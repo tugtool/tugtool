@@ -53,6 +53,10 @@
  *       [L16] pairings declared,
  *       [L19] component authoring guide,
  *       [L20] token sovereignty (composes TugButton)
+ *
+ * @see ./internal/floating-surface-notes.ts for the cross-surface
+ *      invariants table covering popover / confirm-popover / alert /
+ *      sheet and the chain-reactive vs. modal semantic models.
  */
 
 import "./tug-alert.css";

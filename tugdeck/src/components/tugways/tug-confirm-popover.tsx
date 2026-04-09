@@ -29,20 +29,37 @@
  *
  * ## External dismissal via observeDispatch
  *
- * While the popover is open, TugConfirmPopover subscribes to
- * `manager.observeDispatch`. Any action flowing through the chain that
- * is not this popover's own confirm/cancel dismisses the popover and
- * resolves the pending promise with `false`. Self-dispatches (confirm or
- * cancel from our own buttons) are skipped because by the time the
- * observer fires, the primary handler has already nulled `resolverRef`
- * — the observer sees the empty resolver and does nothing. This mirrors
- * the `tug-editor-context-menu` and `tug-popup-menu` precedents.
+ * TugConfirmPopover subscribes to `manager.observeDispatch` on mount
+ * and keeps the subscription active for the lifetime of the
+ * component. Any action flowing through the chain that is not this
+ * popover's own confirm/cancel resolves the pending promise with
+ * `false` and closes the popover. Self-dispatches (confirm or cancel
+ * from our own buttons) are skipped because by the time the observer
+ * fires, the primary handler has already nulled `resolverRef` — the
+ * observer sees the empty resolver and returns without doing
+ * anything. The same null-resolver guard makes the subscription a
+ * no-op when the popover is closed (no `confirm()` call in flight),
+ * so there is no need to gate the effect on an `open` state.
+ *
+ * **Double subscription with the underlying `TugPopover` is
+ * intentional.** `TugPopoverContentShell` also subscribes to
+ * `observeDispatch` while the popover is open, and its handler also
+ * closes the popover on external chain activity. We need BOTH
+ * subscriptions: the shell closes the popover, but it has no way to
+ * resolve `TugConfirmPopover`'s pending promise. Without the
+ * confirm-popover subscription here, an external dispatch would
+ * silently close the popover while leaving the `confirm()` promise
+ * hanging forever. Do not "optimize" by deleting either subscription.
  *
  * Laws: [L06] appearance via CSS/DOM, never React state,
  *       [L11] controls emit actions; responders handle actions,
  *       [L16] pairings declared,
  *       [L19] component authoring guide,
  *       [L20] token sovereignty — popover chrome owned by tug-popover.css
+ *
+ * @see ./internal/floating-surface-notes.ts for the cross-surface
+ *      invariants table covering popover / confirm-popover / alert /
+ *      sheet and the chain-reactive vs. modal semantic models.
  */
 
 import "./tug-confirm-popover.css";
@@ -150,13 +167,10 @@ export const TugConfirmPopover = React.forwardRef<
   // boundary.
   const popoverRef = React.useRef<TugPopoverHandle>(null);
 
-  // Mirror of popover open state, used only to gate the
-  // observeDispatch subscription below. Flipped to true in confirm()
-  // and false in resolveAndClose.
-  const [open, setOpen] = React.useState(false);
-
-  // Resolver pair for the imperative confirm() Promise. Null when no
-  // call is in flight.
+  // Resolver for the imperative confirm() Promise. Null when no
+  // call is in flight. Doubles as the observeDispatch subscription's
+  // no-op guard — when `resolverRef.current === null`, the popover
+  // is not active and the observer has nothing to do.
   const resolverRef = React.useRef<((value: boolean) => void) | null>(null);
 
   // Chain manager — null when rendered outside a ResponderChainProvider
@@ -181,7 +195,6 @@ export const TugConfirmPopover = React.forwardRef<
       resolverRef.current(value);
       resolverRef.current = null;
     }
-    setOpen(false);
     popoverRef.current?.close();
   }, []);
 
@@ -204,26 +217,29 @@ export const TugConfirmPopover = React.forwardRef<
     },
   });
 
-  // External dismissal: any chain activity while the popover is open
-  // cancels it. Self-dispatches (our own confirm/cancel buttons) are
-  // handled by the primary handler above before this observer fires,
-  // so resolverRef is already null and the observer is a no-op for
-  // them. Any other dispatch — a keyboard shortcut elsewhere, a
-  // button click in an unrelated control — lands here with
-  // resolverRef still set and triggers the cancel-and-close path.
+  // External dismissal: any chain activity cancels the popover if a
+  // `confirm()` call is in flight. Self-dispatches (our own
+  // confirm/cancel buttons) are handled by the primary handler above
+  // before this observer fires, so resolverRef is already null and
+  // the observer is a no-op for them. Any other dispatch — a
+  // keyboard shortcut elsewhere, a button click in an unrelated
+  // control — lands here with resolverRef still set and triggers
+  // the cancel-and-close path. When no `confirm()` is in flight,
+  // resolverRef is null and the observer returns without doing
+  // anything, so the subscription runs for the lifetime of the
+  // component without needing an explicit open-state gate.
   React.useLayoutEffect(() => {
-    if (!open || !manager) return;
+    if (!manager) return;
     return manager.observeDispatch(() => {
       if (resolverRef.current === null) return;
       resolveAndClose(false);
     });
-  }, [open, manager, resolveAndClose]);
+  }, [manager, resolveAndClose]);
 
   React.useImperativeHandle(ref, () => ({
     confirm(): Promise<boolean> {
       return new Promise<boolean>((resolve) => {
         resolverRef.current = resolve;
-        setOpen(true);
         popoverRef.current?.open();
       });
     },

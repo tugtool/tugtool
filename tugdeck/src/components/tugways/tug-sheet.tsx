@@ -49,6 +49,10 @@
  *       [L16] pairings declared,
  *       [L19] component authoring guide,
  *       [L20] token sovereignty (composes child controls)
+ *
+ * @see ./internal/floating-surface-notes.ts for the cross-surface
+ *      invariants table covering popover / confirm-popover / alert /
+ *      sheet and the chain-reactive vs. modal semantic models.
  */
 
 import "./tug-sheet.css";
@@ -528,6 +532,84 @@ interface UseTugSheetState {
  *   the sheet portal. Returns null when no sheet is open.
  *
  * Must be called from within a Tugcard (requires TugcardPortalContext).
+ *
+ * ## State machine
+ *
+ * The hook juggles five pieces of state (`state`, `resolverRef`,
+ * `callIdRef`, the mounted `<TugSheet>` instance, and the chain's
+ * `observeDispatch` subscription) across four transition paths. The
+ * tricky invariant is that the exit animation must play on close,
+ * which requires the `<TugSheet>` to stay mounted across the
+ * unmount-decision boundary. The diagram below traces each path.
+ *
+ * ```
+ *                     ┌─────────────────┐
+ *                     │      idle       │
+ *                     │ state = null    │
+ *                     │ resolverRef:0   │
+ *                     └────────┬────────┘
+ *                              │
+ *               showSheet() ───┤  callIdRef++, setState({options, callId})
+ *                              ▼
+ *   ┌──────────────────────────────────────────────────┐
+ *   │                     open                        │
+ *   │  state = {options, resolve, callId}              │
+ *   │  resolverRef = resolve  ← promise pending        │
+ *   │  <TugSheet key={callId} defaultOpen> mounted     │
+ *   │  observeDispatch subscription active             │
+ *   └────────────┬─────────────────────────┬───────────┘
+ *                │                         │
+ *     close(r) ──┤            chain────────┤  Escape / Cmd+.
+ *                │         cancelDialog    │  dispatches cancelDialog
+ *                │       (from any source) │  with sender=this hook's id
+ *                ▼                         ▼
+ *   ┌────────────────────────┐  ┌────────────────────────┐
+ *   │ resolveHook(r):        │  │ observer fires:        │
+ *   │   resolver?(r); ref=0  │  │   if resolverRef≠null  │
+ *   │ then dispatch          │  │   resolveHook(undef)   │
+ *   │   cancelDialog         │  └───────────┬────────────┘
+ *   │   (sender=hook id)     │              │
+ *   └───────────┬────────────┘              │
+ *               │                           │
+ *               ▼                           ▼
+ *   ┌──────────────────────────────────────────────────┐
+ *   │               closing (exit animation)          │
+ *   │  state = {…same…, callId unchanged}              │
+ *   │  resolverRef = null  ← promise already resolved  │
+ *   │  <TugSheet> internal open=false, animating out   │
+ *   │  observer is still mounted but guarded on        │
+ *   │    resolverRef === null → no-op                  │
+ *   └────────────────┬─────────────────────────────────┘
+ *                    │
+ *      showSheet() ──┤  callIdRef++
+ *                    │  setState → new callId → new key
+ *                    ▼
+ *                  (back to "open" with a fresh <TugSheet>;
+ *                   the old one unmounts, the new one's
+ *                   defaultOpen fires and enter animation plays)
+ * ```
+ *
+ * ### Load-bearing ordering rules
+ *
+ * - `close(r)` **must** null `resolverRef` before dispatching
+ *   `cancelDialog`. The dispatch re-enters the observer subscription,
+ *   which would otherwise see the still-set resolver and call
+ *   `resolveHook(undefined)` — double-resolving the promise with a
+ *   wrong result.
+ *
+ * - The hook deliberately does **not** clear `state` on close. The
+ *   old `<TugSheet>` stays mounted, animating out internally, until
+ *   the next `showSheet()` call swaps it for a fresh instance via
+ *   `key={callId}`. Clearing state would unmount the sheet mid-
+ *   animation and skip the exit.
+ *
+ * - `callIdRef++` before `setState` ensures each `showSheet()` gets
+ *   a unique React key, forcing remount instead of reuse. Without
+ *   this, a rapid `close() → showSheet()` sequence would try to
+ *   "reopen" the same instance whose `defaultOpen` has already
+ *   fired once.
+ *
+ * ## Example
  *
  * @example
  * ```tsx

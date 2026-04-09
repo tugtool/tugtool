@@ -17,22 +17,39 @@
  *
  * ## Responder registration lives on TugPopoverContent
  *
- * The chain responder is registered by `TugPopoverContent`, not by
- * `TugPopover` itself. Two reasons:
+ * The chain responder is registered by `TugPopoverContentShell`, a
+ * nested component rendered INSIDE `Popover.Content` and therefore
+ * mounted only while Radix actually shows the popover. Two reasons:
  *
  * 1. `TugPopover` has no DOM node of its own — it's a state owner and
  *    Radix Root wrapper. The responder needs a DOM element to carry
  *    `data-responder-id`, and that element is the portaled content.
- * 2. `TugPopoverContent` only mounts while the popover is open, so the
- *    responder's lifecycle naturally matches the popover's open
- *    lifecycle. Registering at mount and unregistering at unmount
- *    keeps the auto-first-responder promotion (see
- *    `ResponderChainManager.register`) from stealing focus from inner
- *    composites (e.g. `TugConfirmPopover`'s own inner responder) that
- *    mount in the same commit and expect to become first responder
- *    themselves. If `TugPopover` registered a responder at its own
- *    (always-mounted) level, it would auto-promote at initial mount
- *    and block the inner composite's walk.
+ * 2. The shell's lifecycle matches the popover's open lifecycle.
+ *    Registering at mount and unregistering at unmount keeps the
+ *    auto-first-responder promotion (see
+ *    `ResponderChainManager.register`) from stealing focus from
+ *    inner composites (e.g. `TugConfirmPopover`'s own inner
+ *    responder) that mount in the same commit and expect to become
+ *    first responder themselves. If the responder hook ran at
+ *    `TugPopoverContent`'s outer level it would register even when
+ *    `open=false` — the component function still evaluates to
+ *    produce JSX for Radix's Presence wrapper — and the effect
+ *    would auto-promote at initial mount, blocking the inner
+ *    composite's walk forever.
+ *
+ * **This is a structural contract, not a code invariant.** The fix
+ * relies on `Popover.Content` returning null when not open, so its
+ * children (including our shell) are not in the React tree during
+ * the closed state. If a future change makes `TugPopoverContent`
+ * eagerly render its children (e.g. wrapping everything in
+ * `<Popover.Content forceMount>` for custom exit animations), the
+ * shell will start mounting at initial render, its responder will
+ * auto-promote, and inner composites will break. The first
+ * regression is visible in `tug-confirm-popover.test.tsx`'s
+ * `dispatching confirmDialog resolves the promise with true` case —
+ * the walk fails to reach the inner confirm handler and the test
+ * resolves with `false`. Keep that test passing, and this structural
+ * contract stays intact.
  *
  * The `cancelDialog` and `dismissPopover` handlers both close the
  * popover via a `close` callback passed through the
@@ -55,6 +72,21 @@
  * The dispatch carries the popover's own `senderId`, so the
  * `observeDispatch` subscription in `TugPopoverContent` filters it
  * out and does not schedule a second close.
+ *
+ * **Undocumented Radix assumption.** This design relies on Radix
+ * firing `onOpenChange` ONLY in response to user-initiated DOM
+ * dismissal (Escape, click-outside, TugPopoverClose activation), not
+ * in response to our own controlled prop flipping from `true` to
+ * `false`. This has held across the Radix versions we've shipped
+ * on, but it is not an invariant Radix documents explicitly. If a
+ * future Radix release starts firing `onOpenChange` on every
+ * controlled close, every programmatic `close()` will cascade
+ * through `handleOpenChange` and emit an extra `cancelDialog` — not
+ * wrong semantically (both the shell's responder handler and any
+ * inner resolver are idempotent once `resolverRef` is nulled), but
+ * noisy. If the gallery starts showing duplicate close animations
+ * or tests start seeing double-resolve warnings, check Radix's
+ * release notes first.
  *
  * ## External dismissal via observeDispatch
  *
@@ -79,6 +111,10 @@
  *       [L16] pairings declared,
  *       [L17] component aliases resolve to base tier in one hop,
  *       [L19] component authoring guide
+ *
+ * @see ./internal/floating-surface-notes.ts for the cross-surface
+ *      invariants table (popover / confirm-popover / alert / sheet)
+ *      and the chain-reactive vs. modal semantic models.
  */
 
 import "./tug-popover.css";
@@ -380,6 +416,22 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
   //    signal to close it. Without this filter, the Form Content
   //    gallery example (popover containing an input, a switch, and
   //    a save button) would self-dismiss on every field change.
+  //
+  // **The focus-inside filter is a heuristic.** It assumes that
+  // `document.activeElement` accurately reflects "the user is
+  // interacting with the popover", which is true for the cases we
+  // care about (text input focused, Safari's click-without-focus
+  // on buttons leaving focus on the last field) but can be fooled
+  // by a programmatic dispatch that happens to run while focus is
+  // inside the popover — e.g. a timer firing a shortcut action
+  // while the user is typing. The filter will skip such a
+  // dispatch and keep the popover open, even though the dispatch
+  // may have represented a legitimate "close now" signal. This is
+  // an acceptable trade-off for now: keeping form-content popovers
+  // usable is more important than dismissing on weird background
+  // traffic, and users can always press Escape or click outside.
+  // Revisit if a concrete use case surfaces where this trade-off
+  // goes the wrong way.
   //
   // Subscribe via useLayoutEffect so the subscription is in place
   // before any paint that could deliver an event through the chain.
