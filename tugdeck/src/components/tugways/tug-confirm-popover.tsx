@@ -56,6 +56,7 @@ import {
 } from "./tug-popover";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
+import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 
@@ -255,31 +256,6 @@ export const TugConfirmPopover = React.forwardRef<
     });
   }
 
-  // Suppress Safari/macOS button-focus quirk for clicks inside the
-  // popover. macOS WebKit does not move focus to a <button> on click
-  // (only keyboard Tab focuses buttons). When the user clicks a
-  // confirm/cancel button, Safari walks up from the click target
-  // looking for the nearest focusable ancestor — which lands on
-  // Radix Popover's FocusScope container, an element OUTSIDE our
-  // responder's data-responder-id. The focusin on that ancestor
-  // promotes the wrong responder (usually the card), and the chain
-  // dispatch from onClick finds no handler. Preventing mousedown's
-  // default on non-text targets keeps focus where it was and lets
-  // the pointerdown-promoted popover handle the dispatch. See
-  // tug-sheet.tsx for the full rationale.
-  function handleContentMouseDown(e: React.MouseEvent) {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    if (
-      target.closest(
-        'input, textarea, [contenteditable="true"], [contenteditable=""]',
-      )
-    ) {
-      return;
-    }
-    e.preventDefault();
-  }
-
   return (
     <TugPopover ref={popoverRef}>
       <TugPopoverTrigger asChild>{children}</TugPopoverTrigger>
@@ -287,7 +263,7 @@ export const TugConfirmPopover = React.forwardRef<
         <div
           data-slot="tug-confirm-popover"
           className="tug-confirm-popover"
-          onMouseDown={handleContentMouseDown}
+          onMouseDown={suppressButtonFocusShift}
           data-side={side}
           ref={responderRef as (el: HTMLDivElement | null) => void}
         >

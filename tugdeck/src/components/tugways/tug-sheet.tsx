@@ -69,6 +69,7 @@ import { TugcardPortalContext } from "./tug-card";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -411,45 +412,6 @@ export function TugSheetContent({
     }
   }
 
-  // Suppress Safari/macOS's default focus shift on mousedown for
-  // any non-text-input target inside the sheet.
-  //
-  // Why: macOS WebKit does not move focus to a <button> on click
-  // (only keyboard Tab focuses buttons). When the user clicks a
-  // button inside the sheet while a text input has focus, Safari
-  // walks up from the button looking for the nearest focusable
-  // ancestor — which lands on FocusScope's `Primitive.div`
-  // (tabIndex=-1), the element that WRAPS our `.tug-sheet-content`.
-  // That element is OUTSIDE `.tug-sheet-content` in the DOM tree,
-  // so the chain's findResponderForTarget walk goes up past it to
-  // the card, promoting the wrong responder. A cancelDialog
-  // dispatched from the button's onClick then finds no handler and
-  // the sheet stays open — the first click appears to do nothing
-  // except clear the input selection.
-  //
-  // Fix: preventDefault mousedown on any target that is not a text
-  // input. This suppresses the focus shift entirely — focus stays
-  // on whatever was focused before (usually a sheet input), the
-  // click event still fires (click doesn't depend on focus), and
-  // the pointerdown-promotion from the earlier capture listener
-  // has already set first responder to the sheet, so the
-  // cancelDialog dispatch lands on the sheet's handler and closes
-  // it normally. Text inputs (input, textarea, contenteditable)
-  // are excluded so clicks inside them still move focus and
-  // position the caret.
-  function handleContentMouseDown(e: React.MouseEvent) {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    if (
-      target.closest(
-        'input, textarea, [contenteditable="true"], [contenteditable=""]',
-      )
-    ) {
-      return;
-    }
-    e.preventDefault();
-  }
-
   function handleMountAutoFocus(e: Event) {
     if (onOpenAutoFocus) {
       onOpenAutoFocus(e);
@@ -499,7 +461,7 @@ export function TugSheetContent({
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             onKeyDown={handleKeyDown}
-            onMouseDown={handleContentMouseDown}
+            onMouseDown={suppressButtonFocusShift}
           >
           <ResponderScope>
           {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
