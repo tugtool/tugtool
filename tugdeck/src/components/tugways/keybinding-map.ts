@@ -40,6 +40,19 @@ export interface KeyBinding {
    * native select-all is always suppressed when the keybinding matches.
    */
   preventDefaultOnMatch?: boolean;
+  /**
+   * Static payload copied onto the dispatched ActionEvent's `value`
+   * field when this binding matches. Phase A3 / R4 introduced this
+   * for the ⌘1..⌘9 → `jumpToTab` family, where the binding needs to
+   * carry the 1-based tab index into the dispatch. Omit for actions
+   * whose handlers take no payload.
+   *
+   * The field is typed `unknown` to match `ActionEvent.value`, which
+   * itself is untyped by design (see action-vocabulary.ts for the
+   * "middle ground" rationale). Handlers narrow at the dispatch site
+   * via `typeof` or structural guards, same as any other action.
+   */
+  value?: unknown;
 }
 
 // ---- Keybindings ----
@@ -77,6 +90,7 @@ export interface KeyBinding {
  * | Cmd+F            | find               | stage 1 (card stub)             |
  * | Shift+Cmd+[      | previousTab        | stage 1 (card, wraps)           |
  * | Shift+Cmd+]      | nextTab            | stage 1 (card, wraps)           |
+ * | Cmd+1..Cmd+9     | jumpToTab          | stage 1 + value: 1..9 payload   |
  */
 export const KEYBINDINGS: KeyBinding[] = [
   { key: "Backquote", ctrl: true, action: "cycleCard" },
@@ -117,6 +131,22 @@ export const KEYBINDINGS: KeyBinding[] = [
   // wrap via `(idx ± 1 + n) % n`.
   { key: "BracketLeft", meta: true, shift: true, action: "previousTab" },
   { key: "BracketRight", meta: true, shift: true, action: "nextTab" },
+  // Jump to tab by 1-based index (⌘1..⌘9). Each binding carries its
+  // index on `value`; the capture-phase pipeline copies that onto
+  // the dispatched ActionEvent. tug-card's `jumpToTab` handler reads
+  // the index, narrows to `number`, and selects the corresponding
+  // tab. Out-of-range indices are a silent no-op on the handler side.
+  // `preventDefaultOnMatch` is not set: browsers have no default
+  // meaning for ⌘1..⌘9 inside a WKWebView that we need to suppress.
+  { key: "Digit1", meta: true, action: "jumpToTab", value: 1 },
+  { key: "Digit2", meta: true, action: "jumpToTab", value: 2 },
+  { key: "Digit3", meta: true, action: "jumpToTab", value: 3 },
+  { key: "Digit4", meta: true, action: "jumpToTab", value: 4 },
+  { key: "Digit5", meta: true, action: "jumpToTab", value: 5 },
+  { key: "Digit6", meta: true, action: "jumpToTab", value: 6 },
+  { key: "Digit7", meta: true, action: "jumpToTab", value: 7 },
+  { key: "Digit8", meta: true, action: "jumpToTab", value: 8 },
+  { key: "Digit9", meta: true, action: "jumpToTab", value: 9 },
 ];
 
 // ---- matchKeybinding ----

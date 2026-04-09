@@ -846,6 +846,30 @@ export function Tugcard({
     });
   }, [manager, keyboardTabNavSenderId]);
 
+  // jumpToTab: ⌘1..⌘9 lookup by 1-based index. The keybinding map
+  // carries the index on `KeyBinding.value`, which the capture-phase
+  // pipeline copies onto the dispatched ActionEvent. Out-of-range
+  // indices (larger than tab count, or a card with no tabs) are a
+  // silent no-op — same pattern as previousTab / nextTab. Like the
+  // other tab-nav handlers, this re-dispatches `selectTab` through
+  // the chain so the save-state side effect in the `selectTab`
+  // action handler runs in exactly one place. [A3 / R4, #lifecycle-flow]
+  const handleJumpToTab = useCallback(
+    (oneBasedIndex: number) => {
+      const currentTabs = tabsRef.current;
+      if (!currentTabs || currentTabs.length === 0) return;
+      if (oneBasedIndex < 1 || oneBasedIndex > currentTabs.length) return;
+      const targetTab = currentTabs[oneBasedIndex - 1];
+      manager.dispatch({
+        action: "selectTab",
+        value: targetTab.id,
+        sender: keyboardTabNavSenderId,
+        phase: "discrete",
+      });
+    },
+    [manager, keyboardTabNavSenderId],
+  );
+
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
     actions: {
@@ -853,6 +877,13 @@ export function Tugcard({
       selectAll: (_event: ActionEvent) => handleSelectAll(),
       previousTab: (_event: ActionEvent) => handlePreviousTab(),
       nextTab: (_event: ActionEvent) => handleNextTab(),
+      // jumpToTab [L11, A3 / R4]: payload is `value: number` (1-based
+      // tab index). Narrow defensively since event.value is typed
+      // unknown — an out-of-shape dispatch is a silent no-op.
+      jumpToTab: (event: ActionEvent) => {
+        if (typeof event.value !== "number") return;
+        handleJumpToTab(event.value);
+      },
       // selectTab / closeTab [L11, A2.3]: dispatched by TugTabBar in our
       // accessory slot. Payload is `value: tabId`. The responder owns the
       // store-mutation; deck-canvas no longer wires inline arrows for

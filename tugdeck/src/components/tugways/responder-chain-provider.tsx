@@ -73,9 +73,15 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // defers continuations until after its activation blink; the
       // keyboard path has no blink, so the continuation fires immediately
       // after the sync phase.
+      //
+      // `binding.value` is copied onto the dispatched event only when
+      // present. ⌘1..⌘9 use this to carry the 1-based tab index for
+      // `jumpToTab`; every other binding leaves `value` undefined and
+      // the handler sees the same shape it always did. [A3 / R4]
       const { handled, continuation } = manager.dispatchForContinuation({
         action: binding.action,
         phase: "discrete",
+        ...(binding.value !== undefined ? { value: binding.value } : {}),
       });
       if (handled) {
         event.preventDefault();

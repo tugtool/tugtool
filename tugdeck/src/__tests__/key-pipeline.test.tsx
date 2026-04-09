@@ -523,4 +523,102 @@ describe("matchKeybinding", () => {
     );
     expect(binding).toBeNull();
   });
+
+  // ---- ⌘1..⌘9 → jumpToTab with static payload ----
+  //
+  // Each of the nine digit bindings resolves to the `jumpToTab`
+  // action and carries its 1-based index on `KeyBinding.value`.
+  // The capture-phase pipeline threads that value onto the
+  // dispatched ActionEvent (tested below in the "payload threading"
+  // describe).
+
+  it("Cmd+1..Cmd+9 → jumpToTab with matching 1-based value", () => {
+    for (let i = 1; i <= 9; i++) {
+      const binding = matchKeybinding(
+        makeEvent(`Digit${i}`, { metaKey: true }),
+      );
+      expect(binding?.action).toBe("jumpToTab");
+      expect(binding?.value).toBe(i);
+    }
+  });
+});
+
+// ============================================================================
+// Capture-phase payload threading — KeyBinding.value → ActionEvent.value
+// ============================================================================
+
+describe("capture-phase payload threading", () => {
+  it("⌘3 dispatches jumpToTab with event.value === 3", () => {
+    // Register a responder that captures the dispatched event so we
+    // can assert that `KeyBinding.value` (from the ⌘3 map entry) was
+    // copied onto `ActionEvent.value` by the capture listener.
+    let receivedValue: unknown = undefined;
+
+    function Harness() {
+      const manager = useRequiredResponderChain();
+      React.useLayoutEffect(() => {
+        const responderId = "test-jump-harness";
+        manager.register({
+          id: responderId,
+          parentId: null,
+          actions: {
+            jumpToTab: (event: ActionEvent) => {
+              receivedValue = event.value;
+            },
+          },
+        });
+        return () => manager.unregister(responderId);
+      }, [manager]);
+      return null;
+    }
+
+    render(
+      <ResponderChainProvider>
+        <Harness />
+      </ResponderChainProvider>,
+    );
+
+    act(() => {
+      fireKeydown({ code: "Digit3", metaKey: true });
+    });
+
+    expect(receivedValue).toBe(3);
+  });
+
+  it("⌘Z dispatches undo with undefined value (no payload)", () => {
+    // Regression guard: the payload spread must only attach `value`
+    // when the binding defines one. A binding without `value` must
+    // not leak `value: undefined` (or anything else) onto the event.
+    let received: unknown = "SENTINEL_UNTOUCHED";
+
+    function Harness() {
+      const manager = useRequiredResponderChain();
+      React.useLayoutEffect(() => {
+        const responderId = "test-undo-harness";
+        manager.register({
+          id: responderId,
+          parentId: null,
+          actions: {
+            undo: (event: ActionEvent) => {
+              received = event.value;
+            },
+          },
+        });
+        return () => manager.unregister(responderId);
+      }, [manager]);
+      return null;
+    }
+
+    render(
+      <ResponderChainProvider>
+        <Harness />
+      </ResponderChainProvider>,
+    );
+
+    act(() => {
+      fireKeydown({ code: "KeyZ", metaKey: true });
+    });
+
+    expect(received).toBeUndefined();
+  });
 });
