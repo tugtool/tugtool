@@ -706,29 +706,48 @@ Each sub-step is its own commit. Sub-steps run sequentially, not bundled; this m
 
 **Grade impact after A2:** Consistency → A. The component library is now uniformly chain-native.
 
-### Phase A3 — R4: Complete the macOS standard keybinding map (1 session)
+### Phase A3 — R4: Complete the macOS standard keybinding map (1 session) ✅
 
 After A2, every component that needs to respond to a standard shortcut has a registered handler. Now add the bindings.
 
-Full additions to `keybinding-map.ts`:
+**Landed bindings (three sub-steps):**
 
-| Shortcut | Action | Notes |
-|---|---|---|
-| ⌘Z | `undo` | Walks innermost → editor → card → canvas per macOS semantics. |
-| ⇧⌘Z | `redo` | Same walk. |
-| ⌘W | `close` | Closes the first card responder. Handled by `tug-card`. |
-| ⌘T | `addTabToActiveCard` | Already bound via `addTabToActiveCard` action; wire the keystroke. |
-| ⌘⇧T | `reopenTab` | Requires a reopen-tab handler somewhere (card? canvas?). Decide placement during implementation. |
-| ⌘1..⌘9 | `jumpToTab` | Dispatch with `{ value: tabIndex }` payload. `tug-card` handles. |
-| ⌘F | `find` | Existing `find` stub on `tug-card`; bind the key. |
-| ⌘, | `showSettings` | Already in the vocabulary; bind the key. |
-| ⌘. | `cancelDialog` | Works with A2.8 dialogs. |
-| Escape | `cancelDialog` | Complements ⌘.; some dialogs listen to both. |
-| ⇥ / ⇧⇥ | `focusNext` / `focusPrevious` | Requires a chain-wide focus-next implementation; discussed below. |
+| Shortcut | Action | Handler | Commit |
+|---|---|---|---|
+| ⌘Z | `undo` | `tug-prompt-input` / `use-text-input-responder` (editor continuation) | A3.1 `7c97e271` |
+| ⇧⌘Z | `redo` | Same | A3.1 `7c97e271` |
+| ⌘W | `close` | `tug-card` (via Tug.app File > Close Card Control frame, **A3.3**) | A3.1 + A3.3 |
+| ⌘T | `addTabToActiveCard` | `deck-canvas` | A3.1 `7c97e271` |
+| ⌘, | `showSettings` | `deck-canvas` (stub) | A3.1 `7c97e271` |
+| ⌘. | `cancelDialog` | Four A2.8 floating surfaces | A3.1 `7c97e271` |
+| ⌘F | `find` | `tug-card` (stub) | A3.1 `7c97e271` |
+| ⇧⌘[ | `previousTab` | `tug-card` (wraps via `(idx-1+n)%n`) | A3.1 `7c97e271` |
+| ⇧⌘] | `nextTab` | `tug-card` (wraps via `(idx+1)%n`) | A3.1 `7c97e271` |
+| ⌘1..⌘9 | `jumpToTab` | `tug-card` (new handler, narrows `event.value: number`) | A3.2 `b0e08a8b` |
 
-`focusNext` / `focusPrevious` are the most architecturally interesting. The current keyboard navigation in selection controls (arrow keys within a `tug-choice-group`, for instance) can dispatch these through the chain instead of managing focus imperatively. Implementation: a document-level handler that queries all elements with `data-responder-id` in DOM order and walks forward/backward. Sketch, not yet committed — decide during implementation whether to keep it in the chain or leave it to native focus.
+**Roadmap divergence: additions from the original table.**
 
-**Exit criteria:** every standard macOS shortcut has exactly one entry in `keybinding-map.ts`, dispatches a typed action, and works end-to-end.
+- **⇧⌘[ / ⇧⌘]** were added during implementation. The handlers (`previousTab`, `nextTab`) already existed on `tug-card` with wrap-around arithmetic and were previously reachable only programmatically; the keybinding exposes them. macOS convention (Safari, Terminal) uses ⇧⌘[ / ⇧⌘] for tab navigation, not arrow keys.
+
+**`KeyBinding` extension: static payloads.**
+
+`KeyBinding` gained an optional `value?: unknown` field for the ⌘1..⌘9 → `jumpToTab` family, where the binding carries the 1-based tab index into the dispatch. The capture-phase pipeline spreads `value` into `dispatchForContinuation` only when defined, so payload-less bindings still dispatch events with `value` undefined (regression-guarded in `key-pipeline.test.tsx`). This is the first and only payload-carrying binding in the map; making it the precedent is cheaper than nine per-digit action names in `action-vocabulary.ts`.
+
+**Tug.app menu side (A3.3).**
+
+`File > Close Window` (bound to `NSWindow.performClose(_:)`) was swallowing ⌘W at the menubar before the WKWebView could see it. Renamed to `File > Close Card` with a custom `closeActiveCard(_:)` selector that sends a `close-active-card` Control frame. `action-dispatch.ts` registers the action to dispatch `close` through the responder chain, landing on `tug-card`'s existing handler. The tugdeck-side ⌘W entry in the keybinding map still exists for browser-only dev where no Swift menu is present — both paths converge on the same chain dispatch.
+
+**Deferred to later phases:**
+
+The original A3 table listed four more bindings that did not land this phase. Each has an explicit reason:
+
+- **⌘⇧T `reopenTab`** — deferred. Requires a closed-tab history in `deck-manager.ts`, which is a new feature (closed-tab stack + bounded size + serialization to tugbank), not a keybinding map task. The action name exists in the vocabulary; a future phase can add the handler and a single map entry without reopening anything in A3.
+
+- **⇥ / ⇧⇥ `focusNext` / `focusPrevious`** — deferred. The roadmap already marked this "sketch, not yet committed". Native Tab focus already works inside text inputs, and no user has reported a gap in tab-order handling across cards. A chain-wide `focusNext` would need a document-level handler that reads DOM-ordered `data-responder-id` attributes, and the design decision (keep in the chain vs. delegate to native focus) is a distinct architectural change that should stand on its own merits, not ride along with R4.
+
+- **Escape → `cancelDialog`** — skipped. Radix `DismissableLayer` already closes each floating surface on Escape within its own scope, and every A2.8 surface routes that dismissal through `cancelDialog`. A global binding would risk double-dispatch (Radix + chain) and steal Escape from text-input editing modes where Escape has other intended meanings. ⌘. is sufficient for the "keyboard shortcut" requirement, and Escape behavior is working everywhere it is today.
+
+**Exit criteria (revised):** every standard macOS shortcut whose action has a registered handler has exactly one entry in `keybinding-map.ts`, dispatches a typed action, and works end-to-end. Three shortcuts (⌘⇧T, ⇥/⇧⇥, Escape) are tracked as follow-ups with written rationale above.
 
 ### Phase A4 — R6: Retrofit `observeDispatch` to floating surfaces (1 session)
 
