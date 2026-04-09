@@ -299,6 +299,31 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       });
     }
 
+    // Suppress Safari/macOS button-focus quirk for clicks inside the
+    // alert. macOS WebKit does not move focus to a <button> on click
+    // (only keyboard Tab focuses buttons). When the user clicks a
+    // confirm/cancel button, Safari walks up from the click target
+    // looking for the nearest focusable ancestor — which lands on
+    // Radix AlertDialog's internal FocusScope container, an element
+    // OUTSIDE our responder's data-responder-id. The focusin on that
+    // ancestor promotes the wrong responder (usually the card), and
+    // the chain dispatch from onClick finds no handler. Preventing
+    // mousedown's default on non-text targets keeps focus where it
+    // was and lets the pointerdown-promoted alert handle the
+    // dispatch. See tug-sheet.tsx for the full rationale.
+    function handleContentMouseDown(e: React.MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest(
+          'input, textarea, [contenteditable="true"], [contenteditable=""]',
+        )
+      ) {
+        return;
+      }
+      e.preventDefault();
+    }
+
     return (
       <AlertDialog.Root open={open} onOpenChange={handleOpenChange}>
         <AlertDialog.Portal>
@@ -307,6 +332,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             ref={responderRef as (el: HTMLDivElement | null) => void}
             className="tug-alert-content"
             data-slot="tug-alert"
+            onMouseDown={handleContentMouseDown}
             onKeyDown={(e) => {
               // Cmd+. dismisses (macOS convention) — treat as cancel.
               if (e.metaKey && e.key === ".") {
