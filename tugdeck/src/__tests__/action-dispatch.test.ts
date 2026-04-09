@@ -589,3 +589,39 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     expect(second[0]).toEqual({ action: "addTabToActiveCard", phase: "discrete" });
   });
 });
+
+// ---- close-active-card handler ([A3 / R4]) ----
+
+describe("initActionDispatch: close-active-card", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("dispatches 'close' through the registered ResponderChainManager", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const dispatched: ActionEvent[] = [];
+    const stubManager = {
+      dispatch(event: ActionEvent): boolean {
+        dispatched.push(event);
+        return true;
+      },
+    };
+    registerResponderChainManager(stubManager as any);
+
+    dispatchAction({ action: "close-active-card" });
+
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0]).toEqual({ action: "close", phase: "discrete" });
+  });
+
+  it("warns and does not throw when no ResponderChainManager is registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "close-active-card" })).not.toThrow();
+  });
+});

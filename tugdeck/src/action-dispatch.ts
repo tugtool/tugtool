@@ -277,6 +277,22 @@ export function initActionDispatch(
     }
   });
 
+  // close-active-card: Close the focused card via the responder chain.
+  // Dispatches "close" through the ResponderChainManager, which walks to the
+  // innermost responder and lands on tug-card's registered close handler. This
+  // is the File > Close Card menu item's Control-frame round-trip: the Swift
+  // menu has keyEquivalent "w", so ⌘W triggers the menu action (AppKit swallows
+  // the keystroke before the WKWebView sees it) which fires this handler. The
+  // tugdeck-side keybinding map entry for ⌘W exists for browser-only dev where
+  // no Swift menu is present. [A3 / R4]
+  registerAction("close-active-card", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.dispatch({ action: "close", phase: "discrete" });
+    } else {
+      console.warn("close-active-card: responder chain manager not registered yet");
+    }
+  });
+
   // eval: Evaluate JavaScript code and send the result back via CONTROL frame.
   // Used by /api/eval for programmatic access (e.g., running tests from CLI).
   registerAction("eval", async (payload) => {

@@ -252,7 +252,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
-        fileMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        // Close Card: routes through the web view's responder chain rather than
+        // NSWindow.performClose. The custom selector sends a Control frame that
+        // action-dispatch.ts turns into a `close` chain dispatch, which lands on
+        // tug-card's registered handler. Without the round-trip, AppKit would
+        // swallow ⌘W at the menubar and the WKWebView would never see the keystroke.
+        fileMenu.addItem(NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w"))
 
         // Edit Menu - position 2
         let editMenuItem = NSMenuItem()
@@ -385,6 +390,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func addTabToActiveCard(_ sender: Any) {
         sendControl("add-tab-to-active-card")
+    }
+
+    @objc private func closeActiveCard(_ sender: Any) {
+        sendControl("close-active-card")
     }
 
     @objc private func sourceTree(_ sender: Any) {
