@@ -20,11 +20,44 @@
  *
  * Parent responders bind via the `setValueNumber` slot in
  * `useResponderForm`; the setter's second argument is the phase, so
- * consumers can drive a ref-based live preview on `"change"` and only
- * persist state on `"commit"` / `"discrete"`. Consumers that don't
- * care about phases can declare a unary setter `(v: number) => void`
+ * consumers can branch on the phase if they care about the drag
+ * lifecycle (e.g. snapshot on `"begin"`, roll back on `"cancel"`).
+ * Value-picker consumers that treat every intermediate value as a
+ * committed value can declare a unary setter `(v: number) => void`
  * — TypeScript accepts it because the narrower signature is
  * assignable to the wider slot type.
+ *
+ * ## Slider value is semantic data, not appearance
+ *
+ * A slider's value flows through React's controlled-component cycle
+ * because Radix's `SliderPrimitive.Root` reads its thumb position
+ * from the `value` prop via `useControllableState`. When the prop
+ * doesn't update, Radix never re-renders, and the thumb cannot move.
+ * That means every drag frame must propagate through React state for
+ * the slider to function at all — there is no "DOM-only" variant.
+ *
+ * This does not violate [L06]. L06 is about ephemeral visual effects
+ * (hover highlights, focus rings, `data-state` toggles, active press
+ * animations) — state whose only purpose is appearance. A slider's
+ * value is semantic data: it represents a setting the user is
+ * choosing, and the thumb position is derived from that data. Data
+ * flowing through React to drive a visual is the normal React
+ * contract, not an L06 violation.
+ *
+ * It also does not violate [L08]. L08 is explicitly scoped to
+ * *mutation transactions* — the "preview → commit" UX pattern where
+ * a draft mutation is visualized before being persisted (see
+ * `gallery-mutation-tx.tsx`). A volume slider is not a mutation
+ * transaction: there is no "uncommitted preview" state. Every
+ * intermediate value IS a committed value.
+ *
+ * A TugSlider used inside a true mutation transaction would look
+ * different: the consumer would buffer preview values in refs and
+ * apply DOM-level appearance changes to the thing being previewed
+ * (a mock card, a color swatch, a position), with the slider's own
+ * value state tracking the draft throughout the drag. That's an
+ * orthogonal concern from TugSlider's own rendering, which must use
+ * the controlled-component cycle regardless.
  *
  * ## Nested TugValueInput sender-id propagation
  *
@@ -83,7 +116,7 @@
 
 import "./tug-slider.css";
 
-import React, { useCallback, useEffect, useId, useRef } from "react";
+import React, { useCallback, useId, useLayoutEffect, useRef } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
@@ -240,14 +273,22 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     //
     // Fix: install always-on window-level `pointerup` / `pointercancel`
     // listeners that unconditionally clear `draggingRef`. They are
-    // trivially cheap — a single ref read per event. No dispatch is
+    // trivially cheap — a single ref write per event. No dispatch is
     // fired from the safety net: "commit" semantics remain Radix's
     // responsibility via the normal `onValueCommit` path. The safety
     // net only closes the leak window so subsequent interactions see
     // a clean state.
     //
+    // Registered via useLayoutEffect rather than useEffect per [L03]:
+    // the leak-recovery listener is a pointer-handler dependency, and
+    // L03 requires setups that keyboard/pointer handlers depend on to
+    // be complete before any browser event can fire. useLayoutEffect
+    // runs synchronously after DOM mutations and before paint, so the
+    // listener is guaranteed to be installed before the first possible
+    // user interaction.
+    //
     // Also runs on unmount via the effect cleanup — no listener leaks.
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (typeof window === "undefined") return;
       const clearDragging = () => {
         draggingRef.current = false;

@@ -1,11 +1,15 @@
 /**
  * GallerySlider — TugSlider demos for the Component Gallery.
  *
- * Every slider here binds its state through `useResponderForm` so drag
- * phases (`begin`/`change`/`commit`/`cancel`) and keyboard discrete
- * changes both arrive at the same setter. The demo only cares about
- * the final numeric value, so it ignores the phase argument — a
- * unary `setXxx` is assignable to the phased slot signature.
+ * Every slider here binds its value through `useResponderForm`'s
+ * `setValueNumber` slot with a unary setter. The setter runs on every
+ * dispatch phase (begin/change/commit/discrete/cancel) — for a
+ * value-picker slider like volume or font size, every intermediate
+ * drag value is a committed value, so there is no preview/commit
+ * distinction to honor. The slider value is semantic data, not
+ * appearance, so L06/L08 do not apply here. Sliders that need true
+ * preview-then-commit semantics belong in mutation-tx territory
+ * (see `gallery-mutation-tx.tsx`).
  */
 
 import React, { useId, useState } from "react";

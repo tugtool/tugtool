@@ -141,18 +141,18 @@ function getNestedValueInput(container: HTMLElement): HTMLInputElement {
 }
 
 /**
- * Stateful TugSlider wrapper for drag-sequence tests that need the
- * controlled `value` prop to track dispatches in real time.
+ * StatefulSlider — TugSlider test wrapper with a unary setter bound
+ * into useResponderForm's setValueNumber slot. Every phase (begin /
+ * change / commit / discrete / cancel) calls setState with the
+ * dispatched value, matching how real consumers (e.g. gallery-slider)
+ * wire TugSlider as a value picker.
  *
- * Radix uses `useControllableState` internally — when a `value` prop
- * is provided, Radix always reads from the prop, never from a stale
- * internal mirror. That means a static `value={50}` in a test causes
- * Radix's keyboard step handler to always compute from 50, even
- * after an earlier pointerdown hit-test moved the thumb to 75. The
- * wrapper installs a `useResponderForm` setValueNumber binding that
- * updates local state on every dispatch, so successive keyboard /
- * pointer interactions see the most recent value — matching how
- * real consumers (e.g. gallery-slider) are wired.
+ * The slider value is semantic data, not appearance: Radix's thumb
+ * position reads from the controlled `value` prop through React's
+ * render cycle, so parent state must update on every change for the
+ * thumb to actually move. This is not an L06 violation — L06 is
+ * about ephemeral visual effects (hover, focus), not about semantic
+ * data flowing through React.
  */
 function StatefulSlider({
   initialValue,
@@ -317,62 +317,6 @@ describe("TugSlider – drag hit-test (A2.6)", () => {
       value: 75,
       sender: "slider-hittest",
     });
-  });
-});
-
-describe("TugSlider – keyboard step during in-progress drag (A2.6)", () => {
-  it("keyboard step after pointerdown commits the drag and then dispatches discrete", () => {
-    const { container, dispatched } = renderWithChainObserver(
-      <StatefulSlider
-        initialValue={50}
-        senderId="slider-drag-kbd"
-        min={0}
-        max={100}
-        step={1}
-        showValue={false}
-      />
-    );
-
-    const root = getSliderRoot(container);
-    const thumb = getSliderThumb(container);
-
-    fireEvent.pointerDown(root, { button: 0, clientX: 150 });
-    fireEvent.focus(thumb);
-    fireEvent.keyDown(thumb, { key: "ArrowRight" });
-
-    const events = setValueEvents(dispatched);
-
-    // Observed sequence: [begin@50, change@75, commit@76, discrete@76]
-    //
-    // Radix's keyboard step handler calls `updateValues(next, ..., { commit: true })`,
-    // which fires `onValueCommit` SYNCHRONOUSLY inside the setValues
-    // updater — before React flushes the state change and the
-    // subsequent `onValueChange` runs. So the keyboard step produces:
-    //
-    //   a. onValueCommit(76) → our handleSliderCommit sees
-    //      draggingRef=true (still held from pointerdown) → dispatches
-    //      commit@76 and clears draggingRef.
-    //   b. onValueChange(76) → our handleSliderChange now sees
-    //      draggingRef=false → dispatches discrete@76.
-    //
-    // This is the correct end-state for a mid-drag keyboard step: the
-    // drag concludes at the keyboard value, and any further keyboard
-    // input is treated as discrete. The "discrete" tail is an
-    // artifact of Radix's commit-then-change order, but it carries
-    // the same final value as the commit, so a consumer that acts on
-    // commits sees the right result either way.
-    expect(events.length).toBe(4);
-
-    expect(events[0]).toMatchObject({ phase: "begin", value: 50 });
-    expect(events[1]).toMatchObject({ phase: "change", value: 75 });
-    expect(events[2]).toMatchObject({ phase: "commit", value: 76 });
-    expect(events[3]).toMatchObject({ phase: "discrete", value: 76 });
-
-    // All events share the same sender and all are setValue.
-    for (const e of events) {
-      expect(e.sender).toBe("slider-drag-kbd");
-      expect(e.action).toBe("setValue");
-    }
   });
 });
 
@@ -672,5 +616,63 @@ describe("TugSlider – nested TugValueInput sender propagation (A2.6)", () => {
 
     const events = setValueEvents(dispatched);
     expect(events.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keyboard step during in-progress drag
+// ---------------------------------------------------------------------------
+
+describe("TugSlider – keyboard step during in-progress drag (A2.6)", () => {
+  it("keyboard step after pointerdown commits the drag then dispatches discrete", () => {
+    const { container, dispatched } = renderWithChainObserver(
+      <StatefulSlider
+        initialValue={50}
+        senderId="slider-drag-kbd"
+        min={0}
+        max={100}
+        step={1}
+        showValue={false}
+      />
+    );
+
+    const root = getSliderRoot(container);
+    const thumb = getSliderThumb(container);
+
+    fireEvent.pointerDown(root, { button: 0, clientX: 150 });
+    fireEvent.focus(thumb);
+    fireEvent.keyDown(thumb, { key: "ArrowRight" });
+
+    const events = setValueEvents(dispatched);
+
+    // Observed sequence: [begin@50, change@75, commit@76, discrete@76]
+    //
+    // Radix's keyboard step handler calls `updateValues(next, ..., { commit: true })`,
+    // which fires `onValueCommit` SYNCHRONOUSLY inside the setValues
+    // updater — before React flushes the state change and the
+    // subsequent `onValueChange` runs. So the keyboard step produces:
+    //
+    //   a. onValueCommit(76) → our handleSliderCommit sees
+    //      draggingRef=true (still held from pointerdown) → dispatches
+    //      commit@76 and clears draggingRef.
+    //   b. onValueChange(76) → our handleSliderChange now sees
+    //      draggingRef=false → dispatches discrete@76.
+    //
+    // Radix is reading from the *latest committed prop* (75, because
+    // the wrapper setState on change@75) when it handles the keyboard
+    // step, so the step goes 75 → 76. This is the correct
+    // end-state for a mid-drag keyboard step: the drag concludes at
+    // the keyboard value, and any further keyboard input is treated
+    // as discrete.
+    expect(events.length).toBe(4);
+    expect(events[0]).toMatchObject({ phase: "begin", value: 50 });
+    expect(events[1]).toMatchObject({ phase: "change", value: 75 });
+    expect(events[2]).toMatchObject({ phase: "commit", value: 76 });
+    expect(events[3]).toMatchObject({ phase: "discrete", value: 76 });
+
+    for (const e of events) {
+      expect(e.sender).toBe("slider-drag-kbd");
+      expect(e.action).toBe("setValue");
+    }
   });
 });

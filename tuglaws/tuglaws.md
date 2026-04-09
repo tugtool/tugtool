@@ -22,13 +22,23 @@
 
 ## State and Mutation Zones
 
-**L06. Appearance changes go through CSS and DOM, never React state.** Class toggles, attribute changes, and style mutations that don't affect React's subtree are free. Use them. [D01, D03, D84, D12, D13]
+**L06. Ephemeral appearance state goes through CSS and DOM, never React state.** State whose only consumer is rendering and whose only purpose is to look a certain way — hover highlights, focus rings, active-press feedback, `data-state` toggles — belongs in the DOM. Class toggles, attribute changes, and style mutations that don't affect React's subtree are free. Use them.
+
+This law does not apply to semantic data that happens to have a visual representation. Data is state that non-rendering code reads and acts on; rendering is a downstream consequence of the data, not the reason it exists. Examples: a form field's current value, the selected item in a list, a card's title, a user's zoom level. Data flows through React's render cycle because that is how controlled components and derived UI work — that is the contract, not an L06 violation.
+
+The test: *does any non-rendering consumer depend on this state?* If yes, it is data and may live in React. If no — if the only thing that reads it is the renderer itself — it is appearance and belongs in the DOM. Get this test wrong in either direction and things break: data pushed into DOM refs becomes invisible to the code that cares about it; ephemeral visual state pushed through React triggers unnecessary re-renders and subtree invalidations. [D01, D03, D84, D12, D13]
 
 **L07. Every action handler must access current state through refs or stable singletons, never stale closures.** `useResponder` registers actions once at mount. If a handler reads a value that changes over time, it must go through a ref. [D09, D11]
 
 **L22. When external state drives direct DOM updates, observe the store directly — don't round-trip through React's render cycle.** If a store update produces DOM writes (not React state changes), subscribe via the store's observer API in a `useLayoutEffect` and update the DOM in the callback. Do not use `useSyncExternalStore` to pull the value into React and then escape via `useEffect` to write to the DOM — that injects React's scheduling (re-render → paint → effect) between the data change and the DOM update, causing frame delays and stale-closure bugs. `useSyncExternalStore` (L02) is for state that React components *render*. Store observers are for state that drives *direct DOM mutations* (L06).
 
-**L08. Live preview is appearance-zone only; commit crosses zone boundaries.** During mutation transactions, all preview mutations are CSS/DOM. The commit handler may write to stores or React state. Never mix preview with state changes. [D64, D65]
+**L08. Live preview in mutation transactions is appearance-zone only; commit crosses zone boundaries.** A *mutation transaction* is the specific UX pattern where the user begins an interaction that *drafts* a change, sees the draft rendered live against the target, and then either commits the draft (persisting it) or cancels it (rolling back). The defining feature is that the draft value is not yet a committed value — it exists only long enough to be previewed, and the user may discard it. Examples: scrubbing a hue onto a mock card, dragging to reposition a draggable element, dragging an opacity slider in a style inspector.
+
+During the draft phase, all preview mutations are CSS/DOM — the draft is not React state because it may never be committed. The commit handler may write to stores or React state; cancel rolls back via DOM. Never mix preview with state changes.
+
+This law does not apply to continuous controls whose every intermediate value *is* a committed value. Such interactions are not mutation transactions: there is no draft-vs-commit distinction, only a stream of atomic commits. Their values flow through React state normally, the same as any other data. Examples: a volume slider, a font-size stepper, a choice group, a color picker used as a setting editor rather than as a preview tool. The phase system (`begin` / `change` / `commit` / `discrete` / `cancel`) enables mutation-tx usage where needed — it does not require it, and the presence of phased dispatches does not by itself turn a value picker into a mutation transaction.
+
+The test: *can the user end the interaction with a result that was never committed?* If yes, it is a mutation transaction and L08 applies — preview belongs in the DOM. If no — if releasing, committing, or disconnecting always leaves the last seen value as the committed value — it is not a mutation transaction and L08 does not apply. [D64, D65]
 
 **L23. Internal implementation operations must never lose, destroy, or cease to apply user-visible state.** Scroll position, selection, focus, and visible content are user data — the user put them there. A re-lex, re-parse, DOM rebuild, or any other internal bookkeeping operation must preserve these invariants. "Save and restore" is not preservation; it is destruction with attempted recovery. The correct approach is to diff and mutate minimally so user-visible state is never disturbed.
 
@@ -42,7 +52,15 @@
 
 **L10. One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to components. CardFrame owns geometry. Tugcard owns chrome. Card content owns domain logic. Don't reach across layers. [D05, D15]
 
-**L11. Controls emit actions; responders handle actions.** Controls (buttons, sliders, pickers) are not responder nodes. They dispatch ActionEvents into the chain. Responders receive and handle them. [D08, D61, D62, D63]
+**L11. Controls emit actions; responders own state that actions operate on.** A *control* translates a user gesture into a typed intent and dispatches it into the chain — the state that handlers will modify lives elsewhere (a parent, a store, a separate component). A *responder* owns persistent semantic state that actions mutate over time and registers handlers for the actions that mutate it. Responders have a stable identity in the chain so the first-responder promotion mechanism can address them.
+
+The distinction is conceptual, not categorical: it is about *who owns the state an action changes*, not about what kind of widget the component happens to be. The test is, "does this component own the state that this action is going to mutate?" If no, the component is an emitter — it can dispatch the action but another node owns the state, so another node is the responder. If yes, the component must register as a responder because it is the only code that knows how to perform the action on its own state.
+
+Most interactive widgets are controls: their state lives in a parent that passes it back in via props. When such a widget interacts with the user, it dispatches an action whose handler — somewhere up the chain — updates the parent's state, which flows back down. The widget itself holds no authoritative state. Push buttons, sliders, checkboxes, switches, radio groups, choice groups, tab bars, accordions, and popup menus are all examples of this shape.
+
+A component that owns its own state is a responder for the actions that mutate that state. A component that owns a caret, a selection, an undo stack, and a content document is a responder for `cut` / `copy` / `paste` / `selectAll` / `undo` / `redo` — those actions operate directly on state that lives inside the component and nowhere else. A component that owns a window and its contained document is a responder for `close` / `find` / `toggleMenu`. A component that owns a layout tree is a responder for `cycleCard` / `resetLayout`. Text editors, cards, and canvases are examples of this shape.
+
+A single component may be both an emitter and a responder for the same action. A text editor with a context menu dispatches `cut` when the user clicks the menu item; the chain's innermost-first walk routes that dispatch right back to the editor, which handles it on its own selection. Components that own state close the loop on themselves. [D08, D61, D62, D63]
 
 **L12. Selection stays inside card boundaries.** `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D34, D35, D36, D37, D38]
 

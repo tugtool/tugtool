@@ -8,16 +8,39 @@
  * Auto-resize adjusts height imperatively via the native input event [L06].
  * Character counter renders below the textarea when maxLength is set.
  *
+ * ## Chain participation (A2.7)
+ *
+ * When rendered inside a `<ResponderChainProvider>`, TugTextarea
+ * registers itself as a responder node and handles the six standard
+ * editing actions (`cut`, `copy`, `paste`, `selectAll`, `undo`,
+ * `redo`), delegating to native DOM APIs on the underlying
+ * `<textarea>` element. See `tug-input.tsx` for the detailed
+ * rationale behind the execCommand-vs-Clipboard-API choices — the
+ * same trade-offs apply here. Each textarea uses its own native undo
+ * stack, and the chain's innermost-first walk routes actions to the
+ * currently focused one via the focusin listener in
+ * `responder-chain-provider.tsx`.
+ *
+ * Like TugInput, TugTextarea uses a two-path rendering strategy: it
+ * falls back to a plain `<textarea>` render when no provider is in
+ * scope, so it can still be used in standalone previews / tests.
+ *
  * Laws: [L06] appearance via CSS / imperative DOM for auto-resize,
- *       [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide
- * Decisions: [D04] token-driven control state model, [D05] component token naming
+ *       [L11] controls emit actions; responders handle actions,
+ *       [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
+ * Decisions: [D04] token-driven control state model,
+ *            [D05] component token naming
  */
 
 import "./tug-textarea.css";
 
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { useResponderChain } from "./responder-chain-provider";
+import { useResponder } from "./use-responder";
+import type { ActionHandlerResult } from "./responder-chain";
 
 // ---- Types ----
 
@@ -89,36 +112,54 @@ export interface TugTextareaProps
   borderless?: boolean;
 }
 
-// ---- TugTextarea ----
+// ---- Shared rendering helper ----
+//
+// Both the plain and responder-wired variants render identical JSX.
+// The only seam is how the textarea's ref is composed: the plain
+// variant forwards straight through to the consumer's ref, while the
+// responder variant also writes data-responder-id via `extraRef`. By
+// collapsing the rendering into a single helper, we keep the CSS
+// classes, the auto-resize effect, the character counter, and the
+// maxLength wrapper in one place.
 
-export const TugTextarea = React.forwardRef<
-  HTMLTextAreaElement,
-  TugTextareaProps
->(function TugTextarea(
-  {
-    size = "md",
-    validation = "default",
-    resize,
-    rows = 3,
-    maxLength,
-    autoResize = false,
-    maxRows,
-    focusStyle = "background",
-    borderless = false,
-    className,
-    disabled,
-    onChange,
-    value,
-    defaultValue,
-    ...rest
-  },
-  ref,
-) {
+interface TugTextareaBodyProps
+  extends Omit<TugTextareaProps, "size" | "validation" | "resize" | "focusStyle" | "borderless"> {
+  size: TugTextareaSize;
+  validation: TugTextareaValidation;
+  resize?: TugTextareaResize;
+  focusStyle: "background" | "ring";
+  borderless: boolean;
+  /** Additional ref callback applied alongside the forwarded ref. */
+  extraRef?: (el: HTMLTextAreaElement | null) => void;
+  /** The forwarded ref from the public component. */
+  forwardedRef: React.Ref<HTMLTextAreaElement>;
+}
+
+const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
+  size,
+  validation,
+  resize,
+  rows = 3,
+  maxLength,
+  autoResize = false,
+  maxRows,
+  focusStyle,
+  borderless,
+  className,
+  disabled,
+  onChange,
+  value,
+  defaultValue,
+  extraRef,
+  forwardedRef,
+  ...rest
+}) => {
   const boxDisabled = useTugBoxDisabled();
   const effectiveDisabled = disabled || boxDisabled;
 
-  // Internal ref for imperative DOM manipulation; merged with forwarded ref.
-  const internalRef = useRef<HTMLTextAreaElement>(null);
+  // Internal ref for imperative DOM manipulation; merged with forwarded
+  // ref and the optional extraRef (responderRef).
+  const internalRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Counter state — track current character count for the counter display.
   const [charCount, setCharCount] = useState<number>(() => {
@@ -127,19 +168,21 @@ export const TugTextarea = React.forwardRef<
     return 0;
   });
 
-  // Merge the forwarded ref with our internal ref.
-  const setRef = React.useCallback(
+  // Merge the forwarded ref, internal ref, and extraRef onto the one
+  // textarea element. React calls setRef with the element on mount
+  // and with null on unmount, so we must clean up the extraRef the
+  // same way we clean up the forwarded ref.
+  const setRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
-      (internalRef as React.MutableRefObject<HTMLTextAreaElement | null>).current =
-        el;
-      if (typeof ref === "function") {
-        ref(el);
-      } else if (ref) {
-        (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current =
-          el;
+      internalRef.current = el;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(el);
+      } else if (forwardedRef) {
+        (forwardedRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
       }
+      extraRef?.(el);
     },
-    [ref],
+    [forwardedRef, extraRef],
   );
 
   // Auto-resize: adjust height imperatively on input events [L06].
@@ -184,7 +227,7 @@ export const TugTextarea = React.forwardRef<
   }, [autoResize, maxRows]);
 
   // Handle onChange to track character count for the counter.
-  const handleChange = React.useCallback(
+  const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setCharCount(e.target.value.length);
       onChange?.(e);
@@ -245,4 +288,164 @@ export const TugTextarea = React.forwardRef<
   }
 
   return textarea;
+};
+
+// ---- Plain variant (no provider) ----
+
+const TugTextareaPlain = React.forwardRef<HTMLTextAreaElement, TugTextareaProps>(
+  function TugTextareaPlain(
+    {
+      size = "md",
+      validation = "default",
+      resize,
+      focusStyle = "background",
+      borderless = false,
+      ...rest
+    },
+    ref,
+  ) {
+    return (
+      <TugTextareaBody
+        size={size}
+        validation={validation}
+        resize={resize}
+        focusStyle={focusStyle}
+        borderless={borderless}
+        forwardedRef={ref}
+        {...rest}
+      />
+    );
+  },
+);
+
+// ---- Responder variant (inside provider) ----
+
+const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextareaProps>(
+  function TugTextareaWithResponder(
+    {
+      size = "md",
+      validation = "default",
+      resize,
+      focusStyle = "background",
+      borderless = false,
+      disabled,
+      ...rest
+    },
+    ref,
+  ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
+    // Local ref to the textarea DOM node for the action handlers to
+    // reach `select()`, `setRangeText()`, etc. Composed onto the
+    // textarea alongside the forwarded ref and responderRef via the
+    // shared body's `extraRef` slot.
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+    const handleCut = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      if (!textareaRef.current) return;
+      document.execCommand("cut");
+    }, [effectiveDisabled]);
+
+    const handleCopy = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("copy");
+    }, [effectiveDisabled]);
+
+    const handlePaste = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      const el = textareaRef.current;
+      if (!el) return;
+      // See tug-input.tsx for the execCommand-vs-Clipboard-API
+      // rationale and the known undo-stack limitation of paste via
+      // setRangeText.
+      const readPromise =
+        typeof navigator !== "undefined" && navigator.clipboard?.readText
+          ? navigator.clipboard.readText().catch(() => "")
+          : Promise.resolve("");
+      return () => {
+        void readPromise.then((text) => {
+          if (!text) return;
+          const start = el.selectionStart ?? el.value.length;
+          const end = el.selectionEnd ?? el.value.length;
+          el.setRangeText(text, start, end, "end");
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      };
+    }, [effectiveDisabled]);
+
+    const handleSelectAll = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      textareaRef.current?.select();
+    }, [effectiveDisabled]);
+
+    const handleUndo = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("undo");
+    }, [effectiveDisabled]);
+
+    const handleRedo = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("redo");
+    }, [effectiveDisabled]);
+
+    const responderId = useId();
+    const { responderRef } = useResponder({
+      id: responderId,
+      actions: {
+        cut: handleCut,
+        copy: handleCopy,
+        paste: handlePaste,
+        selectAll: handleSelectAll,
+        undo: handleUndo,
+        redo: handleRedo,
+      },
+    });
+
+    // Compose the internal textareaRef with the responder ref via the
+    // shared body's `extraRef` slot. The body handles merging the
+    // forwarded ref itself.
+    const extraRef = useCallback(
+      (el: HTMLTextAreaElement | null) => {
+        textareaRef.current = el;
+        responderRef(el);
+      },
+      [responderRef],
+    );
+
+    return (
+      <TugTextareaBody
+        size={size}
+        validation={validation}
+        resize={resize}
+        focusStyle={focusStyle}
+        borderless={borderless}
+        disabled={disabled}
+        extraRef={extraRef}
+        forwardedRef={ref}
+        {...rest}
+      />
+    );
+  },
+);
+
+// ---- Public component ----
+
+/**
+ * TugTextarea — chain-aware when inside a provider, plain when not.
+ *
+ * Same two-path strategy as TugInput: if no `ResponderChainProvider`
+ * is in scope, fall back to a plain `<textarea>` render; otherwise
+ * register as a responder and wire the six editing actions.
+ */
+export const TugTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  TugTextareaProps
+>(function TugTextarea(props, ref) {
+  const manager = useResponderChain();
+  if (manager === null) {
+    return <TugTextareaPlain {...props} ref={ref} />;
+  }
+  return <TugTextareaWithResponder {...props} ref={ref} />;
 });

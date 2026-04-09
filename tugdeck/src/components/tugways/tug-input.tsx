@@ -5,16 +5,80 @@
  * are driven by --tug7-field-* tokens — theme switches update CSS
  * variables at the DOM level with no React re-renders.
  *
- * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
- *       [L19] component authoring guide
- * Decisions: [D04] token-driven control state model, [D05] component token naming
+ * ## Chain participation (A2.7)
+ *
+ * When rendered inside a `<ResponderChainProvider>`, TugInput registers
+ * itself as a responder node and handles the six standard editing
+ * actions: `cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`. These
+ * are dispatched through the chain by the keybinding map in the
+ * provider (⌘X/⌘C/⌘V/⌘A and later ⌘Z/⌘⇧Z), and also by any
+ * context-menu UI that fires `manager.dispatch({action: "cut", ...})`.
+ *
+ * The handlers delegate to native DOM APIs on the underlying
+ * `<input>` element, so each input uses its own native undo stack
+ * (per the responder chain's innermost-first walk guarantee — the
+ * focused input is always first responder via the focusin listener
+ * in `responder-chain-provider.tsx`):
+ *
+ *   - `cut`       → `document.execCommand("cut")`
+ *   - `copy`      → `document.execCommand("copy")`
+ *   - `paste`     → `navigator.clipboard.readText()` + `input.setRangeText()`
+ *                   (two-phase: sync clipboard read, continuation
+ *                   inserts the text after any menu activation blink)
+ *   - `selectAll` → `input.select()`
+ *   - `undo`      → `document.execCommand("undo")`
+ *   - `redo`      → `document.execCommand("redo")`
+ *
+ * ### Why execCommand for cut/copy/undo/redo
+ *
+ * `document.execCommand` is deprecated but still works in every major
+ * browser for native input elements, and it is the *only* API that
+ * integrates with the input's native undo stack. The Clipboard API
+ * replacement (`navigator.clipboard.writeText`) does not push a cut
+ * onto the input's undo stack, so a cut made via the Clipboard API
+ * cannot be reversed with ⌘Z. execCommand sidesteps this by routing
+ * through the browser's legacy editing infrastructure.
+ *
+ * ### Why Clipboard API for paste
+ *
+ * `document.execCommand("paste")` is blocked in Chrome for web pages
+ * (security / privacy: the clipboard may contain sensitive data from
+ * other apps). The Clipboard API's `readText` is the supported path.
+ * The handler returns a continuation callback so the async clipboard
+ * read can start inside the user gesture and the insertion runs after
+ * any menu blink animation. Limitation: paste via this path does NOT
+ * integrate with the native input's undo stack (⌘Z after a paste
+ * will undo a previous edit, not the paste itself). This is a
+ * browser-level constraint, not a bug in TugInput.
+ *
+ * ## Two-path rendering (no-provider fallback)
+ *
+ * TugInput may legitimately render outside a `ResponderChainProvider`
+ * — e.g. in Storybook-style standalone previews, in tests that don't
+ * set up the chain, or in pre-mount snapshots. `useResponder` throws
+ * outside a provider (deliberately — see its docstring), so TugInput
+ * branches at render time: if `useResponderChain()` returns `null`,
+ * it renders a plain `<input>` with no chain registration; if the
+ * manager is present, it renders the inner `TugInputWithResponder`
+ * variant that registers and wires the handlers. This keeps the
+ * strict invariant of `useResponder` intact while letting consumers
+ * use `TugInput` anywhere.
+ *
+ * Laws: [L06] appearance via CSS, [L11] controls emit actions;
+ *       responders handle actions, [L15] token-driven states,
+ *       [L16] pairings declared, [L19] component authoring guide
+ * Decisions: [D04] token-driven control state model,
+ *            [D05] component token naming
  */
 
 import "./tug-input.css";
 
-import React from "react";
+import React, { useCallback, useId, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { useResponderChain } from "./responder-chain-provider";
+import { useResponder } from "./use-responder";
+import type { ActionHandlerResult } from "./responder-chain";
 
 // ---- Types ----
 
@@ -54,24 +118,45 @@ export interface TugInputProps
   borderless?: boolean;
 }
 
-// ---- TugInput ----
+// ---- Shared rendering ----
+//
+// Both the plain and responder-wired variants render the same JSX:
+// a single `<input>` with our computed className and data attributes.
+// The only difference is whether the ref composes a responder
+// registration or forwards straight through.
 
-export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
-  function TugInput(
-    { size = "md", validation = "default", focusStyle = "background", borderless = false, className, disabled, ...rest },
+function buildInputClassName(
+  size: TugInputSize,
+  validation: TugInputValidation,
+  className: string | undefined,
+): string {
+  return cn(
+    "tug-input",
+    `tug-input-size-${size}`,
+    validation === "invalid" && "tug-input-invalid",
+    validation === "valid" && "tug-input-valid",
+    validation === "warning" && "tug-input-warning",
+    className,
+  );
+}
+
+// ---- Plain variant (no provider) ----
+
+const TugInputPlain = React.forwardRef<HTMLInputElement, TugInputProps>(
+  function TugInputPlain(
+    {
+      size = "md",
+      validation = "default",
+      focusStyle = "background",
+      borderless = false,
+      className,
+      disabled,
+      ...rest
+    },
     ref,
   ) {
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
-
-    const inputClassName = cn(
-      "tug-input",
-      `tug-input-size-${size}`,
-      validation === "invalid" && "tug-input-invalid",
-      validation === "valid" && "tug-input-valid",
-      validation === "warning" && "tug-input-warning",
-      className,
-    );
 
     return (
       <input
@@ -79,11 +164,174 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
         data-slot="tug-input"
         data-focus-style={focusStyle}
         data-borderless={borderless || undefined}
-        className={inputClassName}
+        className={buildInputClassName(size, validation, className)}
         disabled={effectiveDisabled}
         aria-invalid={validation === "invalid" ? "true" : undefined}
         {...rest}
       />
     );
+  },
+);
+
+// ---- Responder variant (inside provider) ----
+
+const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
+  function TugInputWithResponder(
+    {
+      size = "md",
+      validation = "default",
+      focusStyle = "background",
+      borderless = false,
+      className,
+      disabled,
+      ...rest
+    },
+    ref,
+  ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
+    // Local ref to the input DOM node — needed by the action handlers
+    // to reach `selectionStart`, `select()`, `setRangeText()`, etc.
+    // We compose it with the forwarded ref so consumers still get
+    // their ref too.
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const composeInputRef = useCallback(
+      (el: HTMLInputElement | null) => {
+        inputRef.current = el;
+        if (typeof ref === "function") {
+          ref(el);
+        } else if (ref) {
+          (ref as React.MutableRefObject<HTMLInputElement | null>).current = el;
+        }
+      },
+      [ref],
+    );
+
+    // Disabled inputs never handle actions — the early returns in each
+    // handler defend against the dispatch layer somehow sending actions
+    // to a disabled input (which shouldn't happen via normal focus, but
+    // can happen if a consumer calls manager.dispatchTo(id, ...) directly).
+    const handleCut = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      // execCommand("cut") is the only API that integrates with the
+      // native input's undo stack. Deprecated but universally
+      // supported for this use case.
+      document.execCommand("cut");
+    }, [effectiveDisabled]);
+
+    const handleCopy = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("copy");
+    }, [effectiveDisabled]);
+
+    const handlePaste = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      // Two-phase: start the async clipboard read inside the user
+      // gesture (transient activation propagates through this call),
+      // then insert in the continuation so a menu blink can precede
+      // the DOM mutation if the dispatch came from a context menu.
+      // Limitation: setRangeText does not push to the native undo
+      // stack, so ⌘Z will not undo the paste. execCommand("paste") is
+      // blocked in Chrome for web pages, so there is no better
+      // alternative today.
+      const readPromise =
+        typeof navigator !== "undefined" && navigator.clipboard?.readText
+          ? navigator.clipboard.readText().catch(() => "")
+          : Promise.resolve("");
+      return () => {
+        void readPromise.then((text) => {
+          if (!text) return;
+          const start = el.selectionStart ?? el.value.length;
+          const end = el.selectionEnd ?? el.value.length;
+          el.setRangeText(text, start, end, "end");
+          // Fire a synthetic input event so React's onChange sees the
+          // update and controlled inputs stay in sync.
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      };
+    }, [effectiveDisabled]);
+
+    const handleSelectAll = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      inputRef.current?.select();
+    }, [effectiveDisabled]);
+
+    const handleUndo = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("undo");
+    }, [effectiveDisabled]);
+
+    const handleRedo = useCallback((): ActionHandlerResult => {
+      if (effectiveDisabled) return;
+      document.execCommand("redo");
+    }, [effectiveDisabled]);
+
+    const responderId = useId();
+    const { responderRef } = useResponder({
+      id: responderId,
+      actions: {
+        cut: handleCut,
+        copy: handleCopy,
+        paste: handlePaste,
+        selectAll: handleSelectAll,
+        undo: handleUndo,
+        redo: handleRedo,
+      },
+    });
+
+    // Compose three refs onto one input element: the forwarded ref
+    // (from the consumer), the internal inputRef (used by handlers),
+    // and the responderRef (writes data-responder-id for the chain's
+    // findResponderForTarget walk).
+    const composedRef = useCallback(
+      (el: HTMLInputElement | null) => {
+        composeInputRef(el);
+        responderRef(el);
+      },
+      [composeInputRef, responderRef],
+    );
+
+    return (
+      <input
+        ref={composedRef}
+        data-slot="tug-input"
+        data-focus-style={focusStyle}
+        data-borderless={borderless || undefined}
+        className={buildInputClassName(size, validation, className)}
+        disabled={effectiveDisabled}
+        aria-invalid={validation === "invalid" ? "true" : undefined}
+        {...rest}
+      />
+    );
+  },
+);
+
+// ---- Public component ----
+
+/**
+ * TugInput — chain-aware when inside a provider, plain when not.
+ *
+ * Branches at render time on the presence of a ResponderChainManager:
+ * no provider → plain `<input>` render (pre-A2.7 behavior), provider
+ * present → responder-wired render with cut/copy/paste/selectAll/
+ * undo/redo handlers registered on the chain.
+ *
+ * Switching between the two variants across provider boundaries
+ * remounts the input (React sees a different component type). This
+ * is acceptable because ResponderChainProvider identity is stable in
+ * real apps — the branch is effectively decided at mount.
+ */
+export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
+  function TugInput(props, ref) {
+    const manager = useResponderChain();
+    if (manager === null) {
+      return <TugInputPlain {...props} ref={ref} />;
+    }
+    return <TugInputWithResponder {...props} ref={ref} />;
   },
 );
