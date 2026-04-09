@@ -11,12 +11,12 @@
  * actions operate on: a caret, selection, and the input's native
  * undo stack. Inside a `ResponderChainProvider` it registers as a
  * responder node and handles `cut` / `copy` / `paste` / `selectAll`
- * / `undo` / `redo` — delegating to native DOM APIs on the underlying
- * `<input>` element exactly like `tug-input.tsx` and `tug-textarea.tsx`.
- * It also dispatches a `setValue` action with `phase: "discrete"` on
- * every commit path (blur, Enter, arrow key). Outside a provider,
- * the input renders plainly without chain participation — matching
- * the two-path pattern from A2.7.
+ * / `undo` / `redo` via the shared `useTextInputResponder` hook —
+ * the same hook used by TugInput and TugTextarea. It also dispatches
+ * a `setValue` action with `phase: "discrete"` on every commit path
+ * (blur, Enter, arrow key). Outside a provider, the input renders
+ * plainly without chain participation — matching the two-path
+ * pattern from A2.7.
  *
  * When used standalone, parents bind via the `setValueNumber` slot
  * in `useResponderForm` using a gensym'd `senderId`. When nested
@@ -27,8 +27,8 @@
  * text field commit).
  *
  * Right-click opens a `TugEditorContextMenu` anchored at the cursor
- * with cut / copy / paste / selectAll items (same precedent as
- * `tug-prompt-input`).
+ * with cut / copy / paste / selectAll items, driven by the shared
+ * hook.
  *
  * Laws: [L06] appearance via DOM refs not React state,
  *       [L11] controls emit actions; responders handle actions,
@@ -39,18 +39,14 @@
 
 import "./tug-value-input.css";
 
-import React, { useRef, useCallback, useId, useLayoutEffect, useMemo, useState } from "react";
+import React, { useRef, useCallback, useId, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
-import { useResponder } from "./use-responder";
-import type { ActionHandlerResult } from "./responder-chain";
-import {
-  TugEditorContextMenu,
-  type TugEditorContextMenuEntry,
-} from "./tug-editor-context-menu";
+import { useTextInputResponder } from "./use-text-input-responder";
+import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Props ----
 
@@ -444,79 +440,20 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
       dispatchCommit,
     });
 
-    // Mounted flag for paste continuation — prevents writing to a
-    // detached input after unmount.
-    const mountedRef = useRef(true);
-    React.useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
-
-    // ---- Editing action handlers ----
-    //
-    // Mirror the `tug-input.tsx` pattern: execCommand for
-    // cut/copy/undo/redo (native undo-stack integration), native
-    // `select()` for selectAll, and Clipboard API + `setRangeText`
-    // for paste (two-phase continuation).
-    const handleCut = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      if (!editing.inputRef.current) return;
-      document.execCommand("cut");
-    }, [effectiveDisabled, editing.inputRef]);
-
-    const handleCopy = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("copy");
-    }, [effectiveDisabled]);
-
-    const handlePaste = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      const el = editing.inputRef.current;
-      if (!el) return;
-      const readPromise =
-        typeof navigator !== "undefined" && navigator.clipboard?.readText
-          ? navigator.clipboard.readText().catch(() => "")
-          : Promise.resolve("");
-      return () => {
-        void readPromise.then((text) => {
-          if (!text) return;
-          if (!mountedRef.current) return;
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          el.setRangeText(text, start, end, "end");
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      };
-    }, [effectiveDisabled, editing.inputRef]);
-
-    const handleSelectAll = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      editing.inputRef.current?.select();
-    }, [effectiveDisabled, editing.inputRef]);
-
-    const handleUndo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("undo");
-    }, [effectiveDisabled]);
-
-    const handleRedo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("redo");
-    }, [effectiveDisabled]);
-
-    const responderId = useId();
-    const { responderRef } = useResponder({
-      id: responderId,
-      actions: {
-        cut: handleCut,
-        copy: handleCopy,
-        paste: handlePaste,
-        selectAll: handleSelectAll,
-        undo: handleUndo,
-        redo: handleRedo,
-      },
+    // All six editing actions, the right-click context menu, and
+    // responder-node registration come from the shared hook — same
+    // implementation as TugInput and TugTextarea. See
+    // `use-text-input-responder.tsx` for the dispatch semantics and
+    // paste-sync rationale.
+    const {
+      responderRef,
+      menuState,
+      handleContextMenu: openMenu,
+      closeMenu,
+      menuItems,
+    } = useTextInputResponder({
+      inputRef: editing.inputRef,
+      disabled: effectiveDisabled,
     });
 
     // Compose three refs onto one input: internal (for editing
@@ -535,41 +472,15 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
       [ref, editing.inputRef, responderRef],
     );
 
-    // ---- Context menu ----
-    const [menuState, setMenuState] = useState<{
-      x: number;
-      y: number;
-      hasSelection: boolean;
-    } | null>(null);
-
+    // Bridge the hook's menu opener with the consumer's optional
+    // `onContextMenu` prop.
     const handleContextMenu = useCallback(
       (e: React.MouseEvent<HTMLInputElement>) => {
-        if (effectiveDisabled) return;
-        e.preventDefault();
-        const el = editing.inputRef.current;
-        if (!el) return;
-        const hasSelection =
-          el.selectionStart !== null &&
-          el.selectionEnd !== null &&
-          el.selectionStart !== el.selectionEnd;
-        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        openMenu(e);
         onContextMenu?.(e);
       },
-      [effectiveDisabled, onContextMenu, editing.inputRef],
+      [openMenu, onContextMenu],
     );
-
-    const closeMenu = useCallback(() => setMenuState(null), []);
-
-    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-      const hasSelection = menuState?.hasSelection ?? false;
-      return [
-        { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
-        { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
-        { action: "paste", label: "Paste", shortcut: "\u2318V" },
-        { type: "separator" },
-        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
-      ];
-    }, [menuState?.hasSelection]);
 
     return (
       <>

@@ -33,6 +33,7 @@ import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persiste
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
+import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
@@ -559,12 +560,66 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     const handlePaste = useCallback((): ActionHandlerResult => {
       const engine = engineRef.current;
       if (!engine) return;
-      // Kick off the clipboard read inside the user gesture.
-      // navigator.clipboard.read() needs transient activation at the
-      // call site; the subsequent awaits just wait for the promise to
-      // resolve and don't need further activation. The insertion runs
-      // in the continuation (after the menu blink, or immediately for
-      // keyboard shortcut).
+
+      // ---- Native bridge path (Tug.app WKWebView) ----
+      //
+      // Safari's JavaScript Clipboard API (`navigator.clipboard.*`) and
+      // `document.execCommand("paste")` on contentEditable both trigger
+      // a floating "Paste" permission popup on every invocation in
+      // Safari 16.4+. The only JS-accessible path that avoids the popup
+      // inside a WKWebView app is to delegate to the native side: Swift
+      // reads `NSPasteboard.general` (no popup, no prompt) and sends
+      // the contents back via `evaluateJavaScript`. See
+      // `lib/tug-native-clipboard.ts` and
+      // `tugapp/Sources/MainWindow.swift` for the bridge.
+      //
+      // Kick off the read immediately so the promise is created inside
+      // the user gesture; insert via `engine.paste(html, plain)` in
+      // the continuation so the text lands after the menu activation
+      // blink — atom-aware, correct ordering, no popup.
+      if (hasNativeClipboardBridge()) {
+        const nativeReadPromise = readClipboardViaNative();
+        return () => {
+          void nativeReadPromise.then(({ text, html }) => engine.paste(html, text));
+        };
+      }
+
+      // ---- Browser fallback (no WKWebView bridge) ----
+      //
+      // Development in Chrome / Firefox, Storybook, standalone previews,
+      // tests. Use the capture-the-paste-event pattern where possible,
+      // then fall back to the Clipboard API.
+
+      // Explicitly focus the editor: execCommand("paste") fires the
+      // paste event on the currently-focused element.
+      engine.root.focus();
+
+      let pasteEventFired = false;
+      let capturedHtml = "";
+      let capturedPlain = "";
+      const onPaste = (e: ClipboardEvent) => {
+        pasteEventFired = true;
+        e.preventDefault(); // block native insertion; we insert in continuation
+        capturedHtml = e.clipboardData?.getData("text/html") ?? "";
+        capturedPlain = e.clipboardData?.getData("text/plain") ?? "";
+      };
+      engine.root.addEventListener("paste", onPaste, { once: true });
+
+      try {
+        document.execCommand("paste");
+      } catch {
+        // Some browsers throw; treat as failure (Chrome path).
+      }
+      engine.root.removeEventListener("paste", onPaste);
+
+      if (pasteEventFired) {
+        const html = capturedHtml;
+        const plain = capturedPlain;
+        return () => engine.paste(html, plain);
+      }
+
+      // Last-resort: Clipboard API — kick off inside gesture, insert
+      // in continuation.
       const readPromise: Promise<{ html: string; plain: string }> = (async () => {
         let html = "";
         let plain = "";
@@ -601,23 +656,28 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
     // ---- selectAll / undo / redo ----
     //
-    // These round-trip through the engine's own APIs. Unlike cut/copy/
-    // paste they don't need a continuation — the engine's selectAll
-    // and undo/redo are synchronous state transitions with no
-    // clipboard / user-gesture constraint. Registering these handlers
-    // is what makes ⌘A / ⌘Z / ⇧⌘Z work against the focused editor via
-    // the chain once those bindings are wired in the keybinding map.
+    // These round-trip through the engine's own APIs and all return
+    // a continuation so the side effect lands AFTER the context menu
+    // activation blink — matching the cut/copy/paste precedent just
+    // above. The engine's selectAll / undo / redo are synchronous
+    // state transitions (no clipboard / user-gesture constraint), so
+    // there is nothing to put in the sync phase. Keyboard-shortcut
+    // dispatches run the continuation immediately, so user-facing
+    // behavior is identical on the keyboard path. Registering these
+    // handlers is what makes ⌘A / ⌘Z / ⇧⌘Z work against the focused
+    // editor via the chain once those bindings are wired in the
+    // keybinding map.
 
     const handleSelectAll = useCallback((): ActionHandlerResult => {
-      engineRef.current?.selectAll();
+      return () => engineRef.current?.selectAll();
     }, []);
 
     const handleUndo = useCallback((): ActionHandlerResult => {
-      engineRef.current?.undo();
+      return () => engineRef.current?.undo();
     }, []);
 
     const handleRedo = useCallback((): ActionHandlerResult => {
-      engineRef.current?.redo();
+      return () => engineRef.current?.redo();
     }, []);
 
     const { ResponderScope, responderRef } = useResponder({

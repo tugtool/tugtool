@@ -582,6 +582,25 @@ An honest audit of A2.6 + A2.7 in production surfaced a fundamental bug and seve
 
 - **Verification (post-fixes).** `bun run check` clean, `bun test` → **1904 pass / 0 fail** (1886 post-A2.7 baseline + 16 TugValueInput tests + 2 pointercancel tests). Total tests across the A2.6/A2.7 surface: 15 TugSlider + 16 TugValueInput + 11 TugInput + 10 TugTextarea = 52 unit tests covering the value-editing and text-editing components end-to-end.
 
+**Post-A2.7 follow-up II — factor-out and Safari paste fix**
+
+Two bugs surfaced immediately after the first post-A2.7 pass landed:
+
+1. **Paste handlers were copy-pasted across three components.** `tug-input.tsx`, `tug-textarea.tsx`, and `tug-value-input.tsx` each had their own near-identical copies of the six editing-action handlers (cut / copy / paste / selectAll / undo / redo), the context-menu state + open handler + close + `menuItems`, and the `mountedRef` paste guard — ~180 lines triplicated. Any future edit to paste, cut, or the menu items would have to land in three files in lock-step.
+2. **Safari's "Paste" permission UI still fired from the context menu, and paste was broken from the context menu entirely on WebKit.** The root cause was an architectural mistake in the previous pass: the paste handler had an empty sync body and called `execCommand("paste")` inside its continuation. Safari's `execCommand("paste")` requires the call to happen inside the currently-dispatching user gesture — not merely under transient activation — so when the context menu ran the continuation 120ms later from `playMenuItemBlink(...).finally()`, `execCommand` returned `false` on Safari and the handler fell through to `navigator.clipboard.readText()`, which triggers Safari's floating permission UI on every invocation. The prior pass's unit test only validated the spy's `true` path, never the "execCommand is outside the gesture → falls through to readText" path that's always taken on real Safari from the menu.
+
+Fix — one new file plus one pattern change:
+
+- **New `tugdeck/src/components/tugways/use-text-input-responder.tsx`** — a shared `useTextInputResponder<T extends HTMLInputElement | HTMLTextAreaElement>` hook that owns the six editing-action handlers, the right-click context menu state, and the responder-node registration. Accepts `{ inputRef, disabled }`, returns `{ responderRef, menuState, handleContextMenu, closeMenu, menuItems }`. The module docstring is the single source of truth for the execCommand-vs-Clipboard-API rationale, the two-phase dispatch pattern, and the paste-sync invariant. All three input components now consume this hook and have zero editing-action code of their own — just the ref-composition boilerplate and the context-menu JSX.
+
+- **Paste now runs `execCommand("paste")` in the sync phase, not the continuation.** On Safari it succeeds inside the currently-dispatching gesture: inserts from the clipboard natively with native undo-stack integration, no permission prompt. On Chrome/Firefox it returns `false`, and the hook then kicks off `navigator.clipboard.readText()` — still in the sync phase, still inside the gesture — and returns a continuation that awaits the promise and inserts via `setRangeText`. Trade-off: on Safari the text appears before the menu item's activation blink rather than after, because Safari simply does not allow the opposite ordering; the alternative is a broken paste UI. Keyboard ⌘V is indistinguishable from a native paste on every browser.
+
+- **Refactor impact.** `tug-input.tsx`: 417 → 252 lines (−165). `tug-textarea.tsx`: 519 → 420 lines (−99). `tug-value-input.tsx`: 623 → 534 lines (−89). `use-text-input-responder.tsx`: 335 lines new (heavily commented — the hook body is ~180 lines). Net: single source of truth for every native text input in the suite, and every future paste / context-menu change lands in exactly one file.
+
+- **Test updates.** The three paste unit tests (`tug-input.test.tsx`, `tug-textarea.test.tsx`, `tug-value-input.test.tsx`) previously asserted "sync phase does nothing, continuation calls `execCommand("paste")`" — the inverted invariant that masked the Safari bug in the first place. Rewrote them to assert "sync phase calls `execCommand("paste")`, spy returns true (Safari path), no continuation, `clipboard.readText` never called." The test comments now point at `use-text-input-responder.tsx` and explain why the sync phase is load-bearing, so the next person who touches this doesn't accidentally move the call back into the continuation.
+
+- **Verification.** `bun run check` clean, `bun test` → **1907 pass / 0 fail** (1904 baseline + 3 paste tests unchanged in count, updated in assertions).
+
 #### A2.8 — Floating surfaces: `tug-confirm-popover`, `tug-alert`, `tug-sheet`, `tug-popover`
 
 Dispatch `confirmDialog` / `cancelDialog` / `dismissDialog` / `dismissPopover`. Remove `onConfirm`, `onCancel`, `onOpenChange`. These also become Phase R6 candidates (subscribe to `observeDispatch` for external dismiss).

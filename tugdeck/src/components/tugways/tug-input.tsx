@@ -9,47 +9,11 @@
  *
  * When rendered inside a `<ResponderChainProvider>`, TugInput registers
  * itself as a responder node and handles the six standard editing
- * actions: `cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`. These
- * are dispatched through the chain by the keybinding map in the
- * provider (⌘X/⌘C/⌘V/⌘A and later ⌘Z/⌘⇧Z), and also by any
- * context-menu UI that fires `manager.dispatch({action: "cut", ...})`.
- *
- * The handlers delegate to native DOM APIs on the underlying
- * `<input>` element, so each input uses its own native undo stack
- * (per the responder chain's innermost-first walk guarantee — the
- * focused input is always first responder via the focusin listener
- * in `responder-chain-provider.tsx`):
- *
- *   - `cut`       → `document.execCommand("cut")`
- *   - `copy`      → `document.execCommand("copy")`
- *   - `paste`     → `navigator.clipboard.readText()` + `input.setRangeText()`
- *                   (two-phase: sync clipboard read, continuation
- *                   inserts the text after any menu activation blink)
- *   - `selectAll` → `input.select()`
- *   - `undo`      → `document.execCommand("undo")`
- *   - `redo`      → `document.execCommand("redo")`
- *
- * ### Why execCommand for cut/copy/undo/redo
- *
- * `document.execCommand` is deprecated but still works in every major
- * browser for native input elements, and it is the *only* API that
- * integrates with the input's native undo stack. The Clipboard API
- * replacement (`navigator.clipboard.writeText`) does not push a cut
- * onto the input's undo stack, so a cut made via the Clipboard API
- * cannot be reversed with ⌘Z. execCommand sidesteps this by routing
- * through the browser's legacy editing infrastructure.
- *
- * ### Why Clipboard API for paste
- *
- * `document.execCommand("paste")` is blocked in Chrome for web pages
- * (security / privacy: the clipboard may contain sensitive data from
- * other apps). The Clipboard API's `readText` is the supported path.
- * The handler returns a continuation callback so the async clipboard
- * read can start inside the user gesture and the insertion runs after
- * any menu blink animation. Limitation: paste via this path does NOT
- * integrate with the native input's undo stack (⌘Z after a paste
- * will undo a previous edit, not the paste itself). This is a
- * browser-level constraint, not a bug in TugInput.
+ * actions (`cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`) via
+ * the shared `useTextInputResponder` hook. See its module docstring
+ * for the execCommand-vs-Clipboard-API rationale, the two-phase
+ * dispatch pattern, and the reason paste must run synchronously.
+ * TugTextarea and TugValueInput consume the same hook.
  *
  * ## Two-path rendering (no-provider fallback)
  *
@@ -73,16 +37,12 @@
 
 import "./tug-input.css";
 
-import React, { useCallback, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
-import { useResponder } from "./use-responder";
-import type { ActionHandlerResult } from "./responder-chain";
-import {
-  TugEditorContextMenu,
-  type TugEditorContextMenuEntry,
-} from "./tug-editor-context-menu";
+import { useTextInputResponder } from "./use-text-input-responder";
+import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -196,12 +156,28 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Local ref to the input DOM node — needed by the action handlers
-    // to reach `selectionStart`, `select()`, `setRangeText()`, etc.
-    // We compose it with the forwarded ref so consumers still get
-    // their ref too.
+    // Local ref to the input DOM node — needed by the editing action
+    // handlers in the shared hook to reach `selectionStart`,
+    // `select()`, `setRangeText()`, etc.
     const inputRef = useRef<HTMLInputElement | null>(null);
-    const composeInputRef = useCallback(
+
+    // All six editing actions, the right-click context menu, and
+    // responder-node registration come from the shared hook. See
+    // `use-text-input-responder.tsx` for the dispatch semantics,
+    // paste-sync rationale, and disabled-guard rules.
+    const {
+      responderRef,
+      menuState,
+      handleContextMenu: openMenu,
+      closeMenu,
+      menuItems,
+    } = useTextInputResponder({ inputRef, disabled: effectiveDisabled });
+
+    // Compose three refs onto one input element: the forwarded ref
+    // (from the consumer), the internal inputRef (used by handlers
+    // inside the hook), and the responderRef (writes data-responder-id
+    // for the chain's findResponderForTarget walk).
+    const composedRef = useCallback(
       (el: HTMLInputElement | null) => {
         inputRef.current = el;
         if (typeof ref === "function") {
@@ -209,162 +185,21 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
         } else if (ref) {
           (ref as React.MutableRefObject<HTMLInputElement | null>).current = el;
         }
-      },
-      [ref],
-    );
-
-    // Mounted flag used by the async paste continuation to avoid
-    // writing to a detached input after unmount. useRef is enough
-    // because reads in the continuation are synchronous relative to
-    // React's render cycle.
-    const mountedRef = useRef(true);
-    React.useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
-
-    // Disabled inputs never handle actions — the early returns in each
-    // handler defend against the dispatch layer somehow sending actions
-    // to a disabled input (which shouldn't happen via normal focus, but
-    // can happen if a consumer calls manager.dispatchTo(id, ...) directly).
-    const handleCut = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      const el = inputRef.current;
-      if (!el) return;
-      // execCommand("cut") is the only API that integrates with the
-      // native input's undo stack.
-      document.execCommand("cut");
-    }, [effectiveDisabled]);
-
-    const handleCopy = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("copy");
-    }, [effectiveDisabled]);
-
-    const handlePaste = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      const el = inputRef.current;
-      if (!el) return;
-      // Two-phase: start the async clipboard read inside the user
-      // gesture (transient activation propagates through this call),
-      // then insert in the continuation so a menu blink can precede
-      // the DOM mutation if the dispatch came from a context menu.
-      // Limitation: setRangeText does not push to the native undo
-      // stack, so ⌘Z will not undo the paste. execCommand("paste") is
-      // blocked in Chrome for web pages, so there is no better
-      // alternative today.
-      const readPromise =
-        typeof navigator !== "undefined" && navigator.clipboard?.readText
-          ? navigator.clipboard.readText().catch(() => "")
-          : Promise.resolve("");
-      return () => {
-        void readPromise.then((text) => {
-          if (!text) return;
-          if (!mountedRef.current) return;
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          el.setRangeText(text, start, end, "end");
-          // Fire a synthetic input event so React's onChange sees the
-          // update and controlled inputs stay in sync.
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      };
-    }, [effectiveDisabled]);
-
-    const handleSelectAll = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      inputRef.current?.select();
-    }, [effectiveDisabled]);
-
-    const handleUndo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("undo");
-    }, [effectiveDisabled]);
-
-    const handleRedo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("redo");
-    }, [effectiveDisabled]);
-
-    const responderId = useId();
-    const { responderRef } = useResponder({
-      id: responderId,
-      actions: {
-        cut: handleCut,
-        copy: handleCopy,
-        paste: handlePaste,
-        selectAll: handleSelectAll,
-        undo: handleUndo,
-        redo: handleRedo,
-      },
-    });
-
-    // Compose three refs onto one input element: the forwarded ref
-    // (from the consumer), the internal inputRef (used by handlers),
-    // and the responderRef (writes data-responder-id for the chain's
-    // findResponderForTarget walk).
-    const composedRef = useCallback(
-      (el: HTMLInputElement | null) => {
-        composeInputRef(el);
         responderRef(el);
       },
-      [composeInputRef, responderRef],
+      [ref, responderRef],
     );
 
-    // ---- Context menu (right-click) ----
-    //
-    // Matches the tug-prompt-input precedent: on right-click over the
-    // input, open a TugEditorContextMenu anchored at the cursor with
-    // cut / copy / paste / selectAll items. Cut and Copy are disabled
-    // when there is no ranged selection. Menu item activation
-    // dispatches the item's action through the chain; the innermost-
-    // first walk routes it right back to this input, which handles
-    // it via the same execCommand / Clipboard API path used by the
-    // keyboard shortcuts.
-    //
-    // The menu is a portaled positioned `<div>` that never steals
-    // focus, so the input keeps its caret and selection while the
-    // menu is open — clipboard commands run inside a user gesture
-    // from the menu item's mousedown handler.
-    const [menuState, setMenuState] = useState<{
-      x: number;
-      y: number;
-      hasSelection: boolean;
-    } | null>(null);
-
+    // Bridge the hook's menu opener with the consumer's optional
+    // `onContextMenu` prop — the consumer still gets to observe the
+    // event after the menu state has been set.
     const handleContextMenu = useCallback(
       (e: React.MouseEvent<HTMLInputElement>) => {
-        if (effectiveDisabled) return;
-        e.preventDefault();
-        const el = inputRef.current;
-        if (!el) return;
-        // Native input right-click does NOT auto-select a word; it
-        // positions the caret and enables Cut/Copy only if a prior
-        // selection exists. Match that behavior.
-        const hasSelection =
-          el.selectionStart !== null &&
-          el.selectionEnd !== null &&
-          el.selectionStart !== el.selectionEnd;
-        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        openMenu(e);
         onContextMenu?.(e);
       },
-      [effectiveDisabled, onContextMenu],
+      [openMenu, onContextMenu],
     );
-
-    const closeMenu = useCallback(() => setMenuState(null), []);
-
-    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-      const hasSelection = menuState?.hasSelection ?? false;
-      return [
-        { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
-        { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
-        { action: "paste", label: "Paste", shortcut: "\u2318V" },
-        { type: "separator" },
-        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
-      ];
-    }, [menuState?.hasSelection]);
 
     return (
       <>

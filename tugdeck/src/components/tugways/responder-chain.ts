@@ -362,6 +362,35 @@ export class ResponderChainManager {
     return handled;
   }
 
+  /**
+   * Dispatch an ActionEvent directly to a named target and return both the
+   * handled flag and the optional continuation callback — the sibling to
+   * dispatchForContinuation for target-scoped dispatches.
+   *
+   * Same target-resolution semantics as `dispatchTo` (throws on unregistered
+   * target, returns `handled: false` when the node has no handler for the
+   * action). Callers that want two-phase execution use this method and
+   * invoke the returned continuation at their commit point.
+   */
+  dispatchToForContinuation(targetId: string, event: ActionEvent): DispatchResult {
+    const node = this.nodes.get(targetId);
+    if (!node) {
+      throw new Error(`dispatchTo: target "${targetId}" is not registered`);
+    }
+    let handled = false;
+    let continuation: (() => void) | undefined;
+    const handler = node.actions[event.action];
+    if (handler !== undefined) {
+      const result = handler(event);
+      if (typeof result === "function") {
+        continuation = result;
+      }
+      handled = true;
+    }
+    this.notifyDispatchObservers(event, handled);
+    return { handled, continuation };
+  }
+
   // ---- Target-based first-responder resolution ----
 
   /**

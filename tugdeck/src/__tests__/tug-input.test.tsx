@@ -196,74 +196,93 @@ describe("TugInput – focusin promotion (A2.7)", () => {
 // ---------------------------------------------------------------------------
 
 describe("TugInput – action handlers (A2.7)", () => {
-  it("selectAll selects the entire input content", () => {
+  // All handlers use the two-phase pattern: optional sync body runs
+  // inside the user gesture, continuation runs after the menu
+  // activation blink. Tests walk both phases via
+  // dispatchToForContinuation + invoking the continuation.
+
+  it("selectAll defers input.select() to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="sel-input" defaultValue="hello world" />
     );
     const input = getInput(container, "sel-input");
     const id = input.getAttribute("data-responder-id") as string;
 
-    // Put a dummy partial selection first so we can prove selectAll
-    // actually changed it.
     input.setSelectionRange(2, 3);
+    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
+
+    // Sync phase does nothing — selection still (2, 3).
     expect(input.selectionStart).toBe(2);
     expect(input.selectionEnd).toBe(3);
 
-    // Dispatch directly to the responder — bypasses first-responder
-    // promotion so the test is hermetic.
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
-
+    result.continuation?.();
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe("hello world".length);
   });
 
-  it("cut delegates to document.execCommand('cut')", () => {
+  it("cut runs execCommand('copy') in sync phase, then execCommand('delete') in continuation", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="cut-input" defaultValue="hello" />
     );
     const id = getInput(container, "cut-input").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "cut", phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("cut");
+    expect(execCommandCalls[0].command).toBe("copy");
+
+    result.continuation?.();
+    expect(execCommandCalls.length).toBe(2);
+    expect(execCommandCalls[1].command).toBe("delete");
   });
 
-  it("copy delegates to document.execCommand('copy')", () => {
+  it("copy runs execCommand('copy') in sync phase with no continuation", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="copy-input" defaultValue="hello" />
     );
     const id = getInput(container, "copy-input").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "copy", phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
+    expect(result.continuation).toBeUndefined();
   });
 
-  it("undo delegates to document.execCommand('undo')", () => {
+  it("undo defers execCommand('undo') to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="undo-input" defaultValue="hello" />
     );
     const id = getInput(container, "undo-input").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "undo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("undo");
   });
 
-  it("redo delegates to document.execCommand('redo')", () => {
+  it("redo defers execCommand('redo') to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="redo-input" defaultValue="hello" />
     );
     const id = getInput(container, "redo-input").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "redo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("redo");
   });
+
+  // Paste behavior is verified manually — the capture-then-defer /
+  // native-bridge paths depend on Safari/WKWebView clipboard semantics
+  // that happy-dom does not simulate faithfully (ClipboardEvent with a
+  // populated clipboardData, document.activeElement after focus(),
+  // etc.). See use-text-input-responder.tsx and tug-native-clipboard.ts
+  // for the production implementation.
 });
 
 // ---------------------------------------------------------------------------
@@ -275,13 +294,12 @@ describe("TugInput – disabled guard (A2.7)", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="disabled-input" defaultValue="hello" disabled />
     );
-    const input = getInput(container, "disabled-input");
-    const id = input.getAttribute("data-responder-id") as string;
+    const id = getInput(container, "disabled-input").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
+    for (const action of ["cut", "copy", "paste", "undo", "redo"] as const) {
+      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      result.continuation?.();
+    }
 
     expect(execCommandCalls.length).toBe(0);
   });
@@ -293,13 +311,12 @@ describe("TugInput – disabled guard (A2.7)", () => {
     const input = getInput(container, "disabled-sel");
     const id = input.getAttribute("data-responder-id") as string;
 
-    // Set a deliberate starting selection; the handler's short-circuit
-    // should leave it untouched.
     input.setSelectionRange(1, 2);
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
+    result.continuation?.();
 
-    // Selection should be unchanged (the handler short-circuited on
-    // effectiveDisabled before calling input.select()).
+    // Handler short-circuited on effectiveDisabled and returned no
+    // continuation, so the initial selection is untouched.
     expect(input.selectionStart).toBe(1);
     expect(input.selectionEnd).toBe(2);
   });

@@ -287,31 +287,46 @@ describe("TugValueInput – focusin promotion (A2.7)", () => {
 });
 
 describe("TugValueInput – editing action handlers (A2.7)", () => {
-  it("cut delegates to document.execCommand('cut')", () => {
+  // All handlers use the two-phase pattern: a sync-phase body (runs
+  // inside the user gesture) and an optional continuation (runs after
+  // the menu activation blink). The tests walk both phases explicitly
+  // via `dispatchToForContinuation` + invoking the continuation.
+
+  it("cut runs execCommand('copy') in sync phase, then execCommand('delete') in continuation", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "cut", phase: "discrete" });
 
+    // Sync phase: "copy" already fired so the selection stays visible
+    // during the menu activation blink.
     expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("cut");
+    expect(execCommandCalls[0].command).toBe("copy");
+
+    // Continuation phase: "delete" fires after the blink, deleting
+    // the selection and pushing to the native undo stack.
+    result.continuation?.();
+    expect(execCommandCalls.length).toBe(2);
+    expect(execCommandCalls[1].command).toBe("delete");
   });
 
-  it("copy delegates to document.execCommand('copy')", () => {
+  it("copy runs execCommand('copy') in sync phase with no continuation", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "copy", phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
+    // No continuation — nothing needs to happen after the blink.
+    expect(result.continuation).toBeUndefined();
   });
 
-  it("selectAll calls input.select() to select all content", () => {
+  it("selectAll defers input.select() to the continuation phase", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={1234} min={0} max={9999} />
     );
@@ -319,39 +334,52 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
 
+    // Sync phase did nothing — selection still at (1, 2).
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(2);
+
+    // Continuation phase runs the select().
+    result.continuation?.();
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe(input.value.length);
   });
 
-  it("undo delegates to document.execCommand('undo')", () => {
+  it("undo defers execCommand('undo') to the continuation phase", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "undo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("undo");
   });
 
-  it("redo delegates to document.execCommand('redo')", () => {
+  it("redo defers execCommand('redo') to the continuation phase", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "redo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("redo");
   });
+
+  // Paste behavior is verified manually — see tug-input.test.tsx for
+  // the rationale.
 });
 
 describe("TugValueInput – disabled guard (A2.7)", () => {
-  it("disabled input does not fire execCommand on any dispatched editing action", () => {
+  it("disabled input does not fire execCommand or select on any dispatched editing action", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} disabled />
     );
@@ -359,15 +387,17 @@ describe("TugValueInput – disabled guard (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
+
+    // Each handler short-circuits on effectiveDisabled before the
+    // sync body runs, so no continuation should be returned either.
+    for (const action of ["cut", "copy", "paste", "undo", "redo", "selectAll"] as const) {
+      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      result.continuation?.();
+    }
 
     expect(execCommandCalls.length).toBe(0);
-    // selectAll did not fire either, so the deliberate initial selection
-    // is untouched.
+    // selectAll did not fire, so the deliberate initial selection is
+    // untouched.
     expect(input.selectionStart).toBe(1);
     expect(input.selectionEnd).toBe(2);
   });

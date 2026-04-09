@@ -154,7 +154,10 @@ describe("TugTextarea – focusin promotion (A2.7)", () => {
 // ---------------------------------------------------------------------------
 
 describe("TugTextarea – action handlers (A2.7)", () => {
-  it("selectAll selects the entire textarea content", () => {
+  // Mirrors the TugInput handler tests — two-phase pattern, sync body
+  // for clipboard ops and continuation for DOM mutations.
+
+  it("selectAll defers textarea.select() to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugTextarea data-testid="sel-ta" defaultValue="hello world" />
     );
@@ -162,59 +165,75 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     const id = textarea.getAttribute("data-responder-id") as string;
 
     textarea.setSelectionRange(2, 3);
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
 
+    expect(textarea.selectionStart).toBe(2);
+    expect(textarea.selectionEnd).toBe(3);
+
+    result.continuation?.();
     expect(textarea.selectionStart).toBe(0);
     expect(textarea.selectionEnd).toBe("hello world".length);
   });
 
-  it("cut delegates to document.execCommand('cut')", () => {
+  it("cut runs execCommand('copy') in sync phase, then execCommand('delete') in continuation", () => {
     const { container, manager } = renderWithProvider(
       <TugTextarea data-testid="cut-ta" defaultValue="hello" />
     );
     const id = getTextarea(container, "cut-ta").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "cut", phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("cut");
+    expect(execCommandCalls[0].command).toBe("copy");
+
+    result.continuation?.();
+    expect(execCommandCalls.length).toBe(2);
+    expect(execCommandCalls[1].command).toBe("delete");
   });
 
-  it("copy delegates to document.execCommand('copy')", () => {
+  it("copy runs execCommand('copy') in sync phase with no continuation", () => {
     const { container, manager } = renderWithProvider(
       <TugTextarea data-testid="copy-ta" defaultValue="hello" />
     );
     const id = getTextarea(container, "copy-ta").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "copy", phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
+    expect(result.continuation).toBeUndefined();
   });
 
-  it("undo delegates to document.execCommand('undo')", () => {
+  it("undo defers execCommand('undo') to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugTextarea data-testid="undo-ta" defaultValue="hello" />
     );
     const id = getTextarea(container, "undo-ta").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "undo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("undo");
   });
 
-  it("redo delegates to document.execCommand('redo')", () => {
+  it("redo defers execCommand('redo') to the continuation phase", () => {
     const { container, manager } = renderWithProvider(
       <TugTextarea data-testid="redo-ta" defaultValue="hello" />
     );
     const id = getTextarea(container, "redo-ta").getAttribute("data-responder-id") as string;
 
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: "redo", phase: "discrete" });
 
+    expect(execCommandCalls.length).toBe(0);
+    result.continuation?.();
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("redo");
   });
+
+  // Paste behavior is verified manually — see tug-input.test.tsx for
+  // the rationale.
 });
 
 // ---------------------------------------------------------------------------
@@ -230,11 +249,10 @@ describe("TugTextarea – disabled guard (A2.7)", () => {
     const id = textarea.getAttribute("data-responder-id") as string;
 
     textarea.setSelectionRange(1, 2);
-    manager.dispatchTo(id, { action: "cut", phase: "discrete" });
-    manager.dispatchTo(id, { action: "copy", phase: "discrete" });
-    manager.dispatchTo(id, { action: "undo", phase: "discrete" });
-    manager.dispatchTo(id, { action: "redo", phase: "discrete" });
-    manager.dispatchTo(id, { action: "selectAll", phase: "discrete" });
+    for (const action of ["cut", "copy", "paste", "undo", "redo", "selectAll"] as const) {
+      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      result.continuation?.();
+    }
 
     expect(execCommandCalls.length).toBe(0);
     expect(textarea.selectionStart).toBe(1);

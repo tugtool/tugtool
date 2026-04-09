@@ -34,6 +34,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "frontendReady")
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
+        contentController.add(self, name: "clipboardRead")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -347,6 +348,52 @@ extension MainWindow: WKScriptMessageHandler {
             let backend = body["backend"] as? Bool ?? false
             let app = body["app"] as? Bool ?? false
             bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
+        case "clipboardRead":
+            // Native clipboard bridge. Read NSPasteboard directly and call
+            // back to JavaScript with the contents. This exists because
+            // Safari's JavaScript Clipboard API (navigator.clipboard.readText /
+            // .read) triggers a floating "Paste" permission popup on every
+            // invocation, and in Safari 16.4+ document.execCommand("paste")
+            // on contentEditable triggers the same popup. Reading via
+            // NSPasteboard on the native side is the only way to supply
+            // clipboard data to JavaScript without the popup.
+            //
+            // JS-side contract: post {requestId} and wait for a callback
+            // on window.__tugNativeClipboardCallback(data) where data is
+            // {requestId, text, html}. See tug-native-clipboard.ts.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["requestId"] as? String else { return }
+            let pasteboard = NSPasteboard.general
+            let text = pasteboard.string(forType: .string) ?? ""
+            let html = pasteboard.string(forType: .html) ?? ""
+            // Use JSON to pass arbitrary clipboard contents through the
+            // evaluateJavaScript string safely — the text may contain
+            // quotes, backslashes, control chars, and line separators
+            // that would otherwise break a manually-escaped JS literal.
+            let payload: [String: Any] = [
+                "requestId": requestId,
+                "text": text,
+                "html": html
+            ]
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
+                  let jsonString = String(data: jsonData, encoding: .utf8) else {
+                NSLog("MainWindow: JSON serialization failed for clipboardRead")
+                return
+            }
+            // JSON-serialize the JSON once more to produce a valid JS
+            // string literal (handles \u2028 / \u2029 which JSON allows
+            // but JS does not in source text).
+            guard let quotedJsonData = try? JSONSerialization.data(withJSONObject: jsonString, options: [.fragmentsAllowed]),
+                  let quotedJsonString = String(data: quotedJsonData, encoding: .utf8) else {
+                NSLog("MainWindow: JSON quoting failed for clipboardRead")
+                return
+            }
+            let script = "window.__tugNativeClipboardCallback?.(JSON.parse(\(quotedJsonString)))"
+            self.webView.evaluateJavaScript(script) { _, error in
+                if let error = error {
+                    NSLog("MainWindow: evaluateJavaScript failed for clipboardRead: %@", error.localizedDescription)
+                }
+            }
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

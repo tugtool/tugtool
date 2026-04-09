@@ -13,13 +13,10 @@
  * When rendered inside a `<ResponderChainProvider>`, TugTextarea
  * registers itself as a responder node and handles the six standard
  * editing actions (`cut`, `copy`, `paste`, `selectAll`, `undo`,
- * `redo`), delegating to native DOM APIs on the underlying
- * `<textarea>` element. See `tug-input.tsx` for the detailed
- * rationale behind the execCommand-vs-Clipboard-API choices — the
- * same trade-offs apply here. Each textarea uses its own native undo
- * stack, and the chain's innermost-first walk routes actions to the
- * currently focused one via the focusin listener in
- * `responder-chain-provider.tsx`.
+ * `redo`) via the shared `useTextInputResponder` hook — the same
+ * hook used by TugInput and TugValueInput. See its module docstring
+ * for the full dispatch semantics, the paste-sync rationale, and the
+ * reason execCommand("paste") must run in the sync phase.
  *
  * Like TugInput, TugTextarea uses a two-path rendering strategy: it
  * falls back to a plain `<textarea>` render when no provider is in
@@ -35,16 +32,12 @@
 
 import "./tug-textarea.css";
 
-import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
-import { useResponder } from "./use-responder";
-import type { ActionHandlerResult } from "./responder-chain";
-import {
-  TugEditorContextMenu,
-  type TugEditorContextMenuEntry,
-} from "./tug-editor-context-menu";
+import { useTextInputResponder } from "./use-text-input-responder";
+import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -341,87 +334,27 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Local ref to the textarea DOM node for the action handlers to
-    // reach `select()`, `setRangeText()`, etc. Composed onto the
-    // textarea alongside the forwarded ref and responderRef via the
-    // shared body's `extraRef` slot.
+    // Local ref to the textarea DOM node for the editing action
+    // handlers in the shared hook to reach `select()`,
+    // `setRangeText()`, etc. Composed onto the textarea alongside the
+    // forwarded ref and responderRef via the body's `extraRef` slot.
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-    // Mounted flag used by the async paste continuation to avoid
-    // writing to a detached textarea after unmount.
-    const mountedRef = useRef(true);
-    React.useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
-
-    const handleCut = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      if (!textareaRef.current) return;
-      document.execCommand("cut");
-    }, [effectiveDisabled]);
-
-    const handleCopy = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("copy");
-    }, [effectiveDisabled]);
-
-    const handlePaste = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      const el = textareaRef.current;
-      if (!el) return;
-      // See tug-input.tsx for the execCommand-vs-Clipboard-API
-      // rationale and the known undo-stack limitation of paste via
-      // setRangeText.
-      const readPromise =
-        typeof navigator !== "undefined" && navigator.clipboard?.readText
-          ? navigator.clipboard.readText().catch(() => "")
-          : Promise.resolve("");
-      return () => {
-        void readPromise.then((text) => {
-          if (!text) return;
-          if (!mountedRef.current) return;
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          el.setRangeText(text, start, end, "end");
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      };
-    }, [effectiveDisabled]);
-
-    const handleSelectAll = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      textareaRef.current?.select();
-    }, [effectiveDisabled]);
-
-    const handleUndo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("undo");
-    }, [effectiveDisabled]);
-
-    const handleRedo = useCallback((): ActionHandlerResult => {
-      if (effectiveDisabled) return;
-      document.execCommand("redo");
-    }, [effectiveDisabled]);
-
-    const responderId = useId();
-    const { responderRef } = useResponder({
-      id: responderId,
-      actions: {
-        cut: handleCut,
-        copy: handleCopy,
-        paste: handlePaste,
-        selectAll: handleSelectAll,
-        undo: handleUndo,
-        redo: handleRedo,
-      },
-    });
+    // All six editing actions, the right-click context menu, and
+    // responder-node registration come from the shared hook. See
+    // `use-text-input-responder.tsx` for the dispatch semantics and
+    // paste-sync rationale.
+    const {
+      responderRef,
+      menuState,
+      handleContextMenu: openMenu,
+      closeMenu,
+      menuItems,
+    } = useTextInputResponder({ inputRef: textareaRef, disabled: effectiveDisabled });
 
     // Compose the internal textareaRef with the responder ref via the
-    // shared body's `extraRef` slot. The body handles merging the
-    // forwarded ref itself.
+    // body's `extraRef` slot. The body handles merging the forwarded
+    // ref itself.
     const extraRef = useCallback(
       (el: HTMLTextAreaElement | null) => {
         textareaRef.current = el;
@@ -430,47 +363,15 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
       [responderRef],
     );
 
-    // ---- Context menu (right-click) ----
-    //
-    // Same pattern as tug-input.tsx and tug-prompt-input.tsx: open a
-    // portaled TugEditorContextMenu at the click coordinates with
-    // cut/copy/paste/selectAll items. Menu item activation dispatches
-    // through the chain and the innermost-first walk routes it back
-    // to this textarea, which handles it via the normal handlers.
-    const [menuState, setMenuState] = useState<{
-      x: number;
-      y: number;
-      hasSelection: boolean;
-    } | null>(null);
-
+    // Bridge the hook's menu opener with the consumer's optional
+    // `onContextMenu` prop.
     const handleContextMenu = useCallback(
       (e: React.MouseEvent<HTMLTextAreaElement>) => {
-        if (effectiveDisabled) return;
-        e.preventDefault();
-        const el = textareaRef.current;
-        if (!el) return;
-        const hasSelection =
-          el.selectionStart !== null &&
-          el.selectionEnd !== null &&
-          el.selectionStart !== el.selectionEnd;
-        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        openMenu(e);
         onContextMenu?.(e);
       },
-      [effectiveDisabled, onContextMenu],
+      [openMenu, onContextMenu],
     );
-
-    const closeMenu = useCallback(() => setMenuState(null), []);
-
-    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
-      const hasSelection = menuState?.hasSelection ?? false;
-      return [
-        { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
-        { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
-        { action: "paste", label: "Paste", shortcut: "\u2318V" },
-        { type: "separator" },
-        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
-      ];
-    }, [menuState?.hasSelection]);
 
     return (
       <>
