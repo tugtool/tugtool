@@ -40,6 +40,10 @@
  *   capture before the responder chain sees the keydown):
  *     • Escape or ⌘. → close the menu.
  *     • Enter or Space → activate the keyboard-selected item.
+ *     • ArrowDown / ArrowUp → cycle through actionable items,
+ *       wrapping at the ends. If no item is highlighted yet,
+ *       ArrowDown selects the first and ArrowUp selects the last.
+ *     • Home / End → jump to the first or last actionable item.
  *     • Printable character → typeahead select: the character is
  *       appended to a 500ms-reset buffer and the first actionable
  *       item whose label begins with the buffer becomes
@@ -49,8 +53,8 @@
  *       responder chain dispatches its action and the dispatch
  *       observer closes the menu redundantly. If not, this branch is
  *       the sole dismiss path.
- *     • Any other non-character key (Tab, arrows, function keys) →
- *       close the menu and let the event continue.
+ *     • Any other non-character key (Tab, function keys) → close the
+ *       menu and let the event continue.
  *
  * - Visual identity: shared with TugContextMenu via tug-menu.css
  *   classes and tug-menu-item-blink.ts for the activation flash.
@@ -445,6 +449,48 @@ export function TugEditorContextMenu({
         return;
       }
 
+      // Arrow / Home / End — cycle the highlighted item through the
+      // actionable entries (skipping separators, labels, and disabled
+      // items). Wraps at both ends. If nothing is currently
+      // highlighted, ArrowDown picks the first actionable and ArrowUp
+      // picks the last — matching native menu behavior. Separators
+      // and disabled items are never highlighted because `isActionable`
+      // filters them out of the cycle list, so walking the cycle
+      // never lands on one and the user can't get "stuck" on a
+      // non-activatable entry.
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "Home" ||
+        e.key === "End"
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        const actionables = itemsRef.current.filter(isActionable);
+        if (actionables.length === 0) return;
+        const currentAction = selectedActionRef.current;
+        const currentIdx = currentAction
+          ? actionables.findIndex((it) => it.action === currentAction)
+          : -1;
+        let nextIdx: number;
+        if (e.key === "Home") {
+          nextIdx = 0;
+        } else if (e.key === "End") {
+          nextIdx = actionables.length - 1;
+        } else if (e.key === "ArrowDown") {
+          // No current selection → first. Otherwise → next, wrap.
+          nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % actionables.length;
+        } else {
+          // ArrowUp: no current selection → last. Otherwise → prev, wrap.
+          nextIdx =
+            currentIdx < 0
+              ? actionables.length - 1
+              : (currentIdx - 1 + actionables.length) % actionables.length;
+        }
+        setHighlightedItem(actionables[nextIdx].action);
+        return;
+      }
+
       // Any other modifier combo (⌘X, ⌘C, ⌘V, ⌘Z, …) — close the menu
       // and let the event continue to the editor so the shortcut runs
       // natively. No preventDefault, but flushSync so the menu is
@@ -463,8 +509,8 @@ export function TugEditorContextMenu({
         return;
       }
 
-      // Any other non-character key (Tab, arrows, function keys) —
-      // close the menu and let the event pass through.
+      // Any other non-character key (Tab, function keys) — close the
+      // menu and let the event pass through.
       dismiss();
     };
     window.addEventListener("mousedown", onWindowMouseDown, true);
@@ -473,7 +519,7 @@ export function TugEditorContextMenu({
       window.removeEventListener("mousedown", onWindowMouseDown, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, activateItem, applyTypeahead]);
+  }, [open, activateItem, applyTypeahead, setHighlightedItem]);
 
   if (!open) return null;
 

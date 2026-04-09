@@ -491,9 +491,27 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     //   - clipboard commands execute inside a synchronous user gesture
     //     (the item's mousedown handler), so execCommand works directly.
     //
-    // Right-click auto-selects the word under the pointer when there is
-    // no existing ranged selection, matching macOS native behavior.
-    // Future: atom-aware commands based on what the selection contains.
+    // Right-click preserves the existing selection verbatim — a ranged
+    // selection stays ranged, a caret stays a caret, no text that the
+    // user didn't ask us to touch ever gets selected. This is harder
+    // than it sounds: WebKit's contentEditable has a native "smart
+    // click" on right-click that expands the selection to whatever is
+    // under the pointer (a word, or a single character like a space),
+    // and that mutation runs during the browser's default mousedown
+    // handling — before our `contextmenu` listener fires. Reading
+    // `engine.getSelectedRange()` in the contextmenu handler would
+    // observe the post-expansion state and report hasSelection = true
+    // even though the user's original selection was a collapsed caret.
+    //
+    // Fix: capture the selection at `pointerdown` (button === 2),
+    // which fires *before* the browser's native mousedown default
+    // action, then restore it in the contextmenu handler before
+    // sampling hasSelection. Whatever WebKit did between pointerdown
+    // and contextmenu is undone. The restore runs even when the
+    // captured selection is null (no prior selection at all — e.g.
+    // first right-click into an unfocused editor), in which case we
+    // leave the post-click state alone and let hasSelection reflect
+    // whatever the browser placed there.
 
     // Menu state: null when closed, {x, y, hasSelection} when open.
     // hasSelection is sampled once on open and drives Cut/Copy enablement.
@@ -503,9 +521,29 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       hasSelection: boolean;
     } | null>(null);
 
+    // Captured at pointerdown on a right-click, restored at contextmenu.
+    // See the rationale block above.
+    const preRightClickSelectionRef = useRef<{ start: number; end: number } | null>(null);
+
     useLayoutEffect(() => {
       const container = containerRef.current;
       if (!container) return;
+      // Pointerdown runs before the browser's native mousedown default
+      // action, so reading the selection here captures it in its
+      // pre-right-click state. We don't `preventDefault` — we want the
+      // native action to still run (focus the editor, place the caret
+      // if none existed) and then we undo the selection portion of
+      // that action in the contextmenu handler.
+      const onPointerDown = (e: PointerEvent) => {
+        if (e.button !== 2) return;
+        const engine = engineRef.current;
+        if (!engine) return;
+        if (!engine.root.contains(e.target as Node)) {
+          preRightClickSelectionRef.current = null;
+          return;
+        }
+        preRightClickSelectionRef.current = engine.getSelectedRange();
+      };
       const onContextMenu = (e: MouseEvent) => {
         const engine = engineRef.current;
         if (!engine) return;
@@ -518,12 +556,27 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         // pointerdown listener in ResponderChainProvider has already
         // promoted this node via data-responder-id lookup, and a
         // right-click issues pointerdown before contextmenu.
-        const range = engine.selectWordAtPoint(e.clientX, e.clientY);
+        //
+        // Restore the pre-right-click selection, undoing any native
+        // "smart click" expansion WebKit did during mousedown handling.
+        // When the captured value is null (user right-clicked before
+        // the editor had any selection), we skip the restore and let
+        // whatever caret WebKit placed be the effective state — that
+        // avoids clearing a caret the user actually expects to see.
+        const captured = preRightClickSelectionRef.current;
+        if (captured !== null) {
+          engine.setSelectedRange(captured.start, captured.end);
+        }
+        const range = engine.getSelectedRange();
         const hasSelection = range !== null && range.end > range.start;
         setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
       };
+      container.addEventListener("pointerdown", onPointerDown);
       container.addEventListener("contextmenu", onContextMenu);
-      return () => container.removeEventListener("contextmenu", onContextMenu);
+      return () => {
+        container.removeEventListener("pointerdown", onPointerDown);
+        container.removeEventListener("contextmenu", onContextMenu);
+      };
     }, []);
 
     const closeMenu = useCallback(() => setMenuState(null), []);
