@@ -52,6 +52,7 @@ import {
   TugPopover,
   TugPopoverTrigger,
   TugPopoverContent,
+  type TugPopoverHandle,
 } from "./tug-popover";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
@@ -142,6 +143,15 @@ export const TugConfirmPopover = React.forwardRef<
   },
   ref,
 ) {
+  // Handle on the inner TugPopover. `confirm()` opens it; the
+  // chain-action handlers close it. TugPopover now owns its open
+  // state internally — there is no controlled open/onOpenChange
+  // boundary.
+  const popoverRef = React.useRef<TugPopoverHandle>(null);
+
+  // Mirror of popover open state, used only to gate the
+  // observeDispatch subscription below. Flipped to true in confirm()
+  // and false in resolveAndClose.
   const [open, setOpen] = React.useState(false);
 
   // Resolver pair for the imperative confirm() Promise. Null when no
@@ -160,14 +170,18 @@ export const TugConfirmPopover = React.forwardRef<
   const senderId = senderIdProp ?? fallbackSenderId;
 
   // Primary handlers — resolve the pending promise and close. Shared by
-  // the chain action handlers, the direct-invocation fallback used when
-  // no provider is in scope, and the Radix onOpenChange dismissal path.
+  // the chain action handlers, the direct-invocation fallback used
+  // when no provider is in scope, and the Radix dismissal path (which
+  // reaches us via TugPopover's cancelDialog re-emission when Escape /
+  // click-outside fires). Idempotent: a second call with the resolver
+  // already null just closes redundantly.
   const resolveAndClose = React.useCallback((value: boolean) => {
     if (resolverRef.current) {
       resolverRef.current(value);
       resolverRef.current = null;
     }
     setOpen(false);
+    popoverRef.current?.close();
   }, []);
 
   const handleConfirmAction = React.useCallback(() => {
@@ -209,19 +223,10 @@ export const TugConfirmPopover = React.forwardRef<
       return new Promise<boolean>((resolve) => {
         resolverRef.current = resolve;
         setOpen(true);
+        popoverRef.current?.open();
       });
     },
   }));
-
-  // Radix-level dismissal (Escape, click-outside). Convert to a cancel
-  // so the pending promise resolves with false and state stays coherent.
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      resolveAndClose(false);
-      return;
-    }
-    setOpen(nextOpen);
-  }
 
   // Button click handlers. In the normal chain-native path they
   // dispatch through the manager; with no provider in scope they call
@@ -276,7 +281,7 @@ export const TugConfirmPopover = React.forwardRef<
   }
 
   return (
-    <TugPopover open={open} onOpenChange={handleOpenChange}>
+    <TugPopover ref={popoverRef}>
       <TugPopoverTrigger asChild>{children}</TugPopoverTrigger>
       <TugPopoverContent side={side} sideOffset={sideOffset}>
         <div

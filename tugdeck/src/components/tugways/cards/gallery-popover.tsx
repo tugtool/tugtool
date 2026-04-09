@@ -13,6 +13,8 @@ import {
   TugPopoverTrigger,
   TugPopoverContent,
   TugPopoverClose,
+  useTugPopoverClose,
+  type TugPopoverHandle,
 } from "@/components/tugways/tug-popover";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
@@ -33,11 +35,28 @@ const labelStyle: React.CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
+// SaveSettingsButton — form-content popover's "Save Changes" button.
+//
+// Lives in its own component so we can call useTugPopoverClose() here
+// without running the hook in every popover example. Clicking the
+// button would normally persist the form state; for the gallery demo
+// it just closes the popover via the chain. Demonstrates the pattern
+// for "part of" vs "dismisses" controls inside a bare TugPopover:
+// inputs / switches are handled by the focus-inside-popover filter;
+// explicit dismiss buttons reach for useTugPopoverClose.
+// ---------------------------------------------------------------------------
+
+function SaveSettingsButton() {
+  const closePopover = useTugPopoverClose();
+  return <TugPushButton onClick={closePopover}>Save Changes</TugPushButton>;
+}
+
+// ---------------------------------------------------------------------------
 // GalleryPopover
 // ---------------------------------------------------------------------------
 
 export function GalleryPopover() {
-  const [controlledOpen, setControlledOpen] = React.useState(false);
+  const imperativeRef = React.useRef<TugPopoverHandle>(null);
 
   return (
     <div className="cg-content" data-testid="gallery-popover">
@@ -176,7 +195,7 @@ export function GalleryPopover() {
                 <span style={paraStyle}>Enable notifications</span>
                 <TugSwitch aria-label="Enable notifications" />
               </div>
-              <TugPushButton>Save Changes</TugPushButton>
+              <SaveSettingsButton />
             </div>
           </TugPopoverContent>
         </TugPopover>
@@ -219,29 +238,28 @@ export function GalleryPopover() {
 
       <div className="cg-divider" />
 
-      {/* ---- 6. Controlled ---- */}
+      {/* ---- 6. Imperative ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Controlled</div>
-        <div style={labelStyle}>open state managed externally via React.useState</div>
+        <div className="cg-section-title">Imperative</div>
+        <div style={labelStyle}>TugPopoverHandle.open() / .close() driven from an external button</div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-          <TugPopover open={controlledOpen} onOpenChange={setControlledOpen}>
+          <TugPopover ref={imperativeRef}>
             <TugPopoverTrigger>
-              <TugPushButton onClick={() => setControlledOpen((v) => !v)}>
-                {controlledOpen ? "Close Popover" : "Open Popover"}
-              </TugPushButton>
+              <TugPushButton>Anchor</TugPushButton>
             </TugPopoverTrigger>
             <TugPopoverContent>
               <div style={{ padding: "0.75rem" }}>
                 <p style={paraStyle}>
-                  This popover is controlled. The parent component owns the open state
-                  and passes it via the open prop.
+                  This popover is driven via TugPopoverHandle — an external button
+                  calls ref.current.open() to open it. Dismissal still flows through
+                  the responder chain (cancelDialog).
                 </p>
               </div>
             </TugPopoverContent>
           </TugPopover>
-          <span style={paraStyle}>
-            {controlledOpen ? "Popover is open" : "Popover is closed"}
-          </span>
+          <TugPushButton onClick={() => imperativeRef.current?.open()}>
+            Open via handle
+          </TugPushButton>
         </div>
       </div>
 
