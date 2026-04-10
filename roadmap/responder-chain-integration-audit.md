@@ -749,7 +749,7 @@ The original A3 table listed four more bindings that did not land this phase. Ea
 
 **Exit criteria (revised):** every standard macOS shortcut whose action has a registered handler has exactly one entry in `keybinding-map.ts`, dispatches a typed action, and works end-to-end. Three shortcuts (⌘⇧T, ⇥/⇧⇥, Escape) are tracked as follow-ups with written rationale above.
 
-### Phase A4 — R6: Retrofit `observeDispatch` to floating surfaces (1 session)
+### Phase A4 — R6: Retrofit `observeDispatch` to floating surfaces (1 session) ✅
 
 Most of the surfaces originally scoped to A4 were folded forward into A2.8 (and its pre-step 0), which made them chain-native and attached `observeDispatch` at the same time. The invariants table in `tugdeck/src/components/tugways/internal/floating-surface-notes.ts` is the canonical summary of what each of the four A2.8 surfaces does and why.
 
@@ -766,11 +766,11 @@ Most of the surfaces originally scoped to A4 were folded forward into A2.8 (and 
 
 The modal opt-outs for `tug-alert` / `tug-sheet` are intentional: "close on any chain activity" would surprise users whose modal disappears because an unrelated shortcut fired. See `floating-surface-notes.ts:41`.
 
-**What A4 actually touches:** the two surfaces explicitly parked during A2.8 planning — neither is chain-native yet, so this is onboarding work first, `observeDispatch` retrofit second. Same shape as pre-A2.8 step 0 for `tug-popup-button`.
+**What A4 actually touched:** the two surfaces explicitly parked during A2.8 planning — neither was chain-native yet, so this was onboarding work first, `observeDispatch` retrofit second. Same shape as pre-A2.8 step 0 for `tug-popup-button`.
 
-- **A4.1 — `tug-context-menu`.** Today: Radix `ContextMenu` wrapper with a React-callback `onSelect(id)` prop (L11 violation) and a synthetic Escape keydown dismissal. Migrate the items array to the `TugPopupButtonItem` shape (`action: TugAction`, optional `value`) so activation dispatches through the chain via `dispatchForContinuation`; drop `onSelect` and `onOpenChange`; add locally controlled open state; subscribe to `observeDispatch` while open with a `blinkingRef` guard for the menu's own item activation. Mirrors `internal/tug-popup-menu.tsx` sub-step 0. Only consumer is `gallery-context-menu.tsx`, which never wires `onSelect` today — migration is mechanical.
+- ✅ **A4.1 — `tug-context-menu`.** Landed in `236e3f63`. Items migrated to the `TugPopupButtonItem` shape (`action: TugAction`, optional `value`); `onSelect` / `onOpenChange` props dropped; activation dispatches via `manager.dispatchForContinuation`; local `open` state mirrors Radix via `onOpenChange`; `observeDispatch` subscription while open with `blinkingRef` self-dispatch guard. Chain-reactive dismiss and post-blink close both synthesize a document-level Escape keydown because Radix ContextMenu is uncontrolled (no `open` / `defaultOpen` props). Extracted `synthesizeEscapeDismiss()` helper. Only consumer was `gallery-context-menu.tsx`, migrated mechanically. New `tug-context-menu.test.tsx` (7 tests) covers no-provider ergonomics, contextmenu-event open, external-dispatch dismiss, and subscription lifecycle. Added minimal `DOMRect` polyfill to `setup-rtl.ts` because Radix ContextMenu's virtual-anchor path calls `DOMRect.fromRect()` and happy-dom does not ship it.
 
-- **A4.2 — `tug-tooltip`.** No user-interaction actions (tooltips don't emit), so L11 doesn't apply directly. Open question is only "should tooltips dismiss on chain activity?" Radix already handles pointer leave / focus out; the retrofit only matters when a keyboard shortcut or programmatic dispatch fires while the tooltip is showing. Add a nullable `useResponderChain()` + `useLayoutEffect` subscription that calls the Radix close path on any dispatch. No `blinkingRef` needed — tooltips don't self-dispatch. `truncated` mode interaction: none (suppress is about opening, not closing).
+- ✅ **A4.2 — `tug-tooltip`.** Tooltips have no user-interaction action semantics (display-only), so L11 does not apply directly. The novel behavior is chain-reactive dismissal: a deliberate action elsewhere in the app is a strong signal the user has moved on from the hovered content. Always tracks a local `openMirror` state synced via `onOpenChange` (previously tracked only in `truncated` mode) so the effect has a stable gate and a programmatic close path. `useResponderChain()` is nullable — standalone renders without a provider still work and Radix's own hover/focus dismissal is untouched. No `blinkingRef` needed (tooltips never self-dispatch). `truncated` mode interaction: none — the suppress flag only gates open transitions. Exposed a `defaultOpen` prop (Radix-style) primarily for tests; seeds the initial state of `openMirror`. New `tug-tooltip.test.tsx` (7 tests) covers no-provider ergonomics, external-dispatch dismiss, subscription lifecycle, and controlled-mode `onOpenChange(false)` forwarding.
 
 Template (from `tug-editor-context-menu.tsx:353`):
 
@@ -784,12 +784,12 @@ useLayoutEffect(() => {
 }, [open, manager]);
 ```
 
-**Exit criteria:**
-- `tug-context-menu` items carry `action: TugAction` / optional `value`; `onSelect` / `onOpenChange` props removed; activation dispatches through the chain; subscribes to `observeDispatch` while open with a blink guard.
-- `tug-tooltip` subscribes to `observeDispatch` while open and dismisses on external chain traffic.
-- `gallery-context-menu.tsx` migrated to the new item shape.
-- New dedicated test files for both surfaces covering subscribe/unsubscribe lifecycle, blink guard (context menu), chain-native dispatch (context menu), and no-provider fallback.
-- `bun run check` and `bun test` clean.
+**Exit criteria (all met):**
+- ✅ `tug-context-menu` items carry `action: TugAction` / optional `value`; `onSelect` / `onOpenChange` props removed; activation dispatches through the chain; subscribes to `observeDispatch` while open with a blink guard.
+- ✅ `tug-tooltip` subscribes to `observeDispatch` while open and dismisses on external chain traffic.
+- ✅ `gallery-context-menu.tsx` migrated to the new item shape.
+- ✅ New dedicated test files for both surfaces (7 tests each) covering subscribe/unsubscribe lifecycle, blink guard (context menu), chain-native dispatch (context menu), controlled-mode forwarding (tooltip), and no-provider fallback.
+- ✅ `bun run check` and `bun test` clean (2000 passing at A4.2 close).
 
 ### Phase A5 — Update `component-authoring.md` (1 short session, post-A2)
 
