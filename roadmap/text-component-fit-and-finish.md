@@ -53,7 +53,7 @@ See `tuglaws/selection-model.md` for the full audit.
 
 **What each component owns:**
 - **tug-markdown-view:** Uses native DOM Selection directly. Browser handles click-to-clear, drag-to-select. `user-select: text` on the scroll container. `caret-color: transparent` (read-only, no caret needed). Context menu samples `window.getSelection()`. Select-all uses a logical flag + CSS visual + data-model copy.
-- **tug-prompt-input:** Uses TugTextEngine's selection model via contentEditable. No change from current behavior (already uses `data-td-select="custom"` to exempt from clipping).
+- **tug-prompt-input:** Uses TugTextEngine's selection model via contentEditable. No change from current behavior (already uses `data-tug-select="custom"` to exempt from clipping).
 - **tug-input, tug-textarea, tug-value-input:** Use native `selectionStart`/`selectionEnd`. No change from current behavior except removing the now-unnecessary `::highlight()` and `::selection` override CSS rules.
 
 #### Implementation plan
@@ -259,29 +259,44 @@ The `user-select: none` inheritance means most card chrome is already non-select
 
 #### Design concept: three selection categories
 
-Every component in a card falls into one of three categories:
+Every component in a card falls into one of three categories, declared via the `data-tug-select` attribute:
 
-| Category | CSS | Click-drag | ⌘A | Right-click | Selection highlight |
-|----------|-----|-----------|-----|-------------|-------------------|
-| **Selectable** | `user-select: text` | Creates visible selection | Selects all within component | Copy from selection | Native `::selection` paints |
-| **Copyable** | `user-select: none` (inherited) | No effect on selection | Not included in any select-all | Context menu with Copy (copies component's text content) | Never shows selection highlight |
-| **Unselectable** | `user-select: none` (inherited) | No effect on selection | Not included in any select-all | No copy option | Never shows selection highlight |
+| Category | `data-tug-select` | CSS | Click-drag | ⌘A | Right-click | Selection highlight |
+|----------|-------------------|-----|-----------|-----|-------------|-------------------|
+| **Selectable** | `"text"` | `user-select: text` | Creates visible selection | Selects all within component | Copy from selection | Native `::selection` paints |
+| **Copyable** | `"copy"` | `user-select: none` | No effect on selection | Not included in any select-all | Context menu with Copy (copies component's text content) | Never shows selection highlight |
+| **Chrome** | `"none"` or absent | `user-select: none` | No effect on selection | Not included in any select-all | No copy option | Never shows selection highlight |
 
-**Selectable** — text the user can directly select via keyboard or click-drag. Examples: markdown view content, text input content, textarea content, prompt input content. These components set `user-select: text` and handle `selectAll` in the responder chain.
+**Selectable** (`data-tug-select="text"`) — text the user can directly select via keyboard or click-drag. Examples: markdown view content, text input content, textarea content, prompt input content. These components set `user-select: text` (via the `[data-tug-select="text"]` CSS rule) and handle `selectAll` in the responder chain.
 
-**Copyable** — informational text the user might want to copy but should never directly select. Examples: labels, timestamps, status lines. These components do NOT set `user-select: text` — they inherit `user-select: none`. They cannot be drag-selected or included in ⌘A. The only way to copy their content is right-click → Copy from a context menu, which reads the component's text content directly (e.g., `el.textContent`), not from the DOM Selection. No visible selection highlight ever appears.
+**Copyable** (`data-tug-select="copy"`) — informational text the user might want to copy but should never directly select. Examples: labels, timestamps, status lines. These components inherit `user-select: none`. They cannot be drag-selected or included in ⌘A. The only way to copy their content is right-click → Copy from a context menu, which reads the component's text content directly (e.g., `el.textContent`), not from the DOM Selection. No visible selection highlight ever appears.
 
-**Unselectable** — chrome that has no copyable text content. Examples: buttons, toolbar icons, section dividers, decorative elements. These components inherit `user-select: none` and offer no copy mechanism.
+**Chrome** (`data-tug-select="none"` or attribute absent) — UI surface with no copyable text content. Examples: buttons, toolbar icons, section dividers, decorative elements. Inherits `user-select: none` and offers no copy mechanism.
+
+#### Mechanism: `data-tug-select` attribute
+
+The `data-tug-select` attribute (tugdeck namespace) is already established for per-region selection control. The existing values (`none`, `all`, `custom`) are extended with `text` and `copy`:
+
+| Value | Purpose | CSS rule |
+|-------|---------|----------|
+| `"text"` | Selectable content | `[data-tug-select="text"] { user-select: text }` |
+| `"copy"` | Copyable content (right-click only) | No CSS override (inherits `none`) |
+| `"none"` | Chrome (explicit) | `[data-tug-select="none"] { user-select: none }` |
+| `"custom"` | Component owns selection (tug-prompt-input) | SelectionGuard skips clipping |
+| `"all"` | Select entire region on click | `[data-tug-select="all"] { user-select: all }` |
+| absent | Chrome (default) | Inherits `user-select: none` from body |
+
+Component authors set `data-tug-select` on their root element. The attribute drives both CSS behavior (via rules in tug-card.css) and responder behavior (selectable components handle `selectAll` + `copy`; copyable components handle `copy` only via the `useCopyableText` hook).
 
 #### Rules
 
-**Rule 1: Only selectable components set `user-select: text`.** Copyable and unselectable components inherit `user-select: none` from the body. No container element (`.tugcard-content`, `.tug-sheet`, etc.) sets `user-select: text` on behalf of its children.
+**Rule 1: Only selectable components set `user-select: text`.** Copyable and chrome components inherit `user-select: none` from the body. No container element (`.tugcard-content`, `.tug-sheet`, etc.) sets `user-select: text` on behalf of its children.
 
 **Rule 2: Select-all is always scoped to the first responder.** When ⌘A is dispatched through the responder chain:
 - If the first responder is a selectable component that handles `selectAll`, the selection stays within that component. The action does not bubble.
 - If ⌘A reaches the card (no selectable component is focused), it is a no-op. The card does not handle `selectAll`. There is no "select everything in the card" behavior.
 
-**Rule 3: Drag-selection is confined to the component where it started.** A drag that starts in a markdown view stays in the markdown view. A drag that starts in a text input stays in the text input. `user-select: none` on surrounding chrome prevents the selection from extending into copyable or unselectable regions. SelectionGuard prevents it from escaping the card.
+**Rule 3: Drag-selection is confined to the component where it started.** A drag that starts in a markdown view stays in the markdown view. A drag that starts in a text input stays in the text input. `user-select: none` on surrounding chrome prevents the selection from extending into copyable or chrome regions. SelectionGuard prevents it from escaping the card.
 
 **Rule 4: Components that contain both chrome and selectable regions use `user-select: none` on the container and `user-select: text` on the selectable region.** For example, tug-sheet should have `user-select: none` on the sheet overlay and `user-select: text` only on form inputs inside it.
 
@@ -309,7 +324,7 @@ Verify that every `user-select: text` in the codebase is on a selectable compone
 | `.tug-input` | tug-input.css | Selectable | Correct |
 | `.tug-textarea` | tug-textarea.css | Selectable | Correct |
 | `.tug-value-input` | tug-value-input.css | Selectable | Correct |
-| `.tug-sheet` | tug-sheet.css | Unselectable (container) | **Wrong** — remove |
+| `.tug-sheet` | tug-sheet.css | Chrome (container) | **Wrong** — remove |
 | `.style-inspector-overlay` | style-inspector-overlay.css | Review | Determine category |
 
 **Step 4: Implement copyable component pattern.**
