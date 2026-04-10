@@ -4,11 +4,34 @@
  * Implements a Map-based action registry where handlers can be registered
  * and dispatched based on the action string in Control frame payloads.
  *
+ * ## Two kinds of registered actions
+ *
+ * Per `tuglaws/action-naming.md`, the action-dispatch registry carries
+ * two flavors of wire name:
+ *
+ * - **Control-frame-only** actions — app-level RPC from Swift to JS
+ *   that never walks the responder chain. These stay as kebab-case
+ *   string literals at the `registerAction` call site because they
+ *   have no chain-action counterpart. Examples: `reload`, `set-theme`,
+ *   `next-theme`, `set-dev-mode`, `show-card`, `source-tree`, `eval`.
+ *
+ * - **Both** (identity) actions — Control-frame RPCs whose entire
+ *   purpose is to inject a chain dispatch on behalf of a Swift menu
+ *   item. These use the corresponding `TUG_ACTIONS.*` constant at
+ *   both the `registerAction` call and the inner `manager.dispatch`
+ *   call, so the wire string on both sides is identical. Examples:
+ *   `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`, `TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD`,
+ *   `TUG_ACTIONS.CLOSE`. The Swift side calls `sendControl("close")`
+ *   (etc.) with the same string.
+ *
  * Phase 0: DevNotificationRef dependency removed, card handlers removed.
  * Phase 2: Added gallerySetterRef and show-component-gallery handler.
  * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
- *   show-component-gallery now dispatches "show-component-gallery" through
- *   the responder chain manager (same pattern as add-tab).
+ *   show-component-gallery now dispatches through the responder chain
+ *   manager (same pattern as add-tab).
+ * Action-naming rollout: Both-category handlers use TUG_ACTIONS constants
+ *   at the registerAction call site; close-active-card was renamed to
+ *   `close` so its wire format matches the chain-action name.
  * Spec S04 (#s04-action-dispatch-shape), [D04] Gut action-dispatch
  * Spec S05 (#s05-gallery-action)
  */
@@ -228,15 +251,17 @@ export function initActionDispatch(
     }
   });
 
-  // show-component-gallery: Show the Component Gallery card via DeckCanvas responder action.
-  // Dispatches "show-component-gallery" through the ResponderChainManager, which routes it
-  // to DeckCanvas's registered showComponentGallery handler. DeckCanvas finds or creates
-  // the gallery card and focuses it. ([D05], [D07] show-only semantics)
-  registerAction("show-component-gallery", () => {
+  // show-component-gallery (Both): show the Component Gallery card via the
+  // DeckCanvas responder. The Control-frame name and the chain-action name
+  // are the same string (TUG_ACTIONS.SHOW_COMPONENT_GALLERY), and this
+  // handler is the trivial adapter — receive the Control frame, dispatch
+  // the chain action, walk to DeckCanvas's registered handler. DeckCanvas
+  // finds or creates the gallery card and focuses it. ([D05], [D07] show-only)
+  registerAction(TUG_ACTIONS.SHOW_COMPONENT_GALLERY, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     } else {
-      console.warn("show-component-gallery: responder chain manager not registered yet");
+      console.warn(`${TUG_ACTIONS.SHOW_COMPONENT_GALLERY}: responder chain manager not registered yet`);
     }
   });
 
@@ -266,31 +291,33 @@ export function initActionDispatch(
     deckManager.addCard(component);
   });
 
-  // add-tab-to-active-card: Add a new tab to the focused card via the responder chain.
-  // Dispatches "add-tab-to-active-card" through the ResponderChainManager, which routes it to
-  // DeckCanvas's registered addTabToActiveCard handler. DeckCanvas reads the focused card
-  // from its cardsRef and calls store.addTab(). ([D06], [D09])
-  registerAction("add-tab-to-active-card", () => {
+  // add-tab-to-active-card (Both): add a new tab to the focused card.
+  // Trivial adapter — Control-frame name and chain-action name are
+  // identical (TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD). DeckCanvas's
+  // registered handler reads the focused card from its cardsRef and
+  // calls store.addTab(). ([D06], [D09])
+  registerAction(TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.dispatch({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
     } else {
-      console.warn("add-tab-to-active-card: responder chain manager not registered yet");
+      console.warn(`${TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD}: responder chain manager not registered yet`);
     }
   });
 
-  // close-active-card: Close the focused card via the responder chain.
-  // Dispatches "close" through the ResponderChainManager, which walks to the
-  // innermost responder and lands on tug-card's registered close handler. This
-  // is the File > Close Card menu item's Control-frame round-trip: the Swift
-  // menu has keyEquivalent "w", so ⌘W triggers the menu action (AppKit swallows
-  // the keystroke before the WKWebView sees it) which fires this handler. The
-  // tugdeck-side keybinding map entry for ⌘W exists for browser-only dev where
-  // no Swift menu is present. [A3 / R4]
-  registerAction("close-active-card", () => {
+  // close (Both): close the focused card via the responder chain. Trivial
+  // adapter — Control-frame name and chain-action name are identical
+  // (TUG_ACTIONS.CLOSE = "close"). The walk lands on tug-card's registered
+  // close handler. This is the File > Close Card menu item's Control-frame
+  // round-trip: the Swift menu has keyEquivalent "w", so ⌘W triggers the
+  // menu action (AppKit swallows the keystroke before the WKWebView sees
+  // it) which fires this handler. The tugdeck-side keybinding map entry
+  // for ⌘W exists for browser-only dev where no Swift menu is present.
+  // [A3 / R4, action-naming]
+  registerAction(TUG_ACTIONS.CLOSE, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     } else {
-      console.warn("close-active-card: responder chain manager not registered yet");
+      console.warn(`${TUG_ACTIONS.CLOSE}: responder chain manager not registered yet`);
     }
   });
 

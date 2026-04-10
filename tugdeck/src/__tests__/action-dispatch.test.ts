@@ -591,14 +591,14 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
   });
 });
 
-// ---- close-active-card handler ([A3 / R4]) ----
+// ---- close (Both: control-frame + chain action) ----
 
-describe("initActionDispatch: close-active-card", () => {
+describe("initActionDispatch: close (Both)", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("dispatches 'close' through the registered ResponderChainManager", () => {
+  it("dispatches TUG_ACTIONS.CLOSE through the registered ResponderChainManager", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -612,7 +612,9 @@ describe("initActionDispatch: close-active-card", () => {
     };
     registerResponderChainManager(stubManager as any);
 
-    dispatchAction({ action: "close-active-card" });
+    // Wire string and chain-action string are the same — the Both
+    // convergence — so the Control-frame name is just TUG_ACTIONS.CLOSE.
+    dispatchAction({ action: TUG_ACTIONS.CLOSE });
 
     expect(dispatched.length).toBe(1);
     expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
@@ -623,6 +625,6 @@ describe("initActionDispatch: close-active-card", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    expect(() => dispatchAction({ action: "close-active-card" })).not.toThrow();
+    expect(() => dispatchAction({ action: TUG_ACTIONS.CLOSE })).not.toThrow();
   });
 });

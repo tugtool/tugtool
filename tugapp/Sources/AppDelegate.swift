@@ -393,7 +393,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func closeActiveCard(_ sender: Any) {
-        sendControl("close-active-card")
+        // Wire format is the bare chain-action name "close" — see
+        // tugdeck/src/action-dispatch.ts and tuglaws/action-naming.md
+        // for the Both-category convention. The Swift method name
+        // (closeActiveCard) follows Swift conventions and is unrelated
+        // to the wire string.
+        sendControl("close")
     }
 
     @objc private func sourceTree(_ sender: Any) {
