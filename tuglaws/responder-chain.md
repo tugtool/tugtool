@@ -106,9 +106,15 @@ Dispatch walks from the first responder upward through `parentId` links until a 
        dispatch({action: "close"})  → walks past TugPromptInput, matches on TugCard
        dispatch({action: "cycle-card"}) → walks past both, matches on DeckCanvas
        dispatch({action: "select-all"}) → matches on TugPromptInput (innermost wins)
+
+       dispatchTo(cardId, {action: "close"})  → walk starts at TugCard (not at first responder),
+                                                 matches on TugCard
+       dispatchTo(cardId, {action: "cycle-card"}) → walks up from TugCard, matches on DeckCanvas
 ```
 
-Two points worth noticing on the diagram:
+`dispatch` and `dispatchTo` share the same walk loop. The difference is only which node the walk starts at: `dispatch` starts at the current first responder (usually the innermost leaf the user is working with); `dispatchTo` starts at an explicit registered node supplied by the caller. Both walk upward through `parentId` links until a handler matches, and both fall off the root with `handled: false` if no node handles the action. The walk is never downward.
+
+Two more points worth noticing on the diagram:
 
 - `select-all` is registered on both `TugPromptInput` and `TugCard`, and the innermost-first walk means the editor wins while its caret is active. Move the caret out of the editor and first responder leaves it; a later ⌘A now walks past the editor (no handler because the walk starts elsewhere) and the card handles it instead. Same action, different semantics, resolved by first-responder position. No per-component keyboard wiring.
 
@@ -187,7 +193,7 @@ The capture-phase keyboard pipeline also uses `dispatchForContinuation`: for ⌘
 
 ### `manager.dispatchTo(targetId, event) → boolean`
 
-Targeted delivery. Bypasses the chain walk entirely and hands the event directly to the named node. Throws if the target isn't registered.
+Targeted walk. Starts the walk at the named node instead of at the current first responder; otherwise behaves identically to `dispatch` — the event walks up through `parentId` links until some node handles it, or falls off the root with `handled: false`. Throws if `targetId` isn't registered.
 
 ```ts
 manager.dispatchTo(cardId, {
@@ -197,9 +203,13 @@ manager.dispatchTo(cardId, {
 });
 ```
 
-`dispatchTo` is for flows where the emitter knows exactly which responder should receive the event and walking the chain would either find the wrong one or traverse uselessly. The only current consumer is the gallery's property-inspector demo: the inspector's UI is not inside the card whose PropertyStore it drives, so the chain walk from the inspector would never reach the target card. The inspector has the card id, so it addresses the card directly. There is also a `dispatchToForContinuation` sibling for the same reason `dispatchForContinuation` exists on the walking path.
+`dispatchTo` is for flows where the emitter knows the approximate scope the event should reach but doesn't need to know exactly which node in that scope handles it. The gallery's property-inspector demo is the canonical case: the inspector's UI is not inside the card whose PropertyStore it drives, so a chain walk from the inspector's first-responder position would never reach the target card. The inspector has the card id, so it addresses the card directly. If the card itself owns the PropertyStore, its handler runs. If a future card shape delegates the store to a wrapper above it in the chain, the walk continues upward and finds the handler there — the inspector does not need to know which of those shapes the target uses. There is also a `dispatchToForContinuation` sibling for the same reason `dispatchForContinuation` exists on the walking path, with the same walk-up-on-miss semantics.
 
-Throwing on an unregistered target is deliberate: dispatching to a node that does not exist is a programming error, and silently no-oping would hide bugs. If the target might not be registered (e.g., it's optional), the caller should check before dispatching — but in practice that condition means the emitter has a stale reference and should be fixed upstream.
+The walk from `dispatchTo` is still upward-only: it starts at the target, follows `parentId` toward the root, and stops at the first handler. It does *not* walk *down* into the target's children, because state owners are ancestors of the controls that mutate them — walking down would invert the chain's directionality and is not a supported operation.
+
+Throwing on an unregistered target is deliberate: dispatching to a node that does not exist is a programming error, and silently no-oping would hide bugs. If the target might not be registered (e.g., it's optional), the caller should check with `nodeCanHandle(targetId, action)` before dispatching — but in practice that condition means the emitter has a stale reference and should be fixed upstream.
+
+If you specifically want "deliver to this one node only, do not walk to ancestors if the node doesn't handle it," there is no single method for that. Check `nodeCanHandle(targetId, action)` first and only call `dispatchTo` if it returns true. In the current codebase no consumer needs that shape; every targeted dispatch has the "start walk here and let it bubble" semantic that the new behavior provides.
 
 ### `manager.observeDispatch(callback) → unsubscribe`
 

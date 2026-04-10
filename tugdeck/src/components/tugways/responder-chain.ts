@@ -327,6 +327,46 @@ export class ResponderChainManager {
   // ---- Action dispatch ----
 
   /**
+   * Walk the chain from a specified starting node upward via parentId,
+   * invoking the first matching handler and capturing any continuation
+   * it returns. This is the shared implementation for all four dispatch
+   * entry points — `dispatch`, `dispatchForContinuation`, `dispatchTo`,
+   * and `dispatchToForContinuation`. The only thing those methods
+   * differ on is which node the walk starts at and how they report the
+   * result.
+   *
+   * Observer notification and console logging are NOT performed here —
+   * the entry point methods call `notifyDispatchObservers` and
+   * `logDispatch` after the walk so each method can arrange its own
+   * error-handling without duplicating the walk itself.
+   *
+   * `startId` may be null, in which case the walk is vacuous and the
+   * result is `handled: false`. This is the correct outcome when
+   * `dispatch` is called with no first responder set.
+   */
+  private walkFromNode(
+    startId: string | null,
+    event: ActionEvent,
+  ): { handled: boolean; continuation?: () => void; handledBy: string | null } {
+    let currentId: string | null = startId;
+    while (currentId !== null) {
+      const node = this.nodes.get(currentId);
+      if (!node) break;
+      const handler = lookupHandler(node, event.action);
+      if (handler !== undefined) {
+        const result = handler(event);
+        return {
+          handled: true,
+          continuation: typeof result === "function" ? result : undefined,
+          handledBy: currentId,
+        };
+      }
+      currentId = node.parentId;
+    }
+    return { handled: false, handledBy: null };
+  }
+
+  /**
    * Dispatch an action through the chain and return both whether it was
    * handled and any continuation callback returned by the handler.
    *
@@ -351,27 +391,10 @@ export class ResponderChainManager {
   dispatchForContinuation<Extra extends string = never>(
     event: ActionEvent<Extra>,
   ): DispatchResult {
-    let handled = false;
-    let continuation: (() => void) | undefined;
-    let handledBy: string | null = null;
-
-    let currentId: string | null = this.firstResponderId;
-    while (currentId !== null) {
-      const node = this.nodes.get(currentId);
-      if (!node) break;
-      const handler = lookupHandler(node, event.action);
-      if (handler !== undefined) {
-        const result = handler(event as ActionEvent);
-        if (typeof result === "function") {
-          continuation = result;
-        }
-        handled = true;
-        handledBy = currentId;
-        break;
-      }
-      currentId = node.parentId;
-    }
-
+    const { handled, continuation, handledBy } = this.walkFromNode(
+      this.firstResponderId,
+      event as ActionEvent,
+    );
     this.notifyDispatchObservers(event as ActionEvent, handled);
     this.logDispatch(event as ActionEvent, handled, handledBy);
     return { handled, continuation };
@@ -439,12 +462,28 @@ export class ResponderChainManager {
   // ---- Explicit-target dispatch ----
 
   /**
-   * Dispatch an action directly to a specific registered node by ID.
+   * Dispatch an action through the chain, starting the walk at a
+   * specific registered node instead of at the current first responder.
    *
-   * Unlike dispatch(), this does not walk the chain -- it delivers the event
-   * directly to the named target. If the target is not registered, throws an
-   * Error with a descriptive message. If the target is registered but does not
-   * handle the action (action key not in its actions map), returns false.
+   * The walk otherwise behaves identically to `dispatch` — if the target
+   * node itself handles the action, its handler runs and the walk stops
+   * there; if not, the walk continues upward via `parentId` until some
+   * ancestor handles it, or falls off the root with `handled: false`.
+   *
+   * Throws if `targetId` is not registered. That is a programming error:
+   * the emitter has a stale reference and should be fixed upstream, not
+   * silently no-oped. If you specifically want "deliver to this one
+   * node and do nothing if it doesn't handle" behavior, check
+   * `nodeCanHandle(targetId, action)` before calling.
+   *
+   * Why a walking target dispatch: the emitter knows the approximate
+   * scope the event should reach (e.g. "this specific card") but
+   * doesn't need to know exactly which node in that scope owns the
+   * action's state. The gallery inspector dispatches `setProperty` "to
+   * the card," and the walk starts at the card — whether the card
+   * itself owns the PropertyStore or delegates to a wrapper above it,
+   * the chain finds the handler without the inspector having to know
+   * the target's internal shape.
    *
    * Note: canHandle is advisory for validation queries only and is never
    * consulted during dispatchTo.
@@ -456,49 +495,34 @@ export class ResponderChainManager {
     targetId: string,
     event: ActionEvent<Extra>,
   ): boolean {
-    const node = this.nodes.get(targetId);
-    if (!node) {
-      throw new Error(`dispatchTo: target "${targetId}" is not registered`);
-    }
-    let handled = false;
-    const handler = lookupHandler(node, event.action);
-    if (handler !== undefined) {
-      handler(event as ActionEvent);
-      handled = true;
-    }
-    this.notifyDispatchObservers(event as ActionEvent, handled);
-    return handled;
+    return this.dispatchToForContinuation(targetId, event).handled;
   }
 
   /**
-   * Dispatch an ActionEvent directly to a named target and return both the
-   * handled flag and the optional continuation callback — the sibling to
-   * dispatchForContinuation for target-scoped dispatches.
+   * Dispatch an ActionEvent through the chain starting at a named target
+   * and return both the handled flag and the optional continuation
+   * callback — the sibling to `dispatchForContinuation` for
+   * target-scoped dispatches.
    *
-   * Same target-resolution semantics as `dispatchTo` (throws on unregistered
-   * target, returns `handled: false` when the node has no handler for the
-   * action). Callers that want two-phase execution use this method and
-   * invoke the returned continuation at their commit point.
+   * Same walk semantics as `dispatchTo` (starts at the named node and
+   * walks upward via parentId until a handler matches or the walk falls
+   * off the root) and same error handling (throws if `targetId` is not
+   * registered). Callers that want two-phase execution use this method
+   * and invoke the returned continuation at their commit point.
    */
   dispatchToForContinuation<Extra extends string = never>(
     targetId: string,
     event: ActionEvent<Extra>,
   ): DispatchResult {
-    const node = this.nodes.get(targetId);
-    if (!node) {
+    if (!this.nodes.has(targetId)) {
       throw new Error(`dispatchTo: target "${targetId}" is not registered`);
     }
-    let handled = false;
-    let continuation: (() => void) | undefined;
-    const handler = lookupHandler(node, event.action);
-    if (handler !== undefined) {
-      const result = handler(event as ActionEvent);
-      if (typeof result === "function") {
-        continuation = result;
-      }
-      handled = true;
-    }
+    const { handled, continuation, handledBy } = this.walkFromNode(
+      targetId,
+      event as ActionEvent,
+    );
     this.notifyDispatchObservers(event as ActionEvent, handled);
+    this.logDispatch(event as ActionEvent, handled, handledBy);
     return { handled, continuation };
   }
 

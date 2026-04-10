@@ -813,12 +813,35 @@ Per Part 4 decision 5, this happened *after* A2 landed so the doc reflects reali
 
 **Grade impact after A5:** Documentation → A.
 
-### Phase A6 — Clean up the small remaining footguns (cleanup, 1 short session)
+### Phase A6 — Clean up the small remaining footguns (cleanup, 1 short session) ✅
 
-1. **Remove `GalleryAction` from the top-level `TugAction` union.** Introduce a generic type parameter (`TugAction<Extra = never>`) that galleries opt into via `TugAction<GalleryAction>`. Production code imports `TugAction` and doesn't see demo names in autocomplete.
-2. **Optimize the `canHandle` wrapper in `useResponder`.** Only install the wrapper when the caller actually provides a `canHandle` function; leave it undefined otherwise to skip the permanent closure.
-3. **Consider extending `ResponderScope` to render an optional host element.** If more than two components end up needing a wrapper div (deck-canvas was the first), promote it. If it stays a one-off, leave it.
-4. **Run the full `bun test` suite and triage any collateral damage.** Track the two known flakes (`tugcard.test.tsx` `connection.onFrame` mock and `do-set-region-wiring.test.ts` timing) as pre-existing and unrelated. Address anything new immediately.
+The four roadmap items went in quickly because three of them had already landed in passing during earlier phases and the fourth was a verification step. The only substantive work in A6 was an unplanned addition — `dispatchTo` learned to walk up the chain on miss — which turned out to be the right moment for the fix because the new `tuglaws/responder-chain.md` doc was already describing dispatch semantics and the old deliver-only behavior was an unprincipled exception.
+
+**Landed / resolved:**
+
+1. ✅ **Remove `GalleryAction` from the top-level `TugAction` union.** Already done during the action-naming rollout (`5802bc26`). `action-vocabulary.ts` exports `TugAction<Extra extends string = never>` with `GalleryAction` as a sibling type opted in via `TugAction<GalleryAction>` at gallery call sites; production code sees bare `TugAction` and none of the gallery extras in autocomplete. No further action needed.
+
+2. ✅ **Optimize the `canHandle` wrapper in `useResponder`.** Already done. `use-responder.tsx:244-245` captures `hasCanHandleAtMount` / `hasValidateActionAtMount` refs at mount, and the registration block only installs the wrapper closures when the caller actually supplied the corresponding function. Responders that omit both get `undefined` on the node and the chain's dispatch/query code fast-paths past the advisory branch.
+
+3. ✅ **`ResponderScope` host element — closed in favor of the status quo.** Surveyed every `<ResponderScope>` consumer. All of them (`tug-card`, `tug-sheet`, `tug-prompt-input`, every `useResponderForm` client) wrap their own root element manually and the pattern is readable and consistent. No component is awkward under the current shape. The roadmap's own decision rule was "if more than two components end up needing a wrapper div, promote it; otherwise leave it." Leave it.
+
+4. ✅ **Full `bun test` suite.** 2003/2003 passing at A6 close (2000 from A4.2 + 6 new dispatchTo tests − 3 updated existing tests; net +3). Docs-only A5 had zero test impact.
+
+**Unplanned addition:**
+
+5. ✅ **`dispatchTo` walks up the chain on miss.** `ResponderChainManager.dispatchTo` previously delivered the event to the named node and returned `false` if that node did not handle it, ignoring the chain entirely. This forced the emitter to know the target's exact registered action set — leaky and brittle. The new behavior starts the walk at the target and continues upward via `parentId` until some node handles the action or the walk falls off the root, matching `dispatch`'s semantics for the non-first-responder-starting case. `dispatchToForContinuation` gets the same treatment.
+
+   The refactor extracted a shared `private walkFromNode(startId, event)` helper that all four dispatch entry points (`dispatch`, `dispatchForContinuation`, `dispatchTo`, `dispatchToForContinuation`) now call. Each entry point handles its own error cases (throw on unregistered target for the `dispatchTo*` pair) and its own observer/logging calls. Drive-by fix: `dispatchTo` and `dispatchToForContinuation` now call `logDispatch` for consistency with the walking path, so targeted dispatches show up in the `[responder-chain] dispatch` console trace.
+
+   Throw-on-unregistered behavior is unchanged — still a programming error. Callers that genuinely want "deliver to this node only, no walk" check `nodeCanHandle(targetId, action)` first; no such consumer currently exists. Tests updated: one rewrite of the "bypasses chain walk" test (now "starts the walk at the target, not at the current first responder"), one rewrite of the "returns false when target exists but does not handle" test (now "returns false when neither target nor any ancestor handles"), and three new tests covering walk-up on miss, `dispatchToForContinuation` continuation flow from an ancestor, and observer notification after a walk that falls off the root. `responder-chain.md` updated in three places: § "Anatomy of a dispatch" (the ASCII diagram now shows `dispatchTo` examples alongside `dispatch` examples), § "The four dispatch shapes" (the `dispatchTo` subsection is fully rewritten with the new walk semantics and the "no downward walk" clause), and a note that consumers wanting "deliver-only" behavior should gate on `nodeCanHandle`.
+
+**Exit criteria (all met):**
+- ✅ Roadmap items 1–4 resolved (three already done, one verified).
+- ✅ `dispatchTo` walks up the chain, matching `dispatch` semantics.
+- ✅ All four dispatch methods share a single walk implementation.
+- ✅ Targeted dispatches appear in the console dispatch log.
+- ✅ `bun test` clean at 2003 passing.
+- ✅ `responder-chain.md` describes the new behavior accurately and flags the anti-pattern of relying on the old deliver-only semantics.
 
 **Grade impact after A6:** Type safety → A, Implementation strategy → A.
 

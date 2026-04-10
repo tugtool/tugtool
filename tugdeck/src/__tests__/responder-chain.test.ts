@@ -356,10 +356,35 @@ describe("dispatchTo", () => {
     expect(handled).toBe(true);
   });
 
-  it("returns false when target exists but does not handle the action", () => {
+  it("walks up the chain when target does not handle the action", () => {
+    // A6: dispatchTo now starts the walk at the target and continues
+    // upward via parentId until some ancestor handles the action.
+    // Previously this returned false without walking.
+    const mgr = makeManager();
+    const calls: string[] = [];
+    mgr.register({
+      id: "root",
+      parentId: null,
+      actions: asActions({ save: (_event: ActionEvent) => { calls.push("root"); } }),
+    });
+    mgr.register({
+      id: "target",
+      parentId: "root",
+      actions: asActions({ other: (_event: ActionEvent) => { calls.push("target-other"); } }),
+    });
+    const result = mgr.dispatchTo("target", { action: asAction("save"), phase: "discrete" });
+    expect(result).toBe(true);
+    expect(calls).toEqual(["root"]);
+  });
+
+  it("returns false when neither target nor any ancestor handles the action", () => {
     const mgr = makeManager();
     mgr.register({ id: "root", parentId: null, actions: {} });
-    mgr.register({ id: "target", parentId: "root", actions: asActions({ save: (_event: ActionEvent) => {} }) });
+    mgr.register({
+      id: "target",
+      parentId: "root",
+      actions: asActions({ save: (_event: ActionEvent) => {} }),
+    });
     const result = mgr.dispatchTo("target", { action: asAction("delete"), phase: "discrete" });
     expect(result).toBe(false);
   });
@@ -372,15 +397,68 @@ describe("dispatchTo", () => {
     );
   });
 
-  it("bypasses chain walk -- action goes directly to target, not first responder", () => {
+  it("starts the walk at the target, not at the current first responder", () => {
+    // A6: the walk always begins at the explicit targetId, not at
+    // firstResponderId. If both target and first responder handle the
+    // action, only the target's handler runs — the walk starts there
+    // and stops on the first match.
     const mgr = makeManager();
     const calls: string[] = [];
-    mgr.register({ id: "root", parentId: null, actions: asActions({ save: (_event: ActionEvent) => { calls.push("root"); } }) });
-    mgr.register({ id: "target", parentId: "root", actions: asActions({ save: (_event: ActionEvent) => { calls.push("target"); } }) });
-    // First responder is root (auto-promoted), but we dispatch directly to target
+    mgr.register({
+      id: "root",
+      parentId: null,
+      actions: asActions({ save: (_event: ActionEvent) => { calls.push("root"); } }),
+    });
+    mgr.register({
+      id: "target",
+      parentId: "root",
+      actions: asActions({ save: (_event: ActionEvent) => { calls.push("target"); } }),
+    });
+    // First responder is root (auto-promoted), but we dispatch directly to target.
     expect(mgr.getFirstResponder()).toBe("root");
     mgr.dispatchTo("target", { action: asAction("save"), phase: "discrete" });
     expect(calls).toEqual(["target"]);
+  });
+
+  it("dispatchToForContinuation walks up the chain when target does not handle", () => {
+    // A6: dispatchToForContinuation gets the same walk-up treatment as
+    // dispatchTo. If the target doesn't handle, an ancestor's handler
+    // runs and its continuation flows back to the caller.
+    const mgr = makeManager();
+    const continuationCalls: string[] = [];
+    mgr.register({
+      id: "root",
+      parentId: null,
+      actions: asActions({
+        cut: (_event: ActionEvent) => () => { continuationCalls.push("root-continuation"); },
+      }),
+    });
+    mgr.register({
+      id: "target",
+      parentId: "root",
+      actions: {},
+    });
+    const result = mgr.dispatchToForContinuation("target", {
+      action: asAction("cut"),
+      phase: "discrete",
+    });
+    expect(result.handled).toBe(true);
+    expect(typeof result.continuation).toBe("function");
+    result.continuation?.();
+    expect(continuationCalls).toEqual(["root-continuation"]);
+  });
+
+  it("notifies dispatch observers after the walk regardless of outcome", () => {
+    const mgr = makeManager();
+    const observerCalls: Array<{ action: string; handled: boolean }> = [];
+    mgr.observeDispatch((event, handled) => {
+      observerCalls.push({ action: event.action, handled });
+    });
+    mgr.register({ id: "root", parentId: null, actions: {} });
+    mgr.register({ id: "target", parentId: "root", actions: {} });
+    // Unhandled: walk falls off the root, handled = false.
+    mgr.dispatchTo("target", { action: asAction("delete"), phase: "discrete" });
+    expect(observerCalls).toEqual([{ action: "delete", handled: false }]);
   });
 });
 
