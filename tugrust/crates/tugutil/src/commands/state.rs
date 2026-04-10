@@ -57,7 +57,7 @@ pub enum StateCommands {
     },
     /// Claim the next available step for execution
     Claim {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Worktree path (identifies the claimer)
         #[arg(long, value_name = "PATH")]
@@ -71,7 +71,7 @@ pub enum StateCommands {
     },
     /// Start a claimed step
     Start {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor to start
         step: String,
@@ -81,7 +81,7 @@ pub enum StateCommands {
     },
     /// Renew lease on a step
     Heartbeat {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor
         step: String,
@@ -94,7 +94,7 @@ pub enum StateCommands {
     },
     /// Record an artifact breadcrumb for a step
     Artifact {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor
         step: String,
@@ -110,7 +110,7 @@ pub enum StateCommands {
     },
     /// Complete a step
     Complete {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor
         step: String,
@@ -126,7 +126,7 @@ pub enum StateCommands {
     },
     /// Show plan progress and status
     Show {
-        /// Plan file path (optional - shows all plans if not specified)
+        /// Plan identifier (plan_id, slug prefix, or file path) — shows all plans if omitted
         plan: Option<String>,
         /// Show aggregate counts per step (default)
         #[arg(long, conflicts_with = "checklist")]
@@ -140,19 +140,19 @@ pub enum StateCommands {
     },
     /// List ready steps for claiming
     Ready {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
     },
     /// Reset a step to pending status
     Reset {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor to reset
         step: String,
     },
     /// Release a step's claim, returning it to pending status
     Release {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor to release
         step: String,
@@ -165,7 +165,7 @@ pub enum StateCommands {
     },
     /// Reconcile state from git commit trailers
     Reconcile {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Force overwrite of existing commit hashes
         #[arg(long)]
@@ -173,7 +173,7 @@ pub enum StateCommands {
     },
     /// Mark all open checklist items for a step as completed
     CompleteChecklist {
-        /// Plan file path
+        /// Plan identifier (plan_id, slug prefix, or file path)
         plan: String,
         /// Step anchor (e.g., step-1)
         step: String,

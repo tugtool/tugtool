@@ -104,6 +104,8 @@ pub struct SetupData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ready_steps: Option<Vec<String>>,
     // Tugstate fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
     #[serde(skip_serializing_if = "is_false")]
     pub state_initialized: bool,
     #[serde(skip_serializing_if = "is_false")]
@@ -562,6 +564,7 @@ pub fn run_worktree_setup_with_root(
                         reused: false,
                         all_steps: None,
                         ready_steps: None,
+                        plan_id: None,
                         state_initialized: false,
                         auto_reinitialized: false,
                         warnings: vec![],
@@ -588,7 +591,7 @@ pub fn run_worktree_setup_with_root(
             let total_steps = synced_plan.steps.len();
 
             // Initialize tugstate for this worktree and query ready steps while db is in scope
-            let (state_initialized, auto_reinitialized, state_warnings, ready_steps) = {
+            let (state_initialized, auto_reinitialized, state_warnings, ready_steps, state_plan_id) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugutil_core::compute_plan_hash(&synced_plan_path) {
                     Ok(plan_hash) => match tugutil_core::StateDb::open(&db_path, &repo_root) {
@@ -659,14 +662,14 @@ pub fn run_worktree_setup_with_root(
                                         None
                                     }
                                 };
-                                (true, auto_reinit, vec![], ready)
+                                (true, auto_reinit, vec![], ready, Some(init_result.plan_id.clone()))
                             }
                             Err(e) => {
                                 let msg = format!("state init failed: {}", e);
                                 if !quiet {
                                     eprintln!("warning: {}", msg);
                                 }
-                                (false, false, vec![msg], None)
+                                (false, false, vec![msg], None, None)
                             }
                         },
                         Err(e) => {
@@ -674,7 +677,7 @@ pub fn run_worktree_setup_with_root(
                             if !quiet {
                                 eprintln!("warning: {}", msg);
                             }
-                            (false, false, vec![msg], None)
+                            (false, false, vec![msg], None, None)
                         }
                     },
                     Err(e) => {
@@ -682,7 +685,7 @@ pub fn run_worktree_setup_with_root(
                         if !quiet {
                             eprintln!("warning: {}", msg);
                         }
-                        (false, false, vec![msg], None)
+                        (false, false, vec![msg], None, None)
                     }
                 }
             };
@@ -697,6 +700,7 @@ pub fn run_worktree_setup_with_root(
                     reused,
                     all_steps: Some(all_steps),
                     ready_steps,
+                    plan_id: state_plan_id,
                     state_initialized,
                     auto_reinitialized,
                     warnings: state_warnings.clone(),
