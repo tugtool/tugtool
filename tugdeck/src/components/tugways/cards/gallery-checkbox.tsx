@@ -19,6 +19,7 @@ import React, { useId, useState } from "react";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,7 +61,7 @@ const ALL_ROLES: TugCheckboxRole[] = [
 //    responderRef}` to attach to the root.
 // 3. Each TugCheckbox receives its own `senderId` prop, bound to the
 //    variable from step 1. When the user clicks, the checkbox dispatches
-//    `{action: "toggle", value: <boolean>, sender: <senderId>, phase:
+//    `{action: TUG_ACTIONS.TOGGLE, value: <boolean>, sender: <senderId>, phase:
 //    "discrete"}` through the responder chain.
 // 4. The chain walks from the innermost responder (resolved via
 //    `data-responder-id` on this card's root div) and calls our `toggle`

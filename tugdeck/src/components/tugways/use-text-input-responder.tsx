@@ -129,7 +129,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
-import type { TugAction } from "./action-vocabulary";
+import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import {
   TugEditorContextMenu,
   type TugEditorContextMenuEntry,
@@ -468,12 +468,12 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
 
   const responderId = useId();
   const actions: Partial<Record<TugAction, ActionHandler>> = {
-    cut: handleCut,
-    copy: handleCopy,
-    paste: handlePaste,
-    selectAll: handleSelectAll,
-    undo: handleUndo,
-    redo: handleRedo,
+    [TUG_ACTIONS.CUT]: handleCut,
+    [TUG_ACTIONS.COPY]: handleCopy,
+    [TUG_ACTIONS.PASTE]: handlePaste,
+    [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
+    [TUG_ACTIONS.UNDO]: handleUndo,
+    [TUG_ACTIONS.REDO]: handleRedo,
   };
   // `useOptionalResponder` (not `useResponder`) so the three consuming
   // components — TugInput, TugTextarea, TugValueInput — can render
@@ -564,11 +564,11 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
     const hasSelection = menuState?.hasSelection ?? false;
     return [
-      { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
-      { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
-      { action: "paste", label: "Paste", shortcut: "\u2318V" },
+      { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
+      { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
+      { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "\u2318V" },
       { type: "separator" },
-      { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
+      { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A" },
     ];
   }, [menuState?.hasSelection]);
 

@@ -46,6 +46,7 @@ import {
   ResponderChainManager as ResponderChainManagerCtor,
 } from "@/components/tugways/responder-chain";
 import type { ResponderChainManager } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   installFakeNativeClipboardBridge,
   uninstallFakeNativeClipboardBridge,
@@ -338,7 +339,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(2, 3);
-    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
 
     // Sync phase does nothing — selection still (2, 3).
     expect(input.selectionStart).toBe(2);
@@ -355,7 +356,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "cut-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "cut", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -371,7 +372,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "copy-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "copy", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -384,7 +385,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "undo-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "undo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -398,7 +399,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "redo-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "redo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -441,7 +442,7 @@ describe("TugInput – paste cascade", () => {
       input.setSelectionRange(input.value.length, input.value.length);
 
       const result = manager.dispatchToForContinuation(id, {
-        action: "paste",
+        action: TUG_ACTIONS.PASTE,
         phase: "discrete",
       });
       // Paste handler returns a continuation even on the native path
@@ -481,7 +482,7 @@ describe("TugInput – paste cascade", () => {
       input.setSelectionRange(input.value.length, input.value.length);
 
       const result = manager.dispatchToForContinuation(id, {
-        action: "paste",
+        action: TUG_ACTIONS.PASTE,
         phase: "discrete",
       });
       expect(result.continuation).toBeDefined();
@@ -528,7 +529,7 @@ describe("TugInput – disabled guard (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
     result.continuation?.();
 
     // Handler short-circuited on effectiveDisabled and returned no

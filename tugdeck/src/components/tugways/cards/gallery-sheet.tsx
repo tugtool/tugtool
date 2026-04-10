@@ -22,6 +22,7 @@ import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -82,7 +83,7 @@ export function GallerySheet() {
   const dispatchCancel = useCallback(
     (sender: string) => {
       manager?.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender,
         phase: "discrete",
       });

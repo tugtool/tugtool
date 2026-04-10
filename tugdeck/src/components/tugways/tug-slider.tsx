@@ -123,6 +123,7 @@ import type { TugFormatter } from "@/lib/tug-format";
 import { TugValueInput } from "./tug-value-input";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -268,7 +269,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       ) => {
         if (!manager) return;
         manager.dispatch({
-          action: "setValue",
+          action: TUG_ACTIONS.SET_VALUE,
           value: v,
           sender: effectiveSenderId,
           phase,

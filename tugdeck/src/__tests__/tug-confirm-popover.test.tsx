@@ -40,6 +40,7 @@ import {
   type TugConfirmPopoverHandle,
 } from "@/components/tugways/tug-confirm-popover";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
   ResponderChainManager,
@@ -141,7 +142,7 @@ describe("TugConfirmPopover – chain dispatch resolves the confirm() promise", 
     // registered handler resolves the promise and sets open=false.
     act(() => {
       manager.dispatch({
-        action: "confirmDialog",
+        action: TUG_ACTIONS.CONFIRM_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });
@@ -163,7 +164,7 @@ describe("TugConfirmPopover – chain dispatch resolves the confirm() promise", 
 
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });
@@ -193,7 +194,7 @@ describe("TugConfirmPopover – observeDispatch external dismissal", () => {
     // with no registered handler — dismisses the popover and resolves
     // the pending promise with false.
     act(() => {
-      manager.dispatch({ action: "showSettings", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     const result = await pending;

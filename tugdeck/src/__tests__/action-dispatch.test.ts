@@ -11,6 +11,7 @@ import {
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
 import type { ActionEvent } from "../components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // Minimal mock DeckManager.
 // addCard and prepareForReload are stubs that record calls; other methods are omitted.
@@ -542,7 +543,7 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     _resetForTest();
   });
 
-  it("dispatches 'addTabToActiveCard' through the registered ResponderChainManager", () => {
+  it("dispatches 'add-tab-to-active-card' through the registered ResponderChainManager", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -557,10 +558,10 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     };
     registerResponderChainManager(stubManager as any);
 
-    dispatchAction({ action: "add-tab-to-active-card" });
+    dispatchAction({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: "addTabToActiveCard", phase: "discrete" });
+    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -569,7 +570,7 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     initActionDispatch(conn as any, deck as any);
 
     // No registerResponderChainManager call -- ref is null after _resetForTest.
-    expect(() => dispatchAction({ action: "add-tab-to-active-card" })).not.toThrow();
+    expect(() => dispatchAction({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD })).not.toThrow();
   });
 
   it("uses the most recently registered manager (last-registration-wins)", () => {
@@ -582,11 +583,11 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     registerResponderChainManager({ dispatch: (e: ActionEvent) => { first.push(e); return true; } } as any);
     registerResponderChainManager({ dispatch: (e: ActionEvent) => { second.push(e); return true; } } as any);
 
-    dispatchAction({ action: "add-tab-to-active-card" });
+    dispatchAction({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD });
 
     expect(first.length).toBe(0);
     expect(second.length).toBe(1);
-    expect(second[0]).toEqual({ action: "addTabToActiveCard", phase: "discrete" });
+    expect(second[0]).toEqual({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
   });
 });
 
@@ -614,7 +615,7 @@ describe("initActionDispatch: close-active-card", () => {
     dispatchAction({ action: "close-active-card" });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: "close", phase: "discrete" });
+    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {

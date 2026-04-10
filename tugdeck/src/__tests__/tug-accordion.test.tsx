@@ -29,6 +29,7 @@ import { render, fireEvent, cleanup } from "@testing-library/react";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,7 +77,7 @@ function clickTriggerByValue(container: HTMLElement, value: string): void {
 function toggleSectionEvents(
   dispatched: Array<{ event: ActionEvent; handled: boolean }>,
 ): ActionEvent[] {
-  return dispatched.filter((d) => d.event.action === "toggleSection").map((d) => d.event);
+  return dispatched.filter((d) => d.event.action === "toggle-section").map((d) => d.event);
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +110,7 @@ describe("TugAccordion – single mode chain dispatch (A2.4)", () => {
     const events = toggleSectionEvents(dispatched);
     expect(events.length).toBe(1);
     expect(events[0]).toMatchObject({
-      action: "toggleSection",
+      action: TUG_ACTIONS.TOGGLE_SECTION,
       value: "one",
       sender: "acc-single-a",
       phase: "discrete",
@@ -138,7 +139,7 @@ describe("TugAccordion – single mode chain dispatch (A2.4)", () => {
     const events = toggleSectionEvents(dispatched);
     expect(events.length).toBe(1);
     expect(events[0]).toMatchObject({
-      action: "toggleSection",
+      action: TUG_ACTIONS.TOGGLE_SECTION,
       value: "",
       sender: "acc-single-collapse",
       phase: "discrete",
@@ -167,7 +168,7 @@ describe("TugAccordion – multi mode chain dispatch (A2.4)", () => {
 
     const events = toggleSectionEvents(dispatched);
     expect(events.length).toBe(1);
-    expect(events[0].action).toBe("toggleSection");
+    expect(events[0].action).toBe("toggle-section");
     expect(events[0].sender).toBe("acc-multi-a");
     expect(Array.isArray(events[0].value)).toBe(true);
     expect(events[0].value).toEqual(["alpha"]);

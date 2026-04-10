@@ -41,6 +41,7 @@ import { registerGalleryCards } from "@/components/tugways/cards/gallery-registr
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { TugAction } from "@/components/tugways/action-vocabulary";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // Test helper: cast an arbitrary string to TugAction for chain-mechanics
 // tests that exercise behavior independent of the production vocabulary.
@@ -220,7 +221,7 @@ describe("DeckCanvas – responder registration", () => {
       );
     });
 
-    expect(manager!.canHandle("cycleCard")).toBe(true);
+    expect(manager!.canHandle("cycle-card")).toBe(true);
   });
 });
 
@@ -251,7 +252,7 @@ describe("DeckCanvas – cycleCard action", () => {
     });
 
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
+    const handled = manager!.dispatch({ action: TUG_ACTIONS.CYCLE_CARD, phase: "discrete" });
     expect(handled).toBe(true);
     logSpy.mockRestore();
   });
@@ -277,7 +278,7 @@ describe("DeckCanvas – cycleCard action", () => {
       );
     });
 
-    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
+    const handled = manager!.dispatch({ action: TUG_ACTIONS.CYCLE_CARD, phase: "discrete" });
     expect(handled).toBe(true);
   });
 });
@@ -313,7 +314,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     let handled = false;
     act(() => {
-      handled = manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      handled = manager!.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(handled).toBe(true);
   });
@@ -347,7 +348,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     });
 
     act(() => {
-      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
 
     expect(addCardCalls.length).toBe(1);
@@ -388,7 +389,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     };
 
     act(() => {
-      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
 
     expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
@@ -434,13 +435,13 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card now exists -- should focus it, NOT create a new one
     act(() => {
-      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // No second addCard call
     expect(focusedIds).toContain(GALLERY_CARD_ID);
@@ -473,7 +474,7 @@ describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
       );
     });
 
-    expect(manager!.canHandle("cycleCard")).toBe(true);
+    expect(manager!.canHandle("cycle-card")).toBe(true);
 
     act(() => {
       fireKeydown({ code: "Backquote", ctrlKey: true });
@@ -914,7 +915,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("registers 'addTabToActiveCard' as a dispatchable action on the responder chain", () => {
+  it("registers 'add-tab-to-active-card' as a dispatchable action on the responder chain", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -942,7 +943,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
       );
     });
 
-    expect(manager!.canHandle("addTabToActiveCard")).toBe(true);
+    expect(manager!.canHandle("add-tab-to-active-card")).toBe(true);
   });
 
   it("dispatching addTabToActiveCard with a focused card calls store.addTab with the card id and 'hello'", () => {
@@ -981,7 +982,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(1);
@@ -1017,7 +1018,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
+      manager!.dispatch({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(0);

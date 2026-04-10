@@ -12,6 +12,7 @@
  */
 
 import type { TugAction } from "./action-vocabulary";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- KeyBinding interface ----
 
@@ -65,9 +66,9 @@ export interface KeyBinding {
  * Phase A3 / R4 added the macOS-standard shortcut set. Every entry
  * dispatches a typed action through the responder chain; the walk
  * lands on whatever responder registered a handler for that action
- * (editor for undo, card for close/tab nav, canvas for showSettings
- * and addTabToActiveCard, any of the floating surfaces for
- * cancelDialog). There is no per-component keyboard wiring — adding
+ * (editor for undo, card for close/tab nav, canvas for show-settings
+ * and add-tab-to-active-card, any of the floating surfaces for
+ * cancel-dialog). There is no per-component keyboard wiring — adding
  * a new shortcut is one entry here and (if needed) one handler on
  * the responder that owns the semantic.
  *
@@ -76,42 +77,42 @@ export interface KeyBinding {
  * from the moment the handler grows real behavior.
  *
  * Table T02:
- * | Ctrl+`           | cycleCard          | stage 1 (global shortcut)       |
- * | Cmd+A            | selectAll          | stage 1 + preventDefaultOnMatch |
- * | Cmd+X            | cut                | stage 1 + preventDefaultOnMatch |
- * | Cmd+C            | copy               | stage 1 + preventDefaultOnMatch |
- * | Cmd+V            | paste              | stage 1 + preventDefaultOnMatch |
- * | Cmd+Z            | undo               | stage 1 + preventDefaultOnMatch |
- * | Shift+Cmd+Z      | redo               | stage 1 + preventDefaultOnMatch |
- * | Cmd+W            | close              | stage 1 (card close)            |
- * | Cmd+T            | addTabToActiveCard | stage 1 (canvas)                |
- * | Cmd+,            | showSettings       | stage 1 (canvas stub)           |
- * | Cmd+.            | cancelDialog       | stage 1 (floating surfaces)     |
- * | Cmd+F            | find               | stage 1 (card stub)             |
- * | Shift+Cmd+[      | previousTab        | stage 1 (card, wraps)           |
- * | Shift+Cmd+]      | nextTab            | stage 1 (card, wraps)           |
- * | Cmd+1..Cmd+9     | jumpToTab          | stage 1 + value: 1..9 payload   |
+ * | Ctrl+`           | cycle-card             | stage 1 (global shortcut)       |
+ * | Cmd+A            | select-all             | stage 1 + preventDefaultOnMatch |
+ * | Cmd+X            | cut                    | stage 1 + preventDefaultOnMatch |
+ * | Cmd+C            | copy                   | stage 1 + preventDefaultOnMatch |
+ * | Cmd+V            | paste                  | stage 1 + preventDefaultOnMatch |
+ * | Cmd+Z            | undo                   | stage 1 + preventDefaultOnMatch |
+ * | Shift+Cmd+Z      | redo                   | stage 1 + preventDefaultOnMatch |
+ * | Cmd+W            | close                  | stage 1 (card close)            |
+ * | Cmd+T            | add-tab-to-active-card | stage 1 (canvas)                |
+ * | Cmd+,            | show-settings          | stage 1 (canvas stub)           |
+ * | Cmd+.            | cancel-dialog          | stage 1 (floating surfaces)     |
+ * | Cmd+F            | find                   | stage 1 (card stub)             |
+ * | Shift+Cmd+[      | previous-tab           | stage 1 (card, wraps)           |
+ * | Shift+Cmd+]      | next-tab               | stage 1 (card, wraps)           |
+ * | Cmd+1..Cmd+9     | jump-to-tab            | stage 1 + value: 1..9 payload   |
  */
 export const KEYBINDINGS: KeyBinding[] = [
-  { key: "Backquote", ctrl: true, action: "cycleCard" },
-  { key: "KeyA", meta: true, action: "selectAll", preventDefaultOnMatch: true },
+  { key: "Backquote", ctrl: true, action: TUG_ACTIONS.CYCLE_CARD },
+  { key: "KeyA", meta: true, action: TUG_ACTIONS.SELECT_ALL, preventDefaultOnMatch: true },
   // Clipboard shortcuts route through the responder chain so the first
   // responder (e.g. an editor's registered action) does the work. The
   // browser's native clipboard handling is suppressed via
   // preventDefaultOnMatch so a single code path (the responder) owns
   // the semantics — including atom-aware HTML preservation.
-  { key: "KeyX", meta: true, action: "cut", preventDefaultOnMatch: true },
-  { key: "KeyC", meta: true, action: "copy", preventDefaultOnMatch: true },
-  { key: "KeyV", meta: true, action: "paste", preventDefaultOnMatch: true },
+  { key: "KeyX", meta: true, action: TUG_ACTIONS.CUT, preventDefaultOnMatch: true },
+  { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
+  { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
   // Undo / redo suppress the browser's native history stack so the
   // editor's engine / execCommand continuation is the single source
   // of truth — same rationale as the clipboard shortcuts above.
-  { key: "KeyZ", meta: true, action: "undo", preventDefaultOnMatch: true },
+  { key: "KeyZ", meta: true, action: TUG_ACTIONS.UNDO, preventDefaultOnMatch: true },
   {
     key: "KeyZ",
     meta: true,
     shift: true,
-    action: "redo",
+    action: TUG_ACTIONS.REDO,
     preventDefaultOnMatch: true,
   },
   // Card / canvas / dialog shortcuts. These do NOT set
@@ -120,33 +121,33 @@ export const KEYBINDINGS: KeyBinding[] = [
   // already suppressed upstream (⌘T via the Swift menu), or there is
   // no conflicting default at all (⌘, , ⌘., ⌘F inside a WebView run
   // without a browser UI to collide with).
-  { key: "KeyW", meta: true, action: "close" },
-  { key: "KeyT", meta: true, action: "addTabToActiveCard" },
-  { key: "Comma", meta: true, action: "showSettings" },
-  { key: "Period", meta: true, action: "cancelDialog" },
-  { key: "KeyF", meta: true, action: "find" },
+  { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
+  { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD },
+  { key: "Comma", meta: true, action: TUG_ACTIONS.SHOW_SETTINGS },
+  { key: "Period", meta: true, action: TUG_ACTIONS.CANCEL_DIALOG },
+  { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },
   // Tab navigation: macOS convention (Safari, Terminal) uses
   // ⇧⌘[ / ⇧⌘] for previous / next tab with wrap-around. Routes to
-  // tug-card's existing previousTab / nextTab handlers, which already
+  // tug-card's existing previous-tab / next-tab handlers, which already
   // wrap via `(idx ± 1 + n) % n`.
-  { key: "BracketLeft", meta: true, shift: true, action: "previousTab" },
-  { key: "BracketRight", meta: true, shift: true, action: "nextTab" },
+  { key: "BracketLeft", meta: true, shift: true, action: TUG_ACTIONS.PREVIOUS_TAB },
+  { key: "BracketRight", meta: true, shift: true, action: TUG_ACTIONS.NEXT_TAB },
   // Jump to tab by 1-based index (⌘1..⌘9). Each binding carries its
   // index on `value`; the capture-phase pipeline copies that onto
-  // the dispatched ActionEvent. tug-card's `jumpToTab` handler reads
+  // the dispatched ActionEvent. tug-card's `jump-to-tab` handler reads
   // the index, narrows to `number`, and selects the corresponding
   // tab. Out-of-range indices are a silent no-op on the handler side.
   // `preventDefaultOnMatch` is not set: browsers have no default
   // meaning for ⌘1..⌘9 inside a WKWebView that we need to suppress.
-  { key: "Digit1", meta: true, action: "jumpToTab", value: 1 },
-  { key: "Digit2", meta: true, action: "jumpToTab", value: 2 },
-  { key: "Digit3", meta: true, action: "jumpToTab", value: 3 },
-  { key: "Digit4", meta: true, action: "jumpToTab", value: 4 },
-  { key: "Digit5", meta: true, action: "jumpToTab", value: 5 },
-  { key: "Digit6", meta: true, action: "jumpToTab", value: 6 },
-  { key: "Digit7", meta: true, action: "jumpToTab", value: 7 },
-  { key: "Digit8", meta: true, action: "jumpToTab", value: 8 },
-  { key: "Digit9", meta: true, action: "jumpToTab", value: 9 },
+  { key: "Digit1", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 1 },
+  { key: "Digit2", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 2 },
+  { key: "Digit3", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 3 },
+  { key: "Digit4", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 4 },
+  { key: "Digit5", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 5 },
+  { key: "Digit6", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 6 },
+  { key: "Digit7", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 7 },
+  { key: "Digit8", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 8 },
+  { key: "Digit9", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 9 },
 ];
 
 // ---- matchKeybinding ----

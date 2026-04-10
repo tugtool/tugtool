@@ -17,6 +17,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -154,12 +155,12 @@ export function GalleryPushButton() {
   const roleDropdownLabel = previewRole === undefined ? "accent (default)" : previewRole;
 
   // Role dropdown items: first item is "accent (default)" which maps to undefined.
-  // Each item carries `action: "setValue"` with `value` = the role string;
+  // Each item carries `action: TUG_ACTIONS.SET_VALUE` with `value` = the role string;
   // the role popup's binding above branches on "__default__".
   const roleItems = [
-    { action: "setValue" as const, value: "__default__", label: "accent (default)" },
+    { action: TUG_ACTIONS.SET_VALUE, value: "__default__", label: "accent (default)" },
     ...ALL_ROLES.filter((r) => r !== "accent").map((r) => ({
-      action: "setValue" as const,
+      action: TUG_ACTIONS.SET_VALUE,
       value: r,
       label: r,
     })),
@@ -183,7 +184,7 @@ export function GalleryPushButton() {
               size="sm"
               senderId={emphasisPopupId}
               items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
-                action: "setValue" as const,
+                action: TUG_ACTIONS.SET_VALUE,
                 value: v,
                 label: v,
               }))}
@@ -206,7 +207,7 @@ export function GalleryPushButton() {
               size="sm"
               senderId={sizePopupId}
               items={ALL_SIZES.map((s) => ({
-                action: "setValue" as const,
+                action: TUG_ACTIONS.SET_VALUE,
                 value: s,
                 label: s,
               }))}

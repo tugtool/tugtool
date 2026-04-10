@@ -35,6 +35,7 @@ import type { TugButtonSize } from "./internal/tug-button";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -157,7 +158,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       (nextValue: string) => {
         if (!manager) return;
         manager.dispatch({
-          action: "selectValue",
+          action: TUG_ACTIONS.SELECT_VALUE,
           value: nextValue,
           sender: effectiveSenderId,
           phase: "discrete",

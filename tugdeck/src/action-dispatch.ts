@@ -7,7 +7,7 @@
  * Phase 0: DevNotificationRef dependency removed, card handlers removed.
  * Phase 2: Added gallerySetterRef and show-component-gallery handler.
  * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
- *   show-component-gallery now dispatches "showComponentGallery" through
+ *   show-component-gallery now dispatches "show-component-gallery" through
  *   the responder chain manager (same pattern as add-tab).
  * Spec S04 (#s04-action-dispatch-shape), [D04] Gut action-dispatch
  * Spec S05 (#s05-gallery-action)
@@ -18,6 +18,7 @@ import type { DeckManager } from "./deck-manager";
 import type { ResponderChainManager } from "./components/tugways/responder-chain";
 import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 /**
  * Ordered list of all shipped themes.
@@ -228,12 +229,12 @@ export function initActionDispatch(
   });
 
   // show-component-gallery: Show the Component Gallery card via DeckCanvas responder action.
-  // Dispatches "showComponentGallery" through the ResponderChainManager, which routes it
+  // Dispatches "show-component-gallery" through the ResponderChainManager, which routes it
   // to DeckCanvas's registered showComponentGallery handler. DeckCanvas finds or creates
   // the gallery card and focuses it. ([D05], [D07] show-only semantics)
   registerAction("show-component-gallery", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     } else {
       console.warn("show-component-gallery: responder chain manager not registered yet");
     }
@@ -266,12 +267,12 @@ export function initActionDispatch(
   });
 
   // add-tab-to-active-card: Add a new tab to the focused card via the responder chain.
-  // Dispatches "addTabToActiveCard" through the ResponderChainManager, which routes it to
+  // Dispatches "add-tab-to-active-card" through the ResponderChainManager, which routes it to
   // DeckCanvas's registered addTabToActiveCard handler. DeckCanvas reads the focused card
   // from its cardsRef and calls store.addTab(). ([D06], [D09])
   registerAction("add-tab-to-active-card", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
+      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
     } else {
       console.warn("add-tab-to-active-card: responder chain manager not registered yet");
     }
@@ -287,7 +288,7 @@ export function initActionDispatch(
   // no Swift menu is present. [A3 / R4]
   registerAction("close-active-card", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: "close", phase: "discrete" });
+      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     } else {
       console.warn("close-active-card: responder chain manager not registered yet");
     }

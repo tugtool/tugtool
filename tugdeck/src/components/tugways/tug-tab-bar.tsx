@@ -29,6 +29,7 @@ import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
 import { useResponderChain } from "./responder-chain-provider";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import {
   computeOverflow,
   ICON_ONLY_TAB_WIDTH,
@@ -377,7 +378,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     (tabId: string) => {
       if (!manager) return;
       manager.dispatch({
-        action: "selectTab",
+        action: TUG_ACTIONS.SELECT_TAB,
         value: tabId,
         sender: effectiveSenderId,
         phase: "discrete",
@@ -389,7 +390,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     (tabId: string) => {
       if (!manager) return;
       manager.dispatch({
-        action: "closeTab",
+        action: TUG_ACTIONS.CLOSE_TAB,
         value: tabId,
         sender: effectiveSenderId,
         phase: "discrete",
@@ -401,7 +402,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     (componentId: string) => {
       if (!manager) return;
       manager.dispatch({
-        action: "addTab",
+        action: TUG_ACTIONS.ADD_TAB,
         value: componentId,
         sender: effectiveSenderId,
         phase: "discrete",

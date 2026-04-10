@@ -15,6 +15,7 @@ import { CardTitleBar } from "@/components/tugways/tug-card";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -83,11 +84,11 @@ export function GalleryTitleBar() {
               size="sm"
               senderId={iconPopupId}
               items={[
-                { action: "setValue", value: "", label: "None" },
-                { action: "setValue", value: "Layout", label: "Layout" },
-                { action: "setValue", value: "Settings", label: "Settings" },
-                { action: "setValue", value: "Terminal", label: "Terminal" },
-                { action: "setValue", value: "Code", label: "Code" },
+                { action: TUG_ACTIONS.SET_VALUE, value: "", label: "None" },
+                { action: TUG_ACTIONS.SET_VALUE, value: "Layout", label: "Layout" },
+                { action: TUG_ACTIONS.SET_VALUE, value: "Settings", label: "Settings" },
+                { action: TUG_ACTIONS.SET_VALUE, value: "Terminal", label: "Terminal" },
+                { action: TUG_ACTIONS.SET_VALUE, value: "Code", label: "Code" },
               ]}
             />
           </div>

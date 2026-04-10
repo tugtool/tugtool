@@ -36,6 +36,7 @@ import {
   type TugSheetHandle,
 } from "@/components/tugways/tug-sheet";
 import { TugcardPortalContext } from "@/components/tugways/tug-card";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
   ResponderChainManager,
@@ -147,7 +148,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
 
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });
@@ -167,7 +168,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
       // probe that directly but a second dispatch should be a no-op.
       act(() => {
         manager.dispatch({
-          action: "cancelDialog",
+          action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: "fixed-sender",
           phase: "discrete",
         });
@@ -203,7 +204,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
     // the observer we installed also captures the event.
     expect(
       seen.some(
-        (e) => e.action === "cancelDialog" && e.sender === "esc-sender",
+        (e) => e.action === "cancel-dialog" && e.sender === "esc-sender",
       ),
     ).toBe(true);
     cleanupCard();
@@ -231,7 +232,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
 
     expect(
       seen.some(
-        (e) => e.action === "cancelDialog" && e.sender === "cmd-sender",
+        (e) => e.action === "cancel-dialog" && e.sender === "cmd-sender",
       ),
     ).toBe(true);
     cleanupCard();
@@ -256,7 +257,7 @@ describe("TugSheet – modal semantics (no external auto-dismiss)", () => {
     // A bare unrelated dispatch dismisses a TugConfirmPopover but
     // must NOT dismiss a card-modal TugSheet. The sheet stays open.
     act(() => {
-      manager.dispatch({ action: "showSettings", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getSheetContent()).not.toBeNull();

@@ -29,6 +29,7 @@ import React, { useRef, useLayoutEffect } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
+import { TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { StyleCascadeReader } from "@/components/tugways/style-cascade-reader";
 
@@ -152,8 +153,8 @@ export function GalleryMutationTx() {
   useResponder<GalleryAction>({
     id: DEMO_RESPONDER_ID,
     actions: {
-      // ---- previewColor: maps color input events to background-color transaction ----
-      previewColor: (event: ActionEvent<GalleryAction>) => {
+      // ---- preview-color: maps color input events to background-color transaction ----
+      [TUG_GALLERY_ACTIONS.PREVIEW_COLOR]: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
         const color = event.value as string;
@@ -181,8 +182,8 @@ export function GalleryMutationTx() {
         }
       },
 
-      // ---- previewHue: maps pointer-scrub x-position to HSL hue on background-color ----
-      previewHue: (event: ActionEvent<GalleryAction>) => {
+      // ---- preview-hue: maps pointer-scrub x-position to HSL hue on background-color ----
+      [TUG_GALLERY_ACTIONS.PREVIEW_HUE]: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
 
@@ -210,8 +211,8 @@ export function GalleryMutationTx() {
         }
       },
 
-      // ---- previewPosition: maps range slider input to left/top on the mock card ----
-      previewPosition: (event: ActionEvent<GalleryAction>) => {
+      // ---- preview-position: maps range slider input to left/top on the mock card ----
+      [TUG_GALLERY_ACTIONS.PREVIEW_POSITION]: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
         const { left, top } = (event.value as { left: number; top: number });
@@ -366,7 +367,7 @@ export function GalleryMutationTx() {
                   ? "change"
                   : "begin";
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewColor",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_COLOR,
                 phase,
                 value: color,
               });
@@ -374,7 +375,7 @@ export function GalleryMutationTx() {
             onChange={(e) => {
               const color = (e.target as HTMLInputElement).value;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewColor",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_COLOR,
                 phase: "commit",
                 value: color,
               });
@@ -407,7 +408,7 @@ export function GalleryMutationTx() {
               }
               scrubActiveRef.current = true;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewHue",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "begin",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
               });
@@ -415,7 +416,7 @@ export function GalleryMutationTx() {
             onPointerMove={(e) => {
               if (!scrubActiveRef.current) return;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewHue",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "change",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
               });
@@ -424,7 +425,7 @@ export function GalleryMutationTx() {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewHue",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "commit",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
               });
@@ -433,7 +434,7 @@ export function GalleryMutationTx() {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewHue",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "cancel",
               });
             }}
@@ -441,7 +442,7 @@ export function GalleryMutationTx() {
               if (e.key === "Escape" && scrubActiveRef.current) {
                 scrubActiveRef.current = false;
                 manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                  action: "previewHue",
+                  action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                   phase: "cancel",
                 });
               }
@@ -481,7 +482,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "begin",
                 value: { left, top },
               });
@@ -490,7 +491,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "change",
                 value: { left, top },
               });
@@ -499,7 +500,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "commit",
                 value: { left, top },
               });
@@ -523,7 +524,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "begin",
                 value: { left, top },
               });
@@ -532,7 +533,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "change",
                 value: { left, top },
               });
@@ -541,7 +542,7 @@ export function GalleryMutationTx() {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
               manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
-                action: "previewPosition",
+                action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "commit",
                 value: { left, top },
               });

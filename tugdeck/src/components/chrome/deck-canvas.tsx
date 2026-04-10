@@ -63,6 +63,7 @@ import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExtern
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { CardFrame, updateSetAppearance } from "./card-frame";
@@ -233,7 +234,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
      */
     canHandle: () => true,
     actions: {
-      cycleCard: (_event: ActionEvent) => {
+      [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
         const c = cardsRef.current;
         if (c.length < 2) return;
         const nextId = c[0].id; // bottom card rotates to top
@@ -241,16 +242,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         setDeselected(false); // clear deselect flag (stable state setter)
         manager.makeFirstResponder(nextId); // responder chain focus
       },
-      resetLayout: (_event: ActionEvent) => {
+      [TUG_ACTIONS.RESET_LAYOUT]: (_event: ActionEvent) => {
         // Phase 5 will reset card positions.
-        console.log("resetLayout: stub -- not implemented until Phase 5");
+        console.log("reset-layout: stub -- not implemented until Phase 5");
       },
-      showSettings: (_event: ActionEvent) => {
+      [TUG_ACTIONS.SHOW_SETTINGS]: (_event: ActionEvent) => {
         // Phase 8 will open the settings panel.
-        console.log("showSettings: stub -- not implemented until Phase 8");
+        console.log("show-settings: stub -- not implemented until Phase 8");
       },
       /**
-       * showComponentGallery -- find or create the gallery card ([D05], [D07]).
+       * show-component-gallery -- find or create the gallery card ([D05], [D07]).
        *
        * Show-only semantics ([D07]): the gallery card is never closed by this
        * action. If a gallery card is already present (tracked via galleryCardIdRef),
@@ -259,7 +260,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
        * galleryCardIdRef. In both paths, makeFirstResponder is called so the
        * gallery takes responder focus immediately ([D05]).
        */
-      showComponentGallery: (_event: ActionEvent) => {
+      [TUG_ACTIONS.SHOW_COMPONENT_GALLERY]: (_event: ActionEvent) => {
         const existingId = galleryCardIdRef.current;
         const c = cardsRef.current;
 
@@ -281,14 +282,15 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           }
         }
       },
-      // addTabToActiveCard: Add a new "hello" tab to the topmost card (last in array).
-      // Reads cardsRef so the closure never goes stale. If no cards exist,
-      // this is a no-op. The componentId "hello" is intentionally hardcoded
-      // because it is the only registered card type in Phase 5; parameterized
-      // componentId dispatch is deferred until payload support is added.
+      // add-tab-to-active-card: Add a new "hello" tab to the topmost card
+      // (last in array). Reads cardsRef so the closure never goes stale.
+      // If no cards exist, this is a no-op. The componentId "hello" is
+      // intentionally hardcoded because it is the only registered card
+      // type in Phase 5; parameterized componentId dispatch is deferred
+      // until payload support is added.
       // [D06] Add-tab action uses DeckManager + responder chain
       // [D09] Add-tab routed as DeckCanvas responder action
-      addTabToActiveCard: (_event: ActionEvent) => {
+      [TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD]: (_event: ActionEvent) => {
         const c = cardsRef.current;
         if (c.length === 0) return;
         const focusedCard = c[c.length - 1]; // topmost card

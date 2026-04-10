@@ -39,6 +39,7 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import { Tugcard } from "@/components/tugways/tug-card";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Shared schema fixture
@@ -176,7 +177,7 @@ describe("Task 2: Inspector writes update the card", () => {
 
     act(() => {
       manager.dispatchTo("obs-t2a", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#cc0000", source: "inspector" },
       });
@@ -193,7 +194,7 @@ describe("Task 2: Inspector writes update the card", () => {
 
     act(() => {
       manager.dispatchTo("obs-t2b", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 40, source: "inspector" },
       });
@@ -207,7 +208,7 @@ describe("Task 2: Inspector writes update the card", () => {
 
     act(() => {
       manager.dispatchTo("obs-t2c", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontFamily", value: "serif", source: "inspector" },
       });
@@ -241,7 +242,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
     // Simulate a card-side programmatic update (source: 'content').
     act(() => {
       manager.dispatchTo("obs-t3a", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#009900", source: "content" },
       });
@@ -256,7 +257,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
 
     act(() => {
       manager.dispatchTo("obs-t3b", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 20, source: "content" },
       });
@@ -265,7 +266,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
 
     act(() => {
       manager.dispatchTo("obs-t3b", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 36, source: "content" },
       });
@@ -458,13 +459,13 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
 
     // This mirrors what a browser console call would do:
     //   manager.dispatchTo(cardId, {
-    //     action: 'setProperty',
+    //     action: 'set-property',
     //     phase: 'discrete',
     //     value: { path: 'style.backgroundColor', value: '#ff0000' }
     //   })
     act(() => {
       manager.dispatchTo("obs-t6a", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#ff0000" },
         // source omitted — Tugcard defaults it to 'inspector'
@@ -484,7 +485,7 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
 
     act(() => {
       manager.dispatchTo("obs-t6b", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#abcdef" },
         // no source — Tugcard defaults to 'inspector'

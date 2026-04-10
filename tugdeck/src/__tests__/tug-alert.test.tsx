@@ -43,6 +43,7 @@ import {
   useTugAlert,
   type TugAlertHandle,
 } from "@/components/tugways/tug-alert";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
   ResponderChainManager,
@@ -127,7 +128,7 @@ describe("TugAlert – chain dispatch resolves the alert() promise", () => {
 
     act(() => {
       manager.dispatch({
-        action: "confirmDialog",
+        action: TUG_ACTIONS.CONFIRM_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });
@@ -149,7 +150,7 @@ describe("TugAlert – chain dispatch resolves the alert() promise", () => {
 
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });
@@ -225,7 +226,7 @@ describe("TugAlert – modal semantics (no external auto-dismiss)", () => {
     // its observeDispatch subscription. TugAlert is modal and
     // deliberately does not subscribe, so the alert stays open.
     act(() => {
-      manager.dispatch({ action: "showSettings", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getAlertContent()).not.toBeNull();
@@ -234,7 +235,7 @@ describe("TugAlert – modal semantics (no external auto-dismiss)", () => {
     // unresolved promise. Dispatch cancel through the chain to close.
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
       });

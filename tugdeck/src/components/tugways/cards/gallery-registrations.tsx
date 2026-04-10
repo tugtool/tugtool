@@ -68,6 +68,7 @@ import { GalleryTextModelSpike } from "./gallery-text-model-spike";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptInput } from "./gallery-prompt-input";
 import "./gallery.css";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // GALLERY_DEFAULT_TABS
@@ -143,9 +144,9 @@ export function GalleryDropdown() {
 
 /** Sample items for the TugPopupButton gallery demo. Module-scope to avoid recreation. */
 const DEMO_POPUP_BUTTON_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
-  { action: "setValue", value: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
-  { action: "setValue", value: "option-gamma", label: "Gamma (disabled)", disabled: true },
+  { action: TUG_ACTIONS.SET_VALUE, value: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "option-gamma", label: "Gamma (disabled)", disabled: true },
 ];
 
 /**

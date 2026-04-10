@@ -310,7 +310,7 @@ describe("Tugcard – responder registration", () => {
     // The card should be registered and able to handle the standard actions
     expect(manager.canHandle("close")).toBe(true);
     expect(manager.canHandle("minimize")).toBe(true);
-    expect(manager.canHandle("toggleMenu")).toBe(true);
+    expect(manager.canHandle("toggle-menu")).toBe(true);
     expect(manager.canHandle("find")).toBe(true);
   });
 
@@ -322,7 +322,7 @@ describe("Tugcard – responder registration", () => {
       </Tugcard>
     );
 
-    manager.dispatch({ action: "close", phase: "discrete" });
+    manager.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
@@ -497,8 +497,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
       </Tugcard>
     );
 
-    expect(manager.canHandle("previousTab")).toBe(true);
-    expect(manager.canHandle("nextTab")).toBe(true);
+    expect(manager.canHandle("previous-tab")).toBe(true);
+    expect(manager.canHandle("next-tab")).toBe(true);
   });
 
   it("nextTab dispatches setActiveTab with the next tab id (A2.3)", () => {
@@ -527,7 +527,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: "nextTab", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
     });
 
     expect(setActiveCalls.length).toBe(1);
@@ -561,7 +561,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: "previousTab", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
     });
 
     // Wraps from tab-1 (index 0) back to tab-2 (index 1, last)
@@ -591,8 +591,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: "nextTab", phase: "discrete" });
-      manager.dispatch({ action: "previousTab", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
     });
 
     expect(setActiveCalls.length).toBe(0);
@@ -714,6 +714,7 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyDescriptor } from "@/components/tugways/property-store";
 import { PropertyStore } from "@/components/tugways/property-store";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 /** Card content that registers a PropertyStore and exposes it via a ref. */
 function MakePropertyCardContent({
@@ -751,7 +752,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     expect(() => {
       act(() => {
         manager.dispatch({
-          action: "setProperty",
+          action: TUG_ACTIONS.SET_PROPERTY,
           phase: "discrete",
           value: { path: "style.backgroundColor", value: "#ff0000" },
         });
@@ -784,7 +785,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     // Dispatch setProperty directly to the Tugcard responder node
     act(() => {
       manager.dispatchTo("card-with-store", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#aabbcc", source: "inspector" },
       });
@@ -815,7 +816,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
 
     act(() => {
       manager.dispatchTo("card-default-source", {
-        action: "setProperty",
+        action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 24 }, // no source field
       });

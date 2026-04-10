@@ -37,6 +37,7 @@ import {
   renderGroupItemContent,
 } from "./internal/tug-group-utils";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -169,7 +170,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       (nextValue: string) => {
         if (!manager) return;
         manager.dispatch({
-          action: "selectValue",
+          action: TUG_ACTIONS.SELECT_VALUE,
           value: nextValue,
           sender: effectiveSenderId,
           phase: "discrete",

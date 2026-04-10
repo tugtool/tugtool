@@ -73,6 +73,7 @@ import { TugcardPortalContext } from "./tug-card";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 
 /* ---------------------------------------------------------------------------
@@ -293,7 +294,7 @@ export function TugSheetContent({
   const { ResponderScope, responderRef } = useOptionalResponder({
     id: responderId,
     actions: {
-      cancelDialog: closeSheet,
+      [TUG_ACTIONS.CANCEL_DIALOG]: closeSheet,
     },
   });
 
@@ -406,7 +407,7 @@ export function TugSheetContent({
       // closeSheet directly.
       if (manager) {
         manager.dispatch({
-          action: "cancelDialog",
+          action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",
         });
@@ -692,7 +693,7 @@ export function useTugSheet(): {
   useLayoutEffect(() => {
     if (!state || !manager) return;
     return manager.observeDispatch((event) => {
-      if (event.action !== "cancelDialog") return;
+      if (event.action !== "cancel-dialog") return;
       if (event.sender !== senderId) return;
       if (resolverRef.current === null) return;
       resolveHook(undefined);
@@ -731,7 +732,7 @@ export function useTugSheet(): {
       resolveHook(result);
       if (manager) {
         manager.dispatch({
-          action: "cancelDialog",
+          action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",
         });

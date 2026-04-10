@@ -26,6 +26,7 @@ import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -159,7 +160,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       (next: boolean) => {
         if (!manager) return;
         manager.dispatch({
-          action: "toggle",
+          action: TUG_ACTIONS.TOGGLE,
           value: next,
           sender: effectiveSenderId,
           phase: "discrete",

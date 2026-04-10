@@ -14,6 +14,7 @@ import React, { useState } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS, TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
@@ -25,8 +26,8 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
  * ActionEventDemo -- demonstrates explicit-target dispatch via dispatchTo.
  *
  * Registers a local responder node with id "action-event-demo" that handles
- * the "demoAction" action. A TugButton in direct-action mode (onClick) calls
- * manager.dispatchTo("action-event-demo", { action: "demoAction", phase: "discrete" })
+ * the "demo-action" action. A TugButton in direct-action mode (onClick) calls
+ * manager.dispatchTo("action-event-demo", { action: TUG_GALLERY_ACTIONS.DEMO_ACTION, phase: "discrete" })
  * to deliver the event directly to the local responder, bypassing the chain walk.
  *
  * The handler receives the full ActionEvent and stores a display string showing
@@ -51,19 +52,19 @@ function ActionEventDemo() {
   const manager = useRequiredResponderChain();
   const [lastEventText, setLastEventText] = useState<string | null>(null);
 
-  // Register a local responder that handles "demoAction".
+  // Register a local responder that handles "demo-action".
   // useResponder uses useLayoutEffect internally ([D41]), so the node is
   // registered before any click event can fire.
   // The setter is stable across re-renders, so the closure is never stale.
   //
   // The `<GalleryAction>` type parameter opts into the demo-only
-  // vocabulary — "demoAction" is not in the production `TugAction`
+  // vocabulary — "demo-action" is not in the production `TugAction`
   // union, and passing GalleryAction as the Extra type widens the
   // action map's key set to include it.
   useResponder<GalleryAction>({
     id: "action-event-demo",
     actions: {
-      demoAction: (event: ActionEvent<GalleryAction>) => {
+      [TUG_GALLERY_ACTIONS.DEMO_ACTION]: (event: ActionEvent<GalleryAction>) => {
         setLastEventText(`action: "${event.action}", phase: "${event.phase}"`);
       },
     },
@@ -71,7 +72,7 @@ function ActionEventDemo() {
 
   const handleDispatch = () => {
     manager.dispatchTo<GalleryAction>("action-event-demo", {
-      action: "demoAction",
+      action: TUG_GALLERY_ACTIONS.DEMO_ACTION,
       phase: "discrete",
     });
   };
@@ -118,10 +119,10 @@ export function GalleryChainActions() {
       <div className="cg-section">
         <div className="cg-section-title">Chain-Action Buttons</div>
         <div className="cg-variant-row">
-          <TugButton action="cycleCard">
+          <TugButton action="cycle-card">
             Cycle Card
           </TugButton>
-          <TugButton action="showComponentGallery">
+          <TugButton action="show-component-gallery">
             Show Gallery
           </TugButton>
         </div>

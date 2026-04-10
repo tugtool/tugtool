@@ -12,7 +12,7 @@
  * the responder chain. Menu items are typed against `TugAction`, so
  * misspellings are compile errors — the same precedent established by
  * `TugEditorContextMenu` in A1. Value-picker use cases share a single
- * action across all items (typically `"setValue"`) and differ by the
+ * action across all items (typically `"set-value"`) and differ by the
  * item's `value` field; semantic-action use cases can carry a different
  * action per item.
  *
@@ -60,6 +60,7 @@ import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
 import { useResponderChain } from "./responder-chain-provider";
 import type { TugAction } from "./action-vocabulary";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -83,7 +84,7 @@ export type TugPopupButtonPayload = boolean | number | string | string[];
  * `action` through the responder chain, carrying `value` as the payload.
  *
  * - For value pickers (font size, theme, emphasis, ...), all items share a
- *   single `action` such as `"setValue"` and differ by the `value` field.
+ *   single `action` such as `"set-value"` and differ by the `value` field.
  * - For semantic-action menus (file operations, tab add, ...), each item
  *   can carry a distinct `action`.
  *
@@ -113,9 +114,9 @@ export type TugPopupButtonPayload = boolean | number | string | string[];
  * ```ts
  * // Font-size picker: numeric payload
  * const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
- *   { action: "setValue", value: 12, label: "12 px" },
- *   { action: "setValue", value: 14, label: "14 px" },
- *   // { action: "setValue", value: "16", label: "16 px" }  // ← compile error
+ *   { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
+ *   { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
+ *   // { action: TUG_ACTIONS.SET_VALUE, value: "16", label: "16 px" }  // ← compile error
  * ];
  * ```
  *

@@ -38,6 +38,7 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- TugAccordion Props (discriminated union) ----
 
@@ -142,7 +143,7 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
       (value: string) => {
         if (!manager) return;
         manager.dispatch({
-          action: "toggleSection",
+          action: TUG_ACTIONS.TOGGLE_SECTION,
           value,
           sender: effectiveSenderId,
           phase: "discrete",
@@ -154,7 +155,7 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
       (value: string[]) => {
         if (!manager) return;
         manager.dispatch({
-          action: "toggleSection",
+          action: TUG_ACTIONS.TOGGLE_SECTION,
           value,
           sender: effectiveSenderId,
           phase: "discrete",

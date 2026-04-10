@@ -124,6 +124,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 
 /* ---------------------------------------------------------------------------
@@ -237,7 +238,7 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
         setOpen(false);
         if (manager) {
           manager.dispatch({
-            action: "cancelDialog",
+            action: TUG_ACTIONS.CANCEL_DIALOG,
             sender: senderId,
             phase: "discrete",
           });
@@ -386,8 +387,8 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
   const { responderRef } = useOptionalResponder({
     id: responderId,
     actions: {
-      cancelDialog: handleClose,
-      dismissPopover: handleClose,
+      [TUG_ACTIONS.CANCEL_DIALOG]: handleClose,
+      [TUG_ACTIONS.DISMISS_POPOVER]: handleClose,
     },
   });
 
@@ -513,7 +514,7 @@ export function useTugPopoverClose(): () => void {
     if (!ctx) return;
     if (manager) {
       const handled = manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: ctx.senderId,
         phase: "discrete",
       });

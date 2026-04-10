@@ -133,6 +133,7 @@
 
 import React, { useCallback, useId, useRef } from "react";
 import type { ActionEvent, ActionHandler, ActionPhase, TugAction } from "./responder-chain";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponder } from "./use-responder";
 
 // ---- Types ----
@@ -284,7 +285,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     if (!sender) return;
     const setter = bindingsRef.current.selectValue?.[sender];
     if (!setter) {
-      logUnbound("selectValue", event.sender);
+      logUnbound("select-value", event.sender);
       return;
     }
     if (typeof event.value !== "string") return;
@@ -321,7 +322,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
       return;
     }
 
-    logUnbound("setValue", event.sender);
+    logUnbound("set-value", event.sender);
   }, []);
 
   const handleSelectTab = useCallback((event: ActionEvent) => {
@@ -329,7 +330,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     if (!sender) return;
     const setter = bindingsRef.current.selectTab?.[sender];
     if (!setter) {
-      logUnbound("selectTab", event.sender);
+      logUnbound("select-tab", event.sender);
       return;
     }
     if (typeof event.value !== "string") return;
@@ -341,7 +342,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     if (!sender) return;
     const setter = bindingsRef.current.closeTab?.[sender];
     if (!setter) {
-      logUnbound("closeTab", event.sender);
+      logUnbound("close-tab", event.sender);
       return;
     }
     if (typeof event.value !== "string") return;
@@ -353,7 +354,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     if (!sender) return;
     const setter = bindingsRef.current.addTab?.[sender];
     if (!setter) {
-      logUnbound("addTab", event.sender);
+      logUnbound("add-tab", event.sender);
       return;
     }
     if (typeof event.value !== "string") return;
@@ -380,7 +381,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
       return;
     }
 
-    logUnbound("toggleSection", event.sender);
+    logUnbound("toggle-section", event.sender);
   }, []);
 
   // ---- Register as a responder ----
@@ -404,20 +405,20 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   // start dispatching as soon as the slot appears — no
   // re-registration needed.
   const actions: Partial<Record<TugAction, ActionHandler>> = {};
-  if (bindings.toggle) actions.toggle = handleToggle;
-  if (bindings.selectValue) actions.selectValue = handleSelectValue;
+  if (bindings.toggle) actions[TUG_ACTIONS.TOGGLE] = handleToggle;
+  if (bindings.selectValue) actions[TUG_ACTIONS.SELECT_VALUE] = handleSelectValue;
   if (
     bindings.setValueNumber ||
     bindings.setValueString ||
     bindings.setValueStringArray
   ) {
-    actions.setValue = handleSetValue;
+    actions[TUG_ACTIONS.SET_VALUE] = handleSetValue;
   }
-  if (bindings.selectTab) actions.selectTab = handleSelectTab;
-  if (bindings.closeTab) actions.closeTab = handleCloseTab;
-  if (bindings.addTab) actions.addTab = handleAddTab;
+  if (bindings.selectTab) actions[TUG_ACTIONS.SELECT_TAB] = handleSelectTab;
+  if (bindings.closeTab) actions[TUG_ACTIONS.CLOSE_TAB] = handleCloseTab;
+  if (bindings.addTab) actions[TUG_ACTIONS.ADD_TAB] = handleAddTab;
   if (bindings.toggleSectionSingle || bindings.toggleSectionMulti) {
-    actions.toggleSection = handleToggleSection;
+    actions[TUG_ACTIONS.TOGGLE_SECTION] = handleToggleSection;
   }
 
   const id = useId();

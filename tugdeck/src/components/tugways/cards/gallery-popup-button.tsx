@@ -23,6 +23,7 @@ import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import type { TugButtonSize } from "@/components/tugways/internal/tug-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-popup-button.css";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---- Sample data ----
 //
@@ -31,28 +32,28 @@ import "./gallery-popup-button.css";
 // value into local demo state so the status line can display it.
 
 const SAMPLE_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "alpha", label: "Alpha", icon: <Star size={12} /> },
-  { action: "setValue", value: "beta", label: "Beta", icon: <Star size={12} /> },
-  { action: "setValue", value: "gamma", label: "Gamma" },
-  { action: "setValue", value: "delta", label: "Delta (disabled)", disabled: true },
+  { action: TUG_ACTIONS.SET_VALUE, value: "alpha", label: "Alpha", icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "beta", label: "Beta", icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "gamma", label: "Gamma" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "delta", label: "Delta (disabled)", disabled: true },
 ];
 
 const SIZE_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "sm", label: "Small" },
-  { action: "setValue", value: "md", label: "Medium" },
-  { action: "setValue", value: "lg", label: "Large" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "sm", label: "Small" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "md", label: "Medium" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "lg", label: "Large" },
 ];
 
 const EMPHASIS_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "filled", label: "filled" },
-  { action: "setValue", value: "outlined", label: "outlined" },
-  { action: "setValue", value: "ghost", label: "ghost" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "filled", label: "filled" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "outlined", label: "outlined" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "ghost", label: "ghost" },
 ];
 
 const ROLE_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "accent", label: "accent" },
-  { action: "setValue", value: "action", label: "action" },
-  { action: "setValue", value: "danger", label: "danger" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "accent", label: "accent" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "action", label: "action" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "danger", label: "danger" },
 ];
 
 const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];

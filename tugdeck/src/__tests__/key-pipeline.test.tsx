@@ -39,6 +39,7 @@ import {
   useRequiredResponderChain,
 } from "@/components/tugways/responder-chain-provider";
 import { matchKeybinding } from "@/components/tugways/keybinding-map";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---- Helpers ----
 
@@ -205,7 +206,7 @@ describe("key pipeline – capture-phase (stage 1)", () => {
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cycleCard: (_event: ActionEvent) => { cycleCardCalled = true; } },
+      actions: { [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => { cycleCardCalled = true; } },
     });
 
     let preventDefaultCalled = false;
@@ -253,7 +254,7 @@ describe("key pipeline – capture-phase (stage 1)", () => {
       );
     });
 
-    // The provider's manager has no handlers, so dispatch("cycleCard") returns false.
+    // The provider's manager has no handlers, so dispatch("cycle-card") returns false.
     // The event should continue normally and reach bubble-phase listeners.
     const bubbleListener = () => { bubbleListenerFired = true; };
     document.addEventListener("keydown", bubbleListener);
@@ -366,7 +367,7 @@ describe("key pipeline – bubble-phase input guard", () => {
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cycleCard: (_event: ActionEvent) => { cycleCardCalled = true; } },
+      actions: { [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => { cycleCardCalled = true; } },
     });
 
     const input = getByTestId("text-input");
@@ -400,13 +401,13 @@ describe("matchKeybinding", () => {
 
   it("returns full KeyBinding object for Ctrl+Backquote (cycleCard)", () => {
     const event = makeEvent("Backquote", { ctrlKey: true });
-    expect(matchKeybinding(event)?.action).toBe("cycleCard");
+    expect(matchKeybinding(event)?.action).toBe("cycle-card");
   });
 
   it("returns full KeyBinding object for Cmd+A (selectAll) with preventDefaultOnMatch", () => {
     const event = makeEvent("KeyA", { metaKey: true });
     const binding = matchKeybinding(event);
-    expect(binding?.action).toBe("selectAll");
+    expect(binding?.action).toBe("select-all");
     expect(binding?.preventDefaultOnMatch).toBe(true);
   });
 
@@ -414,7 +415,7 @@ describe("matchKeybinding", () => {
     const event = makeEvent("Backquote", { ctrlKey: true });
     const binding = matchKeybinding(event);
     expect(binding).not.toBeNull();
-    expect(binding?.action).toBe("cycleCard");
+    expect(binding?.action).toBe("cycle-card");
     expect(binding?.preventDefaultOnMatch).toBeUndefined();
   });
 
@@ -479,19 +480,19 @@ describe("matchKeybinding", () => {
 
   it("Cmd+T → addTabToActiveCard", () => {
     expect(matchKeybinding(makeEvent("KeyT", { metaKey: true }))?.action).toBe(
-      "addTabToActiveCard",
+      "add-tab-to-active-card",
     );
   });
 
   it("Cmd+, → showSettings", () => {
     expect(matchKeybinding(makeEvent("Comma", { metaKey: true }))?.action).toBe(
-      "showSettings",
+      "show-settings",
     );
   });
 
   it("Cmd+. → cancelDialog", () => {
     expect(matchKeybinding(makeEvent("Period", { metaKey: true }))?.action).toBe(
-      "cancelDialog",
+      "cancel-dialog",
     );
   });
 
@@ -505,14 +506,14 @@ describe("matchKeybinding", () => {
     const binding = matchKeybinding(
       makeEvent("BracketLeft", { metaKey: true, shiftKey: true }),
     );
-    expect(binding?.action).toBe("previousTab");
+    expect(binding?.action).toBe("previous-tab");
   });
 
   it("Shift+Cmd+] → nextTab", () => {
     const binding = matchKeybinding(
       makeEvent("BracketRight", { metaKey: true, shiftKey: true }),
     );
-    expect(binding?.action).toBe("nextTab");
+    expect(binding?.action).toBe("next-tab");
   });
 
   it("Cmd+[ without shift does not match previousTab", () => {
@@ -537,7 +538,7 @@ describe("matchKeybinding", () => {
       const binding = matchKeybinding(
         makeEvent(`Digit${i}`, { metaKey: true }),
       );
-      expect(binding?.action).toBe("jumpToTab");
+      expect(binding?.action).toBe("jump-to-tab");
       expect(binding?.value).toBe(i);
     }
   });
@@ -562,7 +563,7 @@ describe("capture-phase payload threading", () => {
           id: responderId,
           parentId: null,
           actions: {
-            jumpToTab: (event: ActionEvent) => {
+            [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
               receivedValue = event.value;
             },
           },

@@ -52,6 +52,7 @@ import { _resetForTest } from "@/card-registry";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardState, DeckState } from "@/layout-tree";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 afterEach(() => {
   cleanup();
@@ -222,12 +223,12 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     // Verify initial chain state: deck-canvas is root and first responder
     expect(manager.getFirstResponder()).toBe("deck-canvas");
-    expect(manager.canHandle("cycleCard")).toBe(true);
-    expect(manager.canHandle("showComponentGallery")).toBe(true);
+    expect(manager.canHandle("cycle-card")).toBe(true);
+    expect(manager.canHandle("show-component-gallery")).toBe(true);
 
     // ---- Show gallery via showComponentGallery dispatch ----
     act(() => {
-      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
 
     // store.addCard("gallery-buttons") must have been called
@@ -249,7 +250,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
     });
 
     // cycleCard is still handleable (chain didn't break)
-    expect(manager.canHandle("cycleCard")).toBe(true);
+    expect(manager.canHandle("cycle-card")).toBe(true);
   });
 });
 
@@ -291,13 +292,13 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card exists -- must NOT create another card
     act(() => {
-      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // Still exactly 1
     // handleCardFocused should have been called instead

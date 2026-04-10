@@ -42,6 +42,7 @@ import {
   useGroupKeyboardNav,
 } from "./internal/tug-group-utils";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -159,7 +160,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       (next: string[]) => {
         if (!manager) return;
         manager.dispatch({
-          action: "setValue",
+          action: TUG_ACTIONS.SET_VALUE,
           value: next,
           sender: effectiveSenderId,
           phase: "discrete",
@@ -176,8 +177,8 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
         // direction get it; observers that just need "something moved"
         // see any of the two actions.
         const action = (direction === "next" || direction === "last")
-          ? "focusNext"
-          : "focusPrevious";
+          ? "focus-next"
+          : "focus-previous";
         manager.dispatch({
           action,
           sender: effectiveSenderId,

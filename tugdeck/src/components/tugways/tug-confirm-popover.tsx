@@ -76,6 +76,7 @@ import type { TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 /* ---------------------------------------------------------------------------
  * TugConfirmPopoverHandle
@@ -212,8 +213,8 @@ export const TugConfirmPopover = React.forwardRef<
   const { responderRef } = useOptionalResponder({
     id: responderId,
     actions: {
-      confirmDialog: handleConfirmAction,
-      cancelDialog: handleCancelAction,
+      [TUG_ACTIONS.CONFIRM_DIALOG]: handleConfirmAction,
+      [TUG_ACTIONS.CANCEL_DIALOG]: handleCancelAction,
     },
   });
 
@@ -254,7 +255,7 @@ export const TugConfirmPopover = React.forwardRef<
       return;
     }
     manager.dispatch({
-      action: "confirmDialog",
+      action: TUG_ACTIONS.CONFIRM_DIALOG,
       sender: senderId,
       phase: "discrete",
     });
@@ -266,7 +267,7 @@ export const TugConfirmPopover = React.forwardRef<
       return;
     }
     manager.dispatch({
-      action: "cancelDialog",
+      action: TUG_ACTIONS.CANCEL_DIALOG,
       sender: senderId,
       phase: "discrete",
     });

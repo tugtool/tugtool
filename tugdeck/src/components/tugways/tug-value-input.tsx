@@ -50,6 +50,7 @@ import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Props ----
 
@@ -376,7 +377,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       (committed: number) => {
         if (!manager) return;
         manager.dispatch({
-          action: "setValue",
+          action: TUG_ACTIONS.SET_VALUE,
           value: committed,
           sender: effectiveSenderId,
           phase: "discrete",

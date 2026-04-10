@@ -42,6 +42,7 @@ import { usePropertyStore } from "@/components/tugways/hooks/use-property-store"
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -102,7 +103,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  *
  * **Inspector panel:** Three controls (color input, number input + range,
  * select dropdown). Each control dispatches a setProperty action via
- * manager.dispatchTo(cardId, { action: 'setProperty', value: { path, value,
+ * manager.dispatchTo(cardId, { action: 'set-property', value: { path, value,
  * source: 'inspector' } }). The action routes through the parent Tugcard's
  * responder node, which calls store.set() on the registered PropertyStore.
  * [D04]
@@ -226,7 +227,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     manager.dispatchTo(cardId, {
-      action: "setProperty",
+      action: TUG_ACTIONS.SET_PROPERTY,
       phase: "discrete",
       value: {
         path: "style.backgroundColor",
@@ -239,7 +240,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const handleFontSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const num = Number(e.target.value);
     manager.dispatchTo(cardId, {
-      action: "setProperty",
+      action: TUG_ACTIONS.SET_PROPERTY,
       phase: "discrete",
       value: {
         path: "style.fontSize",
@@ -259,7 +260,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
     setValueString: {
       [fontFamilyPopupId]: (value: string) => {
         manager.dispatchTo(cardId, {
-          action: "setProperty",
+          action: TUG_ACTIONS.SET_PROPERTY,
           phase: "discrete",
           value: {
             path: "style.fontFamily",
@@ -383,7 +384,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
             size="sm"
             senderId={fontFamilyPopupId}
             items={FONT_FAMILY_OPTIONS.map((ff) => ({
-              action: "setValue" as const,
+              action: TUG_ACTIONS.SET_VALUE,
               value: ff,
               label: ff,
             }))}

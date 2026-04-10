@@ -30,6 +30,7 @@ import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
 import "./gallery-prompt-input.css";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ===================================================================
 // Sample data
@@ -56,30 +57,30 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
 // ===================================================================
 
 const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "plex-sans", label: "IBM Plex Sans" },
-  { action: "setValue", value: "inter", label: "Inter" },
-  { action: "setValue", value: "hack", label: "Hack (mono)" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "inter", label: "Inter" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "hack", label: "Hack (mono)" },
 ];
 
 // Font size items dispatch numeric payloads — the parent binds via the
 // setValueNumber slot in useResponderForm and reads event.value as number.
 const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: "setValue", value: 11, label: "11 px" },
-  { action: "setValue", value: 12, label: "12 px" },
-  { action: "setValue", value: 13, label: "13 px" },
-  { action: "setValue", value: 14, label: "14 px" },
-  { action: "setValue", value: 15, label: "15 px" },
-  { action: "setValue", value: 16, label: "16 px" },
-  { action: "setValue", value: 18, label: "18 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 11, label: "11 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 18, label: "18 px" },
 ];
 
 // Letter spacing items also dispatch numeric payloads (fractional px).
 const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: "setValue", value: -0.25, label: "-0.25 px" },
-  { action: "setValue", value: -0.15, label: "-0.15 px" },
-  { action: "setValue", value: -0.10, label: "-0.10 px" },
-  { action: "setValue", value: -0.05, label: "-0.05 px" },
-  { action: "setValue", value: 0, label: "Normal" },
+  { action: TUG_ACTIONS.SET_VALUE, value: -0.25, label: "-0.25 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: -0.15, label: "-0.15 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: -0.10, label: "-0.10 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: -0.05, label: "-0.05 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 0, label: "Normal" },
 ];
 
 const RETURN_CHOICES: TugChoiceItem[] = [

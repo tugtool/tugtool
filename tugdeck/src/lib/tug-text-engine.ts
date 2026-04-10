@@ -417,7 +417,7 @@ export class TugTextEngine {
 
   selectAll(): void {
     this.root.focus();
-    document.execCommand("selectAll");
+    document.execCommand("select-all");
   }
 
   /**

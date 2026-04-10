@@ -43,6 +43,7 @@ import {
   type TugPopoverHandle,
 } from "@/components/tugways/tug-popover";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
   ResponderChainManager,
@@ -149,7 +150,7 @@ describe("TugPopover – chain-native dismissal", () => {
 
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",
       });
@@ -169,7 +170,7 @@ describe("TugPopover – chain-native dismissal", () => {
 
     act(() => {
       manager.dispatch({
-        action: "dismissPopover",
+        action: TUG_ACTIONS.DISMISS_POPOVER,
         sender: "external-sender",
         phase: "discrete",
       });
@@ -195,7 +196,7 @@ describe("TugPopover – observeDispatch external dismissal", () => {
     // Any unrelated chain activity — here a bare showSettings dispatch
     // with no registered handler — dismisses the popover.
     act(() => {
-      manager.dispatch({ action: "showSettings", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getPopoverContent()).toBeNull();
@@ -244,7 +245,7 @@ describe("TugPopover – observeDispatch external dismissal", () => {
     // focus-inside-popover filter keeps the popover open.
     act(() => {
       manager.dispatch({
-        action: "toggle",
+        action: TUG_ACTIONS.TOGGLE,
         value: true,
         sender: "inner-switch-sender",
         phase: "discrete",
@@ -274,7 +275,7 @@ describe("TugPopover – responder lifecycle", () => {
     // land.
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",
       });
@@ -288,7 +289,7 @@ describe("TugPopover – responder lifecycle", () => {
 
     act(() => {
       manager.dispatch({
-        action: "cancelDialog",
+        action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",
       });

@@ -31,6 +31,7 @@ import type { SavedSelection } from "./selection-guard";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "./responder-chain-provider";
@@ -824,7 +825,7 @@ export function Tugcard({
     if (idx === -1) return;
     const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
     manager.dispatch({
-      action: "selectTab",
+      action: TUG_ACTIONS.SELECT_TAB,
       value: currentTabs[prevIdx].id,
       sender: keyboardTabNavSenderId,
       phase: "discrete",
@@ -839,7 +840,7 @@ export function Tugcard({
     if (idx === -1) return;
     const nextIdx = (idx + 1) % currentTabs.length;
     manager.dispatch({
-      action: "selectTab",
+      action: TUG_ACTIONS.SELECT_TAB,
       value: currentTabs[nextIdx].id,
       sender: keyboardTabNavSenderId,
       phase: "discrete",
@@ -861,7 +862,7 @@ export function Tugcard({
       if (oneBasedIndex < 1 || oneBasedIndex > currentTabs.length) return;
       const targetTab = currentTabs[oneBasedIndex - 1];
       manager.dispatch({
-        action: "selectTab",
+        action: TUG_ACTIONS.SELECT_TAB,
         value: targetTab.id,
         sender: keyboardTabNavSenderId,
         phase: "discrete",
@@ -873,47 +874,48 @@ export function Tugcard({
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
     actions: {
-      close: (_event: ActionEvent) => handleClose(),
-      selectAll: (_event: ActionEvent) => handleSelectAll(),
-      previousTab: (_event: ActionEvent) => handlePreviousTab(),
-      nextTab: (_event: ActionEvent) => handleNextTab(),
-      // jumpToTab [L11, A3 / R4]: payload is `value: number` (1-based
+      [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => handleClose(),
+      [TUG_ACTIONS.SELECT_ALL]: (_event: ActionEvent) => handleSelectAll(),
+      [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
+      [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
+      // jump-to-tab [L11, A3 / R4]: payload is `value: number` (1-based
       // tab index). Narrow defensively since event.value is typed
       // unknown — an out-of-shape dispatch is a silent no-op.
-      jumpToTab: (event: ActionEvent) => {
+      [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "number") return;
         handleJumpToTab(event.value);
       },
-      // selectTab / closeTab [L11, A2.3]: dispatched by TugTabBar in our
-      // accessory slot. Payload is `value: tabId`. The responder owns the
-      // store-mutation; deck-canvas no longer wires inline arrows for
-      // these. selectTab also runs the save-current-tab-state side effect.
-      selectTab: (event: ActionEvent) => {
+      // select-tab / close-tab [L11, A2.3]: dispatched by TugTabBar in
+      // our accessory slot. Payload is `value: tabId`. The responder
+      // owns the store-mutation; deck-canvas no longer wires inline
+      // arrows for these. select-tab also runs the
+      // save-current-tab-state side effect.
+      [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
         performSelectTab(event.value);
       },
-      closeTab: (event: ActionEvent) => {
+      [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
         store.removeTab(cardId, event.value);
       },
-      // addTab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
+      // add-tab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
       // after the A2.5 tug-popup-button migration. Payload is
       // `value: componentId`. This card's id plus the incoming
       // componentId are the arguments to store.addTab, completing the
       // chain-native tab-add flow. Distinct from the global
-      // addTabToActiveCard action handled by deck-canvas.
-      addTab: (event: ActionEvent) => {
+      // add-tab-to-active-card action handled by deck-canvas.
+      [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
         store.addTab(cardId, event.value);
       },
-      // Stubs: minimize, toggleMenu, find are no-ops until implemented.
-      minimize: (_event: ActionEvent) => {},
-      toggleMenu: (_event: ActionEvent) => {},
-      find: (_event: ActionEvent) => {},
-      // Route incoming setProperty actions to the registered PropertyStore.
+      // Stubs: minimize, toggle-menu, find are no-ops until implemented.
+      [TUG_ACTIONS.MINIMIZE]: (_event: ActionEvent) => {},
+      [TUG_ACTIONS.TOGGLE_MENU]: (_event: ActionEvent) => {},
+      [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {},
+      // Route incoming set-property actions to the registered PropertyStore.
       // Payload shape: { path: string, value: unknown, source?: string }.
       // No-op when no PropertyStore is registered (card does not support inspection).
-      setProperty: (event: ActionEvent) => {
+      [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
         const store = propertyStoreRef.current;
         if (!store) return;
         const payload = event.value as { path: string; value: unknown; source?: string } | undefined;

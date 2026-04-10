@@ -23,6 +23,7 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";
 import type { FeedIdValue } from "@/protocol";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,14 +70,14 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("T13 – Tugcard registers selectAll action", () => {
-  it("canHandle('selectAll') returns true after Tugcard mounts", () => {
+  it("canHandle('select-all') returns true after Tugcard mounts", () => {
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-t13">
         <div>content</div>
       </Tugcard>
     );
 
-    expect(manager.canHandle("selectAll")).toBe(true);
+    expect(manager.canHandle("select-all")).toBe(true);
   });
 
   it("canHandle returns true for both selectAll and pre-existing actions", () => {
@@ -87,11 +88,11 @@ describe("T13 – Tugcard registers selectAll action", () => {
     );
 
     // selectAll is the new Phase 5a action
-    expect(manager.canHandle("selectAll")).toBe(true);
+    expect(manager.canHandle("select-all")).toBe(true);
     // Pre-existing actions from Phase 5 must still be present
     expect(manager.canHandle("close")).toBe(true);
     expect(manager.canHandle("minimize")).toBe(true);
-    expect(manager.canHandle("toggleMenu")).toBe(true);
+    expect(manager.canHandle("toggle-menu")).toBe(true);
     expect(manager.canHandle("find")).toBe(true);
   });
 });
@@ -101,7 +102,7 @@ describe("T13 – Tugcard registers selectAll action", () => {
 // ---------------------------------------------------------------------------
 
 describe("T14 – dispatching selectAll selects content area children", () => {
-  it("dispatch('selectAll') calls window.getSelection().selectAllChildren on the content div", () => {
+  it("dispatch('select-all') calls window.getSelection().selectAllChildren on the content div", () => {
     // Spy on window.getSelection to intercept selectAllChildren
     let selectAllChildrenCalledWith: Element | null = null;
     const origGetSelection = window.getSelection.bind(window);
@@ -121,7 +122,7 @@ describe("T14 – dispatching selectAll selects content area children", () => {
     container = document.body;
 
     act(() => {
-      manager.dispatch({ action: "selectAll", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
     });
 
     // Restore original
@@ -136,7 +137,7 @@ describe("T14 – dispatching selectAll selects content area children", () => {
     void container;
   });
 
-  it("dispatch('selectAll') is a no-op when content ref is null (does not throw)", () => {
+  it("dispatch('select-all') is a no-op when content ref is null (does not throw)", () => {
     // This tests the guard in handleSelectAll: `if (!el) return`
     // We can't null out an attached ref, but we can verify dispatch never throws.
     const { manager } = renderWithManager(
@@ -147,7 +148,7 @@ describe("T14 – dispatching selectAll selects content area children", () => {
 
     expect(() => {
       act(() => {
-        manager.dispatch({ action: "selectAll", phase: "discrete" });
+        manager.dispatch({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
       });
     }).not.toThrow();
   });
@@ -373,7 +374,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
     );
 
     act(() => {
-      manager.dispatch({ action: "close", phase: "discrete" });
+      manager.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -388,8 +389,8 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
 
     expect(manager.canHandle("close")).toBe(true);
     expect(manager.canHandle("minimize")).toBe(true);
-    expect(manager.canHandle("toggleMenu")).toBe(true);
+    expect(manager.canHandle("toggle-menu")).toBe(true);
     expect(manager.canHandle("find")).toBe(true);
-    expect(manager.canHandle("selectAll")).toBe(true);
+    expect(manager.canHandle("select-all")).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
+import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
 
@@ -169,7 +170,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
         // never violated even if Radix emits it unexpectedly.
         const nextBool = next === true;
         manager.dispatch({
-          action: "toggle",
+          action: TUG_ACTIONS.TOGGLE,
           value: nextBool,
           sender: effectiveSenderId,
           phase: "discrete",

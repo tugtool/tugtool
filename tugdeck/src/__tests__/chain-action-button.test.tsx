@@ -36,6 +36,7 @@ const asAction = (name: string) => name as unknown as TugAction;
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // Clean up mounted React trees after each test to prevent DOM accumulation.
 afterEach(() => {
@@ -84,14 +85,14 @@ function makeManagerWithAction(
 describe("chain-action TugButton – visibility", () => {
   it("renders when canHandle returns true", () => {
     const { manager } = makeManagerWithAction("copy");
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     expect(container.querySelector("button")).not.toBeNull();
   });
 
   it("is visible and aria-disabled when canHandle returns false (never-hide [D06])", () => {
     const { manager } = makeManagerWithAction("copy");
     // Register manager but request an action no responder handles
-    const { container } = renderWithManager(manager, { action: "paste", children: "Paste" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.PASTE, children: "Paste" });
     // [D06] TugButton never hides -- renders as aria-disabled instead of null
     expect(container.querySelector("button")).not.toBeNull();
     expect(container.querySelector("button")!.getAttribute("aria-disabled")).toBe("true");
@@ -117,7 +118,7 @@ describe("chain-action TugButton – visibility", () => {
 describe("chain-action TugButton – enabled/disabled state", () => {
   it("is enabled (no aria-disabled) when validateAction returns true", () => {
     const { manager } = makeManagerWithAction("copy", true);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBeNull();
     expect(btn.hasAttribute("disabled")).toBe(false);
@@ -125,14 +126,14 @@ describe("chain-action TugButton – enabled/disabled state", () => {
 
   it("has aria-disabled='true' when validateAction returns false", () => {
     const { manager } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("does NOT have HTML disabled attribute when chain-action is disabled (stays in tab order)", () => {
     const { manager } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     // aria-disabled should be set, but HTML disabled should NOT be set
     expect(btn.getAttribute("aria-disabled")).toBe("true");
@@ -154,18 +155,18 @@ describe("chain-action TugButton – click behavior", () => {
       actions: { copy: (event: ActionEvent) => { dispatched.push(event); } },
     });
 
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
 
     act(() => { fireEvent.click(btn); });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toMatchObject({ action: "copy", phase: "discrete" });
+    expect(dispatched[0]).toMatchObject({ action: TUG_ACTIONS.COPY, phase: "discrete" });
   });
 
   it("click on disabled chain-action button does NOT dispatch", () => {
     const { manager, dispatched } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
 
     act(() => { fireEvent.click(btn); });
@@ -189,7 +190,7 @@ describe("chain-action TugButton – re-render on version change", () => {
       validateAction: () => validateResult,
     });
 
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = () => container.querySelector("button")!;
 
     // Initially enabled
@@ -216,7 +217,7 @@ describe("chain-action TugButton – re-render on version change", () => {
       validateAction: () => validateResult,
     });
 
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = () => container.querySelector("button")!;
 
     expect(btn().getAttribute("aria-disabled")).toBe("true");
@@ -241,7 +242,7 @@ describe("chain-action TugButton – dev-mode warning", () => {
 
     act(() => {
       renderWithManager(manager, {
-        action: "copy",
+        action: TUG_ACTIONS.COPY,
         onClick: () => {},
         children: "Copy",
       });
@@ -308,7 +309,7 @@ describe("chain-action TugButton – outside provider", () => {
 describe("chain-action TugButton – CSS disabled rules", () => {
   it("aria-disabled='true' button does not have HTML disabled attribute", () => {
     const { manager } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBe("true");
     expect(btn.disabled).toBe(false); // stays in tab order
@@ -316,7 +317,7 @@ describe("chain-action TugButton – CSS disabled rules", () => {
 
   it("aria-disabled='true' button has tug-button emphasis-role class (CSS rules target it)", () => {
     const { manager } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBe("true");
     // CSS [aria-disabled='true'].tug-button-outlined-action applies opacity/cursor;
@@ -326,7 +327,7 @@ describe("chain-action TugButton – CSS disabled rules", () => {
 
   it("enabled chain-action button does NOT have aria-disabled", () => {
     const { manager } = makeManagerWithAction("copy", true);
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBeNull();
   });
@@ -402,7 +403,7 @@ describe("chain-action TugButton – target prop", () => {
 
     // Button targets "inspector" but requests an action "delete" it does not handle
     const { container } = renderWithManager(manager, {
-      action: "delete",
+      action: TUG_ACTIONS.DELETE,
       target: "inspector",
       children: "Delete",
     });
@@ -420,13 +421,13 @@ describe("chain-action TugButton – target prop", () => {
       actions: { copy: (event: ActionEvent) => { dispatched.push(event); } },
     });
 
-    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = container.querySelector("button")!;
 
     act(() => { fireEvent.click(btn); });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toMatchObject({ action: "copy", phase: "discrete" });
+    expect(dispatched[0]).toMatchObject({ action: TUG_ACTIONS.COPY, phase: "discrete" });
   });
 
   it("renders normally and logs dev warning when target is set without action", () => {

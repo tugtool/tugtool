@@ -38,6 +38,7 @@ import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // happy-dom geometry stub
@@ -116,7 +117,7 @@ function renderWithChainObserver(ui: React.ReactElement) {
 function setValueEvents(
   dispatched: Array<{ event: ActionEvent; handled: boolean }>,
 ): ActionEvent[] {
-  return dispatched.filter((d) => d.event.action === "setValue").map((d) => d.event);
+  return dispatched.filter((d) => d.event.action === "set-value").map((d) => d.event);
 }
 
 /** Locate the Radix slider root span inside a TugSlider render. */
@@ -225,7 +226,7 @@ describe("TugSlider – keyboard interaction (A2.6)", () => {
     // 2 events (one for onValueChange, one duplicated by onValueCommit).
     expect(events.length).toBe(1);
     expect(events[0]).toMatchObject({
-      action: "setValue",
+      action: TUG_ACTIONS.SET_VALUE,
       sender: "slider-kbd",
       phase: "discrete",
     });
@@ -261,7 +262,7 @@ describe("TugSlider – pointer drag begin (A2.6)", () => {
     // The first dispatch is begin@42 — our handler fires synchronously
     // on pointerdown with the prop value.
     expect(events[0]).toMatchObject({
-      action: "setValue",
+      action: TUG_ACTIONS.SET_VALUE,
       value: 42,
       sender: "slider-begin",
       phase: "begin",
@@ -648,7 +649,7 @@ describe("TugSlider – nested TugValueInput sender propagation (A2.6)", () => {
     const events = setValueEvents(dispatched);
     expect(events.length).toBe(1);
     expect(events[0]).toMatchObject({
-      action: "setValue",
+      action: TUG_ACTIONS.SET_VALUE,
       value: 75,
       sender: "slider-with-input",
       phase: "discrete",
@@ -731,7 +732,7 @@ describe("TugSlider – keyboard step during in-progress drag (A2.6)", () => {
 
     for (const e of events) {
       expect(e.sender).toBe("slider-drag-kbd");
-      expect(e.action).toBe("setValue");
+      expect(e.action).toBe("set-value");
     }
   });
 });

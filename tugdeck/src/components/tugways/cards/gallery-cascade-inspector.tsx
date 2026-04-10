@@ -29,6 +29,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,9 +37,9 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 /** Sample items for the TugPopupButton demo within the Cascade Inspector tab. */
 const INSPECTOR_DEMO_ITEMS: TugPopupButtonItem<string>[] = [
-  { action: "setValue", value: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
-  { action: "setValue", value: "item-beta", label: "Beta", icon: <Star size={12} /> },
-  { action: "setValue", value: "item-gamma", label: "Gamma (disabled)", disabled: true },
+  { action: TUG_ACTIONS.SET_VALUE, value: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "item-beta", label: "Beta", icon: <Star size={12} /> },
+  { action: TUG_ACTIONS.SET_VALUE, value: "item-gamma", label: "Gamma (disabled)", disabled: true },
 ];
 
 // ---------------------------------------------------------------------------

@@ -38,6 +38,7 @@ import {
   ResponderChainManager,
 } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // execCommand spy
@@ -131,7 +132,7 @@ function getInput(container: HTMLElement, testId?: string): HTMLInputElement {
 function setValueEvents(
   dispatched: Array<{ event: ActionEvent; handled: boolean }>,
 ): ActionEvent[] {
-  return dispatched.filter((d) => d.event.action === "setValue").map((d) => d.event);
+  return dispatched.filter((d) => d.event.action === "set-value").map((d) => d.event);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +166,7 @@ describe("TugValueInput – setValue dispatches (A2.6)", () => {
     const events = setValueEvents(dispatched);
     expect(events.length).toBe(1);
     expect(events[0]).toMatchObject({
-      action: "setValue",
+      action: TUG_ACTIONS.SET_VALUE,
       value: 75,
       sender: "vi-edit",
       phase: "discrete",
@@ -298,7 +299,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "cut", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
 
     // Sync phase: "copy" already fired so the selection stays visible
     // during the menu activation blink.
@@ -318,7 +319,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "copy", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -334,7 +335,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    const result = manager.dispatchToForContinuation(id, { action: "selectAll", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
 
     // Sync phase did nothing — selection still at (1, 2).
     expect(input.selectionStart).toBe(1);
@@ -352,7 +353,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "undo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -366,7 +367,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: "redo", phase: "discrete" });
+    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -390,7 +391,7 @@ describe("TugValueInput – disabled guard (A2.7)", () => {
 
     // Each handler short-circuits on effectiveDisabled before the
     // sync body runs, so no continuation should be returned either.
-    for (const action of ["cut", "copy", "paste", "undo", "redo", "selectAll"] as const) {
+    for (const action of ["cut", "copy", "paste", "undo", "redo", "select-all"] as const) {
       const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }

@@ -72,11 +72,11 @@
  * TUG_ACTIONS — production action constants
  * ---------------------------------------------------------------------------
  *
- * Values are still camelCase during the initial scaffolding commit
- * of the action-naming migration. The kebab-case rename lands in
- * the follow-up commit; no call-site changes are needed because
- * every reference flows through `TUG_ACTIONS.*` rather than a raw
- * string literal.
+ * Values are kebab-case wire strings per `tuglaws/action-naming.md`.
+ * Keys are the SCREAMING_SNAKE_CASE canonical constant names every
+ * call site references. Single-word names keep the same spelling
+ * in both forms (`CUT` → `"cut"`); multi-word names convert at
+ * word boundaries (`SELECT_ALL` → `"select-all"`).
  */
 export const TUG_ACTIONS = {
   // ---- Clipboard ----
@@ -97,8 +97,8 @@ export const TUG_ACTIONS = {
   CUT:         "cut",
   COPY:        "copy",
   PASTE:       "paste",
-  SELECT_ALL:  "selectAll",
-  SELECT_NONE: "selectNone",
+  SELECT_ALL:  "select-all",
+  SELECT_NONE: "select-none",
 
   // ---- Editing ----
   //
@@ -127,12 +127,12 @@ export const TUG_ACTIONS = {
   //                 focusable responder.
   // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
-  CYCLE_CARD:     "cycleCard",
-  PREVIOUS_TAB:   "previousTab",
-  NEXT_TAB:       "nextTab",
-  FOCUS_NEXT:     "focusNext",
-  FOCUS_PREVIOUS: "focusPrevious",
-  JUMP_TO_TAB:    "jumpToTab",
+  CYCLE_CARD:     "cycle-card",
+  PREVIOUS_TAB:   "previous-tab",
+  NEXT_TAB:       "next-tab",
+  FOCUS_NEXT:     "focus-next",
+  FOCUS_PREVIOUS: "focus-previous",
+  JUMP_TO_TAB:    "jump-to-tab",
 
   // ---- Dialog / menu ----
   //
@@ -143,10 +143,10 @@ export const TUG_ACTIONS = {
   // DISMISS_POPOVER: payload — none. Close the nearest popover.
   // OPEN_MENU:       payload — none. Open the contextually-appropriate
   //                  menu for the first responder.
-  CONFIRM_DIALOG:  "confirmDialog",
-  CANCEL_DIALOG:   "cancelDialog",
-  DISMISS_POPOVER: "dismissPopover",
-  OPEN_MENU:       "openMenu",
+  CONFIRM_DIALOG:  "confirm-dialog",
+  CANCEL_DIALOG:   "cancel-dialog",
+  DISMISS_POPOVER: "dismiss-popover",
+  OPEN_MENU:       "open-menu",
 
   // ---- Control value ----
   //
@@ -172,11 +172,11 @@ export const TUG_ACTIONS = {
   //                  Used by numeric scrubbers on arrow-up.
   // DECREMENT_VALUE: payload — optional `value: number` (step override).
   //                  Used by numeric scrubbers on arrow-down.
-  SET_VALUE:       "setValue",
+  SET_VALUE:       "set-value",
   TOGGLE:          "toggle",
-  SELECT_VALUE:    "selectValue",
-  INCREMENT_VALUE: "incrementValue",
-  DECREMENT_VALUE: "decrementValue",
+  SELECT_VALUE:    "select-value",
+  INCREMENT_VALUE: "increment-value",
+  DECREMENT_VALUE: "decrement-value",
 
   // ---- Tab operations ----
   //
@@ -188,20 +188,20 @@ export const TUG_ACTIONS = {
   //             handles it (typically `Tugcard`) uses its own cardId
   //             plus the componentId from the payload to call
   //             `store.addTab(cardId, componentId)`. Distinct from
-  //             `addTabToActiveCard`, which is the global menu/keystroke
-  //             path that targets the focused card with a hardcoded
-  //             component type.
+  //             `add-tab-to-active-card`, which is the global
+  //             menu/keystroke path that targets the focused card with
+  //             a hardcoded component type.
   // REOPEN_TAB: payload — none. Restore the most recently closed tab.
-  SELECT_TAB: "selectTab",
-  CLOSE_TAB:  "closeTab",
-  ADD_TAB:    "addTab",
-  REOPEN_TAB: "reopenTab",
+  SELECT_TAB: "select-tab",
+  CLOSE_TAB:  "close-tab",
+  ADD_TAB:    "add-tab",
+  REOPEN_TAB: "reopen-tab",
 
   // ---- Accordion / section ----
   //
   // TOGGLE_SECTION: payload — `value: string | string[]` (id or list of
   //                 ids for single vs. multi-expand accordions).
-  TOGGLE_SECTION: "toggleSection",
+  TOGGLE_SECTION: "toggle-section",
 
   // ---- Window / card ----
   //
@@ -219,12 +219,12 @@ export const TUG_ACTIONS = {
   CLOSE:                  "close",
   MINIMIZE:               "minimize",
   MAXIMIZE:               "maximize",
-  SHOW_COMPONENT_GALLERY: "showComponentGallery",
-  SHOW_SETTINGS:          "showSettings",
-  RESET_LAYOUT:           "resetLayout",
-  ADD_TAB_TO_ACTIVE_CARD: "addTabToActiveCard",
+  SHOW_COMPONENT_GALLERY: "show-component-gallery",
+  SHOW_SETTINGS:          "show-settings",
+  RESET_LAYOUT:           "reset-layout",
+  ADD_TAB_TO_ACTIVE_CARD: "add-tab-to-active-card",
   FIND:                   "find",
-  TOGGLE_MENU:            "toggleMenu",
+  TOGGLE_MENU:            "toggle-menu",
 
   // ---- Meta ----
   //
@@ -232,7 +232,7 @@ export const TUG_ACTIONS = {
   //               Routes to the first responder's registered PropertyStore
   //               (if any). Used by the inspector to drive live property
   //               updates.
-  SET_PROPERTY: "setProperty",
+  SET_PROPERTY: "set-property",
 } as const;
 
 /* ---------------------------------------------------------------------------
@@ -256,10 +256,10 @@ export const TUG_ACTIONS = {
  *                   semantics for draggable element preview.
  */
 export const TUG_GALLERY_ACTIONS = {
-  DEMO_ACTION:      "demoAction",
-  PREVIEW_COLOR:    "previewColor",
-  PREVIEW_HUE:      "previewHue",
-  PREVIEW_POSITION: "previewPosition",
+  DEMO_ACTION:      "demo-action",
+  PREVIEW_COLOR:    "preview-color",
+  PREVIEW_HUE:      "preview-hue",
+  PREVIEW_POSITION: "preview-position",
 } as const;
 
 /* ---------------------------------------------------------------------------
