@@ -26,7 +26,7 @@ import type { TabItem } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
-import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
+import type { TugPopupMenuEntry, TugPopupMenuItem } from "./internal/tug-popup-menu";
 import { useResponderChain } from "./responder-chain-provider";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -430,17 +430,68 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   // Resolve effective families: default to ["standard"] when prop is omitted.
   const effectiveFamilies = acceptedFamilies ?? ["standard"];
 
-  // Build the type-picker dropdown items from registered card types,
+  // Build the type-picker dropdown entries from registered card types,
   // filtered by family. A registration with no `family` field is treated as
   // "standard" (default family). Only registrations whose family is in
-  // effectiveFamilies are shown.
-  const typePickerItems: TugPopupMenuItem[] = Array.from(getAllRegistrations().values())
-    .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"))
-    .map((reg) => ({
-      id: reg.componentId,
-      label: reg.defaultMeta.title,
-      icon: renderIcon(reg.defaultMeta.icon),
-    }));
+  // effectiveFamilies are shown. Items are organized into sub-menus by
+  // category so the top-level menu stays compact.
+  const typePickerItems: TugPopupMenuEntry[] = (() => {
+    const regs = Array.from(getAllRegistrations().values())
+      .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"));
+
+    // Group definitions: ordered list of [label, icon, componentId[]] tuples.
+    // Registrations not listed here fall through at the end as top-level items.
+    const groups: [string, string | undefined, string[]][] = [
+      ["Buttons", "MousePointerClick", ["gallery-buttons", "gallery-default-button", "gallery-popup-button"]],
+      ["Text Input & Display", "TextCursorInput", ["gallery-input", "gallery-value-input", "gallery-textarea", "gallery-prompt-input", "gallery-label", "gallery-markdown-view"]],
+      ["Selection", "CheckSquare", ["gallery-checkbox", "gallery-switch", "gallery-radio-group", "gallery-choice-group", "gallery-option-group", "gallery-slider"]],
+      ["Overlays", "MessageSquareMore", ["gallery-popover", "gallery-confirm-popover", "gallery-context-menu", "gallery-tooltip", "gallery-sheet", "gallery-alert"]],
+      ["Feedback & Status", "Activity", ["gallery-progress", "gallery-badge", "gallery-banner", "gallery-bulletin", "gallery-skeleton", "gallery-marquee"]],
+      ["Layout & Structure", "Box", ["gallery-box", "gallery-atom", "gallery-accordion", "gallery-separator", "gallery-tabbar", "gallery-title-bar"]],
+      ["Animation & Theming", "Play", ["gallery-animator", "gallery-scale-timing", "gallery-palette", "gallery-theme-generator"]],
+      ["Architecture", "GitBranch", ["gallery-mutation", "gallery-mutation-tx", "gallery-observable-props", "gallery-chain-actions", "gallery-cascade-inspector"]],
+    ];
+
+    const regMap = new Map(regs.map((r) => [r.componentId, r]));
+    const entries: TugPopupMenuEntry[] = [];
+    const placed = new Set<string>();
+
+    for (const [label, iconName, ids] of groups) {
+      const subItems: TugPopupMenuItem[] = [];
+      for (const id of ids) {
+        const reg = regMap.get(id);
+        if (!reg) continue;
+        subItems.push({
+          id: reg.componentId,
+          label: reg.defaultMeta.title,
+          icon: renderIcon(reg.defaultMeta.icon),
+        });
+        placed.add(id);
+      }
+      if (subItems.length === 0) continue;
+      entries.push({
+        type: "sub",
+        label,
+        icon: renderIcon(iconName),
+        items: subItems,
+      });
+    }
+
+    // Append any registrations not covered by the groups above.
+    const remaining = regs.filter((r) => !placed.has(r.componentId));
+    if (remaining.length > 0) {
+      if (entries.length > 0) entries.push({ type: "separator" });
+      for (const reg of remaining) {
+        entries.push({
+          id: reg.componentId,
+          label: reg.defaultMeta.title,
+          icon: renderIcon(reg.defaultMeta.icon),
+        });
+      }
+    }
+
+    return entries;
+  })();
 
   // Build overflow dropdown items from overflowTabs (icon + label each). [D07]
   const overflowDropdownItems: TugPopupMenuItem[] = overflowTabs.map((tab) => {
