@@ -791,18 +791,25 @@ useLayoutEffect(() => {
 - ✅ New dedicated test files for both surfaces (7 tests each) covering subscribe/unsubscribe lifecycle, blink guard (context menu), chain-native dispatch (context menu), controlled-mode forwarding (tooltip), and no-provider fallback.
 - ✅ `bun run check` and `bun test` clean (2000 passing at A4.2 close).
 
-### Phase A5 — Update `component-authoring.md` (1 short session, post-A2)
+### Phase A5 — Update `component-authoring.md` (1 short session, post-A2) ✅
 
-Per Part 4 decision 5, this happens *after* A2 lands so the doc reflects reality, not aspiration.
+Per Part 4 decision 5, this happened *after* A2 landed so the doc reflects reality, not aspiration. Scope expanded during the session: A5 also spun up a new sibling tuglaws document (`responder-chain.md`) that holds the mental-model foundation — the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline, the registration hooks. The existing docs (`tuglaws.md` L11, `component-authoring.md`, `action-naming.md`) referenced "the responder chain" everywhere but nothing explained it; reconstructing the model required reading four implementation files plus scattered design decisions. The new doc is ~530 lines and is now the first thing a new contributor reads before touching chain-participant code.
 
-Additions to the checklist:
-- **Controls emit actions via the chain.** Every interactive component that responds to user input must dispatch a typed action via `manager.dispatch` or `manager.dispatchForContinuation`. Callback props for user interaction are prohibited.
-- **Responders register via `useResponder`.** Every component that handles actions must call `useResponder` with a typed `actions` map and attach `responderRef` to its root DOM element.
-- **`data-slot` + `data-responder-id`.** Both attributes on the root element.
-- **No `makeFirstResponder` in component code.** First responder is managed by the chain. Programmatic promotion (e.g. `showComponentGallery` opening a new card) is the only exception and must be documented.
-- **Migration template section.** A short "L11 migration pattern" section with a worked example from A2.1.
+**Landed:**
 
-**Exit criteria:** a new contributor writing a fresh interactive component has exactly one path to follow — the doc, the responder chain, the typed vocabulary — and cannot accidentally fall back to the callback-prop anti-pattern.
+- ✅ **New: `tuglaws/responder-chain.md`** — the mental-model foundation. Covers why a chain exists (Cocoa lineage, the problem it solves), the three principals (control / responder / both), the `ActionEvent` shape and phase system, the dispatch walk with an ASCII diagram, first-responder promotion (pointerdown / focusin / auto-promotion / programmatic), the four dispatch shapes (`dispatch` / `dispatchForContinuation` / `dispatchTo` / `observeDispatch`), two-phase execution via continuations, the registration hooks (`useResponder` vs `useOptionalResponder` decision rule), dispatching from a control, the four-stage keyboard pipeline with an ASCII diagram, `observeDispatch` patterns with the `blinkingRef` guard, the default button stack, and six concrete anti-patterns with the right answer for each. Cross-links to [L11], [L03], [L07], [L08], [L20], `action-naming.md`, `component-authoring.md`, and every relevant source file.
+
+- ✅ **`tuglaws.md`** — L11 gains a single trailing sentence pointing at `responder-chain.md` for the full mechanism. The law text stays untouched; only the pointer is added.
+
+- ✅ **`component-authoring.md`** — three structural updates:
+  1. New top-level "Chain Integration" section inserted between "CSS Structure" and "Component Patterns". Scopes the *how-to* for component authors (which hooks to call, which props to refuse to add, which attributes to write) and defers the *why* to `responder-chain.md`. Contains the L11 "control vs responder vs both" test, the canonical emit snippet, the canonical register snippet, the strict-vs-tolerant decision rule, the `observeDispatch` pattern with the modal opt-out pointer, the no-`makeFirstResponder` rule, and a worked "callback prop → chain dispatch" migration example (before/after code).
+  2. "Standardized citation set" table gains [L11] as a required citation for any component that dispatches or handles an action.
+  3. Checklist gains five new items matching the A5 roadmap spec: controls emit via chain, responders register via `useResponder`, `data-slot` + `data-responder-id` both present, no `makeFirstResponder`, transient UIs subscribe to `observeDispatch`. Plus an [L07] refs-not-closures item. "Laws That Govern Components" reference table gains [L07], [L11], [L19] and a trailing pointer to `responder-chain.md`.
+
+**Exit criteria (all met):**
+- ✅ A new contributor writing a fresh interactive component has exactly one path to follow — `responder-chain.md` for the model, `component-authoring.md` § Chain Integration for the how-to, `action-naming.md` for the vocabulary — and cannot accidentally fall back to the callback-prop anti-pattern.
+- ✅ Every "the chain does X" reference across the tuglaws corpus now resolves to a paragraph in `responder-chain.md` instead of requiring a source-file dive.
+- ✅ L11 migration pattern documented as a worked before/after example in `component-authoring.md`.
 
 **Grade impact after A5:** Documentation → A.
 

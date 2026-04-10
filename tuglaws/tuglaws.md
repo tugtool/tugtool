@@ -62,6 +62,8 @@ A component that owns its own state is a responder for the actions that mutate t
 
 A single component may be both an emitter and a responder for the same action. A text editor with a context menu dispatches `cut` when the user clicks the menu item; the chain's innermost-first walk routes that dispatch right back to the editor, which handles it on its own selection. Components that own state close the loop on themselves. [D08, D61, D62, D63]
 
+The full chain mechanism — `ActionEvent`, the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline, and the registration hooks — is documented in [responder-chain.md](responder-chain.md). Read that document before writing a component that participates in the chain.
+
 **L12. Selection stays inside card boundaries.** `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D34, D35, D36, D37, D38]
 
 ---

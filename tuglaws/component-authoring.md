@@ -2,7 +2,7 @@
 
 *How to build a tugways component. Every component follows this guide exactly — no exceptions, no shortcuts. Consistency is the product.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md). `[P##]` → [color-palette.md](color-palette.md). `[T##]` → [token-naming.md](token-naming.md).*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md). `[P##]` → [color-palette.md](color-palette.md). `[T##]` → [token-naming.md](token-naming.md). Chain mechanics: [responder-chain.md](responder-chain.md). Action vocabulary: [action-naming.md](action-naming.md).*
 
 ---
 
@@ -106,12 +106,13 @@ Rules:
 | Citation | Meaning | Required For |
 |----------|---------|-------------|
 | [L06] | Appearance changes via CSS/DOM, never React state | All components |
+| [L11] | Controls emit actions; responders own state that actions mutate | Any component that dispatches or handles an action |
 | [L15] | Token-driven states; color transitions only | Interactive controls |
 | [L16] | Every foreground rule declares its rendering surface | Components with CSS |
 | [L19] | Component authoring guide | All components |
 | [L20] | Token sovereignty — composed children keep own tokens | Compound composition |
 
-Add component-specific laws on top of this minimum (e.g., [L11] for controls that emit actions, [L09] for card composition).
+Interactive components effectively always cite [L11] because any interactive component either emits an action, handles one, or both. Decorative or layout-only components that do not participate in the chain omit it. Add component-specific laws on top of this minimum (e.g., [L09] for card composition, [L03] when registration timing matters).
 
 **Plan spec references are prohibited.** Docstrings must cite tuglaws (`[L##]`) and design decisions (`[D##]`) only. References like `Spec S04` or `Spec S##` are implementation history from plan artifacts — they are not governing law and must not appear in module docstrings.
 
@@ -425,6 +426,223 @@ Radix components use `[data-state="checked"]`, `[data-state="open"]`, etc. Combi
 
 ---
 
+## Chain Integration
+
+Every interactive component participates in the responder chain. The chain is the single mechanism by which user gestures reach the code that owns the state they affect — keyboard shortcuts, button clicks, context menu items, Swift-menu RPCs, and gallery-inspector dispatches all funnel through the same dispatch/walk/handle cycle.
+
+This section is the component-author's how-to. It tells you which hooks to call, which props to add (and which to refuse to add), and which attributes to write on your root element. It does not explain the chain's mechanics — the walk, the first-responder promotion, the two-phase continuation protocol, the observer pattern — those live in [responder-chain.md](responder-chain.md). Read that document once before writing a chain-participant component for the first time, then use this section as the recurring reference.
+
+### Is your component a control, a responder, or both?
+
+Ask one question: **does this component own the state that the action is going to mutate?** [L11]
+
+- **No** — the state lives elsewhere (parent, store, separate component). Your component is a *control*. It dispatches an action and lets the chain find the responder. Buttons, sliders, toggles, selects, tab bars, accordions, and popup menus are controls. Most components are.
+
+- **Yes** — the state lives inside your component and nowhere else. Your component is a *responder* for that action. It registers a handler that mutates its own state. Text editors, cards, canvases, dialog surfaces, and property stores are responders.
+
+- **Both** — the action's state lives inside your component, AND your component also emits the action from its own internal UI. A text editor with a built-in context menu is the classic both-shape: the "Cut" menu item dispatches `cut`, the chain walks back to the editor (because it's the first responder), and the editor's registered `cut` handler runs on its own selection. Both shapes are not unusual — they are the norm for self-contained widgets with their own action surfaces.
+
+The three shapes all use the same two hooks (`useResponderChain` for emitting, `useResponder` / `useOptionalResponder` for registering). Components that are only controls skip the registration; components that are only responders skip the dispatch; "both" components do both in the same file.
+
+### Emitting an action (controls)
+
+Read the chain manager from context, build an `ActionEvent`, dispatch.
+
+```tsx
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+
+export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
+  const manager = useResponderChain();  // null-safe — for standalone previews
+
+  const handleClick = () => {
+    if (!manager) return;
+    manager.dispatch({
+      action: TUG_ACTIONS.CLOSE,
+      phase: "discrete",
+    });
+  };
+
+  return <button type="button" aria-label={ariaLabel} onClick={handleClick}>×</button>;
+}
+```
+
+Rules:
+
+- **`useResponderChain` is null-safe.** Controls must render outside a chain provider (standalone previews, unit tests without a provider) without throwing. Guard the dispatch call with `if (!manager) return` and fall through to whatever standalone behavior makes sense for the component. Use `useRequiredResponderChain` only if chain presence is load-bearing for correctness — most controls don't meet that bar.
+
+- **Callback props for user interactions are prohibited.** [L11] A `TugCloseButton` must NOT expose an `onClose: () => void` prop. The close action routes through the chain; a callback prop lets the consumer bypass the chain and breaks keyboard shortcuts, first-responder semantics, and observer notification. Non-user-interaction callbacks (state mirror callbacks like `onOpenChange` for Radix integration, lifecycle observers) are fine.
+
+- **Sender id for multi-control forms.** Controls that might coexist with siblings dispatching the same action supply a stable opaque sender id so handlers can tell them apart. Default is `useId()`; expose an optional `senderId?: string` prop so tests can override.
+
+- **Always the constant, never the raw string.** `action: TUG_ACTIONS.CLOSE`, not `action: "close"`. See [action-naming.md](action-naming.md).
+
+- **`dispatch` vs `dispatchForContinuation`.** Use `dispatch` unless you need the `handled` flag or a continuation callback. Buttons in a card use `dispatch`. Context-menu items and the keyboard pipeline use `dispatchForContinuation` because the continuation runs after a menu blink (or immediately for keyboard shortcuts). See [responder-chain.md § Two-phase execution](responder-chain.md#two-phase-execution-via-continuations).
+
+**Form-shaped shortcut.** Components built on form patterns (inputs, toggles, radios, choice groups, tab bars, accordions, popup buttons) should use `useResponderForm` instead of hand-rolling `dispatch` + narrowing. The form hook exposes typed slot callbacks (`toggle`, `setValueNumber`, `selectValue`, `selectTab`, etc.) that narrow `event.value` at the slot boundary and call your setter with the already-typed value. This is the dominant pattern; reach for it whenever the component fits one of the existing slot shapes. See `use-responder-form.tsx` for the slot catalog.
+
+### Handling actions (responders)
+
+Register with `useResponder` (strict) or `useOptionalResponder` (tolerant). Both return a stable `ResponderScope` wrapper and a stable `responderRef` callback. Wrap your subtree in the scope, attach the ref to your root DOM element, and supply a typed `actions` map.
+
+```tsx
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+
+export function TugCard({ cardId, ... }: TugCardProps) {
+  // Handlers read state through refs, not stale closures. [L07]
+  const handleClose = useCallback(() => { /* ... */ }, [/* ... */]);
+  const handleSelectAll = useCallback(() => { /* ... */ }, [/* ... */]);
+
+  const { ResponderScope, responderRef } = useResponder({
+    id: cardId,
+    actions: {
+      [TUG_ACTIONS.CLOSE]:      (_e: ActionEvent) => handleClose(),
+      [TUG_ACTIONS.SELECT_ALL]: (_e: ActionEvent) => handleSelectAll(),
+      [TUG_ACTIONS.JUMP_TO_TAB]: (event: ActionEvent) => {
+        if (typeof event.value !== "number") return;   // narrow defensively
+        handleJumpToTab(event.value);
+      },
+    },
+  });
+
+  return (
+    <ResponderScope>
+      <div
+        data-slot="tug-card"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        {/* card content */}
+      </div>
+    </ResponderScope>
+  );
+}
+```
+
+Rules:
+
+- **`id` must be stable across renders.** Re-registering the responder on every render churns the chain's node map and breaks first-responder tracking. The id typically comes from the component's domain identity (`cardId` from the layout store), from `useId()` for a standalone leaf, or from an explicit prop for test harnesses.
+
+- **`responderRef` attaches to the root DOM element.** The hook writes `data-responder-id="<id>"` on the element; the chain's pointerdown/focusin DOM walk reads that attribute to resolve "the innermost responder under this event target." Without the ref, the manager logs a console warning — `first responder "<id>" has no matching [data-responder-id] element`. Fix the warning by wiring the ref; do not silence it.
+
+- **`<ResponderScope>` wraps the subtree** whose descendants should treat this node as their parent responder. Descendants calling `useResponder` see the scope's id through `ResponderParentContext` and register with that id as their `parentId`. Without the wrapper, descendant `parentId`s skip over this node and the walk order collapses.
+
+- **Handlers read current state through refs.** [L07] `useResponder` registers once at mount and uses a live proxy to pick up handler *identity* changes on re-render, so forgetting to `useCallback`-wrap your handlers is fine. But if the handler *body* closes over a stale state snapshot (`const [tabs] = useState(...)`, handler reads `tabs`), you will see stale values. Use a ref (`tabsRef.current`) for any state the handler reads at dispatch time. This is the most common chain bug in PRs.
+
+- **Narrow `event.value` defensively.** The `value` field is typed `unknown` because the same action name may carry different payload shapes across control instances. Use `typeof`, `Array.isArray`, or a structural field check at the top of the handler and early-return on mismatch so an out-of-shape dispatch is a silent no-op, not a runtime crash.
+
+### `useResponder` vs `useOptionalResponder`
+
+Both hooks have the same signature and return shape. The difference is what they do when no `ResponderChainProvider` is in scope.
+
+- **`useResponder` throws** if the manager context is null. Use it when chain participation is load-bearing — `TugCard`, `DeckCanvas`, `TugPromptInput`, anything whose actions must be routable for the app to function. A missing provider is a programming error; the throw catches it at mount instead of letting the component silently no-op.
+
+- **`useOptionalResponder` silently no-ops** when the manager is null. The hook still runs (returns a stable `ResponderScope` and `responderRef`), but the layout effect skips register/unregister, the ref skips writing `data-responder-id`, and the component falls through to its standalone behavior. Use it for leaf controls that must render in both contexts: inside the app (chain-connected) and standalone in previews, unit tests, or Storybook-style mounts.
+
+**Decision rule:** if rendering without a provider is a programming error, use `useResponder`. If it's a supported configuration (tests, previews, pre-provider mounts), use `useOptionalResponder`. Never mix them in the same component. The tolerant hook exists specifically because the old "split into `TugXxxPlain` and `TugXxxWithResponder`" pattern flipped React's component identity on provider transitions and destroyed caret position, focus, and uncontrolled input state — see the long commentary in `use-responder.tsx` for the scenario it was added to fix.
+
+### Chain-reactive dismissal (`observeDispatch`)
+
+Transient UIs — context menus, popup menus, tooltips, non-modal popovers, confirm popovers — dismiss themselves whenever unrelated chain traffic flows past. Subscribe to `manager.observeDispatch` while open, close in the observer callback, and guard self-dispatches with a `blinkingRef`.
+
+```tsx
+const blinkingRef = useRef(false);
+const [open, setOpen] = useState(false);
+const manager = useResponderChain();
+
+useLayoutEffect(() => {
+  if (!open || !manager) return;
+  return manager.observeDispatch(() => {
+    if (blinkingRef.current) return;  // skip self-dispatches
+    setOpen(false);
+  });
+}, [open, manager]);
+```
+
+- **Subscribe only while open.** The effect is gated on the open flag so the observer is installed exactly when the UI is visible.
+- **Guard self-dispatches.** A menu that dispatches its own item activation triggers the chain walk, which fires every observer — including its own. Set `blinkingRef.current = true` before the activation dispatch and check it at the top of the observer callback. Without the guard, the menu dismisses itself mid-animation.
+- **Modal surfaces opt out.** `TugAlert` and `TugSheet` do NOT install `observeDispatch` observers — they are app-modal and card-modal respectively, and closing on any chain activity would surprise users. `internal/floating-surface-notes.ts` is the canonical invariants table for the four A2.8 floating surfaces; consult it before adding or removing an observer on a floating surface.
+
+See [responder-chain.md § observeDispatch patterns](responder-chain.md#observedispatch-patterns) for the full precedent.
+
+### No `makeFirstResponder` in component code
+
+First responder is managed by the chain. The document-level pointerdown and focusin listeners installed by `ResponderChainProvider` promote the innermost registered responder under the event target automatically — components do not need to call `manager.makeFirstResponder(id)` to become first responder on click or focus.
+
+The only sanctioned programmatic promotion is `DeckCanvas` promoting a freshly-opened card, where no pointer or focus event has fired yet. If you think your component needs `makeFirstResponder`, stop and ask — you are almost certainly fighting the chain for control of first-responder state and papering over a layering bug. The correct answer is almost always "wire `responderRef` correctly and let the chain's promotion listeners do their job."
+
+### Migration pattern — callback prop → chain dispatch
+
+When retrofitting an existing component that uses a callback prop to emit a user action, the mechanical pattern is:
+
+**Before** — callback prop (L11 violation):
+```tsx
+export interface TugCloseButtonProps {
+  onClose: () => void;  // ❌ callback for a user interaction
+  ariaLabel: string;
+}
+
+export function TugCloseButton({ onClose, ariaLabel }: TugCloseButtonProps) {
+  return <button onClick={onClose} aria-label={ariaLabel}>×</button>;
+}
+
+// Consumer:
+<TugCloseButton onClose={() => deleteCard(cardId)} ariaLabel="Close" />
+```
+
+**After** — chain dispatch + responder handler:
+```tsx
+// Control: dispatches through the chain, no callback prop.
+export interface TugCloseButtonProps {
+  ariaLabel: string;  // ← onClose is GONE
+}
+
+export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
+  const manager = useResponderChain();
+  return (
+    <button
+      onClick={() => manager?.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" })}
+      aria-label={ariaLabel}
+    >×</button>
+  );
+}
+
+// Responder (the card): registers a handler for close.
+export function TugCard({ cardId }: TugCardProps) {
+  const handleClose = useCallback(() => deleteCard(cardId), [cardId]);
+  const { ResponderScope, responderRef } = useResponder({
+    id: cardId,
+    actions: {
+      [TUG_ACTIONS.CLOSE]: (_e: ActionEvent) => handleClose(),
+    },
+  });
+  return (
+    <ResponderScope>
+      <div data-slot="tug-card" ref={responderRef as (el: HTMLDivElement | null) => void}>
+        <TugCloseButton ariaLabel="Close card" />  {/* no callback prop */}
+        {/* card content */}
+      </div>
+    </ResponderScope>
+  );
+}
+
+// Consumer: just renders the card. The close logic lives inside the card.
+<TugCard cardId="card-1" />
+```
+
+Three things change:
+
+1. The button's `onClose` prop is deleted. The button dispatches the action directly.
+2. The state owner (the card) registers a handler for the action. The handler runs the logic that used to be inside the consumer's callback.
+3. The consumer stops passing a callback. It just renders the card; the card owns its close behavior.
+
+The migration is a one-way door. Once `close` is a chain action, no part of the codebase should try to route it through a callback prop again — the responder is the single owner of "what does close mean for this card."
+
+This is the pattern the A2 phases followed for every interactive control in the library (A2.1 through A2.8). Real worked examples in the commit history: see `git log --grep='A2\.' tugdeck/` for the per-control migrations and their test files.
+
+---
+
 ## Component Patterns
 
 ### Emphasis × Role
@@ -615,7 +833,7 @@ Before a component is done:
 - [ ] Every token matches what it styles: surface tokens for fills/backgrounds, border tokens for borders, text tokens for text — no semantic mismatches
 - [ ] No ad-hoc theme logic in component TSX/JS
 - [ ] `data-slot="tug-{name}"` on root element
-- [ ] Module docstring cites minimum law set ([L06], [L15] if interactive, [L16] if CSS, [L19]) plus any component-specific laws; no `Spec S##` references
+- [ ] Module docstring cites minimum law set ([L06], [L11] if interactive, [L15] if interactive, [L16] if CSS, [L19]) plus any component-specific laws; no `Spec S##` references
 - [ ] Props interface exported with JSDoc; every CSS-targetable prop has `@selector` annotation
 - [ ] `@tug-pairings` present in both compact and expanded-table formats; components with no pairings use `@tug-pairings: none`
 - [ ] Component-tier aliases (if used) defined in `body {}` and resolve to base tokens in one hop [L17]
@@ -623,6 +841,12 @@ Before a component is done:
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
 - [ ] Compound composition: own tokens scoped to own component slot; no descendant restyling of children; pairings cover only own elements; composed children documented in docstring [L20]
 - [ ] Internal components: lives in `internal/`, docstring says "Internal building block — use [public component] instead", public wrapper re-exports needed types
+- [ ] **Controls emit actions via the chain.** [L11] Every interactive component that responds to user input dispatches a typed action via `manager.dispatch` or `manager.dispatchForContinuation`. No callback props for user interactions.
+- [ ] **Responders register via `useResponder` / `useOptionalResponder`.** Every component that handles actions calls one of the two hooks with a typed `actions` map; the strict form for load-bearing chain participants, the tolerant form for standalone-capable leaves.
+- [ ] **`data-slot` + `data-responder-id` on the root element.** `data-slot` via the literal attribute, `data-responder-id` via attaching `responderRef` from the hook to the root DOM element.
+- [ ] **No `makeFirstResponder` calls from component code.** First responder is managed by the chain's pointerdown / focusin promotion path. The only sanctioned exception is `DeckCanvas` promoting a freshly-opened card, and it is documented inline where it occurs.
+- [ ] **Transient UIs subscribe to `observeDispatch` while open** with a `blinkingRef` self-dispatch guard, unless the surface is intentionally modal (alert, sheet) per `internal/floating-surface-notes.ts`.
+- [ ] Handlers read current state through refs, not stale closures [L07]
 - [ ] Keyboard accessible (Tab, Enter/Space, Escape)
 - [ ] `bun run build` exits 0
 - [ ] `bun run test` exits 0
@@ -657,8 +881,13 @@ Tokens follow the seven-slot convention from [token-naming.md](token-naming.md):
 | [L02] | External state via `useSyncExternalStore` only | Components reading stores |
 | [L03] | `useLayoutEffect` for registrations events depend on | Responder participants |
 | [L06] | Appearance changes via CSS/DOM, never React state | All components |
+| [L07] | Handlers read current state through refs, not stale closures | Action handlers on responders |
+| [L11] | Controls emit actions; responders own state that actions mutate | Any component that dispatches or handles an action |
 | [L15] | Token-driven control states; color transitions only | Interactive controls |
 | [L16] | Every foreground rule declares its rendering surface | All CSS files |
 | [L17] | Component aliases (`--tugx-*`) resolve to `--tug7-*` in one hop | Component-tier tokens |
 | [L18] | Element/surface vocabulary | All token usage |
+| [L19] | Component authoring guide | All components |
 | [L20] | Token sovereignty — composed children keep their own tokens | Compound composition |
+
+For the chain mechanics ([L11], [L03], [L07]) in depth — the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline — see [responder-chain.md](responder-chain.md).
