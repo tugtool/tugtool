@@ -259,7 +259,9 @@ Cross-cutting concern: each component type has a different selection model but s
 
 ---
 
-### 3. Content and selection persistence across tab changes
+### 3. Content and selection persistence across tab changes — DEFERRED
+
+Deferred: requires a proper document model for card content, not per-component save/restore into a key-value store. The single-slot persistence design (`useTugcardPersistence`) doesn't scale to cards with multiple inputs, and the right solution is a card-level content model that captures the full editing surface.
 
 **Current state:** Only tug-prompt-input persists via `useTugcardPersistence` (saves engine state including text, atoms, selection). TugInput, TugValueInput, and TugTextarea have no persistence — content and selection are lost on tab switch.
 
