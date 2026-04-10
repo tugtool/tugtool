@@ -54,7 +54,7 @@ Map input to CLI command:
 tugutil commit \
   --worktree "{worktree_path}" \
   --step "{step_anchor}" \
-  --plan-id "{plan_id}" \
+  --plan "{plan_id}" \
   --message "{proposed_message}" \
   --summary "{log_entry.summary}" \
   --json
@@ -71,7 +71,7 @@ Fixup mode handles polish commits outside the step system. Execute three steps:
 ```bash
 cd "{worktree_path}" && tugutil log prepend \
   --step audit-fix \
-  --plan-id "{plan_id}" \
+  --plan "{plan_id}" \
   --summary "{log_entry.summary}"
 ```
 
