@@ -365,8 +365,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // the second call is a no-op), keyboard shortcuts (Ctrl+`), card creation
   // (addCard), card close (focus shifts to next card), and initial restore.
   //
-  // Rule 4: The appearance change is through the CSS Custom Highlight API (DOM),
-  // not React state. This effect is only the trigger.
+  // Rule 4: The appearance change is through the browser Selection API and the
+  // inactive-selection CSS Highlight (DOM), not React state.
   useLayoutEffect(() => {
     if (focusedCardId) {
       selectionGuard.activateCard(focusedCardId);

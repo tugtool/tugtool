@@ -752,7 +752,7 @@ class SelectionGuard {
     this.stopTracking();
   }
 
-  // ---- selectionchange: mirror + safety net ([D04]) ----
+  // ---- selectionchange: boundary clipping safety net ----
 
   private handleSelectionChange(): void {
     const selection = window.getSelection();
