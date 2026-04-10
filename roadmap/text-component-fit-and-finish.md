@@ -302,6 +302,27 @@ Component authors set `data-tug-select` on their root element. The attribute dri
 
 **Rule 5: Copyable components offer right-click → Copy.** They register as responders with a `copy` handler that reads `el.textContent` (or equivalent) and writes to the clipboard. They show a `TugEditorContextMenu` with Copy enabled and all other items disabled. They do NOT handle `selectAll`.
 
+**Rule 6: Chrome controls refuse focus on click.** Controls (buttons, checkboxes, switches, sliders, radio/choice/option group items, tab bar tabs) prevent mousedown default to stop the browser from moving focus to them on click. This mirrors Cocoa's `acceptsFirstResponder = false` — controls respond to clicks but never steal keyboard focus from the active editor. The click event and its action dispatch are unaffected. Keyboard accessibility is preserved: controls remain in the Tab order (`tabindex` unchanged) so keyboard users can reach them via Tab and activate with Enter/Space. Only mouse-driven focus theft is prevented.
+
+| Component | Focus behavior | Implementation |
+|-----------|---------------|----------------|
+| TugButton (internal) | Refuses focus on click | `onMouseDown={preventFocusTheft}` |
+| TugPushButton | Refuses focus on click | Inherits from TugButton |
+| TugPopupButton | Refuses focus on click | Inherits from TugButton |
+| TugCheckbox | Refuses focus on click | `onMouseDown={preventFocusTheft}` |
+| TugSwitch | Refuses focus on click | `onMouseDown={preventFocusTheft}` |
+| TugSlider | Refuses focus on click | `onMouseDown={preventFocusTheft}` |
+| TugRadioGroup items | Refuses focus on click | On radio item element |
+| TugChoiceGroup items | Refuses focus on click | On choice item element |
+| TugOptionGroup items | Refuses focus on click | On option item element |
+| TugTabBar tabs | Refuses focus on click | On tab element |
+| TugInput | **Accepts focus** | No change — needs keyboard input |
+| TugTextarea | **Accepts focus** | No change |
+| TugValueInput | **Accepts focus** | No change |
+| TugPromptInput | **Accepts focus** | No change |
+| TugMarkdownView | **Accepts focus** | No change (tabIndex=0 for shortcuts) |
+| Display components | N/A | Non-interactive, no focus behavior |
+
 #### Implementation plan
 
 **Step 1: Remove card-level `selectAll` handler.**
@@ -314,7 +335,15 @@ The responder chain already provides the right scoping: tug-prompt-input, tug-in
 
 Remove `user-select: text` from `.tug-sheet`. The sheet overlay is unselectable chrome. Form inputs inside the sheet already have their own `user-select: text`. The sheet's `user-select: text` was a workaround for a WebKit double-click bug — test whether the bug still occurs with the boundary enforcer model. If it does, find a narrower fix (e.g., `user-select: text` only on the sheet's form input region, or a targeted `pointerdown` handler).
 
-**Step 3: Audit all `user-select: text` declarations.**
+**Step 3: Implement focus refusal on chrome controls.**
+
+Add `onMouseDown={(e) => e.preventDefault()}` to controls that should not steal focus from editors. This is a component-level behavior — each control handles it internally, not per-instance. The `click` event is unaffected: mousedown+mouseup on the same element still fires `click` normally. Keyboard Tab navigation is unaffected: controls keep their default `tabindex` so Tab/Enter/Space works.
+
+Start with `TugButton` (internal) since `TugPushButton` and `TugPopupButton` compose it — fixing TugButton fixes all three. Then apply to `TugCheckbox`, `TugSwitch`, `TugSlider`, `TugRadioGroup`, `TugChoiceGroup`, `TugOptionGroup`, and `TugTabBar` tab elements.
+
+This also resolves the tug-sheet WebKit workaround (Q3) — the bug was that clicking a button inside a sheet stole focus from a text input, requiring a double-click. With focus refusal on the button, focus stays in the input and the button activates on the first click.
+
+**Step 4: Audit all `user-select: text` declarations.**
 
 Verify that every `user-select: text` in the codebase is on a selectable component, not a container or chrome element. Current declarations:
 
@@ -327,7 +356,7 @@ Verify that every `user-select: text` in the codebase is on a selectable compone
 | `.tug-sheet` | tug-sheet.css | Chrome (container) | **Wrong** — remove |
 | `.style-inspector-overlay` | style-inspector-overlay.css | Review | Determine category |
 
-**Step 4: Implement copyable component pattern.**
+**Step 5: Implement copyable component pattern.**
 
 Create a reusable pattern for copyable components (labels, timestamps, status text):
 - Component registers as a responder with a `copy` handler
@@ -338,12 +367,15 @@ Create a reusable pattern for copyable components (labels, timestamps, status te
 
 This could be a shared hook (e.g., `useCopyableText(ref)`) that handles the responder registration, context menu, and clipboard write. Each copyable component calls it.
 
-**Step 5: Update `tuglaws/selection-model.md` and `tuglaws/component-authoring.md`.**
+**Step 6: Update `tuglaws/selection-model.md`, `tuglaws/responder-chain.md`, and `tuglaws/component-authoring.md`.**
 
-Document the three categories and five rules. Add guidance to the component authoring guide:
-- "Selectable components set `user-select: text` and handle `selectAll`. Examples: tug-markdown-view, tug-input, tug-textarea, tug-value-input, tug-prompt-input."
-- "Copyable components inherit `user-select: none`, handle `copy` via right-click context menu, and do NOT handle `selectAll`. Use `useCopyableText` hook."
-- "Unselectable components inherit `user-select: none` and offer no copy mechanism. Examples: buttons, toolbars, section headers."
+Document the three selection categories, six rules, and focus acceptance model:
+- `selection-model.md`: Three categories (selectable, copyable, chrome), six rules, `data-tug-select` attribute, focus acceptance model.
+- `responder-chain.md`: Add "Focus acceptance" section explaining that controls refuse focus on click (mousedown prevention) while remaining Tab-accessible. Update the chain walk diagram to remove `select-all` from TugCard.
+- `component-authoring.md`: Add guidance:
+  - "Selectable components set `user-select: text` and handle `selectAll`."
+  - "Copyable components inherit `user-select: none`, handle `copy` via right-click, use `useCopyableText` hook."
+  - "Chrome controls refuse focus on click via mousedown prevention. Use the same pattern as TugButton."
 
 #### Resolved questions
 
@@ -351,12 +383,21 @@ Document the three categories and five rules. Add guidance to the component auth
 
 **Q2: Informational text.** Three categories — selectable, copyable, unselectable. Labels, timestamps, and status lines are **copyable**: right-click → Copy works, but click-drag and ⌘A do not. No visible selection highlight ever appears on copyable content.
 
-**Q3: tug-sheet WebKit workaround.** Needs testing. The comment says `user-select: text` on the sheet prevents WebKit from consuming the first click on a button as a selection-clear action (when a text input inside the sheet has an active selection). Test whether this bug reproduces with the boundary enforcer model. If so, apply a narrower fix.
+**Q3: tug-sheet WebKit workaround.** Resolved by Rule 6 (focus refusal). The bug was that clicking a button inside a sheet while a text input had an active selection caused the first click to be consumed as a selection-clear action. With focus refusal on TugButton (`mousedown.preventDefault`), the button never steals focus from the input — the selection stays, and the button activates on the first click. The broad `user-select: text` on `.tug-sheet` is no longer needed.
 
 **Key files:**
-- `tugdeck/src/components/tugways/tug-card.tsx` (remove handleSelectAll)
-- `tugdeck/src/components/tugways/tug-sheet.css` (remove user-select: text)
+- `tugdeck/src/components/tugways/tug-card.tsx` (remove handleSelectAll — done)
+- `tugdeck/src/components/tugways/tug-sheet.css` (remove user-select: text — done)
+- `tugdeck/src/components/tugways/internal/tug-button.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-checkbox.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-switch.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-slider.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-radio-group.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-choice-group.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-option-group.tsx` (mousedown focus refusal)
+- `tugdeck/src/components/tugways/tug-tab-bar.tsx` (mousedown focus refusal)
 - `tugdeck/src/components/tugways/style-inspector-overlay.css` (audit)
 - `tugdeck/src/components/tugways/use-copyable-text.ts` (new — shared hook for copyable pattern)
-- `tuglaws/selection-model.md` (document three categories and five rules)
-- `tuglaws/component-authoring.md` (add selection guidance)
+- `tuglaws/selection-model.md` (document three categories and six rules)
+- `tuglaws/responder-chain.md` (focus acceptance section, diagram update)
+- `tuglaws/component-authoring.md` (add selection + focus guidance)
