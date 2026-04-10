@@ -662,7 +662,13 @@ pub fn run_worktree_setup_with_root(
                                         None
                                     }
                                 };
-                                (true, auto_reinit, vec![], ready, Some(init_result.plan_id.clone()))
+                                (
+                                    true,
+                                    auto_reinit,
+                                    vec![],
+                                    ready,
+                                    Some(init_result.plan_id.clone()),
+                                )
                             }
                             Err(e) => {
                                 let msg = format!("state init failed: {}", e);
