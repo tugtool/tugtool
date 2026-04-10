@@ -46,7 +46,7 @@
 
 import "./tug-markdown-view.css";
 
-import React, { useImperativeHandle, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
@@ -54,6 +54,10 @@ import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { RegionMap } from "@/lib/region-map";
 import { SmartScroll } from "@/lib/smart-scroll";
 import type { PropertyStore } from "@/components/tugways/property-store";
+import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
@@ -1057,17 +1061,198 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // to be listed as a dependency.
   }, [streamingStore, streamingPath]);
 
+  // ---- Context menu (cut/copy/paste/select all) ----
+  //
+  // Uses TugEditorContextMenu — the same portaled menu used by
+  // tug-prompt-input and the native input components.
+  //
+  // Selection management is handled entirely by SelectionGuard.
+  // This component does NOT add its own pointer or selection event
+  // listeners for selection management. The only listeners are:
+  //   - contextmenu: to show/hide the editor context menu
+  //   - pointerdown (bubble): ONLY to clear the selectAllActive flag
+  //   - click: cleanup pass to remove collapsed carets in read-only content
+
+  // Menu state: null when closed, {x, y, hasSelection} when open.
+  const [menuState, setMenuState] = useState<{
+    x: number;
+    y: number;
+    hasSelection: boolean;
+  } | null>(null);
+
+  const closeMenu = useCallback(() => setMenuState(null), []);
+
+  // ---- Virtualized select-all ----
+  //
+  // A logical flag that means "the entire document is selected," even
+  // though only a viewport window of blocks is in the DOM. When active:
+  //   - Visual: a data-select-all attribute on the scroll container
+  //     paints all block content with the selection color via CSS.
+  //     A CSS rule suppresses ::highlight(card-selection) to prevent
+  //     double painting.
+  //   - Copy: reads from regionMap.text (the full document) instead of
+  //     the DOM Selection.
+  //   - Cleared on the next pointerdown (bubble phase).
+  const selectAllActiveRef = useRef(false);
+
+  /** Set or clear the select-all visual state via data attribute [L06]. */
+  function setSelectAllVisual(active: boolean) {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (active) {
+      el.setAttribute("data-select-all", "");
+    } else {
+      el.removeAttribute("data-select-all");
+    }
+  }
+
+  // ---- Action handlers ----
+
+  const handleCut = useCallback((): ActionHandlerResult => {
+    // Read-only component — cut is a no-op.
+  }, []);
+
+  const handleCopy = useCallback((): ActionHandlerResult => {
+    if (selectAllActiveRef.current) {
+      // Virtualized select-all: copy full text from the data model.
+      const engine = engineRef.current;
+      if (engine) {
+        const text = engine.regionMap.text;
+        void navigator.clipboard.writeText(text);
+      }
+    } else {
+      // Normal selection: use execCommand("copy") which copies the
+      // current DOM Selection. Runs synchronously in the user gesture.
+      document.execCommand("copy");
+    }
+  }, []);
+
+  const handlePaste = useCallback((): ActionHandlerResult => {
+    // Read-only component — paste is a no-op.
+  }, []);
+
+  const handleSelectAll = useCallback((): ActionHandlerResult => {
+    // Return a continuation so the select-all visual applies AFTER
+    // the menu activation blink, matching the two-phase pattern used
+    // by all TugEditorContextMenu dispatches [L11].
+    return () => {
+      selectAllActiveRef.current = true;
+      setSelectAllVisual(true);
+      // Clear the DOM Selection so syncActiveHighlight removes any
+      // existing Range from the card-selection highlight. Without this,
+      // the old Range stays in the highlight (hidden by the CSS
+      // data-select-all override) and flashes visible when select-all
+      // is cleared. Safe now that the Option A fix prevents
+      // activeHighlightCardId=null from triggering stuck selections.
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+    };
+  }, []);
+
+  // ---- Responder registration [L11] ----
+
+  const responderId = useId();
+
+  const { ResponderScope, responderRef } = useOptionalResponder({
+    id: responderId,
+    actions: {
+      [TUG_ACTIONS.CUT]: handleCut,
+      [TUG_ACTIONS.COPY]: handleCopy,
+      [TUG_ACTIONS.PASTE]: handlePaste,
+      [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
+    },
+  });
+
+  // ---- Context menu items ----
+
+  const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
+    const hasSelection = menuState?.hasSelection ?? false;
+    return [
+      { action: TUG_ACTIONS.CUT,        label: "Cut",        shortcut: "\u2318X", disabled: true },
+      { action: TUG_ACTIONS.COPY,       label: "Copy",       shortcut: "\u2318C", disabled: !hasSelection },
+      { action: TUG_ACTIONS.PASTE,      label: "Paste",      shortcut: "\u2318V", disabled: true },
+      { type: "separator" },
+      { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A" },
+    ];
+  }, [menuState?.hasSelection]);
+
+  // ---- Event listeners ----
+  //
+  // Minimal set — SelectionGuard owns the selection lifecycle.
+  // These listeners handle only:
+  //   1. contextmenu: show the editor context menu
+  //   2. pointerdown (bubble): clear selectAllActive flag
+  //   3. click: remove collapsed carets in read-only content
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // 1. Contextmenu — show the editor context menu on right-click
+    //    within the block container.
+    const onContextMenu = (e: MouseEvent) => {
+      const blockContainer = blockContainerRef.current;
+      if (!blockContainer) return;
+      if (!blockContainer.contains(e.target as Node) && e.target !== blockContainer) return;
+      e.preventDefault();
+
+      const hasSelection = selectAllActiveRef.current || (() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+        return blockContainer.contains(sel.anchorNode) || blockContainer.contains(sel.focusNode);
+      })();
+
+      setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+    };
+
+    // 2. Pointerdown (bubble phase) — clear select-all on any
+    //    non-right-click. This runs AFTER SelectionGuard's capture-phase
+    //    handler has already processed the event, so there's no race.
+    //    This is the ONLY pointer listener; no pointermove/pointerup.
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 2 && selectAllActiveRef.current) {
+        selectAllActiveRef.current = false;
+        setSelectAllVisual(false);
+      }
+    };
+
+    container.addEventListener("contextmenu", onContextMenu);
+    container.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      container.removeEventListener("contextmenu", onContextMenu);
+      container.removeEventListener("pointerdown", onPointerDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable
+  }, []);
+
+  // Compose scrollContainerRef with responderRef so one DOM element gets
+  // both: the scroll container ref for windowing logic and the responder
+  // ref for data-responder-id so the chain's first-responder resolution
+  // can find this node.
+  const composedScrollRef = useCallback((el: HTMLDivElement | null) => {
+    (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    responderRef(el);
+  }, [responderRef]);
+
   return (
-    <div
-      ref={scrollContainerRef}
-      data-slot="tug-markdown-view"
-      className={cn("tugx-md-scroll-container", className)}
-      tabIndex={0}
-    >
-      <div ref={topSpacerRef} className="tugx-md-spacer tugx-md-spacer--top" aria-hidden="true" />
-      <div ref={blockContainerRef} className="tugx-md-block-container" />
-      <div ref={bottomSpacerRef} className="tugx-md-spacer tugx-md-spacer--bottom" aria-hidden="true" />
-      <div className="tugx-md-bottom-buffer" aria-hidden="true" />
-    </div>
+    <ResponderScope>
+      <div
+        ref={composedScrollRef}
+        data-slot="tug-markdown-view"
+        className={cn("tugx-md-scroll-container", className)}
+        tabIndex={0}
+      >
+        <div ref={topSpacerRef} className="tugx-md-spacer tugx-md-spacer--top" aria-hidden="true" />
+        <div ref={blockContainerRef} className="tugx-md-block-container" />
+        <div ref={bottomSpacerRef} className="tugx-md-spacer tugx-md-spacer--bottom" aria-hidden="true" />
+        <div className="tugx-md-bottom-buffer" aria-hidden="true" />
+        <TugEditorContextMenu
+          open={menuState !== null}
+          x={menuState?.x ?? 0}
+          y={menuState?.y ?? 0}
+          items={menuItems}
+          onClose={closeMenu}
+        />
+      </div>
+    </ResponderScope>
   );
 });

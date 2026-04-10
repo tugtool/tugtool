@@ -504,8 +504,13 @@ class SelectionGuard {
   activateCard(cardId: string): void {
     if (!this.activeHighlight || !this.inactiveHighlight) return;
 
-    const wasDifferentCard = this.activeHighlightCardId !== null &&
-                             this.activeHighlightCardId !== cardId;
+    // No-op if this card is already the active highlight card.
+    // This prevents re-adding a stale Range from cardRanges to the
+    // highlight when DeckCanvas or other external callers re-trigger
+    // activation for the same card (e.g. on focus-change effects).
+    if (this.activeHighlightCardId === cardId) return;
+
+    const wasDifferentCard = this.activeHighlightCardId !== null;
 
     // Move the previous active card's range to inactive (if different card).
     if (wasDifferentCard) {
@@ -516,7 +521,7 @@ class SelectionGuard {
       }
     }
 
-    // Move the clicked card's range from inactive to active (if it has one).
+    // Move the new card's range from inactive to active (if it has one).
     const range = this.cardRanges.get(cardId);
     if (range) {
       this.inactiveHighlight.delete(range);
@@ -799,19 +804,32 @@ class SelectionGuard {
 
     // ---- Activate the clicked card's highlight ----
     //
-    // Move the clicked card's Range from inactive to active highlight,
-    // and move the previous active card's Range to inactive.
+    // Three cases based on the relationship between the clicked card
+    // and the currently-active highlight card:
     //
-    // When re-activating a card that had a non-collapsed inactive range,
-    // also restore the browser Selection to match and install a one-shot
-    // mousedown handler to prevent the click from collapsing the selection.
+    // 1. Genuine card switch (activeHighlightCardId is non-null and
+    //    different from clickedCardId): Full activation — move old
+    //    card's Range to inactive, move new card's Range to active,
+    //    restore browser Selection, prevent mousedown from collapsing.
+    //
+    // 2. Same card (activeHighlightCardId === clickedCardId): No-op.
+    //    The card is already active. Let the browser handle the click
+    //    normally (place caret, start drag-to-select, etc.).
+    //
+    // 3. No active card (activeHighlightCardId is null — selection was
+    //    cleared): Just set activeHighlightCardId so syncActiveHighlight
+    //    knows which card to update on the next selectionchange. Do NOT
+    //    call activateCard — it would re-add a stale Range from
+    //    cardRanges to the highlight, causing a flash of a previous
+    //    selection that should have been cleared.
     if (clickedCardId && this.highlightsAvailable) {
-      const hadInactiveRange = this.cardRanges.has(clickedCardId) &&
-                               this.activeHighlightCardId !== clickedCardId;
+      if (this.activeHighlightCardId === null) {
+        // Case 3: re-establish the active card without restoring state.
+        this.activeHighlightCardId = clickedCardId;
+      } else if (this.activeHighlightCardId !== clickedCardId) {
+        // Case 1: genuine card switch.
+        this.activateCard(clickedCardId);
 
-      this.activateCard(clickedCardId);
-
-      if (hadInactiveRange) {
         const range = this.cardRanges.get(clickedCardId);
         if (range && !range.collapsed) {
           // Restore browser Selection to match the activated range so
@@ -828,6 +846,7 @@ class SelectionGuard {
           this.installPreventMousedown();
         }
       }
+      // Case 2 (same card): no action needed.
     }
 
     // ---- Tracking loop ----

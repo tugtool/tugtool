@@ -14,13 +14,14 @@
  * Concrete adapter factories:
  *   - `createNativeInputAdapter` — in `use-text-input-responder.tsx`
  *   - `createEngineAdapter`      — in `tug-prompt-input.tsx`
- *   - `HighlightSelectionAdapter` — stub class in this file (wired by item 1)
+ *   - `HighlightSelectionAdapter` — class in this file (DOM Selection over boundary element)
  *
  * Design decisions:
  *   [D01] Adapter is a plain object interface, not a class hierarchy
  *   [D02] Hybrid classifyRightClick replaces geometric-only API
- *   [D03] HighlightSelectionAdapter is a stub in this plan
  */
+
+import { caretPositionFromPointCompat } from "./selection-guard";
 
 // ---------------------------------------------------------------------------
 // RightClickClassification
@@ -176,80 +177,129 @@ export function findWordBoundaries(
 }
 
 // ---------------------------------------------------------------------------
-// HighlightSelectionAdapter (stub — wired by item 1)
+// HighlightSelectionAdapter
 // ---------------------------------------------------------------------------
 
 /**
- * Stub adapter for tug-markdown-view's CSS Custom Highlight / SelectionGuard
- * selection model.
+ * Adapter for tug-markdown-view's CSS Custom Highlight / DOM Selection model.
  *
- * All methods are stubs per [D03]. Query methods return safe defaults; mutation
- * methods throw `Error("Not implemented — wired by item 1")`. Item 1 will
- * replace stub method bodies with real SelectionGuard integration.
+ * Wraps `window.getSelection()` scoped to a boundary element. Used by items
+ * 1-2 for context menu copy enablement, right-click classification, and
+ * word-at-point expansion.
  *
- * Satisfies `TextSelectionAdapter` so items 1-4 can import and reference it
- * without circular dependency issues before item 1 lands.
+ * All query methods check that the DOM Selection is within the boundary
+ * element before returning results. Mutation methods operate on the standard
+ * DOM Selection API — `Selection.modify` for word expansion,
+ * `caretPositionFromPointCompat` for coordinate-to-offset conversion.
  *
- * @param _boundaryEl The boundary `HTMLElement` for the markdown-view card.
- *                    Stored for use by item 1 when the stub is wired.
+ * @param boundaryEl The boundary `HTMLElement` for the markdown-view content.
  */
 export class HighlightSelectionAdapter implements TextSelectionAdapter {
-  // Stored for item 1 — not used by stubs.
   private readonly _boundaryEl: HTMLElement;
 
   constructor(boundaryEl: HTMLElement) {
     this._boundaryEl = boundaryEl;
   }
 
-  /**
-   * Always returns `false` — stub.
-   * Item 1 will query SelectionGuard for a real ranged selection.
-   */
+  /** True when there is a non-collapsed DOM selection within the boundary. */
   hasRangedSelection(): boolean {
-    return false;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+    return this._isSelectionInBoundary(sel);
   }
 
-  /**
-   * Always returns `""` — stub.
-   * Item 1 will extract the selected text from the active CSS Custom Highlight range.
-   */
+  /** Selected text from the DOM selection, or empty string. */
   getSelectedText(): string {
-    return "";
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return "";
+    if (!this._isSelectionInBoundary(sel)) return "";
+    return sel.toString();
   }
 
   /**
-   * Not implemented — wired by item 1.
-   * @throws Error
+   * Select all content within the boundary element via DOM Selection.
+   *
+   * Note: tug-markdown-view does NOT call this for virtualized select-all.
+   * The view's selectAll action handler sets a logical flag + CSS visual
+   * instead, because the DOM only contains a viewport window of blocks.
+   * This method exists for non-virtualized contexts or testing.
    */
   selectAll(): void {
-    throw new Error("Not implemented — wired by item 1");
+    const sel = window.getSelection();
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(this._boundaryEl);
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
-  /**
-   * Not implemented — wired by item 1.
-   * @throws Error
-   */
+  /** Expand the current caret to word boundaries via Selection.modify. */
   expandToWord(): void {
-    throw new Error("Not implemented — wired by item 1");
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    sel.modify("move", "backward", "word");
+    sel.modify("extend", "forward", "word");
   }
 
   /**
-   * Always returns `"elsewhere"` — stub.
-   * Item 1 will use SelectionGuard geometry for a real classification.
+   * Classify a right-click using DOM Range geometry.
+   *
+   * For ranged selections: checks if the click point falls within any of
+   * the selection's client rects. For collapsed selections: checks
+   * proximity of the click to the caret rect.
    */
   classifyRightClick(
-    _clientX: number,
-    _clientY: number,
-    _proximityThreshold: number,
+    clientX: number,
+    clientY: number,
+    proximityThreshold: number,
   ): RightClickClassification {
-    return "elsewhere";
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return "elsewhere";
+    if (!this._isSelectionInBoundary(sel)) return "elsewhere";
+
+    const range = sel.getRangeAt(0);
+
+    if (!sel.isCollapsed) {
+      // Ranged selection — check if click is within any selection rect.
+      const rects = range.getClientRects();
+      for (let i = 0; i < rects.length; i++) {
+        const r = rects[i];
+        if (clientX >= r.left && clientX <= r.right &&
+            clientY >= r.top && clientY <= r.bottom) {
+          return "within-range";
+        }
+      }
+      return "elsewhere";
+    }
+
+    // Collapsed — check proximity to caret.
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return "elsewhere";
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return dist <= proximityThreshold ? "near-caret" : "elsewhere";
   }
 
   /**
-   * Not implemented — wired by item 1.
-   * @throws Error
+   * Place caret at the given viewport coordinates and expand to word.
+   * Uses `caretPositionFromPointCompat` for coordinate-to-offset conversion.
    */
-  selectWordAtPoint(_clientX: number, _clientY: number): void {
-    throw new Error("Not implemented — wired by item 1");
+  selectWordAtPoint(clientX: number, clientY: number): void {
+    const pos = caretPositionFromPointCompat(clientX, clientY);
+    if (!pos) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.setBaseAndExtent(pos.node, pos.offset, pos.node, pos.offset);
+    sel.modify("move", "backward", "word");
+    sel.modify("extend", "forward", "word");
+  }
+
+  /** Check if the DOM selection's anchor or focus is within the boundary. */
+  private _isSelectionInBoundary(sel: Selection): boolean {
+    return (
+      (sel.anchorNode !== null && this._boundaryEl.contains(sel.anchorNode)) ||
+      (sel.focusNode !== null && this._boundaryEl.contains(sel.focusNode))
+    );
   }
 }

@@ -88,13 +88,15 @@ Three implementations, each wrapping its native model:
    - `expandToWord` → `Selection.modify("move", "backward", "word")` + `Selection.modify("extend", "forward", "word")` (already used by `selectWordAtPoint`)
    - `selectAll` → `engine.selectAll()`
 
-3. **`HighlightSelectionAdapter`** — wraps SelectionGuard + DOM Selection for read-only views.
+3. **`HighlightSelectionAdapter`** — thin query layer over SelectionGuard-managed state for read-only views.
    - `hasRangedSelection` → check `window.getSelection()` for a non-collapsed range within the boundary element
    - `getSelectedText` → `window.getSelection().toString()`
-   - `getCaretRect` / `getSelectionRects` → from `window.getSelection().getRangeAt(0)`
-   - `setCaretToPoint` → `caretPositionFromPointCompat` → `Selection.setBaseAndExtent`
-   - `expandToWord` → `Selection.modify` (same as engine, since this is standard DOM Selection)
-   - `selectAll` → create a Range spanning the boundary element, `Selection.addRange`
+   - `selectAll` → sets a logical `selectAllActive` flag + CSS visual (virtualized; see Q2 below)
+   - `expandToWord` → `Selection.modify` (standard DOM Selection)
+   - `classifyRightClick` → geometry check against live DOM Selection Range rects
+   - `selectWordAtPoint` → `caretPositionFromPointCompat` → `Selection.setBaseAndExtent` → expandToWord
+
+   **Critical constraint:** The HighlightSelectionAdapter does NOT add its own pointer or selection event listeners. SelectionGuard owns the full pointer-to-highlight lifecycle for all card content — drag-to-select, highlight rendering, card boundary enforcement, cross-card selection preservation. The adapter only queries the state that SelectionGuard already manages. Adding parallel pointer/selection listeners creates two systems mutating the same `window.getSelection()`, which causes double rendering, stuck selections, and clearing that doesn't stick.
 
 **What the adapter does NOT cover:**
 
@@ -182,37 +184,38 @@ For a read-only component, selection is fundamentally about *what gets copied*, 
 
 1. **Select-all sets a logical flag**, not a DOM selection. The component tracks a `selectAllActive` state (a ref, not React state — per L06, this is appearance).
 
-2. **Visual feedback:** When `selectAllActive` is true, all visible blocks are painted as selected via CSS Highlights. As the user scrolls, newly-entering blocks also get the selection highlight. The visual effect is "everything is highlighted" even though only visible blocks are in the DOM.
+2. **Visual feedback:** When `selectAllActive` is true, a `data-select-all` attribute on the scroll container paints all visible blocks with the selection color via CSS (same tokens as `::highlight(card-selection)`). As the user scrolls, newly-entering blocks inherit the styling automatically because they're children of the styled container. A CSS rule suppresses the `::highlight(card-selection)` rendering while `data-select-all` is active to prevent double painting.
 
-3. **Copy from the data model.** The `copy` handler checks `selectAllActive`. If true, it extracts the full text from `regionMap.text` (or iterates `htmlCache` for formatted content) and writes it to the clipboard via `navigator.clipboard.writeText()` (or `write()` for rich content). No DOM Range needed.
+3. **Copy from the data model.** The `copy` handler checks `selectAllActive`. If true, it extracts the full text from `regionMap.text` and writes it to the clipboard via `navigator.clipboard.writeText()`. No DOM Range needed.
 
-4. **Clear on any selection change.** If the user clicks to place a caret or drags to make a partial selection after select-all, the `selectAllActive` flag clears and normal selection behavior resumes.
+4. **Clear when SelectionGuard processes the next interaction.** The markdown view does NOT add its own pointerdown or selectionchange listeners to clear the flag — that would duplicate SelectionGuard's event handling. Instead, the component listens to a targeted, minimal signal:
+   - A `pointerdown` listener on the scroll container (bubble phase, not capture) checks if `selectAllActive` is true and clears the flag + removes `data-select-all`. This runs after SelectionGuard's capture-phase handler has already processed the event, so there's no race.
+   - This is the ONLY pointer listener the markdown view adds. It does not track pointer movement, detect drags, or manage selection state — SelectionGuard does all of that.
 
-5. **Interaction with SelectionGuard.** SelectionGuard manages per-card selections via CSS Highlights and Range objects. The `selectAllActive` flag is a markdown-view-internal concept that sits above SelectionGuard. When active, the view tells SelectionGuard to paint all visible blocks as selected; when cleared, normal Range-based selection resumes.
+5. **Interaction with SelectionGuard.** SelectionGuard continues to manage all DOM Selection state, CSS Highlight rendering, drag-to-select, and boundary enforcement for the markdown view's card content. The `selectAllActive` flag is a layer above SelectionGuard — it does not touch the DOM Selection or the CSS Highlights. SelectionGuard is unaware of the flag; the only coordination is the CSS rule that suppresses `::highlight(card-selection)` while `data-select-all` is active.
 
 **Implementation sketch:**
 
 ```
-selectAll handler:
+selectAll handler (continuation — runs after menu blink):
   selectAllRef.current = true
-  paint all visible blocks into activeHighlight
-  
-scroll handler (existing RAF callback):
-  if selectAllActive:
-    paint entering blocks into activeHighlight too
+  scrollContainer.setAttribute("data-select-all", "")
     
 copy handler:
   if selectAllActive:
     text = engine.regionMap.text (full content)
     navigator.clipboard.writeText(text)
   else:
-    text = window.getSelection().toString() (normal)
+    document.execCommand("copy") (normal DOM Selection copy)
     
-pointerdown / selectionchange:
-  selectAllRef.current = false (clear logical select-all)
+pointerdown (bubble phase, scroll container only):
+  if selectAllActive:
+    selectAllRef.current = false
+    scrollContainer.removeAttribute("data-select-all")
+  // No other pointer handling — SelectionGuard owns the rest.
 ```
 
-This avoids materializing the full DOM (which defeats virtualization and could be very expensive for large documents), preserves the virtualization invariant, and gives the user the expected behavior: ⌘A highlights everything, ⌘C copies everything.
+This avoids materializing the full DOM (which defeats virtualization and could be very expensive for large documents), preserves the virtualization invariant, does not duplicate SelectionGuard's event handling, and gives the user the expected behavior: ⌘A highlights everything, ⌘C copies everything.
 
 **Key files:**
 - `tugdeck/src/components/tugways/text-selection-adapter.ts` (new — interface + shared utility)
@@ -227,14 +230,22 @@ This avoids materializing the full DOM (which defeats virtualization and could b
 
 **Current state:** No context menu, no responder registration. Uses SelectionGuard for CSS Custom Highlight API selection rendering (read-only).
 
-**Goal:** Adopt the right-click editing menu popup used by the other text components. Since tug-markdown-view is read-only, only **copy** and **select all** should appear. Copy is enabled only when there is a ranged selection.
+**Goal:** Adopt the right-click editing menu popup used by the other text components. The menu shows all four standard text commands — Cut, Copy, Paste, Select All — with Cut and Paste always disabled (read-only component). Copy is enabled only when there is a ranged selection or select-all is active. Standard mac-like menu behavior: show all commands, disable the ones that don't apply.
 
-**Approach:** Can't reuse `useTextInputResponder` (that targets native `<input>`/`<textarea>`). Needs its own contextmenu handler modeled on tug-prompt-input's pattern — register as a responder with `copy` and `selectAll` handlers, show `TugEditorContextMenu` with those two items, sample SelectionGuard state at menu-open time to drive copy enablement.
+**Approach:** Register as a responder with `copy`, `selectAll`, and no-op `cut`/`paste` handlers. Add a `contextmenu` listener to show `TugEditorContextMenu`. Sample `window.getSelection()` at menu-open time to drive copy enablement.
+
+**Critical constraint — work with SelectionGuard, not around it:** The markdown view does NOT add its own `pointerdown`/`pointermove`/`pointerup`/`selectionchange` listeners for selection management. SelectionGuard already handles the full selection lifecycle for all card content: drag-to-select, pointer clamping at card boundaries, highlight rendering via `::highlight(card-selection)`, and selection preservation across card switches. The markdown view's block container is inside a card boundary element, so all of this works out of the box.
+
+The only event listeners the markdown view adds:
+- `contextmenu` on the scroll container — to show/hide the editor context menu
+- `pointerdown` on the scroll container (bubble phase) — ONLY to clear the `selectAllActive` flag when the user clicks after a select-all. This runs after SelectionGuard's capture-phase handler, so there's no race. No other pointer handling.
+
+**Read-only click behavior:** In a read-only view, a caret (collapsed selection) serves no purpose. After SelectionGuard and the browser have finished processing a click, a `click` handler on the scroll container checks if the resulting selection is collapsed and removes it. This is a cleanup pass, not a selection management system — it runs last, after all other handlers.
 
 **Key files:**
 - `tugdeck/src/components/tugways/tug-markdown-view.tsx`
 - `tugdeck/src/components/tugways/tug-editor-context-menu.tsx`
-- `tugdeck/src/components/tugways/selection-guard.ts`
+- `tugdeck/src/components/tugways/tug-markdown-view.css`
 
 ---
 
