@@ -11,6 +11,7 @@
 import React from "react";
 import { Scissors, Copy, Clipboard } from "lucide-react";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugBadge } from "@/components/tugways/tug-badge";
 
 // Shared label style for section annotations
@@ -46,9 +47,9 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { id: "cut",   label: "Cut" },
-              { id: "copy",  label: "Copy" },
-              { id: "paste", label: "Paste" },
+              { action: TUG_ACTIONS.CUT,   label: "Cut" },
+              { action: TUG_ACTIONS.COPY,  label: "Copy" },
+              { action: TUG_ACTIONS.PASTE, label: "Paste" },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>
@@ -65,9 +66,9 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { id: "cut",   label: "Cut",   icon: <Scissors size={14} aria-hidden="true" /> },
-              { id: "copy",  label: "Copy",  icon: <Copy     size={14} aria-hidden="true" /> },
-              { id: "paste", label: "Paste", icon: <Clipboard size={14} aria-hidden="true" /> },
+              { action: TUG_ACTIONS.CUT,   label: "Cut",   icon: <Scissors size={14} aria-hidden="true" /> },
+              { action: TUG_ACTIONS.COPY,  label: "Copy",  icon: <Copy     size={14} aria-hidden="true" /> },
+              { action: TUG_ACTIONS.PASTE, label: "Paste", icon: <Clipboard size={14} aria-hidden="true" /> },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>
@@ -84,9 +85,9 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { id: "cut",   label: "Cut",   shortcut: "⌘X" },
-              { id: "copy",  label: "Copy",  shortcut: "⌘C" },
-              { id: "paste", label: "Paste", shortcut: "⌘V" },
+              { action: TUG_ACTIONS.CUT,   label: "Cut",   shortcut: "⌘X" },
+              { action: TUG_ACTIONS.COPY,  label: "Copy",  shortcut: "⌘C" },
+              { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "⌘V" },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>
@@ -103,16 +104,16 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { type: "label",     label: "Edit" },
-              { id: "undo",        label: "Undo" },
-              { id: "redo",        label: "Redo" },
+              { type: "label",                    label: "Edit" },
+              { action: TUG_ACTIONS.UNDO,         label: "Undo" },
+              { action: TUG_ACTIONS.REDO,         label: "Redo" },
               { type: "separator" },
-              { type: "label",     label: "Clipboard" },
-              { id: "cut",         label: "Cut" },
-              { id: "copy",        label: "Copy" },
-              { id: "paste",       label: "Paste" },
+              { type: "label",                    label: "Clipboard" },
+              { action: TUG_ACTIONS.CUT,          label: "Cut" },
+              { action: TUG_ACTIONS.COPY,         label: "Copy" },
+              { action: TUG_ACTIONS.PASTE,        label: "Paste" },
               { type: "separator" },
-              { id: "select-all",  label: "Select All" },
+              { action: TUG_ACTIONS.SELECT_ALL,   label: "Select All" },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>
@@ -129,9 +130,9 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { id: "cut",   label: "Cut",   disabled: true },
-              { id: "copy",  label: "Copy" },
-              { id: "paste", label: "Paste", disabled: true },
+              { action: TUG_ACTIONS.CUT,   label: "Cut",   disabled: true },
+              { action: TUG_ACTIONS.COPY,  label: "Copy" },
+              { action: TUG_ACTIONS.PASTE, label: "Paste", disabled: true },
             ]}
           >
             <div style={regionStyle}>Right-click here</div>
@@ -148,11 +149,12 @@ export function GalleryContextMenu() {
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
-              { id: "open",      label: "Open" },
-              { id: "duplicate", label: "Duplicate" },
+              { action: TUG_ACTIONS.CUT,       label: "Cut" },
+              { action: TUG_ACTIONS.COPY,      label: "Copy" },
+              { action: TUG_ACTIONS.PASTE,     label: "Paste" },
               { type: "separator" },
-              { id: "rename",    label: "Rename" },
-              { id: "delete",    label: "Delete", disabled: false },
+              { action: TUG_ACTIONS.DUPLICATE, label: "Duplicate" },
+              { action: TUG_ACTIONS.DELETE,    label: "Delete" },
             ]}
           >
             <div

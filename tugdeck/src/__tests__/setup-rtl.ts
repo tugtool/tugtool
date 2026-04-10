@@ -111,6 +111,48 @@ for (const name of HTML_ELEMENT_SUBTYPES) {
   disconnect() {}
 };
 
+// DOMRect is not provided by happy-dom. Radix ContextMenu anchors its
+// floating content at the click point via a virtual ref whose
+// getBoundingClientRect() returns `DOMRect.fromRect(...)`, so without
+// this polyfill any test that opens a TugContextMenu throws
+// "ReferenceError: DOMRect is not defined". The polyfill is a minimal
+// structural match — getters for left/top/right/bottom plus the
+// fromRect() static — which is everything Radix + floating-ui actually
+// read on the returned object.
+if (typeof (global as any).DOMRect === "undefined") {
+  class DOMRectPolyfill {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+    get left(): number { return this.x; }
+    get top(): number { return this.y; }
+    get right(): number { return this.x + this.width; }
+    get bottom(): number { return this.y + this.height; }
+    static fromRect(other?: { x?: number; y?: number; width?: number; height?: number }): DOMRectPolyfill {
+      return new DOMRectPolyfill(
+        other?.x ?? 0,
+        other?.y ?? 0,
+        other?.width ?? 0,
+        other?.height ?? 0,
+      );
+    }
+    toJSON(): object {
+      return {
+        x: this.x, y: this.y, width: this.width, height: this.height,
+        left: this.left, top: this.top, right: this.right, bottom: this.bottom,
+      };
+    }
+  }
+  (global as any).DOMRect = DOMRectPolyfill;
+}
+
 // requestAnimationFrame / cancelAnimationFrame are not provided by happy-dom.
 // Terminal card and other animation-based components use these APIs.
 // Provide a synchronous fallback that calls the callback immediately so

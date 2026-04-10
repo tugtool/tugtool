@@ -751,26 +751,45 @@ The original A3 table listed four more bindings that did not land this phase. Ea
 
 ### Phase A4 — R6: Retrofit `observeDispatch` to floating surfaces (1 session)
 
-Now that A2.8 has made `tug-confirm-popover`, `tug-alert`, `tug-sheet`, `tug-popover` into chain citizens, the `observeDispatch` dismiss pattern can retrofit into each. Also apply to `tug-context-menu`, `tug-popup-button`, `tug-tooltip`.
+Most of the surfaces originally scoped to A4 were folded forward into A2.8 (and its pre-step 0), which made them chain-native and attached `observeDispatch` at the same time. The invariants table in `tugdeck/src/components/tugways/internal/floating-surface-notes.ts` is the canonical summary of what each of the four A2.8 surfaces does and why.
 
-Template (from `tug-editor-context-menu.tsx`):
+**Already landed — inherited from A2.8 / pre-A2.8:**
+
+| Surface | Chain-native | `observeDispatch` | Where |
+|---|---|---|---|
+| `tug-editor-context-menu` | ✓ | ✓ | predates A2.8 — original template |
+| `tug-popup-button` (via `internal/tug-popup-menu`) | ✓ | ✓ | pre-A2.8 step 0 (`ce0f8ad5`) |
+| `tug-confirm-popover` | ✓ | ✓ | A2.8 sub-step 1 (`b8edbc55`) |
+| `tug-alert` | ✓ | ✗ deliberate (app-modal) | A2.8 sub-step 2 (`051846c5`) |
+| `tug-sheet` | ✓ | ✗ deliberate (card-modal) | A2.8 sub-step 3 (`42391384`) |
+| `tug-popover` | ✓ | ✓ with focus-inside filter | A2.8 sub-step 4 (`7cdf3e2b`) |
+
+The modal opt-outs for `tug-alert` / `tug-sheet` are intentional: "close on any chain activity" would surprise users whose modal disappears because an unrelated shortcut fired. See `floating-surface-notes.ts:41`.
+
+**What A4 actually touches:** the two surfaces explicitly parked during A2.8 planning — neither is chain-native yet, so this is onboarding work first, `observeDispatch` retrofit second. Same shape as pre-A2.8 step 0 for `tug-popup-button`.
+
+- **A4.1 — `tug-context-menu`.** Today: Radix `ContextMenu` wrapper with a React-callback `onSelect(id)` prop (L11 violation) and a synthetic Escape keydown dismissal. Migrate the items array to the `TugPopupButtonItem` shape (`action: TugAction`, optional `value`) so activation dispatches through the chain via `dispatchForContinuation`; drop `onSelect` and `onOpenChange`; add locally controlled open state; subscribe to `observeDispatch` while open with a `blinkingRef` guard for the menu's own item activation. Mirrors `internal/tug-popup-menu.tsx` sub-step 0. Only consumer is `gallery-context-menu.tsx`, which never wires `onSelect` today — migration is mechanical.
+
+- **A4.2 — `tug-tooltip`.** No user-interaction actions (tooltips don't emit), so L11 doesn't apply directly. Open question is only "should tooltips dismiss on chain activity?" Radix already handles pointer leave / focus out; the retrofit only matters when a keyboard shortcut or programmatic dispatch fires while the tooltip is showing. Add a nullable `useResponderChain()` + `useLayoutEffect` subscription that calls the Radix close path on any dispatch. No `blinkingRef` needed — tooltips don't self-dispatch. `truncated` mode interaction: none (suppress is about opening, not closing).
+
+Template (from `tug-editor-context-menu.tsx:353`):
 
 ```tsx
 useLayoutEffect(() => {
-  if (!open) return;
+  if (!open || !manager) return;
   return manager.observeDispatch(() => {
     if (blinkingRef.current) return;
-    onClose();
+    setOpen(false);
   });
-}, [open, manager, onClose]);
+}, [open, manager]);
 ```
 
-Per-surface adaptation:
-- Menus and popovers: dismiss on any dispatch.
-- Tooltips: dismiss on any dispatch (a click elsewhere cancels the hover state).
-- Alerts and sheets: already have explicit dismiss actions (`cancelDialog`); `observeDispatch` is redundant but consistent — a click outside that goes through the chain closes them. Evaluate per-surface whether to opt in.
-
-**Exit criteria:** each floating surface's per-surface outside-click and escape-key wiring is replaced by one subscription to `observeDispatch` (keeping Escape as a direct handler where the surface also needs keyboard dismiss).
+**Exit criteria:**
+- `tug-context-menu` items carry `action: TugAction` / optional `value`; `onSelect` / `onOpenChange` props removed; activation dispatches through the chain; subscribes to `observeDispatch` while open with a blink guard.
+- `tug-tooltip` subscribes to `observeDispatch` while open and dismisses on external chain traffic.
+- `gallery-context-menu.tsx` migrated to the new item shape.
+- New dedicated test files for both surfaces covering subscribe/unsubscribe lifecycle, blink guard (context menu), chain-native dispatch (context menu), and no-provider fallback.
+- `bun run check` and `bun test` clean.
 
 ### Phase A5 — Update `component-authoring.md` (1 short session, post-A2)
 
