@@ -56,6 +56,10 @@ pub struct MergeData {
     /// Files with merge conflicts (only present for conflict states)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conflicting_files: Option<Vec<String>>,
+    /// When true, the skill should offer to push local commits before merging
+    /// (set for ahead_clean / diverged_clean states in remote mode)
+    #[serde(skip_serializing_if = "is_false")]
+    pub push_recommended: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -82,6 +86,7 @@ impl MergeData {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         }
     }
 }
@@ -885,6 +890,7 @@ fn run_merge_in(
     let mut p4_ahead_count: Option<u32> = None;
     let mut p4_behind_count: Option<u32> = None;
     let mut p4_conflicting_files: Option<Vec<String>> = None;
+    let mut p4_push_recommended = false;
 
     if effective_mode == "remote" {
         let pr_branch_for_sync = if pr_info.is_some() {
@@ -912,6 +918,7 @@ fn run_merge_in(
                     ahead_count: None,
                     behind_count: None,
                     conflicting_files: None,
+                    push_recommended: false,
                 };
                 if json {
                     println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -934,11 +941,14 @@ fn run_merge_in(
                 ..
             }) => {
                 if conflicts.is_empty() {
-                    // ahead_clean: warn but do NOT block
+                    // ahead_clean: recommend pushing first to avoid post-merge rebase
                     p4_sync_state = Some("ahead_clean".to_string());
                     p4_ahead_count = Some(ahead_count);
+                    p4_push_recommended = true;
                     all_warnings.push(format!(
-                        "Local main is {} commit(s) ahead of origin/main. Will rebase after merge.",
+                        "Local main is {} commit(s) ahead of origin/main. \
+                         Pushing first is recommended to avoid post-merge rebase conflicts. \
+                         If not pushed, will attempt rebase with --empty=drop after merge.",
                         ahead_count
                     ));
                 } else {
@@ -977,6 +987,7 @@ fn run_merge_in(
                         ahead_count: p4_ahead_count,
                         behind_count: None,
                         conflicting_files: p4_conflicting_files.clone(),
+                        push_recommended: p4_push_recommended,
                     };
                     if json {
                         println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -993,12 +1004,15 @@ fn run_merge_in(
                 ..
             }) => {
                 if conflicts.is_empty() {
-                    // diverged_clean: warn but do NOT block
+                    // diverged_clean: recommend pushing first to avoid post-merge rebase
                     p4_sync_state = Some("diverged_clean".to_string());
                     p4_ahead_count = Some(ahead_count);
                     p4_behind_count = Some(behind_count);
+                    p4_push_recommended = true;
                     all_warnings.push(format!(
-                        "Local main has diverged from origin/main ({} ahead, {} behind). Will rebase after merge.",
+                        "Local main has diverged from origin/main ({} ahead, {} behind). \
+                         Pushing first is recommended to avoid post-merge rebase conflicts. \
+                         If not pushed, will attempt rebase with --empty=drop after merge.",
                         ahead_count, behind_count
                     ));
                 } else {
@@ -1039,6 +1053,7 @@ fn run_merge_in(
                         ahead_count: p4_ahead_count,
                         behind_count: p4_behind_count,
                         conflicting_files: p4_conflicting_files.clone(),
+                        push_recommended: p4_push_recommended,
                     };
                     if json {
                         println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1116,6 +1131,7 @@ fn run_merge_in(
             ahead_count: p4_ahead_count,
             behind_count: p4_behind_count,
             conflicting_files: p4_conflicting_files.clone(),
+            push_recommended: p4_push_recommended,
         };
 
         if json {
@@ -1185,6 +1201,7 @@ fn run_merge_in(
                 ahead_count: p4_ahead_count,
                 behind_count: p4_behind_count,
                 conflicting_files: p4_conflicting_files.clone(),
+                push_recommended: p4_push_recommended,
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1224,6 +1241,7 @@ fn run_merge_in(
                 ahead_count: p4_ahead_count,
                 behind_count: p4_behind_count,
                 conflicting_files: p4_conflicting_files.clone(),
+                push_recommended: p4_push_recommended,
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1243,13 +1261,17 @@ fn run_merge_in(
             Ok(ref o) if o.status.success() => true,
             Ok(_) => {
                 // ff-only failed (local had commits) — fall back to rebase.
+                // Use --empty=drop so commits whose content is already in the
+                // squash merge are silently skipped instead of conflicting.
                 if !quiet {
-                    println!("Fast-forward failed; rebasing local commits onto origin/main...");
+                    println!(
+                        "Fast-forward failed; rebasing local commits onto origin/main (--empty=drop)..."
+                    );
                 }
                 let rebase_output = Command::new("git")
                     .arg("-C")
                     .arg(&repo_root)
-                    .args(["rebase", "origin/main"])
+                    .args(["rebase", "--empty=drop", "origin/main"])
                     .output()
                     .map_err(|e| format!("Failed to execute git rebase: {}", e));
                 match rebase_output {
@@ -1264,9 +1286,12 @@ fn run_merge_in(
                         let stderr = String::from_utf8_lossy(&ro.stderr);
                         let err_msg = format!(
                             "Rebase of local commits onto origin/main failed after PR merge: {}\n\
-                             The PR was merged on GitHub. To recover, run:\n\
+                             The PR was merged on GitHub. The rebase has been aborted and \
+                             local main is back to its pre-merge state. To recover:\n\
                                git fetch origin main\n\
-                               git rebase origin/main",
+                               git rebase --empty=drop origin/main\n\
+                             Then resolve any conflicts manually (git rebase --skip for \
+                             commits already in the squash merge).",
                             stderr
                         );
                         let data = MergeData {
@@ -1287,6 +1312,7 @@ fn run_merge_in(
                             ahead_count: p4_ahead_count,
                             behind_count: p4_behind_count,
                             conflicting_files: p4_conflicting_files.clone(),
+                            push_recommended: p4_push_recommended,
                         };
                         if json {
                             println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1297,7 +1323,9 @@ fn run_merge_in(
                     }
                     Err(e) => {
                         let err_msg = format!(
-                            "Failed to run rebase after PR merge: {}. Run: git fetch origin main && git rebase origin/main",
+                            "Failed to run rebase after PR merge: {}. To recover:\n\
+                               git fetch origin main\n\
+                               git rebase --empty=drop origin/main",
                             e
                         );
                         let data = MergeData {
@@ -1318,6 +1346,7 @@ fn run_merge_in(
                             ahead_count: p4_ahead_count,
                             behind_count: p4_behind_count,
                             conflicting_files: p4_conflicting_files.clone(),
+                            push_recommended: p4_push_recommended,
                         };
                         if json {
                             println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1351,6 +1380,7 @@ fn run_merge_in(
                     ahead_count: p4_ahead_count,
                     behind_count: p4_behind_count,
                     conflicting_files: p4_conflicting_files.clone(),
+                    push_recommended: p4_push_recommended,
                 };
                 if json {
                     println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1398,6 +1428,7 @@ fn run_merge_in(
                     ahead_count: None,
                     behind_count: None,
                     conflicting_files: None,
+                    push_recommended: false,
                 };
                 if json {
                     println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1488,6 +1519,7 @@ fn run_merge_in(
         ahead_count: p4_ahead_count,
         behind_count: p4_behind_count,
         conflicting_files: p4_conflicting_files,
+        push_recommended: p4_push_recommended,
     };
 
     if json {
@@ -1583,6 +1615,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(!json.contains("\"warnings\""));
@@ -1608,6 +1641,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(json.contains("\"warnings\""));
@@ -1642,6 +1676,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(!json.contains("\"untracked_files\""));
@@ -1667,6 +1702,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(json.contains("\"untracked_files\""));
@@ -1694,6 +1730,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -1722,6 +1759,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -1751,6 +1789,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -2462,6 +2501,7 @@ mod tests {
             ahead_count: None,
             behind_count: None,
             conflicting_files: None,
+            push_recommended: false,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();

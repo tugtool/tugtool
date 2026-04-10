@@ -54,6 +54,7 @@ Parse the JSON output. Key fields:
 | `ahead_count` | Commits local main is ahead of origin (omitted when 0 or not applicable) |
 | `behind_count` | Commits local main is behind origin (omitted when 0 or not applicable) |
 | `conflicting_files` | Files with merge conflicts (only present for conflict states) |
+| `push_recommended` | When true, local main has unpushed commits — offer to push before merging |
 
 If the command fails (exit code non-zero), report the error and halt. The error message tells the user what went wrong.
 
@@ -74,17 +75,17 @@ The sync check uses a three-tier response based on `sync_state`:
 
 Proceed directly with the normal merge confirmation below. No additional prompt is needed for sync.
 
-#### Confirm rebase (sync_state: ahead_clean or diverged_clean)
+#### Push first (push_recommended: true)
 
-Before the normal merge confirmation, ask the user to approve the rebase:
+When `push_recommended` is true in the dry-run output, local main has unpushed commits. These MUST be pushed before merging — otherwise the squash merge absorbs the local commits' content, and rebasing them afterward produces unresolvable conflicts.
 
 ```
 AskUserQuestion(
   questions: [{
-    question: "Local main has N unpushed commit(s) that will be rebased onto the merged PR. Proceed?",
-    header: "Rebase & Merge",
+    question: "Local main has N unpushed commit(s). These must be pushed to origin before merging to avoid post-merge conflicts.",
+    header: "Push & Merge",
     options: [
-      { label: "Rebase and Merge (Recommended)", description: "Merge the PR, then rebase local commits onto the result" },
+      { label: "Push and merge (Recommended)", description: "Push local commits to origin, then merge the PR cleanly" },
       { label: "Cancel", description: "Abort without making changes" }
     ],
     multiSelect: false
@@ -92,7 +93,10 @@ AskUserQuestion(
 )
 ```
 
-Replace N with `ahead_count` from the JSON. If user selects "Cancel", halt with: "Merge cancelled."
+Replace N with `ahead_count` from the JSON.
+
+- If "Push and merge": run `git push origin main` before proceeding to the merge step. If the push fails, report the error and halt. If it succeeds, proceed to the normal merge confirmation (the sync_state will effectively become `in_sync` after the push, and `git merge --ff-only` will succeed without rebase).
+- If "Cancel": halt with "Merge cancelled."
 
 #### Block with conflicts (sync_state: ahead_conflict or diverged_conflict)
 
@@ -358,8 +362,8 @@ If step 3 fails, report clearly and suggest recovery. Do not retry automatically
 - **Local main diverged with conflicts** (`sync_state: diverged_conflict`): Local main has diverged from origin/main and the local commits conflict with the PR branch. The conflicting files are listed in `conflicting_files`. Resolve conflicts manually.
 
 **Non-blocking sync states** (proceed with warning):
-- **ahead_clean**: Local main has unpushed commits but a clean merge is possible. After the PR merges on GitHub, tugutil will attempt `--ff-only` first; if that fails, it will rebase local commits onto the result.
-- **diverged_clean**: Local main has diverged from origin/main but a clean rebase is possible. Same recovery as above.
+- **ahead_clean**: Local main has unpushed commits. The skill offers to push first (recommended) or merge and rebase after. If rebasing, `--empty=drop` auto-skips commits whose content is already in the squash merge.
+- **diverged_clean**: Local main has diverged from origin/main but no conflicts. Same push-first-or-rebase-after flow as above.
 
 ---
 
