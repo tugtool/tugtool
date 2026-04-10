@@ -11,7 +11,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugutil\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugutil commands' >&2; exit 2 ;; esac"
+          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugutil\\ *|*\\|\\ tugutil\\ *|*\\|tugutil\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugutil commands' >&2; exit 2 ;; esac"
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator
