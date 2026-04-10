@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-10T16:20:55Z
+---
+
+## step-3: Added createEngineAdapter to tug-prompt-input.tsx with DOM geometry classifyRightClick, engine-delegated selectWordAtPoint with collapse guard, and Selection.modify expandToWord
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
 step: step-2
 date: 2025-04-10T16:15:55Z
 ---
