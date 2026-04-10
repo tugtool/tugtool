@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-10T16:08:23Z
+---
+
+## step-1: Created text-selection-adapter.ts with TextSelectionAdapter interface, RightClickClassification type, NativeInputSelectionAdapterExtras, findWordBoundaries utility, and HighlightSelectionAdapter stub
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
 step: step-3
 date: 2025-04-06T22:06:52Z
 ---
