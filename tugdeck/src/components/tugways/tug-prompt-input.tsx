@@ -35,9 +35,128 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
+import type { TextSelectionAdapter, RightClickClassification } from "@/components/tugways/text-selection-adapter";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
+
+// ---------------------------------------------------------------------------
+// createEngineAdapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a `TextSelectionAdapter` backed by a `TugTextEngine` instance.
+ *
+ * Implements `TextSelectionAdapter` by delegating to TugTextEngine methods
+ * and using DOM Selection geometry for `classifyRightClick`.
+ *
+ * Design decisions: [D01] Plain object interface, [D02] Hybrid classifyRightClick.
+ *
+ * @param engine The TugTextEngine instance to wrap.
+ * @returns A `TextSelectionAdapter` for the given engine.
+ */
+export function createEngineAdapter(engine: TugTextEngine): TextSelectionAdapter {
+  /**
+   * True when there is a non-collapsed (ranged) selection in the engine.
+   */
+  function hasRangedSelection(): boolean {
+    const range = engine.getSelectedRange();
+    if (!range) return false;
+    return range.end > range.start;
+  }
+
+  /**
+   * The currently selected text, extracted from engine state using range
+   * offsets against `engine.getText()`.
+   */
+  function getSelectedText(): string {
+    const range = engine.getSelectedRange();
+    if (!range || range.end <= range.start) return "";
+    const text = engine.getText();
+    return text.slice(range.start, range.end);
+  }
+
+  /**
+   * Select all content via `engine.selectAll()`.
+   */
+  function selectAll(): void {
+    engine.selectAll();
+  }
+
+  /**
+   * Expand the current caret to word boundaries using `Selection.modify`.
+   *
+   * Matches the pattern already used by `engine.selectWordAtPoint` internally.
+   */
+  function expandToWord(): void {
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.modify("move", "backward", "word");
+    sel.modify("extend", "forward", "word");
+  }
+
+  /**
+   * Classify a right-click relative to the current engine selection.
+   *
+   * Uses `window.getSelection()?.getRangeAt(0)` for geometry:
+   * - Collapsed: compute distance from caret bounding rect to (clientX, clientY),
+   *   return `"near-caret"` if within `proximityThreshold`, else `"elsewhere"`.
+   * - Ranged: check if (clientX, clientY) falls within any of `getClientRects()`,
+   *   return `"within-range"` if so, else `"elsewhere"`.
+   */
+  function classifyRightClick(
+    clientX: number,
+    clientY: number,
+    proximityThreshold: number,
+  ): RightClickClassification {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return "elsewhere";
+
+    const domRange = sel.getRangeAt(0);
+
+    if (sel.isCollapsed) {
+      // Collapsed caret: measure distance from caret rect to click point.
+      const rect = domRange.getBoundingClientRect();
+      const dx = clientX - (rect.left + rect.width / 2);
+      const dy = clientY - (rect.top + rect.height / 2);
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance <= proximityThreshold ? "near-caret" : "elsewhere";
+    }
+
+    // Ranged selection: check if click falls within any of the range rects.
+    const rects = domRange.getClientRects();
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i]!;
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        return "within-range";
+      }
+    }
+
+    return "elsewhere";
+  }
+
+  /**
+   * Collapse any existing selection via `engine.setSelectedRange(0)` to clear
+   * the ranged-selection guard in `engine.selectWordAtPoint`, then delegate to
+   * `engine.selectWordAtPoint(clientX, clientY)`.
+   *
+   * Collapsing first ensures that an "elsewhere" right-click always selects a
+   * new word at the click point rather than preserving a stale ranged selection.
+   */
+  function selectWordAtPoint(clientX: number, clientY: number): void {
+    engine.setSelectedRange(0);
+    engine.selectWordAtPoint(clientX, clientY);
+  }
+
+  return {
+    hasRangedSelection,
+    getSelectedText,
+    selectAll,
+    expandToWord,
+    classifyRightClick,
+    selectWordAtPoint,
+  };
+}
 
 /**
  * TugPromptInput props interface.

@@ -4,10 +4,14 @@ description: Orchestrates the planning workflow - spawns sub-agents via Task
 allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
 hooks:
   PreToolUse:
-    - matcher: "Bash|Write|Edit"
+    - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "echo 'Orchestrator must delegate via Task, not use tools directly' >&2; exit 2"
+          command: "echo 'Orchestrator must not use Write/Edit directly' >&2; exit 2"
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugutil\\ *|*\\|\\ tugutil\\ *|*\\|tugutil\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugutil commands' >&2; exit 2 ;; esac"
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator

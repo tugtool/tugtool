@@ -49,13 +49,14 @@
 import "../tug-menu.css";
 
 import React, { useLayoutEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 
 // ---- Types ----
 
-/** A single item in a TugPopupMenu. */
+/** A single selectable item in a TugPopupMenu. */
 export interface TugPopupMenuItem {
   /** Unique identifier for this item. Passed to onSelect when clicked. */
   id: string;
@@ -67,6 +68,38 @@ export interface TugPopupMenuItem {
   disabled?: boolean;
 }
 
+/** A visual separator line between menu sections. */
+export interface TugPopupMenuSeparator {
+  type: "separator";
+}
+
+/** A non-interactive section label in the menu. */
+export interface TugPopupMenuLabel {
+  type: "label";
+  label: string;
+}
+
+/** A sub-menu group with its own trigger and nested items. */
+export interface TugPopupMenuSub {
+  type: "sub";
+  /** Display label for the sub-menu trigger. */
+  label: string;
+  /** Optional icon node rendered before the trigger label. */
+  icon?: React.ReactNode;
+  /** Nested entries inside the sub-menu. Supports items, separators, and labels (not nested subs). */
+  items: TugPopupMenuEntry[];
+}
+
+/**
+ * A single entry in a TugPopupMenu items array.
+ *
+ * Plain objects without a `type` field are selectable items.
+ * Objects with `type: "separator"` render a divider line.
+ * Objects with `type: "label"` render a non-interactive section heading.
+ * Objects with `type: "sub"` render a sub-menu with a trigger and nested content.
+ */
+export type TugPopupMenuEntry = TugPopupMenuItem | TugPopupMenuSeparator | TugPopupMenuLabel | TugPopupMenuSub;
+
 /**
  * Props for TugPopupMenu.
  *
@@ -77,8 +110,8 @@ export interface TugPopupMenuItem {
 export interface TugPopupMenuProps {
   /** Trigger element. Wrapped in Radix Trigger asChild -- must accept ref. */
   trigger: React.ReactNode;
-  /** List of items to display in the popup menu. */
-  items: TugPopupMenuItem[];
+  /** List of entries to display in the popup menu. Accepts items, separators, and labels. */
+  items: TugPopupMenuEntry[];
   /** Called with the selected item's id when an item is clicked. */
   onSelect: (id: string) => void;
   /** Menu alignment relative to the trigger. Default: "start". */
@@ -234,6 +267,74 @@ export function TugPopupMenu({
     });
   }
 
+  /**
+   * Render a list of menu entries. Extracted so the same logic handles
+   * both top-level content and sub-menu content.
+   */
+  function renderEntries(entries: TugPopupMenuEntry[], keyPrefix: string) {
+    return entries.map((entry, idx) => {
+      if ("type" in entry && entry.type === "separator") {
+        return (
+          <DropdownMenuPrimitive.Separator
+            key={`${keyPrefix}-sep-${idx}`}
+            className="tug-menu-separator"
+          />
+        );
+      }
+      if ("type" in entry && entry.type === "label") {
+        return (
+          <DropdownMenuPrimitive.Label
+            key={`${keyPrefix}-label-${idx}`}
+            className="tug-menu-label"
+          >
+            {entry.label}
+          </DropdownMenuPrimitive.Label>
+        );
+      }
+      if ("type" in entry && entry.type === "sub") {
+        return (
+          <DropdownMenuPrimitive.Sub key={`${keyPrefix}-sub-${idx}`}>
+            <DropdownMenuPrimitive.SubTrigger className="tug-menu-item tug-menu-sub-trigger">
+              {entry.icon !== undefined && (
+                <span className="tug-menu-item-icon" aria-hidden="true">
+                  {entry.icon}
+                </span>
+              )}
+              <span className="tug-menu-item-label">{entry.label}</span>
+              <span className="tug-menu-sub-chevron" aria-hidden="true">
+                <ChevronRight size={12} />
+              </span>
+            </DropdownMenuPrimitive.SubTrigger>
+            <DropdownMenuPrimitive.Portal>
+              <DropdownMenuPrimitive.SubContent
+                className="tug-menu-content"
+                sideOffset={4}
+              >
+                {renderEntries(entry.items, `${keyPrefix}-sub-${idx}`)}
+              </DropdownMenuPrimitive.SubContent>
+            </DropdownMenuPrimitive.Portal>
+          </DropdownMenuPrimitive.Sub>
+        );
+      }
+      const item = entry as TugPopupMenuItem;
+      return (
+        <DropdownMenuPrimitive.Item
+          key={item.id}
+          className="tug-menu-item"
+          disabled={item.disabled}
+          onSelect={(event) => handleItemSelect(item.id, event)}
+        >
+          {item.icon !== undefined && (
+            <span className="tug-menu-item-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+          )}
+          <span className="tug-menu-item-label">{item.label}</span>
+        </DropdownMenuPrimitive.Item>
+      );
+    });
+  }
+
   return (
     <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen}>
       <DropdownMenuPrimitive.Trigger asChild>
@@ -246,21 +347,7 @@ export function TugPopupMenu({
           sideOffset={sideOffset}
           data-testid={dataTestId}
         >
-          {items.map((item) => (
-            <DropdownMenuPrimitive.Item
-              key={item.id}
-              className="tug-menu-item"
-              disabled={item.disabled}
-              onSelect={(event) => handleItemSelect(item.id, event)}
-            >
-              {item.icon !== undefined && (
-                <span className="tug-menu-item-icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-              )}
-              <span className="tug-menu-item-label">{item.label}</span>
-            </DropdownMenuPrimitive.Item>
-          ))}
+          {renderEntries(items, "root")}
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
     </DropdownMenuPrimitive.Root>

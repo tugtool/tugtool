@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-04-10T16:29:53Z
+---
+
+## audit-fix: CI fix: cargo fmt formatting on pre-existing worktree.rs tuple
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
+step: step-4
+date: 2025-04-10T16:25:06Z
+---
+
+## step-4: Verification-only step: bun run check clean, 2003 tests pass, no import cycles, all three adapters satisfy TextSelectionAdapter interface
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
+step: step-3
+date: 2025-04-10T16:20:55Z
+---
+
+## step-3: Added createEngineAdapter to tug-prompt-input.tsx with DOM geometry classifyRightClick, engine-delegated selectWordAtPoint with collapse guard, and Selection.modify expandToWord
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
+step: step-2
+date: 2025-04-10T16:15:55Z
+---
+
+## step-2: Added createNativeInputAdapter to use-text-input-responder.tsx with offset-based classifyRightClick, capturePreRightClick, and findWordBoundaries integration
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
+step: step-1
+date: 2025-04-10T16:08:23Z
+---
+
+## step-1: Created text-selection-adapter.ts with TextSelectionAdapter interface, RightClickClassification type, NativeInputSelectionAdapterExtras, findWordBoundaries utility, and HighlightSelectionAdapter stub
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
 step: step-3
 date: 2025-04-06T22:06:52Z
 ---

@@ -261,6 +261,8 @@ The keyboard pipeline does the same thing without a blink — it invokes the con
 
 A handler that returns `void` is the standard case. Most handlers do. Continuations are an opt-in affordance for the handful of actions where "do everything now" and "split across a blink" are both legitimate, and the responder is the only code that knows which slice goes where.
 
+**Namespace boundary — action names vs. `document.execCommand`.** Continuations in editing handlers often call `document.execCommand` to perform the actual mutation (`"insertText"`, `"delete"`, `"selectAll"`, etc.). The `execCommand` API has its own camelCase command vocabulary that is separate from the chain's kebab-case action names. The chain action `"select-all"` dispatches to the handler; the handler's continuation calls `document.execCommand("selectAll")`. These are two different strings in two different namespaces — the action name routes to the right responder, the execCommand name tells the browser what to do. See [action-naming.md § Action Names vs. Browser Command Names](action-naming.md#action-names-vs-browser-command-names) for the full rule.
+
 ---
 
 ## Registering a responder

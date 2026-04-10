@@ -139,6 +139,12 @@ import {
   readClipboardViaNative,
   warnIfWKWebViewRace,
 } from "@/lib/tug-native-clipboard";
+import {
+  type TextSelectionAdapter,
+  type NativeInputSelectionAdapterExtras,
+  type RightClickClassification,
+  findWordBoundaries,
+} from "./text-selection-adapter";
 
 // ---- applyPastedText — pure helper ----
 //
@@ -198,6 +204,146 @@ export function applyPastedText(
 
 /** Any DOM element that has an editable text value, caret, and selection. */
 export type TextInputLikeElement = HTMLInputElement | HTMLTextAreaElement;
+
+// ---------------------------------------------------------------------------
+// createNativeInputAdapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Factory that wraps a native `<input>` or `<textarea>` element in a
+ * `TextSelectionAdapter`.
+ *
+ * The returned object also satisfies `NativeInputSelectionAdapterExtras`,
+ * which exposes `capturePreRightClick()` — call this at `pointerdown` time
+ * (when `event.button === 2`) to snapshot the selection before the browser
+ * moves the caret. `classifyRightClick` then compares the post-mousedown
+ * position against that snapshot.
+ *
+ * See: [D04] NativeInputSelectionAdapter captures pre-click state via
+ * explicit call.
+ *
+ * @param el  The host `<input>` or `<textarea>` DOM element.
+ * @returns   `TextSelectionAdapter & NativeInputSelectionAdapterExtras`
+ */
+export function createNativeInputAdapter(
+  el: TextInputLikeElement,
+): TextSelectionAdapter & NativeInputSelectionAdapterExtras {
+  // Snapshot of the selection state captured at pointerdown (button === 2).
+  // `classifyRightClick` reads this to compare against the post-mousedown
+  // browser-placed caret. Initialized to null — `capturePreRightClick`
+  // must be called before `classifyRightClick` for a meaningful result.
+  let preRightClickStart: number | null = null;
+  let preRightClickEnd: number | null = null;
+
+  return {
+    /**
+     * True when there is a non-collapsed (ranged) selection.
+     * Guards against null — `selectionStart`/`selectionEnd` are null on
+     * non-text input types (e.g. `<input type="number">`).
+     */
+    hasRangedSelection(): boolean {
+      return (
+        el.selectionStart !== null &&
+        el.selectionEnd !== null &&
+        el.selectionStart !== el.selectionEnd
+      );
+    },
+
+    /**
+     * The currently selected text, or `""` when there is no ranged selection.
+     */
+    getSelectedText(): string {
+      if (!this.hasRangedSelection()) return "";
+      return el.value.slice(el.selectionStart!, el.selectionEnd!);
+    },
+
+    /** Select all content in the element. */
+    selectAll(): void {
+      el.select();
+    },
+
+    /**
+     * Expand the browser-placed caret to word boundaries using
+     * `findWordBoundaries`.
+     */
+    expandToWord(): void {
+      const offset = el.selectionStart ?? 0;
+      const { start, end } = findWordBoundaries(el.value, offset);
+      el.setSelectionRange(start, end);
+    },
+
+    /**
+     * Capture the pre-right-click selection state.
+     *
+     * Call this at `pointerdown` time when `event.button === 2`, before the
+     * browser's mousedown handler moves the caret. `classifyRightClick`
+     * compares the post-mousedown offset against this snapshot.
+     */
+    capturePreRightClick(): void {
+      preRightClickStart = el.selectionStart;
+      preRightClickEnd = el.selectionEnd;
+    },
+
+    /**
+     * Classify a right-click relative to the selection captured at the last
+     * `capturePreRightClick()` call.
+     *
+     * The `clientX`/`clientY`/`proximityThreshold` parameters are unused —
+     * native input adapters use offset comparison (exact) rather than geometry.
+     *
+     * Algorithm:
+     *   1. Read the current `selectionStart` (browser-placed after mousedown).
+     *   2. If the captured snapshot was collapsed and the new offset matches
+     *      either captured boundary → `"near-caret"`.
+     *   3. If the captured snapshot was ranged and the new offset falls within
+     *      `[capturedStart, capturedEnd)` → `"within-range"`.
+     *   4. Otherwise → `"elsewhere"`.
+     */
+    classifyRightClick(
+      _clientX: number,
+      _clientY: number,
+      _proximityThreshold: number,
+    ): RightClickClassification {
+      const newOffset = el.selectionStart;
+      if (newOffset === null) return "elsewhere";
+
+      const capturedStart = preRightClickStart;
+      const capturedEnd = preRightClickEnd;
+
+      // No snapshot — treat as "elsewhere".
+      if (capturedStart === null || capturedEnd === null) return "elsewhere";
+
+      const capturedIsCollapsed = capturedStart === capturedEnd;
+
+      if (capturedIsCollapsed) {
+        // Case 1: collapsed selection — click is near the caret if the browser
+        // placed the caret at the same position as the captured offset.
+        return newOffset === capturedStart ? "near-caret" : "elsewhere";
+      }
+
+      // Case 2: ranged selection — click is within the range if the browser
+      // placed the caret inside [capturedStart, capturedEnd).
+      if (newOffset >= capturedStart && newOffset < capturedEnd) {
+        return "within-range";
+      }
+
+      // Case 3: click fell outside the selection.
+      return "elsewhere";
+    },
+
+    /**
+     * The browser already placed the caret via mousedown; call `expandToWord`
+     * to extend it to word boundaries.
+     *
+     * The `clientX`/`clientY` parameters are unused — native inputs do not
+     * support `caretPositionFromPoint` geometry for their internal text
+     * rendering.
+     */
+    selectWordAtPoint(_clientX: number, _clientY: number): void {
+      this.expandToWord();
+    },
+  };
+}
 
 /** State of the right-click context menu. `null` when closed. */
 export interface TextInputContextMenuState {
