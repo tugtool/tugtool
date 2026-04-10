@@ -130,6 +130,12 @@ describe("unregister", () => {
     mgr.unregister("root");
     expect(mgr.getValidationVersion()).toBeGreaterThan(v0);
   });
+
+  // Note: the DOM-walk recovery path (when the captured parentId has
+  // already unregistered earlier in the same cleanup pass) is exercised
+  // in `responder-chain-unregister-recovery.test.tsx`, which has the
+  // happy-dom Window globals it needs. This file stays pure-JS so the
+  // existing tests don't pay for a DOM environment they don't use.
 });
 
 // ---- dispatch ----

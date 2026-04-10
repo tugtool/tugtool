@@ -236,21 +236,68 @@ export class ResponderChainManager {
   /**
    * Unregister a responder node.
    *
-   * If the removed node was the first responder, auto-promotes its parent
-   * (via parentId) to first responder. If the node has no parent, sets
-   * firstResponderId to null. Always increments validationVersion and
-   * notifies subscribers.
+   * If the removed node was the first responder, auto-promotes the
+   * nearest still-registered ancestor to first responder. The lookup
+   * walks the unregistering node's DOM ancestors via
+   * `findResponderForTarget`, which is robust against the order in
+   * which sibling effect cleanups run during a tree unmount.
+   *
+   * Why DOM walk instead of `node.parentId`:
+   *
+   * React useLayoutEffect cleanup order during a multi-level unmount is
+   * not strictly child-to-parent. A wrapping responder's effect cleanup
+   * can run BEFORE the cleanup of a responder it nests — concretely,
+   * when a gallery card uses `useResponderForm` to wrap a
+   * `tug-prompt-input`, switching tabs unmounts the form responder
+   * before the prompt input. By the time the prompt input's cleanup
+   * fires, its captured `parentId` (the form responder's id) is no
+   * longer in `nodes`, so the previous one-level promotion would set
+   * `firstResponderId = null`. Subsequent dispatches start from null
+   * and walk nothing — every keyboard shortcut becomes a no-op until
+   * the next click promotes a new first responder. (Symptom in the
+   * field: ⇧⌘[ / ⇧⌘] tab navigation got "stuck" the first time the
+   * user passed through a tab containing such a nested form responder.)
+   *
+   * The DOM is the truth source during cleanup: React runs effect
+   * cleanups before removing DOM nodes, so the unregistering node's
+   * element and its ancestors are all still in the document.
+   * `findResponderForTarget` walks DOM parents looking for
+   * `data-responder-id` whose value IS in `this.nodes` — it naturally
+   * skips ancestors that have already unregistered in the same
+   * cleanup pass and stops at the nearest one that's still alive.
+   *
+   * Falls back to the captured `parentId` when there is no document
+   * (jsdom-less unit tests) or when the unregistering element is
+   * already detached.
    */
   unregister(id: string): void {
     const node = this.nodes.get(id);
     this.nodes.delete(id);
 
     if (this.firstResponderId === id) {
-      if (node && node.parentId !== null && this.nodes.has(node.parentId)) {
-        this.firstResponderId = node.parentId;
-      } else {
-        this.firstResponderId = null;
+      let nextFirst: string | null = null;
+
+      if (typeof document !== "undefined") {
+        const escapedId =
+          typeof CSS !== "undefined" && typeof CSS.escape === "function"
+            ? CSS.escape(id)
+            : id;
+        const el = document.querySelector(`[data-responder-id="${escapedId}"]`);
+        if (el && el.parentElement) {
+          nextFirst = this.findResponderForTarget(el.parentElement);
+        }
       }
+
+      if (
+        nextFirst === null &&
+        node &&
+        node.parentId !== null &&
+        this.nodes.has(node.parentId)
+      ) {
+        nextFirst = node.parentId;
+      }
+
+      this.firstResponderId = nextFirst;
       this.syncFirstResponderDomAttribute();
       this.incrementAndNotify();
     }
