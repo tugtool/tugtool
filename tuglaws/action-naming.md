@@ -261,11 +261,38 @@ The `close-active-card` Control-frame name (introduced in A3.3) is renamed to `c
 
 ---
 
+## Action Names vs. Browser Command Names
+
+Two naming systems coexist in editing code:
+
+| Namespace | Casing | Examples | Where it flows |
+|-----------|--------|----------|----------------|
+| **Action names** (ours) | `kebab-case` | `"select-all"`, `"cut"`, `"paste"` | Responder chain dispatch, keybinding map, Control-frame RPC |
+| **`document.execCommand` names** (the browser's) | `camelCase` | `"selectAll"`, `"insertText"`, `"forwardDelete"` | Browser editing API calls |
+
+These describe overlapping concepts — the chain action `"select-all"` and the browser command `"selectAll"` both mean "select everything" — but they are **separate vocabularies with different casing rules**. One flows through `manager.dispatch`; the other flows to `document.execCommand`. They must never be mixed.
+
+**The rule:** When calling `document.execCommand(...)`, use the browser's camelCase command name — never a `TUG_ACTIONS.*` constant, never a kebab-case string. The browser API does not recognize kebab-case variants; WebKit silently ignores them with no error.
+
+**The canonical `execCommand` names used in the codebase:**
+
+```
+selectAll    insertText    insertHTML    insertLineBreak
+delete       forwardDelete undo          redo
+```
+
+These are string literals at the call site — not constants, not derived from action names. They are a browser API vocabulary that we consume, not one we define.
+
+**Why this matters:** The action-naming migration (A3) converted all chain-action strings to kebab-case. A `document.execCommand` call that happened to contain the same concept (`"select-all"` instead of the correct `"selectAll"`) broke silently — the browser ignored the unrecognized command, the handler appeared to succeed, and the bug only surfaced because the Swift Edit menu (which bypasses JavaScript entirely via `NSText.selectAll(_:)`) still worked, creating a visible discrepancy.
+
+---
+
 ## Out of Scope
 
 - **Swift method names, selectors, and variable names.** Swift follows Swift conventions. Only the `sendControl("<wire-name>")` string argument is constrained by this document.
 - **CSS custom properties and class names.** Those are governed by [token-naming.md](token-naming.md). Action names never appear in CSS.
 - **JavaScript identifier names.** Handler functions (`handleCut`, `handleSelectAll`) and callback props follow JS camelCase; only the action *string* is constrained.
+- **Browser API command names.** `document.execCommand` uses its own camelCase vocabulary (`"selectAll"`, `"insertText"`, etc.). These are not action names and are not governed by this document's kebab-case rule. See [Action Names vs. Browser Command Names](#action-names-vs-browser-command-names) above.
 - **Feed ids, store method names, and other non-action strings.** If it isn't dispatched through `manager.dispatch`, bound in `keybinding-map.ts`, or sent as a `sendControl(...)` RPC name, this document does not apply.
 
 ---

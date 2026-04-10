@@ -81,6 +81,13 @@
 export const TUG_ACTIONS = {
   // ---- Clipboard ----
   //
+  // NAMESPACE BOUNDARY: These kebab-case strings are chain-dispatch
+  // names, NOT browser execCommand names. Handlers that call
+  // document.execCommand must use the browser's own camelCase
+  // vocabulary ("selectAll", "insertText", "delete", etc.).
+  // See tuglaws/action-naming.md § "Action Names vs. Browser
+  // Command Names" for the full rule.
+  //
   // CUT:         payload — none. The first responder cuts its current
   //              selection. Handlers typically return a continuation for
   //              two-phase activation (copy to clipboard synchronously,
@@ -91,7 +98,9 @@ export const TUG_ACTIONS = {
   //              content. Handlers typically return a continuation so the
   //              paste happens after any menu activation animation.
   // SELECT_ALL:  payload — none. The first responder selects all of its
-  //              content.
+  //              content. The handler calls document.execCommand("selectAll")
+  //              — note the camelCase browser command name, not this
+  //              kebab-case action name.
   // SELECT_NONE: payload — none. The first responder collapses its
   //              selection. NOTE: no responder currently registers a
   //              handler for this — dispatching is a silent no-op

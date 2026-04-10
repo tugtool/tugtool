@@ -759,6 +759,8 @@ For form inputs that follow the field token family.
 - Validation: `[aria-invalid="true"]` overrides border color (but not focus state)
 - Size variants via class
 
+**Namespace boundary for editing fields:** Components that call `document.execCommand` (text engines, contentEditable wrappers) must use the browser's camelCase command names (`"selectAll"`, `"insertText"`, `"delete"`, `"undo"`, etc.) — never the chain's kebab-case action names. These are separate vocabularies. See [action-naming.md § Action Names vs. Browser Command Names](action-naming.md#action-names-vs-browser-command-names).
+
 ---
 
 ## Accessibility
