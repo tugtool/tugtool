@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-10T16:15:55Z
+---
+
+## step-2: Added createNativeInputAdapter to use-text-input-responder.tsx with offset-based classifyRightClick, capturePreRightClick, and findWordBoundaries integration
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
 step: step-1
 date: 2025-04-10T16:08:23Z
 ---
