@@ -4,141 +4,87 @@ Fit-and-finish changes for text display and editing components: tug-input, tug-v
 
 ## Items
 
-### 6. Unified text selection adapter (foundational — do first)
+### 6. Selection model rework + text selection adapter (foundational — do first)
 
-**Problem:** Items 1–4 all touch selection behavior, but the five text components use three different selection models:
+**Problem:** The current selection system (SelectionGuard) was designed as a **selection manager** that owns rendering for all card content — it suppresses native `::selection`, mirrors every `selectionchange` into CSS Highlights, manages card-switch preservation, and enforces boundaries. This architecture has proven deeply problematic:
 
-| Model | Components | Selection representation | Selection query | Word-at-point | Save/restore |
-|-------|-----------|------------------------|-----------------|---------------|-------------|
-| **Native input** | tug-input, tug-textarea, tug-value-input | `selectionStart`/`selectionEnd` integers | `start !== end` | Not implemented | Not implemented |
-| **TugTextEngine** | tug-prompt-input | Flat text offsets `{ start, end }` | `end > start` | `selectWordAtPoint` via `Selection.modify` | `captureState`/`restoreState` via `useTugcardPersistence` |
-| **SelectionGuard** | tug-markdown-view (via card boundary) | Path-based `SavedSelection` (anchorPath[], focusPath[]) | Not directly exposed | Not implemented | `saveSelection`/`restoreSelection` per card |
+- **Stuck selections.** Hidden state (`cardRanges`, `justActivatedCardId`, `activeHighlightCardId`) creates cycles where stale Ranges are re-added to highlights on click, making selections impossible to clear.
+- **Multiple activation paths.** `activateCard` is called from both `handlePointerDown` (capture phase) and DeckCanvas's `useLayoutEffect` (after React commit). These paths have different timing and semantics but share the same state, creating race conditions.
+- **Chrome is selectable.** The boundary is `.tugcard-content`, which includes both content and chrome. `::highlight()` paints through `user-select: none` regions, so chrome appears selected even when CSS says it shouldn't be.
+- **Double rendering.** Native inputs re-enable `::selection` for themselves AND have `::highlight(card-selection)` rules — two systems paint simultaneously.
+- **Components can't manage their own selection.** Because SelectionGuard reacts to every `selectionchange` globally, any component that calls `removeAllRanges()` or manipulates the DOM Selection triggers SelectionGuard state changes that cascade unpredictably.
 
-Items 1–4 each need a subset of selection operations. When the needs are cross-tabulated, it becomes clear that several operations are required uniformly across all three models:
+See `tuglaws/selection-model.md` for the full audit.
 
-| Operation | Item 1 (md-view menu) | Item 2 (right-click reposition) | Item 3 (tab persistence) | Needed by |
-|-----------|----------------------|-------------------------------|-------------------------|-----------|
-| Has ranged selection? | Copy enablement | Case 1 vs 2 vs 3 | — | All 3 models |
-| Get selected text | Copy handler | — | — | md-view, engine |
-| Caret/range geometry | — | Proximity + within-range checks | — | All 3 models |
-| Set caret to point | — | Case 3 | — | All 3 models |
-| Expand to word at point | — | Case 3 | — | All 3 models |
-| Save/restore selection | — | — | Per-tab persistence | Native (new), others (done) |
-| Select all | Handler | — | — | md-view (new) |
+#### Architectural change: SelectionGuard becomes a boundary enforcer
 
-Without a shared abstraction, each of items 1–4 will re-derive the same "how do I query/manipulate selection in this component type?" logic with ad-hoc branching. The right-click repositioning logic (item 2) is especially vulnerable — the three-case algorithm is identical across all components, but the selection model access is different each time.
+**Core principle:** SelectionGuard operates at the **card level only**. It prevents selections from escaping card boundaries and handles card-switch dimming/restoration. It does NOT reach inside cards to manage how content components handle selection. Card contents never know about or care about SelectionGuard.
 
-**Proposal: `TextSelectionAdapter` interface.**
+**What changes:**
 
-A small interface that each component family implements, providing a uniform API for the operations that items 1–4 need. The adapter does not replace the underlying selection model — it is a thin bridge so shared behavioral logic can work uniformly.
+| Responsibility | Current (selection manager) | New (boundary enforcer) |
+|---|---|---|
+| **Active selection rendering** | `::selection` suppressed globally; `card-selection` CSS Highlight mirrors every `selectionchange` | Native `::selection` paints active selections. No `card-selection` highlight. No `syncActiveHighlight`. No `cardRanges` mirroring. |
+| **Inactive selection rendering** | Range moves between `card-selection` and `inactive-selection` highlights | Only `inactive-selection` highlight exists. Range cloned into it on card deactivation, removed on reactivation. |
+| **Boundary enforcement** | Pointer clamping + selectionchange clipping (unchanged) | Same — still needed. |
+| **Card-switch preservation** | `activateCard` with `justActivatedCardId` guard, `preventMousedown`, `cardRanges` persistence | Simpler: on deactivation, clone Range into `inactive-selection` and save it. On activation, restore browser Selection from saved Range. `justActivatedCardId` and `cardRanges` eliminated. |
+| **Tab persistence** | `saveSelection` / `restoreSelection` (unchanged) | Same API, same mechanism. |
+| **App activation** | Move Range between highlights (unchanged) | Same. |
+| **Chrome selectability** | Boundary on `.tugcard-content` includes chrome; `::highlight()` paints through `user-select: none` | Native `::selection` respects `user-select: none`. Components opt in to `user-select: text` individually. Chrome is naturally non-selectable. |
 
-```ts
-interface TextSelectionAdapter {
-  /** True when there is a non-collapsed selection. */
-  hasRangedSelection(): boolean;
+**What gets eliminated:**
+- `syncActiveHighlight` — the entire method (runs on every `selectionchange`, source of most bugs)
+- `cardRanges` — no longer needed for mirroring (only written at card deactivation)
+- `justActivatedCardId` — no longer needed (existed to prevent `syncActiveHighlight` from overwriting restored selections)
+- `card-selection` CSS Highlight — removed entirely
+- `.tugcard-content ::selection { transparent }` — removed; native `::selection` paints
+- Per-component `::selection` re-enablement (tug-input, tug-textarea, etc.) — not needed; never suppressed
+- Per-component `::highlight(card-selection)` rules — removed; highlight doesn't exist
+- tug-prompt-input's `::highlight(card-selection) { transparent !important }` — not needed
+- Double rendering on native inputs — eliminated
 
-  /** The currently selected text, or empty string if no ranged selection. */
-  getSelectedText(): string;
+**What stays:**
+- Boundary enforcement (pointer clamping, `selectstart` gating, `selectionchange` clipping)
+- `inactive-selection` highlight for dimmed cards
+- `useSelectionBoundary` hook
+- Save/restore for tab switches
+- App activation/deactivation
+- `preventMousedown` for click-back (still needed, but only on genuine card switches — simpler to reason about)
 
-  /**
-   * DOMRect of the caret (collapsed selection) or null.
-   * Used by item 2 case 1: "is the click near the caret?"
-   */
-  getCaretRect(): DOMRect | null;
+**What each component owns:**
+- **tug-markdown-view:** Uses native DOM Selection directly. Browser handles click-to-clear, drag-to-select. `user-select: text` on the scroll container. `caret-color: transparent` (read-only, no caret needed). Context menu samples `window.getSelection()`. Select-all uses a logical flag + CSS visual + data-model copy.
+- **tug-prompt-input:** Uses TugTextEngine's selection model via contentEditable. No change from current behavior (already uses `data-td-select="custom"` to exempt from clipping).
+- **tug-input, tug-textarea, tug-value-input:** Use native `selectionStart`/`selectionEnd`. No change from current behavior except removing the now-unnecessary `::highlight()` and `::selection` override CSS rules.
 
-  /**
-   * Array of DOMRects covering the ranged selection, or empty.
-   * Used by item 2 case 2: "is the click inside the selection?"
-   */
-  getSelectionRects(): DOMRect[];
+#### Implementation plan
 
-  /**
-   * Place the caret at the given viewport coordinates.
-   * Used by item 2 case 3 before word expansion.
-   */
-  setCaretToPoint(clientX: number, clientY: number): void;
+**Step 1: Remove the `card-selection` highlight and `syncActiveHighlight`.**
+- Delete `syncActiveHighlight` method.
+- Remove `card-selection` from `CSS.highlights` registration in `initHighlights` and `attach`.
+- Remove the `activeHighlight` field, `cardRanges` map, `justActivatedCardId`, and `activeHighlightCardId`.
+- Remove `::selection { transparent }` from `.tugcard-content` in tug-card.css.
+- Remove all `::highlight(card-selection)` CSS rules from tug-card.css, tug-input.css, tug-textarea.css, tug-value-input.css, tug-prompt-input.css, tug-markdown-view.css.
+- Remove `::selection` re-enablement rules from tug-input.css, tug-textarea.css, tug-value-input.css, tug-prompt-input.css (native `::selection` is no longer suppressed).
+- **Test:** Drag-to-select in all text components works. Selection is visible via native `::selection`. No double rendering.
 
-  /**
-   * Expand the current caret to word boundaries.
-   * Used by item 2 case 3 after setCaretToPoint.
-   */
-  expandToWord(): void;
+**Step 2: Rework card-switch to save/restore without `syncActiveHighlight`.**
+- On card deactivation (a different card is clicked): clone the current card's DOM Selection Range, add it to `inactive-selection` highlight, clear the browser Selection.
+- On card activation (clicking back): restore browser Selection from the saved Range, remove from `inactive-selection`. Install `preventMousedown` to stop the click from collapsing.
+- DeckCanvas's `useLayoutEffect` calls a simplified `activateCard` that only manages the `inactive-selection` highlight, not a `card-selection` highlight.
+- **Test:** Select text in Card A, click Card B, Card A's selection dims. Click back to Card A, selection restores.
 
-  /** Select all content. */
-  selectAll(): void;
-}
-```
+**Step 3: Verify boundary enforcement still works.**
+- Pointer clamping, `selectstart` gating, and keyboard selection clipping should work unchanged — they don't depend on `syncActiveHighlight` or `card-selection`.
+- **Test:** Drag selection in a card, drag pointer outside the card boundary — selection clips at the edge. Start a selection in card chrome — blocked by `selectstart` handler + `user-select: none`.
 
-Three implementations, each wrapping its native model:
+**Step 4: Clean up and update tests.**
+- Update SelectionGuard tests to reflect the new architecture.
+- Remove tests for `syncActiveHighlight`, `cardRanges`, `justActivatedCardId`.
+- Add tests for the new save/restore flow.
 
-1. **`NativeInputSelectionAdapter`** — wraps `<input>` / `<textarea>` elements.
-   - `hasRangedSelection` → `el.selectionStart !== el.selectionEnd`
-   - `getSelectedText` → `el.value.slice(el.selectionStart, el.selectionEnd)`
-   - `getCaretRect` → use `caretPositionFromPoint` or create a hidden span/range at the caret offset to measure geometry. Alternatively, for native inputs, `el.getBoundingClientRect()` combined with character offset heuristics may suffice for the ~1em proximity check.
-   - `getSelectionRects` → native inputs don't expose per-character rects easily; for the "click within range" check, a reasonable approximation is whether the click's character offset falls between `selectionStart` and `selectionEnd` (geometric check not needed — offset comparison suffices).
-   - `setCaretToPoint` → `el.setSelectionRange(offset, offset)` where offset is derived from click coordinates (this is the trickiest part — native inputs don't have `caretPositionFromPoint` that resolves into them; we may need to use `el.setSelectionRange` with an offset computed from the input's text metrics).
-   - `expandToWord` → compute word boundaries from `el.value` at current `selectionStart`, then `el.setSelectionRange(wordStart, wordEnd)`.
-   - `selectAll` → `el.select()`
+#### TextSelectionAdapter interface
 
-2. **`EngineSelectionAdapter`** — wraps `TugTextEngine`.
-   - `hasRangedSelection` → `engine.getSelectedRange()` with `end > start`
-   - `getSelectedText` → extract from engine state using range
-   - `getCaretRect` / `getSelectionRects` → use `window.getSelection().getRangeAt(0).getBoundingClientRect()` / `getClientRects()` (the engine's contentEditable participates in the standard DOM Selection API)
-   - `setCaretToPoint` → `caretRangeFromPoint` → `engine.setSelectedRange`
-   - `expandToWord` → `Selection.modify("move", "backward", "word")` + `Selection.modify("extend", "forward", "word")` (already used by `selectWordAtPoint`)
-   - `selectAll` → `engine.selectAll()`
-
-3. **`HighlightSelectionAdapter`** — thin query layer over SelectionGuard-managed state for read-only views.
-   - `hasRangedSelection` → check `window.getSelection()` for a non-collapsed range within the boundary element
-   - `getSelectedText` → `window.getSelection().toString()`
-   - `selectAll` → sets a logical `selectAllActive` flag + CSS visual (virtualized; see Q2 below)
-   - `expandToWord` → `Selection.modify` (standard DOM Selection)
-   - `classifyRightClick` → geometry check against live DOM Selection Range rects
-   - `selectWordAtPoint` → `caretPositionFromPointCompat` → `Selection.setBaseAndExtent` → expandToWord
-
-   **Critical constraint:** The HighlightSelectionAdapter does NOT add its own pointer or selection event listeners. SelectionGuard owns the full pointer-to-highlight lifecycle for all card content — drag-to-select, highlight rendering, card boundary enforcement, cross-card selection preservation. The adapter only queries the state that SelectionGuard already manages. Adding parallel pointer/selection listeners creates two systems mutating the same `window.getSelection()`, which causes double rendering, stuck selections, and clearing that doesn't stick.
-
-**What the adapter does NOT cover:**
-
-- **Content persistence (item 3).** Each component's content serialization is model-specific (`TugTextEditingState` for the engine, `{ value, selectionStart, selectionEnd }` for native inputs, nothing for read-only markdown-view). The adapter doesn't try to unify these — `useTugcardPersistence` already has the right shape for per-component save/restore callbacks.
-- **Undo stack (item 4).** This is about DOM lifecycle, not selection model.
-- **Context menu rendering.** The adapter provides the queries; the context menu component (`TugEditorContextMenu`) and its activation logic stay unchanged.
-
-**How items 1–4 use the adapter:**
-
-- **Item 1 (md-view context menu):** The `HighlightSelectionAdapter` provides `hasRangedSelection()` for copy enablement, `getSelectedText()` for the copy handler, and `selectAll()` for the select-all handler.
-- **Item 2 (right-click repositioning):** A single shared utility function `repositionSelectionOnRightClick(adapter, clientX, clientY, emSize)` implements the three-case algorithm using the adapter interface. Every text component calls it from its contextmenu handler, passing its own adapter. One algorithm, three models, zero branching at the call site.
-- **Item 3 (tab persistence):** Each component's `useTugcardPersistence` callbacks use the component's native API (not the adapter) for save/restore. The adapter is not involved.
-- **Item 4 (undo):** Not involved.
-
-**Implementation approach:**
-
-The adapter is a plain object (not a class hierarchy, not a React hook). Each component creates one in its contextmenu handler or passes it as a ref. The interface is small enough that implementations are 5–15 lines each. The `repositionSelectionOnRightClick` utility is ~30 lines of pure logic against the interface.
-
-File placement: `tugdeck/src/components/tugways/text-selection-adapter.ts` for the interface and the shared right-click utility. Each adapter implementation lives next to its consumer (inline in the hook or component, not in a separate file — they're too small to warrant their own module).
-
-**Resolved questions:**
-
-#### Q1: Native input caret-to-point
-
-**Finding:** `caretPositionFromPoint` / `caretRangeFromPoint` do NOT resolve positions inside `<input>` or `<textarea>` elements. The text inside native inputs is rendered in a browser-internal context that the document-level hit-testing API cannot reach. The codebase confirms this: `caretPositionFromPointCompat` (selection-guard.ts) is only ever called for card content areas (contentEditable and markdown), never for native inputs.
-
-**Solution: let the browser do the work.** On right-click, the browser's native mousedown handler fires *before* the contextmenu event and places the caret at the click point. At contextmenu time, `selectionStart`/`selectionEnd` already reflect where the browser resolved the click. We don't need to do our own coordinate-to-offset conversion — the browser already did it.
-
-The three-case algorithm for native inputs becomes offset-based instead of geometric:
-
-1. **Capture** the pre-right-click selection at `pointerdown` (button === 2), before the browser's mousedown moves it: `{ oldStart, oldEnd } = { selectionStart, selectionEnd }`.
-2. **At `contextmenu`**, read where the browser placed the caret: `newOffset = selectionStart` (after the browser's mousedown collapsed it).
-3. **Decide:**
-   - **Case 1 (caret, click near):** Old selection was collapsed (`oldStart === oldEnd`) and `newOffset === oldStart` (same character position). Restore old caret — effectively a no-op since the positions match.
-   - **Case 2 (range, click inside):** Old selection was ranged (`oldStart < oldEnd`) and `oldStart <= newOffset <= oldEnd`. Restore old range via `el.setSelectionRange(oldStart, oldEnd)`.
-   - **Case 3 (otherwise):** Let the browser's new caret position stand. Expand to word boundaries by scanning `el.value` for word-boundary characters around `newOffset`, then `el.setSelectionRange(wordStart, wordEnd)`.
-
-This is ~20 lines in `use-text-input-responder.tsx` and needs no geometric APIs, no canvas measurement, no hidden measurement spans. The browser's native hit-testing is the coordinate-to-offset converter.
-
-**Impact on the adapter interface:** The geometric methods (`getCaretRect`, `getSelectionRects`) are not needed for native inputs. The `NativeInputSelectionAdapter` can still implement the full interface — `getCaretRect` would return the input element's bounding rect as a rough approximation — but the right-click repositioning logic for native inputs uses offset comparison, not geometric proximity. The shared `repositionSelectionOnRightClick` utility should accept *either* geometric or offset-based inputs, or the three-case logic should be a method on the adapter itself so each model implements it naturally.
-
-**Revised adapter interface** (hybrid approach — shared decision logic with model-specific input):
+The `TextSelectionAdapter` interface (already implemented in `text-selection-adapter.ts`) provides a uniform selection query/mutation API for items 1–2. With the selection model rework, the `HighlightSelectionAdapter` simplifies — it queries native DOM Selection directly, with no dependency on SelectionGuard state:
 
 ```ts
 interface TextSelectionAdapter {
@@ -146,101 +92,52 @@ interface TextSelectionAdapter {
   getSelectedText(): string;
   selectAll(): void;
   expandToWord(): void;
-
-  /**
-   * Classify a right-click relative to the current selection.
-   * Each adapter implements this using the comparison method
-   * natural to its model (geometric for contentEditable/highlight,
-   * offset-based for native inputs).
-   *
-   * Returns the case that applies, so the caller can decide
-   * whether to restore the pre-click selection or expand to word.
-   */
-  classifyRightClick(
-    clientX: number,
-    clientY: number,
-    proximityThreshold: number,  // e.g. 1em in pixels
-  ): "near-caret" | "within-range" | "elsewhere";
-
-  /**
-   * Place the caret at the given viewport coordinates and
-   * expand to word boundaries. Used for the "elsewhere" case.
-   * For native inputs, the browser already placed the caret
-   * via mousedown — this just does the word expansion.
-   */
+  classifyRightClick(clientX: number, clientY: number, proximityThreshold: number):
+    "near-caret" | "within-range" | "elsewhere";
   selectWordAtPoint(clientX: number, clientY: number): void;
 }
 ```
 
-The contentEditable and highlight adapters implement `classifyRightClick` using `Range.getBoundingClientRect()` / `getClientRects()` and distance checks. The native input adapter implements it using offset comparison against the browser-placed caret. Same interface, same caller code, different internal strategies.
+Three implementations:
+1. **`NativeInputSelectionAdapter`** — offset-based, wraps `<input>`/`<textarea>`. Already in `use-text-input-responder.tsx`.
+2. **`EngineSelectionAdapter`** — wraps TugTextEngine. Already in `tug-prompt-input.tsx`.
+3. **`HighlightSelectionAdapter`** — wraps native DOM Selection for read-only views. Already in `text-selection-adapter.ts`. After the rework, this is just standard DOM Selection queries — no SelectionGuard dependency.
 
-#### Q2: tug-markdown-view's `selectAll` scope
+#### Resolved questions
 
-**Finding:** The markdown view is virtualized. Only visible blocks plus ~2 viewport heights of overscan are in the DOM. All content IS in memory — pre-parsed HTML in `htmlCache` (never evicted) and raw text in `regionMap.text` — but creating a DOM Range spanning all content is impossible because most blocks don't have DOM nodes.
+**Q1: Native input caret-to-point.** `caretPositionFromPoint`/`caretRangeFromPoint` do NOT resolve positions inside `<input>`/`<textarea>`. Solution: let the browser place the caret on mousedown; read `selectionStart`/`selectionEnd` at contextmenu time. Offset-based three-case algorithm. See `createNativeInputAdapter` in `use-text-input-responder.tsx`.
 
-**Solution: logical select-all with data-model copy.**
-
-For a read-only component, selection is fundamentally about *what gets copied*, not about DOM Range objects. The approach:
-
-1. **Select-all sets a logical flag**, not a DOM selection. The component tracks a `selectAllActive` state (a ref, not React state — per L06, this is appearance).
-
-2. **Visual feedback:** When `selectAllActive` is true, a `data-select-all` attribute on the scroll container paints all visible blocks with the selection color via CSS (same tokens as `::highlight(card-selection)`). As the user scrolls, newly-entering blocks inherit the styling automatically because they're children of the styled container. A CSS rule suppresses the `::highlight(card-selection)` rendering while `data-select-all` is active to prevent double painting.
-
-3. **Copy from the data model.** The `copy` handler checks `selectAllActive`. If true, it extracts the full text from `regionMap.text` and writes it to the clipboard via `navigator.clipboard.writeText()`. No DOM Range needed.
-
-4. **Clear when SelectionGuard processes the next interaction.** The markdown view does NOT add its own pointerdown or selectionchange listeners to clear the flag — that would duplicate SelectionGuard's event handling. Instead, the component listens to a targeted, minimal signal:
-   - A `pointerdown` listener on the scroll container (bubble phase, not capture) checks if `selectAllActive` is true and clears the flag + removes `data-select-all`. This runs after SelectionGuard's capture-phase handler has already processed the event, so there's no race.
-   - This is the ONLY pointer listener the markdown view adds. It does not track pointer movement, detect drags, or manage selection state — SelectionGuard does all of that.
-
-5. **Interaction with SelectionGuard.** SelectionGuard continues to manage all DOM Selection state, CSS Highlight rendering, drag-to-select, and boundary enforcement for the markdown view's card content. The `selectAllActive` flag is a layer above SelectionGuard — it does not touch the DOM Selection or the CSS Highlights. SelectionGuard is unaware of the flag; the only coordination is the CSS rule that suppresses `::highlight(card-selection)` while `data-select-all` is active.
-
-**Implementation sketch:**
-
-```
-selectAll handler (continuation — runs after menu blink):
-  selectAllRef.current = true
-  scrollContainer.setAttribute("data-select-all", "")
-    
-copy handler:
-  if selectAllActive:
-    text = engine.regionMap.text (full content)
-    navigator.clipboard.writeText(text)
-  else:
-    document.execCommand("copy") (normal DOM Selection copy)
-    
-pointerdown (bubble phase, scroll container only):
-  if selectAllActive:
-    selectAllRef.current = false
-    scrollContainer.removeAttribute("data-select-all")
-  // No other pointer handling — SelectionGuard owns the rest.
-```
-
-This avoids materializing the full DOM (which defeats virtualization and could be very expensive for large documents), preserves the virtualization invariant, does not duplicate SelectionGuard's event handling, and gives the user the expected behavior: ⌘A highlights everything, ⌘C copies everything.
+**Q2: tug-markdown-view's `selectAll` scope.** The view is virtualized — most blocks aren't in the DOM. Solution: logical `selectAllActive` flag + `data-select-all` CSS attribute on the scroll container for visual feedback + `regionMap.text` for copy. Cleared on next pointerdown (bubble phase, scroll container only). The select-all visual uses the same selection color tokens. After the rework, the `data-select-all` CSS suppresses `::selection` (not `::highlight(card-selection)`, which no longer exists) and paints block backgrounds.
 
 **Key files:**
-- `tugdeck/src/components/tugways/text-selection-adapter.ts` (new — interface + shared utility)
-- `tugdeck/src/components/tugways/use-text-input-responder.tsx` (native input adapter)
-- `tugdeck/src/components/tugways/tug-prompt-input.tsx` (engine adapter)
-- `tugdeck/src/components/tugways/tug-markdown-view.tsx` (highlight adapter)
-- `tugdeck/src/components/tugways/selection-guard.ts` (may need minor additions for query support)
+- `tugdeck/src/components/tugways/selection-guard.ts` (major rework)
+- `tugdeck/src/components/tugways/tug-card.css` (remove `::selection` suppression, `::highlight(card-selection)` rules)
+- `tugdeck/src/components/tugways/tug-input.css`, `tug-textarea.css`, `tug-value-input.css`, `tug-prompt-input.css` (remove `::selection` re-enablement, `::highlight()` rules)
+- `tugdeck/src/components/tugways/tug-markdown-view.css` (update select-all CSS for native `::selection`)
+- `tugdeck/src/components/tugways/text-selection-adapter.ts` (simplify HighlightSelectionAdapter)
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (simplify `activateCard` call)
+- `tugdeck/src/__tests__/selection-guard.test.ts`, `selection-model.test.tsx` (rework tests)
 
 ---
 
 ### 1. tug-markdown-view: right-click context menu
 
-**Current state:** No context menu, no responder registration. Uses SelectionGuard for CSS Custom Highlight API selection rendering (read-only).
+**Depends on:** Item 6 (selection model rework must land first).
 
-**Goal:** Adopt the right-click editing menu popup used by the other text components. The menu shows all four standard text commands — Cut, Copy, Paste, Select All — with Cut and Paste always disabled (read-only component). Copy is enabled only when there is a ranged selection or select-all is active. Standard mac-like menu behavior: show all commands, disable the ones that don't apply.
+**Current state:** WIP context menu and responder registration exist but selection behavior is broken due to SelectionGuard's `syncActiveHighlight` interference. See checkpoint commit `eec440f5`.
 
-**Approach:** Register as a responder with `copy`, `selectAll`, and no-op `cut`/`paste` handlers. Add a `contextmenu` listener to show `TugEditorContextMenu`. Sample `window.getSelection()` at menu-open time to drive copy enablement.
+**Goal:** Right-click context menu with Cut (disabled), Copy (enabled when selection or select-all), Paste (disabled), Select All. Standard mac-like menu: all commands shown, inapplicable ones disabled.
 
-**Critical constraint — work with SelectionGuard, not around it:** The markdown view does NOT add its own `pointerdown`/`pointermove`/`pointerup`/`selectionchange` listeners for selection management. SelectionGuard already handles the full selection lifecycle for all card content: drag-to-select, pointer clamping at card boundaries, highlight rendering via `::highlight(card-selection)`, and selection preservation across card switches. The markdown view's block container is inside a card boundary element, so all of this works out of the box.
+**Approach (after item 6 lands):** With the selection model rework, native `::selection` paints the active selection. The browser handles drag-to-select, click-to-clear, and selection rendering natively. The markdown view just needs:
 
-The only event listeners the markdown view adds:
-- `contextmenu` on the scroll container — to show/hide the editor context menu
-- `pointerdown` on the scroll container (bubble phase) — ONLY to clear the `selectAllActive` flag when the user clicks after a select-all. This runs after SelectionGuard's capture-phase handler, so there's no race. No other pointer handling.
+- `user-select: text` on the scroll container (content is selectable)
+- `caret-color: transparent` (read-only, no caret needed)
+- Responder registration with `copy`, `selectAll`, and no-op `cut`/`paste` handlers
+- `contextmenu` listener to show `TugEditorContextMenu`
+- `pointerdown` listener (bubble) to clear `selectAllActive` flag
+- Virtualized select-all via logical flag + `data-select-all` CSS + `regionMap.text` copy
 
-**Read-only click behavior:** In a read-only view, a caret (collapsed selection) serves no purpose. After SelectionGuard and the browser have finished processing a click, a `click` handler on the scroll container checks if the resulting selection is collapsed and removes it. This is a cleanup pass, not a selection management system — it runs last, after all other handlers.
+No custom pointer tracking, no selection state management, no coordination with SelectionGuard internals. The browser does the work; the component reads the result.
 
 **Key files:**
 - `tugdeck/src/components/tugways/tug-markdown-view.tsx`
@@ -251,7 +148,9 @@ The only event listeners the markdown view adds:
 
 ### 2. Selection repositioning on right-click
 
-**Current state:** tug-prompt-input captures pre-right-click selection and restores it (defeating WebKit's smart-click word expansion). Native input components (`useTextInputResponder`) sample native selection at menu time with no repositioning logic.
+**Depends on:** Item 6 (selection model rework must land first).
+
+**Current state:** tug-prompt-input captures pre-right-click selection and restores it (defeating WebKit's smart-click word expansion). Native input components (`useTextInputResponder`) have `createNativeInputAdapter` with offset-based `classifyRightClick`. tug-markdown-view has `HighlightSelectionAdapter` with geometry-based `classifyRightClick`. Adapters exist but aren't wired into contextmenu handlers yet.
 
 **Goal:** Three-case behavior for all text components:
 
@@ -259,14 +158,13 @@ The only event listeners the markdown view adds:
 2. **Range + click inside range:** Keep range as-is, open menu.
 3. **Otherwise:** Move selection to click point and expand to word bounds.
 
-**Approach:** Use `caretPositionFromPoint` / `caretRangeFromPoint` to determine click position relative to current selection. For native inputs, compare against `selectionStart`/`selectionEnd` positions. For tug-prompt-input's contentEditable, same DOM API works. For tug-markdown-view, selection model differs (Custom Highlight API) so word-expansion works through SelectionGuard/range APIs.
-
-Cross-cutting concern: each component type has a different selection model but should share the same behavioral logic. Consider a shared utility that takes a selection-model adapter.
+**Approach (after item 6 lands):** Each component's `contextmenu` handler calls `adapter.classifyRightClick()` and acts on the result. For tug-markdown-view, the adapter queries native DOM Selection directly (no SelectionGuard dependency). For native inputs, offset comparison. For tug-prompt-input, DOM geometry.
 
 **Key files:**
 - `tugdeck/src/components/tugways/use-text-input-responder.tsx`
 - `tugdeck/src/components/tugways/tug-prompt-input.tsx`
 - `tugdeck/src/components/tugways/tug-markdown-view.tsx`
+- `tugdeck/src/components/tugways/text-selection-adapter.ts`
 
 ---
 
