@@ -234,3 +234,114 @@ Deferred: requires a proper document model for card content, not per-component s
 - `tuglaws/responder-chain.md` (amendment)
 - `tuglaws/component-authoring.md` (amendment)
 - `tugdeck/src/components/tugways/action-vocabulary.ts` (comment addition)
+
+---
+
+### 7. Card content selection design (do after #6)
+
+**Depends on:** Item 6 (boundary enforcer model must be in place).
+
+**Problem:** With the boundary enforcer model landed, native `::selection` paints active selections and SelectionGuard only handles card-level concerns. But within a card, selection still leaks through chrome — labels, section headers, button text, description text. A card like the TugSheet gallery shows a rich UI surface with many components, and drag-selecting or ⌘A-ing selects *everything*, revealing the web implementation underneath. The card should feel like a native app panel where only designated content regions are selectable.
+
+**Current state after item 6:**
+
+- `body` has `user-select: none` (baseline)
+- `.tugcard-content` inherits `none` (we removed `user-select: text` in item 6)
+- Content components opt in individually: `.tugx-md-scroll-container`, `.tug-input`, `.tug-textarea`, `.tug-value-input` have `user-select: text`
+- `.tug-sheet` has `user-select: text` (the entire sheet overlay, including labels and chrome)
+- `tug-card.tsx:handleSelectAll` calls `selectAllChildren` on the card content area or the active contentEditable — this selects everything inside the card if no contentEditable is focused
+
+The `user-select: none` inheritance means most card chrome is already non-selectable for drag-to-select. But two problems remain:
+
+1. **Select-all selects everything.** The card's `handleSelectAll` calls `selectAllChildren(contentRef)` which selects all text in the content area, including chrome elements that have `user-select: none` (the DOM Selection API ignores `user-select` — it operates on DOM nodes, not CSS layout).
+
+2. **Some components set `user-select: text` too broadly.** `.tug-sheet` makes the entire sheet selectable, including its section headers and labels.
+
+#### Design concept: three selection categories
+
+Every component in a card falls into one of three categories:
+
+| Category | CSS | Click-drag | ⌘A | Right-click | Selection highlight |
+|----------|-----|-----------|-----|-------------|-------------------|
+| **Selectable** | `user-select: text` | Creates visible selection | Selects all within component | Copy from selection | Native `::selection` paints |
+| **Copyable** | `user-select: none` (inherited) | No effect on selection | Not included in any select-all | Context menu with Copy (copies component's text content) | Never shows selection highlight |
+| **Unselectable** | `user-select: none` (inherited) | No effect on selection | Not included in any select-all | No copy option | Never shows selection highlight |
+
+**Selectable** — text the user can directly select via keyboard or click-drag. Examples: markdown view content, text input content, textarea content, prompt input content. These components set `user-select: text` and handle `selectAll` in the responder chain.
+
+**Copyable** — informational text the user might want to copy but should never directly select. Examples: labels, timestamps, status lines. These components do NOT set `user-select: text` — they inherit `user-select: none`. They cannot be drag-selected or included in ⌘A. The only way to copy their content is right-click → Copy from a context menu, which reads the component's text content directly (e.g., `el.textContent`), not from the DOM Selection. No visible selection highlight ever appears.
+
+**Unselectable** — chrome that has no copyable text content. Examples: buttons, toolbar icons, section dividers, decorative elements. These components inherit `user-select: none` and offer no copy mechanism.
+
+#### Rules
+
+**Rule 1: Only selectable components set `user-select: text`.** Copyable and unselectable components inherit `user-select: none` from the body. No container element (`.tugcard-content`, `.tug-sheet`, etc.) sets `user-select: text` on behalf of its children.
+
+**Rule 2: Select-all is always scoped to the first responder.** When ⌘A is dispatched through the responder chain:
+- If the first responder is a selectable component that handles `selectAll`, the selection stays within that component. The action does not bubble.
+- If ⌘A reaches the card (no selectable component is focused), it is a no-op. The card does not handle `selectAll`. There is no "select everything in the card" behavior.
+
+**Rule 3: Drag-selection is confined to the component where it started.** A drag that starts in a markdown view stays in the markdown view. A drag that starts in a text input stays in the text input. `user-select: none` on surrounding chrome prevents the selection from extending into copyable or unselectable regions. SelectionGuard prevents it from escaping the card.
+
+**Rule 4: Components that contain both chrome and selectable regions use `user-select: none` on the container and `user-select: text` on the selectable region.** For example, tug-sheet should have `user-select: none` on the sheet overlay and `user-select: text` only on form inputs inside it.
+
+**Rule 5: Copyable components offer right-click → Copy.** They register as responders with a `copy` handler that reads `el.textContent` (or equivalent) and writes to the clipboard. They show a `TugEditorContextMenu` with Copy enabled and all other items disabled. They do NOT handle `selectAll`.
+
+#### Implementation plan
+
+**Step 1: Remove card-level `selectAll` handler.**
+
+The card's `handleSelectAll` in `tug-card.tsx` currently calls `selectAllChildren(contentRef)` as a fallback when no contentEditable is focused. Remove this handler entirely. The card should not handle `selectAll` — it should bubble up through the chain unhandled.
+
+The responder chain already provides the right scoping: tug-prompt-input, tug-input, tug-textarea, tug-value-input, and tug-markdown-view all handle `selectAll` in their own responder registrations. If ⌘A reaches the card, it means no selectable component is focused — the correct behavior is to do nothing.
+
+**Step 2: Fix `.tug-sheet` user-select.**
+
+Remove `user-select: text` from `.tug-sheet`. The sheet overlay is unselectable chrome. Form inputs inside the sheet already have their own `user-select: text`. The sheet's `user-select: text` was a workaround for a WebKit double-click bug — test whether the bug still occurs with the boundary enforcer model. If it does, find a narrower fix (e.g., `user-select: text` only on the sheet's form input region, or a targeted `pointerdown` handler).
+
+**Step 3: Audit all `user-select: text` declarations.**
+
+Verify that every `user-select: text` in the codebase is on a selectable component, not a container or chrome element. Current declarations:
+
+| Selector | File | Category | Status |
+|----------|------|----------|--------|
+| `.tugx-md-scroll-container` | tug-markdown-view.css | Selectable | Correct |
+| `.tug-input` | tug-input.css | Selectable | Correct |
+| `.tug-textarea` | tug-textarea.css | Selectable | Correct |
+| `.tug-value-input` | tug-value-input.css | Selectable | Correct |
+| `.tug-sheet` | tug-sheet.css | Unselectable (container) | **Wrong** — remove |
+| `.style-inspector-overlay` | style-inspector-overlay.css | Review | Determine category |
+
+**Step 4: Implement copyable component pattern.**
+
+Create a reusable pattern for copyable components (labels, timestamps, status text):
+- Component registers as a responder with a `copy` handler
+- `copy` handler reads `el.textContent` (or a prop) and writes to the clipboard via `navigator.clipboard.writeText()`
+- Component adds a `contextmenu` listener that shows `TugEditorContextMenu` with Copy enabled, Cut/Paste/SelectAll disabled
+- No `user-select: text` — the component inherits `user-select: none`
+- No visible selection ever appears
+
+This could be a shared hook (e.g., `useCopyableText(ref)`) that handles the responder registration, context menu, and clipboard write. Each copyable component calls it.
+
+**Step 5: Update `tuglaws/selection-model.md` and `tuglaws/component-authoring.md`.**
+
+Document the three categories and five rules. Add guidance to the component authoring guide:
+- "Selectable components set `user-select: text` and handle `selectAll`. Examples: tug-markdown-view, tug-input, tug-textarea, tug-value-input, tug-prompt-input."
+- "Copyable components inherit `user-select: none`, handle `copy` via right-click context menu, and do NOT handle `selectAll`. Use `useCopyableText` hook."
+- "Unselectable components inherit `user-select: none` and offer no copy mechanism. Examples: buttons, toolbars, section headers."
+
+#### Resolved questions
+
+**Q1: Card-level selectAll.** Cards do not handle `selectAll`. An empty card ignores it entirely. The action bubbles up to SelectionGuard's boundary, which does not propagate it further. No selection is created.
+
+**Q2: Informational text.** Three categories — selectable, copyable, unselectable. Labels, timestamps, and status lines are **copyable**: right-click → Copy works, but click-drag and ⌘A do not. No visible selection highlight ever appears on copyable content.
+
+**Q3: tug-sheet WebKit workaround.** Needs testing. The comment says `user-select: text` on the sheet prevents WebKit from consuming the first click on a button as a selection-clear action (when a text input inside the sheet has an active selection). Test whether this bug reproduces with the boundary enforcer model. If so, apply a narrower fix.
+
+**Key files:**
+- `tugdeck/src/components/tugways/tug-card.tsx` (remove handleSelectAll)
+- `tugdeck/src/components/tugways/tug-sheet.css` (remove user-select: text)
+- `tugdeck/src/components/tugways/style-inspector-overlay.css` (audit)
+- `tugdeck/src/components/tugways/use-copyable-text.ts` (new — shared hook for copyable pattern)
+- `tuglaws/selection-model.md` (document three categories and five rules)
+- `tuglaws/component-authoring.md` (add selection guidance)
