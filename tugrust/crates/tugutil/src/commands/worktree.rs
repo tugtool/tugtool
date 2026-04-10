@@ -1155,6 +1155,7 @@ mod tests {
             state_initialized: false,
             auto_reinitialized: false,
             warnings: vec![],
+            plan_id: None,
         };
 
         let json = serde_json::to_string(&data).expect("serialization should succeed");
@@ -1188,6 +1189,7 @@ mod tests {
             state_initialized: true,
             auto_reinitialized: false,
             warnings: vec![],
+            plan_id: None,
         };
         let json = serde_json::to_string(&data).expect("serialization should succeed");
         assert!(json.contains("state_initialized"));
@@ -1210,6 +1212,7 @@ mod tests {
             state_initialized: false,
             auto_reinitialized: false,
             warnings: vec!["state init failed: forced".to_string()],
+            plan_id: None,
         };
         let json = serde_json::to_string(&data).expect("serialization should succeed");
         assert!(json.contains("warnings"));

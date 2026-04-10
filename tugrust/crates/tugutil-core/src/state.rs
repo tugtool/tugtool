@@ -1117,7 +1117,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_id, step_an
             let remaining_updated = tx
                 .execute(
                     "UPDATE checklist_items SET status = 'completed', updated_at = ?1
-                     WHERE plan_id = ?2 AND step_anchor = ?3 AND status = 'open'",
+                     WHERE plan_id = ?2 AND step_anchor = ?3 AND status NOT IN ('completed', 'deferred')",
                     rusqlite::params![&now, plan_id, anchor],
                 )
                 .map_err(|e| TugError::StateDbQuery {
