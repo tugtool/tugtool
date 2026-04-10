@@ -325,27 +325,31 @@ Component authors set `data-tug-select` on their root element. The attribute dri
 
 #### Implementation plan
 
-**Step 1: Remove card-level `selectAll` handler.**
+**Step 1: Remove card-level `selectAll` handler. — DONE**
 
 The card's `handleSelectAll` in `tug-card.tsx` currently calls `selectAllChildren(contentRef)` as a fallback when no contentEditable is focused. Remove this handler entirely. The card should not handle `selectAll` — it should bubble up through the chain unhandled.
 
 The responder chain already provides the right scoping: tug-prompt-input, tug-input, tug-textarea, tug-value-input, and tug-markdown-view all handle `selectAll` in their own responder registrations. If ⌘A reaches the card, it means no selectable component is focused — the correct behavior is to do nothing.
 
-**Step 2: Fix `.tug-sheet` user-select.**
+**Step 2: Fix `.tug-sheet` user-select. — DONE**
 
 Remove `user-select: text` from `.tug-sheet`. The sheet overlay is unselectable chrome. Form inputs inside the sheet already have their own `user-select: text`. The sheet's `user-select: text` was a workaround for a WebKit double-click bug — test whether the bug still occurs with the boundary enforcer model. If it does, find a narrower fix (e.g., `user-select: text` only on the sheet's form input region, or a targeted `pointerdown` handler).
 
-**Step 3: Implement focus refusal on chrome controls.**
+**Step 3: Implement focus refusal on chrome controls. — DONE**
 
-Add `onMouseDown={(e) => e.preventDefault()}` to controls that should not steal focus from editors. This is a component-level behavior — each control handles it internally, not per-instance. The `click` event is unaffected: mousedown+mouseup on the same element still fires `click` normally. Keyboard Tab navigation is unaffected: controls keep their default `tabindex` so Tab/Enter/Space works.
+Controls that should not steal focus from editors are marked with `data-tug-focus="refuse"` on their root element. That attribute is the single source of truth — controls add nothing else. Two document-level listeners in `responder-chain-provider.tsx` handle both concerns centrally:
+- `pointerdown` (capture): if target is inside `[data-tug-focus="refuse"]`, skip first-responder promotion
+- `mousedown` (capture): if target is inside `[data-tug-focus="refuse"]`, call `preventDefault()` to prevent browser focus transfer
 
-Start with `TugButton` (internal) since `TugPushButton` and `TugPopupButton` compose it — fixing TugButton fixes all three. Then apply to `TugCheckbox`, `TugSwitch`, `TugSlider`, `TugRadioGroup`, `TugChoiceGroup`, `TugOptionGroup`, and `TugTabBar` tab elements.
+The `click` event is unaffected. Keyboard Tab navigation is preserved (controls keep default `tabindex`).
 
-This also resolves the tug-sheet WebKit workaround (Q3) — the bug was that clicking a button inside a sheet stole focus from a text input, requiring a double-click. With focus refusal on the button, focus stays in the input and the button activates on the first click.
+Applied to: `TugButton` (covers TugPushButton, TugPopupButton), `TugCheckbox`, `TugSwitch`, `TugSlider`, `TugChoiceGroup`, `TugOptionGroup`, `TugTabBar` (tabs + close buttons). `TugRadioGroup` items use TugButton via `asChild` — already covered.
 
-**Step 4: Audit all `user-select: text` declarations.**
+Also resolves the tug-sheet WebKit workaround (Q3) — buttons no longer steal focus from text inputs.
 
-Verify that every `user-select: text` in the codebase is on a selectable component, not a container or chrome element. Current declarations:
+**Step 4: Audit all `user-select: text` declarations. — DONE**
+
+All active `user-select: text` declarations are on selectable content components:
 
 | Selector | File | Category | Status |
 |----------|------|----------|--------|
@@ -353,8 +357,8 @@ Verify that every `user-select: text` in the codebase is on a selectable compone
 | `.tug-input` | tug-input.css | Selectable | Correct |
 | `.tug-textarea` | tug-textarea.css | Selectable | Correct |
 | `.tug-value-input` | tug-value-input.css | Selectable | Correct |
-| `.tug-sheet` | tug-sheet.css | Chrome (container) | **Wrong** — remove |
-| `.style-inspector-overlay` | style-inspector-overlay.css | Review | Determine category |
+| `.style-inspector-overlay` | style-inspector-overlay.css | Selectable (dev tool) | Correct |
+| `.tug-sheet` | tug-sheet.css | Chrome (container) | Fixed in step 2 |
 
 **Step 5: Implement copyable component pattern.**
 
