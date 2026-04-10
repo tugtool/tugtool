@@ -26,6 +26,11 @@ type MockupSize = "sm" | "md" | "lg";
 
 const ALL_ROLES: MockupRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution"];
 
+// NOTE: the `action` keys in ROLE_HUE and ROLE_ICONS below are role-prop
+// values (one of MockupRole), not chain-action names from `TUG_ACTIONS`.
+// The two `action` namespaces are unrelated; audit greps for
+// `action:\s*"…"` will surface these lines as false positives — they
+// are not dispatch sites.
 const ROLE_HUE: Record<MockupRole, string> = {
   accent:  "orange",
   action:  "blue",

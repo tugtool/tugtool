@@ -600,7 +600,7 @@ describe("capture-phase payload threading", () => {
           id: responderId,
           parentId: null,
           actions: {
-            undo: (event: ActionEvent) => {
+            [TUG_ACTIONS.UNDO]: (event: ActionEvent) => {
               received = event.value;
             },
           },

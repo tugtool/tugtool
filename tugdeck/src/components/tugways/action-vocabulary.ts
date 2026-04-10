@@ -93,7 +93,9 @@ export const TUG_ACTIONS = {
   // SELECT_ALL:  payload — none. The first responder selects all of its
   //              content.
   // SELECT_NONE: payload — none. The first responder collapses its
-  //              selection.
+  //              selection. NOTE: no responder currently registers a
+  //              handler for this — dispatching is a silent no-op
+  //              until a control wires it up.
   CUT:         "cut",
   COPY:        "copy",
   PASTE:       "paste",
@@ -122,9 +124,13 @@ export const TUG_ACTIONS = {
   // PREVIOUS_TAB:   payload — none. Card-level: switch to previous tab.
   // NEXT_TAB:       payload — none. Card-level: switch to next tab.
   // FOCUS_NEXT:     payload — none. Move keyboard focus to the next
-  //                 focusable responder.
+  //                 focusable responder. NOTE: no handler yet —
+  //                 ⇥/⇧⇥ are deferred per the A3 / R4 retrospective.
+  //                 Dispatching is a silent no-op until a chain-wide
+  //                 focus-next implementation lands.
   // FOCUS_PREVIOUS: payload — none. Move keyboard focus to the previous
-  //                 focusable responder.
+  //                 focusable responder. NOTE: no handler yet — see
+  //                 FOCUS_NEXT.
   // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
   CYCLE_CARD:     "cycle-card",
@@ -192,6 +198,9 @@ export const TUG_ACTIONS = {
   //             menu/keystroke path that targets the focused card with
   //             a hardcoded component type.
   // REOPEN_TAB: payload — none. Restore the most recently closed tab.
+  //             NOTE: no handler yet — ⌘⇧T is deferred per the A3 / R4
+  //             retrospective pending a closed-tab history in
+  //             deck-manager. Dispatching is a silent no-op until then.
   SELECT_TAB: "select-tab",
   CLOSE_TAB:  "close-tab",
   ADD_TAB:    "add-tab",

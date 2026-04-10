@@ -45,6 +45,14 @@ export type TugProgressRole =
 
 // ---- Role injection ----
 
+/**
+ * Maps role prop values to progress token suffixes.
+ *
+ * NOTE: the `action` key here is a role-prop value, not a chain-action
+ * name from `TUG_ACTIONS`. The two `action` namespaces are unrelated;
+ * audit greps for `action:\s*"…"` will surface this line as a false
+ * positive — it is not a dispatch site.
+ */
 const ROLE_TOKEN_MAP: Record<string, string> = {
   option: "option",
   action: "active",

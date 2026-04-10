@@ -569,6 +569,101 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     expect(setActiveCalls[0].tabId).toBe("tab-2");
   });
 
+  it("jumpToTab dispatches setActiveTab with the Nth tab id (A3 / R4)", () => {
+    // Round-trip guard: jumpToTab → handleJumpToTab → re-dispatch
+    // selectTab → store.setActiveTab. The intermediate selectTab dispatch
+    // is what runs the save-current-tab-state side effect, so this
+    // assertion is what protects ⌘1..⌘9 from a future refactor that
+    // breaks the re-dispatch chain.
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+    registerTabCard("editor", "Editor");
+
+    const setActiveCalls: Array<{ cardId: string; tabId: string }> = [];
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+      makeTab("tab-3", "editor", "Editor"),
+    ];
+
+    const { manager } = renderWithManagerAndStore(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+      >
+        <div>content</div>
+      </Tugcard>,
+      {
+        setActiveTab: (cardId: string, tabId: string) => {
+          setActiveCalls.push({ cardId, tabId });
+        },
+      },
+    );
+
+    // ⌘2 → 1-based index 2 → tab-2
+    act(() => {
+      manager.dispatch({
+        action: TUG_ACTIONS.JUMP_TO_TAB,
+        value: 2,
+        phase: "discrete",
+      });
+    });
+    expect(setActiveCalls.length).toBe(1);
+    expect(setActiveCalls[0].tabId).toBe("tab-2");
+    expect(setActiveCalls[0].cardId).toBe(defaultProps.cardId);
+
+    // ⌘3 → 1-based index 3 → tab-3
+    act(() => {
+      manager.dispatch({
+        action: TUG_ACTIONS.JUMP_TO_TAB,
+        value: 3,
+        phase: "discrete",
+      });
+    });
+    expect(setActiveCalls.length).toBe(2);
+    expect(setActiveCalls[1].tabId).toBe("tab-3");
+  });
+
+  it("jumpToTab is a no-op for out-of-range or non-number payloads", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const setActiveCalls: Array<{ cardId: string; tabId: string }> = [];
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { manager } = renderWithManagerAndStore(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+      >
+        <div>content</div>
+      </Tugcard>,
+      {
+        setActiveTab: (cardId: string, tabId: string) => {
+          setActiveCalls.push({ cardId, tabId });
+        },
+      },
+    );
+
+    act(() => {
+      // index 0 — invalid (1-based)
+      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 0, phase: "discrete" });
+      // index 9 — past the end of a 2-tab card
+      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 9, phase: "discrete" });
+      // wrong type
+      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: "2", phase: "discrete" });
+      // missing payload
+      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, phase: "discrete" });
+    });
+
+    expect(setActiveCalls.length).toBe(0);
+  });
+
   it("previousTab/nextTab are no-ops when tabs.length <= 1", () => {
     registerTabCard("hello", "Hello");
 

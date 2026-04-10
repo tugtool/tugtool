@@ -909,9 +909,16 @@ export function Tugcard({
         store.addTab(cardId, event.value);
       },
       // Stubs: minimize, toggle-menu, find are no-ops until implemented.
+      // `find` logs because ⌘F is bound in keybinding-map.ts and a user
+      // pressing the shortcut would otherwise see nothing — the stub log
+      // makes the no-op visible in the dev console until the real handler
+      // grows. minimize and toggle-menu have no keybinding so they stay
+      // silent. [A3 / R4 polish]
       [TUG_ACTIONS.MINIMIZE]: (_event: ActionEvent) => {},
       [TUG_ACTIONS.TOGGLE_MENU]: (_event: ActionEvent) => {},
-      [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {},
+      [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
+        console.info("find: stub — no find UI implemented yet");
+      },
       // Route incoming set-property actions to the registered PropertyStore.
       // Payload shape: { path: string, value: unknown, source?: string }.
       // No-op when no PropertyStore is registered (card does not support inspection).

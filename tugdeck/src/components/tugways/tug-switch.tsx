@@ -55,6 +55,11 @@ export type TugSwitchRole =
  * The prop API uses "action" but the token system uses "active"
  * (e.g., --tug7-surface-toggle-track-normal-active-rest).
  * "accent" is not in this map — it's the implicit default when no role is provided.
+ *
+ * NOTE: the `action` key here is a role-prop value, not a chain-action
+ * name from `TUG_ACTIONS`. The two `action` namespaces are unrelated;
+ * audit greps for `action:\s*"…"` will surface this line as a false
+ * positive — it is not a dispatch site.
  */
 const ROLE_TOKEN_MAP: Record<string, string> = {
   option:  "option",
