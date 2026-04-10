@@ -380,29 +380,11 @@ body {
 }
 
 /*
- * Suppress native ::selection rendering. All selection painting is done via
- * CSS Custom Highlight API — "card-selection" for the active card and
- * "inactive-selection" for dimmed cards. This eliminates the flash that
- * occurred when swapping between ::selection and ::highlight() rendering
- * systems, because there is now only one system.
- *
- * The browser Selection object still works for copy/paste and accessibility;
- * only the visual painting is suppressed.
- *
- * Rule 4 of Rules of Tugways: appearance changes through CSS and DOM.
+ * Active selection uses native ::selection. No suppression needed — the
+ * browser paints it directly. Selection color tokens are applied here so
+ * all card content uses the same selection appearance.
  */
 .tugcard-content ::selection {
-  background-color: transparent;
-  color: inherit;
-}
-
-/*
- * Active card selection via CSS Custom Highlight API.
- *
- * SelectionGuard mirrors the live browser Selection into this highlight on
- * every selectionchange event. This is the ONLY visible selection rendering.
- */
-::highlight(card-selection) {
   background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
   color: var(--tug7-element-selection-text-normal-plain-rest);
 }
@@ -410,10 +392,9 @@ body {
 /*
  * Inactive (dimmed) card selection via CSS Custom Highlight API.
  *
- * When a card loses focus, SelectionGuard moves its Range from
- * "card-selection" to "inactive-selection". When the card regains focus,
- * the Range moves back. The Highlight swap itself is a simple
- * delete/add — no intermediate empty state, no flash.
+ * When a card loses focus, SelectionGuard clones its Range into the
+ * "inactive-selection" highlight. When the card regains focus, the Range
+ * is restored to the browser Selection and removed from the highlight.
  */
 ::highlight(inactive-selection) {
   background-color: var(--tug7-surface-selection-primary-normal-plain-inactive);

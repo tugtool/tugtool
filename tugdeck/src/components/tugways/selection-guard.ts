@@ -1,41 +1,31 @@
 /**
- * selection-guard.ts -- SelectionGuard singleton for Phase 5a Selection Model.
+ * selection-guard.ts -- SelectionGuard singleton (boundary enforcer).
  *
- * Architecture: Single-system selection rendering via CSS Custom Highlight API.
+ * Architecture: SelectionGuard operates at the CARD LEVEL only. It:
+ *   - Prevents selections from escaping card boundaries
+ *   - Handles card-switch dimming (inactive-selection CSS Highlight)
+ *   - Handles card-switch restoration (restore browser Selection on click-back)
+ *   - Manages app activation/deactivation dimming
  *
- * Native `::selection` is transparent. ALL selection painting goes through two
- * CSS Custom Highlights:
- *   - "card-selection": active card's selection (mirrored on every selectionchange)
- *   - "inactive-selection": dimmed selections for inactive cards
+ * It does NOT reach inside cards to manage content selection. Active
+ * selection rendering uses native ::selection. Components own their own
+ * selection behavior.
  *
- * On card switch, the Range object moves between Highlights — same Range
- * objects, different Highlights. A one-shot mousedown prevention handler
- * stops the browser from collapsing a restored selection on click-back.
+ * Only ONE CSS Custom Highlight: "inactive-selection" for dimmed cards.
+ * No "card-selection" highlight — native ::selection handles the active card.
  *
  * Three-layer selection containment system:
  *   1. CSS `user-select: none` baseline (globals.css) prevents selection
- *      starting in chrome. Card content areas opt back in with `user-select: text`.
+ *      starting in chrome. Content components opt in with `user-select: text`.
  *   2. SelectionGuard (this file) clips selection at runtime when it escapes
  *      card boundaries:
- *        - Pointer-clamped clipping on every `pointermove` (primary path, D03)
- *        - `selectionchange` safety net for keyboard-driven extension (D04)
- *        - RAF-based autoscroll for overflow cards (Strategy §RAF-autoscroll)
- *   3. `data-td-select` attribute API (D05): four modes (default, none, all,
+ *        - Pointer-clamped clipping on every `pointermove` (primary path)
+ *        - `selectionchange` safety net for keyboard-driven extension
+ *        - RAF-based autoscroll for overflow cards
+ *   3. `data-td-select` attribute API: four modes (default, none, all,
  *      custom) give card authors fine-grained per-region control.
  *
- * Design decisions referenced:
- *   [D02] Module-level singleton (matches ResponderChainManager pattern)
- *   [D03] Pointer-clamped clipping via caretPositionFromPoint
- *   [D04] selectionchange safety net for keyboard selection
- *   [D05] data-td-select attribute API
- *   [D06] Cmd+A selectAll action (wired in tugcard.tsx, Step 5)
- *   [D07] Selection tokens (tug.css)
- *
- * API reference: Spec S01, Spec S04
- * Risk mitigations: R01 (caretPositionFromPoint compat), R02 (selection flash)
- *
- * See also: tugplan-tugways-phase-5a-selection-model.md §strategy,
- * design-system-concepts.md Concept 14.
+ * See tuglaws/selection-model.md for the full system documentation.
  */
 
 // ---------------------------------------------------------------------------
@@ -189,22 +179,18 @@ const EDGE_SIZE_PX = 40;
 const MAX_SCROLL_SPEED = 20;
 
 /**
- * SelectionGuard — module-level singleton that contains text selection within
- * registered card content boundaries.
+ * SelectionGuard — module-level singleton that enforces selection boundaries
+ * at the card level.
  *
- * ## Selection rendering (single-system architecture)
+ * ## Architecture (boundary enforcer)
  *
- * Native `::selection` is transparent. Two CSS Custom Highlights render all
- * selection visuals:
- *   - `card-selection`: the active card's selection, mirrored from the browser
- *     Selection on every `selectionchange` event.
- *   - `inactive-selection`: dimmed selections for cards that lost focus.
+ * Active selection uses native `::selection`. One CSS Custom Highlight
+ * (`inactive-selection`) renders dimmed selections for background cards.
  *
- * On card switch (pointerdown), the active card's Range moves from
- * `card-selection` to `inactive-selection`, and the clicked card's Range
- * (if any) moves from `inactive-selection` to `card-selection`. Same Range
- * objects, different Highlights. The swap is a simple delete/add on each
- * Highlight — no intermediate empty state, no flash.
+ * On card switch: the old card's Selection is cloned into `inactive-selection`
+ * (dimmed). The new card's saved Range (if any) is restored to the browser
+ * Selection. A one-shot mousedown handler prevents the click from collapsing
+ * the restored selection.
  *
  * ## Registration
  *
@@ -213,49 +199,42 @@ const MAX_SCROLL_SPEED = 20;
  *
  * ## Lifecycle
  *
- * `attach()` installs document-level event listeners and creates Highlights.
- * `detach()` removes them. Called by `ResponderChainProvider` (Step 6).
+ * `attach()` installs document-level event listeners. `detach()` removes them.
+ * Called by `ResponderChainProvider`.
  *
  * ## Selection persistence
  *
- * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` for Phase 5b
- * tab switching (saves selection before unmount, restores after remount).
+ * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` for tab
+ * switching (saves selection before unmount, restores after remount).
  *
  * ## Testing
  *
  * `reset()` clears all state between test cases.
- *
- * [D02] Module-level singleton — zero React state, synchronous imperative
- * handling, same pattern as ResponderChainManager.
  */
 class SelectionGuard {
   // cardId → boundary element
   private boundaries: Map<string, HTMLElement> = new Map();
 
   // ---- CSS Custom Highlight API state ----
+  //
+  // Only ONE highlight: "inactive-selection" for dimmed cards.
+  // Active selection uses native ::selection — no highlight needed.
 
-  // cardId → Range for cards with a selection (active or inactive).
-  // The Range is always owned by exactly one of the two Highlights.
-  private cardRanges: Map<string, Range> = new Map();
-
-  // The card whose Range is in activeHighlight (if any).
-  private activeHighlightCardId: string | null = null;
-
-  // CSS Highlight for the active card's selection ("card-selection").
-  private activeHighlight: Highlight | null = null;
-
-  // CSS Highlight for inactive cards' dimmed selections ("inactive-selection").
+  // CSS Highlight for inactive cards' dimmed selections.
   private inactiveHighlight: Highlight | null = null;
 
-  // Whether CSS.highlights is available. When false, all highlight
-  // management is silently skipped (graceful degradation).
-  private highlightsAvailable = false;
+  // cardId → cloned Range for cards whose selection is dimmed in the
+  // inactive-selection highlight. Written on card deactivation, removed
+  // on card reactivation. NOT written on every selectionchange.
+  private inactiveRanges: Map<string, Range> = new Map();
 
-  // Set by activateCard when a card with a non-collapsed inactive range is
-  // activated. syncActiveHighlight checks this to preserve the existing range
-  // when the browser collapses the selection due to the activation click.
-  // Cleared after the first selectionchange is processed.
-  private justActivatedCardId: string | null = null;
+  // The card that currently "owns" the active selection (i.e., the
+  // focused card). Used to know which card to deactivate when a
+  // different card is clicked.
+  private activeCardId_highlight: string | null = null;
+
+  // Whether CSS.highlights is available.
+  private highlightsAvailable = false;
 
   // One-shot mousedown prevention handler reference (for cleanup in reset).
   private boundPreventMousedown: ((e: MouseEvent) => void) | null = null;
@@ -285,28 +264,18 @@ class SelectionGuard {
     this.boundSelectionChange = this.handleSelectionChange.bind(this);
     this.boundSelectStart = this.handleSelectStart.bind(this);
 
-    // Create CSS Custom Highlights eagerly so they exist before any React
-    // effects fire. Tugcard's activation useLayoutEffect calls restoreSelection
-    // → syncActiveHighlight, which needs these objects. Since the singleton is
-    // created at module scope, this runs before React mounts. (Risk R02)
     this.initHighlights();
   }
 
   /**
-   * Create CSS Custom Highlight objects if the API is available and they
-   * haven't been created yet. Idempotent — safe to call multiple times.
-   *
-   * Called eagerly in the constructor (so highlights exist before React mounts)
-   * and again in attach() (so tests that install mock CSS.highlights after
-   * import can still initialize highlights).
+   * Create the inactive-selection CSS Highlight if the API is available.
+   * Idempotent — safe to call multiple times.
    */
   private initHighlights(): void {
-    if (this.highlightsAvailable) return; // already initialized
+    if (this.highlightsAvailable) return;
     if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       this.highlightsAvailable = true;
-      this.activeHighlight = new Highlight();
       this.inactiveHighlight = new Highlight();
-      CSS.highlights.set("card-selection", this.activeHighlight);
       CSS.highlights.set("inactive-selection", this.inactiveHighlight);
     }
   }
@@ -331,7 +300,15 @@ class SelectionGuard {
     if (this.activeCardId === cardId) {
       this.stopTracking();
     }
-    this.removeCardHighlight(cardId);
+    // Clean up any inactive highlight state for this card.
+    const range = this.inactiveRanges.get(cardId);
+    if (range && this.inactiveHighlight) {
+      this.inactiveHighlight.delete(range);
+    }
+    this.inactiveRanges.delete(cardId);
+    if (this.activeCardId_highlight === cardId) {
+      this.activeCardId_highlight = null;
+    }
   }
 
   // ---- Lifecycle ----
@@ -350,13 +327,12 @@ class SelectionGuard {
     document.addEventListener("selectionchange", this.boundSelectionChange);
     document.addEventListener("selectstart", this.boundSelectStart, { capture: true });
 
-    // Initialize highlights if not yet created (covers tests that install
+    // Initialize highlight if not yet created (covers tests that install
     // mock CSS.highlights after module import), and re-register with
-    // CSS.highlights if detach() previously unregistered them.
+    // CSS.highlights if detach() previously unregistered it.
     this.initHighlights();
-    if (this.highlightsAvailable && this.activeHighlight && this.inactiveHighlight &&
+    if (this.highlightsAvailable && this.inactiveHighlight &&
         typeof CSS !== "undefined" && CSS.highlights !== undefined) {
-      CSS.highlights.set("card-selection", this.activeHighlight);
       CSS.highlights.set("inactive-selection", this.inactiveHighlight);
     }
   }
@@ -377,241 +353,158 @@ class SelectionGuard {
     document.removeEventListener("selectstart", this.boundSelectStart, { capture: true });
     this.stopAutoscroll();
     this.removePreventMousedown();
-    this.justActivatedCardId = null;
 
     if (this.highlightsAvailable && typeof CSS !== "undefined" && CSS.highlights !== undefined) {
-      CSS.highlights.delete("card-selection");
       CSS.highlights.delete("inactive-selection");
     }
-    this.cardRanges.clear();
-    this.activeHighlightCardId = null;
+    this.inactiveRanges.clear();
+    this.activeCardId_highlight = null;
   }
 
-  // ---- Highlight management ----
+  // ---- Card activation (highlight management) ----
 
   /**
-   * Mirror the live browser Selection into the active card's CSS Highlight.
+   * Activate a card — make it the "focused" card for selection purposes.
    *
-   * Called from handleSelectionChange on every selection mutation. Clones the
-   * browser's Range and places it in the "card-selection" Highlight so the
-   * user sees the selection painted with our custom colors (native ::selection
-   * is transparent).
-   */
-  private syncActiveHighlight(): void {
-    if (!this.activeHighlight || !this.inactiveHighlight) return;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      // Selection was cleared — remove from the active highlight visual,
-      // but keep the Range in cardRanges. The cardRanges entry serves as
-      // a fallback for saveSelection when the browser clears the selection
-      // before the save callback runs (e.g. clicking user-select:none chrome).
-      if (this.activeHighlightCardId) {
-        const oldRange = this.cardRanges.get(this.activeHighlightCardId);
-        if (oldRange) {
-          this.activeHighlight.delete(oldRange);
-        }
-        this.activeHighlightCardId = null;
-      }
-      return;
-    }
-
-    const anchorNode = selection.anchorNode;
-    if (!anchorNode) return;
-
-    // Find which card boundary contains the selection anchor.
-    let selCardId: string | null = null;
-    let selBoundary: HTMLElement | null = null;
-    for (const [cardId, element] of this.boundaries) {
-      if (element.contains(anchorNode)) {
-        selCardId = cardId;
-        selBoundary = element;
-        break;
-      }
-    }
-
-    if (!selCardId || !selBoundary) {
-      // Selection anchor is outside all card boundaries — remove from the
-      // active highlight visual but keep the Range in cardRanges (same
-      // rationale as the rangeCount=0 case above).
-      if (this.activeHighlightCardId) {
-        const oldRange = this.cardRanges.get(this.activeHighlightCardId);
-        if (oldRange) {
-          this.activeHighlight.delete(oldRange);
-        }
-        this.activeHighlightCardId = null;
-      }
-      return;
-    }
-
-    // Clone the browser's Range for our highlight.
-    const range = selection.getRangeAt(0).cloneRange();
-
-    // Boundary containment: both endpoints must be within this card.
-    if (!selBoundary.contains(range.startContainer) || !selBoundary.contains(range.endContainer)) {
-      return;
-    }
-
-    // If a card was just activated (pointerdown moved its Range from inactive
-    // to active) and the browser collapsed the selection (default click behavior),
-    // preserve the existing non-collapsed range. This prevents click-back from
-    // wiping out a dimmed selection that the user expects to reactivate.
-    if (range.collapsed && this.justActivatedCardId === selCardId) {
-      const existing = this.cardRanges.get(selCardId);
-      if (existing && !existing.collapsed) {
-        this.justActivatedCardId = null;
-        // Ensure the existing range is in the active highlight.
-        this.activeHighlight!.delete(existing);
-        this.activeHighlight!.add(existing);
-        this.activeHighlightCardId = selCardId;
-        return;
-      }
-    }
-    this.justActivatedCardId = null;
-
-    // If the active card changed, move the old card's range to inactive.
-    if (this.activeHighlightCardId && this.activeHighlightCardId !== selCardId) {
-      const oldRange = this.cardRanges.get(this.activeHighlightCardId);
-      if (oldRange) {
-        this.activeHighlight.delete(oldRange);
-        this.inactiveHighlight.add(oldRange);
-      }
-    }
-
-    // Remove the previous range for this card from whichever highlight owns it.
-    const existing = this.cardRanges.get(selCardId);
-    if (existing) {
-      this.activeHighlight.delete(existing);
-      this.inactiveHighlight.delete(existing);
-    }
-
-    // Add the new range to the active highlight.
-    this.cardRanges.set(selCardId, range);
-    this.activeHighlight.add(range);
-    this.activeHighlightCardId = selCardId;
-  }
-
-  /**
-   * Activate a card's highlight. Move the clicked card's Range from inactive to
-   * active highlight, and move the previous active card's Range from active
-   * to inactive.
+   * When switching FROM a different card:
+   *   1. Clone the old card's current DOM Selection Range into the
+   *      inactive-selection highlight (dimmed visual).
+   *   2. Clear the browser Selection (the old card's selection is now
+   *      only in the inactive highlight).
+   *   3. Restore the new card's saved Range (if any) to the browser
+   *      Selection and remove it from inactive-selection.
+   *   4. Install preventMousedown so the activation click doesn't
+   *      collapse the restored selection.
    *
-   * Called internally from handlePointerDown (pointer-driven focus) and
-   * externally from DeckCanvas's useLayoutEffect (all focus-change paths).
-   * Safe to call multiple times for the same cardId — the second call is a
-   * no-op since activeHighlightCardId already matches.
+   * When the same card is re-activated (no-op) or when no card was
+   * previously active: just update the tracking field.
+   *
+   * Called from handlePointerDown (pointer-driven focus) and from
+   * DeckCanvas's useLayoutEffect (all focus-change paths).
    */
   activateCard(cardId: string): void {
-    if (!this.activeHighlight || !this.inactiveHighlight) return;
+    // No-op if already the active card.
+    if (this.activeCardId_highlight === cardId) return;
 
-    // No-op if this card is already the active highlight card.
-    // This prevents re-adding a stale Range from cardRanges to the
-    // highlight when DeckCanvas or other external callers re-trigger
-    // activation for the same card (e.g. on focus-change effects).
-    if (this.activeHighlightCardId === cardId) return;
+    const previousCardId = this.activeCardId_highlight;
 
-    const wasDifferentCard = this.activeHighlightCardId !== null;
-
-    // Move the previous active card's range to inactive (if different card).
-    if (wasDifferentCard) {
-      const oldRange = this.cardRanges.get(this.activeHighlightCardId!);
-      if (oldRange) {
-        this.activeHighlight.delete(oldRange);
-        this.inactiveHighlight.add(oldRange);
+    // ---- Deactivate the previous card ----
+    if (previousCardId && this.inactiveHighlight) {
+      // Clone the current DOM Selection into inactive-selection for the
+      // old card, so it renders dimmed.
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const anchorNode = sel.anchorNode;
+        const boundary = previousCardId ? this.boundaries.get(previousCardId) : null;
+        if (anchorNode && boundary && boundary.contains(anchorNode)) {
+          const range = sel.getRangeAt(0).cloneRange();
+          if (boundary.contains(range.startContainer) && boundary.contains(range.endContainer)) {
+            // Remove any previous inactive range for this card.
+            const oldInactive = this.inactiveRanges.get(previousCardId);
+            if (oldInactive) this.inactiveHighlight.delete(oldInactive);
+            this.inactiveRanges.set(previousCardId, range);
+            this.inactiveHighlight.add(range);
+          }
+        }
       }
+      // Clear the browser Selection — the old card's selection is now
+      // represented only by the inactive highlight.
+      const sel2 = window.getSelection();
+      if (sel2) sel2.removeAllRanges();
     }
 
-    // Move the new card's range from inactive to active (if it has one).
-    const range = this.cardRanges.get(cardId);
-    if (range) {
-      this.inactiveHighlight.delete(range);
-      this.activeHighlight.add(range);
-    }
+    // ---- Activate the new card ----
+    this.activeCardId_highlight = cardId;
 
-    // If activating a different card that has a non-collapsed range, mark it
-    // so syncActiveHighlight preserves the range instead of letting the
-    // browser's click collapse overwrite it.
-    if (wasDifferentCard && range && !range.collapsed) {
-      this.justActivatedCardId = cardId;
-    }
+    // If the new card has a saved inactive range, restore it to the
+    // browser Selection and remove from inactive-selection.
+    if (this.inactiveHighlight) {
+      const savedRange = this.inactiveRanges.get(cardId);
+      if (savedRange && !savedRange.collapsed) {
+        // Remove from inactive highlight.
+        this.inactiveHighlight.delete(savedRange);
+        this.inactiveRanges.delete(cardId);
 
-    this.activeHighlightCardId = cardId;
-  }
+        // Restore to browser Selection — native ::selection paints it.
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(savedRange.cloneRange());
+        }
 
-  /**
-   * Remove all highlight state for a card (used on unregister/cleanup).
-   */
-  private removeCardHighlight(cardId: string): void {
-    const range = this.cardRanges.get(cardId);
-    if (!range) return;
-
-    this.cardRanges.delete(cardId);
-    if (this.activeHighlight) this.activeHighlight.delete(range);
-    if (this.inactiveHighlight) this.inactiveHighlight.delete(range);
-
-    if (this.activeHighlightCardId === cardId) {
-      this.activeHighlightCardId = null;
+        // Prevent the activation click from collapsing the restored selection.
+        this.installPreventMousedown();
+      } else if (savedRange) {
+        // Collapsed range — just clean up, don't restore.
+        this.inactiveHighlight.delete(savedRange);
+        this.inactiveRanges.delete(cardId);
+      }
     }
   }
 
   // ---- App activation state ----
 
-  // The card whose Range was in activeHighlight before app deactivation.
-  // Used by activateApp() to restore the correct card to active state.
+  // The card that was active before app deactivation.
   private deactivatedCardId: string | null = null;
 
   /**
-   * Dim all selections when the app loses focus (deactivation).
+   * Dim the active card's selection when the app loses focus.
    *
-   * Moves the active card's Range from activeHighlight to inactiveHighlight
-   * so all selections render with the dimmed style. Remembers which card was
-   * active so activateApp() can restore it.
+   * Clones the active card's DOM Selection Range into inactive-selection
+   * so it renders dimmed. Clears the browser Selection.
    *
    * Called from the native app via window.__tugdeckAppDeactivated().
    */
   deactivateApp(): void {
-    if (!this.activeHighlight || !this.inactiveHighlight) return;
+    if (!this.inactiveHighlight) return;
 
-    this.deactivatedCardId = this.activeHighlightCardId;
+    this.deactivatedCardId = this.activeCardId_highlight;
 
-    if (this.activeHighlightCardId) {
-      const range = this.cardRanges.get(this.activeHighlightCardId);
-      if (range) {
-        this.activeHighlight.delete(range);
-        this.inactiveHighlight.add(range);
+    if (this.activeCardId_highlight) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const boundary = this.boundaries.get(this.activeCardId_highlight);
+        if (boundary && sel.anchorNode && boundary.contains(sel.anchorNode)) {
+          const range = sel.getRangeAt(0).cloneRange();
+          if (boundary.contains(range.startContainer) && boundary.contains(range.endContainer)) {
+            const oldInactive = this.inactiveRanges.get(this.activeCardId_highlight);
+            if (oldInactive) this.inactiveHighlight.delete(oldInactive);
+            this.inactiveRanges.set(this.activeCardId_highlight, range);
+            this.inactiveHighlight.add(range);
+          }
+        }
+        sel.removeAllRanges();
       }
-      this.activeHighlightCardId = null;
     }
   }
 
   /**
-   * Restore the active card's selection when the app regains focus (activation).
+   * Restore the active card's selection when the app regains focus.
    *
-   * Moves the previously-active card's Range from inactiveHighlight back to
-   * activeHighlight. Clears the deactivated state.
+   * Restores the browser Selection from the saved Range in inactive-selection
+   * and removes it from the inactive highlight.
    *
    * Called from the native app via window.__tugdeckAppActivated().
    */
   activateApp(): void {
-    if (!this.activeHighlight || !this.inactiveHighlight) return;
+    if (!this.inactiveHighlight) return;
     if (!this.deactivatedCardId) return;
 
-    const range = this.cardRanges.get(this.deactivatedCardId);
-    if (range) {
+    const range = this.inactiveRanges.get(this.deactivatedCardId);
+    if (range && !range.collapsed) {
       this.inactiveHighlight.delete(range);
-      this.activeHighlight.add(range);
+      this.inactiveRanges.delete(this.deactivatedCardId);
 
-      // Restore the browser Selection to match the reactivated range so
-      // copy/paste works immediately after the app regains focus.
-      if (!range.collapsed) {
-        const sel = window.getSelection();
-        if (sel) {
-          sel.removeAllRanges();
-          sel.addRange(range.cloneRange());
-        }
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range.cloneRange());
       }
+    } else if (range) {
+      this.inactiveHighlight.delete(range);
+      this.inactiveRanges.delete(this.deactivatedCardId);
     }
-    this.activeHighlightCardId = this.deactivatedCardId;
+
     this.deactivatedCardId = null;
   }
 
@@ -653,10 +546,11 @@ class SelectionGuard {
       }
     }
 
-    // Fallback: use the stored Range from our highlight system.
-    // This works whether the card is active or inactive, since we always
-    // have the Range in cardRanges regardless of which Highlight owns it.
-    const storedRange = this.cardRanges.get(cardId);
+    // Fallback: use the stored Range from the inactive-selection highlight.
+    // This covers the case where the browser Selection was cleared (e.g.
+    // the user clicked user-select:none chrome) but the card still has a
+    // dimmed selection in the inactive highlight.
+    const storedRange = this.inactiveRanges.get(cardId);
     if (storedRange) {
       const startNode = storedRange.startContainer;
       const endNode = storedRange.endContainer;
@@ -711,11 +605,8 @@ class SelectionGuard {
         focusNode,
         saved.focusOffset
       );
-      // Mirror the restored selection into the CSS Highlight synchronously.
-      // selectionchange fires asynchronously after setBaseAndExtent, so
-      // without this call the highlight wouldn't update until the next event
-      // loop tick — causing the selection to be invisible during the gap.
-      this.syncActiveHighlight();
+      // Native ::selection renders the restored selection immediately.
+      // No syncActiveHighlight call needed.
     } catch {
       // setBaseAndExtent can throw if offsets are out of range (e.g. content
       // changed). Fail silently — best-effort restoration.
@@ -730,13 +621,9 @@ class SelectionGuard {
   reset(): void {
     this.stopTracking();
     this.removePreventMousedown();
-    this.justActivatedCardId = null;
     this.boundaries.clear();
-    this.cardRanges.clear();
-    this.activeHighlightCardId = null;
-    if (this.activeHighlight) {
-      this.activeHighlight.clear();
-    }
+    this.inactiveRanges.clear();
+    this.activeCardId_highlight = null;
     if (this.inactiveHighlight) {
       this.inactiveHighlight.clear();
     }
@@ -802,51 +689,13 @@ class SelectionGuard {
       }
     }
 
-    // ---- Activate the clicked card's highlight ----
+    // ---- Activate the clicked card ----
     //
-    // Three cases based on the relationship between the clicked card
-    // and the currently-active highlight card:
-    //
-    // 1. Genuine card switch (activeHighlightCardId is non-null and
-    //    different from clickedCardId): Full activation — move old
-    //    card's Range to inactive, move new card's Range to active,
-    //    restore browser Selection, prevent mousedown from collapsing.
-    //
-    // 2. Same card (activeHighlightCardId === clickedCardId): No-op.
-    //    The card is already active. Let the browser handle the click
-    //    normally (place caret, start drag-to-select, etc.).
-    //
-    // 3. No active card (activeHighlightCardId is null — selection was
-    //    cleared): Just set activeHighlightCardId so syncActiveHighlight
-    //    knows which card to update on the next selectionchange. Do NOT
-    //    call activateCard — it would re-add a stale Range from
-    //    cardRanges to the highlight, causing a flash of a previous
-    //    selection that should have been cleared.
-    if (clickedCardId && this.highlightsAvailable) {
-      if (this.activeHighlightCardId === null) {
-        // Case 3: re-establish the active card without restoring state.
-        this.activeHighlightCardId = clickedCardId;
-      } else if (this.activeHighlightCardId !== clickedCardId) {
-        // Case 1: genuine card switch.
-        this.activateCard(clickedCardId);
-
-        const range = this.cardRanges.get(clickedCardId);
-        if (range && !range.collapsed) {
-          // Restore browser Selection to match the activated range so
-          // copy/paste works immediately and the selection is functional.
-          const sel = window.getSelection();
-          if (sel) {
-            sel.removeAllRanges();
-            sel.addRange(range.cloneRange());
-          }
-
-          // One-shot mousedown prevention: stop the browser from processing
-          // the click as a new selection action, which would collapse the
-          // restored selection.
-          this.installPreventMousedown();
-        }
-      }
-      // Case 2 (same card): no action needed.
+    // activateCard handles all cases: same-card (no-op), card switch
+    // (deactivate old, activate new, restore selection), and first
+    // activation (just set the tracking field).
+    if (clickedCardId) {
+      this.activateCard(clickedCardId);
     }
 
     // ---- Tracking loop ----
@@ -908,8 +757,8 @@ class SelectionGuard {
   private handleSelectionChange(): void {
     const selection = window.getSelection();
 
-    // Mirror the live selection into the active card's CSS Highlight.
-    this.syncActiveHighlight();
+    // No mirroring — native ::selection handles rendering.
+    // This handler only clips selections that escape card boundaries.
 
     if (!selection || selection.rangeCount === 0) return;
 

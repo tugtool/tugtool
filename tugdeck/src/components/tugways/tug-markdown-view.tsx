@@ -1088,8 +1088,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // though only a viewport window of blocks is in the DOM. When active:
   //   - Visual: a data-select-all attribute on the scroll container
   //     paints all block content with the selection color via CSS.
-  //     A CSS rule suppresses ::highlight(card-selection) to prevent
-  //     double painting.
+  //     A CSS rule suppresses ::selection to prevent double painting.
   //   - Copy: reads from regionMap.text (the full document) instead of
   //     the DOM Selection.
   //   - Cleared on the next pointerdown (bubble phase).
@@ -1138,12 +1137,8 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     return () => {
       selectAllActiveRef.current = true;
       setSelectAllVisual(true);
-      // Clear the DOM Selection so syncActiveHighlight removes any
-      // existing Range from the card-selection highlight. Without this,
-      // the old Range stays in the highlight (hidden by the CSS
-      // data-select-all override) and flashes visible when select-all
-      // is cleared. Safe now that the Option A fix prevents
-      // activeHighlightCardId=null from triggering stuck selections.
+      // Clear the DOM Selection so native ::selection doesn't paint
+      // alongside the data-select-all CSS visual.
       const sel = window.getSelection();
       if (sel) sel.removeAllRanges();
     };

@@ -103,32 +103,6 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Selection overrides
-   Re-enable native ::selection for the contentEditable. The card system
-   suppresses ::selection globally and paints via CSS Custom Highlight API.
-   The Highlight API doesn't track contentEditable selection correctly.
-   We restore native ::selection and suppress the Custom Highlight.
-   --------------------------------------------------------------------------- */
-
-.tug-prompt-input-editor ::selection,
-.tug-prompt-input-editor::selection {
-  background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
-  color: inherit;
-}
-
-.tug-prompt-input-editor::highlight(card-selection),
-.tug-prompt-input-editor ::highlight(card-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
-.tug-prompt-input-editor::highlight(inactive-selection),
-.tug-prompt-input-editor ::highlight(inactive-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
-/* ---------------------------------------------------------------------------
    Maximized — fill available container space
    --------------------------------------------------------------------------- */
 

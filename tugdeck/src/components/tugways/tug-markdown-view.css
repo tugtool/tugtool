@@ -41,8 +41,7 @@
 
   /* Read-only: suppress the blinking caret. The browser may paint one when
      the scroll container (tabIndex=0) has focus and a collapsed selection
-     exists. Selections are painted via ::highlight(card-selection) by
-     SelectionGuard; the caret has no purpose in read-only content. */
+     exists. The caret has no purpose in read-only content. */
   caret-color: transparent;
 }
 
@@ -103,11 +102,11 @@
  * When the scroll container has [data-select-all], all block content is
  * painted with the selection color to indicate a logical select-all that
  * spans the full document (including virtualized blocks not in the DOM).
- * Uses the same tokens as ::highlight(card-selection) for visual consistency.
+ * Uses the same selection color tokens as .tugcard-content ::selection.
  *
  * No DOM selection is set — the visual is purely CSS-driven via this
  * data attribute. Copy reads from the data model (regionMap.text).
- * The attribute is cleared on any pointerdown or selectionchange.
+ * The attribute is cleared on pointerdown.
  */
 /* @tug-renders-on: --tug7-surface-selection-primary-normal-plain-rest */
 [data-select-all] .tugx-md-block {
@@ -115,9 +114,10 @@
   color: var(--tug7-element-selection-text-normal-plain-rest);
 }
 
-/* Suppress the regular card-selection highlight when select-all is active,
-   so the user doesn't see two overlapping selection treatments. */
-[data-select-all] .tugx-md-block-container ::highlight(card-selection) {
+/* Suppress native ::selection during logical select-all so the user
+   doesn't see both the data-select-all block background AND any stale
+   DOM selection from before the select-all. */
+[data-select-all] .tugx-md-block-container ::selection {
   background-color: transparent;
 }
 

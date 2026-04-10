@@ -69,30 +69,6 @@
   -webkit-user-select: text;
 }
 
-/* ----------------------------------------------------------------------------
-   Selection overrides
-   Re-enable native ::selection for the textarea. The card system
-   (tug-card.css) suppresses ::selection globally and paints via the
-   CSS Custom Highlight API, but native <textarea> selection lives in
-   the element's own selectionStart/End — it never reaches
-   window.getSelection() and the Highlight API never sees it, so the
-   global suppression makes the selection invisible. Restore native
-   ::selection here and suppress the Custom Highlight for this
-   element. Mirrors the tug-prompt-input.css precedent.
-   @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest
----------------------------------------------------------------------------- */
-
-.tug-textarea::selection {
-  background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
-  color: inherit;
-}
-
-.tug-textarea::highlight(card-selection),
-.tug-textarea::highlight(inactive-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-textarea::placeholder {
   color: var(--tug7-element-field-text-normal-placeholder-rest);

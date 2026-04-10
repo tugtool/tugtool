@@ -53,29 +53,6 @@ body {
   -webkit-user-select: text;
 }
 
-/* ---- Selection highlight ----
- *
- * Re-enable native ::selection for the input. The card system
- * (tug-card.css) suppresses ::selection globally and paints via the
- * CSS Custom Highlight API, but native <input> selection lives in
- * the element's own selectionStart/End — it never reaches
- * window.getSelection() and the Highlight API never sees it, so the
- * global suppression makes the selection invisible. Restore native
- * ::selection here and suppress the Custom Highlight for this
- * element. Mirrors the tug-prompt-input.css precedent.
- */
-
-.tug-value-input::selection {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  color: var(--tug7-element-global-text-normal-inverse-rest);
-}
-
-.tug-value-input::highlight(card-selection),
-.tug-value-input::highlight(inactive-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
 /* ---- Focus ---- */
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
