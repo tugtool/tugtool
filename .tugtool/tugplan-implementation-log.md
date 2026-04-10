@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-10T16:25:06Z
+---
+
+## step-4: Verification-only step: bun run check clean, 2003 tests pass, no import cycles, all three adapters satisfy TextSelectionAdapter interface
+
+**Files changed:**
+- text-selection-adapter-ff24688-8
+
+---
+
+---
 step: step-3
 date: 2025-04-10T16:20:55Z
 ---
