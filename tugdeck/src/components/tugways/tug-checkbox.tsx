@@ -208,6 +208,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
         className={cn("tug-checkbox", `tug-checkbox-size-${size}`, !label && className)}
         style={roleStyle}
         data-role={role}
+        data-tug-focus="refuse"
         {...rest}
       >
         <CheckboxPrimitive.Indicator className="tug-checkbox-indicator">

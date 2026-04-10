@@ -257,6 +257,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
                 isIconOnly && "tug-option-group-item-icon-only",
               )}
               tabIndex={isFocused ? 0 : -1}
+              data-tug-focus="refuse"
               onClick={() => {
                 if (!isDisabled) {
                   setFocusedValue(item.value);

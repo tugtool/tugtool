@@ -198,6 +198,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
         className={cn("tug-switch", `tug-switch-size-${size}`, !label && className)}
         style={roleStyle}
         data-role={role}
+        data-tug-focus="refuse"
         {...rest}
       >
         <SwitchPrimitive.Thumb className="tug-switch-thumb" />

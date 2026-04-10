@@ -605,6 +605,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
             tabIndex={0}
             onClick={handleTabClick}
             onPointerDown={handleTabPointerDown}
+            data-tug-focus="refuse"
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") handleTabClick();
             }}
@@ -620,6 +621,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
                 type="button"
                 className="tug-tab-close"
                 onClick={handleCloseClick}
+                data-tug-focus="refuse"
                 aria-label={`Close ${tab.title} tab`}
                 data-testid={`tug-tab-close-${tab.id}`}
               >

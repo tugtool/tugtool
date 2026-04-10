@@ -25,6 +25,7 @@ import { useTugBoxDisabled } from "./tug-box-context";
 const NOOP_SUBSCRIBE = (_cb: () => void): (() => void) => () => {};
 const NOOP_SNAPSHOT = (): number => 0;
 
+
 // ---- Types ----
 
 /** TugButton emphasis values — controls visual weight [D02] */
@@ -408,6 +409,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     <Comp
       ref={ref}
       data-slot="tug-button"
+      data-tug-focus="refuse"
       disabled={effectiveDisabled}
       aria-label={ariaLabel}
       aria-busy={loading ? "true" : undefined}

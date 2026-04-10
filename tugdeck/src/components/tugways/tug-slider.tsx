@@ -479,6 +479,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             onValueChange={handleSliderChange}
             onValueCommit={handleSliderCommit}
             onPointerDown={handlePointerDown}
+            data-tug-focus="refuse"
             min={min}
             max={max}
             step={step}

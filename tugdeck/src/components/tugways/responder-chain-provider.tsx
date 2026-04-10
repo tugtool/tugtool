@@ -191,8 +191,40 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
+    // ---- Focus refusal for chrome controls ----
+    //
+    // Controls marked with data-tug-focus="refuse" (buttons, checkboxes,
+    // switches, sliders, etc.) should not steal keyboard focus or
+    // first-responder status from the active editor. This is the
+    // web equivalent of Cocoa's acceptsFirstResponder = false.
+    //
+    // Two document-level listeners implement this centrally:
+    //   - pointerdown (capture): skips first-responder promotion
+    //   - mousedown (capture): calls preventDefault to stop browser focus
+    //
+    // Controls only need to add the attribute. Both behaviors are
+    // handled here — no per-component onMouseDown handlers needed.
+    const FOCUS_REFUSE_SELECTOR = '[data-tug-focus="refuse"]';
+
+    function isFocusRefusing(target: EventTarget | null): boolean {
+      if (!(target instanceof Element)) {
+        if (target instanceof Node && target.parentElement) {
+          return target.parentElement.closest(FOCUS_REFUSE_SELECTOR) !== null;
+        }
+        return false;
+      }
+      return target.closest(FOCUS_REFUSE_SELECTOR) !== null;
+    }
+
     function promoteOnPointerDown(event: PointerEvent): void {
+      if (isFocusRefusing(event.target)) return;
       promoteFromTarget(event.target as Node | null);
+    }
+
+    function preventFocusOnMouseDown(event: MouseEvent): void {
+      if (isFocusRefusing(event.target)) {
+        event.preventDefault();
+      }
     }
 
     function promoteOnFocusIn(event: FocusEvent): void {
@@ -202,12 +234,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
+    document.addEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
     document.addEventListener("focusin", promoteOnFocusIn, { capture: true });
 
     return () => {
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
+      document.removeEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       selectionGuard.detach();
     };

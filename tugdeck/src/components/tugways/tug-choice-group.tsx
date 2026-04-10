@@ -238,6 +238,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
                 isIconOnly && "tug-choice-group-segment-icon-only",
               )}
               tabIndex={isActive ? 0 : -1}
+              data-tug-focus="refuse"
               onClick={() => {
                 if (!isDisabled && !isActive) {
                   dispatchSelectValue(item.value);
