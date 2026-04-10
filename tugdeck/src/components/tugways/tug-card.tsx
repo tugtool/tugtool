@@ -461,13 +461,12 @@ export function Tugcard({
   const [cardEl, setCardEl] = useState<HTMLDivElement | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Content area ref (selection boundary + selectAll action)
+  // Content area ref (selection boundary)
   // ---------------------------------------------------------------------------
 
   // Ref to the content area div. Used by:
   //   - useSelectionBoundary: registers this element with SelectionGuard so
   //     selection is contained within card boundaries ([D02], [D03])
-  //   - selectAll action: calls selectAllChildren on this element ([D06])
   //   - read scrollLeft/scrollTop for tab state capture
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -790,21 +789,12 @@ export function Tugcard({
     onClose?.();
   }, [onClose]);
 
-  // selectAll: scope Cmd+A to the first responder.
-  // If focus is inside a contentEditable child (e.g. a text input engine),
-  // scope selection to that element — it is the first responder.
-  // Otherwise, select the entire card content area.
-  const handleSelectAll = useCallback(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const active = document.activeElement;
-    if (active && active !== el && el.contains(active) &&
-        active.getAttribute("contenteditable") === "true") {
-      window.getSelection()?.selectAllChildren(active);
-      return;
-    }
-    window.getSelection()?.selectAllChildren(el);
-  }, []);
+  // selectAll is NOT handled at the card level. Content components
+  // (tug-input, tug-textarea, tug-prompt-input, tug-markdown-view)
+  // handle selectAll in their own responder registrations, scoping
+  // the selection to the focused component. If no content component
+  // handles it, the action bubbles past the card — which is correct:
+  // there is no "select everything in the card" behavior.
 
   // previousTab / nextTab: read tabs/active id from refs (closures never
   // go stale, Rule #5), compute the target tab id, and dispatch
@@ -875,7 +865,6 @@ export function Tugcard({
     id: cardId,
     actions: {
       [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => handleClose(),
-      [TUG_ACTIONS.SELECT_ALL]: (_event: ActionEvent) => handleSelectAll(),
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => handleNextTab(),
       // jump-to-tab [L11, A3 / R4]: payload is `value: number` (1-based

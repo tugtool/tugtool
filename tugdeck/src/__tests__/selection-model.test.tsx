@@ -2,8 +2,8 @@
  * Selection model integration tests -- Step 5.
  *
  * Tests cover:
- * - T13: Tugcard registers selectAll action in responder chain (canHandle returns true)
- * - T14: Dispatching selectAll through the chain calls selectAllChildren on the content area
+ * - T13: Tugcard does NOT handle selectAll (boundary enforcer model — content components own it)
+ * - T14: Dispatching selectAll to card is unhandled (no selectAllChildren call)
  * - T15: Tugcard content area is registered with SelectionGuard on mount
  * - T15a: Contenteditable region with data-td-select="custom" inside card content
  *         receives full selection autonomy (guard does not clip within the custom region)
@@ -66,30 +66,31 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// T13: Tugcard registers selectAll action in responder chain
+// T13: Tugcard does NOT handle selectAll (boundary enforcer model)
 // ---------------------------------------------------------------------------
 
-describe("T13 – Tugcard registers selectAll action", () => {
-  it("canHandle('select-all') returns true after Tugcard mounts", () => {
+describe("T13 – Tugcard does not handle selectAll", () => {
+  it("canHandle('select-all') returns false — card does not own selectAll", () => {
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-t13">
         <div>content</div>
       </Tugcard>
     );
 
-    expect(manager.canHandle("select-all")).toBe(true);
+    // Card does not register a selectAll handler. Content components
+    // (tug-input, tug-markdown-view, etc.) handle it in their own
+    // responder registrations. If no content component handles it,
+    // the action bubbles past the card — which is correct.
+    expect(manager.canHandle("select-all")).toBe(false);
   });
 
-  it("canHandle returns true for both selectAll and pre-existing actions", () => {
+  it("pre-existing card actions are still registered", () => {
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-t13b">
         <div>content</div>
       </Tugcard>
     );
 
-    // selectAll is the new Phase 5a action
-    expect(manager.canHandle("select-all")).toBe(true);
-    // Pre-existing actions from Phase 5 must still be present
     expect(manager.canHandle("close")).toBe(true);
     expect(manager.canHandle("minimize")).toBe(true);
     expect(manager.canHandle("toggle-menu")).toBe(true);
@@ -98,54 +99,19 @@ describe("T13 – Tugcard registers selectAll action", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T14: Dispatching selectAll calls selectAllChildren on the content area
+// T14: dispatching selectAll to card is unhandled (no selectAllChildren call)
 // ---------------------------------------------------------------------------
 
-describe("T14 – dispatching selectAll selects content area children", () => {
-  it("dispatch('select-all') calls window.getSelection().selectAllChildren on the content div", () => {
-    // Spy on window.getSelection to intercept selectAllChildren
-    let selectAllChildrenCalledWith: Element | null = null;
-    const origGetSelection = window.getSelection.bind(window);
-    const mockSelection = {
-      selectAllChildren: (el: Element) => {
-        selectAllChildrenCalledWith = el;
-      },
-    };
-    (window as any).getSelection = () => mockSelection;
-
-    let container!: HTMLElement;
+describe("T14 – selectAll dispatch is unhandled at card level", () => {
+  it("dispatch('select-all') does not throw when no content component handles it", () => {
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-t14">
-        <div data-testid="inner-content">selectable text</div>
-      </Tugcard>
-    );
-    container = document.body;
-
-    act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
-    });
-
-    // Restore original
-    (window as any).getSelection = origGetSelection;
-
-    // selectAllChildren must have been called with the content area element
-    expect(selectAllChildrenCalledWith).not.toBeNull();
-
-    // Verify the element has the tugcard-content class
-    const el = selectAllChildrenCalledWith as unknown as HTMLElement;
-    expect(el.classList.contains("tugcard-content")).toBe(true);
-    void container;
-  });
-
-  it("dispatch('select-all') is a no-op when content ref is null (does not throw)", () => {
-    // This tests the guard in handleSelectAll: `if (!el) return`
-    // We can't null out an attached ref, but we can verify dispatch never throws.
-    const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t14b">
         <div>content</div>
       </Tugcard>
     );
 
+    // selectAll dispatched with no content component as first responder.
+    // The card does not handle it — the dispatch returns handled: false.
     expect(() => {
       act(() => {
         manager.dispatch({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
@@ -380,7 +346,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("all original responder actions are still registered alongside selectAll", () => {
+  it("all original responder actions are still registered (selectAll is NOT)", () => {
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-t16-all">
         <div>content</div>
@@ -391,6 +357,6 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
     expect(manager.canHandle("minimize")).toBe(true);
     expect(manager.canHandle("toggle-menu")).toBe(true);
     expect(manager.canHandle("find")).toBe(true);
-    expect(manager.canHandle("select-all")).toBe(true);
+    expect(manager.canHandle("select-all")).toBe(false);
   });
 });
