@@ -142,7 +142,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // present. ⌘1..⌘9 use this to carry the 1-based tab index for
       // `jumpToTab`; every other binding leaves `value` undefined and
       // the handler sees the same shape it always did. [A3 / R4]
-      const { handled, continuation } = manager.dispatchForContinuation({
+      const { handled, continuation } = manager.sendToFirstResponderForContinuation({
         action: binding.action,
         phase: "discrete",
         ...(binding.value !== undefined ? { value: binding.value } : {}),
@@ -169,7 +169,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             active.isContentEditable ||
             active.tagName === "BUTTON");
         if (!skipActivation) {
-          const defaultButton = manager.getDefaultButton();
+          const defaultButton = manager.peekDefaultButton();
           if (defaultButton !== null) {
             defaultButton.click();
             event.preventDefault();
@@ -283,7 +283,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     function promoteOnPointerDown(event: PointerEvent): void {
       // Focus-refusing controls skip first-responder promotion.
       // This is safe because controls use targeted dispatch
-      // (dispatchTo parent) — the first responder is irrelevant
+      // (sendToTarget parent) — the first responder is irrelevant
       // for their actions. Keyboard shortcuts use nil-targeted
       // dispatch and need the first responder to stay on the
       // editor, so skipping promotion here is correct for both.

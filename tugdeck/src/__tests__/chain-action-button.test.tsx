@@ -6,7 +6,7 @@
  * - Hidden (returns null) when canHandle returns false
  * - Visually disabled (aria-disabled="true") when validateAction returns false
  * - Enabled when validateAction returns true
- * - Click on enabled button calls manager.dispatch(action)
+ * - Click on enabled button calls manager.sendToFirstResponder(action)
  * - Click on disabled button does not dispatch
  * - Re-renders when validation version changes (focus change)
  * - Dev-mode warning when both action and onClick are set
@@ -146,7 +146,7 @@ describe("chain-action TugButton – enabled/disabled state", () => {
 // ============================================================================
 
 describe("chain-action TugButton – click behavior", () => {
-  it("click on enabled button calls manager.dispatch with ActionEvent", () => {
+  it("click on enabled button calls manager.sendToFirstResponder with ActionEvent", () => {
     const manager = new ResponderChainManager();
     const dispatched: ActionEvent[] = [];
     manager.register({
@@ -368,7 +368,7 @@ describe("chain-action TugButton – target prop", () => {
     return { manager, targetDispatched, rootDispatched };
   }
 
-  it("calls manager.dispatchTo(target, event) on click when action and target are set", () => {
+  it("calls manager.sendToTarget(target, event) on click when action and target are set", () => {
     const { manager, targetDispatched } = makeManagerWithTarget("setColor");
 
     const { container } = renderWithManager(manager, {
@@ -412,7 +412,7 @@ describe("chain-action TugButton – target prop", () => {
     expect(btn.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("calls manager.dispatch (not dispatchTo) when no target is set (existing behavior preserved)", () => {
+  it("calls controlDispatch (targeted to parent) when no explicit target is set", () => {
     const manager = new ResponderChainManager();
     const dispatched: ActionEvent[] = [];
     manager.register({
@@ -448,12 +448,10 @@ describe("chain-action TugButton – target prop", () => {
     warnSpy.mockRestore();
   });
 
-  it("logs dev warning when dispatchTo returns false (target does not handle action)", () => {
-    const warnSpy = spyOn(console, "warn");
-
+  it("sendToTarget with explicit target dispatches even when target has no handler", () => {
     const manager = new ResponderChainManager();
     // Register inspector with canHandle returning true (so button is enabled)
-    // but no actions map entry (so dispatchTo returns false)
+    // but no actions map entry (so sendToTarget walks past without handling)
     manager.register({
       id: "canvas",
       parentId: null,
@@ -476,12 +474,7 @@ describe("chain-action TugButton – target prop", () => {
     // Button should be enabled (nodeCanHandle returns true via canHandle callback)
     expect(btn.getAttribute("aria-disabled")).toBeNull();
 
+    // Click dispatches without error — sendToTarget walks up and finds no handler
     act(() => { fireEvent.click(btn); });
-
-    // dispatchTo returns false because "setColor" is not in inspector's actions map
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('dispatchTo("inspector", "setColor") returned false')
-    );
-    warnSpy.mockRestore();
   });
 });

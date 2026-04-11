@@ -18,7 +18,7 @@
  * - **Both** (identity) actions — Control-frame RPCs whose entire
  *   purpose is to inject a chain dispatch on behalf of a Swift menu
  *   item. These use the corresponding `TUG_ACTIONS.*` constant at
- *   both the `registerAction` call and the inner `manager.dispatch`
+ *   both the `registerAction` call and the inner `manager.sendToFirstResponder`
  *   call, so the wire string on both sides is identical. Examples:
  *   `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`, `TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD`,
  *   `TUG_ACTIONS.CLOSE`. The Swift side calls `sendControl("close")`
@@ -259,7 +259,7 @@ export function initActionDispatch(
   // finds or creates the gallery card and focuses it. ([D05], [D07] show-only)
   registerAction(TUG_ACTIONS.SHOW_COMPONENT_GALLERY, () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
+      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     } else {
       console.warn(`${TUG_ACTIONS.SHOW_COMPONENT_GALLERY}: responder chain manager not registered yet`);
     }
@@ -298,7 +298,7 @@ export function initActionDispatch(
   // calls store.addTab(). ([D06], [D09])
   registerAction(TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
+      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });
     } else {
       console.warn(`${TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD}: responder chain manager not registered yet`);
     }
@@ -315,7 +315,7 @@ export function initActionDispatch(
   // [A3 / R4, action-naming]
   registerAction(TUG_ACTIONS.CLOSE, () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
+      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     } else {
       console.warn(`${TUG_ACTIONS.CLOSE}: responder chain manager not registered yet`);
     }

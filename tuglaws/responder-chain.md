@@ -107,18 +107,18 @@ Dispatch walks from the first responder upward through `parentId` links until a 
        dispatch({action: "select-all"}) → matches on TugPromptInput (innermost wins)
        dispatch({action: "select-all"}) with no editor focused → unhandled (no-op)
 
-       dispatchTo(cardId, {action: "close"})  → walk starts at TugCard (not at first responder),
+       sendToTarget(cardId, {action: "close"})  → walk starts at TugCard (not at first responder),
                                                  matches on TugCard
-       dispatchTo(cardId, {action: "cycle-card"}) → walks up from TugCard, matches on DeckCanvas
+       sendToTarget(cardId, {action: "cycle-card"}) → walks up from TugCard, matches on DeckCanvas
 ```
 
-`dispatch` and `dispatchTo` share the same walk loop. The difference is only which node the walk starts at: `dispatch` starts at the current first responder (usually the innermost leaf the user is working with); `dispatchTo` starts at an explicit registered node supplied by the caller. Both walk upward through `parentId` links until a handler matches, and both fall off the root with `handled: false` if no node handles the action. The walk is never downward.
+`sendToFirstResponder` and `sendToTarget` share the same walk loop. The difference is only which node the walk starts at: `sendToFirstResponder` starts at the current first responder (usually the innermost leaf the user is working with); `sendToTarget` starts at an explicit registered node supplied by the caller. Both walk upward through `parentId` links until a handler matches, and both fall off the root with `handled: false` if no node handles the action. The walk is never downward.
 
 Two more points worth noticing on the diagram:
 
 - `select-all` is registered only on content components (`TugPromptInput`, `TugInput`, `TugTextarea`, `TugValueInput`, `TugMarkdownView`) — NOT on `TugCard`. When an editor is focused, ⌘A selects within that editor. When no editor is focused, the action is unhandled — it walks all the way to the root and falls off. There is no "select everything in the card" behavior.
 
-- An action that no node handles walks all the way to the root and falls off. `dispatch` returns `false`. That is the correct outcome for unhandled shortcuts: the browser's native handling (or nothing at all) runs. The chain does not need an "unhandled" sink.
+- An action that no node handles walks all the way to the root and falls off. `sendToFirstResponder` returns `false`. That is the correct outcome for unhandled shortcuts: the browser's native handling (or nothing at all) runs. The chain does not need an "unhandled" sink.
 
 After the walk — handled or not — every registered dispatch observer fires. Observers run after the walk, see the final `handled` boolean, and can do whatever they want (typically: dismiss a transient UI because unrelated chain traffic flowed past). Observers do not intercept the walk or change its outcome. See [observeDispatch patterns](#observedispatch-patterns) below.
 
@@ -183,12 +183,12 @@ This also resolves the WebKit double-click issue in sheets: previously, clicking
 
 The manager exposes four methods for sending an action into the chain. Three are walks; one is a targeted delivery. All of them notify observers afterward.
 
-### `manager.dispatch(event) → boolean`
+### `manager.sendToFirstResponder(event) → boolean`
 
 The standard walk. Returns `true` if some responder handled the action, `false` otherwise. This is the method most control code uses.
 
 ```ts
-manager.dispatch({
+manager.sendToFirstResponder({
   action: TUG_ACTIONS.SELECT_TAB,
   value: tabId,
   sender: myTabBarSenderId,
@@ -196,16 +196,16 @@ manager.dispatch({
 });
 ```
 
-If you don't care whether anyone handled it (most button clicks don't — the card is registered, the handler runs), `dispatch` is what you want. It is a thin wrapper over `dispatchForContinuation` that discards the continuation slot.
+If you don't care whether anyone handled it (most button clicks don't — the card is registered, the handler runs), `sendToFirstResponder` is what you want. It is a thin wrapper over `sendToFirstResponderForContinuation` that discards the continuation slot.
 
-### `manager.dispatchForContinuation(event) → {handled, continuation}`
+### `manager.sendToFirstResponderForContinuation(event) → {handled, continuation}`
 
 Same walk, but returns both the handled flag and any continuation callback the handler returned. Use this when you need either signal.
 
-The continuation is the second phase of two-phase execution. A handler may return a `() => void` from its synchronous body; `dispatchForContinuation` returns that function to the caller, which invokes it at its own commit point. The canonical example is the clipboard cut flow: the synchronous portion of the handler must run inside the user-gesture frame (because that's when `navigator.clipboard.writeText` is permitted to fire), and the delete-selection portion should run *after* a menu activation blink completes. The handler writes to the clipboard inline and returns `() => deleteSelection()`; the menu's activation logic plays the blink, then invokes the continuation.
+The continuation is the second phase of two-phase execution. A handler may return a `() => void` from its synchronous body; `sendToFirstResponderForContinuation` returns that function to the caller, which invokes it at its own commit point. The canonical example is the clipboard cut flow: the synchronous portion of the handler must run inside the user-gesture frame (because that's when `navigator.clipboard.writeText` is permitted to fire), and the delete-selection portion should run *after* a menu activation blink completes. The handler writes to the clipboard inline and returns `() => deleteSelection()`; the menu's activation logic plays the blink, then invokes the continuation.
 
 ```ts
-const { handled, continuation } = manager.dispatchForContinuation({
+const { handled, continuation } = manager.sendToFirstResponderForContinuation({
   action: TUG_ACTIONS.CUT,
   phase: "discrete",
 });
@@ -214,31 +214,31 @@ if (handled) {
 }
 ```
 
-The capture-phase keyboard pipeline also uses `dispatchForContinuation`: for ⌘X on a text input the sync clipboard write must happen during the keydown, and the continuation (delete the selection) runs immediately after because there's no blink to wait for. The same handler works for both paths.
+The capture-phase keyboard pipeline also uses `sendToFirstResponderForContinuation`: for ⌘X on a text input the sync clipboard write must happen during the keydown, and the continuation (delete the selection) runs immediately after because there's no blink to wait for. The same handler works for both paths.
 
-### `manager.dispatchTo(targetId, event) → boolean`
+### `manager.sendToTarget(targetId, event) → boolean`
 
-Targeted walk. Starts the walk at the named node instead of at the current first responder; otherwise behaves identically to `dispatch` — the event walks up through `parentId` links until some node handles it, or falls off the root with `handled: false`. Throws if `targetId` isn't registered.
+Targeted walk. Starts the walk at the named node instead of at the current first responder; otherwise behaves identically to `sendToFirstResponder` — the event walks up through `parentId` links until some node handles it, or falls off the root with `handled: false`. Throws if `targetId` isn't registered.
 
 ```ts
-manager.dispatchTo(cardId, {
+manager.sendToTarget(cardId, {
   action: TUG_ACTIONS.SET_PROPERTY,
   phase: "discrete",
   value: { path: "style.backgroundColor", value: "#4f8ef7", source: "inspector" },
 });
 ```
 
-`dispatchTo` is for flows where the emitter knows the approximate scope the event should reach but doesn't need to know exactly which node in that scope handles it. The gallery's property-inspector demo is the canonical case: the inspector's UI is not inside the card whose PropertyStore it drives, so a chain walk from the inspector's first-responder position would never reach the target card. The inspector has the card id, so it addresses the card directly. If the card itself owns the PropertyStore, its handler runs. If a future card shape delegates the store to a wrapper above it in the chain, the walk continues upward and finds the handler there — the inspector does not need to know which of those shapes the target uses. There is also a `dispatchToForContinuation` sibling for the same reason `dispatchForContinuation` exists on the walking path, with the same walk-up-on-miss semantics.
+`sendToTarget` is for flows where the emitter knows the approximate scope the event should reach but doesn't need to know exactly which node in that scope handles it. The gallery's property-inspector demo is the canonical case: the inspector's UI is not inside the card whose PropertyStore it drives, so a chain walk from the inspector's first-responder position would never reach the target card. The inspector has the card id, so it addresses the card directly. If the card itself owns the PropertyStore, its handler runs. If a future card shape delegates the store to a wrapper above it in the chain, the walk continues upward and finds the handler there — the inspector does not need to know which of those shapes the target uses. There is also a `sendToTargetForContinuation` sibling for the same reason `sendToFirstResponderForContinuation` exists on the walking path, with the same walk-up-on-miss semantics.
 
-The walk from `dispatchTo` is still upward-only: it starts at the target, follows `parentId` toward the root, and stops at the first handler. It does *not* walk *down* into the target's children, because state owners are ancestors of the controls that mutate them — walking down would invert the chain's directionality and is not a supported operation.
+The walk from `sendToTarget` is still upward-only: it starts at the target, follows `parentId` toward the root, and stops at the first handler. It does *not* walk *down* into the target's children, because state owners are ancestors of the controls that mutate them — walking down would invert the chain's directionality and is not a supported operation.
 
 Throwing on an unregistered target is deliberate: dispatching to a node that does not exist is a programming error, and silently no-oping would hide bugs. If the target might not be registered (e.g., it's optional), the caller should check with `nodeCanHandle(targetId, action)` before dispatching — but in practice that condition means the emitter has a stale reference and should be fixed upstream.
 
-If you specifically want "deliver to this one node only, do not walk to ancestors if the node doesn't handle it," there is no single method for that. Check `nodeCanHandle(targetId, action)` first and only call `dispatchTo` if it returns true. In the current codebase no consumer needs that shape; every targeted dispatch has the "start walk here and let it bubble" semantic that the new behavior provides.
+If you specifically want "deliver to this one node only, do not walk to ancestors if the node doesn't handle it," there is no single method for that. Check `nodeCanHandle(targetId, action)` first and only call `sendToTarget` if it returns true. In the current codebase no consumer needs that shape; every targeted dispatch has the "start walk here and let it bubble" semantic that the new behavior provides.
 
-### `manager.dispatchToForContinuation(targetId, event) → { handled, continuation }`
+### `manager.sendToTargetForContinuation(targetId, event) → { handled, continuation }`
 
-The targeted sibling of `dispatchForContinuation`. Same walk semantics as `dispatchTo` (starts at the named node and walks upward via `parentId`), same error handling (throws if `targetId` is not registered), but returns the full `{ handled, continuation }` result instead of discarding the continuation. Callers that need two-phase execution against a specific target use this method and invoke the returned continuation at their commit point.
+The targeted sibling of `sendToFirstResponderForContinuation`. Same walk semantics as `sendToTarget` (starts at the named node and walks upward via `parentId`), same error handling (throws if `targetId` is not registered), but returns the full `{ handled, continuation }` result instead of discarding the continuation. Callers that need two-phase execution against a specific target use this method and invoke the returned continuation at their commit point.
 
 ### `manager.nodeCanHandle(nodeId, action) → boolean`
 
@@ -275,7 +275,7 @@ See [observeDispatch patterns](#observedispatch-patterns) below for the canonica
 
 Some handlers need to do work in two phases: a synchronous phase that must run inside the user's gesture frame (clipboard writes, input-field focus moves, event.preventDefault before the browser reacts) and a deferred phase that runs after a visible side effect (a menu blink, a press animation, a transition).
 
-The chain's handler return-type — `void | (() => void)` — is exactly that two-phase shape. The sync body of the handler runs as part of `dispatch`; if it returns a function, the caller of `dispatchForContinuation` gets that function back and invokes it later. There is no scheduling; the caller decides when "later" is.
+The chain's handler return-type — `void | (() => void)` — is exactly that two-phase shape. The sync body of the handler runs as part of `sendToFirstResponder`; if it returns a function, the caller of `sendToFirstResponderForContinuation` gets that function back and invokes it later. There is no scheduling; the caller decides when "later" is.
 
 ```ts
 // Responder side (a text editor registered on the card):
@@ -288,7 +288,7 @@ actions: {
 }
 
 // Emitter side (the context menu):
-const { handled, continuation } = manager.dispatchForContinuation({
+const { handled, continuation } = manager.sendToFirstResponderForContinuation({
   action: TUG_ACTIONS.CUT,
   phase: "discrete",
 });
@@ -404,14 +404,14 @@ export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
 }
 ```
 
-`useControlDispatch` reads the parent responder ID from `ResponderParentContext` and calls `manager.dispatchTo(parentId, event)`. The first responder is irrelevant — the action always reaches the parent handler. This is the web equivalent of Cocoa's targeted action pattern (`[NSApp sendAction:action to:target from:sender]` where `target` is non-nil).
+`useControlDispatch` reads the parent responder ID from `ResponderParentContext` and calls `manager.sendToTarget(parentId, event)`. The first responder is irrelevant — the action always reaches the parent handler. This is the web equivalent of Cocoa's targeted action pattern (`[NSApp sendAction:action to:target from:sender]` where `target` is non-nil).
 
-**Why not `manager.dispatch()`?** The nil-targeted form walks from the first responder. A control's handler is typically on the control's parent responder — which may not be an ancestor of the first responder. Keyboard shortcuts use `dispatch()` because they should go to "whatever the user is working with." Controls use `useControlDispatch()` because they have a specific receiver.
+**Why not `manager.sendToFirstResponder()`?** The nil-targeted form walks from the first responder. A control's handler is typically on the control's parent responder — which may not be an ancestor of the first responder. Keyboard shortcuts use `sendToFirstResponder()` because they should go to "whatever the user is working with." Controls use `useControlDispatch()` because they have a specific receiver.
 
 | Dispatch mode | Used by | Method | Walks from |
 |--------------|---------|--------|-----------|
-| **Targeted** | Controls | `useControlDispatch()` → `dispatchTo(parentId)` | Parent responder |
-| **Nil-targeted** | Keyboard shortcuts, menu items | `dispatch()` | First responder |
+| **Targeted** | Controls | `useControlDispatch()` → `sendToTarget(parentId)` | Parent responder |
+| **Nil-targeted** | Keyboard shortcuts, menu items | `sendToFirstResponder()` | First responder |
 
 Three conventions enforced across every control:
 
@@ -419,7 +419,7 @@ Three conventions enforced across every control:
 
 2. **Sender id convention.** Controls that might coexist with siblings in the same form supply a stable opaque sender id so handlers can tell them apart. The default is `useId()`; callers can override via a `senderId` prop for tests that want determinism. See `tug-popup-button.tsx:223-229` for the canonical pattern.
 
-3. **Controls never call `manager.dispatch()`.** Controls always use `useControlDispatch()`. The nil-targeted `dispatch()` is reserved for keyboard shortcuts and menu items — code paths where the action should route to the first responder.
+3. **Controls never call `manager.sendToFirstResponder()`.** Controls always use `useControlDispatch()`. The nil-targeted `sendToFirstResponder()` is reserved for keyboard shortcuts and menu items — code paths where the action should route to the first responder.
 
 ### The `useResponderForm` shortcut
 
@@ -450,7 +450,7 @@ browser keydown
 │                                                                │
 │ If a keybinding matches:                                       │
 │   - preventDefaultOnMatch? → event.preventDefault()            │
-│   - manager.dispatchForContinuation({                          │
+│   - manager.sendToFirstResponderForContinuation({                          │
 │       action: binding.action,                                  │
 │       phase: "discrete",                                       │
 │       ...(binding.value !== undefined ? {value} : {})          │
@@ -468,7 +468,7 @@ browser keydown
 │ Stage 2 (bubble)   Enter-key default-button activation        │
 │                                                                │
 │ If key === "Enter" and target is not an input/textarea/editor:│
-│   - defaultButton = manager.getDefaultButton()                 │
+│   - defaultButton = manager.peekDefaultButton()                 │
 │   - defaultButton?.click()                                     │
 │   - preventDefault + stopPropagation                           │
 └──────────────────────────┬───────────────────────────────────┘
@@ -530,12 +530,12 @@ One subtler filter worth knowing: `TugPopover` installs an `observeDispatch` sub
 Separate from the main chain but registered on the same `ResponderChainManager`: a stack of HTML button elements that can be "default activated" by pressing Enter outside a text input.
 
 ```ts
-manager.setDefaultButton(element);   // push
-manager.clearDefaultButton(element); // pop (by reference)
-manager.getDefaultButton();          // peek at top
+manager.pushDefaultButton(element);   // push
+manager.popDefaultButton(element); // pop (by reference)
+manager.peekDefaultButton();          // peek at top
 ```
 
-Stage 2 of the keyboard pipeline queries `getDefaultButton()` on Enter, and — provided the current target is not a text input, textarea, or button — calls `.click()` on the element. This is how the Return key "presses" the default button in a dialog. Nested modal scoping works because the stack is LIFO: an inner dialog pushes its button on open, Enter activates the inner button, and close pops it, restoring the outer dialog's default button automatically.
+Stage 2 of the keyboard pipeline queries `peekDefaultButton()` on Enter, and — provided the current target is not a text input, textarea, or button — calls `.click()` on the element. This is how the Return key "presses" the default button in a dialog. Nested modal scoping works because the stack is LIFO: an inner dialog pushes its button on open, Enter activates the inner button, and close pops it, restoring the outer dialog's default button automatically.
 
 You almost certainly do not write code that touches this directly. `TugButton` pushes/pops via a `defaultButton` prop when its parent dialog asks; the dialog components (`TugConfirmPopover`, `TugAlert`) wire that prop on their primary-action button. If you are writing a new modal-shaped component, the convention is to pass `defaultButton` to the confirm button; if you are writing a plain button, leave the default-button machinery alone.
 

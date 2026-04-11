@@ -127,7 +127,7 @@ describe("TugAlert – chain dispatch resolves the alert() promise", () => {
     expect(getAlertContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CONFIRM_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
@@ -149,7 +149,7 @@ describe("TugAlert – chain dispatch resolves the alert() promise", () => {
     expect(getAlertContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
@@ -226,7 +226,7 @@ describe("TugAlert – modal semantics (no external auto-dismiss)", () => {
     // its observeDispatch subscription. TugAlert is modal and
     // deliberately does not subscribe, so the alert stays open.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getAlertContent()).not.toBeNull();
@@ -234,7 +234,7 @@ describe("TugAlert – modal semantics (no external auto-dismiss)", () => {
     // Clean up the pending promise so the test doesn't leak an
     // unresolved promise. Dispatch cancel through the chain to close.
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",

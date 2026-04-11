@@ -54,71 +54,71 @@ describe("default button stack", () => {
 
   it("push one element -- getDefaultButton returns it", () => {
     const btn = makeButton("confirm");
-    mgr.setDefaultButton(btn);
-    expect(mgr.getDefaultButton()).toBe(btn);
+    mgr.pushDefaultButton(btn);
+    expect(mgr.peekDefaultButton()).toBe(btn);
   });
 
   it("push two elements -- getDefaultButton returns the second (most recent)", () => {
     const btn1 = makeButton("outer");
     const btn2 = makeButton("inner");
-    mgr.setDefaultButton(btn1);
-    mgr.setDefaultButton(btn2);
-    expect(mgr.getDefaultButton()).toBe(btn2);
+    mgr.pushDefaultButton(btn1);
+    mgr.pushDefaultButton(btn2);
+    expect(mgr.peekDefaultButton()).toBe(btn2);
   });
 
   it("push two, clear the second -- getDefaultButton returns the first", () => {
     const btn1 = makeButton("outer");
     const btn2 = makeButton("inner");
-    mgr.setDefaultButton(btn1);
-    mgr.setDefaultButton(btn2);
-    mgr.clearDefaultButton(btn2);
-    expect(mgr.getDefaultButton()).toBe(btn1);
+    mgr.pushDefaultButton(btn1);
+    mgr.pushDefaultButton(btn2);
+    mgr.popDefaultButton(btn2);
+    expect(mgr.peekDefaultButton()).toBe(btn1);
   });
 
   it("clear with element not on stack -- no-op, stack unchanged", () => {
     const btn1 = makeButton("registered");
     const btn2 = makeButton("never-pushed");
-    mgr.setDefaultButton(btn1);
-    mgr.clearDefaultButton(btn2);
-    expect(mgr.getDefaultButton()).toBe(btn1);
+    mgr.pushDefaultButton(btn1);
+    mgr.popDefaultButton(btn2);
+    expect(mgr.peekDefaultButton()).toBe(btn1);
   });
 
   it("clear on empty stack -- no-op, getDefaultButton returns null", () => {
     const btn = makeButton("orphan");
-    mgr.clearDefaultButton(btn);
-    expect(mgr.getDefaultButton()).toBe(null);
+    mgr.popDefaultButton(btn);
+    expect(mgr.peekDefaultButton()).toBe(null);
   });
 
   it("getDefaultButton returns null when stack is empty", () => {
-    expect(mgr.getDefaultButton()).toBe(null);
+    expect(mgr.peekDefaultButton()).toBe(null);
   });
 
   it("push same element twice, clear once -- one instance removed, element still on stack", () => {
     const btn = makeButton("duplicate");
-    mgr.setDefaultButton(btn);
-    mgr.setDefaultButton(btn);
-    mgr.clearDefaultButton(btn);
+    mgr.pushDefaultButton(btn);
+    mgr.pushDefaultButton(btn);
+    mgr.popDefaultButton(btn);
     // One instance remains -- last push was the removed one (lastIndexOf), first push stays
-    expect(mgr.getDefaultButton()).toBe(btn);
+    expect(mgr.peekDefaultButton()).toBe(btn);
   });
 
   it("clearing the last element leaves stack empty", () => {
     const btn = makeButton("only");
-    mgr.setDefaultButton(btn);
-    mgr.clearDefaultButton(btn);
-    expect(mgr.getDefaultButton()).toBe(null);
+    mgr.pushDefaultButton(btn);
+    mgr.popDefaultButton(btn);
+    expect(mgr.peekDefaultButton()).toBe(null);
   });
 
   it("clearDefaultButton removes the LAST occurrence (lastIndexOf semantics)", () => {
     const btn = makeButton("shared");
     const other = makeButton("other");
-    mgr.setDefaultButton(btn);
-    mgr.setDefaultButton(other);
-    mgr.setDefaultButton(btn);
+    mgr.pushDefaultButton(btn);
+    mgr.pushDefaultButton(other);
+    mgr.pushDefaultButton(btn);
     // Stack is [btn, other, btn]. lastIndexOf(btn) == 2.
     // After clear: [btn, other]. getDefaultButton() == other.
-    mgr.clearDefaultButton(btn);
-    expect(mgr.getDefaultButton()).toBe(other);
+    mgr.popDefaultButton(btn);
+    expect(mgr.peekDefaultButton()).toBe(other);
   });
 });
 
@@ -167,9 +167,9 @@ function DefaultButtonFixture({ buttonTestId, onButtonRef, onButtonClick }: Defa
     const el = btnRef.current;
     if (!el) return;
     onButtonRef(el);
-    manager.setDefaultButton(el);
+    manager.pushDefaultButton(el);
     return () => {
-      manager.clearDefaultButton(el);
+      manager.popDefaultButton(el);
       onButtonRef(null);
     };
   }, [manager, onButtonRef]);
@@ -355,11 +355,11 @@ describe("Enter-key pipeline integration", () => {
     document.body.appendChild(innerBtn);
 
     act(() => {
-      manager.setDefaultButton(outerBtn);
+      manager.pushDefaultButton(outerBtn);
     });
 
     act(() => {
-      manager.setDefaultButton(innerBtn);
+      manager.pushDefaultButton(innerBtn);
     });
 
     // Press Enter -- inner button should activate
@@ -370,7 +370,7 @@ describe("Enter-key pipeline integration", () => {
     expect(innerClicks).toEqual(["inner"]);
 
     act(() => {
-      manager.clearDefaultButton(innerBtn);
+      manager.popDefaultButton(innerBtn);
     });
 
     // Press Enter again -- outer button should activate now
@@ -381,7 +381,7 @@ describe("Enter-key pipeline integration", () => {
     expect(innerClicks).toEqual(["inner", "outer"]);
 
     // Cleanup
-    manager.clearDefaultButton(outerBtn);
+    manager.popDefaultButton(outerBtn);
     document.body.removeChild(outerBtn);
     document.body.removeChild(innerBtn);
   });

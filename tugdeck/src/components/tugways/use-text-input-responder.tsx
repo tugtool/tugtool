@@ -365,7 +365,7 @@ export interface UseTextInputResponderOptions<T extends TextInputLikeElement> {
    * When true, all handlers short-circuit before touching the DOM and
    * the context menu refuses to open. This is defence-in-depth — a
    * disabled input normally cannot receive focus, but
-   * `manager.dispatchTo(id, ...)` can target it directly and must not
+   * `manager.sendToTarget(id, ...)` can target it directly and must not
    * mutate a disabled field.
    */
   disabled: boolean;

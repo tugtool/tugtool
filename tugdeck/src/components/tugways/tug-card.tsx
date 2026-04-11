@@ -814,7 +814,7 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
-    manager.dispatch({
+    manager.sendToFirstResponder({
       action: TUG_ACTIONS.SELECT_TAB,
       value: currentTabs[prevIdx].id,
       sender: keyboardTabNavSenderId,
@@ -829,7 +829,7 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const nextIdx = (idx + 1) % currentTabs.length;
-    manager.dispatch({
+    manager.sendToFirstResponder({
       action: TUG_ACTIONS.SELECT_TAB,
       value: currentTabs[nextIdx].id,
       sender: keyboardTabNavSenderId,
@@ -851,7 +851,7 @@ export function Tugcard({
       if (!currentTabs || currentTabs.length === 0) return;
       if (oneBasedIndex < 1 || oneBasedIndex > currentTabs.length) return;
       const targetTab = currentTabs[oneBasedIndex - 1];
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.SELECT_TAB,
         value: targetTab.id,
         sender: keyboardTabNavSenderId,

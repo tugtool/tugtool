@@ -149,7 +149,7 @@ describe("TugPopover – chain-native dismissal", () => {
     expect(getPopoverContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",
@@ -169,7 +169,7 @@ describe("TugPopover – chain-native dismissal", () => {
     expect(getPopoverContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.DISMISS_POPOVER,
         sender: "external-sender",
         phase: "discrete",
@@ -196,7 +196,7 @@ describe("TugPopover – observeDispatch external dismissal", () => {
     // Any unrelated chain activity — here a bare showSettings dispatch
     // with no registered handler — dismisses the popover.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getPopoverContent()).toBeNull();
@@ -244,7 +244,7 @@ describe("TugPopover – observeDispatch external dismissal", () => {
     // "close on any non-self dispatch" rule this would dismiss; the
     // focus-inside-popover filter keeps the popover open.
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.TOGGLE,
         value: true,
         sender: "inner-switch-sender",
@@ -274,7 +274,7 @@ describe("TugPopover – responder lifecycle", () => {
     // leaked or failed to re-register, the second close would not
     // land.
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",
@@ -288,7 +288,7 @@ describe("TugPopover – responder lifecycle", () => {
     expect(getPopoverContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "external-sender",
         phase: "discrete",

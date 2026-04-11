@@ -50,9 +50,9 @@ export function GalleryDefaultButton() {
     // container span. This is safe: the span holds exactly one button child.
     const btn = confirmContainerRef.current?.querySelector("button") ?? null;
     if (!btn) return;
-    manager.setDefaultButton(btn);
+    manager.pushDefaultButton(btn);
     return () => {
-      manager.clearDefaultButton(btn);
+      manager.popDefaultButton(btn);
     };
   }, [manager]);
 

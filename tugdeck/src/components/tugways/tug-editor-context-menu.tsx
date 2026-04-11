@@ -17,7 +17,7 @@
  *         inside the mousedown handler — a synchronous user gesture.
  *
  * - Actions flow through the responder chain [L11]. Each item's `id`
- *   is the action name dispatched via manager.dispatchForContinuation.
+ *   is the action name dispatched via manager.sendToFirstResponderForContinuation.
  *   The first responder (typically the editor that opened the menu)
  *   provides the handler. Handlers may return a continuation callback
  *   for two-phase execution: the sync body runs inside the user
@@ -294,7 +294,7 @@ export function TugEditorContextMenu({
     if (blinkingRef.current) return;
     blinkingRef.current = true;
     // Phase 1: synchronous dispatch through the responder chain.
-    const { continuation } = manager.dispatchForContinuation({
+    const { continuation } = manager.sendToFirstResponderForContinuation({
       action,
       phase: "discrete",
     });
@@ -339,7 +339,7 @@ export function TugEditorContextMenu({
   //
   // The menu registers a dispatch observer with the responder chain:
   // every action flowing through the chain (via dispatch,
-  // dispatchForContinuation, or dispatchTo) fires this callback. If
+  // sendToFirstResponderForContinuation, or sendToTarget) fires this callback. If
   // the menu is the one dispatching (an item activation in flight —
   // blinkingRef is true), we skip the close so the menu can finish
   // its own animation. Otherwise, the dispatch is external (⌘A,

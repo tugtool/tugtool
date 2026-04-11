@@ -2,7 +2,7 @@
  * action-vocabulary.ts — the central registry of action names that
  * flow through the responder chain.
  *
- * Every action dispatched via `manager.dispatch`, registered via
+ * Every action dispatched via `manager.sendToFirstResponder`, registered via
  * `useResponder`'s actions map, or bound in `keybinding-map.ts` must
  * reference a name from `TUG_ACTIONS` below. The `TugAction` union
  * is derived from `TUG_ACTIONS` via `as const`, so adding a new

@@ -75,8 +75,9 @@ export interface ActionEvent<Extra extends string = never> {
  *   clipboard write) runs inline; the deferred portion (e.g., mutating
  *   the document after visual feedback) runs from the continuation.
  *
- * Callers that need the continuation use `dispatchForContinuation`.
- * `dispatch` discards it and just reports handled/unhandled.
+ * Callers that need the continuation use the `ForContinuation` variants.
+ * `sendToFirstResponder` / `sendToTarget` discard it and just report
+ * handled/unhandled.
  *
  * [D02] Two-phase action handling via optional continuation
  */
@@ -140,7 +141,7 @@ export interface ResponderNode<Extra extends string = never> {
  * change so useSyncExternalStore subscribers know to re-check.
  */
 /**
- * Result of dispatchForContinuation — whether the event was handled and,
+ * Result of the ForContinuation dispatch methods — whether the event was handled and,
  * if the handler returned a continuation callback, that callback.
  */
 export interface DispatchResult {
@@ -157,7 +158,7 @@ export interface DispatchResult {
 
 /**
  * Signature of a dispatch observer. Fires after every call to dispatch,
- * dispatchForContinuation, or dispatchTo — whether or not a handler
+ * sendToFirstResponder, sendToTarget, or their ForContinuation siblings — whether or not a handler
  * matched. `handled` reflects the final outcome. Use for components that
  * need to react to chain traffic (e.g. a context menu that closes on
  * any external action).
@@ -330,10 +331,15 @@ export class ResponderChainManager {
    * Walk the chain from a specified starting node upward via parentId,
    * invoking the first matching handler and capturing any continuation
    * it returns. This is the shared implementation for all four dispatch
-   * entry points — `dispatch`, `dispatchForContinuation`, `dispatchTo`,
-   * and `dispatchToForContinuation`. The only thing those methods
-   * differ on is which node the walk starts at and how they report the
-   * result.
+   * entry points. The only thing those methods differ on is which node
+   * the walk starts at and how they report the result.
+   *
+   * The four public methods form a 2x2 matrix:
+   *
+   *   |                    | boolean return         | DispatchResult return                    |
+   *   |--------------------|------------------------|------------------------------------------|
+   *   | **First responder**| sendToFirstResponder   | sendToFirstResponderForContinuation      |
+   *   | **Named target**   | sendToTarget           | sendToTargetForContinuation              |
    *
    * Observer notification and console logging are NOT performed here —
    * the entry point methods call `notifyDispatchObservers` and
@@ -388,7 +394,7 @@ export class ResponderChainManager {
    * [D02] Handlers may return continuations for two-phase execution
    * Spec S02 (#s02-dispatch-method)
    */
-  dispatchForContinuation<Extra extends string = never>(
+  sendToFirstResponderForContinuation<Extra extends string = never>(
     event: ActionEvent<Extra>,
   ): DispatchResult {
     const { handled, continuation, handledBy } = this.walkFromNode(
@@ -401,14 +407,14 @@ export class ResponderChainManager {
   }
 
   /**
-   * Dispatch an action through the chain. Boolean-return wrapper around
-   * dispatchForContinuation for callers that don't need the continuation.
+   * Dispatch an action to the first responder. Boolean-return wrapper around
+   * sendToFirstResponderForContinuation for callers that don't need the continuation.
    *
    * [D01] ActionEvent is the sole dispatch currency
    * Spec S02 (#s02-dispatch-method)
    */
-  dispatch<Extra extends string = never>(event: ActionEvent<Extra>): boolean {
-    return this.dispatchForContinuation(event).handled;
+  sendToFirstResponder<Extra extends string = never>(event: ActionEvent<Extra>): boolean {
+    return this.sendToFirstResponderForContinuation(event).handled;
   }
 
   // ---- Validation queries ----
@@ -486,36 +492,36 @@ export class ResponderChainManager {
    * the target's internal shape.
    *
    * Note: canHandle is advisory for validation queries only and is never
-   * consulted during dispatchTo.
+   * consulted during sendToTarget.
    *
-   * [D03] dispatchTo throws on unregistered target
+   * [D03] sendToTarget throws on unregistered target
    * Spec S03 (#s03-dispatch-to-method)
    */
-  dispatchTo<Extra extends string = never>(
+  sendToTarget<Extra extends string = never>(
     targetId: string,
     event: ActionEvent<Extra>,
   ): boolean {
-    return this.dispatchToForContinuation(targetId, event).handled;
+    return this.sendToTargetForContinuation(targetId, event).handled;
   }
 
   /**
    * Dispatch an ActionEvent through the chain starting at a named target
    * and return both the handled flag and the optional continuation
-   * callback — the sibling to `dispatchForContinuation` for
+   * callback — the sibling to `sendToFirstResponderForContinuation` for
    * target-scoped dispatches.
    *
-   * Same walk semantics as `dispatchTo` (starts at the named node and
+   * Same walk semantics as `sendToTarget` (starts at the named node and
    * walks upward via parentId until a handler matches or the walk falls
    * off the root) and same error handling (throws if `targetId` is not
    * registered). Callers that want two-phase execution use this method
    * and invoke the returned continuation at their commit point.
    */
-  dispatchToForContinuation<Extra extends string = never>(
+  sendToTargetForContinuation<Extra extends string = never>(
     targetId: string,
     event: ActionEvent<Extra>,
   ): DispatchResult {
     if (!this.nodes.has(targetId)) {
-      throw new Error(`dispatchToForContinuation: target "${targetId}" is not registered`);
+      throw new Error(`sendToTargetForContinuation: target "${targetId}" is not registered`);
     }
     const { handled, continuation, handledBy } = this.walkFromNode(
       targetId,
@@ -595,7 +601,7 @@ export class ResponderChainManager {
    *
    * [D01] Stack semantics for nested modal scoping
    */
-  setDefaultButton(element: HTMLButtonElement): void {
+  pushDefaultButton(element: HTMLButtonElement): void {
     this.defaultButtonStack.push(element);
   }
 
@@ -609,7 +615,7 @@ export class ResponderChainManager {
    * [D01] Reference-based removal
    * [R02] Defensive: no-op if not found
    */
-  clearDefaultButton(element: HTMLButtonElement): void {
+  popDefaultButton(element: HTMLButtonElement): void {
     const index = this.defaultButtonStack.lastIndexOf(element);
     if (index !== -1) {
       this.defaultButtonStack.splice(index, 1);
@@ -621,7 +627,7 @@ export class ResponderChainManager {
    *
    * [D01] Most recent registration wins
    */
-  getDefaultButton(): HTMLButtonElement | null {
+  peekDefaultButton(): HTMLButtonElement | null {
     return this.defaultButtonStack[this.defaultButtonStack.length - 1] ?? null;
   }
 
@@ -650,8 +656,9 @@ export class ResponderChainManager {
   /**
    * Subscribe to every action flowing through the chain.
    *
-   * The callback fires after every `dispatch`, `dispatchForContinuation`,
-   * and `dispatchTo` call — whether the event was handled or not. The
+   * The callback fires after every `sendToFirstResponder`,
+   * `sendToTarget`, and their ForContinuation siblings — whether the
+   * event was handled or not. The
    * `handled` argument reports the final outcome. Returns an
    * unsubscribe function.
    *

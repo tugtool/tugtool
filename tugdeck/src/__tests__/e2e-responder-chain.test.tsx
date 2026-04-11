@@ -228,7 +228,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     // ---- Show gallery via showComponentGallery dispatch ----
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
 
     // store.addCard("gallery-buttons") must have been called
@@ -292,13 +292,13 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card exists -- must NOT create another card
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // Still exactly 1
     // handleCardFocused should have been called instead

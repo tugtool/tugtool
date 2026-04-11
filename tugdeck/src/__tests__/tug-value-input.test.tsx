@@ -299,7 +299,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
 
     // Sync phase: "copy" already fired so the selection stays visible
     // during the menu activation blink.
@@ -319,7 +319,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -335,7 +335,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
 
     // Sync phase did nothing — selection still at (1, 2).
     expect(input.selectionStart).toBe(1);
@@ -353,7 +353,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -367,7 +367,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     );
     const id = getInput(container).getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -392,7 +392,7 @@ describe("TugValueInput – disabled guard (A2.7)", () => {
     // Each handler short-circuits on effectiveDisabled before the
     // sync body runs, so no continuation should be returned either.
     for (const action of ["cut", "copy", "paste", "undo", "redo", "select-all"] as const) {
-      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      const result = manager.sendToTargetForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }
 

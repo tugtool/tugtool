@@ -164,7 +164,7 @@ describe("TugPopupMenu – observeDispatch external dismiss", () => {
     // inside the dispatch, setOpen(false) is queued — act() flushes
     // the state update and any effects before we read the DOM.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     // Radix unmounts the content on close (no exit animation in
@@ -216,7 +216,7 @@ describe("TugPopupMenu – subscription lifecycle", () => {
     // Initially closed: no observer subscribed, dispatching is a no-op
     // for this menu. The content element stays null.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
     expect(getMenuContent("popup-lifecycle")).toBeNull();
   });
@@ -234,7 +234,7 @@ describe("TugPopupMenu – subscription lifecycle", () => {
 
     // First dispatch closes the menu.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
     const afterFirst = getMenuContent("popup-unsub");
     if (afterFirst !== null) {
@@ -248,7 +248,7 @@ describe("TugPopupMenu – subscription lifecycle", () => {
     // subscription does not leak.
     expect(() => {
       act(() => {
-        manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+        manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
       });
     }).not.toThrow();
     const afterSecond = getMenuContent("popup-unsub");

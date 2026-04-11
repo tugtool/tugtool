@@ -82,7 +82,7 @@ export function GallerySheet() {
 
   const dispatchCancel = useCallback(
     (sender: string) => {
-      manager?.dispatch({
+      manager?.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender,
         phase: "discrete",

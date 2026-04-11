@@ -114,7 +114,7 @@ describe("T14 – selectAll dispatch is unhandled at card level", () => {
     // The card does not handle it — the dispatch returns handled: false.
     expect(() => {
       act(() => {
-        manager.dispatch({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
+        manager.sendToFirstResponder({ action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
       });
     }).not.toThrow();
   });
@@ -340,7 +340,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
     );
 
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);

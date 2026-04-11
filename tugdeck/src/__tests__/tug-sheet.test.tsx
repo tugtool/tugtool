@@ -10,7 +10,7 @@
  * - The imperative `TugSheetHandle.close()` method.
  * - A `cancelDialog` action dispatched through the responder chain —
  *   from inside the sheet's Escape/Cmd+. keybinding handler, or from
- *   consumer Cancel/Save buttons that dispatch via `manager.dispatch`.
+ *   consumer Cancel/Save buttons that dispatch via `manager.sendToFirstResponder`.
  * - The `close(result?)` callback passed to the `useTugSheet()` hook's
  *   content render prop.
  *
@@ -147,7 +147,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
     expect(getSheetContent()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
@@ -167,7 +167,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
       // invariant is that internal open state is now false; we can't
       // probe that directly but a second dispatch should be a no-op.
       act(() => {
-        manager.dispatch({
+        manager.sendToFirstResponder({
           action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: "fixed-sender",
           phase: "discrete",
@@ -257,7 +257,7 @@ describe("TugSheet – modal semantics (no external auto-dismiss)", () => {
     // A bare unrelated dispatch dismisses a TugConfirmPopover but
     // must NOT dismiss a card-modal TugSheet. The sheet stays open.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     expect(getSheetContent()).not.toBeNull();

@@ -4,7 +4,7 @@
  * Demonstrates the full PropertyStore round-trip:
  *   1. Card content registers a PropertyStore via usePropertyStore().
  *   2. An inspector panel reads current values and dispatches setProperty
- *      actions via manager.dispatchTo(cardId, ...) — routing through the
+ *      actions via manager.sendToTarget(cardId, ...) — routing through the
  *      parent Tugcard's responder node to the registered store.
  *   3. The target element's appearance updates reactively via
  *      useSyncExternalStore subscriptions, one per property.
@@ -14,7 +14,7 @@
  *
  * This is the first gallery tab to use the cardId argument from contentFactory.
  * The cardId is needed to direct setProperty actions to the correct Tugcard
- * responder node via dispatchTo.
+ * responder node via sendToTarget.
  *
  * Design decisions:
  *   [D01] Context callback registration for PropertyStore
@@ -92,7 +92,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  * observable-properties pipeline.
  *
  * Accepts the `cardId` prop from contentFactory so it can target setProperty
- * actions at the correct Tugcard responder node via dispatchTo. This is the
+ * actions at the correct Tugcard responder node via sendToTarget. This is the
  * first gallery tab content to use the cardId argument; existing tabs discard
  * it as `_cardId`.
  *
@@ -103,7 +103,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  *
  * **Inspector panel:** Three controls (color input, number input + range,
  * select dropdown). Each control dispatches a setProperty action via
- * manager.dispatchTo(cardId, { action: 'set-property', value: { path, value,
+ * manager.sendToTarget(cardId, { action: 'set-property', value: { path, value,
  * source: 'inspector' } }). The action routes through the parent Tugcard's
  * responder node, which calls store.set() on the registered PropertyStore.
  * [D04]
@@ -213,7 +213,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   }, [store]);
 
   // ---------------------------------------------------------------------------
-  // Inspector control handlers — dispatch setProperty via dispatchTo
+  // Inspector control handlers — dispatch setProperty via sendToTarget
   // ---------------------------------------------------------------------------
   //
   // All controls tag their changes with source: 'inspector'. This allows the
@@ -226,7 +226,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   //   observer notification → useSyncExternalStore re-render. [D04]
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    manager.dispatchTo(cardId, {
+    manager.sendToTarget(cardId, {
       action: TUG_ACTIONS.SET_PROPERTY,
       phase: "discrete",
       value: {
@@ -239,7 +239,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
 
   const handleFontSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const num = Number(e.target.value);
-    manager.dispatchTo(cardId, {
+    manager.sendToTarget(cardId, {
       action: TUG_ACTIONS.SET_PROPERTY,
       phase: "discrete",
       value: {
@@ -259,7 +259,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontFamilyPopupId]: (value: string) => {
-        manager.dispatchTo(cardId, {
+        manager.sendToTarget(cardId, {
           action: TUG_ACTIONS.SET_PROPERTY,
           phase: "discrete",
           value: {
@@ -314,7 +314,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       <div className="cg-divider" />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Inspector panel: controls dispatch setProperty via dispatchTo.      */}
+      {/* Inspector panel: controls dispatch setProperty via sendToTarget.      */}
       {/* Source attribution: source: 'inspector' tags all writes so          */}
       {/* content-side observers can skip re-dispatch. [D03]                  */}
       {/* ------------------------------------------------------------------ */}
@@ -322,7 +322,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
         <div className="cg-section-title">Inspector Panel</div>
         <p className="cg-description">
           Each control dispatches <code>setProperty</code> via{" "}
-          <code>dispatchTo(cardId, ...)</code>. The action routes through the
+          <code>sendToTarget(cardId, ...)</code>. The action routes through the
           parent Tugcard's responder node to the registered PropertyStore.
           Source is tagged <code>'inspector'</code> to prevent circular loops.
         </p>

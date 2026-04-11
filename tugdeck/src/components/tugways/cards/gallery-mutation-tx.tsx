@@ -37,7 +37,7 @@ import { StyleCascadeReader } from "@/components/tugways/style-cascade-reader";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Stable responder ID for the demo node -- used by dispatchTo. */
+/** Stable responder ID for the demo node -- used by sendToTarget. */
 const DEMO_RESPONDER_ID = "mutation-tx-demo";
 
 /** Initial position of the mock card element. */
@@ -71,7 +71,7 @@ function xToHue(clientX: number, rect: DOMRect): number {
  * are not part of the continuous gesture path.
  *
  * **Responder wiring:**
- * Controls call `manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, event)` (explicit-target
+ * Controls call `manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, event)` (explicit-target
  * dispatch). The demo's own responder node handles `previewColor`, `previewHue`,
  * and `previewPosition` actions and translates action phases to transaction
  * lifecycle calls.
@@ -366,7 +366,7 @@ export function GalleryMutationTx() {
                 target && mutationTransactionManager.getActiveTransaction(target) !== null
                   ? "change"
                   : "begin";
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_COLOR,
                 phase,
                 value: color,
@@ -374,7 +374,7 @@ export function GalleryMutationTx() {
             }}
             onChange={(e) => {
               const color = (e.target as HTMLInputElement).value;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_COLOR,
                 phase: "commit",
                 value: color,
@@ -407,7 +407,7 @@ export function GalleryMutationTx() {
                 e.currentTarget.setPointerCapture(e.pointerId);
               }
               scrubActiveRef.current = true;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "begin",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -415,7 +415,7 @@ export function GalleryMutationTx() {
             }}
             onPointerMove={(e) => {
               if (!scrubActiveRef.current) return;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "change",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -424,7 +424,7 @@ export function GalleryMutationTx() {
             onPointerUp={(e) => {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "commit",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -433,7 +433,7 @@ export function GalleryMutationTx() {
             onPointerCancel={() => {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                 phase: "cancel",
               });
@@ -441,7 +441,7 @@ export function GalleryMutationTx() {
             onKeyDown={(e) => {
               if (e.key === "Escape" && scrubActiveRef.current) {
                 scrubActiveRef.current = false;
-                manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+                manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                   action: TUG_GALLERY_ACTIONS.PREVIEW_HUE,
                   phase: "cancel",
                 });
@@ -481,7 +481,7 @@ export function GalleryMutationTx() {
               // Begin on pointerdown -- NOT on focus (to avoid auto-cancel on focus).
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "begin",
                 value: { left, top },
@@ -490,7 +490,7 @@ export function GalleryMutationTx() {
             onInput={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "change",
                 value: { left, top },
@@ -499,7 +499,7 @@ export function GalleryMutationTx() {
             onPointerUp={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "commit",
                 value: { left, top },
@@ -523,7 +523,7 @@ export function GalleryMutationTx() {
             onPointerDown={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "begin",
                 value: { left, top },
@@ -532,7 +532,7 @@ export function GalleryMutationTx() {
             onInput={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "change",
                 value: { left, top },
@@ -541,7 +541,7 @@ export function GalleryMutationTx() {
             onPointerUp={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
+              manager.sendToTarget<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: TUG_GALLERY_ACTIONS.PREVIEW_POSITION,
                 phase: "commit",
                 value: { left, top },

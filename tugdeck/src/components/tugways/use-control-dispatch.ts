@@ -9,14 +9,14 @@
  *   - `dispatch(event)` — targeted dispatch, returns boolean
  *   - `dispatchForContinuation(event)` — targeted dispatch with continuation
  *
- * Both call manager.dispatchTo / manager.dispatchToForContinuation with the
+ * Both call manager.sendToTarget / manager.sendToTargetForContinuation with the
  * parent responder as the target. The first responder is irrelevant.
  *
  * This is the web equivalent of Cocoa's targeted action pattern:
  *   [NSApp sendAction:action to:target from:sender]
  * where target is the control's parent view controller.
  *
- * Keyboard shortcuts and menu items use the nil-targeted form (manager.dispatch)
+ * Keyboard shortcuts and menu items use the nil-targeted form (manager.sendToFirstResponder)
  * which walks from the first responder. Controls must never use that form.
  *
  * See roadmap/targeted-dispatch.md for the full design rationale.
@@ -46,7 +46,7 @@ export function useControlDispatch(): ControlDispatch {
   const dispatch = useCallback(
     (event: ActionEvent) => {
       if (!manager || !parentId) return false;
-      return manager.dispatchTo(parentId, event);
+      return manager.sendToTarget(parentId, event);
     },
     [manager, parentId],
   );
@@ -54,7 +54,7 @@ export function useControlDispatch(): ControlDispatch {
   const dispatchForContinuation = useCallback(
     (event: ActionEvent) => {
       if (!manager || !parentId) return NOOP_RESULT;
-      return manager.dispatchToForContinuation(parentId, event);
+      return manager.sendToTargetForContinuation(parentId, event);
     },
     [manager, parentId],
   );

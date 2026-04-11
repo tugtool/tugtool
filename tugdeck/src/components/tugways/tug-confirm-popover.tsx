@@ -254,7 +254,7 @@ export const TugConfirmPopover = React.forwardRef<
       handleConfirmAction();
       return;
     }
-    manager.dispatch({
+    manager.sendToFirstResponder({
       action: TUG_ACTIONS.CONFIRM_DIALOG,
       sender: senderId,
       phase: "discrete",
@@ -266,7 +266,7 @@ export const TugConfirmPopover = React.forwardRef<
       handleCancelAction();
       return;
     }
-    manager.dispatch({
+    manager.sendToFirstResponder({
       action: TUG_ACTIONS.CANCEL_DIALOG,
       sender: senderId,
       phase: "discrete",

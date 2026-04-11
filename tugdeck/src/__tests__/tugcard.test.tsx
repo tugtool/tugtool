@@ -322,7 +322,7 @@ describe("Tugcard – responder registration", () => {
       </Tugcard>
     );
 
-    manager.dispatch({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
+    manager.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE, phase: "discrete" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
@@ -527,7 +527,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
     });
 
     expect(setActiveCalls.length).toBe(1);
@@ -561,7 +561,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
     });
 
     // Wraps from tab-1 (index 0) back to tab-2 (index 1, last)
@@ -603,7 +603,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
 
     // ⌘2 → 1-based index 2 → tab-2
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.JUMP_TO_TAB,
         value: 2,
         phase: "discrete",
@@ -615,7 +615,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
 
     // ⌘3 → 1-based index 3 → tab-3
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.JUMP_TO_TAB,
         value: 3,
         phase: "discrete",
@@ -652,13 +652,13 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
 
     act(() => {
       // index 0 — invalid (1-based)
-      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 0, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 0, phase: "discrete" });
       // index 9 — past the end of a 2-tab card
-      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 9, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.JUMP_TO_TAB, value: 9, phase: "discrete" });
       // wrong type
-      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, value: "2", phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.JUMP_TO_TAB, value: "2", phase: "discrete" });
       // missing payload
-      manager.dispatch({ action: TUG_ACTIONS.JUMP_TO_TAB, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.JUMP_TO_TAB, phase: "discrete" });
     });
 
     expect(setActiveCalls.length).toBe(0);
@@ -686,8 +686,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
-      manager.dispatch({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.NEXT_TAB, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.PREVIOUS_TAB, phase: "discrete" });
     });
 
     expect(setActiveCalls.length).toBe(0);
@@ -846,7 +846,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     // Dispatching setProperty with no registered store should not throw
     expect(() => {
       act(() => {
-        manager.dispatch({
+        manager.sendToFirstResponder({
           action: TUG_ACTIONS.SET_PROPERTY,
           phase: "discrete",
           value: { path: "style.backgroundColor", value: "#ff0000" },
@@ -855,7 +855,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     }).not.toThrow();
   });
 
-  it("setProperty action dispatched via dispatchTo reaches the registered PropertyStore", () => {
+  it("setProperty action dispatched via sendToTarget reaches the registered PropertyStore", () => {
     const storeRef = React.createRef<PropertyStore | null>() as React.MutableRefObject<PropertyStore | null>;
     storeRef.current = null;
 
@@ -879,7 +879,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
 
     // Dispatch setProperty directly to the Tugcard responder node
     act(() => {
-      manager.dispatchTo("card-with-store", {
+      manager.sendToTarget("card-with-store", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#aabbcc", source: "inspector" },
@@ -910,7 +910,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     });
 
     act(() => {
-      manager.dispatchTo("card-default-source", {
+      manager.sendToTarget("card-default-source", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 24 }, // no source field

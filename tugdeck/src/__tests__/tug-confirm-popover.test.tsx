@@ -6,7 +6,7 @@
  * its confirm/cancel buttons through the responder chain. Internally
  * the component registers as a responder with `confirmDialog` and
  * `cancelDialog` handlers that resolve the pending promise and close;
- * the buttons dispatch those actions via `manager.dispatch`, the
+ * the buttons dispatch those actions via `manager.sendToFirstResponder`, the
  * dispatch walks from the innermost responder (promoted by the
  * pointerdown pathway to the popover's own `.tug-confirm-popover`
  * element), and lands back on the popover's own handler.
@@ -141,7 +141,7 @@ describe("TugConfirmPopover – chain dispatch resolves the confirm() promise", 
     // confirm button had been clicked (chain self-loop). The popover's
     // registered handler resolves the promise and sets open=false.
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CONFIRM_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
@@ -163,7 +163,7 @@ describe("TugConfirmPopover – chain dispatch resolves the confirm() promise", 
     expect(getPopoverRoot()).not.toBeNull();
 
     act(() => {
-      manager.dispatch({
+      manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: "fixed-sender",
         phase: "discrete",
@@ -194,7 +194,7 @@ describe("TugConfirmPopover – observeDispatch external dismissal", () => {
     // with no registered handler — dismisses the popover and resolves
     // the pending promise with false.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     const result = await pending;

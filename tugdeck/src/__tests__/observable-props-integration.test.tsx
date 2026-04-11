@@ -12,7 +12,7 @@
  *           tests; cross-referenced here via the no-loop assertion)
  * - Task 5: useSyncExternalStore renders only for changed property — changing
  *           backgroundColor does not notify fontSize/fontFamily subscribers
- * - Task 6: setProperty works via dispatchTo (same as Task 2 path)
+ * - Task 6: setProperty works via sendToTarget (same as Task 2 path)
  *
  * Success criteria verified:
  * - PropertyStore.get returns current value; throws for invalid path
@@ -172,11 +172,11 @@ describe("Task 2: Inspector writes update the card", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("setProperty dispatched via dispatchTo updates the target element backgroundColor", () => {
+  it("setProperty dispatched via sendToTarget updates the target element backgroundColor", () => {
     const { container, manager } = renderObservableProps("obs-t2a");
 
     act(() => {
-      manager.dispatchTo("obs-t2a", {
+      manager.sendToTarget("obs-t2a", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#cc0000", source: "inspector" },
@@ -193,7 +193,7 @@ describe("Task 2: Inspector writes update the card", () => {
     const { container, manager } = renderObservableProps("obs-t2b");
 
     act(() => {
-      manager.dispatchTo("obs-t2b", {
+      manager.sendToTarget("obs-t2b", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 40, source: "inspector" },
@@ -207,7 +207,7 @@ describe("Task 2: Inspector writes update the card", () => {
     const { container, manager } = renderObservableProps("obs-t2c");
 
     act(() => {
-      manager.dispatchTo("obs-t2c", {
+      manager.sendToTarget("obs-t2c", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontFamily", value: "serif", source: "inspector" },
@@ -241,7 +241,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
 
     // Simulate a card-side programmatic update (source: 'content').
     act(() => {
-      manager.dispatchTo("obs-t3a", {
+      manager.sendToTarget("obs-t3a", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#009900", source: "content" },
@@ -256,7 +256,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
     const { container, manager } = renderObservableProps("obs-t3b");
 
     act(() => {
-      manager.dispatchTo("obs-t3b", {
+      manager.sendToTarget("obs-t3b", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 20, source: "content" },
@@ -265,7 +265,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
     expect(container.querySelector("[data-testid='state-font-size']")?.textContent).toBe("20px");
 
     act(() => {
-      manager.dispatchTo("obs-t3b", {
+      manager.sendToTarget("obs-t3b", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 36, source: "content" },
@@ -447,10 +447,10 @@ describe("Task 5: useSyncExternalStore triggers re-render only for changed path"
 });
 
 // ---------------------------------------------------------------------------
-// Task 6: setProperty action works via dispatchTo
+// Task 6: setProperty action works via sendToTarget
 // ---------------------------------------------------------------------------
 
-describe("Task 6: setProperty action works via dispatchTo (console-equivalent)", () => {
+describe("Task 6: setProperty action works via sendToTarget (console-equivalent)", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -458,13 +458,13 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
     const { container, manager } = renderObservableProps("obs-t6a");
 
     // This mirrors what a browser console call would do:
-    //   manager.dispatchTo(cardId, {
+    //   manager.sendToTarget(cardId, {
     //     action: 'set-property',
     //     phase: 'discrete',
     //     value: { path: 'style.backgroundColor', value: '#ff0000' }
     //   })
     act(() => {
-      manager.dispatchTo("obs-t6a", {
+      manager.sendToTarget("obs-t6a", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#ff0000" },
@@ -484,7 +484,7 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
     const lastChangeSpan = container.querySelector("[data-testid='observer-last-change']") as HTMLSpanElement;
 
     act(() => {
-      manager.dispatchTo("obs-t6b", {
+      manager.sendToTarget("obs-t6b", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#abcdef" },

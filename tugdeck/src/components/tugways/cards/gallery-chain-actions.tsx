@@ -3,7 +3,7 @@
  *
  * Demonstrates chain-action TugButton mode: buttons whose visibility and
  * enablement depend on the responder chain. Also includes an ActionEvent
- * dispatch demo showing explicit-target dispatch via dispatchTo.
+ * dispatch demo showing explicit-target dispatch via sendToTarget.
  *
  * **Authoritative reference:** [D01] gallery-chain-actions componentId.
  *
@@ -23,11 +23,11 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 // ---------------------------------------------------------------------------
 
 /**
- * ActionEventDemo -- demonstrates explicit-target dispatch via dispatchTo.
+ * ActionEventDemo -- demonstrates explicit-target dispatch via sendToTarget.
  *
  * Registers a local responder node with id "action-event-demo" that handles
  * the "demo-action" action. A TugButton in direct-action mode (onClick) calls
- * manager.dispatchTo("action-event-demo", { action: TUG_GALLERY_ACTIONS.DEMO_ACTION, phase: "discrete" })
+ * manager.sendToTarget("action-event-demo", { action: TUG_GALLERY_ACTIONS.DEMO_ACTION, phase: "discrete" })
  * to deliver the event directly to the local responder, bypassing the chain walk.
  *
  * The handler receives the full ActionEvent and stores a display string showing
@@ -71,7 +71,7 @@ function ActionEventDemo() {
   });
 
   const handleDispatch = () => {
-    manager.dispatchTo<GalleryAction>("action-event-demo", {
+    manager.sendToTarget<GalleryAction>("action-event-demo", {
       action: TUG_GALLERY_ACTIONS.DEMO_ACTION,
       phase: "discrete",
     });
@@ -82,7 +82,7 @@ function ActionEventDemo() {
       <div className="cg-section-title">ActionEvent Dispatch</div>
       <p className="cg-description">
         Click the button to dispatch directly to a local responder node via{" "}
-        <code>dispatchTo</code>. The handler receives the full{" "}
+        <code>sendToTarget</code>. The handler receives the full{" "}
         <code>ActionEvent</code> and displays its fields below.
       </p>
       <div className="cg-variant-row">
@@ -109,7 +109,7 @@ function ActionEventDemo() {
  *
  * Demonstrates chain-action TugButton mode: buttons whose visibility and
  * enablement depend on the responder chain. Also includes an ActionEvent
- * dispatch demo showing explicit-target dispatch via dispatchTo.
+ * dispatch demo showing explicit-target dispatch via sendToTarget.
  *
  * **Authoritative reference:** [D01] gallery-chain-actions componentId.
  */

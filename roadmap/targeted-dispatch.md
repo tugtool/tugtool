@@ -2,11 +2,11 @@
 
 ## Problem
 
-Controls (buttons, checkboxes, switches, sliders, choice groups, etc.) currently dispatch actions using `manager.dispatch()`, which walks the responder chain starting from the **first responder**. This creates two problems:
+Controls (buttons, checkboxes, switches, sliders, choice groups, etc.) currently dispatch actions using `manager.sendToFirstResponder()`, which walks the responder chain starting from the **first responder**. This creates two problems:
 
 ### Problem 1: Dispatches miss their handler
 
-`dispatch()` walks from the first responder **upward** through `parentId` links. The handler for a control's action is typically on the control's **parent responder** — which may be a sibling or descendant of the first responder, not an ancestor.
+`sendToFirstResponder()` walks from the first responder **upward** through `parentId` links. The handler for a control's action is typically on the control's **parent responder** — which may be a sibling or descendant of the first responder, not an ancestor.
 
 Example: the gallery-prompt-input card has this responder tree:
 
@@ -27,11 +27,11 @@ Focus-refusing controls (`data-tug-focus="refuse"`) should not steal keyboard fo
 - If we **skip** promotion for focus-refusing controls: the first responder stays on the editor, but the dispatch walk may not reach the control's handler (same problem as #1 — the handler might not be an ancestor of the editor).
 - If we **don't skip** promotion: the first responder changes to the control's parent responder, which fixes dispatch but breaks keyboard shortcuts (⌘C/⌘V no longer route to the editor).
 
-There is no correct behavior for `promoteOnPointerDown` that solves both problems simultaneously, because `dispatch()` is the wrong dispatch method for controls.
+There is no correct behavior for `promoteOnPointerDown` that solves both problems simultaneously, because `sendToFirstResponder()` is the wrong dispatch method for controls.
 
 ## Root Cause
 
-All controls use `manager.dispatch()` — the nil-targeted form that walks from the first responder. But controls are not menu items or keyboard shortcuts. They have a specific parent responder that handles their action. They should use **targeted dispatch**.
+All controls use `manager.sendToFirstResponder()` — the nil-targeted form that walks from the first responder. But controls are not menu items or keyboard shortcuts. They have a specific parent responder that handles their action. They should use **targeted dispatch**.
 
 ## The Cocoa Model
 
@@ -49,10 +49,10 @@ Keyboard shortcuts use nil-targeted actions because they should reach the focuse
 
 | Cocoa | Our system | Walks from |
 |-------|-----------|-----------|
-| Targeted action (`target != nil`) | `manager.dispatchTo(targetId, event)` | The named target node |
-| Nil-targeted action (`target == nil`) | `manager.dispatch(event)` | The first responder |
+| Targeted action (`target != nil`) | `manager.sendToTarget(targetId, event)` | The named target node |
+| Nil-targeted action (`target == nil`) | `manager.sendToFirstResponder(event)` | The first responder |
 
-The bug: our controls use `dispatch` when they should use `dispatchTo`.
+The bug: our controls use `sendToFirstResponder` when they should use `sendToTarget`.
 
 ## Solution
 
@@ -64,14 +64,14 @@ The bug: our controls use `dispatch` when they should use `dispatchTo`.
 const parentResponderId = useContext(ResponderParentContext);
 
 // Control dispatches to its parent — targeted, not nil-targeted
-manager.dispatchTo(parentResponderId, { action: TUG_ACTIONS.SELECT_VALUE, ... });
+manager.sendToTarget(parentResponderId, { action: TUG_ACTIONS.SELECT_VALUE, ... });
 ```
 
 This is the exact equivalent of Cocoa's `button.target = self` pattern. The parent responder is the target. The first responder is irrelevant.
 
 ### Focus refusal becomes simple
 
-With targeted dispatch, focus refusal is purely about **browser focus** — preventing the browser from moving keyboard focus to the control on mousedown. The responder chain's first-responder promotion can happen normally (or not — it doesn't matter, because controls don't use `dispatch()`).
+With targeted dispatch, focus refusal is purely about **browser focus** — preventing the browser from moving keyboard focus to the control on mousedown. The responder chain's first-responder promotion can happen normally (or not — it doesn't matter, because controls don't use `sendToFirstResponder()`).
 
 The `promoteOnPointerDown` handler goes back to the simple, unconditional version:
 
@@ -97,8 +97,8 @@ function promoteOnPointerDown(event: PointerEvent): void {
 ```
 
 This is safe because:
-- Controls use `dispatchTo` — they don't need the first responder to be set correctly for their dispatches.
-- Keyboard shortcuts use `dispatch` — they need the first responder to stay on the editor.
+- Controls use `sendToTarget` — they don't need the first responder to be set correctly for their dispatches.
+- Keyboard shortcuts use `sendToFirstResponder` — they need the first responder to stay on the editor.
 - Both are correct when we skip promotion for focus-refusing controls.
 
 ### What about the "fresh launch" problem?
@@ -109,14 +109,14 @@ On fresh launch, DeckCanvas sets the first responder to the card via `makeFirstR
 
 | Dispatch mode | Used by | Method | Walks from | First responder matters? |
 |--------------|---------|--------|-----------|------------------------|
-| **Targeted** | Controls (buttons, checkboxes, sliders, etc.) | `dispatchTo(parentId, event)` | The parent responder | No |
+| **Targeted** | Controls (buttons, checkboxes, sliders, etc.) | `sendToTarget(parentId, event)` | The parent responder | No |
 | **Nil-targeted** | Keyboard shortcuts, menu items | `dispatch(event)` | The first responder | Yes |
 
 ## Implementation Plan
 
 ### Step 1: Add `useControlDispatch` hook
 
-Create a small hook that controls use instead of calling `manager.dispatch()` directly:
+Create a small hook that controls use instead of calling `manager.sendToFirstResponder()` directly:
 
 ```ts
 function useControlDispatch(): (event: ActionEvent) => boolean {
@@ -124,37 +124,37 @@ function useControlDispatch(): (event: ActionEvent) => boolean {
   const parentId = useContext(ResponderParentContext);
   return useCallback((event: ActionEvent) => {
     if (!manager || !parentId) return false;
-    return manager.dispatchTo(parentId, event);
+    return manager.sendToTarget(parentId, event);
   }, [manager, parentId]);
 }
 ```
 
-This encapsulates the "targeted dispatch to parent" pattern. Controls call `dispatchTo(parentId, ...)` instead of `dispatch(...)`. The hook reads the parent responder ID from context — no prop drilling needed.
+This encapsulates the "targeted dispatch to parent" pattern. Controls call `sendToTarget(parentId, ...)` instead of `dispatch(...)`. The hook reads the parent responder ID from context — no prop drilling needed.
 
 ### Step 2: Migrate controls to `useControlDispatch`
 
-Every control that currently calls `manager.dispatch()` switches to the hook. The change per control is mechanical: replace `manager.dispatch(event)` with `controlDispatch(event)`.
+Every control that currently calls `manager.sendToFirstResponder()` switches to the hook. The change per control is mechanical: replace `manager.sendToFirstResponder(event)` with `controlDispatch(event)`.
 
 Controls to migrate:
 
 | Control | File | Current dispatch |
 |---------|------|-----------------|
-| TugButton (no `target` prop) | `internal/tug-button.tsx` | `manager.dispatch(event)` |
-| TugCheckbox | `tug-checkbox.tsx` | `manager.dispatch(event)` |
-| TugSwitch | `tug-switch.tsx` | `manager.dispatch(event)` |
-| TugSlider | `tug-slider.tsx` | `manager.dispatch(event)` |
-| TugChoiceGroup | `tug-choice-group.tsx` | `manager.dispatch(event)` |
-| TugOptionGroup | `tug-option-group.tsx` | `manager.dispatch(event)` |
-| TugRadioGroup | `tug-radio-group.tsx` | `manager.dispatch(event)` |
-| TugAccordion | `tug-accordion.tsx` | `manager.dispatch(event)` |
-| TugTabBar | `tug-tab-bar.tsx` | `manager.dispatch(event)` |
-| TugValueInput | `tug-value-input.tsx` | `manager.dispatch(event)` |
+| TugButton (no `target` prop) | `internal/tug-button.tsx` | `manager.sendToFirstResponder(event)` |
+| TugCheckbox | `tug-checkbox.tsx` | `manager.sendToFirstResponder(event)` |
+| TugSwitch | `tug-switch.tsx` | `manager.sendToFirstResponder(event)` |
+| TugSlider | `tug-slider.tsx` | `manager.sendToFirstResponder(event)` |
+| TugChoiceGroup | `tug-choice-group.tsx` | `manager.sendToFirstResponder(event)` |
+| TugOptionGroup | `tug-option-group.tsx` | `manager.sendToFirstResponder(event)` |
+| TugRadioGroup | `tug-radio-group.tsx` | `manager.sendToFirstResponder(event)` |
+| TugAccordion | `tug-accordion.tsx` | `manager.sendToFirstResponder(event)` |
+| TugTabBar | `tug-tab-bar.tsx` | `manager.sendToFirstResponder(event)` |
+| TugValueInput | `tug-value-input.tsx` | `manager.sendToFirstResponder(event)` |
 
-**Note:** TugButton already supports `dispatchTo(target, ...)` when its `target` prop is set. The migration adds the `parentId` fallback when no explicit `target` is provided.
+**Note:** TugButton already supports `sendToTarget(target, ...)` when its `target` prop is set. The migration adds the `parentId` fallback when no explicit `target` is provided.
 
-**Note:** TugCard dispatches (`previousTab`, `nextTab`, `jumpToTab`) stay as `manager.dispatch()` — the card is a responder dispatching to itself or its ancestors, not a control dispatching to a parent.
+**Note:** TugCard dispatches (`previousTab`, `nextTab`, `jumpToTab`) stay as `manager.sendToFirstResponder()` — the card is a responder dispatching to itself or its ancestors, not a control dispatching to a parent.
 
-**Note:** TugSheet, TugAlert, TugConfirmPopover, TugPopover dispatch for their own internal state management. These are responders, not controls — they stay as `manager.dispatch()`.
+**Note:** TugSheet, TugAlert, TugConfirmPopover, TugPopover dispatch for their own internal state management. These are responders, not controls — they stay as `manager.sendToFirstResponder()`.
 
 ### Step 3: Simplify `promoteOnPointerDown`
 
@@ -168,8 +168,8 @@ function promoteOnPointerDown(event: PointerEvent): void {
 ```
 
 This is correct because:
-- Controls use `dispatchTo` — first responder is irrelevant for their dispatches
-- Keyboard shortcuts use `dispatch` — first responder stays on the editor
+- Controls use `sendToTarget` — first responder is irrelevant for their dispatches
+- Keyboard shortcuts use `sendToFirstResponder` — first responder stays on the editor
 - Browser focus stays on the editor — `mousedown.preventDefault()` handles that
 
 ### Step 4: Verify `canHandle` and `validateAction` for targeted controls
@@ -197,7 +197,7 @@ Update `tuglaws/responder-chain.md`:
 
 Update `tuglaws/component-authoring.md`:
 - In the "Controls dispatch, responders handle" section, show `useControlDispatch` as the standard pattern
-- Explain why controls should never use `manager.dispatch()` directly
+- Explain why controls should never use `manager.sendToFirstResponder()` directly
 
 ## Files
 

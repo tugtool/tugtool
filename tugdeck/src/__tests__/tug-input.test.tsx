@@ -24,7 +24,7 @@
  *      inserts at the current selection via setRangeText.
  *
  * 4. Disabled guard
- *    - A disabled input dispatched via manager.dispatchTo still runs
+ *    - A disabled input dispatched via manager.sendToTarget still runs
  *      the handler, but the handler's effectiveDisabled short-circuit
  *      prevents execCommand / select / setRangeText from firing.
  *
@@ -339,7 +339,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(2, 3);
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
 
     // Sync phase does nothing — selection still (2, 3).
     expect(input.selectionStart).toBe(2);
@@ -356,7 +356,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "cut-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -372,7 +372,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "copy-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -385,7 +385,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "undo-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -399,7 +399,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     );
     const id = getInput(container, "redo-input").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -441,7 +441,7 @@ describe("TugInput – paste cascade", () => {
       // Caret at end so the inserted text appends.
       input.setSelectionRange(input.value.length, input.value.length);
 
-      const result = manager.dispatchToForContinuation(id, {
+      const result = manager.sendToTargetForContinuation(id, {
         action: TUG_ACTIONS.PASTE,
         phase: "discrete",
       });
@@ -481,7 +481,7 @@ describe("TugInput – paste cascade", () => {
       const id = input.getAttribute("data-responder-id") as string;
       input.setSelectionRange(input.value.length, input.value.length);
 
-      const result = manager.dispatchToForContinuation(id, {
+      const result = manager.sendToTargetForContinuation(id, {
         action: TUG_ACTIONS.PASTE,
         phase: "discrete",
       });
@@ -514,7 +514,7 @@ describe("TugInput – disabled guard (A2.7)", () => {
     const id = getInput(container, "disabled-input").getAttribute("data-responder-id") as string;
 
     for (const action of ["cut", "copy", "paste", "undo", "redo"] as const) {
-      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      const result = manager.sendToTargetForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }
 
@@ -529,7 +529,7 @@ describe("TugInput – disabled guard (A2.7)", () => {
     const id = input.getAttribute("data-responder-id") as string;
 
     input.setSelectionRange(1, 2);
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
     result.continuation?.();
 
     // Handler short-circuited on effectiveDisabled and returned no

@@ -150,7 +150,7 @@ describe("useResponder – unregister on unmount", () => {
     });
 
     // Dispatch should return false -- node no longer in chain
-    expect(manager.dispatch({ action: asAction("anything"), phase: "discrete" })).toBe(false);
+    expect(manager.sendToFirstResponder({ action: asAction("anything"), phase: "discrete" })).toBe(false);
     expect(manager.getFirstResponder()).toBe(null);
   });
 });
@@ -214,7 +214,7 @@ describe("useResponder – two-level nesting", () => {
     });
 
     manager.makeFirstResponder("child");
-    const handled = manager.dispatch({ action: asAction("bubbled"), phase: "discrete" });
+    const handled = manager.sendToFirstResponder({ action: asAction("bubbled"), phase: "discrete" });
     expect(handled).toBe(true);
     expect(parentHandled).toBe(true);
   });

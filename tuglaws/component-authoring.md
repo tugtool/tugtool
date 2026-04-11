@@ -466,13 +466,13 @@ export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
 }
 ```
 
-The hook reads the parent responder ID from context and calls `dispatchTo(parentId, event)`. The action goes directly to the parent handler regardless of the first responder. Outside a provider the dispatch is a no-op (returns `false`).
+The hook reads the parent responder ID from context and calls `sendToTarget(parentId, event)`. The action goes directly to the parent handler regardless of the first responder. Outside a provider the dispatch is a no-op (returns `false`).
 
-**Why targeted dispatch?** Controls have a specific receiver — their parent responder. The nil-targeted `dispatch()` walks from the first responder, which may be a sibling or descendant of the parent. Targeted dispatch bypasses the first responder entirely and always reaches the handler. See [responder-chain.md § Dispatching from a control](responder-chain.md#dispatching-from-a-control) for the full rationale.
+**Why targeted dispatch?** Controls have a specific receiver — their parent responder. The nil-targeted `sendToFirstResponder()` walks from the first responder, which may be a sibling or descendant of the parent. Targeted dispatch bypasses the first responder entirely and always reaches the handler. See [responder-chain.md § Dispatching from a control](responder-chain.md#dispatching-from-a-control) for the full rationale.
 
 Rules:
 
-- **Controls never call `manager.dispatch()`.** Always use `useControlDispatch()`. The nil-targeted `dispatch()` is reserved for keyboard shortcuts and menu items.
+- **Controls never call `manager.sendToFirstResponder()`.** Always use `useControlDispatch()`. The nil-targeted `sendToFirstResponder()` is reserved for keyboard shortcuts and menu items.
 
 - **Callback props for user interactions are prohibited.** [L11] A `TugCloseButton` must NOT expose an `onClose: () => void` prop. The close action routes through the chain; a callback prop lets the consumer bypass the chain and breaks keyboard shortcuts, first-responder semantics, and observer notification. Non-user-interaction callbacks (state mirror callbacks like `onOpenChange` for Radix integration, lifecycle observers) are fine.
 
@@ -913,7 +913,7 @@ Before a component is done:
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
 - [ ] Compound composition: own tokens scoped to own component slot; no descendant restyling of children; pairings cover only own elements; composed children documented in docstring [L20]
 - [ ] Internal components: lives in `internal/`, docstring says "Internal building block — use [public component] instead", public wrapper re-exports needed types
-- [ ] **Controls emit actions via targeted dispatch.** [L11] Every interactive component that responds to user input dispatches a typed action via `useControlDispatch()`. No `manager.dispatch()` calls from controls. No callback props for user interactions.
+- [ ] **Controls emit actions via targeted dispatch.** [L11] Every interactive component that responds to user input dispatches a typed action via `useControlDispatch()`. No `manager.sendToFirstResponder()` calls from controls. No callback props for user interactions.
 - [ ] **Responders register via `useResponder` / `useOptionalResponder`.** Every component that handles actions calls one of the two hooks with a typed `actions` map; the strict form for load-bearing chain participants, the tolerant form for standalone-capable leaves.
 - [ ] **`data-slot` + `data-responder-id` on the root element.** `data-slot` via the literal attribute, `data-responder-id` via attaching `responderRef` from the hook to the root DOM element.
 - [ ] **No `makeFirstResponder` calls from component code.** First responder is managed by the chain's pointerdown / focusin promotion path. The only sanctioned exception is `DeckCanvas` promoting a freshly-opened card, and it is documented inline where it occurs.

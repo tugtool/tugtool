@@ -406,7 +406,7 @@ export function TugSheetContent({
       // parent chain is correctly set). Fallback: no provider → call
       // closeSheet directly.
       if (manager) {
-        manager.dispatch({
+        manager.sendToFirstResponder({
           action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",
@@ -731,7 +731,7 @@ export function useTugSheet(): {
     const close = (result?: string) => {
       resolveHook(result);
       if (manager) {
-        manager.dispatch({
+        manager.sendToFirstResponder({
           action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",

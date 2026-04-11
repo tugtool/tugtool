@@ -137,7 +137,7 @@ describe("TugTooltip – observeDispatch external dismiss", () => {
     // act() flushes the state update and any resulting effects before
     // we read the DOM.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     // Radix unmounts the content on close (no exit animation in
@@ -182,7 +182,7 @@ describe("TugTooltip – subscription lifecycle", () => {
     // Initially closed: no observer subscribed, dispatching is a no-op
     // for this tooltip. The content element stays null.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
     expect(getTooltipContent()).toBeNull();
   });
@@ -196,7 +196,7 @@ describe("TugTooltip – subscription lifecycle", () => {
 
     // First dispatch closes the tooltip.
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
     const afterFirst = getTooltipContent();
     if (afterFirst !== null) {
@@ -209,7 +209,7 @@ describe("TugTooltip – subscription lifecycle", () => {
     // proof that the subscription does not leak.
     expect(() => {
       act(() => {
-        manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+        manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
       });
     }).not.toThrow();
     const afterSecond = getTooltipContent();
@@ -239,7 +239,7 @@ describe("TugTooltip – controlled-mode forwarding", () => {
     expect(getTooltipContent()?.getAttribute("data-state")).toMatch(/^(delayed-open|instant-open)$/);
 
     act(() => {
-      manager.dispatch({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
+      manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_SETTINGS, phase: "discrete" });
     });
 
     // The component does not mutate its internal mirror in controlled

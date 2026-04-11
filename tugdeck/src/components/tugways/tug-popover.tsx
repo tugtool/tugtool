@@ -237,7 +237,7 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
       if (!nextOpen) {
         setOpen(false);
         if (manager) {
-          manager.dispatch({
+          manager.sendToFirstResponder({
             action: TUG_ACTIONS.CANCEL_DIALOG,
             sender: senderId,
             phase: "discrete",
@@ -513,7 +513,7 @@ export function useTugPopoverClose(): () => void {
   return React.useCallback(() => {
     if (!ctx) return;
     if (manager) {
-      const handled = manager.dispatch({
+      const handled = manager.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: ctx.senderId,
         phase: "discrete",

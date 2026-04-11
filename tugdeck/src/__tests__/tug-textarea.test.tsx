@@ -166,7 +166,7 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     const id = textarea.getAttribute("data-responder-id") as string;
 
     textarea.setSelectionRange(2, 3);
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.SELECT_ALL, phase: "discrete" });
 
     expect(textarea.selectionStart).toBe(2);
     expect(textarea.selectionEnd).toBe(3);
@@ -182,7 +182,7 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     );
     const id = getTextarea(container, "cut-ta").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.CUT, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -198,7 +198,7 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     );
     const id = getTextarea(container, "copy-ta").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.COPY, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(1);
     expect(execCommandCalls[0].command).toBe("copy");
@@ -211,7 +211,7 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     );
     const id = getTextarea(container, "undo-ta").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -225,7 +225,7 @@ describe("TugTextarea – action handlers (A2.7)", () => {
     );
     const id = getTextarea(container, "redo-ta").getAttribute("data-responder-id") as string;
 
-    const result = manager.dispatchToForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
+    const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
     expect(execCommandCalls.length).toBe(0);
     result.continuation?.();
@@ -251,7 +251,7 @@ describe("TugTextarea – disabled guard (A2.7)", () => {
 
     textarea.setSelectionRange(1, 2);
     for (const action of ["cut", "copy", "paste", "undo", "redo", "select-all"] as const) {
-      const result = manager.dispatchToForContinuation(id, { action, phase: "discrete" });
+      const result = manager.sendToTargetForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }
 

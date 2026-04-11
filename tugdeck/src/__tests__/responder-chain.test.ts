@@ -48,7 +48,7 @@ describe("register", () => {
     const mgr = makeManager();
     let called = false;
     mgr.register({ id: "root", parentId: null, actions: asActions({ foo: (_event: ActionEvent) => { called = true; } }) });
-    mgr.dispatch({ action: asAction("foo"), phase: "discrete" });
+    mgr.sendToFirstResponder({ action: asAction("foo"), phase: "discrete" });
     expect(called).toBe(true);
   });
 
@@ -100,7 +100,7 @@ describe("unregister", () => {
     let called = false;
     mgr.register({ id: "root", parentId: null, actions: asActions({ bar: (_event: ActionEvent) => { called = true; } }) });
     mgr.unregister("root");
-    mgr.dispatch({ action: asAction("bar"), phase: "discrete" });
+    mgr.sendToFirstResponder({ action: asAction("bar"), phase: "discrete" });
     expect(called).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe("dispatch", () => {
     const mgr = makeManager();
     const calls: string[] = [];
     mgr.register({ id: "root", parentId: null, actions: asActions({ ping: (_event: ActionEvent) => { calls.push("ping"); } }) });
-    const result = mgr.dispatch({ action: asAction("ping"), phase: "discrete" });
+    const result = mgr.sendToFirstResponder({ action: asAction("ping"), phase: "discrete" });
     expect(result).toBe(true);
     expect(calls).toEqual(["ping"]);
   });
@@ -157,7 +157,7 @@ describe("dispatch", () => {
     mgr.register({ id: "child", parentId: "root", actions: {} });
     mgr.makeFirstResponder("child");
 
-    const result = mgr.dispatch({ action: asAction("bubbled"), phase: "discrete" });
+    const result = mgr.sendToFirstResponder({ action: asAction("bubbled"), phase: "discrete" });
     expect(result).toBe(true);
     expect(parentHandled).toBe(true);
   });
@@ -165,7 +165,7 @@ describe("dispatch", () => {
   it("returns false when no handler found in chain", () => {
     const mgr = makeManager();
     mgr.register({ id: "root", parentId: null, actions: {} });
-    const result = mgr.dispatch({ action: asAction("no-such-action"), phase: "discrete" });
+    const result = mgr.sendToFirstResponder({ action: asAction("no-such-action"), phase: "discrete" });
     expect(result).toBe(false);
   });
 
@@ -181,7 +181,7 @@ describe("dispatch", () => {
         return true; // claims it can handle everything
       },
     });
-    const result = mgr.dispatch({ action: asAction("anything"), phase: "discrete" });
+    const result = mgr.sendToFirstResponder({ action: asAction("anything"), phase: "discrete" });
     expect(result).toBe(false);
     expect(canHandleCalled).toBe(false);
   });
@@ -351,7 +351,7 @@ describe("dispatchTo", () => {
     let handled = false;
     mgr.register({ id: "root", parentId: null, actions: {} });
     mgr.register({ id: "target", parentId: "root", actions: asActions({ save: (_event: ActionEvent) => { handled = true; } }) });
-    const result = mgr.dispatchTo("target", { action: asAction("save"), phase: "discrete" });
+    const result = mgr.sendToTarget("target", { action: asAction("save"), phase: "discrete" });
     expect(result).toBe(true);
     expect(handled).toBe(true);
   });
@@ -372,7 +372,7 @@ describe("dispatchTo", () => {
       parentId: "root",
       actions: asActions({ other: (_event: ActionEvent) => { calls.push("target-other"); } }),
     });
-    const result = mgr.dispatchTo("target", { action: asAction("save"), phase: "discrete" });
+    const result = mgr.sendToTarget("target", { action: asAction("save"), phase: "discrete" });
     expect(result).toBe(true);
     expect(calls).toEqual(["root"]);
   });
@@ -385,15 +385,15 @@ describe("dispatchTo", () => {
       parentId: "root",
       actions: asActions({ save: (_event: ActionEvent) => {} }),
     });
-    const result = mgr.dispatchTo("target", { action: asAction("delete"), phase: "discrete" });
+    const result = mgr.sendToTarget("target", { action: asAction("delete"), phase: "discrete" });
     expect(result).toBe(false);
   });
 
   it("throws Error with descriptive message when target is not registered", () => {
     const mgr = makeManager();
     mgr.register({ id: "root", parentId: null, actions: {} });
-    expect(() => mgr.dispatchTo("ghost", { action: asAction("save"), phase: "discrete" })).toThrow(
-      'dispatchTo: target "ghost" is not registered'
+    expect(() => mgr.sendToTarget("ghost", { action: asAction("save"), phase: "discrete" })).toThrow(
+      'sendToTargetForContinuation: target "ghost" is not registered'
     );
   });
 
@@ -416,7 +416,7 @@ describe("dispatchTo", () => {
     });
     // First responder is root (auto-promoted), but we dispatch directly to target.
     expect(mgr.getFirstResponder()).toBe("root");
-    mgr.dispatchTo("target", { action: asAction("save"), phase: "discrete" });
+    mgr.sendToTarget("target", { action: asAction("save"), phase: "discrete" });
     expect(calls).toEqual(["target"]);
   });
 
@@ -438,7 +438,7 @@ describe("dispatchTo", () => {
       parentId: "root",
       actions: {},
     });
-    const result = mgr.dispatchToForContinuation("target", {
+    const result = mgr.sendToTargetForContinuation("target", {
       action: asAction("cut"),
       phase: "discrete",
     });
@@ -457,7 +457,7 @@ describe("dispatchTo", () => {
     mgr.register({ id: "root", parentId: null, actions: {} });
     mgr.register({ id: "target", parentId: "root", actions: {} });
     // Unhandled: walk falls off the root, handled = false.
-    mgr.dispatchTo("target", { action: asAction("delete"), phase: "discrete" });
+    mgr.sendToTarget("target", { action: asAction("delete"), phase: "discrete" });
     expect(observerCalls).toEqual([{ action: "delete", handled: false }]);
   });
 });
@@ -499,7 +499,7 @@ describe("nodeCanHandle", () => {
 describe("edge cases", () => {
   it("dispatch returns false when firstResponderId is null", () => {
     const mgr = makeManager();
-    expect(mgr.dispatch({ action: asAction("foo"), phase: "discrete" })).toBe(false);
+    expect(mgr.sendToFirstResponder({ action: asAction("foo"), phase: "discrete" })).toBe(false);
   });
 
   it("unregister non-first-responder does not change firstResponderId", () => {
@@ -523,7 +523,7 @@ describe("edge cases", () => {
         b: (_event: ActionEvent) => { calls.push("b"); },
       }),
     });
-    mgr.dispatch({ action: asAction("a"), phase: "discrete" });
+    mgr.sendToFirstResponder({ action: asAction("a"), phase: "discrete" });
     expect(calls).toEqual(["a"]);
   });
 });

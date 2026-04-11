@@ -18,7 +18,7 @@
  *
  * ## Known limitation: continuation ordering
  *
- * TugPopupButton dispatches via `manager.dispatchToForContinuation` and
+ * TugPopupButton dispatches via `manager.sendToTargetForContinuation` and
  * runs any returned continuation callback immediately after the dispatch
  * returns. This differs from the `TugEditorContextMenu` precedent in one
  * detail: the precedent dispatches **before** the blink animation so the

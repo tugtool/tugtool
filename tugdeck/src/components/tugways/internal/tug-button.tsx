@@ -107,7 +107,7 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * `useControlDispatch` (the standard targeted dispatch pattern).
    * When set, the button dispatches to the named node instead.
    *
-   * [D03] dispatchTo throws on unregistered target
+   * [D03] sendToTarget throws on unregistered target
    * [D04] TugButton target prop requires action prop
    * [D07] nodeCanHandle for per-node capability query
    */
@@ -313,7 +313,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       // Chain-action mode: targeted dispatch. [D01]
       // Explicit `target` prop overrides the default parent dispatch.
       if (target !== undefined) {
-        manager!.dispatchTo(target, { action, phase: "discrete" });
+        manager!.sendToTarget(target, { action, phase: "discrete" });
       } else {
         controlDispatch({ action, phase: "discrete" });
       }

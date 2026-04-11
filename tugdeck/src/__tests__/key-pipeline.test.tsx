@@ -292,8 +292,8 @@ describe("key pipeline – capture-phase (stage 1)", () => {
       );
     });
 
-    const dispatchSpy = mock(manager.dispatch.bind(manager));
-    manager.dispatch = dispatchSpy;
+    const dispatchSpy = mock(manager.sendToFirstResponder.bind(manager));
+    manager.sendToFirstResponder = dispatchSpy;
 
     act(() => {
       fireKeydown({ code: "KeyA" });
@@ -328,8 +328,8 @@ describe("key pipeline – bubble-phase input guard", () => {
       ));
     });
 
-    const dispatchSpy = mock(manager.dispatch.bind(manager));
-    manager.dispatch = dispatchSpy;
+    const dispatchSpy = mock(manager.sendToFirstResponder.bind(manager));
+    manager.sendToFirstResponder = dispatchSpy;
 
     const input = getByTestId("text-input");
 

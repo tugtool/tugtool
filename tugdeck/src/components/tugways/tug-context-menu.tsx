@@ -153,7 +153,7 @@ function synthesizeEscapeDismiss(): void {
  * and chain-reactive dismissal.
  *
  * Items carry typed `action: TugAction` (+ optional payload); selection
- * dispatches via `manager.dispatchForContinuation` after the shared
+ * dispatches via `manager.sendToFirstResponderForContinuation` after the shared
  * double-blink animation. While open, the menu subscribes to
  * `observeDispatch` so external chain activity dismisses it (menu's own
  * activations are guarded by `blinkingRef`).
