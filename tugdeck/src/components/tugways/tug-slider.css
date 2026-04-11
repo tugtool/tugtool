@@ -70,9 +70,6 @@ body {
   gap: var(--tug-space-sm);
 }
 
-.tug-slider-stacked .tug-value-input {
-  width: 56px;
-}
 
 
 /* ============================================================================

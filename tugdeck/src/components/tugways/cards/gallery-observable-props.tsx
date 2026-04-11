@@ -44,6 +44,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
@@ -239,26 +240,27 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
     });
   };
 
-  const handleFontSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const num = Number(e.target.value);
-    manager.sendToTarget(cardId, {
-      action: TUG_ACTIONS.SET_PROPERTY,
-      phase: "discrete",
-      value: {
-        path: "style.fontSize",
-        value: num,
-        source: "inspector",
-      },
-    });
-  };
-
   // L11 migration via useResponderForm — the font-family popup dispatches
   // setValue with a string payload; its binding does the explicit-target
   // setProperty dispatch to this specific cardId. This is the same
   // inspector pattern the original card demonstrated, now routed via the
   // chain-dispatch path from TugPopupButton instead of a direct callback.
+  const fontSizeInputId = useId();
   const fontFamilyPopupId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
+    setValueNumber: {
+      [fontSizeInputId]: (value: number) => {
+        manager.sendToTarget(cardId, {
+          action: TUG_ACTIONS.SET_PROPERTY,
+          phase: "discrete",
+          value: {
+            path: "style.fontSize",
+            value,
+            source: "inspector",
+          },
+        });
+      },
+    },
     setValueString: {
       [fontFamilyPopupId]: (value: string) => {
         manager.sendToTarget(cardId, {
@@ -334,25 +336,15 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
 
         {/* Font Size */}
         <div className="cg-control-group" data-testid="inspector-font-size-group">
-          <TugLabel size="2xs" color="muted" htmlFor="obs-props-font-size">{DEMO_SCHEMA[1].label}</TugLabel>
-          <input
-            id="obs-props-font-size"
-            type="number"
-            className="cg-control-input"
+          <TugLabel size="2xs" color="muted">{DEMO_SCHEMA[1].label}</TugLabel>
+          <TugValueInput
+            value={fontSize}
+            senderId={fontSizeInputId}
             min={DEMO_SCHEMA[1].min}
             max={DEMO_SCHEMA[1].max}
-            value={fontSize}
+            step={1}
+            size="sm"
             data-testid="inspector-font-size"
-            onChange={handleFontSizeChange}
-          />
-          <input
-            type="range"
-            className="cg-position-slider"
-            min={DEMO_SCHEMA[1].min}
-            max={DEMO_SCHEMA[1].max}
-            value={fontSize}
-            data-testid="inspector-font-size-range"
-            onChange={handleFontSizeChange}
           />
         </div>
 

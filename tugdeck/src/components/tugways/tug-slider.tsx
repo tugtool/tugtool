@@ -510,6 +510,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             step={step}
             size={size}
             disabled={effectiveDisabled}
+            style={layout === "stacked" && label ? { width: "56px" } : undefined}
           />
         )}
       </>
