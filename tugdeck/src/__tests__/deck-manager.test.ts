@@ -1537,3 +1537,161 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     manager = new DeckManager(container, connection);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Explicit set membership (5.5a)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.getCardSet", () => {
+  it("returns empty array for a card not in any set", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello")!;
+    expect(manager.getCardSet(cardId)).toEqual([]);
+  });
+
+  it("returns the full set including the queried card", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    const setA = manager.getCardSet(a);
+    expect(setA).toContain(a);
+    expect(setA).toContain(b);
+    expect(setA.length).toBe(2);
+  });
+
+  it("returns empty array for an unknown card ID", () => {
+    expect(manager.getCardSet("nonexistent")).toEqual([]);
+  });
+});
+
+describe("DeckManager.joinSet", () => {
+  it("creates a set from two solo cards", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    expect(manager.getDeckState().sets).toEqual([[a, b]]);
+  });
+
+  it("is a no-op when called with fewer than 2 cards", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    manager.joinSet([a]);
+    expect(manager.getDeckState().sets).toEqual([]);
+  });
+
+  it("merges two existing sets when a card bridges them", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    const c = manager.addCard("hello")!;
+    // Create two separate sets.
+    manager.joinSet([a, b]);
+    manager.joinSet([c, b]); // b bridges set {a,b} and solo c
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(1);
+    const merged = sets[0];
+    expect(merged).toContain(a);
+    expect(merged).toContain(b);
+    expect(merged).toContain(c);
+  });
+
+  it("is idempotent when cards are already in the same set", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    manager.joinSet([a, b]);
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(1);
+    expect(sets[0].length).toBe(2);
+  });
+
+  it("preserves unrelated sets", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    const c = manager.addCard("hello")!;
+    const d = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    manager.joinSet([c, d]);
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(2);
+  });
+});
+
+describe("DeckManager.removeFromSet", () => {
+  it("removes a card from a 3-member set, leaving 2 members", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    const c = manager.addCard("hello")!;
+    manager.joinSet([a, b, c]);
+    manager.removeFromSet(a);
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(1);
+    expect(sets[0]).toContain(b);
+    expect(sets[0]).toContain(c);
+    expect(sets[0]).not.toContain(a);
+  });
+
+  it("dissolves a 2-member set when one card is removed", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    manager.removeFromSet(a);
+    expect(manager.getDeckState().sets).toEqual([]);
+  });
+
+  it("is a no-op for a card not in any set", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const versionBefore = manager.getVersion();
+    manager.removeFromSet(a);
+    // No state change — version should not increment.
+    expect(manager.getVersion()).toBe(versionBefore);
+  });
+
+  it("does not affect unrelated sets", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    const c = manager.addCard("hello")!;
+    const d = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    manager.joinSet([c, d]);
+    manager.removeFromSet(a); // dissolves {a,b}, leaves {c,d}
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(1);
+    expect(sets[0]).toContain(c);
+    expect(sets[0]).toContain(d);
+  });
+});
+
+describe("DeckManager.removeCard — set cleanup", () => {
+  it("removes a card from its set and dissolves if < 2 remain", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    manager.joinSet([a, b]);
+    manager.handleCardClosed(a);
+    expect(manager.getDeckState().sets).toEqual([]);
+    expect(manager.getDeckState().cards.find((c) => c.id === a)).toBeUndefined();
+  });
+
+  it("removes a card from a 3-member set, leaving the set intact", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const a = manager.addCard("hello")!;
+    const b = manager.addCard("hello")!;
+    const c = manager.addCard("hello")!;
+    manager.joinSet([a, b, c]);
+    manager.handleCardClosed(a);
+    const sets = manager.getDeckState().sets;
+    expect(sets.length).toBe(1);
+    expect(sets[0]).toContain(b);
+    expect(sets[0]).toContain(c);
+    expect(sets[0]).not.toContain(a);
+  });
+});
