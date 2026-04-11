@@ -34,7 +34,7 @@ import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -147,24 +147,22 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
 
     const ctx: TugRadioGroupContextValue = { size, disabled: effectiveDisabled };
 
-    // Chain dispatch [L11]: on user activation (click or Radix-handled
-    // arrow keys), dispatch `selectValue` through the responder chain
-    // with the newly selected item id as `value` and the stable sender
-    // id. No-op when no ResponderChainProvider is mounted.
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `selectValue` to
+    // the parent responder with the newly selected item id as `value`
+    // and a stable sender id. No-op outside a provider.
+    const controlDispatch = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const handleValueChange = useCallback(
       (nextValue: string) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.SELECT_VALUE,
           value: nextValue,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     return (

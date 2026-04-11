@@ -36,7 +36,7 @@ import {
   useGroupKeyboardNav,
   renderGroupItemContent,
 } from "./internal/tug-group-utils";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -159,24 +159,22 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       indEl.style.width = `${segEl.offsetWidth}px`;
     }, [value, items]);
 
-    // Chain dispatch [L11]: selection changes dispatch `selectValue`.
-    // Arrow keys in this component move selection (not just focus),
-    // so arrow-key navigation also dispatches `selectValue` via the
-    // same handler. No separate focusNext/focusPrevious dispatch.
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `selectValue` to
+    // the parent responder. Arrow keys move selection (not just
+    // focus), so they also dispatch via the same handler.
+    const controlDispatch = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const dispatchSelectValue = useCallback(
       (nextValue: string) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.SELECT_VALUE,
           value: nextValue,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // ---- Keyboard navigation ----

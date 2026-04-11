@@ -27,7 +27,7 @@ import { getAllRegistrations } from "@/card-registry";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuEntry, TugPopupMenuItem } from "./internal/tug-popup-menu";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
@@ -364,51 +364,45 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   }: TugTabBarProps,
   ref,
 ) {
-  // Chain dispatch [L11]: tab select/close actions are dispatched through
-  // the responder chain. The enclosing card's responder handles them by
-  // matching `event.sender` against this tab bar's senderId. If no
-  // ResponderChainProvider is mounted (unit tests, standalone preview)
-  // dispatch is a no-op — TugTabBar still renders correctly but the
-  // user's clicks have no observable effect, which is the expected
-  // standalone-preview behavior.
-  const manager = useResponderChain();
+  // Chain dispatch [L11]: targeted dispatch of tab select/close/add
+  // actions to the parent responder. The enclosing card's responder
+  // handles them by matching `event.sender` against this tab bar's
+  // senderId. Outside a provider the dispatch is a no-op.
+  const controlDispatch = useControlDispatch();
   const fallbackSenderId = useId();
   const effectiveSenderId = senderId ?? fallbackSenderId;
   const dispatchSelectTab = useCallback(
     (tabId: string) => {
-      if (!manager) return;
-      manager.dispatch({
+      controlDispatch({
         action: TUG_ACTIONS.SELECT_TAB,
         value: tabId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
     },
-    [manager, effectiveSenderId],
+    [controlDispatch, effectiveSenderId],
   );
   const dispatchCloseTab = useCallback(
     (tabId: string) => {
-      if (!manager) return;
-      manager.dispatch({
+      controlDispatch({
         action: TUG_ACTIONS.CLOSE_TAB,
         value: tabId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
     },
-    [manager, effectiveSenderId],
+    [controlDispatch, effectiveSenderId],
   );
   const dispatchAddTab = useCallback(
     (componentId: string) => {
-      if (!manager) return;
-      manager.dispatch({
+      controlDispatch({
         action: TUG_ACTIONS.ADD_TAB,
         value: componentId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
     },
-    [manager, effectiveSenderId],
+    [controlDispatch, effectiveSenderId],
   );
   // Ref for the tab bar container, used by useTabOverflow. [D02]
   const barRef = useRef<HTMLDivElement>(null);

@@ -122,7 +122,7 @@ import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { TugValueInput } from "./tug-value-input";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -248,7 +248,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     // in progress via `draggingRef`, flipped on `onPointerDown` and
     // cleared in `handleValueCommit`. See the module docstring for
     // the full sequence diagram.
-    const manager = useResponderChain();
+    const controlDispatch = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const draggingRef = useRef(false);
@@ -267,15 +267,14 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
         v: number,
         phase: "begin" | "change" | "commit" | "discrete" | "cancel",
       ) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.SET_VALUE,
           value: v,
           sender: effectiveSenderId,
           phase,
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // Live ref to the latest `dispatchSetValue` so the window-level

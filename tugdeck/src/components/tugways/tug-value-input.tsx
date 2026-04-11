@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { useTextInputResponder } from "./use-text-input-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
@@ -365,25 +365,22 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
 
     // ---- Chain dispatch [L11] ----
     //
-    // `useResponderChain()` returns `null` outside a provider. The
-    // dispatchCommit callback guards on that and becomes a no-op,
-    // so `useValueInputEditing` below can wire it into blur/Enter/
-    // arrow-key handlers unconditionally — no provider means no
-    // dispatch, native editing is unaffected.
-    const manager = useResponderChain();
+    // Targeted dispatch of `setValue` to the parent responder on
+    // commit paths (blur, Enter, arrow key). Outside a provider
+    // the dispatch is a no-op — native editing is unaffected.
+    const controlDispatch = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const dispatchCommit = useCallback(
       (committed: number) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.SET_VALUE,
           value: committed,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     const editing = useValueInputEditing({

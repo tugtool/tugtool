@@ -25,7 +25,7 @@ import React, { useCallback, useId } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -152,26 +152,22 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Chain dispatch [L11]: on user activation, dispatch a `toggle`
-    // action through the responder chain with the new boolean state
-    // as `value` and a stable sender id. If no ResponderChainProvider
-    // is mounted (e.g. unit tests, standalone preview), the dispatch
-    // is a no-op — the Radix primitive still tracks internal state
-    // for uncontrolled usage.
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `toggle` to the
+    // parent responder with the new boolean state as `value` and a
+    // stable sender id. Outside a provider the dispatch is a no-op.
+    const controlDispatch = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const handleCheckedChange = useCallback(
       (next: boolean) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.TOGGLE,
           value: next,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // Role injection — every path injects surface-toggle-track tokens. [L06]

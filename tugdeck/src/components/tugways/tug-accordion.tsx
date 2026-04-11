@@ -37,7 +37,7 @@ import * as Accordion from "@radix-ui/react-accordion";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- TugAccordion Props (discriminated union) ----
@@ -126,42 +126,35 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Chain dispatch [L11]: on user toggle, dispatch a `toggleSection`
-    // action through the responder chain. Single-mode payload is `string`
-    // (the open item id, or "" when collapsed); multi-mode payload is
-    // `string[]` (the set of currently open item ids). The responder
-    // handler narrows on shape via the `toggleSectionSingle` /
-    // `toggleSectionMulti` slots in `useResponderForm`.
-    //
-    // Uncontrolled accordions still dispatch — Radix tracks the open set
-    // internally and we just notify the chain. If no responder cares,
-    // the dispatch walks past unhandled (which is correct).
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `toggleSection` to
+    // the parent responder. Single-mode payload is `string` (the open
+    // item id, or "" when collapsed); multi-mode payload is `string[]`.
+    // Uncontrolled accordions still dispatch — Radix tracks the open
+    // set internally and we just notify the chain.
+    const controlDispatch = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const handleSingleValueChange = useCallback(
       (value: string) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.TOGGLE_SECTION,
           value,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
     const handleMultiValueChange = useCallback(
       (value: string[]) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.TOGGLE_SECTION,
           value,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // Build Radix-compatible props with effectiveDisabled and our internal

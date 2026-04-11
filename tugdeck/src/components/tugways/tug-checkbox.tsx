@@ -27,7 +27,7 @@ import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -157,31 +157,27 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Chain dispatch [L11]: on user activation, dispatch a `toggle`
-    // action through the responder chain with the new boolean state
-    // as `value` and a stable sender id. If no ResponderChainProvider
-    // is mounted (e.g. unit tests, standalone preview), the dispatch
-    // is a no-op — the Radix primitive still tracks internal state
-    // for uncontrolled usage.
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `toggle` to the
+    // parent responder with the new boolean state as `value` and a
+    // stable sender id. Outside a provider the dispatch is a no-op.
+    const controlDispatch = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const handleCheckedChange = useCallback(
       (next: TugCheckedState) => {
-        if (!manager) return;
         // Radix only emits `boolean` on user activation; the
         // "indeterminate" state is programmatic-only. Coerce
         // defensively so the `toggle` payload contract (boolean) is
         // never violated even if Radix emits it unexpectedly.
         const nextBool = next === true;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.TOGGLE,
           value: nextBool,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // Role injection — every path injects surface-toggle-primary tokens. [L06]

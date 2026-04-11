@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useResponderChain } from "../responder-chain-provider";
 import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
+import { useControlDispatch } from "../use-control-dispatch";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -261,7 +262,10 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // ---- Chain-action mode: unconditional hook calls (React rules of hooks) ----
 
   // useResponderChain() returns the manager or null (safe outside provider).
+  // Needed for canHandle/validateAction queries below.
   const manager = useResponderChain();
+  // Targeted dispatch to parent responder — same hook all controls use.
+  const controlDispatch = useControlDispatch();
 
   // useSyncExternalStore() called unconditionally on every render. [L02]
   // When the chain is inactive (no manager, or no action prop), use the
@@ -311,19 +315,12 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     if (isChainDisabled) return;
 
     if (chainActive && chainCanHandle) {
-      // Chain-action mode: dispatch through the responder chain with ActionEvent.
-      // [D01] ActionEvent is the sole dispatch currency
+      // Chain-action mode: targeted dispatch. [D01]
+      // Explicit `target` prop overrides the default parent dispatch.
       if (target !== undefined) {
-        // Explicit-target mode: dispatch directly to the named node.
-        // [D03] dispatchTo throws on unregistered target
-        const handled = manager.dispatchTo(target, { action, phase: "discrete" });
-        if (!handled && process.env.NODE_ENV !== "production") {
-          console.warn(
-            `TugButton: dispatchTo("${target}", "${action}") returned false -- target does not handle this action`
-          );
-        }
+        manager!.dispatchTo(target, { action, phase: "discrete" });
       } else {
-        manager.dispatch({ action, phase: "discrete" });
+        controlDispatch({ action, phase: "discrete" });
       }
       return;
     }

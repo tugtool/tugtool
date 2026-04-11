@@ -41,7 +41,7 @@ import {
   renderGroupItemContent,
   useGroupKeyboardNav,
 } from "./internal/tug-group-utils";
-import { useResponderChain } from "./responder-chain-provider";
+import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 // ---- Types ----
@@ -149,29 +149,27 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       return firstEnabled?.value ?? items[0]?.value ?? "";
     });
 
-    // Chain dispatch [L11]: user activation dispatches `setValue` with
-    // the new `string[]` as value. Arrow-key navigation dispatches
-    // `focusNext`/`focusPrevious` via the chain as observable events.
-    const manager = useResponderChain();
+    // Chain dispatch [L11]: targeted dispatch of `setValue` to the
+    // parent responder. Arrow-key navigation dispatches
+    // `focusNext`/`focusPrevious` as observable events.
+    const controlDispatch = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
 
     const dispatchSetValue = useCallback(
       (next: string[]) => {
-        if (!manager) return;
-        manager.dispatch({
+        controlDispatch({
           action: TUG_ACTIONS.SET_VALUE,
           value: next,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     const dispatchFocusDirection = useCallback(
       (direction: "next" | "previous" | "first" | "last") => {
-        if (!manager) return;
         // Map Home/End to focusNext/focusPrevious since the vocabulary
         // doesn't distinguish first/last. Observers that care about
         // direction get it; observers that just need "something moved"
@@ -179,13 +177,13 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
         const action = (direction === "next" || direction === "last")
           ? "focus-next"
           : "focus-previous";
-        manager.dispatch({
+        controlDispatch({
           action,
           sender: effectiveSenderId,
           phase: "discrete",
         });
       },
-      [manager, effectiveSenderId],
+      [controlDispatch, effectiveSenderId],
     );
 
     // ---- Toggle logic ----
