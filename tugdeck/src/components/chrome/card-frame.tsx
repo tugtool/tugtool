@@ -60,6 +60,32 @@ function snapshotCardRects(
 }
 
 // ---------------------------------------------------------------------------
+// findSharedEdgesInExplicitSets
+// ---------------------------------------------------------------------------
+
+/**
+ * Find shared edges only among cards that belong to the same explicit set.
+ *
+ * For each explicit set in the store, filters `rects` to that set's members
+ * and runs `findSharedEdges` on the subset. Returns the concatenation of all
+ * per-set results. Cards not in any explicit set are never considered.
+ */
+function findSharedEdgesInExplicitSets(
+  rects: { id: string; rect: Rect }[],
+  store: IDeckManagerStore,
+): SharedEdge[] {
+  const edges: SharedEdge[] = [];
+  const snapshot = store.getSnapshot();
+  for (const setIds of snapshot.sets) {
+    const setRects = rects.filter((r) => setIds.includes(r.id));
+    if (setRects.length >= 2) {
+      edges.push(...findSharedEdges(setRects));
+    }
+  }
+  return edges;
+}
+
+// ---------------------------------------------------------------------------
 // Shadow extension constant
 //
 // px beyond border-box for exterior edges in clip-path: inset().
@@ -1339,17 +1365,7 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     });
   });
 
-  // Restrict shared-edge detection to only cards that are members of the same
-  // explicit set. This prevents coincidental proximity from creating visual set
-  // treatment (squared corners, clip-path shadow control).
-  const sharedEdges: SharedEdge[] = [];
-  const snapshot = store.getSnapshot();
-  for (const setIds of snapshot.sets) {
-    const setRects = rects.filter((r) => setIds.includes(r.id));
-    if (setRects.length >= 2) {
-      sharedEdges.push(...findSharedEdges(setRects));
-    }
-  }
+  const sharedEdges = findSharedEdgesInExplicitSets(rects, store);
   const sets = computeSets(rects.map((c) => c.id), sharedEdges);
 
   // Build a set membership lookup: cardId → true if in any set.
@@ -1519,15 +1535,7 @@ function postActionSetUpdate(
     });
   });
 
-  // Restrict shared-edge detection to explicit set members only.
-  const postSharedEdges: SharedEdge[] = [];
-  const snapshot = store.getSnapshot();
-  for (const setIds of snapshot.sets) {
-    const setRects = postRects.filter((r) => setIds.includes(r.id));
-    if (setRects.length >= 2) {
-      postSharedEdges.push(...findSharedEdges(setRects));
-    }
-  }
+  const postSharedEdges = findSharedEdgesInExplicitSets(postRects, store);
   const postSets = computeSets(
     postRects.map((c) => c.id),
     postSharedEdges,
