@@ -39,14 +39,14 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
  * - [D40] Local display state uses useState -- local component state, not
  *   external store state, so useSyncExternalStore does not apply
  * - [D01] ActionEvent is the sole dispatch currency
- * - [D03] dispatchTo throws on unregistered target (ensured by layout-effect
+ * - [D03] sendToTarget throws on unregistered target (ensured by layout-effect
  *   registration before any click can fire)
  *
  * Note on stale closures: the demoAction handler closes over the useState
  * setter. This is safe because React guarantees setter identity stability
  * across re-renders -- the setter never changes.
  *
- * **Authoritative reference:** [D01] ActionEvent dispatch, [D03] dispatchTo.
+ * **Authoritative reference:** [D01] ActionEvent dispatch, [D03] sendToTarget.
  */
 function ActionEventDemo() {
   const manager = useRequiredResponderChain();

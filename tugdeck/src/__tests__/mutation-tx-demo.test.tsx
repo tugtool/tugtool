@@ -127,7 +127,7 @@ describe("GalleryMutationTx – color input dispatches ActionEvents", () => {
 
     // Simulate commit by calling the manager directly -- verifies that commitTransaction
     // is available and removes the transaction from the map. The onChange handler
-    // calls dispatchTo → commitTransaction; here we verify the manager side directly
+    // calls sendToTarget → commitTransaction; here we verify the manager side directly
     // since fireEvent.change on <input type="color"> has unreliable behavior in
     // happy-dom (the native change event may not propagate through React's synthetic
     // event system for color inputs in the test environment).

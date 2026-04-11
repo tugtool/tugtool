@@ -275,7 +275,7 @@ export function TugEditorContextMenu({
    *    synchronously — inside the current user gesture. The first
    *    responder's handler runs inside the mousedown/keydown stack,
    *    so clipboard APIs and execCommand work. If the handler returns
-   *    a continuation callback (see ActionHandler), dispatchForContinuation
+   *    a continuation callback (see ActionHandler), sendToFirstResponderForContinuation
    *    exposes it here.
    *
    * 2. Play the activation blink. When it finishes, run the optional

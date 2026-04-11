@@ -155,7 +155,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   //     observer would re-dispatch or apply secondary effects here.
   //   - source === 'inspector': the change came from the inspector; the
   //     observer SKIPS re-dispatch to break the circular loop:
-  //       inspector → dispatchTo → Tugcard.setProperty → store.set →
+  //       inspector → sendToTarget → Tugcard.setProperty → store.set →
   //       notify observers → (skip) → no re-dispatch back to inspector.
   //
   // The observer writes the last change record into a DOM ref for live display
@@ -222,7 +222,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   //
   // The action routes through the parent Tugcard's setProperty handler, which
   // calls store.set(path, value, source). This exercises the full round-trip:
-  //   inspector control → dispatchTo → Tugcard.setProperty → store.set →
+  //   inspector control → sendToTarget → Tugcard.setProperty → store.set →
   //   observer notification → useSyncExternalStore re-render. [D04]
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {

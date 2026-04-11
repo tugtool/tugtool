@@ -344,7 +344,7 @@ describe("TugAlert – TugAlertProvider + useTugAlert singleton", () => {
     // walks from the alert (promoted as first responder via the
     // button-click DOM walk) and matches the action name. For this
     // test, no pointerdown has fired so first responder is unset; we
-    // dispatch directly via dispatchTo is not available here, so we
+    // dispatch directly via sendToTarget is not available here, so we
     // instead click the rendered confirm button.
     const confirmBtn = getButtonByText("OK");
     expect(confirmBtn).not.toBeNull();

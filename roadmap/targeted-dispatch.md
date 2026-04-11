@@ -103,7 +103,7 @@ This is safe because:
 
 ### What about the "fresh launch" problem?
 
-On fresh launch, DeckCanvas sets the first responder to the card via `makeFirstResponder`. Controls that use `dispatchTo(parentResponderId)` bypass the first responder entirely — they always reach their parent handler. The "fresh launch" problem disappears because controls never depended on the first responder in the first place.
+On fresh launch, DeckCanvas sets the first responder to the card via `makeFirstResponder`. Controls that use `sendToTarget(parentResponderId)` bypass the first responder entirely — they always reach their parent handler. The "fresh launch" problem disappears because controls never depended on the first responder in the first place.
 
 ### Summary of the two dispatch modes
 

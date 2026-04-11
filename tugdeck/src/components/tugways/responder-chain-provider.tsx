@@ -130,7 +130,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (binding.preventDefaultOnMatch) {
         event.preventDefault();
       }
-      // Use dispatchForContinuation so two-phase action handlers (those
+      // Use sendToFirstResponderForContinuation so two-phase action handlers (those
       // that return a continuation callback from their sync body — e.g.
       // cut: synchronously write clipboard, continuation deletes selection)
       // run to completion under keyboard shortcuts. The context menu

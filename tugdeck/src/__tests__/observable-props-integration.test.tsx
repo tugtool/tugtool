@@ -6,7 +6,7 @@
  *
  * Tasks verified:
  * - Task 1: Inspector reads match card state — controls display current values
- * - Task 2: Inspector writes update the card — dispatchTo → store → re-render
+ * - Task 2: Inspector writes update the card — sendToTarget → store → re-render
  * - Task 3: Card-side changes notify inspector — store.set → controls update
  * - Task 4: Source attribution prevents circular updates (covered in step-4
  *           tests; cross-referenced here via the no-loop assertion)
@@ -454,7 +454,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("dispatchTo setProperty with backgroundColor '#ff0000' updates the target", () => {
+  it("sendToTarget setProperty with backgroundColor '#ff0000' updates the target", () => {
     const { container, manager } = renderObservableProps("obs-t6a");
 
     // This mirrors what a browser console call would do:
@@ -475,7 +475,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
     expect(container.querySelector("[data-testid='state-bg-color']")?.textContent).toBe("#ff0000");
   });
 
-  it("dispatchTo setProperty with omitted source defaults to 'inspector'", () => {
+  it("sendToTarget setProperty with omitted source defaults to 'inspector'", () => {
     const { container, manager } = renderObservableProps("obs-t6b");
 
     // The source attribution observer tracks the source; when source is

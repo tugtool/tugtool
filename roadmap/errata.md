@@ -35,17 +35,17 @@ These duplicate the authoritative definitions in `tug-tooltip.css` (lines 21-27)
 
 ---
 
-## E03: dispatchTo should forward to nextResponder when target doesn't handle action
+## E03: sendToTarget should forward to nextResponder when target doesn't handle action
 
 **Files:** `tugdeck/src/components/tugways/responder-chain.ts` (lines 256-266), `tugdeck/src/components/tugways/internal/tug-button.tsx` (lines 314-322)
 
-**Issue:** When a button/component specifies an explicit target for an action via `dispatchTo()`, and that target is registered but does not handle the action (i.e., the action key is not in its actions map), the current implementation returns `false` and stops. TugButton then logs a dev-mode warning. No chain walking occurs.
+**Issue:** When a button/component specifies an explicit target for an action via `sendToTarget()`, and that target is registered but does not handle the action (i.e., the action key is not in its actions map), the current implementation returns `false` and stops. TugButton then logs a dev-mode warning. No chain walking occurs.
 
 This is incorrect per UIKit's responder chain model. In UIKit, when a control sends an action to a specific target and that target does not handle it, the action is forwarded up the responder chain starting from the target's `nextResponder`. A direct target is a *preferred* first stop, not a hard boundary — the chain is still the fallback. Only when no responder in the chain handles the action does dispatch truly fail.
 
 Our current behavior treats an explicit target as a dead end: if the target can't handle the action, dispatch fails silently. This means a component can't set a target for "try this responder first" semantics — it's all-or-nothing.
 
-**Fix:** Modify `dispatchTo()` so that when the named target does not handle the action, it walks up from the target's `parentId` (our equivalent of `nextResponder`) using the same chain-walk logic as `dispatch()`. Return `false` only if no responder from the target upward handles the action. Update the TugButton warning accordingly — a `false` return would then mean no responder in the chain from the target upward could handle the action, not just that the target itself couldn't.
+**Fix:** Modify `sendToTarget()` so that when the named target does not handle the action, it walks up from the target's `parentId` (our equivalent of `nextResponder`) using the same chain-walk logic as `sendToFirstResponder()`. Return `false` only if no responder from the target upward handles the action. Update the TugButton warning accordingly — a `false` return would then mean no responder in the chain from the target upward could handle the action, not just that the target itself couldn't.
 
 Update tests in `tugdeck/src/__tests__/responder-chain.test.ts` to cover the new forwarding behavior.
 

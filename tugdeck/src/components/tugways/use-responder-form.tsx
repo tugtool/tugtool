@@ -389,7 +389,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   // Only install handlers for actions whose binding slot is actually
   // populated. This matters because the chain walker breaks on the
   // first registered handler it finds
-  // (responder-chain.ts:dispatchForContinuation): `handler(event);
+  // (responder-chain.ts:sendToFirstResponderForContinuation): `handler(event);
   // handled = true; break;`. If we installed all six handlers
   // unconditionally, a form that only declares `{toggle: {...}}` would
   // still intercept — and silently drop — every `selectValue`,

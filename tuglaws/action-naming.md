@@ -10,7 +10,7 @@
 
 Action names are API. They sit at three protocol boundaries:
 
-1. **Chain dispatch** — `manager.dispatch({ action, ... })` ↔ `useResponder({ actions: { [name]: handler } })`. The name is how a control communicates intent to its responder.
+1. **Chain dispatch** — `manager.sendToFirstResponder({ action, ... })` ↔ `useResponder({ actions: { [name]: handler } })`. The name is how a control communicates intent to its responder.
 2. **Keybinding map** — `{ key: "KeyZ", meta: true, action: ... }`. The name is how the keyboard reaches the chain.
 3. **Control-frame RPC** — `sendControl("name")` on the Swift side ↔ `registerAction("name", handler)` on the JS side. The name is a wire-format symbol carried across a process boundary.
 
@@ -28,7 +28,7 @@ Every action name belongs to exactly one of three categories. The category deter
 
 | Category | Defined in | Dispatched by | Handled by | Example |
 |----------|------------|---------------|------------|---------|
-| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.dispatchForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `jump-to-tab` |
+| **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `jump-to-tab` |
 | **Control frame** | `registerAction` calls in `action-dispatch.ts` | Swift `sendControl(...)` → `dispatchAction` on the JS side | Handler body inside `registerAction`; may side-effect directly, may dispatch a chain action | `reload`, `set-theme`, `eval` |
 | **Both** (identity) | Both — same string in both tables | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler is a one-liner that re-dispatches the chain action; responders handle it | `close`, `add-tab-to-active-card`, `show-component-gallery` |
 
@@ -47,7 +47,7 @@ Every action name belongs to exactly one of three categories. The category deter
   });
   ```
 
-  No name translation. The Swift `sendControl("add-tab-to-active-card")` and the `manager.dispatch({ action: "add-tab-to-active-card" })` carry the same string; the responder chain takes over from there.
+  No name translation. The Swift `sendControl("add-tab-to-active-card")` and the `manager.sendToFirstResponder({ action: "add-tab-to-active-card" })` carry the same string; the responder chain takes over from there.
 
 ---
 
@@ -143,7 +143,7 @@ export type TugAction<Extra extends string = never> =
 
 ```ts
 // ✅ correct
-manager.dispatch({ action: TUG_ACTIONS.CUT, phase: "discrete" });
+manager.sendToFirstResponder({ action: TUG_ACTIONS.CUT, phase: "discrete" });
 
 const { ResponderScope, responderRef } = useResponder({
   id: cardId,
@@ -159,7 +159,7 @@ const { ResponderScope, responderRef } = useResponder({
 
 ```ts
 // ❌ forbidden — raw string literal
-manager.dispatch({ action: "cut", phase: "discrete" });
+manager.sendToFirstResponder({ action: "cut", phase: "discrete" });
 ```
 
 The type system won't catch this (the literal `"cut"` is still a valid `TugAction` member), so it's a review-time convention. The constant reference is what makes grep, find-references, and future renames work.

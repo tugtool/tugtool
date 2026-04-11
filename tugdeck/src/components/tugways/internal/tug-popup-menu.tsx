@@ -238,7 +238,7 @@ export function TugPopupMenu({
     // state (setOpen(false)) rather than synthesizing a document-level
     // Escape keydown. blinkingRef stays true across the onSelect call
     // so that any chain dispatches issued by the handler (e.g.,
-    // TugPopupButton's dispatchForContinuation) are skipped by the
+    // TugPopupButton's sendToFirstResponderForContinuation) are skipped by the
     // observeDispatch subscription above and do not double-close the
     // menu. blinkingRef is reset only after onSelect completes. [D01]
     //

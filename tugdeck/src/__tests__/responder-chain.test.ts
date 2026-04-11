@@ -343,9 +343,9 @@ describe("subscribe", () => {
   });
 });
 
-// ---- dispatchTo ----
+// ---- sendToTarget ----
 
-describe("dispatchTo", () => {
+describe("sendToTarget", () => {
   it("delivers action to registered target and returns true", () => {
     const mgr = makeManager();
     let handled = false;
@@ -357,7 +357,7 @@ describe("dispatchTo", () => {
   });
 
   it("walks up the chain when target does not handle the action", () => {
-    // A6: dispatchTo now starts the walk at the target and continues
+    // A6: sendToTarget now starts the walk at the target and continues
     // upward via parentId until some ancestor handles the action.
     // Previously this returned false without walking.
     const mgr = makeManager();
@@ -422,7 +422,7 @@ describe("dispatchTo", () => {
 
   it("dispatchToForContinuation walks up the chain when target does not handle", () => {
     // A6: dispatchToForContinuation gets the same walk-up treatment as
-    // dispatchTo. If the target doesn't handle, an ancestor's handler
+    // sendToTarget. If the target doesn't handle, an ancestor's handler
     // runs and its continuation flows back to the caller.
     const mgr = makeManager();
     const continuationCalls: string[] = [];
