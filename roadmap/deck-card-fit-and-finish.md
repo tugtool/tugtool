@@ -165,12 +165,67 @@ The root cause: set membership is determined by geometric proximity alone (`find
 
 ---
 
+## 5.5. Set Snapping Hardening
+
+Follow-up improvements to the option-key-only snapping implementation (5). The core design is correct; these items tighten the code, add missing test coverage, and reduce maintenance burden.
+
+### 5.5a. Unit tests for set management methods
+
+`_joinSet`, `_removeFromSet`, and `_getCardSet` have non-trivial logic — union-find merging, dissolution when fewer than 2 members remain, cleanup on card removal — and none of it is tested. The test updates for item 5 only added `sets: []` stubs to make existing tests compile.
+
+Add tests in `deck-manager.test.ts` covering:
+- Basic `joinSet` of two solo cards.
+- `joinSet` that merges two existing sets (card bridges them).
+- `joinSet` with cards already in the same set (idempotent).
+- `removeFromSet` that leaves a set with 2+ members (set persists, reduced).
+- `removeFromSet` that drops a set below 2 members (set dissolves).
+- `getCardSet` for a member (returns full set including self) vs. non-member (returns `[]`).
+- `removeCard` cleaning up set membership (card removed from set, set dissolved if < 2 remain).
+
+### 5.5b. Make `store` required in `updateSetAppearance` and `postActionSetUpdate`
+
+Both functions accept `store?` as optional. When omitted, they fall back to geometry-only set detection — the exact behavior we just fixed. Every real call site passes the store, so the fallback is dead code that preserves the old bug as a silent reintroduction path. Remove the optional marker: make `store: IDeckManagerStore` required. Delete the fallback branch.
+
+### 5.5c. Extract shared-edge filtering helper
+
+The same logic block — iterate `snapshot.sets`, filter rects to each set's members, call `findSharedEdges` per set, concat results — appears identically in `updateSetAppearance` and `postActionSetUpdate`. Extract into a helper:
+
+```ts
+function findSharedEdgesWithinExplicitSets(
+  rects: { id: string; rect: Rect }[],
+  store: IDeckManagerStore,
+): SharedEdge[]
+```
+
+Both call sites reduce to a one-liner. A bug fix in one automatically applies to the other.
+
+### 5.5d. Eliminate double `updateSetAppearance` on snap-drop
+
+When `store.joinSet()` fires at drop time, `notify()` triggers the DeckCanvas store subscriber, which calls `updateSetAppearance`. Then `postActionSetUpdate` calls `updateSetAppearance` again. Two full DOM traversals with `querySelectorAll`, `getBoundingClientRect`, `findSharedEdges`, and z-index reordering on every snap-drop for no benefit.
+
+Fix: either skip `updateSetAppearance` inside `postActionSetUpdate` when the caller already triggered it via a store mutation, or gate the DeckCanvas subscriber to skip during active gestures. The simplest approach is to have `postActionSetUpdate` be the sole `updateSetAppearance` caller on the drop path, since it runs after all store mutations are complete, and suppress the subscriber-driven call during gestures.
+
+### 5.5e. Narrow snap-on-drop set formation to snapped-to cards only
+
+Currently, after a snap-mode drop, `findSharedEdges` runs on ALL cards and joins every card sharing an edge with the dropped card into a set. If you snap card A to card B's right edge, but card A's bottom also happens to be within 8px of card C, the result is {A, B, C} — even though you only intentionally targeted B.
+
+Fix: use the snap result to identify which specific card(s) the user snapped to, and only join those. `computeSnap` returns the guide positions and deltas but not the target card ID. Either extend `SnapResult` to include the target card ID for each axis, or post-filter the shared edges to only those on the axis/edge that was actually snapped.
+
+### 5.5f. Enforce single-set invariant on deserialize
+
+The data model (`string[][]`) doesn't structurally prevent a card from appearing in two sets. `joinSet` prevents this in practice, but a corrupted or hand-edited layout blob could violate it. Add a deduplication pass in `deserialize`: if a card ID appears in multiple sets, merge those sets. This is cheap defensive code that prevents silent behavioral inconsistency from `_getCardSet` returning only the first match.
+
+**Scope:** tugdeck (`card-frame.tsx`, `deck-manager.ts`, `deck-manager.test.ts`, `snap.ts`, `serialization.ts`).
+
+---
+
 ## Implementation Order
 
 Suggested sequencing based on dependencies and risk:
 
-1. **Option-key-only snapping (5)** — bug fix, highest user-facing impact, and the explicit-set-membership model is a prerequisite for reliable arrange commands.
-2. **Card size policies (2)** — foundational for arrange commands and for relaxed placement (need to know minimum sizes to enforce title-bar visibility).
-3. **Relaxed placement (3)** — depends on size policies for safety; straightforward once those exist.
-4. **View menu (4)** — depends on size policies (for tile/cascade) and explicit sets (for correct card list). Largest scope item.
-5. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.
+1. **Option-key-only snapping (5)** — bug fix, highest user-facing impact, and the explicit-set-membership model is a prerequisite for reliable arrange commands. Done.
+2. **Set snapping hardening (5.5)** — tests, cleanup, and tightening of the explicit-set implementation. Do this now while the code is fresh.
+3. **Card size policies (2)** — foundational for arrange commands and for relaxed placement (need to know minimum sizes to enforce title-bar visibility).
+4. **Relaxed placement (3)** — depends on size policies for safety; straightforward once those exist.
+5. **View menu (4)** — depends on size policies (for tile/cascade) and explicit sets (for correct card list). Largest scope item.
+6. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.
