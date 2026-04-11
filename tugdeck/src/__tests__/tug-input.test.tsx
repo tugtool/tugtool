@@ -379,7 +379,7 @@ describe("TugInput – action handlers (A2.7)", () => {
     expect(result.continuation).toBeUndefined();
   });
 
-  it("undo defers execCommand('undo') to the continuation phase", () => {
+  it("undo is not handled (browser native undo runs instead)", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="undo-input" defaultValue="hello" />
     );
@@ -387,13 +387,10 @@ describe("TugInput – action handlers (A2.7)", () => {
 
     const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
-    expect(execCommandCalls.length).toBe(0);
-    result.continuation?.();
-    expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("undo");
+    expect(result.handled).toBe(false);
   });
 
-  it("redo defers execCommand('redo') to the continuation phase", () => {
+  it("redo is not handled (browser native redo runs instead)", () => {
     const { container, manager } = renderWithProvider(
       <TugInput data-testid="redo-input" defaultValue="hello" />
     );
@@ -401,10 +398,7 @@ describe("TugInput – action handlers (A2.7)", () => {
 
     const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
-    expect(execCommandCalls.length).toBe(0);
-    result.continuation?.();
-    expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("redo");
+    expect(result.handled).toBe(false);
   });
 
   // Paste's three-branch reader cascade is tested in two targeted
@@ -460,7 +454,12 @@ describe("TugInput – paste cascade", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(input.value).toBe("beforepasted-native");
+      // applyPastedText uses execCommand("insertText") which doesn't
+      // mutate the DOM in happy-dom, so verify the call was made with
+      // the correct text rather than checking input.value.
+      const insertCall = execCommandCalls.find(c => c.command === "insertText");
+      expect(insertCall).toBeDefined();
+      expect(insertCall!.value).toBe("pasted-native");
     } finally {
       uninstallFakeNativeClipboardBridge();
     }
@@ -495,7 +494,12 @@ describe("TugInput – paste cascade", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(input.value).toBe("beforepasted-api");
+      // applyPastedText uses execCommand("insertText") which doesn't
+      // mutate the DOM in happy-dom, so verify the call was made with
+      // the correct text rather than checking input.value.
+      const insertCall = execCommandCalls.find(c => c.command === "insertText");
+      expect(insertCall).toBeDefined();
+      expect(insertCall!.value).toBe("pasted-api");
     } finally {
       uninstallFakeClipboardReadText();
     }
@@ -513,7 +517,7 @@ describe("TugInput – disabled guard (A2.7)", () => {
     );
     const id = getInput(container, "disabled-input").getAttribute("data-responder-id") as string;
 
-    for (const action of ["cut", "copy", "paste", "undo", "redo"] as const) {
+    for (const action of ["cut", "copy", "paste"] as const) {
       const result = manager.sendToTargetForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }

@@ -450,18 +450,18 @@ describe("matchKeybinding", () => {
   // narrowly scoped to the map lookup so a misspelled modifier or
   // key code fails loudly at the keybinding level.
 
-  it("Cmd+Z (KeyZ, meta) → undo with preventDefaultOnMatch", () => {
+  it("Cmd+Z (KeyZ, meta) → undo without preventDefaultOnMatch", () => {
     const binding = matchKeybinding(makeEvent("KeyZ", { metaKey: true }));
     expect(binding?.action).toBe("undo");
-    expect(binding?.preventDefaultOnMatch).toBe(true);
+    expect(binding?.preventDefaultOnMatch).toBeUndefined();
   });
 
-  it("Shift+Cmd+Z (KeyZ, meta+shift) → redo with preventDefaultOnMatch", () => {
+  it("Shift+Cmd+Z (KeyZ, meta+shift) → redo without preventDefaultOnMatch", () => {
     const binding = matchKeybinding(
       makeEvent("KeyZ", { metaKey: true, shiftKey: true }),
     );
     expect(binding?.action).toBe("redo");
-    expect(binding?.preventDefaultOnMatch).toBe(true);
+    expect(binding?.preventDefaultOnMatch).toBeUndefined();
   });
 
   it("Cmd+Z must not match redo (shift discriminator)", () => {

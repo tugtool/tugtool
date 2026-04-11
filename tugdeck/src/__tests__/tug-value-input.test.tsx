@@ -349,7 +349,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
     expect(input.selectionEnd).toBe(input.value.length);
   });
 
-  it("undo defers execCommand('undo') to the continuation phase", () => {
+  it("undo is not handled (browser native undo runs instead)", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
@@ -357,13 +357,10 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
 
     const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.UNDO, phase: "discrete" });
 
-    expect(execCommandCalls.length).toBe(0);
-    result.continuation?.();
-    expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("undo");
+    expect(result.handled).toBe(false);
   });
 
-  it("redo defers execCommand('redo') to the continuation phase", () => {
+  it("redo is not handled (browser native redo runs instead)", () => {
     const { container, manager } = renderWithFullProvider(
       <TugValueInput value={50} min={0} max={100} />
     );
@@ -371,10 +368,7 @@ describe("TugValueInput – editing action handlers (A2.7)", () => {
 
     const result = manager.sendToTargetForContinuation(id, { action: TUG_ACTIONS.REDO, phase: "discrete" });
 
-    expect(execCommandCalls.length).toBe(0);
-    result.continuation?.();
-    expect(execCommandCalls.length).toBe(1);
-    expect(execCommandCalls[0].command).toBe("redo");
+    expect(result.handled).toBe(false);
   });
 
   // Paste behavior is verified manually — see tug-input.test.tsx for
@@ -393,7 +387,7 @@ describe("TugValueInput – disabled guard (A2.7)", () => {
 
     // Each handler short-circuits on effectiveDisabled before the
     // sync body runs, so no continuation should be returned either.
-    for (const action of ["cut", "copy", "paste", "undo", "redo", "select-all"] as const) {
+    for (const action of ["cut", "copy", "paste", "select-all"] as const) {
       const result = manager.sendToTargetForContinuation(id, { action, phase: "discrete" });
       result.continuation?.();
     }
