@@ -27,6 +27,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import type { ActionPhase } from "@/components/tugways/responder-chain";
+import { createNumberFormatter } from "@/lib/tug-format";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -35,6 +36,7 @@ import type { ActionPhase } from "@/components/tugways/responder-chain";
 const DEFAULT_SCALE = 1;
 const DEFAULT_TIMING = 1;
 const DEFAULT_MOTION = true;
+const decimal2Formatter = createNumberFormatter({ decimals: 2, grouping: false });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -159,8 +161,8 @@ export function GalleryScaleTiming() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Global Multipliers</TugLabel>
         <div className="cg-controls cg-st-controls">
-          <TugSlider value={scale} senderId={scaleId} min={0.85} max={2.0} step={0.05} label="--tug-zoom" size="sm" />
-          <TugSlider value={timing} senderId={timingId} min={0.1} max={10.0} step={0.1} label="--tug-timing" size="sm" />
+          <TugSlider value={scale} senderId={scaleId} min={0.85} max={2.0} step={0.05} label="--tug-zoom" layout="stacked" size="sm" formatter={decimal2Formatter} style={{ marginBottom: "16px" }} />
+          <TugSlider value={timing} senderId={timingId} min={0.1} max={10.0} step={0.1} label="--tug-timing" layout="stacked" size="sm" formatter={decimal2Formatter} style={{ marginBottom: "16px" }} />
           <div className="cg-control-group cg-st-slider-row">
             <TugCheckbox checked={motionOn} senderId={motionCheckId} label="Motion enabled (--tug-motion)" size="sm" />
             <TugLabel size="2xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>

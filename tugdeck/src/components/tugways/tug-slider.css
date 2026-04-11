@@ -41,7 +41,7 @@ body {
 .tug-slider {
   display: inline-flex;
   align-items: center;
-  gap: var(--tug-space-sm);
+  gap: var(--tug-space-xs);
   flex: 1;
   min-width: 0;
 }
@@ -62,11 +62,16 @@ body {
   max-width: 400px;
 }
 
-/* In stacked layout the track + value input share a row in the controls wrapper */
+/* In stacked layout the track + value input share a row (Carbon model).
+   Value input gets a fixed width so stacked sliders align when grouped. */
 .tug-slider-stacked .tug-slider-controls {
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
+}
+
+.tug-slider-stacked .tug-value-input {
+  width: 56px;
 }
 
 
@@ -146,8 +151,8 @@ body {
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-slider-thumb:focus-visible {
-  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tug7-element-global-fill-normal-accent-rest) 80%, transparent);
 }
 
 
@@ -164,6 +169,7 @@ body {
   color: var(--tugx-slider-label-fg);
   user-select: none;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 

@@ -151,9 +151,10 @@ function useValueInputEditing({
   // Guards against mouseup deselecting text after click-to-focus.
   const justFocusedRef = useRef<boolean>(false);
 
-  // ---- Input width based on max value length ----
+  // ---- Input width based on longest formatted boundary value ----
+  const displayMin = formatter ? formatter.format(min ?? 0) : String(min ?? 0);
   const displayMax = formatter ? formatter.format(max ?? 100) : String(max ?? 100);
-  const inputWidth = `${displayMax.length + 2}ch`;
+  const inputWidth = `${Math.max(displayMin.length, displayMax.length) + 1}ch`;
 
   // ---- Sync display value when not editing [L06] ----
   //
@@ -417,7 +418,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           data-slot="tug-value-input"
           className={buildInputClassName(size, className)}
           defaultValue={editing.displayValue}
-          style={{ width: editing.inputWidth, ...style }}
+          style={style}
           aria-disabled={effectiveDisabled || undefined}
           aria-label="Value"
           onFocus={editing.handleFocus}

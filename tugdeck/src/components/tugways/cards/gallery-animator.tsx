@@ -228,7 +228,7 @@ function PhysicsCurvesDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={resetAll}>
           Reset
         </TugPushButton>
-        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
     </div>
     </ResponderScope>
@@ -316,7 +316,7 @@ function DurationTokensDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
       <div className="cg-anim-token-legend">
         {Object.entries(DURATION_TOKEN_MAP).map(([token, ms]) => (
@@ -428,7 +428,7 @@ function CancelModesDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
       <TugLabel size="2xs" color="muted" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
     </div>
@@ -539,7 +539,7 @@ function NamedSlotsDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
       {lastAction !== null && (
         <TugLabel size="2xs" color="muted" data-testid="anim-slot-status">{lastAction}</TugLabel>
