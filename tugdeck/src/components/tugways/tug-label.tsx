@@ -24,6 +24,9 @@ export type TugLabelSize = "xs" | "sm" | "md" | "lg";
 /** TugLabel color variants. */
 export type TugLabelColor = "default" | "muted";
 
+/** TugLabel text alignment. */
+export type TugLabelAlign = "start" | "center" | "end";
+
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
   /** Text content of the label (string only — required for truncation). */
@@ -46,6 +49,12 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    * @default false
    */
   mono?: boolean;
+  /**
+   * Text alignment.
+   * @selector .tug-label-align-center | .tug-label-align-end
+   * @default "start"
+   */
+  align?: TugLabelAlign;
   /**
    * Maximum number of lines before truncation.
    * @default unlimited
@@ -106,6 +115,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       size = "md",
       color = "default",
       mono = false,
+      align = "start",
       maxLines,
       ellipsis = "end",
       required = false,
@@ -223,6 +233,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       `tug-label-size-${size}`,
       color !== "default" && `tug-label-color-${color}`,
       mono && "tug-label-mono",
+      align !== "start" && `tug-label-align-${align}`,
       disabled && "tug-label-disabled",
       className,
     );

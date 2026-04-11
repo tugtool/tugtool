@@ -17,17 +17,6 @@
   flex-direction: column-reverse;
 }
 
-.tug-confirm-popover-body {
-  padding: 0.25rem 0.75rem 0.75rem 0.75rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
-  text-align: center;
-}
-
-/* side="top" → body is visually on top, needs top padding instead */
-.tug-confirm-popover[data-side="top"] .tug-confirm-popover-body {
-  padding: 0.75rem 0.75rem 0.25rem 0.75rem;
-}
 
 .tug-confirm-popover-actions {
   display: flex;
@@ -35,4 +24,14 @@
   gap: 0.5rem;
   padding: 0.75rem;
   white-space: nowrap;
+}
+
+/* Message label sits below actions (bottom side) or above (top side).
+   Horizontal padding matches actions; vertical is tighter near actions. */
+.tug-confirm-popover > .tug-label {
+  padding: 0.25rem 0.75rem 0.75rem;
+}
+
+.tug-confirm-popover[data-side="top"] > .tug-label {
+  padding: 0.75rem 0.75rem 0.25rem;
 }

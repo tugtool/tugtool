@@ -71,6 +71,7 @@ import {
   TugPopoverContent,
   type TugPopoverHandle,
 } from "./tug-popover";
+import { TugLabel } from "./tug-label";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
@@ -98,7 +99,7 @@ export interface TugConfirmPopoverHandle {
 /** TugConfirmPopover props. */
 export interface TugConfirmPopoverProps {
   /** Confirmation message displayed in the popover body. */
-  message: React.ReactNode;
+  message: string;
   /**
    * Confirm button label.
    * @default "Confirm"
@@ -297,7 +298,7 @@ export const TugConfirmPopover = React.forwardRef<
               {confirmLabel}
             </TugPushButton>
           </div>
-          <div className="tug-confirm-popover-body">{message}</div>
+          <TugLabel size="lg" align="center">{message}</TugLabel>
         </div>
       </TugPopoverContent>
     </TugPopover>
