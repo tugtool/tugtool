@@ -1318,11 +1318,10 @@ function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): stri
  *
  * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
  * @param containerEl - The ResponderScope element (kept for API compatibility; used for z-index reordering context).
- * @param store - DeckManager store for reading explicit set membership. When provided,
- *   only cards in explicit sets are considered for set visual treatment. When omitted
- *   (backward compatibility), falls back to geometry-only detection.
+ * @param store - DeckManager store for reading explicit set membership. Only cards in
+ *   explicit sets are considered for set visual treatment.
  */
-export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null, store?: IDeckManagerStore): void {
+export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null, store: IDeckManagerStore): void {
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
   const rects: { id: string; rect: Rect }[] = [];
   allFrameEls.forEach((el) => {
@@ -1340,23 +1339,16 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     });
   });
 
-  // When explicit sets are available, restrict shared-edge detection to only cards
-  // that are members of the same explicit set. This prevents coincidental proximity
-  // from creating visual set treatment (squared corners, clip-path shadow control).
-  let sharedEdges: SharedEdge[];
-  if (store) {
-    const snapshot = store.getSnapshot();
-    const explicitSets = snapshot.sets;
-    // For each explicit set, find shared edges among its members only.
-    sharedEdges = [];
-    for (const setIds of explicitSets) {
-      const setRects = rects.filter((r) => setIds.includes(r.id));
-      if (setRects.length >= 2) {
-        sharedEdges.push(...findSharedEdges(setRects));
-      }
+  // Restrict shared-edge detection to only cards that are members of the same
+  // explicit set. This prevents coincidental proximity from creating visual set
+  // treatment (squared corners, clip-path shadow control).
+  const sharedEdges: SharedEdge[] = [];
+  const snapshot = store.getSnapshot();
+  for (const setIds of snapshot.sets) {
+    const setRects = rects.filter((r) => setIds.includes(r.id));
+    if (setRects.length >= 2) {
+      sharedEdges.push(...findSharedEdges(setRects));
     }
-  } else {
-    sharedEdges = findSharedEdges(rects);
   }
   const sets = computeSets(rects.map((c) => c.id), sharedEdges);
 
@@ -1508,7 +1500,7 @@ function postActionSetUpdate(
   preActionSetMemberIds: string[],
   canvasBounds: DOMRect | null,
   containerEl: HTMLElement | null,
-  store?: IDeckManagerStore,
+  store: IDeckManagerStore,
 ): void {
   const postRects: { id: string; rect: Rect }[] = [];
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
@@ -1527,20 +1519,14 @@ function postActionSetUpdate(
     });
   });
 
-  // Use explicit sets from the store to determine post-action set membership.
-  // Geometric shared-edge detection is only used within explicit set members.
-  let postSharedEdges: SharedEdge[];
-  if (store) {
-    const snapshot = store.getSnapshot();
-    postSharedEdges = [];
-    for (const setIds of snapshot.sets) {
-      const setRects = postRects.filter((r) => setIds.includes(r.id));
-      if (setRects.length >= 2) {
-        postSharedEdges.push(...findSharedEdges(setRects));
-      }
+  // Restrict shared-edge detection to explicit set members only.
+  const postSharedEdges: SharedEdge[] = [];
+  const snapshot = store.getSnapshot();
+  for (const setIds of snapshot.sets) {
+    const setRects = postRects.filter((r) => setIds.includes(r.id));
+    if (setRects.length >= 2) {
+      postSharedEdges.push(...findSharedEdges(setRects));
     }
-  } else {
-    postSharedEdges = findSharedEdges(postRects);
   }
   const postSets = computeSets(
     postRects.map((c) => c.id),
