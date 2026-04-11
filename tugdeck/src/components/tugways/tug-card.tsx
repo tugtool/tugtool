@@ -1108,23 +1108,25 @@ export function Tugcard({
         className="tugcard-body"
         data-testid="tugcard-body"
       >
-        {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
-            data-card-id is used by TabDragCoordinator to identify single-tab card
-            drop targets (tier-2 hit-test cache entry, [D05]). */}
-        <div
-          ref={accessoryRef}
-          className="tugcard-accessory"
-          data-testid="tugcard-accessory"
-          data-card-id={cardId}
-          style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
-        >
-          {resolvedAccessory}
-        </div>
+        <ResponderScope>
+          {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
+              data-card-id is used by TabDragCoordinator to identify single-tab card
+              drop targets (tier-2 hit-test cache entry, [D05]).
+              Inside ResponderScope so TugTabBar's targeted dispatch reaches
+              this card's selectTab/closeTab/addTab handlers. */}
+          <div
+            ref={accessoryRef}
+            className="tugcard-accessory"
+            data-testid="tugcard-accessory"
+            data-card-id={cardId}
+            style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
+          >
+            {resolvedAccessory}
+          </div>
 
-        {/* Content area: flex-grow, overflow auto */}
-        <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
-          <TugcardDataProvider feedData={feedData}>
-            <ResponderScope>
+          {/* Content area: flex-grow, overflow auto */}
+          <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
+            <TugcardDataProvider feedData={feedData}>
               {/* Provide PropertyStore registration callback to card content.
                   Card content calls usePropertyStore() which reads this context and
                   calls registerPropertyStore in useLayoutEffect. [D01] */}
@@ -1142,9 +1144,9 @@ export function Tugcard({
                   </TugcardDirtyContext>
                 </TugcardPersistenceContext>
               </TugcardPropertyContext>
-            </ResponderScope>
-          </TugcardDataProvider>
-        </div>
+            </TugcardDataProvider>
+          </div>
+        </ResponderScope>
       </div>
     </div>
     </TugcardPortalContext>
