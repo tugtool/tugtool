@@ -18,6 +18,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugBox } from "@/components/tugways/tug-box";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -73,7 +74,7 @@ export function GalleryTitleBar() {
       {/* ---- Interactive Controls ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
-        <div className="cg-controls">
+        <TugBox variant="bordered" rounded="sm" style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
           <div className="cg-control-group">
             <TugLabel size="2xs" color="muted">Icon</TugLabel>
             <TugPopupButton
@@ -100,7 +101,7 @@ export function GalleryTitleBar() {
             />
             <TugLabel size="2xs" color="muted" htmlFor="cg-title-closable-check">Closable</TugLabel>
           </div>
-        </div>
+        </TugBox>
       </div>
 
       <TugSeparator />

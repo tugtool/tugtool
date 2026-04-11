@@ -22,6 +22,7 @@ import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugwa
 import { Star } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugBox } from "@/components/tugways/tug-box";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -212,7 +213,7 @@ export function GalleryScaleTiming() {
       {/* ---- JS Helper Readout ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">JS Helper Readout</TugLabel>
-        <div className="cg-st-readout" data-testid="st-readout">
+        <TugBox variant="bordered" rounded="sm" data-testid="st-readout" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <div className="cg-st-readout-row">
             <TugLabel size="2xs" color="muted" mono>getTugZoom()</TugLabel>
             <TugLabel size="2xs" mono data-testid="st-readout-scale">{formatValue(readout.scale)}</TugLabel>
@@ -225,7 +226,7 @@ export function GalleryScaleTiming() {
             <TugLabel size="2xs" color="muted" mono>isTugMotionEnabled()</TugLabel>
             <TugLabel size="2xs" mono data-testid="st-readout-motion">{String(readout.motionEnabled)}</TugLabel>
           </div>
-        </div>
+        </TugBox>
       </div>
 
       <TugSeparator />
@@ -233,7 +234,7 @@ export function GalleryScaleTiming() {
       {/* ---- Live Preview ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Live Preview</TugLabel>
-        <div className="cg-st-preview" data-testid="st-preview">
+        <TugBox variant="bordered" rounded="sm" data-testid="st-preview" style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
           <div className="cg-st-preview-row">
             <TugPushButton emphasis="filled" role="accent" size="md">Filled Accent</TugPushButton>
             <TugPushButton size="md">Outlined Active</TugPushButton>
@@ -279,7 +280,7 @@ export function GalleryScaleTiming() {
               <div className="tug-pole"><div className="tug-pole-inner" /></div>
             </div>
           </div>
-        </div>
+        </TugBox>
       </div>
 
       <TugSeparator />

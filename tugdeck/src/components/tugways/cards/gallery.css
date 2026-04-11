@@ -8,7 +8,6 @@
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
  * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
- * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-controls (border)                |
  * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
  * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
  * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
@@ -49,16 +48,6 @@
    Controls Bar (interactive toggles)
    ========================================================================= */
 
-.cg-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 14px;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  flex-wrap: wrap;
-}
 
 .cg-control-group {
   display: flex;
@@ -336,18 +325,6 @@
 }
 
 
-/* JS helper readout: three rows showing function name and return value */
-.cg-st-readout {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  font-family: var(--tug-font-family-mono);
-  font-size: 11px;
-}
 
 .cg-st-readout-row {
   display: flex;
@@ -356,16 +333,6 @@
 }
 
 
-/* Live preview area for scale/timing demo buttons. */
-.cg-st-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  padding: 16px;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-}
 
 .cg-st-preview-row {
   display: flex;
