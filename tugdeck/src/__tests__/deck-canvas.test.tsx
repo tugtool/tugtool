@@ -77,7 +77,7 @@ function makeMockConnection() {
  *
  * Override individual fields with spies for tests that need callback assertions.
  */
-function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
+function makeMockStore(deckState: DeckState = { cards: [], sets: [] }): IDeckManagerStore {
   return {
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
@@ -101,6 +101,10 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     unregisterSaveCallback: (_id: string) => {},
     // Collapse toggle (added in Step 3 of the collapse feature)
     toggleCardCollapse: (_id: string) => {},
+    // Explicit set membership
+    getCardSet: (_cardId: string) => [],
+    joinSet: (_cardIds: string[]) => {},
+    removeFromSet: (_cardId: string) => {},
   };
 }
 
@@ -162,7 +166,7 @@ function makeCardState(id: string, componentId: string): CardState {
 
 /** Build a DeckState from an array of CardState. */
 function makeDeckState(cards: CardState[]): DeckState {
-  return { cards };
+  return { cards, sets: [] };
 }
 
 // ============================================================================
@@ -409,12 +413,13 @@ describe("DeckCanvas – showComponentGallery action", () => {
     const focusedIds: string[] = [];
 
     // ReactiveStore so cards array updates after addCard
-    const reactiveStore = new ReactiveStore({ cards: [] });
+    const reactiveStore = new ReactiveStore({ cards: [], sets: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
       // Simulate adding the card to store state
       reactiveStore.setState({
         cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
+        sets: [],
       });
       return GALLERY_CARD_ID;
     };
@@ -566,7 +571,7 @@ describe("DeckCanvas – T26: empty store renders no cards", () => {
   });
 
   it("renders no CardFrame elements when store returns deckState with empty cards", () => {
-    const store = makeMockStore({ cards: [] });
+    const store = makeMockStore({ cards: [], sets: [] });
     let container!: HTMLElement;
     act(() => {
       ({ container } = renderDeckCanvasWithStore(store));
@@ -653,7 +658,7 @@ class ReactiveStore implements IDeckManagerStore {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
-  constructor(initial: DeckState = { cards: [] }) {
+  constructor(initial: DeckState = { cards: [], sets: [] }) {
     this._state = initial;
   }
 
@@ -684,6 +689,10 @@ class ReactiveStore implements IDeckManagerStore {
   unregisterSaveCallback = (_id: string): void => {};
   // Collapse toggle (added in Step 3 of the collapse feature)
   toggleCardCollapse = (_id: string): void => {};
+  // Explicit set membership
+  getCardSet = (_cardId: string): string[] => [];
+  joinSet = (_cardIds: string[]): void => {};
+  removeFromSet = (_cardId: string): void => {};
 
   /** Update state and notify subscribers (triggers useSyncExternalStore re-render). */
   setState(next: DeckState): void {
@@ -720,7 +729,7 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       acceptsFamilies: ["standard"],
     };
 
-    const store = new ReactiveStore({ cards: [singleTabCard] });
+    const store = new ReactiveStore({ cards: [singleTabCard], sets: [] });
 
     let container!: HTMLElement;
     act(() => {
@@ -745,6 +754,7 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
           tabs: [tab1, tab2],
           activeTabId: "tab-2",
         }],
+        sets: [],
       });
     });
 
@@ -784,7 +794,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       acceptsFamilies: ["standard"],
     };
 
-    const store = new ReactiveStore({ cards: [multiTabCard] });
+    const store = new ReactiveStore({ cards: [multiTabCard], sets: [] });
 
     let container!: HTMLElement;
     act(() => {
@@ -806,6 +816,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
     act(() => {
       store.setState({
         cards: [{ ...multiTabCard, activeTabId: "tab-2" }],
+        sets: [],
       });
     });
 
@@ -842,7 +853,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
     };
 
     const closedIds: string[] = [];
-    const store = new ReactiveStore({ cards: [multiTabCard] });
+    const store = new ReactiveStore({ cards: [multiTabCard], sets: [] });
     store.handleCardClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
@@ -1000,7 +1011,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     }
 
     const addTabCalls: Array<unknown> = [];
-    const store = makeMockStore({ cards: [] });
+    const store = makeMockStore({ cards: [], sets: [] });
     store.addTab = (cardId, componentId) => {
       addTabCalls.push({ cardId, componentId });
       return null;

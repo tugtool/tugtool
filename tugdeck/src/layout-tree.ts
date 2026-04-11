@@ -59,4 +59,11 @@ export interface DeckState {
    * ([D03])
    */
   focusedCardId?: string;
+  /**
+   * Explicit set membership groups. Each inner array is a group of card IDs
+   * that were intentionally snapped together via Option+drag. Sets form only
+   * through snap gestures and dissolve through Option+drag break-out or card
+   * removal. Geometric proximity alone never creates a set.
+   */
+  sets: string[][];
 }

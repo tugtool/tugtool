@@ -18,6 +18,7 @@ export function serialize(deckState: DeckState): object {
   return {
     version: 5,
     cards: deckState.cards,
+    sets: deckState.sets,
   };
 }
 
@@ -110,7 +111,22 @@ export function deserialize(
       });
     }
 
-    return { cards };
+    // Deserialize explicit sets (backward compatible: missing = empty array).
+    const rawSets = raw["sets"];
+    const sets: string[][] = [];
+    if (Array.isArray(rawSets)) {
+      const validCardIds = new Set(cards.map((c) => c.id));
+      for (const s of rawSets) {
+        if (!Array.isArray(s)) continue;
+        // Filter to only card IDs that exist in the deserialized cards.
+        const filtered = (s as string[]).filter((id) => validCardIds.has(id));
+        if (filtered.length >= 2) {
+          sets.push(filtered);
+        }
+      }
+    }
+
+    return { cards, sets };
   } catch {
     return buildDefaultLayout(canvasWidth, canvasHeight);
   }
@@ -134,5 +150,5 @@ export function buildDefaultLayout(
   _canvasWidth: number,
   _canvasHeight: number
 ): DeckState {
-  return { cards: [] };
+  return { cards: [], sets: [] };
 }

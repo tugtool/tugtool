@@ -25,6 +25,7 @@ import { CardTitleBar, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/tug-ca
 import { CardFrame } from "@/components/chrome/card-frame";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 import type { CardState } from "@/layout-tree";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 import { DeckManager } from "@/deck-manager";
 import { _resetForTest, registerCard } from "@/card-registry";
 import { serialize, deserialize } from "@/serialization";
@@ -56,6 +57,34 @@ function makeMockConnection() {
     close: () => {},
   };
 }
+
+/**
+ * Minimal mock IDeckManagerStore for CardFrame renders in card-header tests.
+ */
+const mockStore: IDeckManagerStore = {
+  subscribe: (_cb: () => void) => () => {},
+  getSnapshot: () => ({ cards: [], sets: [] }),
+  getVersion: () => 0,
+  handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+  handleCardClosed: (_id: string) => {},
+  handleCardFocused: (_id: string) => {},
+  addCard: (_componentId: string) => null,
+  addTab: (_cardId: string, _componentId: string) => null,
+  removeTab: (_cardId: string, _tabId: string) => {},
+  setActiveTab: (_cardId: string, _tabId: string) => {},
+  reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
+  detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
+  mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+  getTabState: (_tabId: string) => undefined,
+  setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+  initialFocusedCardId: undefined,
+  registerSaveCallback: (_id: string, _callback: () => void) => {},
+  unregisterSaveCallback: (_id: string) => {},
+  toggleCardCollapse: (_id: string) => {},
+  getCardSet: (_cardId: string) => [],
+  joinSet: (_cardIds: string[]) => {},
+  removeFromSet: (_cardId: string) => {},
+};
 
 // ---------------------------------------------------------------------------
 // T-CH01 / T-CH02: Chevron collapse/expand
@@ -274,6 +303,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { container } = render(
       <ResponderChainProvider>
         <CardFrame
+          store={mockStore}
           cardState={collapsedState}
           renderContent={(injected: CardFrameInjectedProps) => (
             <div data-testid="card-content">
@@ -298,6 +328,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { container } = render(
       <ResponderChainProvider>
         <CardFrame
+          store={mockStore}
           cardState={expandedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
@@ -317,6 +348,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { getByTestId } = render(
       <ResponderChainProvider>
         <CardFrame
+          store={mockStore}
           cardState={collapsedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
@@ -396,6 +428,7 @@ describe("Serialization – collapsed state round-trip", () => {
       cards: [
         makeCardState({ id: "c1", collapsed: true }),
       ],
+      sets: [],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);
@@ -407,6 +440,7 @@ describe("Serialization – collapsed state round-trip", () => {
       cards: [
         makeCardState({ id: "c1" }), // no collapsed field
       ],
+      sets: [],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);

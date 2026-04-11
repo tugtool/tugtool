@@ -31,7 +31,7 @@ export function makeMockStore(
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
-    getSnapshot: (): DeckState => ({ cards: [] }),
+    getSnapshot: (): DeckState => ({ cards: [], sets: [] }),
     getVersion: () => 0,
     handleCardMoved: () => {},
     handleCardClosed: () => {},
@@ -53,6 +53,10 @@ export function makeMockStore(
     unregisterSaveCallback: () => {},
     // Step 3: collapse toggle no-op stub.
     toggleCardCollapse: () => {},
+    // Explicit set membership no-op stubs.
+    getCardSet: () => [],
+    joinSet: () => {},
+    removeFromSet: () => {},
   };
 
   return { ...base, ...overrides };

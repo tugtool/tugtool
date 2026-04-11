@@ -16,6 +16,7 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 import { animate } from "@/components/tugways/tug-animator";
@@ -112,6 +113,8 @@ export interface CardFrameInjectedProps {
  * Props for the CardFrame component.
  */
 export interface CardFrameProps {
+  /** DeckManager store for explicit set membership access. */
+  store: IDeckManagerStore;
   /** Card position, size, and id from DeckState. */
   cardState: CardState;
   /**
@@ -174,6 +177,7 @@ const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
  * CardFrame -- positions, drags, resizes, and stacks a single card on the canvas.
  */
 export function CardFrame({
+  store,
   cardState,
   renderContent,
   onCardMoved,
@@ -423,43 +427,26 @@ export function CardFrame({
       const canvasBounds = dragCanvasBounds.current;
       dragOtherRects.current = snapshotCardRects(canvasBounds, id);
 
-      // Compute set membership at drag-start for set-move behavior. [D02]
-      // Build allCardRects with this card prepended.
-      const thisRect: Rect = {
-        x: position.x,
-        y: position.y,
-        width: frame.offsetWidth,
-        height: frame.offsetHeight,
-      };
-      const allCardRects = [{ id, rect: thisRect }, ...dragOtherRects.current];
-      const sharedEdges = findSharedEdges(allCardRects);
-      const sets = computeSets(
-        allCardRects.map((c) => c.id),
-        sharedEdges,
-      );
-
-      // Find the set this card belongs to (if any).
+      // Compute set membership at drag-start from explicit sets (not geometry). [D02]
+      // Explicit sets are tracked in DeckManager and only form through Option+drag snapping.
+      const explicitSetIds = store.getCardSet(id);
       dragSetMembers.current = [];
       dragSetOrigins.current = [];
       dragSetMemberIdsAtDragStart.current = [];
-      for (const cardSet of sets) {
-        if (cardSet.cardIds.includes(id) && cardSet.cardIds.length >= 2) {
-          // Snapshot the full set membership at drag-start (including this card). [D54]
-          dragSetMemberIdsAtDragStart.current = cardSet.cardIds.slice();
-          for (const memberId of cardSet.cardIds) {
-            if (memberId === id) continue;
-            const memberEl = document.querySelector<HTMLElement>(
-              `.card-frame[data-card-id="${memberId}"]`,
-            );
-            if (memberEl) {
-              dragSetMembers.current.push({ id: memberId, el: memberEl });
-              dragSetOrigins.current.push({
-                x: parseFloat(memberEl.style.left) || 0,
-                y: parseFloat(memberEl.style.top) || 0,
-              });
-            }
+      if (explicitSetIds.length >= 2) {
+        dragSetMemberIdsAtDragStart.current = explicitSetIds.slice();
+        for (const memberId of explicitSetIds) {
+          if (memberId === id) continue;
+          const memberEl = document.querySelector<HTMLElement>(
+            `.card-frame[data-card-id="${memberId}"]`,
+          );
+          if (memberEl) {
+            dragSetMembers.current.push({ id: memberId, el: memberEl });
+            dragSetOrigins.current.push({
+              x: parseFloat(memberEl.style.left) || 0,
+              y: parseFloat(memberEl.style.top) || 0,
+            });
           }
-          break;
         }
       }
 
@@ -580,6 +567,8 @@ export function CardFrame({
             onCardMoved(member.id, memberPos, memberSize);
           }
           // Detach: clear set members so this card enters snap mode.
+          // Remove from explicit set in DeckManager.
+          store.removeFromSet(id);
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
           // Directly clear clip-path and data-in-set on the detached card's .tugcard.
@@ -734,7 +723,7 @@ export function CardFrame({
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
               // Recompute clip-path after merge so set appearance reflects the new layout. [D01]
-              updateSetAppearance(dragCanvasBounds.current, frame.parentElement);
+              updateSetAppearance(dragCanvasBounds.current, frame.parentElement, store);
               return;
             }
           }
@@ -798,8 +787,25 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
+        // After snap-mode drop: if the card landed adjacent to another card,
+        // form/extend an explicit set in DeckManager. Only when snap was active.
+        if (snapResult && (snapResult.x !== null || snapResult.y !== null)) {
+          // Re-snapshot rects now that the card is in its final position.
+          const postRects = snapshotCardRects(dragCanvasBounds.current);
+          const postSharedEdges = findSharedEdges(postRects);
+          // Find which cards this card shares edges with.
+          const adjacentIds = new Set<string>();
+          for (const edge of postSharedEdges) {
+            if (edge.cardAId === id) adjacentIds.add(edge.cardBId);
+            if (edge.cardBId === id) adjacentIds.add(edge.cardAId);
+          }
+          if (adjacentIds.size > 0) {
+            store.joinSet([id, ...adjacentIds]);
+          }
+        }
+
         // Flash set perimeter / break-out flash on drop. [D54, D55]
-        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
+        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement, store);
 
         // Reset all drag state. This block appears in both the merge path
         // and normal drop path — intentionally duplicated for clarity over
@@ -820,7 +826,7 @@ export function CardFrame({
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
     // onCardMerged, and activeTabId are stable or handled via closure capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y],
+    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y, store],
   );
 
   // ---------------------------------------------------------------------------
@@ -870,20 +876,14 @@ export function CardFrame({
       const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id);
       const resizeOtherRects = resizeOtherCardRects.map((r) => r.rect);
 
-      // Snapshot set membership at resize-start for post-resize flash detection. [D54]
-      // Build all card rects (including this card) and find which set this card belongs to.
-      const resizeAllRects = snapshotCardRects(resizeCanvasBounds);
-      const resizePreSharedEdges = findSharedEdges(resizeAllRects);
-      const resizePreSets = computeSets(
-        resizeAllRects.map((c) => c.id),
-        resizePreSharedEdges,
-      );
-      const resizePreSet = resizePreSets.find((s) => s.cardIds.includes(id));
-      const resizePreSetMemberIds: string[] = resizePreSet ? resizePreSet.cardIds.slice() : [];
+      // Snapshot set membership at resize-start from explicit sets (not geometry). [D54]
+      const resizeExplicitSetIds = store.getCardSet(id);
+      const resizePreSetMemberIds: string[] = resizeExplicitSetIds.length >= 2 ? resizeExplicitSetIds.slice() : [];
 
-      // Detect sash neighbor: if this card is in a set AND the edge being resized is a shared
-      // edge with a neighbor, store the sash neighbor info for co-resize.
+      // Detect sash neighbor: if this card is in an explicit set AND the edge being resized
+      // is a shared edge with a set neighbor, store the sash neighbor info for co-resize.
       // Only single-edge resizes (n, s, e, w) can be sash; corners skip sash detection.
+      // Use geometry to find which set member shares the resized edge.
       let sashNeighborId: string | null = null;
       let sashNeighborEdge: "n" | "s" | "e" | "w" | null = null;
       let sashNeighborEl: HTMLElement | null = null;
@@ -893,7 +893,11 @@ export function CardFrame({
       let sashNeighborStartH = 0;
 
       const isSingleEdge = edge === "n" || edge === "s" || edge === "e" || edge === "w";
-      if (isSingleEdge && resizePreSet) {
+      if (isSingleEdge && resizeExplicitSetIds.length >= 2) {
+        // Only look for shared edges among explicit set members.
+        const resizeSetRects = snapshotCardRects(resizeCanvasBounds)
+          .filter((r) => resizeExplicitSetIds.includes(r.id));
+        const resizePreSharedEdges = findSharedEdges(resizeSetRects);
         for (const sharedEdge of resizePreSharedEdges) {
           // Check if this shared edge involves the current card and the resize edge.
           let neighborId: string | null = null;
@@ -1084,7 +1088,7 @@ export function CardFrame({
         // Call updateSetAppearance once per frame to keep clip-path values correct for both
         // the resizing card and the sash neighbor throughout the gesture. [D06]
         if (sashNeighborEl && !latestResizeModifier) {
-          updateSetAppearance(resizeCanvasBounds, frame.parentElement);
+          updateSetAppearance(resizeCanvasBounds, frame.parentElement, store);
         }
       }
 
@@ -1136,8 +1140,23 @@ export function CardFrame({
           onCardMoved(sashNeighborId, neighborPos, neighborSize);
         }
 
+        // After snap-mode resize: if the card's resized edge landed adjacent to
+        // another card, form/extend an explicit set in DeckManager.
+        if (isSnapModifier(e)) {
+          const postResizeRects = snapshotCardRects(resizeCanvasBounds);
+          const postResizeSharedEdges = findSharedEdges(postResizeRects);
+          const adjacentIds = new Set<string>();
+          for (const edge of postResizeSharedEdges) {
+            if (edge.cardAId === id) adjacentIds.add(edge.cardBId);
+            if (edge.cardBId === id) adjacentIds.add(edge.cardAId);
+          }
+          if (adjacentIds.size > 0) {
+            store.joinSet([id, ...adjacentIds]);
+          }
+        }
+
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
-        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement);
+        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement, store);
       }
 
       frame.addEventListener("pointermove", onPointerMove);
@@ -1145,7 +1164,7 @@ export function CardFrame({
     },
     // minSizeRef.current is always current; position/size are start values read at resize-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height],
+    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height, store],
   );
 
   // ---------------------------------------------------------------------------
@@ -1299,8 +1318,11 @@ function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): stri
  *
  * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
  * @param containerEl - The ResponderScope element (kept for API compatibility; used for z-index reordering context).
+ * @param store - DeckManager store for reading explicit set membership. When provided,
+ *   only cards in explicit sets are considered for set visual treatment. When omitted
+ *   (backward compatibility), falls back to geometry-only detection.
  */
-export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null): void {
+export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null, store?: IDeckManagerStore): void {
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
   const rects: { id: string; rect: Rect }[] = [];
   allFrameEls.forEach((el) => {
@@ -1318,7 +1340,24 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     });
   });
 
-  const sharedEdges = findSharedEdges(rects);
+  // When explicit sets are available, restrict shared-edge detection to only cards
+  // that are members of the same explicit set. This prevents coincidental proximity
+  // from creating visual set treatment (squared corners, clip-path shadow control).
+  let sharedEdges: SharedEdge[];
+  if (store) {
+    const snapshot = store.getSnapshot();
+    const explicitSets = snapshot.sets;
+    // For each explicit set, find shared edges among its members only.
+    sharedEdges = [];
+    for (const setIds of explicitSets) {
+      const setRects = rects.filter((r) => setIds.includes(r.id));
+      if (setRects.length >= 2) {
+        sharedEdges.push(...findSharedEdges(setRects));
+      }
+    }
+  } else {
+    sharedEdges = findSharedEdges(rects);
+  }
   const sets = computeSets(rects.map((c) => c.id), sharedEdges);
 
   // Build a set membership lookup: cardId → true if in any set.
@@ -1462,12 +1501,14 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
  * @param cardId - The id of the moved or resized card.
  * @param preActionSetMemberIds - Set member IDs captured before the action started (empty if solo).
  * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
+ * @param store - DeckManager store for explicit set membership.
  */
 function postActionSetUpdate(
   cardId: string,
   preActionSetMemberIds: string[],
   canvasBounds: DOMRect | null,
   containerEl: HTMLElement | null,
+  store?: IDeckManagerStore,
 ): void {
   const postRects: { id: string; rect: Rect }[] = [];
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
@@ -1486,7 +1527,21 @@ function postActionSetUpdate(
     });
   });
 
-  const postSharedEdges = findSharedEdges(postRects);
+  // Use explicit sets from the store to determine post-action set membership.
+  // Geometric shared-edge detection is only used within explicit set members.
+  let postSharedEdges: SharedEdge[];
+  if (store) {
+    const snapshot = store.getSnapshot();
+    postSharedEdges = [];
+    for (const setIds of snapshot.sets) {
+      const setRects = postRects.filter((r) => setIds.includes(r.id));
+      if (setRects.length >= 2) {
+        postSharedEdges.push(...findSharedEdges(setRects));
+      }
+    }
+  } else {
+    postSharedEdges = findSharedEdges(postRects);
+  }
   const postSets = computeSets(
     postRects.map((c) => c.id),
     postSharedEdges,
@@ -1513,7 +1568,7 @@ function postActionSetUpdate(
   }
 
   // Update set appearance (squared corners, clip-path) after any move/resize. [D08]
-  updateSetAppearance(canvasBounds, containerEl);
+  updateSetAppearance(canvasBounds, containerEl, store);
 }
 
 // ---------------------------------------------------------------------------

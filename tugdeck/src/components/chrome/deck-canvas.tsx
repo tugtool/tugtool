@@ -379,7 +379,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     const containerEl = containerRef.current;
     if (!containerEl) return;
     const canvasBounds = containerEl.getBoundingClientRect();
-    updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
+    updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl, store);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Subscribe to store mutations and update set appearance on every notification. [D03, S03]
@@ -396,7 +396,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const containerEl = containerRef.current;
       if (!containerEl) return;
       const canvasBounds = containerEl.getBoundingClientRect();
-      updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
+      updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl, store);
     });
     return unsubscribe;
   }, [store]);
@@ -468,6 +468,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         return (
           <CardFrame
             key={cardState.id}
+            store={store}
             cardState={cardState}
             zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}

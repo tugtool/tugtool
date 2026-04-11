@@ -216,6 +216,15 @@ export class DeckManager implements IDeckManagerStore {
   /** Stable bound callback: toggle the collapsed state of a card. */
   public toggleCardCollapse: (cardId: string) => void;
 
+  /** Stable bound callback: get the explicit set containing a card. */
+  public getCardSet: (cardId: string) => string[];
+
+  /** Stable bound callback: join cards into an explicit set. */
+  public joinSet: (cardIds: string[]) => void;
+
+  /** Stable bound callback: remove a card from its explicit set. */
+  public removeFromSet: (cardId: string) => void;
+
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
   /**
@@ -279,6 +288,9 @@ export class DeckManager implements IDeckManagerStore {
     this.detachTab = this._detachTab.bind(this);
     this.mergeTab = this._mergeTab.bind(this);
     this.toggleCardCollapse = this._toggleCardCollapse.bind(this);
+    this.getCardSet = this._getCardSet.bind(this);
+    this.joinSet = this._joinSet.bind(this);
+    this.removeFromSet = this._removeFromSet.bind(this);
 
     // Load or build the initial canvas state.
     // subscribers, stateVersion, handleCard*, and deckState must all be initialized
@@ -441,11 +453,18 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Remove a card from the canvas by card ID.
+   * Also removes the card from any explicit set it belongs to.
    */
   removeCard(cardId: string): void {
+    // Clean up set membership: remove cardId from its set, dissolve if < 2 remain.
+    const sets = this.deckState.sets
+      .map((s) => s.filter((id) => id !== cardId))
+      .filter((s) => s.length >= 2);
+
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
+      sets,
     };
     this.notify();
     this.scheduleSave();
@@ -958,6 +977,81 @@ export class DeckManager implements IDeckManagerStore {
       ...this.deckState,
       cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
     };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  // ---- Explicit set membership (option-key-only snapping) ----
+
+  /**
+   * Return the card IDs in the same explicit set as `cardId`.
+   * Returns an empty array if the card is not in any set.
+   * The returned array includes `cardId` itself.
+   */
+  private _getCardSet(cardId: string): string[] {
+    for (const s of this.deckState.sets) {
+      if (s.includes(cardId)) {
+        return s.slice();
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Join cards into an explicit set. If any card is already in a set,
+   * the sets are merged. Cards not currently in any set are added.
+   * The resulting set is the union of all involved sets plus the given IDs.
+   */
+  private _joinSet(cardIds: string[]): void {
+    if (cardIds.length < 2) return;
+
+    // Collect all set indices that overlap with the given cardIds.
+    const involvedIndices = new Set<number>();
+    for (let i = 0; i < this.deckState.sets.length; i++) {
+      const s = this.deckState.sets[i];
+      if (cardIds.some((id) => s.includes(id))) {
+        involvedIndices.add(i);
+      }
+    }
+
+    // Build the merged set: union of all involved sets + the given cardIds.
+    const merged = new Set<string>(cardIds);
+    for (const i of involvedIndices) {
+      for (const id of this.deckState.sets[i]) {
+        merged.add(id);
+      }
+    }
+
+    // Rebuild the sets array: keep non-involved sets, append merged.
+    const newSets = this.deckState.sets.filter((_, i) => !involvedIndices.has(i));
+    newSets.push(Array.from(merged));
+
+    this.deckState = { ...this.deckState, sets: newSets };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  /**
+   * Remove a card from its explicit set. If the remaining set has fewer
+   * than 2 members, the set is dissolved entirely.
+   */
+  private _removeFromSet(cardId: string): void {
+    let changed = false;
+    const newSets: string[][] = [];
+    for (const s of this.deckState.sets) {
+      if (s.includes(cardId)) {
+        const remaining = s.filter((id) => id !== cardId);
+        if (remaining.length >= 2) {
+          newSets.push(remaining);
+        }
+        changed = true;
+      } else {
+        newSets.push(s);
+      }
+    }
+    if (!changed) return;
+
+    this.deckState = { ...this.deckState, sets: newSets };
     this.notify();
     this.scheduleSave();
   }

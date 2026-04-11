@@ -11,7 +11,7 @@ import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
 describe("DeckState", () => {
   test("DeckState with empty cards array is valid", () => {
-    const state: DeckState = { cards: [] };
+    const state: DeckState = { cards: [], sets: [] };
     expect(state.cards).toBeDefined();
     expect(Array.isArray(state.cards)).toBe(true);
     expect(state.cards.length).toBe(0);
@@ -138,7 +138,7 @@ describe("serialize and deserialize", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card] };
+    const canvasState: DeckState = { cards: [card], sets: [] };
 
     const serialized = serialize(canvasState);
     const json = JSON.stringify(serialized);
@@ -172,7 +172,7 @@ describe("serialize and deserialize", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card] };
+    const canvasState: DeckState = { cards: [card], sets: [] };
 
     const json = JSON.stringify(serialize(canvasState));
     const restored = deserialize(json, 1920, 1080);
@@ -260,7 +260,7 @@ describe("serialize and deserialize", () => {
       acceptsFamilies: ["standard"],
     };
 
-    const json = JSON.stringify(serialize({ cards: [cardA, cardB] }));
+    const json = JSON.stringify(serialize({ cards: [cardA, cardB], sets: [] }));
     const restored = deserialize(json, 1920, 1080);
 
     expect(restored.cards.length).toBe(2);
@@ -365,7 +365,7 @@ describe("focusCard data model (D06)", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
     const p2 = makeCard("files");
-    const canvasState: DeckState = { cards: [p0, p1, p2] };
+    const canvasState: DeckState = { cards: [p0, p1, p2], sets: [] };
 
     // Simulate focusCard(p0.id): splice and push
     const idx = canvasState.cards.findIndex((p) => p.id === p0.id);
@@ -382,7 +382,7 @@ describe("focusCard data model (D06)", () => {
   test("focusing already-last card does not reorder", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
-    const canvasState: DeckState = { cards: [p0, p1] };
+    const canvasState: DeckState = { cards: [p0, p1], sets: [] };
 
     // p1 is already last — focusCard would early-return
     const idx = canvasState.cards.findIndex((p) => p.id === p1.id);
@@ -397,7 +397,7 @@ describe("focusCard data model (D06)", () => {
 
 describe("addNewCard data model (D01)", () => {
   test("pushing a new CardState adds it at canvas center", () => {
-    const canvasState: DeckState = { cards: [] };
+    const canvasState: DeckState = { cards: [], sets: [] };
     const canvasW = 800;
     const canvasH = 600;
     const CARD_W = 400;
@@ -430,7 +430,7 @@ describe("removeCard data model (D01)", () => {
   test("splicing a card from the array removes it", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
-    const canvasState: DeckState = { cards: [p0, p1] };
+    const canvasState: DeckState = { cards: [p0, p1], sets: [] };
 
     // Simulate removeCard: filter out the card whose tab matches
     const tabIdToRemove = p0.tabs[0].id;
@@ -461,7 +461,7 @@ describe("removeCard data model (D01)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card] };
+    const canvasState: DeckState = { cards: [card], sets: [] };
 
     // Remove tab1
     canvasState.cards = canvasState.cards
@@ -584,7 +584,7 @@ describe("CardState collapsed field (Phase 5f, Step 1)", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const state: DeckState = { cards: [card] };
+    const state: DeckState = { cards: [card], sets: [] };
     const serialized = serialize(state) as { version: number; cards: CardState[] };
     expect(serialized.cards.length).toBe(1);
     expect(serialized.cards[0].collapsed).toBe(true);
@@ -601,7 +601,7 @@ describe("CardState collapsed field (Phase 5f, Step 1)", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const json = JSON.stringify(serialize({ cards: [card] }));
+    const json = JSON.stringify(serialize({ cards: [card], sets: [] }));
     const restored = deserialize(json, 1920, 1080);
     expect(restored.cards[0].collapsed).toBe(true);
   });
@@ -641,12 +641,12 @@ describe("TabStateBag type (Phase 5f, Step 1)", () => {
 
 describe("DeckState focusedCardId field (Phase 5f, Step 1)", () => {
   test("DeckState accepts optional focusedCardId", () => {
-    const state: DeckState = { cards: [], focusedCardId: "card-abc" };
+    const state: DeckState = { cards: [], sets: [], focusedCardId: "card-abc" };
     expect(state.focusedCardId).toBe("card-abc");
   });
 
   test("DeckState without focusedCardId has undefined field", () => {
-    const state: DeckState = { cards: [] };
+    const state: DeckState = { cards: [], sets: [] };
     expect(state.focusedCardId).toBeUndefined();
   });
 });

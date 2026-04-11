@@ -19,10 +19,40 @@ import { render, fireEvent, act } from "@testing-library/react";
 import { CardFrame } from "@/components/chrome/card-frame";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 import type { CardState } from "@/layout-tree";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Minimal mock IDeckManagerStore for CardFrame tests.
+ * CardFrame requires a `store` prop for explicit set membership access.
+ */
+const mockStore: IDeckManagerStore = {
+  subscribe: (_cb: () => void) => () => {},
+  getSnapshot: () => ({ cards: [], sets: [] }),
+  getVersion: () => 0,
+  handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+  handleCardClosed: (_id: string) => {},
+  handleCardFocused: (_id: string) => {},
+  addCard: (_componentId: string) => null,
+  addTab: (_cardId: string, _componentId: string) => null,
+  removeTab: (_cardId: string, _tabId: string) => {},
+  setActiveTab: (_cardId: string, _tabId: string) => {},
+  reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
+  detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
+  mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+  getTabState: (_tabId: string) => undefined,
+  setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+  initialFocusedCardId: undefined,
+  registerSaveCallback: (_id: string, _callback: () => void) => {},
+  unregisterSaveCallback: (_id: string) => {},
+  toggleCardCollapse: (_id: string) => {},
+  getCardSet: (_cardId: string) => [],
+  joinSet: (_cardIds: string[]) => {},
+  removeFromSet: (_cardId: string) => {},
+};
 
 function makeCardState(overrides: Partial<CardState> = {}): CardState {
   return {
@@ -65,6 +95,7 @@ function makeRenderContent(
 }
 
 const defaultProps = {
+  store: mockStore,
   cardState: makeCardState(),
   onCardMoved: mock(() => {}),
   onCardClosed: mock(() => {}),

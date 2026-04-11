@@ -755,6 +755,7 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
           acceptsFamilies: ["standard"],
         },
       ],
+      sets: [],
     });
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId);
@@ -787,6 +788,7 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
           acceptsFamilies: ["standard"],
         },
       ],
+      sets: [],
     });
 
     expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
@@ -819,6 +821,7 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
           acceptsFamilies: ["standard"],
         },
       ],
+      sets: [],
     });
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId);
