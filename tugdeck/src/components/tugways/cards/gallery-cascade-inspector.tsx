@@ -82,7 +82,7 @@ export function GalleryCascadeInspector() {
       {/* ---- Activation instructions ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Cascade Inspector Demo</TugLabel>
-        <TugLabel size="xs" color="muted" data-testid="inspector-instructions">Hold Shift+Option and hover the elements below to see the cascade inspector in action. Each sample exercises a different token chain depth. Click to pin the overlay; press Escape to close.</TugLabel>
+        <TugLabel size="2xs" color="muted" data-testid="inspector-instructions">Hold Shift+Option and hover the elements below to see the cascade inspector in action. Each sample exercises a different token chain depth. Click to pin the overlay; press Escape to close.</TugLabel>
       </div>
 
       <div className="cg-divider" />
@@ -90,7 +90,7 @@ export function GalleryCascadeInspector() {
       {/* ---- (a) TugPopupButton: three-layer chain --tugx-menu-* -> --tug-* -> palette ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">(a) TugPopupButton — three-layer chain</TugLabel>
-        <TugLabel size="xs" color="muted">--tugx-menu-* → --tug-* → palette variable</TugLabel>
+        <TugLabel size="2xs" color="muted">--tugx-menu-* → --tug-* → palette variable</TugLabel>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
           <TugPopupButton
             label="Open Menu"
@@ -99,7 +99,7 @@ export function GalleryCascadeInspector() {
             items={INSPECTOR_DEMO_ITEMS}
           />
           {dropdownSelected !== null && (
-            <TugLabel size="xs" color="muted">{`Selected: ${dropdownSelected}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Selected: ${dropdownSelected}`}</TugLabel>
           )}
         </div>
       </div>
@@ -109,7 +109,7 @@ export function GalleryCascadeInspector() {
       {/* ---- (b) TugButton: two-layer chain --tug-* -> palette (no comp token) ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">(b) TugButton — two-layer chain (no comp token)</TugLabel>
-        <TugLabel size="xs" color="muted">--tug7-surface-control-primary-filled-accent-rest → palette variable. TugButton CSS references --tug-* directly — no --tug-button-* tokens are wired yet.</TugLabel>
+        <TugLabel size="2xs" color="muted">--tug7-surface-control-primary-filled-accent-rest → palette variable. TugButton CSS references --tug-* directly — no --tug-button-* tokens are wired yet.</TugLabel>
         <div className="cg-variant-row" data-testid="inspector-sample-button">
           <TugPushButton emphasis="filled" role="accent" size="md">
             Filled Accent
@@ -131,7 +131,7 @@ export function GalleryCascadeInspector() {
       {/* ---- (c) Colored div: --tug7-element-global-fill-normal-accent-rest -> palette ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">(c) Base accent token — --tug7-element-global-fill-normal-accent-rest</TugLabel>
-        <TugLabel size="xs" color="muted">Background uses var(--tug7-element-global-fill-normal-accent-rest) → palette variable. Two-layer chain: base token → palette variable → TugColor provenance.</TugLabel>
+        <TugLabel size="2xs" color="muted">Background uses var(--tug7-element-global-fill-normal-accent-rest) → palette variable. Two-layer chain: base token → palette variable → TugColor provenance.</TugLabel>
         <div
           data-testid="inspector-sample-accent"
           style={{
@@ -152,7 +152,7 @@ export function GalleryCascadeInspector() {
       {/* ---- (d) Surface-raised div: non-chromatic base token, terminal hex ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">(d) Surface raised token — --tug7-surface-global-primary-normal-raised-rest</TugLabel>
-        <TugLabel size="xs" color="muted">Background uses var(--tug7-surface-global-primary-normal-raised-rest). Non-chromatic base token: chain terminates at a literal hex value (not a palette variable), so no TugColor provenance is shown.</TugLabel>
+        <TugLabel size="2xs" color="muted">Background uses var(--tug7-surface-global-primary-normal-raised-rest). Non-chromatic base token: chain terminates at a literal hex value (not a palette variable), so no TugColor provenance is shown.</TugLabel>
         <div
           data-testid="inspector-sample-surface"
           style={{
@@ -174,7 +174,7 @@ export function GalleryCascadeInspector() {
       {/* ---- (e) Direct palette reference: var(--tug-orange-light) -> TugColor provenance ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">(e) Direct palette reference — --tug-orange-light</TugLabel>
-        <TugLabel size="xs" color="muted">Background uses var(--tug-orange-light) directly. Single-hop chain that terminates immediately at a palette variable — inspector shows TugColor provenance (hue: orange, preset: light) directly.</TugLabel>
+        <TugLabel size="2xs" color="muted">Background uses var(--tug-orange-light) directly. Single-hop chain that terminates immediately at a palette variable — inspector shows TugColor provenance (hue: orange, preset: light) directly.</TugLabel>
         <div
           data-testid="inspector-sample-palette"
           style={{

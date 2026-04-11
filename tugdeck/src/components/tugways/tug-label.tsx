@@ -18,8 +18,11 @@ import { useCopyableText } from "./use-copyable-text";
 
 // ---- Types ----
 
-/** TugLabel size names — matches TugInput sizes, plus xs for annotations. */
-export type TugLabelSize = "xs" | "sm" | "md" | "lg";
+/** TugLabel size names — matches --tug-font-size-* theme tokens. */
+export type TugLabelSize =
+  | "8xs" | "7xs" | "6xs" | "5xs" | "4xs" | "3xs" | "2xs"
+  | "xs" | "sm" | "md" | "lg" | "xl"
+  | "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "8xl";
 
 /** TugLabel color variants. */
 export type TugLabelColor = "default" | "muted";

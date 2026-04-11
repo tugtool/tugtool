@@ -45,7 +45,6 @@
   display: block;
   width: 100%;
   font-family: inherit;
-  font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: 0.01em;
@@ -137,19 +136,19 @@
 .tug-input-size-sm {
   height: 1.75rem; /* 28px — matches tug-button sm */
   padding: 0 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--tug-font-size-xs);
 }
 
 .tug-input-size-md {
   height: 2rem; /* 32px — matches tug-button md */
   padding: 0 0.625rem;
-  font-size: 0.8125rem;
+  font-size: var(--tug-font-size-sm);
 }
 
 .tug-input-size-lg {
   height: 2.25rem; /* 36px — matches tug-button lg */
   padding: 0 0.75rem;
-  font-size: 0.875rem;
+  font-size: var(--tug-font-size-md);
 }
 
 /* ============================================================================

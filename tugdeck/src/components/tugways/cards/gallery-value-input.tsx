@@ -64,17 +64,17 @@ export function GalleryValueInput() {
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>sm</span>
             <TugValueInput size="sm" value={smValue} senderId={smId} min={0} max={100} />
-            <TugLabel size="xs" color="muted">{`Value: ${smValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${smValue}`}</TugLabel>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>md</span>
             <TugValueInput size="md" value={mdValue} senderId={mdId} min={0} max={100} />
-            <TugLabel size="xs" color="muted">{`Value: ${mdValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${mdValue}`}</TugLabel>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>lg</span>
             <TugValueInput size="lg" value={lgValue} senderId={lgId} min={0} max={100} />
-            <TugLabel size="xs" color="muted">{`Value: ${lgValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${lgValue}`}</TugLabel>
           </div>
         </div>
       </div>
@@ -95,7 +95,7 @@ export function GalleryValueInput() {
               max={1}
               step={0.01}
             />
-            <TugLabel size="xs" color="muted">{`Value: ${percentValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${percentValue}`}</TugLabel>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>decimal</span>
@@ -107,7 +107,7 @@ export function GalleryValueInput() {
               max={10}
               step={0.1}
             />
-            <TugLabel size="xs" color="muted">{`Value: ${decimalValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${decimalValue}`}</TugLabel>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>integer</span>
@@ -118,7 +118,7 @@ export function GalleryValueInput() {
               max={100}
               step={1}
             />
-            <TugLabel size="xs" color="muted">{`Value: ${integerValue}`}</TugLabel>
+            <TugLabel size="2xs" color="muted">{`Value: ${integerValue}`}</TugLabel>
           </div>
         </div>
       </div>

@@ -298,7 +298,7 @@ export const TugConfirmPopover = React.forwardRef<
               {confirmLabel}
             </TugPushButton>
           </div>
-          <TugLabel size="lg" align="center">{message}</TugLabel>
+          <TugLabel size="md" align="center">{message}</TugLabel>
         </div>
       </TugPopoverContent>
     </TugPopover>

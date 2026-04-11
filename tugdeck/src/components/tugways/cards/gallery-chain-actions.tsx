@@ -81,7 +81,7 @@ function ActionEventDemo() {
   return (
     <div className="cg-section" data-testid="action-event-demo">
       <TugLabel className="cg-section-title">ActionEvent Dispatch</TugLabel>
-      <TugLabel size="xs" color="muted">Click the button to dispatch directly to a local responder node via sendToTarget. The handler receives the full ActionEvent and displays its fields below.</TugLabel>
+      <TugLabel size="2xs" color="muted">Click the button to dispatch directly to a local responder node via sendToTarget. The handler receives the full ActionEvent and displays its fields below.</TugLabel>
       <div className="cg-variant-row">
         <TugPushButton
           size="md"
@@ -90,7 +90,7 @@ function ActionEventDemo() {
           Dispatch demoAction
         </TugPushButton>
       </div>
-      <TugLabel size="xs" color="muted" data-testid="action-event-demo-status">{lastEventText !== null ? lastEventText : "No event received"}</TugLabel>
+      <TugLabel size="2xs" color="muted" data-testid="action-event-demo-status">{lastEventText !== null ? lastEventText : "No event received"}</TugLabel>
     </div>
   );
 }

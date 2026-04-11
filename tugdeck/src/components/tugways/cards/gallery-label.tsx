@@ -97,11 +97,11 @@ export function GalleryLabel() {
         <TugLabel className="cg-section-title">TugLabel — Multiline Wrapping</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">No maxLines — wraps freely:</TugLabel>
+            <TugLabel size="2xs" color="muted">No maxLines — wraps freely:</TugLabel>
             <TugLabel>{LONG_TEXT}</TugLabel>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">maxLines=2, no ellipsis:</TugLabel>
+            <TugLabel size="2xs" color="muted">maxLines=2, no ellipsis:</TugLabel>
             <TugLabel maxLines={2} ellipsis="none">{LONG_TEXT}</TugLabel>
           </div>
         </div>
@@ -114,15 +114,15 @@ export function GalleryLabel() {
         <TugLabel className="cg-section-title">TugLabel — Ellipsis: End (CSS line-clamp)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">maxLines=1:</TugLabel>
+            <TugLabel size="2xs" color="muted">maxLines=1:</TugLabel>
             <TugLabel maxLines={1} ellipsis="end">{LONG_TEXT}</TugLabel>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">maxLines=2:</TugLabel>
+            <TugLabel size="2xs" color="muted">maxLines=2:</TugLabel>
             <TugLabel maxLines={2} ellipsis="end">{LONG_TEXT}</TugLabel>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">maxLines=3:</TugLabel>
+            <TugLabel size="2xs" color="muted">maxLines=3:</TugLabel>
             <TugLabel maxLines={3} ellipsis="end">{LONG_TEXT}</TugLabel>
           </div>
         </div>
@@ -135,11 +135,11 @@ export function GalleryLabel() {
         <TugLabel className="cg-section-title">TugLabel — Ellipsis: Start</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">File path, maxLines=1:</TugLabel>
+            <TugLabel size="2xs" color="muted">File path, maxLines=1:</TugLabel>
             <TugLabel maxLines={1} ellipsis="start" icon={<Folder />}>{PATH_TEXT}</TugLabel>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Long text, maxLines=2:</TugLabel>
+            <TugLabel size="2xs" color="muted">Long text, maxLines=2:</TugLabel>
             <TugLabel maxLines={2} ellipsis="start">{LONG_TEXT}</TugLabel>
           </div>
         </div>
@@ -152,11 +152,11 @@ export function GalleryLabel() {
         <TugLabel className="cg-section-title">TugLabel — Ellipsis: Middle</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">File path, maxLines=1:</TugLabel>
+            <TugLabel size="2xs" color="muted">File path, maxLines=1:</TugLabel>
             <TugLabel maxLines={1} ellipsis="middle" icon={<Folder />}>{PATH_TEXT}</TugLabel>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Long text, maxLines=2:</TugLabel>
+            <TugLabel size="2xs" color="muted">Long text, maxLines=2:</TugLabel>
             <TugLabel maxLines={2} ellipsis="middle">{LONG_TEXT}</TugLabel>
           </div>
         </div>

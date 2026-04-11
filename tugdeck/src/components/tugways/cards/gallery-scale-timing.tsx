@@ -58,7 +58,7 @@ interface SliderRowProps {
 function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note }: SliderRowProps) {
   return (
     <div className="cg-control-group cg-st-slider-row">
-      <TugLabel size="xs" color="muted" mono htmlFor={id}>{label}</TugLabel>
+      <TugLabel size="2xs" color="muted" mono htmlFor={id}>{label}</TugLabel>
       <input
         id={id}
         type="range"
@@ -75,8 +75,8 @@ function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note 
           }
         }}
       />
-      <TugLabel size="xs" mono>{formatValue(value, step < 0.1 ? 2 : 1)}</TugLabel>
-      {note && <TugLabel size="xs" color="muted">{note}</TugLabel>}
+      <TugLabel size="2xs" mono>{formatValue(value, step < 0.1 ? 2 : 1)}</TugLabel>
+      {note && <TugLabel size="2xs" color="muted">{note}</TugLabel>}
     </div>
   );
 }
@@ -200,8 +200,8 @@ export function GalleryScaleTiming() {
               checked={motionOn}
               onChange={(e) => setMotionOn(e.target.checked)}
             />
-            <TugLabel size="xs" color="muted" htmlFor="st-motion">Motion enabled (--tug-motion)</TugLabel>
-            <TugLabel size="xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
+            <TugLabel size="2xs" color="muted" htmlFor="st-motion">Motion enabled (--tug-motion)</TugLabel>
+            <TugLabel size="2xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
           </div>
         </div>
       </div>
@@ -213,16 +213,16 @@ export function GalleryScaleTiming() {
         <TugLabel className="cg-section-title">JS Helper Readout</TugLabel>
         <div className="cg-st-readout" data-testid="st-readout">
           <div className="cg-st-readout-row">
-            <TugLabel size="xs" color="muted" mono>getTugZoom()</TugLabel>
-            <TugLabel size="xs" mono data-testid="st-readout-scale">{formatValue(readout.scale)}</TugLabel>
+            <TugLabel size="2xs" color="muted" mono>getTugZoom()</TugLabel>
+            <TugLabel size="2xs" mono data-testid="st-readout-scale">{formatValue(readout.scale)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <TugLabel size="xs" color="muted" mono>getTugTiming()</TugLabel>
-            <TugLabel size="xs" mono data-testid="st-readout-timing">{formatValue(readout.timing)}</TugLabel>
+            <TugLabel size="2xs" color="muted" mono>getTugTiming()</TugLabel>
+            <TugLabel size="2xs" mono data-testid="st-readout-timing">{formatValue(readout.timing)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <TugLabel size="xs" color="muted" mono>isTugMotionEnabled()</TugLabel>
-            <TugLabel size="xs" mono data-testid="st-readout-motion">{String(readout.motionEnabled)}</TugLabel>
+            <TugLabel size="2xs" color="muted" mono>isTugMotionEnabled()</TugLabel>
+            <TugLabel size="2xs" mono data-testid="st-readout-motion">{String(readout.motionEnabled)}</TugLabel>
           </div>
         </div>
       </div>
@@ -258,7 +258,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Petals Spinner ---- */}
           <div className="cg-st-preview-row">
-            <TugLabel size="xs" color="muted">Petals</TugLabel>
+            <TugLabel size="2xs" color="muted">Petals</TugLabel>
             {[18].map((sz) => (
               <span
                 key={sz}
@@ -273,7 +273,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Pole Progress Bar ---- */}
           <div className="cg-st-preview-row">
-            <TugLabel size="xs" color="muted">Pole</TugLabel>
+            <TugLabel size="2xs" color="muted">Pole</TugLabel>
             <div style={{ width: "30%" }}>
               <div className="tug-pole"><div className="tug-pole-inner" /></div>
             </div>

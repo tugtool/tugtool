@@ -61,7 +61,7 @@ export function GalleryDefaultButton() {
     <div className="cg-content" data-testid="gallery-default-button">
       <div className="cg-section">
         <TugLabel className="cg-section-title">Default Button</TugLabel>
-        <TugLabel size="xs" color="muted">Click outside the buttons, then press Enter to activate the default button.</TugLabel>
+        <TugLabel size="2xs" color="muted">Click outside the buttons, then press Enter to activate the default button.</TugLabel>
         <div className="cg-variant-row">
           <TugPushButton
             size="md"
@@ -81,7 +81,7 @@ export function GalleryDefaultButton() {
           </span>
         </div>
         {lastAction !== null && (
-          <TugLabel size="xs" color="muted" data-testid="gallery-default-button-status">{lastAction}</TugLabel>
+          <TugLabel size="2xs" color="muted" data-testid="gallery-default-button-status">{lastAction}</TugLabel>
         )}
       </div>
     </div>

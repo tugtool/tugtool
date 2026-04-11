@@ -25,6 +25,97 @@ Gallery cards use ~60 `cg-*` CSS classes defined in `gallery.css` to style raw `
 | `cg-anim-cancel-box` | Cancellation mode indicator |
 | `cg-anim-slot-box` | Named slot indicator |
 
+## Step 0: Type scale foundation
+
+Before migrating gallery components, establish a type scale that all components consume from the theme. TugLabel currently hardcodes its own `rem` values and ignores the `--tug-font-size-*` tokens that 10 other components already use. This must be fixed at the foundation level first.
+
+### Design decisions
+
+**D-TS1: One type scale, defined in the theme.** All font sizes come from `--tug-font-size-*` CSS custom properties defined in `brio.css` and `harmony.css`. No component hardcodes pixel or rem values for font-size. The `--tug-` prefix conforms to the scale/dimension category in `tuglaws/token-naming.md`.
+
+**D-TS2: Scale stop names follow the established convention.** All `--tug-` scale tokens (spacing, radius, icon-size) already use the same stop names. The type scale uses the same vocabulary. The full set of available stop names, in order:
+
+`8xs · 7xs · 6xs · 5xs · 4xs · 3xs · 2xs · xs · sm · md · lg · xl · 2xl · 3xl · 4xl · 5xl · 6xl · 7xl · 8xl`
+
+Not every scale must define every stop. A scale defines the stops it needs. The type scale defines the full 19-stop range from 5px to 72px to accommodate future needs without extending the scale later.
+
+**D-TS3: Values are in `px`.** All existing `--tug-` scale tokens use `px`. The type scale follows suit. This is a desktop developer tool — absolute pixel sizing is appropriate.
+
+**D-TS4: The current theme values are canonical.** The existing 7-stop type scale in the theme files (`2xs=11, xs=12, sm=13, md=14, lg=16, xl=20, 2xl=24`) is consumed by 10+ component CSS files. These values are the source of truth. TugLabel must be brought into conformance with them, not the other way around.
+
+**D-TS5: Paired line-height tokens.** Each `--tug-font-size-*` stop has a corresponding `--tug-line-height-*` stop. New size stops require new line-height stops.
+
+**D-TS6: Components reference tokens, never raw values.** Every `font-size` declaration in component CSS must be `var(--tug-font-size-*)`. Any hardcoded font-size is a bug.
+
+### Current state
+
+Theme tokens (both brio and harmony, identical):
+
+| Token | Value |
+|-------|-------|
+| `--tug-font-size-2xs` | 11px |
+| `--tug-font-size-xs` | 12px |
+| `--tug-font-size-sm` | 13px |
+| `--tug-font-size-md` | 14px |
+| `--tug-font-size-lg` | 16px |
+| `--tug-font-size-xl` | 20px |
+| `--tug-font-size-2xl` | 24px |
+
+TugLabel's hardcoded values (wrong — ignores theme tokens):
+
+| TugLabel size prop | Hardcoded value | Nearest theme token |
+|--------------------|----------------|---------------------|
+| `xs` | 0.6875rem (11px) | `--tug-font-size-2xs` (11px) |
+| `sm` | 0.75rem (12px) | `--tug-font-size-xs` (12px) |
+| `md` | 0.8125rem (13px) | `--tug-font-size-sm` (13px) |
+| `lg` | 0.875rem (14px) | `--tug-font-size-md` (14px) |
+
+TugLabel's size names don't even match the token names they correspond to. `size="md"` maps to `--tug-font-size-sm`. This is a mess.
+
+### Required work
+
+**0a. Extend the scale to 19 stops.** The type scale covers 5px–72px:
+
+| Token | Value |
+|-------|-------|
+| `--tug-font-size-8xs` | 5px |
+| `--tug-font-size-7xs` | 6px |
+| `--tug-font-size-6xs` | 7px |
+| `--tug-font-size-5xs` | 8px |
+| `--tug-font-size-4xs` | 9px |
+| `--tug-font-size-3xs` | 10px |
+| `--tug-font-size-2xs` | 11px |
+| `--tug-font-size-xs` | 12px |
+| `--tug-font-size-sm` | 13px |
+| `--tug-font-size-md` | 14px |
+| `--tug-font-size-lg` | 16px |
+| `--tug-font-size-xl` | 20px |
+| `--tug-font-size-2xl` | 24px |
+| `--tug-font-size-3xl` | 30px |
+| `--tug-font-size-4xl` | 36px |
+| `--tug-font-size-5xl` | 48px |
+| `--tug-font-size-6xl` | 56px |
+| `--tug-font-size-7xl` | 64px |
+| `--tug-font-size-8xl` | 72px |
+
+The existing 7 stops (2xs through 2xl) retain their current values. The scale extends 5 stops below and 6 stops above.
+
+**0b. Add any new stops to both theme files.** Add new `--tug-font-size-*` and `--tug-line-height-*` entries to `brio.css` and `harmony.css`.
+
+**0c. Update `tug-token-names.ts`.** Regenerate or manually add new token names to the generated file.
+
+**0d. Rewrite TugLabel to consume theme tokens.** Replace all hardcoded rem values with `var(--tug-font-size-*)`. The `size` prop values must match the token stop names exactly: `size="md"` → `var(--tug-font-size-md)`. Remove `font-size` from the base `.tug-label` class — it comes from the size variant class.
+
+**0e. Fix TugLabel's size type.** `TugLabelSize` must enumerate the same stop names used by the theme tokens: `"8xs" | "7xs" | "6xs" | "5xs" | "4xs" | "3xs" | "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "8xl"`.
+
+**0f. Update all TugLabel call sites.** Every `size="xs"` that actually means 11px must change to `size="2xs"` to match the theme token. Every `size="md"` that actually means 13px must change to `size="sm"`. This is a name correction — the visual output at each call site stays the same.
+
+**0g. Fix TugLabel's `gap` unit.** Change `gap: 0.375rem` to `0.35em` so icon-text spacing scales proportionally with font size.
+
+**0h. Audit all other components for hardcoded font-size.** Any component CSS with a raw `font-size` value (not `var(--tug-font-size-*)`) is non-conforming and must be fixed.
+
+**0i. Update `tuglaws/token-naming.md`.** Document the type scale convention under the `--tug-` scale/dimension section, including the stop name vocabulary and the requirement that every font-size declaration uses a token.
+
 ## Step 1: Text labels to TugLabel
 
 Replace all text-display `<div>`, `<p>`, `<span>` elements that use `cg-*` text classes with `<TugLabel>`.

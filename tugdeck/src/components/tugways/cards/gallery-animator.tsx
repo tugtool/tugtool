@@ -100,7 +100,7 @@ function PercentSlider({
         value={value}
         onChange={(e) => onChange(parseInt(e.target.value, 10))}
       />
-      <TugLabel size="xs" mono>{`${value}%`}</TugLabel>
+      <TugLabel size="2xs" mono>{`${value}%`}</TugLabel>
     </div>
   );
 }
@@ -191,7 +191,7 @@ function PhysicsCurvesDemo() {
   return (
     <div className="cg-section">
       <TugLabel className="cg-section-title">Physics Solvers</TugLabel>
-      <TugLabel size="xs" color="muted">Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver drive WAAPI animations with physically-accurate motion.</TugLabel>
+      <TugLabel size="2xs" color="muted">Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver drive WAAPI animations with physically-accurate motion.</TugLabel>
       <div className="cg-anim-stages" data-testid="anim-physics-stage">
         {/* Spring — horizontal */}
         <TugBox
@@ -299,7 +299,7 @@ function DurationTokensDemo() {
   return (
     <div className="cg-section">
       <TugLabel className="cg-section-title">Duration Tokens</TugLabel>
-      <TugLabel size="xs" color="muted">Duration tokens resolve to base ms values scaled by getTugTiming(). Click each to see the speed difference.</TugLabel>
+      <TugLabel size="2xs" color="muted">Duration tokens resolve to base ms values scaled by getTugTiming(). Click each to see the speed difference.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -406,7 +406,7 @@ function CancelModesDemo() {
   return (
     <div className="cg-section">
       <TugLabel className="cg-section-title">Cancellation Modes</TugLabel>
-      <TugLabel size="xs" color="muted">Start a slow animation, then cancel it with each mode to see the difference. snap-to-end jumps to final state, hold-at-current freezes in place, reverse-from-current animates back to start.</TugLabel>
+      <TugLabel size="2xs" color="muted">Start a slow animation, then cancel it with each mode to see the difference. snap-to-end jumps to final state, hold-at-current freezes in place, reverse-from-current animates back to start.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -439,7 +439,7 @@ function CancelModesDemo() {
         </TugPushButton>
         <PercentSlider value={pct} onChange={setPct} />
       </div>
-      <TugLabel size="xs" color="muted" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
+      <TugLabel size="2xs" color="muted" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
     </div>
   );
 }
@@ -516,7 +516,7 @@ function NamedSlotsDemo() {
   return (
     <div className="cg-section">
       <TugLabel className="cg-section-title">Named Slots</TugLabel>
-      <TugLabel size="xs" color="muted">Animations with the same key on the same element automatically cancel the previous one. Different keys coexist independently.</TugLabel>
+      <TugLabel size="2xs" color="muted">Animations with the same key on the same element automatically cancel the previous one. Different keys coexist independently.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -547,7 +547,7 @@ function NamedSlotsDemo() {
         <PercentSlider value={pct} onChange={setPct} />
       </div>
       {lastAction !== null && (
-        <TugLabel size="xs" color="muted" data-testid="anim-slot-status">{lastAction}</TugLabel>
+        <TugLabel size="2xs" color="muted" data-testid="anim-slot-status">{lastAction}</TugLabel>
       )}
     </div>
   );

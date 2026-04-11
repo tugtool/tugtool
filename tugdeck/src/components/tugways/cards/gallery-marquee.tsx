@@ -35,7 +35,7 @@ export function GalleryMarquee() {
       {/* ---- Short text (no animation) ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">TugMarquee — Short Text (No Scroll)</TugLabel>
-        <TugLabel size="xs" color="muted">Text fits within the container — stays static, no animation.</TugLabel>
+        <TugLabel size="2xs" color="muted">Text fits within the container — stays static, no animation.</TugLabel>
         <div style={{ maxWidth: "360px" }}>
           <TugMarquee>{SHORT_TEXT}</TugMarquee>
         </div>
@@ -73,15 +73,15 @@ export function GalleryMarquee() {
         <TugLabel className="cg-section-title">TugMarquee — Speed Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">Slow (15 px/s):</TugLabel>
+            <TugLabel size="2xs" color="muted">Slow (15 px/s):</TugLabel>
             <TugMarquee speed={15}>{LONG_TEXT}</TugMarquee>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Default (30 px/s):</TugLabel>
+            <TugLabel size="2xs" color="muted">Default (30 px/s):</TugLabel>
             <TugMarquee speed={30}>{LONG_TEXT}</TugMarquee>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Fast (60 px/s):</TugLabel>
+            <TugLabel size="2xs" color="muted">Fast (60 px/s):</TugLabel>
             <TugMarquee speed={60}>{LONG_TEXT}</TugMarquee>
           </div>
         </div>
@@ -94,15 +94,15 @@ export function GalleryMarquee() {
         <TugLabel className="cg-section-title">TugMarquee — Pause Time Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <div>
-            <TugLabel size="xs" color="muted">Short pause (500ms):</TugLabel>
+            <TugLabel size="2xs" color="muted">Short pause (500ms):</TugLabel>
             <TugMarquee pauseTime={500}>{MEDIUM_TEXT}</TugMarquee>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Default pause (2000ms):</TugLabel>
+            <TugLabel size="2xs" color="muted">Default pause (2000ms):</TugLabel>
             <TugMarquee pauseTime={2000}>{MEDIUM_TEXT}</TugMarquee>
           </div>
           <div>
-            <TugLabel size="xs" color="muted">Long pause (5000ms):</TugLabel>
+            <TugLabel size="2xs" color="muted">Long pause (5000ms):</TugLabel>
             <TugMarquee pauseTime={5000}>{MEDIUM_TEXT}</TugMarquee>
           </div>
         </div>
@@ -134,7 +134,7 @@ export function GalleryMarquee() {
       {/* ---- Animation Disabled ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">TugMarquee — Animation Disabled</TugLabel>
-        <TugLabel size="xs" color="muted">animate=false — static with end ellipsis, even when text overflows.</TugLabel>
+        <TugLabel size="2xs" color="muted">animate=false — static with end ellipsis, even when text overflows.</TugLabel>
         <div style={{ maxWidth: "280px" }}>
           <TugMarquee animate={false} icon={<FileText />}>{LONG_TEXT}</TugMarquee>
         </div>
