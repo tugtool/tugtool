@@ -51,6 +51,7 @@ body {
      baseline (globals.css). Form controls need explicit opt-in. */
   user-select: text;
   -webkit-user-select: text;
+  cursor: text;
 }
 
 /* ---- Focus ---- */

@@ -67,6 +67,7 @@
      and ranged selection works. */
   user-select: text;
   -webkit-user-select: text;
+  cursor: text;
 }
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */

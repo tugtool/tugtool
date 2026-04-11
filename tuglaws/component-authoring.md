@@ -812,6 +812,24 @@ The browser's native context menu is suppressed app-wide. Every right-click prod
 
 Never let the native browser context menu appear — it reveals the web implementation.
 
+### Cursors
+
+The cursor tells the user what will happen if they click. The baseline is `cursor: default` (arrow) on `body` and `.tugcard-content`. Components override explicitly — never leave `cursor: auto` on any element (it shows an I-beam over text, implying selectability).
+
+| Cursor | When to use | Set by |
+|--------|-------------|--------|
+| `default` (arrow) | Chrome: labels, headers, toolbars, backgrounds, empty space | Inherited from `.tugcard-content` — no action needed |
+| `text` (I-beam) | Selectable content: text inputs, textareas, contentEditable, markdown view | Component CSS (`cursor: text` alongside `user-select: text`) |
+| `pointer` (hand) | Interactive controls: buttons, checkboxes, switches, links | Component CSS (`cursor: pointer`) |
+| `not-allowed` | Disabled controls | Component CSS on disabled/aria-disabled state |
+| `grab` / `grabbing` | Draggable surfaces (card title bar) | Component CSS |
+| `crosshair` | Precision pick (color pickers) | Component CSS |
+| `ew-resize` / `ns-resize` / `nwse-resize` | Resize handles | Component CSS |
+
+**Rule: pair `cursor: text` with `user-select: text`.** Every selectable component sets both. If text shows an I-beam, the user expects to be able to select it. If text is non-selectable, it must show the arrow.
+
+**Rule: chrome inherits the arrow.** Chrome components do not need to set `cursor: default` — they inherit it from `.tugcard-content`. Only set it explicitly if overriding a more specific rule (e.g., `cursor: default` on a readOnly input that would otherwise show I-beam).
+
 ---
 
 ## Accessibility
