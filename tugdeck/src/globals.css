@@ -26,6 +26,7 @@ body {
     linear-gradient(90deg, var(--tug7-surface-global-primary-normal-grid-rest) 1px, transparent 1px);
   background-size: 24px 24px;
   user-select: none;
+  cursor: default;
 }
 
 #deck-container {

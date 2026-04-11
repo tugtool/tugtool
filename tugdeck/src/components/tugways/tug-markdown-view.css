@@ -38,6 +38,7 @@
      inherits none. This component contains user-selectable content. */
   user-select: text;
   -webkit-user-select: text;
+  cursor: text;
 
   /* Read-only: suppress the blinking caret. The browser may paint one when
      the scroll container (tabIndex=0) has focus and a collapsed selection

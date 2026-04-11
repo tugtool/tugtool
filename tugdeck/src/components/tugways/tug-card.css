@@ -353,6 +353,9 @@ body {
      user-select: text in their own CSS. Card chrome stays non-selectable. */
   user-select: none;
   -webkit-user-select: none;
+  /* Arrow cursor on chrome. Selectable components (text inputs, markdown
+     view) override to cursor: text in their own CSS. */
+  cursor: default;
   overscroll-behavior: contain;
 }
 
