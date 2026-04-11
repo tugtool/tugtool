@@ -10,7 +10,7 @@
  *   - Side-by-side comparisons with real TugPushButton for context
  */
 
-import React, { useState } from "react";
+import React, { useState, useId } from "react";
 import { Star, Circle, AlertTriangle, Check, Zap, Database, Shield } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
@@ -20,6 +20,8 @@ import {
 import "./gallery-badge.css";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugSlider } from "@/components/tugways/tug-slider";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---- Types ----
 
@@ -66,39 +68,6 @@ function roleToOklch(role: MockupRole, intensity: number, tone: number, alpha?: 
   return oklch;
 }
 
-// ---- Slider ----
-
-function MockupSlider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="badge-mockup-slider">
-      <span className="badge-mockup-slider-label">{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="badge-mockup-slider-input"
-      />
-      <span className="badge-mockup-slider-value">{value}</span>
-    </div>
-  );
-}
 
 // ---- MockupBadge ----
 
@@ -188,6 +157,26 @@ export function GalleryBadgeMockup() {
 
   const [radius, setRadius] = useState(DEFAULTS.radius);
 
+  const fgIntensityId = useId();
+  const fgToneId = useId();
+  const bgIntensityId = useId();
+  const bgToneId = useId();
+  const bgAlphaId = useId();
+  const borderIntensityId = useId();
+  const borderToneId = useId();
+  const borderAlphaId = useId();
+  const borderWidthId = useId();
+  const radiusId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueNumber: {
+      [fgIntensityId]: setFgIntensity, [fgToneId]: setFgTone,
+      [bgIntensityId]: setBgIntensity, [bgToneId]: setBgTone, [bgAlphaId]: setBgAlpha,
+      [borderIntensityId]: setBorderIntensity, [borderToneId]: setBorderTone,
+      [borderAlphaId]: setBorderAlpha, [borderWidthId]: setBorderWidth,
+      [radiusId]: setRadius,
+    },
+  });
+
   function resetFg() { setFgIntensity(DEFAULTS.fgIntensity); setFgTone(DEFAULTS.fgTone); }
   function resetBg() { setBgIntensity(DEFAULTS.bgIntensity); setBgTone(DEFAULTS.bgTone); setBgAlpha(DEFAULTS.bgAlpha); }
   function resetBorder() { setBorderIntensity(DEFAULTS.borderIntensity); setBorderTone(DEFAULTS.borderTone); setBorderAlpha(DEFAULTS.borderAlpha); setBorderWidth(DEFAULTS.borderWidth); }
@@ -195,7 +184,8 @@ export function GalleryBadgeMockup() {
   function resetAll() { resetFg(); resetBg(); resetBorder(); resetShape(); }
 
   return (
-    <div className="cg-content" data-testid="gallery-badge-mockup-content">
+    <ResponderScope>
+    <div className="cg-content" data-testid="gallery-badge-mockup-content" ref={responderRef as (el: HTMLDivElement | null) => void}>
 
       {/* ---- Controls ---- */}
       <div className="cg-section">
@@ -203,25 +193,25 @@ export function GalleryBadgeMockup() {
         <div className="badge-mockup-controls">
           <div className="badge-mockup-control-group">
             <div className="badge-mockup-control-group-title">Foreground <button className="badge-mockup-reset" onClick={resetFg}>reset</button></div>
-            <MockupSlider label="Intensity" value={fgIntensity} min={0} max={100} onChange={setFgIntensity} />
-            <MockupSlider label="Tone" value={fgTone} min={0} max={100} onChange={setFgTone} />
+            <TugSlider size="sm" label="Intensity" value={fgIntensity} min={0} max={100} senderId={fgIntensityId} />
+            <TugSlider size="sm" label="Tone" value={fgTone} min={0} max={100} senderId={fgToneId} />
           </div>
           <div className="badge-mockup-control-group">
             <div className="badge-mockup-control-group-title">Background <button className="badge-mockup-reset" onClick={resetBg}>reset</button></div>
-            <MockupSlider label="Intensity" value={bgIntensity} min={0} max={100} onChange={setBgIntensity} />
-            <MockupSlider label="Tone" value={bgTone} min={0} max={100} onChange={setBgTone} />
-            <MockupSlider label="Alpha" value={bgAlpha} min={0} max={100} onChange={setBgAlpha} />
+            <TugSlider size="sm" label="Intensity" value={bgIntensity} min={0} max={100} senderId={bgIntensityId} />
+            <TugSlider size="sm" label="Tone" value={bgTone} min={0} max={100} senderId={bgToneId} />
+            <TugSlider size="sm" label="Alpha" value={bgAlpha} min={0} max={100} senderId={bgAlphaId} />
           </div>
           <div className="badge-mockup-control-group">
             <div className="badge-mockup-control-group-title">Border <button className="badge-mockup-reset" onClick={resetBorder}>reset</button></div>
-            <MockupSlider label="Intensity" value={borderIntensity} min={0} max={100} onChange={setBorderIntensity} />
-            <MockupSlider label="Tone" value={borderTone} min={0} max={100} onChange={setBorderTone} />
-            <MockupSlider label="Alpha" value={borderAlpha} min={0} max={100} onChange={setBorderAlpha} />
-            <MockupSlider label="Width" value={borderWidth} min={0} max={3} onChange={setBorderWidth} />
+            <TugSlider size="sm" label="Intensity" value={borderIntensity} min={0} max={100} senderId={borderIntensityId} />
+            <TugSlider size="sm" label="Tone" value={borderTone} min={0} max={100} senderId={borderToneId} />
+            <TugSlider size="sm" label="Alpha" value={borderAlpha} min={0} max={100} senderId={borderAlphaId} />
+            <TugSlider size="sm" label="Width" value={borderWidth} min={0} max={3} senderId={borderWidthId} />
           </div>
           <div className="badge-mockup-control-group">
             <div className="badge-mockup-control-group-title">Shape <button className="badge-mockup-reset" onClick={resetShape}>reset</button></div>
-            <MockupSlider label="Radius" value={radius} min={0} max={12} onChange={setRadius} />
+            <TugSlider size="sm" label="Radius" value={radius} min={0} max={12} senderId={radiusId} />
           </div>
         </div>
       </div>
@@ -321,5 +311,6 @@ export function GalleryBadgeMockup() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

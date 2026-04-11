@@ -20,7 +20,7 @@
  * @module components/tugways/cards/gallery-animator
  */
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useId } from "react";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
@@ -33,6 +33,8 @@ import {
 import type { TugAnimation } from "@/components/tugways/tug-animator";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugSlider } from "@/components/tugways/tug-slider";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,29 +84,6 @@ function useResizeReset(
 // PercentSlider -- shared control for track usage percentage
 // ---------------------------------------------------------------------------
 
-function PercentSlider({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="cg-anim-pct-row">
-      <span>Travel</span>
-      <input
-        type="range"
-        className="cg-anim-pct-range"
-        min={10}
-        max={100}
-        step={5}
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-      />
-      <TugLabel size="2xs" mono>{`${value}%`}</TugLabel>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // PhysicsCurvesDemo
@@ -122,6 +101,8 @@ function PhysicsCurvesDemo() {
 
   const animsRef = useRef<TugAnimation[]>([]);
   const [pct, setPct] = useState(100);
+  const pctId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({ setValueNumber: { [pctId]: setPct } });
 
   const cancelAll = useCallback(() => {
     for (const a of animsRef.current) {
@@ -190,7 +171,8 @@ function PhysicsCurvesDemo() {
   }, [cancelAll]);
 
   return (
-    <div className="cg-section">
+    <ResponderScope>
+    <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Physics Solvers</TugLabel>
       <TugLabel size="2xs" color="muted">Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver drive WAAPI animations with physically-accurate motion.</TugLabel>
       <div className="cg-anim-stages" data-testid="anim-physics-stage">
@@ -246,9 +228,10 @@ function PhysicsCurvesDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={resetAll}>
           Reset
         </TugPushButton>
-        <PercentSlider value={pct} onChange={setPct} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
       </div>
     </div>
+    </ResponderScope>
   );
 }
 
@@ -262,6 +245,8 @@ function DurationTokensDemo() {
   const animRef = useRef<TugAnimation | null>(null);
   const [activeToken, setActiveToken] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
+  const pctId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({ setValueNumber: { [pctId]: setPct } });
 
   const reset = useCallback(() => {
     if (animRef.current) {
@@ -298,7 +283,8 @@ function DurationTokensDemo() {
   }, []);
 
   return (
-    <div className="cg-section">
+    <ResponderScope>
+    <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Duration Tokens</TugLabel>
       <TugLabel size="2xs" color="muted">Duration tokens resolve to base ms values scaled by getTugTiming(). Click each to see the speed difference.</TugLabel>
       <TugBox
@@ -330,7 +316,7 @@ function DurationTokensDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <PercentSlider value={pct} onChange={setPct} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
       </div>
       <div className="cg-anim-token-legend">
         {Object.entries(DURATION_TOKEN_MAP).map(([token, ms]) => (
@@ -341,6 +327,7 @@ function DurationTokensDemo() {
         ))}
       </div>
     </div>
+    </ResponderScope>
   );
 }
 
@@ -354,6 +341,8 @@ function CancelModesDemo() {
   const animRef = useRef<TugAnimation | null>(null);
   const [status, setStatus] = useState("idle");
   const [pct, setPct] = useState(100);
+  const pctId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({ setValueNumber: { [pctId]: setPct } });
 
   const reset = useCallback(() => {
     if (animRef.current) {
@@ -405,7 +394,8 @@ function CancelModesDemo() {
   }, []);
 
   return (
-    <div className="cg-section">
+    <ResponderScope>
+    <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Cancellation Modes</TugLabel>
       <TugLabel size="2xs" color="muted">Start a slow animation, then cancel it with each mode to see the difference. snap-to-end jumps to final state, hold-at-current freezes in place, reverse-from-current animates back to start.</TugLabel>
       <TugBox
@@ -438,10 +428,11 @@ function CancelModesDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <PercentSlider value={pct} onChange={setPct} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
       </div>
       <TugLabel size="2xs" color="muted" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
     </div>
+    </ResponderScope>
   );
 }
 
@@ -455,6 +446,8 @@ function NamedSlotsDemo() {
   const animsRef = useRef<TugAnimation[]>([]);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
+  const pctId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({ setValueNumber: { [pctId]: setPct } });
 
   const reset = useCallback(() => {
     for (const a of animsRef.current) {
@@ -515,7 +508,8 @@ function NamedSlotsDemo() {
   }, []);
 
   return (
-    <div className="cg-section">
+    <ResponderScope>
+    <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Named Slots</TugLabel>
       <TugLabel size="2xs" color="muted">Animations with the same key on the same element automatically cancel the previous one. Different keys coexist independently.</TugLabel>
       <TugBox
@@ -545,12 +539,13 @@ function NamedSlotsDemo() {
         <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugPushButton>
-        <PercentSlider value={pct} onChange={setPct} />
+        <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" showValue={false} />
       </div>
       {lastAction !== null && (
         <TugLabel size="2xs" color="muted" data-testid="anim-slot-status">{lastAction}</TugLabel>
       )}
     </div>
+    </ResponderScope>
   );
 }
 

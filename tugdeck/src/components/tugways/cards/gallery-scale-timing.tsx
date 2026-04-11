@@ -25,6 +25,8 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugSlider } from "@/components/tugways/tug-slider";
+import type { ActionPhase } from "@/components/tugways/responder-chain";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -42,48 +44,6 @@ function formatValue(v: number, decimals: number = 2): string {
   return v.toFixed(decimals);
 }
 
-// ---------------------------------------------------------------------------
-// SliderRow
-// ---------------------------------------------------------------------------
-
-interface SliderRowProps {
-  label: string;
-  id: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (v: number) => void;
-  /** Called on pointer release — use for expensive CSS changes like zoom. */
-  onCommit?: (v: number) => void;
-  note?: string;
-}
-
-function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note }: SliderRowProps) {
-  return (
-    <div className="cg-control-group cg-st-slider-row">
-      <TugLabel size="2xs" color="muted" mono htmlFor={id}>{label}</TugLabel>
-      <input
-        id={id}
-        type="range"
-        className="cg-st-range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        onPointerUp={(e) => onCommit?.(parseFloat((e.target as HTMLInputElement).value))}
-        onKeyUp={(e) => {
-          if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
-            onCommit?.(parseFloat((e.target as HTMLInputElement).value));
-          }
-        }}
-      />
-      <TugLabel size="2xs" mono>{formatValue(value, step < 0.1 ? 2 : 1)}</TugLabel>
-      {note && <TugLabel size="2xs" color="muted">{note}</TugLabel>}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // GalleryScaleTiming
@@ -168,9 +128,24 @@ export function GalleryScaleTiming() {
     };
   }, []);
 
-  // ---- Responder form for the motion checkbox ----
+  // ---- Responder form for sliders + checkbox ----
+  const scaleId = useId();
+  const timingId = useId();
   const motionCheckId = useId();
+
+  // Phase-aware setter: scale commits CSS zoom only on commit/discrete (D-PH3)
+  const handleScale = useCallback((v: number, phase: ActionPhase) => {
+    setScale(v);
+    if (phase === "commit" || phase === "discrete") {
+      commitScale(v);
+    }
+  }, [setScale, commitScale]);
+
   const { ResponderScope, responderRef } = useResponderForm({
+    setValueNumber: {
+      [scaleId]: handleScale,
+      [timingId]: setTiming,
+    },
     toggle: {
       [motionCheckId]: setMotionOn,
     },
@@ -184,27 +159,8 @@ export function GalleryScaleTiming() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Global Multipliers</TugLabel>
         <div className="cg-controls cg-st-controls">
-          <SliderRow
-            label="--tug-zoom"
-            id="st-scale"
-            min={0.85}
-            max={2.0}
-            step={0.05}
-            value={scale}
-            onChange={setScale}
-            onCommit={commitScale}
-            note="CSS zoom on body — scales entire UI including layout"
-          />
-          <SliderRow
-            label="--tug-timing"
-            id="st-timing"
-            min={0.1}
-            max={10.0}
-            step={0.1}
-            value={timing}
-            onChange={setTiming}
-            note="Scales all --tug-motion-duration-* tokens"
-          />
+          <TugSlider value={scale} senderId={scaleId} min={0.85} max={2.0} step={0.05} label="--tug-zoom" size="sm" />
+          <TugSlider value={timing} senderId={timingId} min={0.1} max={10.0} step={0.1} label="--tug-timing" size="sm" />
           <div className="cg-control-group cg-st-slider-row">
             <TugCheckbox checked={motionOn} senderId={motionCheckId} label="Motion enabled (--tug-motion)" size="sm" />
             <TugLabel size="2xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
