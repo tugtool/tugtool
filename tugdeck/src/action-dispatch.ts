@@ -13,7 +13,7 @@
  *   that never walks the responder chain. These stay as kebab-case
  *   string literals at the `registerAction` call site because they
  *   have no chain-action counterpart. Examples: `reload`, `set-theme`,
- *   `next-theme`, `set-dev-mode`, `show-card`, `source-tree`, `eval`.
+ *   `next-theme`, `set-dev-mode`, `show-card`, `source-tree`.
  *
  * - **Both** (identity) actions — Control-frame RPCs whose entire
  *   purpose is to inject a chain dispatch on behalf of a Swift menu
@@ -319,24 +319,5 @@ export function initActionDispatch(
     } else {
       console.warn(`${TUG_ACTIONS.CLOSE}: responder chain manager not registered yet`);
     }
-  });
-
-  // eval: Evaluate JavaScript code and send the result back via CONTROL frame.
-  // Used by /api/eval for programmatic access (e.g., running tests from CLI).
-  registerAction("eval", async (payload) => {
-    const requestId = payload.requestId;
-    const code = payload.code;
-    if (typeof requestId !== "string" || typeof code !== "string") {
-      console.warn("eval: missing requestId or code", payload);
-      return;
-    }
-    let result: unknown;
-    try {
-      // eslint-disable-next-line no-eval
-      result = await eval(code);
-    } catch (err) {
-      result = { error: String(err) };
-    }
-    connection.sendControlFrame("eval-response", { requestId, result });
   });
 }
