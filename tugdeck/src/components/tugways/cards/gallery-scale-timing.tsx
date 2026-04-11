@@ -15,7 +15,7 @@
  * @module components/tugways/cards/gallery-scale-timing
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useId } from "react";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
@@ -23,6 +23,8 @@ import { Star } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -166,8 +168,17 @@ export function GalleryScaleTiming() {
     };
   }, []);
 
+  // ---- Responder form for the motion checkbox ----
+  const motionCheckId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: {
+      [motionCheckId]: setMotionOn,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-scale-timing">
+    <ResponderScope>
+    <div className="cg-content" data-testid="gallery-scale-timing" ref={responderRef as (el: HTMLDivElement | null) => void}>
 
       {/* ---- Global Multipliers ---- */}
       <div className="cg-section">
@@ -195,14 +206,7 @@ export function GalleryScaleTiming() {
             note="Scales all --tug-motion-duration-* tokens"
           />
           <div className="cg-control-group cg-st-slider-row">
-            <input
-              id="st-motion"
-              type="checkbox"
-              className="cg-control-checkbox"
-              checked={motionOn}
-              onChange={(e) => setMotionOn(e.target.checked)}
-            />
-            <TugLabel size="2xs" color="muted" htmlFor="st-motion">Motion enabled (--tug-motion)</TugLabel>
+            <TugCheckbox checked={motionOn} senderId={motionCheckId} label="Motion enabled (--tug-motion)" size="sm" />
             <TugLabel size="2xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
           </div>
         </div>
@@ -293,5 +297,6 @@ export function GalleryScaleTiming() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

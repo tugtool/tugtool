@@ -19,6 +19,7 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -51,9 +52,13 @@ export function GalleryTitleBar() {
   // L11 migration via useResponderForm — the icon picker dispatches
   // setValue with a string payload; its binding writes iconName state.
   const iconPopupId = useId();
+  const closableId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [iconPopupId]: setIconName,
+    },
+    toggle: {
+      [closableId]: setClosable,
     },
   });
 
@@ -92,14 +97,7 @@ export function GalleryTitleBar() {
           </div>
 
           <div className="cg-control-group">
-            <input
-              id="cg-title-closable-check"
-              type="checkbox"
-              className="cg-control-checkbox"
-              checked={closable}
-              onChange={(e) => setClosable(e.target.checked)}
-            />
-            <TugLabel size="2xs" color="muted" htmlFor="cg-title-closable-check">Closable</TugLabel>
+            <TugCheckbox checked={closable} senderId={closableId} label="Closable" size="sm" />
           </div>
         </TugBox>
       </div>

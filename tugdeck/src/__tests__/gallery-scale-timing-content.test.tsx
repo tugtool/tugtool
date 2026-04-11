@@ -23,6 +23,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 import { GalleryScaleTiming } from "@/components/tugways/cards/gallery-scale-timing";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 
 // ---------------------------------------------------------------------------
 // Helper: invoke a React input element's onChange handler directly.
@@ -85,7 +86,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryScaleTiming />));
+        ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-scale-timing']")).not.toBeNull();
@@ -94,7 +95,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("renders the JS helper readout section", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     expect(container.querySelector("[data-testid='st-readout']")).not.toBeNull();
   });
@@ -102,7 +103,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("renders the live preview section", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     expect(container.querySelector("[data-testid='st-preview']")).not.toBeNull();
   });
@@ -110,7 +111,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("preview section contains buttons", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const preview = container.querySelector("[data-testid='st-preview']")!;
     const buttons = preview.querySelectorAll("button");
@@ -120,7 +121,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("renders the scale range input with correct attributes", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     expect(scaleInput).not.toBeNull();
@@ -133,7 +134,7 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("renders the timing range input with correct attributes", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const timingInput = container.querySelector("#st-timing") as HTMLInputElement;
     expect(timingInput).not.toBeNull();
@@ -146,12 +147,11 @@ describe("GalleryScaleTiming – renders without errors", () => {
   it("renders the motion toggle checkbox checked by default", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
-    const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
+    const motionCheck = container.querySelector("[role='checkbox']") as HTMLElement;
     expect(motionCheck).not.toBeNull();
-    expect(motionCheck.type).toBe("checkbox");
-    expect(motionCheck.checked).toBe(true);
+    expect(motionCheck.getAttribute("data-state")).toBe("checked");
   });
 });
 
@@ -171,7 +171,7 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("scale slider onCommit (pointer up) sets --tug-zoom on :root", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -183,7 +183,7 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("scale slider onChange alone does NOT set --tug-zoom (deferred to commit)", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -195,7 +195,7 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("after scale commit, preview area still renders buttons", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.25");
@@ -209,7 +209,7 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("timing slider onChange sets --tug-timing on :root", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const timingInput = container.querySelector("#st-timing") as HTMLInputElement;
     invokeRangeOnChange(timingInput, "5");
@@ -220,9 +220,9 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("unchecking motion toggle sets data-tug-motion='off' on body", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
-    const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
+    const motionCheck = container.querySelector("[role='checkbox']") as HTMLElement;
     act(() => { fireEvent.click(motionCheck); });
     expect(document.body.getAttribute("data-tug-motion")).toBe("off");
   });
@@ -230,9 +230,9 @@ describe("GalleryScaleTiming – slider interactions", () => {
   it("re-checking motion toggle removes data-tug-motion from body", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTiming />));
+      ({ container } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
-    const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
+    const motionCheck = container.querySelector("[role='checkbox']") as HTMLElement;
     act(() => { fireEvent.click(motionCheck); }); // off
     act(() => { fireEvent.click(motionCheck); }); // on again
     expect(document.body.getAttribute("data-tug-motion")).toBeNull();
@@ -256,7 +256,7 @@ describe("GalleryScaleTiming – cleanup on unmount", () => {
     let container!: HTMLElement;
     let unmount!: () => void;
     act(() => {
-      ({ container, unmount } = render(<GalleryScaleTiming />));
+      ({ container, unmount } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -270,9 +270,9 @@ describe("GalleryScaleTiming – cleanup on unmount", () => {
     let container!: HTMLElement;
     let unmount!: () => void;
     act(() => {
-      ({ container, unmount } = render(<GalleryScaleTiming />));
+      ({ container, unmount } = render(<ResponderChainProvider><GalleryScaleTiming /></ResponderChainProvider>));
     });
-    act(() => { fireEvent.click(container.querySelector("#st-motion") as HTMLInputElement); });
+    act(() => { fireEvent.click(container.querySelector("[role='checkbox']") as HTMLElement); });
     expect(document.body.getAttribute("data-tug-motion")).toBe("off");
     act(() => { unmount(); });
     expect(document.body.getAttribute("data-tug-motion")).toBeNull();
