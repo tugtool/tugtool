@@ -18,7 +18,7 @@ import { useResponderChain } from "../responder-chain-provider";
 import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 import { useControlDispatch } from "../use-control-dispatch";
-import { ResponderParentContext } from "../use-responder";
+import { ResponderParentContext } from "../responder-chain";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function

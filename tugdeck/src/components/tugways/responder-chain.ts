@@ -783,7 +783,7 @@ export class ResponderChainManager {
   }
 }
 
-// ---- ResponderChainContext ----
+// ---- React Contexts ----
 
 /**
  * React context holding the singleton ResponderChainManager for the canvas
@@ -794,3 +794,18 @@ export class ResponderChainManager {
  */
 export const ResponderChainContext =
   createContext<ResponderChainManager | null>(null);
+
+/**
+ * React context holding the nearest ancestor responder ID.
+ *
+ * Default is null (no parent -- caller is a root node).
+ * Each useResponder call provides its own ID as the new value for its subtree
+ * via ResponderScope, enabling automatic parent discovery without prop drilling.
+ *
+ * Controls read this to discover their dispatch target (useControlDispatch).
+ * useResponder reads this to register with the correct parentId.
+ *
+ * Co-located with ResponderChainContext so both contexts live in the same
+ * infrastructure module.
+ */
+export const ResponderParentContext = createContext<string | null>(null);

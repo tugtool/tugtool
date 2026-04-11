@@ -23,9 +23,8 @@
  */
 
 import { useCallback, useContext } from "react";
-import { ResponderChainContext } from "./responder-chain";
+import { ResponderChainContext, ResponderParentContext } from "./responder-chain";
 import type { ActionEvent, DispatchResult } from "./responder-chain";
-import { ResponderParentContext } from "./use-responder";
 
 const NOOP_RESULT: DispatchResult = { handled: false, continuation: undefined };
 

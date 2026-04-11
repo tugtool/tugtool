@@ -23,20 +23,12 @@
  * Spec S02
  */
 
-import React, { createContext, useCallback, useContext, useLayoutEffect, useRef } from "react";
-import { ResponderChainContext } from "./responder-chain";
+import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
+import { ResponderChainContext, ResponderParentContext } from "./responder-chain";
 import type { ActionHandler, ResponderNode, TugAction } from "./responder-chain";
 
-// ---- ResponderParentContext ----
-
-/**
- * React context holding the nearest ancestor responder ID.
- *
- * Default is null (no parent -- caller is a root node).
- * Each useResponder call provides its own ID as the new value for its subtree
- * via ResponderScope, enabling automatic parent discovery without prop drilling.
- */
-export const ResponderParentContext = createContext<string | null>(null);
+// Re-export for backward compatibility — existing consumers import from here.
+export { ResponderParentContext } from "./responder-chain";
 
 // ---- UseResponderOptions ----
 
