@@ -38,6 +38,7 @@
 import { type DeckState, type CardState, type TabItem, type TabStateBag } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration } from "./card-registry";
+import { findSharedEdges, computeSets, cardToRect } from "./snap";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -456,15 +457,23 @@ export class DeckManager implements IDeckManagerStore {
    * Also removes the card from any explicit set it belongs to.
    */
   removeCard(cardId: string): void {
-    // Clean up set membership: remove cardId from its set, dissolve if < 2 remain.
-    const sets = this.deckState.sets
-      .map((s) => s.filter((id) => id !== cardId))
-      .filter((s) => s.length >= 2);
+    // Clean up set membership: remove cardId from its set. If removing the card
+    // disconnects the remaining members (e.g. middle card of a linear chain),
+    // split into connected sub-groups based on geometric adjacency.
+    const newSets: string[][] = [];
+    for (const s of this.deckState.sets) {
+      if (s.includes(cardId)) {
+        const remaining = s.filter((id) => id !== cardId);
+        newSets.push(...this.splitSetByAdjacency(remaining));
+      } else {
+        newSets.push(s);
+      }
+    }
 
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
-      sets,
+      sets: newSets,
     };
     this.notify();
     this.scheduleSave();
@@ -984,6 +993,30 @@ export class DeckManager implements IDeckManagerStore {
   // ---- Explicit set membership (option-key-only snapping) ----
 
   /**
+   * Split a set of card IDs into connected components based on geometric
+   * adjacency. Uses card positions/sizes from deckState (not DOM).
+   *
+   * Returns only components with 2+ members. Singletons are discarded
+   * (a card alone is not a set).
+   */
+  private splitSetByAdjacency(cardIds: string[]): string[][] {
+    if (cardIds.length < 2) return [];
+    const cardMap = new Map<string, CardState>();
+    for (const card of this.deckState.cards) {
+      if (cardIds.includes(card.id)) {
+        cardMap.set(card.id, card);
+      }
+    }
+    const rects = cardIds
+      .filter((id) => cardMap.has(id))
+      .map((id) => ({ id, rect: cardToRect(cardMap.get(id)!) }));
+    if (rects.length < 2) return [];
+    const sharedEdges = findSharedEdges(rects);
+    const components = computeSets(rects.map((r) => r.id), sharedEdges);
+    return components.map((c) => c.cardIds);
+  }
+
+  /**
    * Return the card IDs in the same explicit set as `cardId`.
    * Returns an empty array if the card is not in any set.
    * The returned array includes `cardId` itself.
@@ -1041,9 +1074,8 @@ export class DeckManager implements IDeckManagerStore {
     for (const s of this.deckState.sets) {
       if (s.includes(cardId)) {
         const remaining = s.filter((id) => id !== cardId);
-        if (remaining.length >= 2) {
-          newSets.push(remaining);
-        }
+        // Re-check connectivity: removing a bridge card may split the set.
+        newSets.push(...this.splitSetByAdjacency(remaining));
         changed = true;
       } else {
         newSets.push(s);

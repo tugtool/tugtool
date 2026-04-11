@@ -837,20 +837,20 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
-        // After snap-mode drop: if the card landed adjacent to another card,
-        // form/extend an explicit set in DeckManager. Only when snap was active.
+        // After snap-mode drop: if the card snapped to specific cards, form/extend
+        // an explicit set with only those cards. Uses the snappedToXIndex/YIndex from
+        // the snap result to identify exactly which cards were targeted, rather than
+        // joining all geometrically adjacent cards.
         if (snapResult && (snapResult.x !== null || snapResult.y !== null)) {
-          // Re-snapshot rects now that the card is in its final position.
-          const postRects = snapshotCardRects(dragCanvasBounds.current);
-          const postSharedEdges = findSharedEdges(postRects);
-          // Find which cards this card shares edges with.
-          const adjacentIds = new Set<string>();
-          for (const edge of postSharedEdges) {
-            if (edge.cardAId === id) adjacentIds.add(edge.cardBId);
-            if (edge.cardBId === id) adjacentIds.add(edge.cardAId);
+          const snappedToIds = new Set<string>();
+          if (snapResult.snappedToXIndex >= 0) {
+            snappedToIds.add(dragOtherRects.current[snapResult.snappedToXIndex].id);
           }
-          if (adjacentIds.size > 0) {
-            store.joinSet([id, ...adjacentIds]);
+          if (snapResult.snappedToYIndex >= 0) {
+            snappedToIds.add(dragOtherRects.current[snapResult.snappedToYIndex].id);
+          }
+          if (snappedToIds.size > 0) {
+            store.joinSet([id, ...snappedToIds]);
           }
         }
 
@@ -997,6 +997,8 @@ export function CardFrame({
       let latestResizeModifier = isSnapModifier(event.nativeEvent);
       let resizeRafId: number | null = null;
       let resizeActive = true;
+      /** Indices into resizeOtherCardRects of cards snapped to on the last resize snap. */
+      let lastResizeSnappedToIndices: number[] = [];
 
       function computeAndApplyResize(pointer: { x: number; y: number }, snapModifier: boolean): {
         left: number; top: number; width: number; height: number;
@@ -1096,6 +1098,7 @@ export function CardFrame({
 
           // Pass borderWidth=1 so adjacent-edge resize snaps overlap by 1px for border collapse. [D56]
           const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects, 1);
+          lastResizeSnappedToIndices = snapResult.snappedToIndices;
 
           // Apply snapped values back to the rect, clamped to minSize.
           let { left, top, width, height } = r;
@@ -1124,6 +1127,7 @@ export function CardFrame({
 
           return { left, top, width, height };
         } else {
+          lastResizeSnappedToIndices = [];
           clearGuideElements(resizeGuideEls);
           return r;
         }
@@ -1198,19 +1202,13 @@ export function CardFrame({
           onCardMoved(sashNeighborId, neighborPos, neighborSize);
         }
 
-        // After snap-mode resize: if the card's resized edge landed adjacent to
-        // another card, form/extend an explicit set in DeckManager.
-        if (isSnapModifier(e)) {
-          const postResizeRects = snapshotCardRects(resizeCanvasBounds);
-          const postResizeSharedEdges = findSharedEdges(postResizeRects);
-          const adjacentIds = new Set<string>();
-          for (const edge of postResizeSharedEdges) {
-            if (edge.cardAId === id) adjacentIds.add(edge.cardBId);
-            if (edge.cardBId === id) adjacentIds.add(edge.cardAId);
-          }
-          if (adjacentIds.size > 0) {
-            store.joinSet([id, ...adjacentIds]);
-          }
+        // After snap-mode resize: if the card's resized edge snapped to specific
+        // cards, form/extend an explicit set with only those cards.
+        if (isSnapModifier(e) && lastResizeSnappedToIndices.length > 0) {
+          const snappedToIds = lastResizeSnappedToIndices.map(
+            (idx) => resizeOtherCardRects[idx].id,
+          );
+          store.joinSet([id, ...snappedToIds]);
         }
 
         suppressSetAppearanceUpdate = false;

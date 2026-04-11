@@ -33,6 +33,10 @@ export interface SnapResult {
   x: number | null;
   y: number | null;
   guides: GuidePosition[];
+  /** Index into the `others` array of the card that produced the x-axis snap, or -1 if no x snap. */
+  snappedToXIndex: number;
+  /** Index into the `others` array of the card that produced the y-axis snap, or -1 if no y snap. */
+  snappedToYIndex: number;
 }
 
 /**
@@ -133,11 +137,13 @@ export function computeSnap(
   let bestXDist = Infinity;
   let bestXDelta = 0;
   let bestXGuide = 0;
+  let bestXIndex = -1;
   let snapX = false;
 
   let bestYDist = Infinity;
   let bestYDelta = 0;
   let bestYGuide = 0;
+  let bestYIndex = -1;
   let snapY = false;
 
   for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
@@ -187,6 +193,7 @@ export function computeSnap(
         bestXDist = candidate.dist;
         bestXDelta = candidate.delta;
         bestXGuide = candidate.guide;
+        bestXIndex = otherIdx;
         snapX = true;
       }
     }
@@ -231,6 +238,7 @@ export function computeSnap(
         bestYDist = candidate.dist;
         bestYDelta = candidate.delta;
         bestYGuide = candidate.guide;
+        bestYIndex = otherIdx;
         snapY = true;
       }
     }
@@ -247,7 +255,7 @@ export function computeSnap(
     guides.push({ axis: "y", position: bestYGuide });
   }
 
-  return { x, y, guides };
+  return { x, y, guides, snappedToXIndex: snapX ? bestXIndex : -1, snappedToYIndex: snapY ? bestYIndex : -1 };
 }
 
 // ---- computeResizeSnap ----
@@ -270,7 +278,7 @@ export function computeResizeSnap(
   resizingEdges: { top?: number; bottom?: number; left?: number; right?: number },
   others: Rect[],
   borderWidth?: number
-): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[] } {
+): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[]; snappedToIndices: number[] } {
   const bw = borderWidth ?? 0;
 
   // Snap each edge independently; track best snap (minimum distance) per edge key.
@@ -280,20 +288,25 @@ export function computeResizeSnap(
   let leftSnapped: number | undefined;
   let leftGuide: number | undefined;
   let leftDist = Infinity;
+  let leftIndex = -1;
 
   let rightSnapped: number | undefined;
   let rightGuide: number | undefined;
   let rightDist = Infinity;
+  let rightIndex = -1;
 
   let topSnapped: number | undefined;
   let topGuide: number | undefined;
   let topDist = Infinity;
+  let topIndex = -1;
 
   let bottomSnapped: number | undefined;
   let bottomGuide: number | undefined;
   let bottomDist = Infinity;
+  let bottomIndex = -1;
 
-  for (const other of others) {
+  for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
+    const other = others[otherIdx];
     const otherLeft = other.x;
     const otherRight = other.x + other.width;
     const otherTop = other.y;
@@ -308,6 +321,7 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherLeft;
           leftGuide = otherLeft;
+          leftIndex = otherIdx;
         }
       }
       // left vs otherRight (adjacent-edge: resizing left toward other's right, overlap by bw)
@@ -317,6 +331,7 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherRight - bw;
           leftGuide = otherRight;
+          leftIndex = otherIdx;
         }
       }
     }
@@ -330,6 +345,7 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherLeft + bw;
           rightGuide = otherLeft;
+          rightIndex = otherIdx;
         }
       }
       // right vs otherRight (same-edge, no offset)
@@ -339,6 +355,7 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherRight;
           rightGuide = otherRight;
+          rightIndex = otherIdx;
         }
       }
     }
@@ -352,6 +369,7 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherTop;
           topGuide = otherTop;
+          topIndex = otherIdx;
         }
       }
       // top vs otherBottom (adjacent-edge: resizing top toward other's bottom, overlap by bw)
@@ -361,6 +379,7 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherBottom - bw;
           topGuide = otherBottom;
+          topIndex = otherIdx;
         }
       }
     }
@@ -374,6 +393,7 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherTop + bw;
           bottomGuide = otherTop;
+          bottomIndex = otherIdx;
         }
       }
       // bottom vs otherBottom (same-edge, no offset)
@@ -383,6 +403,7 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherBottom;
           bottomGuide = otherBottom;
+          bottomIndex = otherIdx;
         }
       }
     }
@@ -407,12 +428,23 @@ export function computeResizeSnap(
     }
   }
 
+  // Collect unique indices of all cards that were snapped to.
+  const snappedToIndices: number[] = [];
+  const seen = new Set<number>();
+  for (const idx of [leftIndex, rightIndex, topIndex, bottomIndex]) {
+    if (idx >= 0 && !seen.has(idx)) {
+      seen.add(idx);
+      snappedToIndices.push(idx);
+    }
+  }
+
   return {
     ...(leftSnapped !== undefined ? { left: leftSnapped } : {}),
     ...(rightSnapped !== undefined ? { right: rightSnapped } : {}),
     ...(topSnapped !== undefined ? { top: topSnapped } : {}),
     ...(bottomSnapped !== undefined ? { bottom: bottomSnapped } : {}),
     guides,
+    snappedToIndices,
   };
 }
 

@@ -1622,18 +1622,50 @@ describe("DeckManager.joinSet", () => {
 });
 
 describe("DeckManager.removeFromSet", () => {
-  it("removes a card from a 3-member set, leaving 2 members", () => {
+  it("removes a card from a 3-member set, leaving 2 adjacent members", () => {
     registerCard(makeRegistration("hello", "Hello"));
-    const a = manager.addCard("hello")!;
-    const b = manager.addCard("hello")!;
-    const c = manager.addCard("hello")!;
-    manager.joinSet([a, b, c]);
+    // Position cards so B and C are adjacent (B's bottom = C's top).
+    // A is also adjacent to B but will be removed.
+    const a = crypto.randomUUID();
+    const b = crypto.randomUUID();
+    const c = crypto.randomUUID();
+    const tab = (cardId: string) => ({ id: crypto.randomUUID(), componentId: "hello", title: "Hello", closable: true });
+    const tabA = tab(a), tabB = tab(b), tabC = tab(c);
+    manager.applyLayout({
+      cards: [
+        { id: a, position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [tabA], activeTabId: tabA.id, title: "", acceptsFamilies: ["standard"] },
+        { id: b, position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [tabB], activeTabId: tabB.id, title: "", acceptsFamilies: ["standard"] },
+        { id: c, position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [tabC], activeTabId: tabC.id, title: "", acceptsFamilies: ["standard"] },
+      ],
+      sets: [[a, b, c]],
+    });
     manager.removeFromSet(a);
     const sets = manager.getDeckState().sets;
     expect(sets.length).toBe(1);
     expect(sets[0]).toContain(b);
     expect(sets[0]).toContain(c);
     expect(sets[0]).not.toContain(a);
+  });
+
+  it("splits a set when removing the bridge card disconnects remaining members", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    // Linear chain: A — B — C. Removing B disconnects A and C.
+    const a = crypto.randomUUID();
+    const b = crypto.randomUUID();
+    const c = crypto.randomUUID();
+    const tab = () => ({ id: crypto.randomUUID(), componentId: "hello", title: "Hello", closable: true });
+    const tabA = tab(), tabB = tab(), tabC = tab();
+    manager.applyLayout({
+      cards: [
+        { id: a, position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [tabA], activeTabId: tabA.id, title: "", acceptsFamilies: ["standard"] },
+        { id: b, position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [tabB], activeTabId: tabB.id, title: "", acceptsFamilies: ["standard"] },
+        { id: c, position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [tabC], activeTabId: tabC.id, title: "", acceptsFamilies: ["standard"] },
+      ],
+      sets: [[a, b, c]],
+    });
+    manager.removeFromSet(b);
+    // A and C are not adjacent — set dissolves entirely.
+    expect(manager.getDeckState().sets).toEqual([]);
   });
 
   it("dissolves a 2-member set when one card is removed", () => {
@@ -1681,17 +1713,47 @@ describe("DeckManager.removeCard — set cleanup", () => {
     expect(manager.getDeckState().cards.find((c) => c.id === a)).toBeUndefined();
   });
 
-  it("removes a card from a 3-member set, leaving the set intact", () => {
+  it("removes a card from a 3-member set, keeping adjacent remaining members", () => {
     registerCard(makeRegistration("hello", "Hello"));
-    const a = manager.addCard("hello")!;
-    const b = manager.addCard("hello")!;
-    const c = manager.addCard("hello")!;
-    manager.joinSet([a, b, c]);
+    // A — B — C vertical chain. Close A; B and C remain adjacent.
+    const a = crypto.randomUUID();
+    const b = crypto.randomUUID();
+    const c = crypto.randomUUID();
+    const tab = () => ({ id: crypto.randomUUID(), componentId: "hello", title: "Hello", closable: true });
+    const tabA = tab(), tabB = tab(), tabC = tab();
+    manager.applyLayout({
+      cards: [
+        { id: a, position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [tabA], activeTabId: tabA.id, title: "", acceptsFamilies: ["standard"] },
+        { id: b, position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [tabB], activeTabId: tabB.id, title: "", acceptsFamilies: ["standard"] },
+        { id: c, position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [tabC], activeTabId: tabC.id, title: "", acceptsFamilies: ["standard"] },
+      ],
+      sets: [[a, b, c]],
+    });
     manager.handleCardClosed(a);
     const sets = manager.getDeckState().sets;
     expect(sets.length).toBe(1);
     expect(sets[0]).toContain(b);
     expect(sets[0]).toContain(c);
     expect(sets[0]).not.toContain(a);
+  });
+
+  it("dissolves set when closing the bridge card disconnects remaining members", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    // A — B — C. Close B; A and C are not adjacent — set dissolves.
+    const a = crypto.randomUUID();
+    const b = crypto.randomUUID();
+    const c = crypto.randomUUID();
+    const tab = () => ({ id: crypto.randomUUID(), componentId: "hello", title: "Hello", closable: true });
+    const tabA = tab(), tabB = tab(), tabC = tab();
+    manager.applyLayout({
+      cards: [
+        { id: a, position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [tabA], activeTabId: tabA.id, title: "", acceptsFamilies: ["standard"] },
+        { id: b, position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [tabB], activeTabId: tabB.id, title: "", acceptsFamilies: ["standard"] },
+        { id: c, position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [tabC], activeTabId: tabC.id, title: "", acceptsFamilies: ["standard"] },
+      ],
+      sets: [[a, b, c]],
+    });
+    manager.handleCardClosed(b);
+    expect(manager.getDeckState().sets).toEqual([]);
   });
 });
