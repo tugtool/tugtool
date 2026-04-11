@@ -27,7 +27,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, fireEvent, cleanup } from "@testing-library/react";
 
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
-import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import { ResponderChainContext, ResponderParentContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
@@ -43,14 +43,15 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
  */
 function renderWithChainObserver(ui: React.ReactElement) {
   const manager = new ResponderChainManager();
+  manager.register({ id: "root", parentId: null, actions: {} });
   const dispatched: Array<{ event: ActionEvent; handled: boolean }> = [];
   manager.observeDispatch((event, handled) => {
     dispatched.push({ event, handled });
   });
   const result = render(
-    <ResponderChainContext.Provider value={manager}>
+    <ResponderChainContext.Provider value={manager}><ResponderParentContext.Provider value="root">
       {ui}
-    </ResponderChainContext.Provider>
+    </ResponderParentContext.Provider></ResponderChainContext.Provider>
   );
   return { ...result, manager, dispatched };
 }

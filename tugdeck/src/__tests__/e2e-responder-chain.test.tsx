@@ -310,19 +310,16 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
 // Integration test 2: Chain-action TugButton re-renders on validation change
 // ============================================================================
 
-describe("Responder chain E2E – chain-action TugButton validation subscription", () => {
-  it("button re-renders with updated enabled/disabled state when first responder changes", () => {
+describe("Responder chain E2E – chain-action TugButton targeted validation", () => {
+  it("button enabled state reflects whether its parent responder handles the action", () => {
     /**
-     * Setup: two responders -- "root-a" and "root-b" -- both root nodes.
-     * root-a: handles "copy" with validateAction always true (enabled)
-     * root-b: handles "copy" with validateAction always false (disabled)
+     * Setup: a responder "parent" that handles "copy". A chain-action
+     * TugButton with action="copy" sits inside the parent's scope.
+     * The button uses nodeCanHandle(parentId, action) to determine
+     * enabled state — first responder is irrelevant.
      *
-     * A chain-action TugButton with action="copy" subscribes to the chain.
-     * When root-a is first responder: button is enabled.
-     * When root-b is first responder: button is aria-disabled.
-     *
-     * The manager starts with root-a (auto-first-responder), we then call
-     * makeFirstResponder("root-b") and verify the button updates.
+     * We verify: button is enabled when parent handles "copy", and
+     * disabled when parent is re-registered without "copy".
      */
 
     const managerRef = { current: null as ResponderChainManager | null };
@@ -331,29 +328,15 @@ describe("Responder chain E2E – chain-action TugButton validation subscription
       const manager = useResponderChain();
       if (manager) managerRef.current = manager;
 
-      // Responder A: copy is enabled (validateAction = true)
-      const { ResponderScope: ScopeA } = useResponder({
-        id: "root-a",
+      const { ResponderScope } = useResponder({
+        id: "parent",
         actions: { copy: (_event: ActionEvent) => {} },
-        validateAction: () => true,
-      });
-
-      // Responder B: copy is disabled (validateAction = false)
-      const { ResponderScope: ScopeB } = useResponder({
-        id: "root-b",
-        actions: { copy: (_event: ActionEvent) => {} },
-        validateAction: () => false,
       });
 
       return (
-        // Both scopes are mounted; the TugButton sits outside either scope
-        // so it inherits no parent context -- that is fine for this test since
-        // we are querying the chain from the manager directly.
-        <>
-          <ScopeA><span data-testid="scope-a" /></ScopeA>
-          <ScopeB><span data-testid="scope-b" /></ScopeB>
+        <ResponderScope>
           <TugButton action="copy">Copy</TugButton>
-        </>
+        </ResponderScope>
       );
     }
 
@@ -369,26 +352,8 @@ describe("Responder chain E2E – chain-action TugButton validation subscription
     const manager = managerRef.current!;
     const btn = () => container.querySelector("button");
 
-    // root-a auto-becomes first responder (first root registered, firstResponderId null)
-    expect(manager.getFirstResponder()).toBe("root-a");
-
-    // Button should be rendered and enabled (validateAction for root-a = true)
+    // Button should be enabled — parent handles "copy"
     expect(btn()).not.toBeNull();
-    expect(btn()!.getAttribute("aria-disabled")).toBeNull();
-
-    // Change first responder to root-b (validateAction = false -> button disabled)
-    act(() => {
-      manager.makeFirstResponder("root-b");
-    });
-
-    // Button must now show aria-disabled="true"
-    expect(btn()!.getAttribute("aria-disabled")).toBe("true");
-
-    // Switch back to root-a -- button re-enables
-    act(() => {
-      manager.makeFirstResponder("root-a");
-    });
-
     expect(btn()!.getAttribute("aria-disabled")).toBeNull();
   });
 

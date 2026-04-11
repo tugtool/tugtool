@@ -551,7 +551,7 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
     // Create a stub ResponderChainManager that records dispatch calls.
     const dispatched: ActionEvent[] = [];
     const stubManager = {
-      dispatch(event: ActionEvent): boolean {
+      sendToFirstResponder(event: ActionEvent): boolean {
         dispatched.push(event);
         return true;
       },
@@ -580,8 +580,8 @@ describe("initActionDispatch: add-tab-to-active-card", () => {
 
     const first: ActionEvent[] = [];
     const second: ActionEvent[] = [];
-    registerResponderChainManager({ dispatch: (e: ActionEvent) => { first.push(e); return true; } } as any);
-    registerResponderChainManager({ dispatch: (e: ActionEvent) => { second.push(e); return true; } } as any);
+    registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { first.push(e); return true; } } as any);
+    registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { second.push(e); return true; } } as any);
 
     dispatchAction({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD });
 
@@ -605,7 +605,7 @@ describe("initActionDispatch: close (Both)", () => {
 
     const dispatched: ActionEvent[] = [];
     const stubManager = {
-      dispatch(event: ActionEvent): boolean {
+      sendToFirstResponder(event: ActionEvent): boolean {
         dispatched.push(event);
         return true;
       },

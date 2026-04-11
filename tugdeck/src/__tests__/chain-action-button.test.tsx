@@ -25,7 +25,7 @@ import React from "react";
 import { describe, it, expect, mock, afterEach, spyOn } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
-import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import { ResponderChainContext, ResponderParentContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionHandler } from "@/components/tugways/responder-chain";
 import type { TugAction } from "@/components/tugways/action-vocabulary";
 
@@ -54,26 +54,33 @@ function renderWithManager(
 ) {
   return render(
     <ResponderChainContext.Provider value={manager}>
-      <TugButton {...props} />
+      <ResponderParentContext.Provider value="root">
+        <TugButton {...props} />
+      </ResponderParentContext.Provider>
     </ResponderChainContext.Provider>
   );
 }
 
 /**
  * Make a manager with a registered root node handling `actionName`.
- * Returns { manager, dispatchRecord } where dispatchRecord tracks calls.
+ * Returns { manager, dispatched } where dispatched tracks calls.
+ *
+ * When `enabled` is false, the root node does NOT register the action
+ * in its actions map, so nodeCanHandle returns false and the button
+ * renders as disabled (aria-disabled).
  */
 function makeManagerWithAction(
   actionName: string,
-  validateResult: boolean = true
+  enabled: boolean = true
 ): { manager: ResponderChainManager; dispatched: ActionEvent[] } {
   const manager = new ResponderChainManager();
   const dispatched: ActionEvent[] = [];
   manager.register({
     id: "root",
     parentId: null,
-    actions: { [actionName]: (event: ActionEvent) => dispatched.push(event) },
-    validateAction: (_action: string) => validateResult,
+    actions: enabled
+      ? { [actionName]: (event: ActionEvent) => dispatched.push(event) }
+      : {},
   });
   return { manager, dispatched };
 }
@@ -180,51 +187,52 @@ describe("chain-action TugButton – click behavior", () => {
 // ============================================================================
 
 describe("chain-action TugButton – re-render on version change", () => {
-  it("updates enabled state when validation version increments (focus change)", () => {
+  it("updates from enabled to disabled when parent no longer handles action", () => {
     const manager = new ResponderChainManager();
-    let validateResult = true;
     manager.register({
       id: "root",
       parentId: null,
       actions: { copy: (_event: ActionEvent) => {} },
-      validateAction: () => validateResult,
     });
 
     const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = () => container.querySelector("button")!;
 
-    // Initially enabled
+    // Initially enabled — parent handles "copy"
     expect(btn().getAttribute("aria-disabled")).toBeNull();
 
-    // Simulate a change that should disable the button: change validateResult
-    // and increment version by calling makeFirstResponder (or any version bump).
-    validateResult = false;
+    // Re-register without the action → nodeCanHandle returns false
     act(() => {
-      manager.makeFirstResponder("root"); // bumps validationVersion -> subscribers notified
+      manager.unregister("root");
+      manager.register({ id: "root", parentId: null, actions: {} });
     });
 
     // Button should now be disabled
     expect(btn().getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("updates from disabled to enabled when version increments", () => {
+  it("updates from disabled to enabled when parent gains action handler", () => {
     const manager = new ResponderChainManager();
-    let validateResult = false;
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: (_event: ActionEvent) => {} },
-      validateAction: () => validateResult,
+      actions: {},
     });
 
     const { container } = renderWithManager(manager, { action: TUG_ACTIONS.COPY, children: "Copy" });
     const btn = () => container.querySelector("button")!;
 
+    // Initially disabled — parent does not handle "copy"
     expect(btn().getAttribute("aria-disabled")).toBe("true");
 
-    validateResult = true;
+    // Re-register with the action → nodeCanHandle returns true
     act(() => {
-      manager.makeFirstResponder("root");
+      manager.unregister("root");
+      manager.register({
+        id: "root",
+        parentId: null,
+        actions: { copy: (_event: ActionEvent) => {} },
+      });
     });
 
     expect(btn().getAttribute("aria-disabled")).toBeNull();
