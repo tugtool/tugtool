@@ -185,21 +185,16 @@ export function applyPastedText(
   if (!text) return;
   const node = inputRef.current;
   if (!node) return;
-  // `selectionStart` / `selectionEnd` can be null on some element
-  // states (not all input types are text — `<input type="number">`
-  // doesn't expose selection); fall back to "insert at end" in that
-  // case, matching native paste behavior when the browser can't
-  // resolve a caret.
-  const start = node.selectionStart ?? node.value.length;
-  const end = node.selectionEnd ?? node.value.length;
-  // `"end"` leaves the caret after the inserted text, matching the
-  // behavior of a native paste.
-  node.setRangeText(text, start, end, "end");
-  // Synthetic input event so React's controlled-input bookkeeping
-  // picks up the new value via its onChange listener — without this,
-  // controlled consumers would see a DOM value that disagrees with
-  // their React state until the next keystroke.
-  node.dispatchEvent(new Event("input", { bubbles: true }));
+  // Focus the node so execCommand targets it.
+  node.focus();
+  // Insert via execCommand("insertText") so the edit routes through
+  // the browser's native editing pipeline. This pushes onto the undo
+  // stack (so Cmd+Z can revert a paste) and fires the input event
+  // natively — no synthetic event dispatch needed. The previous
+  // approach (setRangeText + synthetic input event) bypassed the
+  // editing pipeline entirely, which left paste invisible to the
+  // WKWebView's NSUndoManager.
+  document.execCommand("insertText", false, text);
 }
 
 /** Any DOM element that has an editable text value, caret, and selection. */
@@ -607,26 +602,20 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     };
   }, [disabled, inputRef]);
 
-  const handleUndo = useCallback((): ActionHandlerResult => {
-    if (disabled) return;
-    return () => {
-      document.execCommand("undo");
-    };
-  }, [disabled]);
-
-  const handleRedo = useCallback((): ActionHandlerResult => {
-    if (disabled) return;
-    return () => {
-      document.execCommand("redo");
-    };
-  }, [disabled]);
-
   // ---- Responder registration ----
   //
   // `useResponder` installs a live Proxy over `options.actions` — so
   // a fresh object literal each render is fine, every dispatch reads
   // the latest handler identities via the ref. No need to memoize
   // the actions map here.
+  //
+  // Undo / redo are intentionally not registered. execCommand("undo")
+  // does not operate on native <input>/<textarea> — their undo stack
+  // is browser-internal and only reachable via the native Cmd+Z
+  // keystroke. By not registering handlers, the keybinding dispatch
+  // returns handled=false, skips preventDefault, and the browser's
+  // native undo runs. (Context menu undo/redo for native inputs will
+  // require a custom undo stack — that work is tabled for now.)
 
   const responderId = useId();
   const actions: Partial<Record<TugAction, ActionHandler>> = {
@@ -634,8 +623,6 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [TUG_ACTIONS.COPY]: handleCopy,
     [TUG_ACTIONS.PASTE]: handlePaste,
     [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
-    [TUG_ACTIONS.UNDO]: handleUndo,
-    [TUG_ACTIONS.REDO]: handleRedo,
   };
   // `useOptionalResponder` (not `useResponder`) so the three consuming
   // components — TugInput, TugTextarea, TugValueInput — can render

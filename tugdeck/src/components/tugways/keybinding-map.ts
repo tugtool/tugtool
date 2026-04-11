@@ -104,17 +104,17 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyX", meta: true, action: TUG_ACTIONS.CUT, preventDefaultOnMatch: true },
   { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
   { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
-  // Undo / redo suppress the browser's native history stack so the
-  // editor's engine / execCommand continuation is the single source
-  // of truth — same rationale as the clipboard shortcuts above.
-  { key: "KeyZ", meta: true, action: TUG_ACTIONS.UNDO, preventDefaultOnMatch: true },
-  {
-    key: "KeyZ",
-    meta: true,
-    shift: true,
-    action: TUG_ACTIONS.REDO,
-    preventDefaultOnMatch: true,
-  },
+  // Undo / redo do NOT use preventDefaultOnMatch. Native <input> and
+  // <textarea> elements rely on the browser's built-in undo stack,
+  // which no JavaScript API can trigger programmatically. These
+  // components do not register undo/redo handlers, so the dispatch
+  // returns handled=false, preventDefault is skipped, and the
+  // browser's native Cmd+Z runs. ContentEditable responders (e.g.
+  // tug-prompt-input) register their own handlers; when handled, the
+  // dispatch branch calls preventDefault so the engine's execCommand
+  // is the single source of truth.
+  { key: "KeyZ", meta: true, action: TUG_ACTIONS.UNDO },
+  { key: "KeyZ", meta: true, shift: true, action: TUG_ACTIONS.REDO },
   // Card / canvas / dialog shortcuts. These do NOT set
   // preventDefaultOnMatch: either the key has no browser default we
   // care about (⌘W in a WebView is app-level), or the default is
