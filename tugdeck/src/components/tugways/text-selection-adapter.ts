@@ -69,21 +69,17 @@ export interface TextSelectionAdapter {
    * Returns the case that applies so the caller can decide whether to restore
    * the pre-click selection or expand to word.
    *
-   * - `"near-caret"`:   Collapsed selection, click is near the caret.
+   * - `"near-caret"`:   Collapsed selection, click is within the same word
+   *                      as the caret.
    * - `"within-range"`: Ranged selection, click is inside the selected range.
    * - `"elsewhere"`:    Click is outside the current selection.
    *
-   * @param clientX           Viewport X coordinate of the right-click event.
-   * @param clientY           Viewport Y coordinate of the right-click event.
-   * @param proximityThreshold Distance in pixels within which a click near a
-   *                          collapsed caret is classified as `"near-caret"`.
-   *                          Native input adapters may ignore this parameter
-   *                          (offset comparison is exact, not geometric).
+   * @param clientX Viewport X coordinate of the right-click event.
+   * @param clientY Viewport Y coordinate of the right-click event.
    */
   classifyRightClick(
     clientX: number,
     clientY: number,
-    proximityThreshold: number,
   ): RightClickClassification;
 
   /**
@@ -254,13 +250,12 @@ export class HighlightSelectionAdapter implements TextSelectionAdapter {
    * Classify a right-click using DOM Range geometry.
    *
    * For ranged selections: checks if the click point falls within any of
-   * the selection's client rects. For collapsed selections: checks
-   * proximity of the click to the caret rect.
+   * the selection's client rects. For collapsed selections: expands to
+   * the caret's word and checks if the click falls within it.
    */
   classifyRightClick(
     clientX: number,
     clientY: number,
-    proximityThreshold: number,
   ): RightClickClassification {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return "elsewhere";
@@ -281,13 +276,25 @@ export class HighlightSelectionAdapter implements TextSelectionAdapter {
       return "elsewhere";
     }
 
-    // Collapsed — check proximity to caret.
-    const rect = range.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return "elsewhere";
-    const dx = clientX - (rect.left + rect.width / 2);
-    const dy = clientY - (rect.top + rect.height / 2);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    return dist <= proximityThreshold ? "near-caret" : "elsewhere";
+    // Collapsed — expand to the caret's word, check if the click falls
+    // within the word's bounding rects, then restore the caret.
+    const saved = range.cloneRange();
+    sel.modify("move", "backward", "word");
+    sel.modify("extend", "forward", "word");
+    const wordRange = sel.getRangeAt(0);
+    const rects = wordRange.getClientRects();
+    // Restore collapsed caret.
+    sel.removeAllRanges();
+    sel.addRange(saved);
+
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (clientX >= r.left && clientX <= r.right &&
+          clientY >= r.top && clientY <= r.bottom) {
+        return "near-caret";
+      }
+    }
+    return "elsewhere";
   }
 
   /**

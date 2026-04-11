@@ -297,13 +297,13 @@ export function createNativeInputAdapter(
      * Classify a right-click relative to the selection captured at the last
      * `capturePreRightClick()` call.
      *
-     * The `clientX`/`clientY`/`proximityThreshold` parameters are unused —
-     * native input adapters use offset comparison (exact) rather than geometry.
+     * The `clientX`/`clientY` parameters are unused — native input adapters
+     * use offset comparison rather than geometry.
      *
      * Algorithm:
      *   1. Read the current `selectionStart` (browser-placed after mousedown).
-     *   2. If the captured snapshot was collapsed and the new offset matches
-     *      either captured boundary → `"near-caret"`.
+     *   2. If the captured snapshot was collapsed and the new offset is within
+     *      the same word → `"near-caret"`.
      *   3. If the captured snapshot was ranged and the new offset falls within
      *      `[capturedStart, capturedEnd)` → `"within-range"`.
      *   4. Otherwise → `"elsewhere"`.
@@ -311,7 +311,6 @@ export function createNativeInputAdapter(
     classifyRightClick(
       _clientX: number,
       _clientY: number,
-      _proximityThreshold: number,
     ): RightClickClassification {
       const newOffset = el.selectionStart;
       if (newOffset === null) return "elsewhere";
@@ -326,11 +325,16 @@ export function createNativeInputAdapter(
 
       if (capturedIsCollapsed) {
         // Case 1: collapsed selection — click is near the caret if the
-        // browser placed the new caret within one character of the
-        // captured offset. Exact match is too strict — a right-click
-        // slightly to the left or right of the caret lands one offset
-        // away, and that should still count as "near".
-        return Math.abs(newOffset - capturedStart) <= 1 ? "near-caret" : "elsewhere";
+        // browser placed the new caret within the same word. Pixel
+        // distance isn't available for native inputs (no DOM Range for
+        // their internal text layout), so word boundaries are the best
+        // geometric proxy — they scale naturally with font size and
+        // character width.
+        const word = findWordBoundaries(el.value, capturedStart);
+        const inSameWord = word.start !== word.end
+          && newOffset >= word.start
+          && newOffset <= word.end;
+        return inSameWord ? "near-caret" : "elsewhere";
       }
 
       // Case 2: ranged selection — click is within the range if the browser
@@ -735,7 +739,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
       }
 
       // Classify the right-click against the pre-click selection.
-      const classification = adapter.classifyRightClick(e.clientX, e.clientY, 0);
+      const classification = adapter.classifyRightClick(e.clientX, e.clientY);
 
       let hasSelection: boolean;
       if (classification === "elsewhere") {

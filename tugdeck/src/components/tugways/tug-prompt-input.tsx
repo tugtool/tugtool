@@ -35,7 +35,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
-import type { TextSelectionAdapter, RightClickClassification } from "@/components/tugways/text-selection-adapter";
+import { findWordBoundaries, type TextSelectionAdapter, type RightClickClassification } from "@/components/tugways/text-selection-adapter";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
@@ -107,7 +107,6 @@ export function createEngineAdapter(engine: TugTextEngine): TextSelectionAdapter
   function classifyRightClick(
     clientX: number,
     clientY: number,
-    proximityThreshold: number,
   ): RightClickClassification {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return "elsewhere";
@@ -115,12 +114,33 @@ export function createEngineAdapter(engine: TugTextEngine): TextSelectionAdapter
     const domRange = sel.getRangeAt(0);
 
     if (sel.isCollapsed) {
-      // Collapsed caret: measure distance from caret rect to click point.
-      const rect = domRange.getBoundingClientRect();
-      const dx = clientX - (rect.left + rect.width / 2);
-      const dy = clientY - (rect.top + rect.height / 2);
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      return distance <= proximityThreshold ? "near-caret" : "elsewhere";
+      // Collapsed caret: "near" if the click lands in the same word as
+      // the caret. Find the word boundaries around the caret in engine
+      // text, expand the DOM selection to cover that word, check if the
+      // click falls within the word's bounding rects, then restore the
+      // caret. This matches the native-input heuristic (same word =
+      // near) while using reliable DOM geometry for the hit test.
+      const range = engine.getSelectedRange();
+      if (!range) return "elsewhere";
+      const text = engine.getText();
+      const word = findWordBoundaries(text, range.start);
+      if (word.start === word.end) return "elsewhere"; // caret on whitespace/punctuation
+
+      // Expand selection to the caret's word, read its rects, restore.
+      sel.modify("move", "backward", "word");
+      sel.modify("extend", "forward", "word");
+      const wordRange = sel.getRangeAt(0);
+      const rects = wordRange.getClientRects();
+      // Restore collapsed caret.
+      engine.setSelectedRange(range.start, range.end);
+
+      for (let i = 0; i < rects.length; i++) {
+        const r = rects[i]!;
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+          return "near-caret";
+        }
+      }
+      return "elsewhere";
     }
 
     // Ranged selection: check if click falls within any of the range rects.
@@ -691,8 +711,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         // Classify the right-click against the restored selection and
         // reposition if the click landed away from it.
         const adapter = createEngineAdapter(engine);
-        const threshold = parseFloat(getComputedStyle(engine.root).fontSize);
-        const classification = adapter.classifyRightClick(e.clientX, e.clientY, threshold);
+        const classification = adapter.classifyRightClick(e.clientX, e.clientY);
 
         let hasSelection: boolean;
         if (classification === "elsewhere") {
