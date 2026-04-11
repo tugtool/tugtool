@@ -24,6 +24,7 @@ import type { TugButtonSize } from "@/components/tugways/internal/tug-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-popup-button.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---- Sample data ----
 //
@@ -106,7 +107,7 @@ export function GalleryPopupButton() {
 
       {/* ---- Standard TugPopupButton (outlined-option) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPopupButton — Convenience Wrapper</div>
+        <TugLabel className="cg-section-title">TugPopupButton — Convenience Wrapper</TugLabel>
         <div className="gpb-demo-row">
           {ALL_SIZES.map((size) => (
             <div key={size} className="gpb-demo-item">
@@ -131,7 +132,7 @@ export function GalleryPopupButton() {
 
       {/* ---- Custom triggers via TugPopupMenu ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPopupMenu — Direct Usage (Custom Triggers)</div>
+        <TugLabel className="cg-section-title">TugPopupMenu — Direct Usage (Custom Triggers)</TugLabel>
         <div className="gpb-demo-row">
           <div className="gpb-demo-item">
             <span className="gpb-demo-label">filled-accent</span>
@@ -249,7 +250,7 @@ export function GalleryPopupButton() {
 
       {/* ---- In-context: control bar mockup ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">In Context — Control Bar</div>
+        <TugLabel className="cg-section-title">In Context — Control Bar</TugLabel>
         <div className="gpb-context-bar">
           <span className="gpb-context-label">Emphasis</span>
           <div className="gpb-button-wrapper">

@@ -7,6 +7,7 @@
 
 import React from "react";
 import { TugSkeleton, TugSkeletonGroup } from "@/components/tugways/tug-skeleton";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GallerySkeleton
@@ -18,7 +19,7 @@ export function GallerySkeleton() {
 
       {/* ---- Single skeleton elements ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSkeleton — Width Variants</div>
+        <TugLabel className="cg-section-title">TugSkeleton — Width Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
           <TugSkeleton width="100%" height={14} />
           <TugSkeleton width="80%"  height={14} />
@@ -31,7 +32,7 @@ export function GallerySkeleton() {
 
       {/* ---- Height variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSkeleton — Height Variants</div>
+        <TugLabel className="cg-section-title">TugSkeleton — Height Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
           <TugSkeleton width="100%" height={10} />
           <TugSkeleton width="100%" height={16} />
@@ -44,7 +45,7 @@ export function GallerySkeleton() {
 
       {/* ---- Radius override ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSkeleton — Radius Override</div>
+        <TugLabel className="cg-section-title">TugSkeleton — Radius Override</TugLabel>
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           <TugSkeleton width="60px"  height={60} />
           <TugSkeleton width="60px"  height={60} radius="50%" />
@@ -57,7 +58,7 @@ export function GallerySkeleton() {
 
       {/* ---- TugSkeletonGroup: text block ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSkeletonGroup — Text Block</div>
+        <TugLabel className="cg-section-title">TugSkeletonGroup — Text Block</TugLabel>
         <p className="cg-description">
           <code>TugSkeletonGroup</code> wraps skeletons in a flex column with configurable gap.
           This group mimics a paragraph of loading text.
@@ -77,7 +78,7 @@ export function GallerySkeleton() {
 
       {/* ---- Multiple groups: synchronized shimmer ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSkeleton — Multiple Groups Side by Side</div>
+        <TugLabel className="cg-section-title">TugSkeleton — Multiple Groups Side by Side</TugLabel>
         <p className="cg-description">
           All skeleton elements share the same CSS pulse animation, so
           elements across separate groups breathe in sync.

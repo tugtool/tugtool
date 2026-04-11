@@ -10,6 +10,7 @@
 import React from "react";
 import { bulletin } from "@/components/tugways/tug-bulletin";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -33,7 +34,7 @@ export function GalleryBulletin() {
 
       {/* ---- 1. Default bulletin ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Default Bulletin</div>
+        <TugLabel className="cg-section-title">Default Bulletin</TugLabel>
         <div style={labelStyle}>bulletin() — basic fire-and-forget notification</div>
         <div style={{ display: "flex" }}>
           <TugPushButton
@@ -50,7 +51,7 @@ export function GalleryBulletin() {
 
       {/* ---- 2. With description ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Description</div>
+        <TugLabel className="cg-section-title">With Description</TugLabel>
         <div style={labelStyle}>bulletin(message, &#123; description &#125;) — adds supporting detail below title</div>
         <div style={{ display: "flex" }}>
           <TugPushButton
@@ -71,7 +72,7 @@ export function GalleryBulletin() {
 
       {/* ---- 3. Tone variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Tone Variants</div>
+        <TugLabel className="cg-section-title">Tone Variants</TugLabel>
         <div style={labelStyle}>bulletin(), bulletin.success(), bulletin.danger(), bulletin.caution() — left-border accent</div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <TugPushButton
@@ -112,7 +113,7 @@ export function GalleryBulletin() {
 
       {/* ---- 4. With action ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Action</div>
+        <TugLabel className="cg-section-title">With Action</TugLabel>
         <div style={labelStyle}>bulletin(message, &#123; action &#125;) — inline action button for quick follow-up</div>
         <div style={{ display: "flex" }}>
           <TugPushButton
@@ -133,7 +134,7 @@ export function GalleryBulletin() {
 
       {/* ---- 5. Custom duration ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Custom Duration</div>
+        <TugLabel className="cg-section-title">Custom Duration</TugLabel>
         <div style={labelStyle}>bulletin(message, &#123; duration: 8000 &#125;) — stays visible for 8 seconds</div>
         <div style={{ display: "flex" }}>
           <TugPushButton

@@ -31,6 +31,7 @@ import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import type { TugOptionGroupRole } from "@/components/tugways/tug-option-group";
 import { TugBox } from "@/components/tugways/tug-box";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -121,7 +122,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- Icon Only (Text Formatting) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Icon Only (Text Formatting)</div>
+        <TugLabel className="cg-section-title">Icon Only (Text Formatting)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             Classic B/I/U toolbar — each item toggles independently.
@@ -149,7 +150,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- Icon + Label (Alignment) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Icon + Label</div>
+        <TugLabel className="cg-section-title">Icon + Label</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             Alignment toolbar — icon and label together.
@@ -178,7 +179,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sizes</div>
+        <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
@@ -229,7 +230,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Roles</div>
+        <TugLabel className="cg-section-title">Roles</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {ROLE_ENTRIES.map(({ role, label }) => (
             <div key={label} style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "16px" }}>
@@ -256,7 +257,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
@@ -295,7 +296,7 @@ export function GalleryOptionGroup() {
 
       {/* ---- TugBox Cascade ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugBox Cascade</div>
+        <TugLabel className="cg-section-title">TugBox Cascade</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             TugOptionGroup inside a disabled TugBox — all items inherit the disabled state.

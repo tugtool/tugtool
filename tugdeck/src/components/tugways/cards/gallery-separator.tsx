@@ -10,6 +10,7 @@
 
 import React from "react";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // Shared inline text style for demo content
 const textStyle: React.CSSProperties = {
@@ -34,7 +35,7 @@ export function GallerySeparator() {
 
       {/* ---- Plain Horizontal ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Plain Horizontal</div>
+        <TugLabel className="cg-section-title">Plain Horizontal</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <p style={textStyle}>Content above the separator.</p>
           <TugSeparator />
@@ -46,7 +47,7 @@ export function GallerySeparator() {
 
       {/* ---- Labeled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Labeled</div>
+        <TugLabel className="cg-section-title">Labeled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
           <div>
             <p style={textStyle}>Sign in with email</p>
@@ -65,7 +66,7 @@ export function GallerySeparator() {
 
       {/* ---- Ornamental — Single Glyphs ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ornamental — Single Glyphs</div>
+        <TugLabel className="cg-section-title">Ornamental — Single Glyphs</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxWidth: "480px" }}>
           <TugSeparator ornament="◆" />
           <TugSeparator ornament="✦" />
@@ -79,7 +80,7 @@ export function GallerySeparator() {
 
       {/* ---- Ornamental — Dinkus Patterns ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ornamental — Dinkus Patterns</div>
+        <TugLabel className="cg-section-title">Ornamental — Dinkus Patterns</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxWidth: "480px" }}>
           <TugSeparator ornament="* * *" />
           <TugSeparator ornament="· · ·" />
@@ -91,7 +92,7 @@ export function GallerySeparator() {
 
       {/* ---- Capped ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Capped</div>
+        <TugLabel className="cg-section-title">Capped</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
           <div>
             <div style={descStyle}>plain capped line</div>
@@ -111,7 +112,7 @@ export function GallerySeparator() {
 
       {/* ---- Length & Alignment ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Length & Alignment</div>
+        <TugLabel className="cg-section-title">Length & Alignment</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
           <div>
             <div style={descStyle}>length="50%" align="center" (default)</div>
@@ -140,7 +141,7 @@ export function GallerySeparator() {
 
       {/* ---- Vertical ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Vertical</div>
+        <TugLabel className="cg-section-title">Vertical</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
           <div>
@@ -189,7 +190,7 @@ export function GallerySeparator() {
 
       {/* ---- SVG Ornament ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">SVG Ornament</div>
+        <TugLabel className="cg-section-title">SVG Ornament</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
           <div>
             <div style={descStyle}>SVG at default size</div>

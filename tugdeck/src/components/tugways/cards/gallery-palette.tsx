@@ -37,6 +37,7 @@ import {
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import "./gallery-palette.css";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -681,13 +682,13 @@ export function GalleryPalette() {
 
       {/* Achromatic strip: black / gray / white */}
       <div className="cg-section">
-        <div className="cg-section-title">Achromatic</div>
+        <TugLabel className="cg-section-title">Achromatic</TugLabel>
         <TugAchromaticStrip />
       </div>
 
       {/* Canonical color strip */}
       <div className="cg-section">
-        <div className="cg-section-title">Canonical Colors</div>
+        <TugLabel className="cg-section-title">Canonical Colors</TugLabel>
         <TugHueStrip
           canonicalL={canonicalL}
           selectedHue={selectedHue}
@@ -698,7 +699,7 @@ export function GalleryPalette() {
 
       {/* L Curve Editor */}
       <div className="cg-section">
-        <div className="cg-section-title">Canonical Lightness — drag to adjust</div>
+        <TugLabel className="cg-section-title">Canonical Lightness — drag to adjust</TugLabel>
         <LCurveEditor
           canonicalL={canonicalL}
           onChange={handleLChange}
@@ -710,7 +711,7 @@ export function GalleryPalette() {
       {/* IntensityTone picker for selected hue */}
       {selectedHue && (
         <div className="cg-section">
-          <div className="cg-section-title">{selectedHue} — Intensity x Tone</div>
+          <TugLabel className="cg-section-title">{`${selectedHue} — Intensity x Tone`}</TugLabel>
           <IntensityTonePicker
             hueName={selectedHue}
             canonicalL={canonicalL[selectedHue]}

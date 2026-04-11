@@ -19,6 +19,7 @@
 import React, { useState, useRef, useLayoutEffect } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GalleryDefaultButton
@@ -59,7 +60,7 @@ export function GalleryDefaultButton() {
   return (
     <div className="cg-content" data-testid="gallery-default-button">
       <div className="cg-section">
-        <div className="cg-section-title">Default Button</div>
+        <TugLabel className="cg-section-title">Default Button</TugLabel>
         <p className="cg-description">
           Click outside the buttons, then press Enter to activate the default button.
         </p>

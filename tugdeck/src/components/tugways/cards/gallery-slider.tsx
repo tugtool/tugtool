@@ -18,6 +18,7 @@ import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./gallery-slider.css";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---- Formatters (module scope to avoid recreation on each render) ----
 
@@ -90,7 +91,7 @@ export function GallerySlider() {
 
       {/* ---- Section 1: Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — Sizes</div>
+        <TugLabel className="cg-section-title">TugSlider — Sizes</TugLabel>
         <div className="gs-size-row">
           <div className="gs-size-item">
             <span className="gs-demo-label">sm</span>
@@ -129,7 +130,7 @@ export function GallerySlider() {
 
       {/* ---- Section 2: Layouts ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — Layouts</div>
+        <TugLabel className="cg-section-title">TugSlider — Layouts</TugLabel>
         <div className="gs-layout-col">
           <div className="gs-layout-item">
             <span className="gs-demo-label">inline</span>
@@ -158,7 +159,7 @@ export function GallerySlider() {
 
       {/* ---- Section 3: Formatters ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — Formatters</div>
+        <TugLabel className="cg-section-title">TugSlider — Formatters</TugLabel>
         <div className="gs-formatter-col">
           <div className="gs-formatter-item">
             <span className="gs-demo-label">percent</span>
@@ -205,7 +206,7 @@ export function GallerySlider() {
 
       {/* ---- Section 4: Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — Disabled</div>
+        <TugLabel className="cg-section-title">TugSlider — Disabled</TugLabel>
         <TugSlider
           size="md"
           value={disabledValue}
@@ -218,7 +219,7 @@ export function GallerySlider() {
 
       {/* ---- Section 5: No Value Input ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — No Value Input</div>
+        <TugLabel className="cg-section-title">TugSlider — No Value Input</TugLabel>
         <TugSlider
           size="md"
           value={noValueValue}
@@ -232,7 +233,7 @@ export function GallerySlider() {
 
       {/* ---- Section 6: Ticks + Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugSlider — Ticks & Icons</div>
+        <TugLabel className="cg-section-title">TugSlider — Ticks & Icons</TugLabel>
         <div className="gs-layout-col">
           <div className="gs-layout-item">
             <span className="gs-demo-label">ticks</span>

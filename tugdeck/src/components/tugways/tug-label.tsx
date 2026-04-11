@@ -57,13 +57,6 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
   icon?: React.ReactNode;
   /** Icon color (CSS color value or token). Defaults to label text color. */
   iconColor?: string;
-  /**
-   * When true, the label is "copyable" — right-click shows a Copy menu
-   * that copies the label's text content to the clipboard. No visible
-   * selection or drag-to-select. See tuglaws/selection-model.md.
-   * @default false
-   */
-  copyable?: boolean;
 }
 
 // ---- Truncation helpers ----
@@ -102,7 +95,6 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       disabled = false,
       icon,
       iconColor,
-      copyable = false,
       className,
       ...rest
     },
@@ -111,12 +103,12 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const textRef = useRef<HTMLSpanElement>(null);
     const labelRef = useRef<HTMLLabelElement | null>(null);
 
-    // Copyable: right-click → Copy copies the label's text content.
-    // Only active when copyable prop is true.
-    const copyable_ = useCopyableText({
+    // Labels are copyable — right-click → Copy copies the label's text
+    // content. This is intrinsic to the component, not opt-in.
+    const copyable = useCopyableText({
       ref: labelRef as React.MutableRefObject<HTMLElement | null>,
       getText: () => children,
-      disabled: !copyable,
+      disabled: false,
       forwardedRef: ref as React.Ref<HTMLElement>,
     });
     const [truncatedText, setTruncatedText] = useState<string | null>(null);
@@ -223,11 +215,11 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     return (
       <>
         <LabelPrimitive.Root
-          ref={copyable ? copyable_.composedRef as React.Ref<HTMLLabelElement> : ref}
+          ref={copyable.composedRef as React.Ref<HTMLLabelElement>}
           data-slot="tug-label"
           htmlFor={htmlFor}
           className={labelClassName}
-          onContextMenu={copyable ? copyable_.handleContextMenu : undefined}
+          onContextMenu={copyable.handleContextMenu}
           {...rest}
         >
           {icon && (
@@ -248,7 +240,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
             {required && <span className="tug-label-required" aria-hidden="true"> *</span>}
           </span>
         </LabelPrimitive.Root>
-        {copyable && copyable_.contextMenu}
+        {copyable.contextMenu}
       </>
     );
   },

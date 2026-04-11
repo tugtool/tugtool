@@ -16,6 +16,7 @@ import {
   type TugConfirmPopoverHandle,
 } from "@/components/tugways/tug-confirm-popover";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -88,7 +89,7 @@ export function GalleryConfirmPopover() {
 
       {/* ---- 1. Danger Confirmation ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Danger Confirmation</div>
+        <TugLabel className="cg-section-title">Danger Confirmation</TugLabel>
         <div style={labelStyle}>Default role="danger" — delete action guard</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
@@ -111,7 +112,7 @@ export function GalleryConfirmPopover() {
 
       {/* ---- 2. Action Confirmation ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Action Confirmation</div>
+        <TugLabel className="cg-section-title">Action Confirmation</TugLabel>
         <div style={labelStyle}>confirmRole="action" — non-destructive confirmation</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
@@ -134,7 +135,7 @@ export function GalleryConfirmPopover() {
 
       {/* ---- 3. Custom Labels ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Custom Labels</div>
+        <TugLabel className="cg-section-title">Custom Labels</TugLabel>
         <div style={labelStyle}>Custom confirmLabel and cancelLabel</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
@@ -157,7 +158,7 @@ export function GalleryConfirmPopover() {
 
       {/* ---- 4. Positioning ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Positioning</div>
+        <TugLabel className="cg-section-title">Positioning</TugLabel>
         <div style={labelStyle}>side="bottom" (default) vs side="top" — buttons always nearest to trigger</div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
           <TugConfirmPopover
@@ -192,7 +193,7 @@ export function GalleryConfirmPopover() {
 
       {/* ---- 5. Promise API ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Promise API</div>
+        <TugLabel className="cg-section-title">Promise API</TugLabel>
         <div style={labelStyle}>Imperative confirm() via useRef — resolves true/false</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover

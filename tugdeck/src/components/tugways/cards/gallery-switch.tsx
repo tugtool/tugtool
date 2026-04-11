@@ -13,6 +13,7 @@ import React, { useId, useState } from "react";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,7 +61,7 @@ export function GallerySwitch() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Size Variants</div>
+        <TugLabel className="cg-section-title">Size Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {ALL_SIZES.map((size) => (
             <TugSwitch key={size} size={size} label={`Size: ${size}`} defaultChecked />
@@ -72,7 +73,7 @@ export function GallerySwitch() {
 
       {/* ---- States (Controlled) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">States (Controlled)</div>
+        <TugLabel className="cg-section-title">States (Controlled)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch
             checked={enabled1}
@@ -91,7 +92,7 @@ export function GallerySwitch() {
 
       {/* ---- Without Labels ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Without Labels</div>
+        <TugLabel className="cg-section-title">Without Labels</TugLabel>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugSwitch aria-label="Feature A" />
           <TugSwitch aria-label="Feature B" defaultChecked />
@@ -102,7 +103,7 @@ export function GallerySwitch() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch disabled label="Disabled off" />
           <TugSwitch disabled defaultChecked label="Disabled on" />
@@ -113,7 +114,7 @@ export function GallerySwitch() {
 
       {/* ---- Settings Example ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Settings Example</div>
+        <TugLabel className="cg-section-title">Settings Example</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <TugSwitch label="Dark mode" defaultChecked />
           <TugSwitch label="Auto-save" defaultChecked />
@@ -126,7 +127,7 @@ export function GallerySwitch() {
 
       {/* ---- Role Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Role Variants</div>
+        <TugLabel className="cg-section-title">Role Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch defaultChecked label="accent (default)" />
           {ALL_ROLES.map((role) => (

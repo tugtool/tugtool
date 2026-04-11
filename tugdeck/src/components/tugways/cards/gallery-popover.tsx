@@ -19,6 +19,7 @@ import {
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // Shared text style for paragraph content inside popovers
 const paraStyle: React.CSSProperties = {
@@ -63,7 +64,7 @@ export function GalleryPopover() {
 
       {/* ---- 1. Basic ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Basic</div>
+        <TugLabel className="cg-section-title">Basic</TugLabel>
         <div style={labelStyle}>Default side (bottom) — click button to open popover</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
@@ -86,7 +87,7 @@ export function GalleryPopover() {
 
       {/* ---- 2. Positioning ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Positioning</div>
+        <TugLabel className="cg-section-title">Positioning</TugLabel>
         <div style={labelStyle}>Four sides — each button opens a popover on that side</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
           <TugPopover>
@@ -139,7 +140,7 @@ export function GalleryPopover() {
 
       {/* ---- 3. With Arrow ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Arrow</div>
+        <TugLabel className="cg-section-title">With Arrow</TugLabel>
         <div style={labelStyle}>arrow={"{true}"} — visual connection between popover and trigger</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
@@ -161,7 +162,7 @@ export function GalleryPopover() {
 
       {/* ---- 4. Form Content ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Form Content</div>
+        <TugLabel className="cg-section-title">Form Content</TugLabel>
         <div style={labelStyle}>Popover containing interactive form fields</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
@@ -206,7 +207,7 @@ export function GalleryPopover() {
 
       {/* ---- 5. With Close Button ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Close Button</div>
+        <TugLabel className="cg-section-title">With Close Button</TugLabel>
         <div style={labelStyle}>TugPopoverClose wraps a TugPushButton to dismiss the popover</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
@@ -240,7 +241,7 @@ export function GalleryPopover() {
 
       {/* ---- 6. Imperative ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Imperative</div>
+        <TugLabel className="cg-section-title">Imperative</TugLabel>
         <div style={labelStyle}>TugPopoverHandle.open() / .close() driven from an external button</div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
           <TugPopover ref={imperativeRef}>

@@ -17,6 +17,7 @@ import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-
 import { TUG_ACTIONS, TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // ActionEventDemo
@@ -79,7 +80,7 @@ function ActionEventDemo() {
 
   return (
     <div className="cg-section" data-testid="action-event-demo">
-      <div className="cg-section-title">ActionEvent Dispatch</div>
+      <TugLabel className="cg-section-title">ActionEvent Dispatch</TugLabel>
       <p className="cg-description">
         Click the button to dispatch directly to a local responder node via{" "}
         <code>sendToTarget</code>. The handler receives the full{" "}
@@ -117,7 +118,7 @@ export function GalleryChainActions() {
   return (
     <div className="cg-content" data-testid="gallery-chain-actions">
       <div className="cg-section">
-        <div className="cg-section-title">Chain-Action Buttons</div>
+        <TugLabel className="cg-section-title">Chain-Action Buttons</TugLabel>
         <div className="cg-variant-row">
           <TugButton action="cycle-card">
             Cycle Card

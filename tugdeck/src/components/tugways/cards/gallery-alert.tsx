@@ -12,6 +12,7 @@ import React from "react";
 import { TugAlert, useTugAlert } from "@/components/tugways/tug-alert";
 import type { TugAlertHandle } from "@/components/tugways/tug-alert";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -96,7 +97,7 @@ function GalleryAlertInner() {
 
       {/* ---- 1. Basic Alert (useTugAlert hook) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Basic Alert</div>
+        <TugLabel className="cg-section-title">Basic Alert</TugLabel>
         <div style={labelStyle}>useTugAlert() hook — default action role, default info icon</div>
         <div style={{ display: "flex" }}>
           <TugPushButton emphasis="outlined" size="sm" onClick={handleBasicAlert}>
@@ -112,7 +113,7 @@ function GalleryAlertInner() {
 
       {/* ---- 2. Danger Confirmation ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Danger Confirmation</div>
+        <TugLabel className="cg-section-title">Danger Confirmation</TugLabel>
         <div style={labelStyle}>confirmRole="danger", icon="Trash2" — destructive action guard</div>
         <div style={{ display: "flex" }}>
           <TugPushButton emphasis="filled" role="danger" size="sm" onClick={handleDangerAlert}>
@@ -128,7 +129,7 @@ function GalleryAlertInner() {
 
       {/* ---- 3. Caution Warning ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Caution Warning</div>
+        <TugLabel className="cg-section-title">Caution Warning</TugLabel>
         <div style={labelStyle}>confirmRole="caution", icon="TriangleAlert" — potentially lossy action</div>
         <div style={{ display: "flex" }}>
           <TugPushButton emphasis="outlined" size="sm" onClick={handleCautionAlert}>
@@ -144,7 +145,7 @@ function GalleryAlertInner() {
 
       {/* ---- 4. OK-Only (no cancel) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">OK-Only (No Cancel)</div>
+        <TugLabel className="cg-section-title">OK-Only (No Cancel)</TugLabel>
         <div style={labelStyle}>cancelLabel=null — single-button acknowledgement variant</div>
         <div style={{ display: "flex" }}>
           <TugPushButton emphasis="outlined" size="sm" onClick={handleOkOnlyAlert}>
@@ -160,7 +161,7 @@ function GalleryAlertInner() {
 
       {/* ---- 5. Ref-Based Imperative API ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ref-Based Imperative API</div>
+        <TugLabel className="cg-section-title">Ref-Based Imperative API</TugLabel>
         <div style={labelStyle}>useRef&lt;TugAlertHandle&gt; + alertRef.current.alert() — alternative to provider pattern</div>
         {/* Standalone TugAlert instance for this section */}
         <TugAlert ref={alertRef} title="Send feedback?" />

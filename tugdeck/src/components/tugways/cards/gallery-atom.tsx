@@ -18,6 +18,7 @@ import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-atom.css";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---- Sample data ----
 
@@ -142,7 +143,7 @@ export function GalleryAtom() {
 
       {/* ---- All known types ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Atom Types</div>
+        <TugLabel className="cg-section-title">Atom Types</TugLabel>
         <div ref={typesRef} className="gallery-atom-row" />
       </div>
 
@@ -150,7 +151,7 @@ export function GalleryAtom() {
 
       {/* ---- Inline with text ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Inline with Text</div>
+        <TugLabel className="cg-section-title">Inline with Text</TugLabel>
         <div ref={inlineRef} className="gallery-atom-text-sample" />
       </div>
 
@@ -158,7 +159,7 @@ export function GalleryAtom() {
 
       {/* ---- Truncation ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Truncation</div>
+        <TugLabel className="cg-section-title">Truncation</TugLabel>
         <div style={descStyle}>Labels truncated to 150px with ellipsis</div>
         <div ref={truncRef} className="gallery-atom-row" />
       </div>
@@ -167,7 +168,7 @@ export function GalleryAtom() {
 
       {/* ---- Label modes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Label Modes</div>
+        <TugLabel className="cg-section-title">Label Modes</TugLabel>
         <TugChoiceGroup
           items={LABEL_MODE_CHOICES}
           value={labelMode}

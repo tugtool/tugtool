@@ -33,10 +33,10 @@ export function GalleryLabel() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Size Variants</div>
+        <TugLabel className="cg-section-title">TugLabel — Size Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_SIZES.map((size) => (
-            <TugLabel key={size} size={size} copyable>
+            <TugLabel key={size} size={size}>
               {`Label size: ${size}`}
             </TugLabel>
           ))}
@@ -47,7 +47,7 @@ export function GalleryLabel() {
 
       {/* ---- Required Indicator ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Required Indicator</div>
+        <TugLabel className="cg-section-title">TugLabel — Required Indicator</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugLabel>Optional field</TugLabel>
           <TugLabel required>Required field</TugLabel>
@@ -58,7 +58,7 @@ export function GalleryLabel() {
 
       {/* ---- With Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — With Icons</div>
+        <TugLabel className="cg-section-title">TugLabel — With Icons</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugLabel icon={<Tag />}>Default icon color</TugLabel>
           <TugLabel icon={<Info />} iconColor="var(--tug7-element-global-fill-normal-accentCool-rest)">
@@ -80,7 +80,7 @@ export function GalleryLabel() {
 
       {/* ---- Icons at All Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Icons at All Sizes</div>
+        <TugLabel className="cg-section-title">TugLabel — Icons at All Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_SIZES.map((size) => (
             <TugLabel key={size} size={size} icon={<Tag />} required>
@@ -94,7 +94,7 @@ export function GalleryLabel() {
 
       {/* ---- Multiline Wrapping ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Multiline Wrapping</div>
+        <TugLabel className="cg-section-title">TugLabel — Multiline Wrapping</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">No maxLines — wraps freely:</p>
@@ -111,7 +111,7 @@ export function GalleryLabel() {
 
       {/* ---- Ellipsis: End ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Ellipsis: End (CSS line-clamp)</div>
+        <TugLabel className="cg-section-title">TugLabel — Ellipsis: End (CSS line-clamp)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">maxLines=1:</p>
@@ -132,7 +132,7 @@ export function GalleryLabel() {
 
       {/* ---- Ellipsis: Start ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Ellipsis: Start</div>
+        <TugLabel className="cg-section-title">TugLabel — Ellipsis: Start</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">File path, maxLines=1:</p>
@@ -149,7 +149,7 @@ export function GalleryLabel() {
 
       {/* ---- Ellipsis: Middle ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Ellipsis: Middle</div>
+        <TugLabel className="cg-section-title">TugLabel — Ellipsis: Middle</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">File path, maxLines=1:</p>
@@ -166,7 +166,7 @@ export function GalleryLabel() {
 
       {/* ---- Paired with TugInput ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Paired with TugInput</div>
+        <TugLabel className="cg-section-title">TugLabel — Paired with TugInput</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "360px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <TugLabel htmlFor="demo-name" required>Name</TugLabel>
@@ -185,7 +185,7 @@ export function GalleryLabel() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugLabel — Disabled</div>
+        <TugLabel className="cg-section-title">TugLabel — Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "360px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <TugLabel htmlFor="demo-disabled" disabled>Disabled label</TugLabel>

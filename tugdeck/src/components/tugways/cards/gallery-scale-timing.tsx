@@ -20,6 +20,7 @@ import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { Star } from "lucide-react";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -170,7 +171,7 @@ export function GalleryScaleTiming() {
 
       {/* ---- Global Multipliers ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Global Multipliers</div>
+        <TugLabel className="cg-section-title">Global Multipliers</TugLabel>
         <div className="cg-controls cg-st-controls">
           <SliderRow
             label="--tug-zoom"
@@ -215,7 +216,7 @@ export function GalleryScaleTiming() {
 
       {/* ---- JS Helper Readout ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">JS Helper Readout</div>
+        <TugLabel className="cg-section-title">JS Helper Readout</TugLabel>
         <div className="cg-st-readout" data-testid="st-readout">
           <div className="cg-st-readout-row">
             <span className="cg-st-readout-fn">getTugZoom()</span>
@@ -242,7 +243,7 @@ export function GalleryScaleTiming() {
 
       {/* ---- Live Preview ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Live Preview</div>
+        <TugLabel className="cg-section-title">Live Preview</TugLabel>
         <div className="cg-st-preview" data-testid="st-preview">
           <div className="cg-st-preview-row">
             <TugPushButton emphasis="filled" role="accent" size="md">Filled Accent</TugPushButton>

@@ -25,6 +25,7 @@ import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import "./gallery-theme-generator.css";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const CVD_TYPES: CVDType[] = ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"];
 
@@ -190,7 +191,7 @@ export function GalleryThemeGenerator() {
       <div className="cg-divider" />
 
       <div className="cg-section">
-        <div className="cg-section-title">Controls</div>
+        <TugLabel className="cg-section-title">Controls</TugLabel>
         <button className="gtg-compact-hue-row" data-testid="gtg-canvas-hue" disabled type="button">
           <span className="gtg-compact-hue-label">Canvas</span>
         </button>
@@ -200,7 +201,7 @@ export function GalleryThemeGenerator() {
       <div className="cg-divider" />
 
       <div className="cg-section">
-        <div className="cg-section-title">Token Preview ({snapshot.entries.length} tokens)</div>
+        <TugLabel className="cg-section-title">{`Token Preview (${snapshot.entries.length} tokens)`}</TugLabel>
         <div className="gtg-token-grid" data-testid="gtg-token-grid">
           <div className="gtg-token-header">
             <span>Token</span>
@@ -226,7 +227,7 @@ export function GalleryThemeGenerator() {
       <div className="cg-divider" />
 
       <div className="cg-section">
-        <div className="cg-section-title">Contrast Dashboard</div>
+        <TugLabel className="cg-section-title">Contrast Dashboard</TugLabel>
         <div className="gtg-dash-summary" data-testid="gtg-dash-summary">
           <span className="gtg-dash-summary-count" data-testid="gtg-dash-summary-count">{passCount}/{checkedCount}</span>
           <span>pairs pass contrast</span>
@@ -268,7 +269,7 @@ export function GalleryThemeGenerator() {
       <div className="cg-divider" />
 
       <div className="cg-section">
-        <div className="cg-section-title">Color Vision Deficiency Preview</div>
+        <TugLabel className="cg-section-title">Color Vision Deficiency Preview</TugLabel>
         <div className="gtg-cvd-strip" data-testid="gtg-cvd-strip">
           <div className="gtg-cvd-col-headers">
             <div className="gtg-cvd-type-label-cell" />
@@ -311,7 +312,7 @@ export function GalleryThemeGenerator() {
       <div className="cg-divider" />
 
       <div className="cg-section">
-        <div className="cg-section-title">Accessibility Diagnostics</div>
+        <TugLabel className="cg-section-title">Accessibility Diagnostics</TugLabel>
         <div className="gtg-autofix-panel" data-testid="gtg-autofix-panel">
           <div className="gtg-diag-section" data-testid="gtg-diag-floor-section">
             <div className="gtg-diag-section-title">Failing contrast pairs ({failingPairs.length})</div>

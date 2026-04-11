@@ -14,6 +14,7 @@ import React, { useId, useState } from "react";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import type { TugRadioRole } from "@/components/tugways/tug-radio-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -75,7 +76,7 @@ export function GalleryRadioGroup() {
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sizes</div>
+        <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
@@ -108,7 +109,7 @@ export function GalleryRadioGroup() {
 
       {/* ---- Orientations ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Orientations</div>
+        <TugLabel className="cg-section-title">Orientations</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>horizontal</div>
@@ -143,7 +144,7 @@ export function GalleryRadioGroup() {
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Roles</div>
+        <TugLabel className="cg-section-title">Roles</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugRadioGroup defaultValue="on" aria-label="accent (default)">
             <TugRadioItem value="off">accent off</TugRadioItem>
@@ -162,7 +163,7 @@ export function GalleryRadioGroup() {
 
       {/* ---- Group Label ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Group Label</div>
+        <TugLabel className="cg-section-title">Group Label</TugLabel>
         <TugRadioGroup
           label="Notification channel"
           name="notification-channel"
@@ -180,7 +181,7 @@ export function GalleryRadioGroup() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>group disabled</div>

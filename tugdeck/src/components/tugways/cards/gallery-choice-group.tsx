@@ -28,6 +28,7 @@ import {
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,7 +128,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sizes</div>
+        <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
@@ -178,7 +179,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Roles</div>
+        <TugLabel className="cg-section-title">Roles</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {/* accent (default — no role prop) */}
           <TugChoiceGroup
@@ -211,7 +212,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
@@ -251,7 +252,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Instant Indicator ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Instant Indicator</div>
+        <TugLabel className="cg-section-title">Instant Indicator</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             Default behavior — indicator snaps instantly to the selected segment (no animation).
@@ -276,7 +277,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Animated ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Animated</div>
+        <TugLabel className="cg-section-title">Animated</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             With <code>animated</code> — the indicator pill slides smoothly between segments.
@@ -302,7 +303,7 @@ export function GalleryChoiceGroup() {
 
       {/* ---- Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Icons</div>
+        <TugLabel className="cg-section-title">Icons</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
           {/* Icon + label (left — default) */}

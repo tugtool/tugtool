@@ -31,6 +31,7 @@ import {
   DURATION_TOKEN_MAP,
 } from "@/components/tugways/tug-animator";
 import type { TugAnimation } from "@/components/tugways/tug-animator";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -189,7 +190,7 @@ function PhysicsCurvesDemo() {
 
   return (
     <div className="cg-section">
-      <div className="cg-section-title">Physics Solvers</div>
+      <TugLabel className="cg-section-title">Physics Solvers</TugLabel>
       <p className="cg-description">
         Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver
         drive WAAPI animations with physically-accurate motion.
@@ -300,7 +301,7 @@ function DurationTokensDemo() {
 
   return (
     <div className="cg-section">
-      <div className="cg-section-title">Duration Tokens</div>
+      <TugLabel className="cg-section-title">Duration Tokens</TugLabel>
       <p className="cg-description">
         Duration tokens resolve to base ms values scaled by{" "}
         <code>getTugTiming()</code>. Click each to see the speed difference.
@@ -410,7 +411,7 @@ function CancelModesDemo() {
 
   return (
     <div className="cg-section">
-      <div className="cg-section-title">Cancellation Modes</div>
+      <TugLabel className="cg-section-title">Cancellation Modes</TugLabel>
       <p className="cg-description">
         Start a slow animation, then cancel it with each mode to see the difference.
         <strong> snap-to-end</strong> jumps to final state,{" "}
@@ -527,7 +528,7 @@ function NamedSlotsDemo() {
 
   return (
     <div className="cg-section">
-      <div className="cg-section-title">Named Slots</div>
+      <TugLabel className="cg-section-title">Named Slots</TugLabel>
       <p className="cg-description">
         Animations with the same <code>key</code> on the same element automatically cancel
         the previous one. Different keys coexist independently.

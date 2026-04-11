@@ -17,6 +17,7 @@ import { TugProgress } from "@/components/tugways/tug-progress";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // Shared text style for paragraph content inside accordion items
 const paraStyle: React.CSSProperties = {
@@ -63,7 +64,7 @@ export function GalleryAccordion() {
 
       {/* ---- 1. Single Mode ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Single Mode</div>
+        <TugLabel className="cg-section-title">Single Mode</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugAccordion type="single" collapsible>
             <TugAccordionItem value="getting-started" trigger="Getting Started">
@@ -93,7 +94,7 @@ export function GalleryAccordion() {
 
       {/* ---- 2. Multiple Mode ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Multiple Mode</div>
+        <TugLabel className="cg-section-title">Multiple Mode</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugAccordion type="multiple">
             <TugAccordionItem value="features" trigger="Features">
@@ -123,7 +124,7 @@ export function GalleryAccordion() {
 
       {/* ---- 3. Default Open ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Default Open</div>
+        <TugLabel className="cg-section-title">Default Open</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <div style={labelStyle}>defaultValue="second-item" — second panel opens on mount</div>
           <TugAccordion type="single" collapsible defaultValue="second-item">
@@ -147,7 +148,7 @@ export function GalleryAccordion() {
 
       {/* ---- 4. Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Variants</div>
+        <TugLabel className="cg-section-title">Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
           <div>
             <div style={labelStyle}>variant="separator" (default) — divider lines between items</div>
@@ -212,7 +213,7 @@ export function GalleryAccordion() {
 
       {/* ---- 5. Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
           <div>
             <div style={labelStyle}>disabled on root — all items non-interactive</div>
@@ -246,7 +247,7 @@ export function GalleryAccordion() {
 
       {/* ---- 6. TugBox Cascade ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugBox Cascade</div>
+        <TugLabel className="cg-section-title">TugBox Cascade</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugBox variant="bordered" label="Disabled via TugBox" disabled={true}>
             <TugAccordion type="single" collapsible>
@@ -268,7 +269,7 @@ export function GalleryAccordion() {
 
       {/* ---- 7. Rich Triggers ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Rich Triggers</div>
+        <TugLabel className="cg-section-title">Rich Triggers</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <div style={labelStyle}>trigger accepts any ReactNode — icon + text layout via flex</div>
           <TugAccordion type="single" collapsible>
@@ -319,7 +320,7 @@ export function GalleryAccordion() {
 
       {/* ---- 8. Nested Content ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Nested Content</div>
+        <TugLabel className="cg-section-title">Nested Content</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <div style={labelStyle}>accordion as a container for real UI — TugBadge, TugProgress, TugInput, TugSwitch</div>
           <TugAccordion type="multiple">
@@ -360,7 +361,7 @@ export function GalleryAccordion() {
 
       {/* ---- 9. Chain-controlled (A2.4) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Chain-Controlled (A2.4)</div>
+        <TugLabel className="cg-section-title">Chain-Controlled (A2.4)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
           <div>
             <div style={labelStyle}>

@@ -20,6 +20,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -107,7 +108,7 @@ export function GalleryCheckbox() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Size Variants</div>
+        <TugLabel className="cg-section-title">Size Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {ALL_SIZES.map((size) => (
             <TugCheckbox key={size} size={size} label={`Size: ${size}`} defaultChecked />
@@ -119,7 +120,7 @@ export function GalleryCheckbox() {
 
       {/* ---- States ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">States (Controlled)</div>
+        <TugLabel className="cg-section-title">States (Controlled)</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugCheckbox
             checked={checked1}
@@ -143,7 +144,7 @@ export function GalleryCheckbox() {
 
       {/* ---- Without Labels ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Without Labels</div>
+        <TugLabel className="cg-section-title">Without Labels</TugLabel>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugCheckbox aria-label="Option A" />
           <TugCheckbox aria-label="Option B" defaultChecked />
@@ -155,7 +156,7 @@ export function GalleryCheckbox() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugCheckbox disabled label="Disabled unchecked" />
           <TugCheckbox disabled defaultChecked label="Disabled checked" />
@@ -167,7 +168,7 @@ export function GalleryCheckbox() {
 
       {/* ---- Group Example ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Group Example</div>
+        <TugLabel className="cg-section-title">Group Example</TugLabel>
         <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
           <legend style={{
             fontSize: "0.8125rem",
@@ -190,7 +191,7 @@ export function GalleryCheckbox() {
 
       {/* ---- Role Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Role Variants</div>
+        <TugLabel className="cg-section-title">Role Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugCheckbox defaultChecked label="accent (default)" />
           {ALL_ROLES.map((role) => (

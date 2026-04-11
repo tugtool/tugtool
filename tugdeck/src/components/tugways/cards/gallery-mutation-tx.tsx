@@ -32,6 +32,7 @@ import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-
 import { TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { StyleCascadeReader } from "@/components/tugways/style-cascade-reader";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -277,7 +278,7 @@ export function GalleryMutationTx() {
       {/* Mock card -- absolute-positioned target element                     */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
-        <div className="cg-section-title">Mock Target Element</div>
+        <TugLabel className="cg-section-title">Mock Target Element</TugLabel>
         <p className="cg-description">
           A positioned div whose CSS properties are mutated by the demos below.
           Commit keeps the final value; cancel restores the original.
@@ -302,7 +303,7 @@ export function GalleryMutationTx() {
       {/* Cascade reader display                                              */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
-        <div className="cg-section-title">Cascade Reader Display</div>
+        <TugLabel className="cg-section-title">Cascade Reader Display</TugLabel>
         <p className="cg-description">
           Updated via direct DOM writes during gestures — no React re-renders.
         </p>
@@ -345,7 +346,7 @@ export function GalleryMutationTx() {
       {/* Demo 1: Color input                                                 */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-color-input">
-        <div className="cg-section-title">Demo 1 — Color Input (background-color)</div>
+        <TugLabel className="cg-section-title">Demo 1 — Color Input (background-color)</TugLabel>
         <p className="cg-description">
           The color picker dispatches <code>begin</code> on first input, <code>change</code>{" "}
           on subsequent inputs (intermediate picks), and <code>commit</code> on the{" "}
@@ -391,7 +392,7 @@ export function GalleryMutationTx() {
       {/* Demo 2: Pointer-scrub swatch                                        */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-hue-scrub">
-        <div className="cg-section-title">Demo 2 — Hue Scrub (pointer drag)</div>
+        <TugLabel className="cg-section-title">Demo 2 — Hue Scrub (pointer drag)</TugLabel>
         <p className="cg-description">
           Drag horizontally across the swatch to scrub the hue of the mock card's
           background-color. Release to commit; press Escape to cancel and restore
@@ -458,7 +459,7 @@ export function GalleryMutationTx() {
       {/* Demo 3: Position sliders                                            */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-position-sliders">
-        <div className="cg-section-title">Demo 3 — Position Sliders (left + top)</div>
+        <TugLabel className="cg-section-title">Demo 3 — Position Sliders (left + top)</TugLabel>
         <p className="cg-description">
           Two range sliders set the <code>left</code> and <code>top</code> inline
           styles of the mock card, demonstrating multi-property snapshotting.

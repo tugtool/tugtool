@@ -68,6 +68,7 @@ import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptInput } from "./gallery-prompt-input";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GALLERY_DEFAULT_TABS
@@ -203,7 +204,7 @@ export function GalleryBadge() {
       {ALL_BADGE_EMPHASES.map((emphasis) => (
         <React.Fragment key={emphasis}>
           <div className="cg-section">
-            <div className="cg-section-title">TugBadge — {emphasis}</div>
+            <TugLabel className="cg-section-title">{`TugBadge — ${emphasis}`}</TugLabel>
             <div className="cg-matrix">
               <div className="cg-subtype-block">
                 <div className="cg-subtype-label">text only</div>

@@ -14,6 +14,7 @@
 import React from "react";
 import { TugBanner } from "@/components/tugways/tug-banner";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -85,7 +86,7 @@ export function GalleryBanner() {
 
       {/* ---- 1. Status variant — danger tone (default) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Status — Danger Tone</div>
+        <TugLabel className="cg-section-title">Status — Danger Tone</TugLabel>
         <div style={labelStyle}>Solid-fill strip. Bold text. Full-opacity — impossible to miss.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
@@ -119,7 +120,7 @@ export function GalleryBanner() {
 
       {/* ---- 2. Status variant — caution tone ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Status — Caution Tone</div>
+        <TugLabel className="cg-section-title">Status — Caution Tone</TugLabel>
         <div style={labelStyle}>tone="caution" — solid yellow palette.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
@@ -153,7 +154,7 @@ export function GalleryBanner() {
 
       {/* ---- 3. Status variant — default tone ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Status — Default Tone</div>
+        <TugLabel className="cg-section-title">Status — Default Tone</TugLabel>
         <div style={labelStyle}>tone="default" — neutral overlay palette.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
@@ -187,7 +188,7 @@ export function GalleryBanner() {
 
       {/* ---- 4. Status variant with icon ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Status with Icon</div>
+        <TugLabel className="cg-section-title">Status with Icon</TugLabel>
         <div style={labelStyle}>icon="wifi-off" — Lucide icon rendered inline in strip.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
@@ -215,7 +216,7 @@ export function GalleryBanner() {
 
       {/* ---- 5. Error variant ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Error Variant</div>
+        <TugLabel className="cg-section-title">Error Variant</TugLabel>
         <div style={labelStyle}>
           variant="error" — two parts: bold strip at top (same urgency as status), centered detail panel
           below with stack trace + reload. Detail panel is scrollable and non-alarming.

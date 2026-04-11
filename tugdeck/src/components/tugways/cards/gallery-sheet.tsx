@@ -23,6 +23,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -96,7 +97,7 @@ export function GallerySheet() {
 
       {/* ---- 1. useTugSheet() Hook ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">useTugSheet() Hook</div>
+        <TugLabel className="cg-section-title">useTugSheet() Hook</TugLabel>
         <div style={labelStyle}>
           Imperative Promise API — call showSheet() anywhere, await the result. No compound JSX required.
         </div>
@@ -145,7 +146,7 @@ export function GallerySheet() {
 
       {/* ---- 2. Basic Sheet ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Basic Sheet</div>
+        <TugLabel className="cg-section-title">Basic Sheet</TugLabel>
         <div style={labelStyle}>
           Compound API — TugSheet / TugSheetTrigger / TugSheetContent with a settings form
         </div>
@@ -187,7 +188,7 @@ export function GallerySheet() {
 
       {/* ---- 3. Sheet with Description ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sheet with Description</div>
+        <TugLabel className="cg-section-title">Sheet with Description</TugLabel>
         <div style={labelStyle}>
           Optional <code>description</code> prop — renders beneath the title, wired to aria-describedby
         </div>
@@ -225,7 +226,7 @@ export function GallerySheet() {
 
       {/* ---- 4. Imperative API ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Imperative API</div>
+        <TugLabel className="cg-section-title">Imperative API</TugLabel>
         <div style={labelStyle}>
           useRef&lt;TugSheetHandle&gt; + sheetRef.current.open() / .close() — programmatic control
         </div>
@@ -275,7 +276,7 @@ export function GallerySheet() {
 
       {/* ---- 5. Rich Content ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Rich Content</div>
+        <TugLabel className="cg-section-title">Rich Content</TugLabel>
         <div style={labelStyle}>
           Scrollable content within the sheet&apos;s max-height constraint — checklist with multiple items
         </div>

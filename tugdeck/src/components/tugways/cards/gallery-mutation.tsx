@@ -11,6 +11,7 @@
 import React, { useState, useRef } from "react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCSSVar, useDOMClass, useDOMStyle } from "@/components/tugways/hooks";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // MutationModelDemo
@@ -88,7 +89,7 @@ export function GalleryMutation() {
   return (
     <div className="cg-content" data-testid="gallery-mutation">
       <div className="cg-section">
-        <div className="cg-section-title">Mutation Model</div>
+        <TugLabel className="cg-section-title">Mutation Model</TugLabel>
         <MutationModelDemo />
       </div>
     </div>

@@ -15,6 +15,7 @@ import React, { useState } from "react";
 import { TugTextarea } from "@/components/tugways/tug-textarea";
 import type { TugTextareaSize, TugTextareaValidation } from "@/components/tugways/tug-textarea";
 import { TugBox } from "@/components/tugways/tug-box";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -39,7 +40,7 @@ export function GalleryTextarea() {
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sizes</div>
+        <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
           {ALL_SIZES.map((size) => (
             <TugTextarea
@@ -56,7 +57,7 @@ export function GalleryTextarea() {
 
       {/* ---- Validation States ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Validation States</div>
+        <TugLabel className="cg-section-title">Validation States</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
           {ALL_VALIDATIONS.map((v) => (
             <TugTextarea
@@ -74,7 +75,7 @@ export function GalleryTextarea() {
 
       {/* ---- Resize Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Resize Variants</div>
+        <TugLabel className="cg-section-title">Resize Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>
 
           <div>
@@ -117,7 +118,7 @@ export function GalleryTextarea() {
 
       {/* ---- Auto-Resize ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Auto-Resize</div>
+        <TugLabel className="cg-section-title">Auto-Resize</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>
 
           <div>
@@ -150,7 +151,7 @@ export function GalleryTextarea() {
 
       {/* ---- Character Counter ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Character Counter</div>
+        <TugLabel className="cg-section-title">Character Counter</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>
 
           <div>
@@ -185,7 +186,7 @@ export function GalleryTextarea() {
 
       {/* ---- States ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">States</div>
+        <TugLabel className="cg-section-title">States</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
           <TugTextarea disabled rows={3} defaultValue="Disabled with value" />
           <TugTextarea disabled rows={3} placeholder="Disabled with placeholder" />
@@ -198,7 +199,7 @@ export function GalleryTextarea() {
 
       {/* ---- TugBox Cascade ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugBox Cascade</div>
+        <TugLabel className="cg-section-title">TugBox Cascade</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugBox variant="bordered" label="Feedback Form" disabled>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>

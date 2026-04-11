@@ -13,6 +13,7 @@ import { Scissors, Copy, Clipboard } from "lucide-react";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // Shared label style for section annotations
 const labelStyle: React.CSSProperties = {
@@ -43,7 +44,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 1. Basic ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Basic</div>
+        <TugLabel className="cg-section-title">Basic</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
             items={[
@@ -61,7 +62,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 2. With Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Icons</div>
+        <TugLabel className="cg-section-title">With Icons</TugLabel>
         <div style={labelStyle}>icon prop — lucide-react icons rendered before the label</div>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
@@ -80,7 +81,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 3. With Shortcuts ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Shortcuts</div>
+        <TugLabel className="cg-section-title">With Shortcuts</TugLabel>
         <div style={labelStyle}>shortcut prop — keyboard hint rendered after the label</div>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
@@ -99,7 +100,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 4. Separators and Labels ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Separators and Labels</div>
+        <TugLabel className="cg-section-title">Separators and Labels</TugLabel>
         <div style={labelStyle}>type="label" for section headers, type="separator" for dividers</div>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
@@ -125,7 +126,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 5. Disabled Items ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled Items</div>
+        <TugLabel className="cg-section-title">Disabled Items</TugLabel>
         <div style={labelStyle}>disabled={"{true}"} — non-interactive items rendered with reduced opacity</div>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu
@@ -144,7 +145,7 @@ export function GalleryContextMenu() {
 
       {/* ---- 6. On a Card ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">On a Card</div>
+        <TugLabel className="cg-section-title">On a Card</TugLabel>
         <div style={labelStyle}>primary use case — right-clicking a card-like UI element</div>
         <div style={{ maxWidth: "480px" }}>
           <TugContextMenu

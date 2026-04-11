@@ -18,6 +18,7 @@ import {
   DEFAULT_CANONICAL_L,
 } from "@/components/tugways/palette-engine";
 import "./gallery-badge.css";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---- Types ----
 
@@ -228,7 +229,7 @@ export function GalleryBadgeMockup() {
 
       {/* ---- All roles with current slider values ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">All Roles — Current Settings</div>
+        <TugLabel className="cg-section-title">All Roles — Current Settings</TugLabel>
         <div className="badge-mockup-comparison">
           {ALL_ROLES.map((role) => (
             <div key={role} className="badge-mockup-row">
@@ -260,7 +261,7 @@ export function GalleryBadgeMockup() {
 
       {/* ---- Side-by-side with real TugPushButton ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Badge vs Button — Side by Side</div>
+        <TugLabel className="cg-section-title">Badge vs Button — Side by Side</TugLabel>
         <div className="badge-mockup-comparison">
 
           <div className="badge-mockup-group">
@@ -296,7 +297,7 @@ export function GalleryBadgeMockup() {
 
       {/* ---- In-context mockup ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">In Context — Status & Count Badges</div>
+        <TugLabel className="cg-section-title">In Context — Status & Count Badges</TugLabel>
         <div className="badge-mockup-comparison">
           <div className="badge-mockup-group">
             <div className="badge-mockup-group-title">Status badges</div>

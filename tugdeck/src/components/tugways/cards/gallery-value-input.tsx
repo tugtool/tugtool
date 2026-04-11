@@ -6,6 +6,7 @@ import React, { useId, useState } from "react";
 import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---- Formatters (module scope to avoid recreation on each render) ----
 
@@ -58,7 +59,7 @@ export function GalleryValueInput() {
 
       {/* ---- Section 1: Sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugValueInput — Sizes</div>
+        <TugLabel className="cg-section-title">TugValueInput — Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>sm</span>
@@ -82,7 +83,7 @@ export function GalleryValueInput() {
 
       {/* ---- Section 2: Formatters ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugValueInput — Formatters</div>
+        <TugLabel className="cg-section-title">TugValueInput — Formatters</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>percent</span>
@@ -126,7 +127,7 @@ export function GalleryValueInput() {
 
       {/* ---- Section 3: Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugValueInput — Disabled</div>
+        <TugLabel className="cg-section-title">TugValueInput — Disabled</TugLabel>
         <TugValueInput value={disabledValue} disabled />
       </div>
 

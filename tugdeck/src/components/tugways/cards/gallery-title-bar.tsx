@@ -16,6 +16,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -62,7 +63,7 @@ export function GalleryTitleBar() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
       <div className="cg-section">
-        <div className="cg-section-title">Title Bar Demo (Step 3)</div>
+        <TugLabel className="cg-section-title">Title Bar Demo (Step 3)</TugLabel>
         <p className="cg-description">
           CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal
           ellipsis), and close buttons.
@@ -73,7 +74,7 @@ export function GalleryTitleBar() {
 
       {/* ---- Interactive Controls ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Preview Controls</div>
+        <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <div className="cg-controls">
           <div className="cg-control-group">
             <label className="cg-control-label">
@@ -112,7 +113,7 @@ export function GalleryTitleBar() {
 
       {/* ---- Live CardTitleBar Demo ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">CardTitleBar — Live Demo</div>
+        <TugLabel className="cg-section-title">CardTitleBar — Live Demo</TugLabel>
         <div
           style={{
             border: "1px solid var(--tugx-card-border)",

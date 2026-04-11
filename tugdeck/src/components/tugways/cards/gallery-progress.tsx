@@ -13,6 +13,7 @@ import React, { useState } from "react";
 import { TugProgress } from "@/components/tugways/tug-progress";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugBox } from "@/components/tugways/tug-box";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GalleryProgress
@@ -54,7 +55,7 @@ export function GalleryProgress() {
 
       {/* ---- 1. Spinner — Indeterminate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Spinner — Indeterminate</div>
+        <TugLabel className="cg-section-title">Spinner — Indeterminate</TugLabel>
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
           <TugProgress variant="spinner" size="sm" aria-label="Loading" />
           <TugProgress variant="spinner" size="md" aria-label="Loading" />
@@ -66,7 +67,7 @@ export function GalleryProgress() {
 
       {/* ---- 2. Spinner — With Label ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Spinner — With Label</div>
+        <TugLabel className="cg-section-title">Spinner — With Label</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <TugProgress variant="spinner" label="Loading..." />
           <TugProgress variant="spinner" value={0.47} label="47% complete" />
@@ -77,7 +78,7 @@ export function GalleryProgress() {
 
       {/* ---- 3. Bar — Indeterminate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Bar — Indeterminate</div>
+        <TugLabel className="cg-section-title">Bar — Indeterminate</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
           <TugProgress variant="bar" size="sm" aria-label="Processing" />
           <TugProgress variant="bar" size="md" aria-label="Processing" />
@@ -89,7 +90,7 @@ export function GalleryProgress() {
 
       {/* ---- 4. Bar — Determinate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Bar — Determinate</div>
+        <TugLabel className="cg-section-title">Bar — Determinate</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
           <TugProgress variant="bar" value={0} label="0% — Not started" />
           <TugProgress variant="bar" value={0.25} label="25% — Quarter done" />
@@ -103,7 +104,7 @@ export function GalleryProgress() {
 
       {/* ---- 5. Ring — Indeterminate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ring — Indeterminate</div>
+        <TugLabel className="cg-section-title">Ring — Indeterminate</TugLabel>
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
           <TugProgress variant="ring" size="sm" aria-label="Loading" />
           <TugProgress variant="ring" size="md" aria-label="Loading" />
@@ -115,7 +116,7 @@ export function GalleryProgress() {
 
       {/* ---- 6. Ring — Determinate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ring — Determinate</div>
+        <TugLabel className="cg-section-title">Ring — Determinate</TugLabel>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <TugProgress variant="ring" value={0} size="lg" aria-label="0%" />
           <TugProgress variant="ring" value={0.25} size="lg" aria-label="25%" />
@@ -129,7 +130,7 @@ export function GalleryProgress() {
 
       {/* ---- 7. Pie — Indeterminate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Pie — Indeterminate</div>
+        <TugLabel className="cg-section-title">Pie — Indeterminate</TugLabel>
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
           <TugProgress variant="pie" size="sm" aria-label="Loading" />
           <TugProgress variant="pie" size="md" aria-label="Loading" />
@@ -141,7 +142,7 @@ export function GalleryProgress() {
 
       {/* ---- 8. Pie — Determinate ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Pie — Determinate</div>
+        <TugLabel className="cg-section-title">Pie — Determinate</TugLabel>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <TugProgress variant="pie" value={0} size="lg" aria-label="0%" />
           <TugProgress variant="pie" value={0.25} size="lg" aria-label="25%" />
@@ -155,7 +156,7 @@ export function GalleryProgress() {
 
       {/* ---- 9. Transition Demo (was 7) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Transition Demo</div>
+        <TugLabel className="cg-section-title">Transition Demo</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "32px", maxWidth: "480px" }}>
           <p style={{ fontSize: "0.875rem", color: "var(--tug7-element-field-text-normal-label-rest)", margin: 0 }}>
             Starts indeterminate for 2 seconds, then transitions to determinate progress.
@@ -209,7 +210,7 @@ export function GalleryProgress() {
 
       {/* ---- 8. Roles ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Roles</div>
+        <TugLabel className="cg-section-title">Roles</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
           <TugProgress variant="bar" value={0.6} label="Accent (default)" />
           <TugProgress variant="bar" value={0.6} role="action" label="Action" />
@@ -222,7 +223,7 @@ export function GalleryProgress() {
 
       {/* ---- 9. Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
           <TugProgress variant="spinner" disabled label="Spinner disabled" />
           <TugProgress variant="bar" value={0.5} disabled label="Bar disabled at 50%" />
@@ -234,7 +235,7 @@ export function GalleryProgress() {
 
       {/* ---- 10. TugBox Cascade ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugBox Cascade</div>
+        <TugLabel className="cg-section-title">TugBox Cascade</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugBox variant="bordered" label="Disabled via TugBox" disabled>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>

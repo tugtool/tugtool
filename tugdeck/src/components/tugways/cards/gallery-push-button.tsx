@@ -18,6 +18,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -175,7 +176,7 @@ export function GalleryPushButton() {
     >
       {/* ---- Preview Controls ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Preview Controls</div>
+        <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <div className="cg-controls">
           <div className="cg-control-group">
             <span className="cg-control-label">Emphasis</span>
@@ -238,7 +239,7 @@ export function GalleryPushButton() {
 
       {/* ---- Interactive Preview ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Interactive Preview</div>
+        <TugLabel className="cg-section-title">TugPushButton — Interactive Preview</TugLabel>
         <div className="cg-variant-row">
           <TugPushButton
             emphasis={previewEmphasis}
@@ -277,7 +278,7 @@ export function GalleryPushButton() {
 
       {/* ---- Trailing Icon ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Trailing Icon</div>
+        <TugLabel className="cg-section-title">TugPushButton — Trailing Icon</TugLabel>
         <div className="cg-variant-row">
           <TugPushButton
             emphasis="outlined"
@@ -320,7 +321,7 @@ export function GalleryPushButton() {
 
       {/* ---- Rounded ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Border Radius (rounded prop)</div>
+        <TugLabel className="cg-section-title">TugPushButton — Border Radius (rounded prop)</TugLabel>
         <div className="cg-variant-row">
           {ALL_ROUNDED.map((r) => (
             <TugPushButton
@@ -340,7 +341,7 @@ export function GalleryPushButton() {
 
       {/* ---- Disabled (static) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Disabled States</div>
+        <TugLabel className="cg-section-title">TugPushButton — Disabled States</TugLabel>
         <div className="cg-variant-row">
           <TugPushButton emphasis="filled" role="action" size="md" disabled>
             Filled
@@ -380,7 +381,7 @@ export function GalleryPushButton() {
 
       {/* ---- Loading (static) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Loading States</div>
+        <TugLabel className="cg-section-title">TugPushButton — Loading States</TugLabel>
         <div className="cg-variant-row">
           <TugPushButton emphasis="filled" role="action" size="md" loading>
             Filled
@@ -420,7 +421,7 @@ export function GalleryPushButton() {
 
       {/* ---- Full Matrix ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPushButton — Full Matrix (all subtypes × emphasis x role × sizes)</div>
+        <TugLabel className="cg-section-title">TugPushButton — Full Matrix (all subtypes × emphasis x role × sizes)</TugLabel>
         <div className="cg-matrix">
           {ALL_SUBTYPES.map((subtype) => (
             <div key={subtype} className="cg-subtype-block">

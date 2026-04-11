@@ -43,6 +43,7 @@ import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/pr
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -289,7 +290,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* useSyncExternalStore. No React state — values flow from the store.  */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
-        <div className="cg-section-title">Target Element</div>
+        <TugLabel className="cg-section-title">Target Element</TugLabel>
         <p className="cg-description">
           Appearance driven by PropertyStore values via{" "}
           <code>useSyncExternalStore</code>. Each property subscribes
@@ -319,7 +320,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* content-side observers can skip re-dispatch. [D03]                  */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="observable-props-inspector">
-        <div className="cg-section-title">Inspector Panel</div>
+        <TugLabel className="cg-section-title">Inspector Panel</TugLabel>
         <p className="cg-description">
           Each control dispatches <code>setProperty</code> via{" "}
           <code>sendToTarget(cardId, ...)</code>. The action routes through the
@@ -398,7 +399,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* Source attribution — live circular guard display [D03]             */}
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="observable-props-source-note">
-        <div className="cg-section-title">Source Attribution (Circular Guard)</div>
+        <TugLabel className="cg-section-title">Source Attribution (Circular Guard)</TugLabel>
         <p className="cg-description">
           A content-side <code>store.observe()</code> listener receives every{" "}
           <code>PropertyChange</code> record and checks <code>change.source</code>:{" "}

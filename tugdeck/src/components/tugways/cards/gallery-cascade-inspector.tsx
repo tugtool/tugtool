@@ -30,6 +30,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -80,7 +81,7 @@ export function GalleryCascadeInspector() {
 
       {/* ---- Activation instructions ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Cascade Inspector Demo</div>
+        <TugLabel className="cg-section-title">Cascade Inspector Demo</TugLabel>
         <p className="cg-description" data-testid="inspector-instructions">
           Hold <kbd>Shift+Option</kbd> and hover the elements below to see the cascade
           inspector in action. Each sample exercises a different token chain depth.

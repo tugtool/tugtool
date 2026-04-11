@@ -47,7 +47,7 @@ export function GalleryTooltip() {
 
       {/* ---- 1. Basic ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Basic</div>
+        <TugLabel className="cg-section-title">Basic</TugLabel>
         <div style={rowStyle}>
           <TugTooltip content="Save document">
             <TugPushButton>Save</TugPushButton>
@@ -59,7 +59,7 @@ export function GalleryTooltip() {
 
       {/* ---- 2. Positioning ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Positioning</div>
+        <TugLabel className="cg-section-title">Positioning</TugLabel>
         <div style={labelStyle}>side prop — top / bottom / left / right</div>
         <div style={rowStyle}>
           <TugTooltip content="Tooltip on top" side="top">
@@ -81,7 +81,7 @@ export function GalleryTooltip() {
 
       {/* ---- 3. With Shortcut ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Shortcut</div>
+        <TugLabel className="cg-section-title">With Shortcut</TugLabel>
         <div style={labelStyle}>shortcut prop renders a styled kbd badge alongside content</div>
         <div style={rowStyle}>
           <TugTooltip content="Bold" shortcut="⌘B">
@@ -100,7 +100,7 @@ export function GalleryTooltip() {
 
       {/* ---- 4. Without Arrow ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Without Arrow</div>
+        <TugLabel className="cg-section-title">Without Arrow</TugLabel>
         <div style={rowStyle}>
           <div>
             <div style={labelStyle}>arrow={"{true}"} (default)</div>
@@ -121,7 +121,7 @@ export function GalleryTooltip() {
 
       {/* ---- 5. On Icon Buttons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">On Icon Buttons</div>
+        <TugLabel className="cg-section-title">On Icon Buttons</TugLabel>
         <div style={labelStyle}>primary use case — icon-only buttons with descriptive tooltips and shortcuts</div>
         <div style={rowStyle}>
           <TugTooltip content="Save" shortcut="⌘S">
@@ -151,7 +151,7 @@ export function GalleryTooltip() {
 
       {/* ---- 6. Alignment ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Alignment</div>
+        <TugLabel className="cg-section-title">Alignment</TugLabel>
         <div style={labelStyle}>align prop — start / center / end — shown on a wide trigger (~200px)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div>
@@ -218,7 +218,7 @@ export function GalleryTooltip() {
 
       {/* ---- 7. Truncation-Aware ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Truncation-Aware</div>
+        <TugLabel className="cg-section-title">Truncation-Aware</TugLabel>
         <div style={labelStyle}>truncated={"{true}"} — tooltip appears only when content is visually clipped</div>
         <div style={rowStyle}>
           <div>
@@ -252,7 +252,7 @@ export function GalleryTooltip() {
 
       {/* ---- 8. Disabled Trigger ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled Trigger</div>
+        <TugLabel className="cg-section-title">Disabled Trigger</TugLabel>
         <div style={labelStyle}>disabled button wrapped in a span to preserve pointer events</div>
         <div style={rowStyle}>
           <TugTooltip content="This action is currently unavailable">
@@ -273,7 +273,7 @@ export function GalleryTooltip() {
 
       {/* ---- 9. Rich Content ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Rich Content</div>
+        <TugLabel className="cg-section-title">Rich Content</TugLabel>
         <div style={labelStyle}>content accepts ReactNode — multi-line with title and description</div>
         <div style={rowStyle}>
           <TugTooltip

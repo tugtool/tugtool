@@ -17,6 +17,7 @@ import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // GalleryBox
@@ -110,7 +111,7 @@ export function GalleryBox() {
 
       {/* ---- Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Variants</div>
+        <TugLabel className="cg-section-title">Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
           {/* plain */}
@@ -159,7 +160,7 @@ export function GalleryBox() {
 
       {/* ---- Label Positions ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Label Positions</div>
+        <TugLabel className="cg-section-title">Label Positions</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "24px", alignItems: "flex-start" }}>
 
           {/* legend (in border line) */}
@@ -191,7 +192,7 @@ export function GalleryBox() {
 
       {/* ---- Nested Boxes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Nested Boxes</div>
+        <TugLabel className="cg-section-title">Nested Boxes</TugLabel>
         <TugBox variant="bordered" label="Account Settings">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <TugCheckbox label="Enable notifications" checked={nestedCb} senderId={nestedCbId} />
@@ -219,7 +220,7 @@ export function GalleryBox() {
 
       {/* ---- Interactive Disable Toggle ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled Cascade</div>
+        <TugLabel className="cg-section-title">Disabled Cascade</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch
             label="Enable settings"
@@ -265,7 +266,7 @@ export function GalleryBox() {
 
       {/* ---- Rounded ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Border Radius</div>
+        <TugLabel className="cg-section-title">Border Radius</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
           {(["none", "sm", "md", "lg", "full"] as const).map((r) => (
             <div key={r} style={{ width: "180px" }}>

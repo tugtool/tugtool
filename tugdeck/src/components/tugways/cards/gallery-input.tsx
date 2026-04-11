@@ -13,6 +13,7 @@
 import React from "react";
 import { TugInput } from "@/components/tugways/tug-input";
 import type { TugInputSize, TugInputValidation } from "@/components/tugways/tug-input";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,7 +32,7 @@ export function GalleryInput() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Size Variants</div>
+        <TugLabel className="cg-section-title">Size Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_SIZES.map((size) => (
             <TugInput
@@ -47,7 +48,7 @@ export function GalleryInput() {
 
       {/* ---- Validation States ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Validation States</div>
+        <TugLabel className="cg-section-title">Validation States</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_VALIDATIONS.map((v) => (
             <TugInput
@@ -64,7 +65,7 @@ export function GalleryInput() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
+        <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugInput disabled defaultValue="Disabled with value" />
           <TugInput disabled placeholder="Disabled with placeholder" />
@@ -75,7 +76,7 @@ export function GalleryInput() {
 
       {/* ---- Read-only ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Read-only</div>
+        <TugLabel className="cg-section-title">Read-only</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugInput readOnly defaultValue="Read-only with value" />
           <TugInput readOnly placeholder="Read-only with placeholder" />
@@ -86,7 +87,7 @@ export function GalleryInput() {
 
       {/* ---- Input Types ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Input Types</div>
+        <TugLabel className="cg-section-title">Input Types</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugInput type="text" placeholder="type=text" />
           <TugInput type="password" placeholder="type=password" />

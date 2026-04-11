@@ -11,6 +11,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { getRegistration } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
 // TugTabBarDemo
@@ -183,7 +184,7 @@ export function GalleryTabBar() {
   return (
     <div className="cg-content" data-testid="gallery-tabbar">
       <div className="cg-section">
-        <div className="cg-section-title">TugTabBar — Interactive Demo</div>
+        <TugLabel className="cg-section-title">TugTabBar — Interactive Demo</TugLabel>
         <TugTabBarDemo />
       </div>
     </div>

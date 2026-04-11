@@ -31,6 +31,7 @@ import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
 import "./gallery-prompt-input.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 // ===================================================================
 // Sample data
@@ -276,7 +277,7 @@ export function GalleryPromptInput() {
 
       {/* ---- Interactive Editor ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Editor</div>
+        <TugLabel className="cg-section-title">Editor</TugLabel>
         <div style={maximized ? { display: "flex", flexDirection: "column" as const, height: "300px", gap: "8px" } : undefined}>
           <div className="prompt-input-toolbar">
             <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
@@ -329,7 +330,7 @@ export function GalleryPromptInput() {
 
       {/* ---- Key Configuration ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Key Configuration</div>
+        <TugLabel className="cg-section-title">Key Configuration</TugLabel>
         <div className="prompt-input-key-config">
           <div className="prompt-input-key-config-row">
             <span className="prompt-input-key-config-label">Return (main keyboard):</span>
