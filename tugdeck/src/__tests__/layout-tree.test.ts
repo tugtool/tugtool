@@ -342,6 +342,38 @@ describe("serialize and deserialize", () => {
     expect(result.cards[0].size.width).toBe(100);
     expect(result.cards[0].size.height).toBe(100);
   });
+
+  test("deserialize merges sets that share a card ID (single-set invariant)", () => {
+    const v5 = {
+      version: 5,
+      cards: [
+        { id: "a", position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t1", componentId: "hello", title: "H", closable: true }], activeTabId: "t1" },
+        { id: "b", position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t2", componentId: "hello", title: "H", closable: true }], activeTabId: "t2" },
+        { id: "c", position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [{ id: "t3", componentId: "hello", title: "H", closable: true }], activeTabId: "t3" },
+      ],
+      // Card "b" appears in two sets — corrupted data.
+      sets: [["a", "b"], ["b", "c"]],
+    };
+    const result = deserialize(JSON.stringify(v5), 1920, 1080);
+    // Should be merged into a single set containing all three.
+    expect(result.sets.length).toBe(1);
+    expect(result.sets[0].sort()).toEqual(["a", "b", "c"]);
+  });
+
+  test("deserialize does not merge sets with no overlapping card IDs", () => {
+    const v5 = {
+      version: 5,
+      cards: [
+        { id: "a", position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t1", componentId: "hello", title: "H", closable: true }], activeTabId: "t1" },
+        { id: "b", position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t2", componentId: "hello", title: "H", closable: true }], activeTabId: "t2" },
+        { id: "c", position: { x: 400, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t3", componentId: "hello", title: "H", closable: true }], activeTabId: "t3" },
+        { id: "d", position: { x: 400, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t4", componentId: "hello", title: "H", closable: true }], activeTabId: "t4" },
+      ],
+      sets: [["a", "b"], ["c", "d"]],
+    };
+    const result = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(result.sets.length).toBe(2);
+  });
 });
 
 // ---- Card management data-layer tests (D01, D06) ----
