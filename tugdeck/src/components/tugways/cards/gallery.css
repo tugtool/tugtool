@@ -8,9 +8,6 @@
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
  * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
- * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
- * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
- * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
  * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
  * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
  */
@@ -55,30 +52,6 @@
   gap: 6px;
 }
 
-
-.cg-control-select {
-  font-size: 12px;
-  font-family: var(--tug-font-family-sans);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-xs);
-  padding: 2px 6px;
-  cursor: pointer;
-  outline: none;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
-.cg-control-select:focus {
-  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-}
-
-.cg-control-checkbox {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
-  cursor: pointer;
-}
 
 
 /* ============================================================================
@@ -163,23 +136,6 @@
   flex-wrap: wrap;
 }
 
-/* Trigger button for the TugPopupButton demo -- styled to match the gallery aesthetic */
-.cg-demo-trigger {
-  font-size: 12px;
-  font-family: var(--tug-font-family-sans);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  padding: 5px 12px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.cg-demo-trigger:hover,
-.cg-demo-trigger[data-state="open"] {
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-}
 
 
 /* ============================================================================
@@ -317,12 +273,6 @@
   flex-wrap: nowrap;
 }
 
-
-.cg-st-range {
-  flex: 0 0 180px;
-  cursor: pointer;
-  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
-}
 
 
 
@@ -545,23 +495,6 @@
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
-/* --- Shared: percentage slider control row --- */
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-anim-pct-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  user-select: none;
-}
-
-.cg-anim-pct-range {
-  width: 100px;
-  cursor: pointer;
-  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
-}
 
 
 /* ============================================================================
