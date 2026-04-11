@@ -11,13 +11,14 @@
 
 import "./tug-button.css";
 
-import React, { useSyncExternalStore } from "react";
+import React, { useContext, useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "../responder-chain-provider";
 import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 import { useControlDispatch } from "../use-control-dispatch";
+import { ResponderParentContext } from "../use-responder";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -262,8 +263,10 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // ---- Chain-action mode: unconditional hook calls (React rules of hooks) ----
 
   // useResponderChain() returns the manager or null (safe outside provider).
-  // Needed for canHandle/validateAction queries below.
+  // Needed for canHandle/validateAction queries and explicit-target dispatch.
   const manager = useResponderChain();
+  // Parent responder ID — the default dispatch and validation target.
+  const parentId = useContext(ResponderParentContext);
   // Targeted dispatch to parent responder — same hook all controls use.
   const controlDispatch = useControlDispatch();
 
@@ -278,23 +281,17 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // ---- Chain-action validation (computed from hook results) ----
 
-  // When chain-action is active, query the manager for capability and state.
-  // These are derived from the useSyncExternalStore snapshot version above,
-  // so they update whenever the validation version increments.
-  //
-  // When target is set, use nodeCanHandle(target, action) for the enabled check
-  // so the button reflects the target node's capability, not the full chain's.
-  // validateAction is only consulted in chain-walk mode (no target), where the
-  // chain walk determines both capability and enabled state.
+  // Query the effective target for capability and enabled state.
+  // Explicit `target` prop wins; otherwise use the parent responder
+  // (same target the dispatch will use). Both paths use nodeCanHandle
+  // — the button always validates against its dispatch target, never
+  // the first responder.
   // [D07] nodeCanHandle for per-node capability query
-  const chainCanHandle = chainActive
-    ? (target !== undefined ? manager.nodeCanHandle(target, action) : manager.canHandle(action))
+  const effectiveValidationTarget = target ?? parentId;
+  const chainCanHandle = chainActive && effectiveValidationTarget !== null
+    ? manager.nodeCanHandle(effectiveValidationTarget, action)
     : false;
-  // In target mode the enabled state is fully determined by nodeCanHandle alone;
-  // validateAction is a chain-walk concept and is not consulted for targeted dispatch.
-  const chainValidated = chainActive && target === undefined
-    ? manager.validateAction(action)
-    : chainCanHandle;
+  const chainValidated = chainCanHandle;
 
   // isChainDisabled: chain is active and either canHandle is false OR validateAction is false.
   // When true, the button renders as aria-disabled (never hidden -- [D06] never-hide).
