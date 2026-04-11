@@ -21,6 +21,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { Star } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -206,7 +207,7 @@ export function GalleryScaleTiming() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- JS Helper Readout ---- */}
       <div className="cg-section">
@@ -227,7 +228,7 @@ export function GalleryScaleTiming() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Live Preview ---- */}
       <div className="cg-section">
@@ -281,7 +282,7 @@ export function GalleryScaleTiming() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Reset ---- */}
       <div className="cg-section">

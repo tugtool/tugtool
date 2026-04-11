@@ -13,6 +13,7 @@ import { Save, Copy, Trash2, Settings } from "lucide-react";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // Shared label style for section annotations
 const labelStyle: React.CSSProperties = {
@@ -55,7 +56,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Positioning ---- */}
       <div className="cg-section">
@@ -77,7 +78,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. With Shortcut ---- */}
       <div className="cg-section">
@@ -96,7 +97,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Without Arrow ---- */}
       <div className="cg-section">
@@ -117,7 +118,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. On Icon Buttons ---- */}
       <div className="cg-section">
@@ -147,7 +148,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 6. Alignment ---- */}
       <div className="cg-section">
@@ -214,7 +215,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 7. Truncation-Aware ---- */}
       <div className="cg-section">
@@ -248,7 +249,7 @@ export function GalleryTooltip() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 8. Disabled Trigger ---- */}
       <div className="cg-section">
@@ -269,7 +270,7 @@ export function GalleryTooltip() {
         </p>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 9. Rich Content ---- */}
       <div className="cg-section">

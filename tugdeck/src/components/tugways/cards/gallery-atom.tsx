@@ -19,6 +19,7 @@ import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-atom.css";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---- Sample data ----
 
@@ -147,7 +148,7 @@ export function GalleryAtom() {
         <div ref={typesRef} className="gallery-atom-row" />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Inline with text ---- */}
       <div className="cg-section">
@@ -155,7 +156,7 @@ export function GalleryAtom() {
         <div ref={inlineRef} className="gallery-atom-text-sample" />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Truncation ---- */}
       <div className="cg-section">
@@ -164,7 +165,7 @@ export function GalleryAtom() {
         <div ref={truncRef} className="gallery-atom-row" />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Label modes ---- */}
       <div className="cg-section">

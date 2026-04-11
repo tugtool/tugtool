@@ -11,6 +11,7 @@ import React from "react";
 import { bulletin } from "@/components/tugways/tug-bulletin";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -47,7 +48,7 @@ export function GalleryBulletin() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. With description ---- */}
       <div className="cg-section">
@@ -68,7 +69,7 @@ export function GalleryBulletin() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Tone variants ---- */}
       <div className="cg-section">
@@ -109,7 +110,7 @@ export function GalleryBulletin() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. With action ---- */}
       <div className="cg-section">
@@ -130,7 +131,7 @@ export function GalleryBulletin() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Custom duration ---- */}
       <div className="cg-section">

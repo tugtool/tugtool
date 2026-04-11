@@ -9,6 +9,7 @@ import { Music, Radio, Disc3, FileText, Folder } from "lucide-react";
 import { TugMarquee } from "@/components/tugways/tug-marquee";
 import type { TugMarqueeSize } from "@/components/tugways/tug-marquee";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,7 +42,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Overflowing text (default settings) ---- */}
       <div className="cg-section">
@@ -52,7 +53,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
@@ -66,7 +67,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Speed Variants ---- */}
       <div className="cg-section">
@@ -87,7 +88,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Pause Time Variants ---- */}
       <div className="cg-section">
@@ -108,7 +109,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- With Icons ---- */}
       <div className="cg-section">
@@ -129,7 +130,7 @@ export function GalleryMarquee() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Animation Disabled ---- */}
       <div className="cg-section">

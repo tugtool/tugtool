@@ -17,6 +17,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -67,7 +68,7 @@ export function GalleryTitleBar() {
         <TugLabel size="2xs" color="muted">CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal ellipsis), and close buttons.</TugLabel>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Interactive Controls ---- */}
       <div className="cg-section">
@@ -102,7 +103,7 @@ export function GalleryTitleBar() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Live CardTitleBar Demo ---- */}
       <div className="cg-section">

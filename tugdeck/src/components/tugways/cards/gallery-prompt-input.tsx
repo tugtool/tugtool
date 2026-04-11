@@ -32,6 +32,7 @@ import { FeedId } from "@/protocol";
 import "./gallery-prompt-input.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ===================================================================
 // Sample data
@@ -326,7 +327,7 @@ export function GalleryPromptInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Key Configuration ---- */}
       <div className="cg-section">

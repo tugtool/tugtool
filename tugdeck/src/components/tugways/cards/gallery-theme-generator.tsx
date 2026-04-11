@@ -26,6 +26,7 @@ import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import "./gallery-theme-generator.css";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const CVD_TYPES: CVDType[] = ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"];
 
@@ -188,7 +189,7 @@ export function GalleryThemeGenerator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">Controls</TugLabel>
@@ -198,7 +199,7 @@ export function GalleryThemeGenerator() {
         <EmphasisRolePreview />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">{`Token Preview (${snapshot.entries.length} tokens)`}</TugLabel>
@@ -224,7 +225,7 @@ export function GalleryThemeGenerator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">Contrast Dashboard</TugLabel>
@@ -266,7 +267,7 @@ export function GalleryThemeGenerator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">Color Vision Deficiency Preview</TugLabel>
@@ -309,7 +310,7 @@ export function GalleryThemeGenerator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">Accessibility Diagnostics</TugLabel>

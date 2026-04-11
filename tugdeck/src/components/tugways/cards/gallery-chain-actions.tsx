@@ -18,6 +18,7 @@ import { TUG_ACTIONS, TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vo
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // ActionEventDemo
@@ -123,7 +124,7 @@ export function GalleryChainActions() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       <ActionEventDemo />
     </div>

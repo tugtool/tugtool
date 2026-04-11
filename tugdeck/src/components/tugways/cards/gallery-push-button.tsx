@@ -19,6 +19,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -235,7 +236,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Interactive Preview ---- */}
       <div className="cg-section">
@@ -274,7 +275,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Trailing Icon ---- */}
       <div className="cg-section">
@@ -317,7 +318,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Rounded ---- */}
       <div className="cg-section">
@@ -337,7 +338,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled (static) ---- */}
       <div className="cg-section">
@@ -377,7 +378,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Loading (static) ---- */}
       <div className="cg-section">
@@ -417,7 +418,7 @@ export function GalleryPushButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Full Matrix ---- */}
       <div className="cg-section">

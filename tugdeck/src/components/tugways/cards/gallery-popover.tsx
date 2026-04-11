@@ -20,6 +20,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // Shared text style for paragraph content inside popovers
 const paraStyle: React.CSSProperties = {
@@ -83,7 +84,7 @@ export function GalleryPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Positioning ---- */}
       <div className="cg-section">
@@ -136,7 +137,7 @@ export function GalleryPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. With Arrow ---- */}
       <div className="cg-section">
@@ -158,7 +159,7 @@ export function GalleryPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Form Content ---- */}
       <div className="cg-section">
@@ -203,7 +204,7 @@ export function GalleryPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. With Close Button ---- */}
       <div className="cg-section">
@@ -237,7 +238,7 @@ export function GalleryPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 6. Imperative ---- */}
       <div className="cg-section">

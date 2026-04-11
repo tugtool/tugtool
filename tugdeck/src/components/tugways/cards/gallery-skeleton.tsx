@@ -8,6 +8,7 @@
 import React from "react";
 import { TugSkeleton, TugSkeletonGroup } from "@/components/tugways/tug-skeleton";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // GallerySkeleton
@@ -28,7 +29,7 @@ export function GallerySkeleton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Height variants ---- */}
       <div className="cg-section">
@@ -41,7 +42,7 @@ export function GallerySkeleton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Radius override ---- */}
       <div className="cg-section">
@@ -54,7 +55,7 @@ export function GallerySkeleton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- TugSkeletonGroup: text block ---- */}
       <div className="cg-section">
@@ -71,7 +72,7 @@ export function GallerySkeleton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Multiple groups: synchronized shimmer ---- */}
       <div className="cg-section">

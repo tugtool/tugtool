@@ -21,6 +21,7 @@ import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/compon
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,7 +117,7 @@ export function GalleryCheckbox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- States ---- */}
       <div className="cg-section">
@@ -140,7 +141,7 @@ export function GalleryCheckbox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Without Labels ---- */}
       <div className="cg-section">
@@ -152,7 +153,7 @@ export function GalleryCheckbox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
@@ -164,7 +165,7 @@ export function GalleryCheckbox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Group Example ---- */}
       <div className="cg-section">
@@ -187,7 +188,7 @@ export function GalleryCheckbox() {
         </fieldset>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Role Variants ---- */}
       <div className="cg-section">

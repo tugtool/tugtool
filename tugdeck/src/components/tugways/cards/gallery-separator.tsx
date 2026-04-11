@@ -43,7 +43,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Labeled ---- */}
       <div className="cg-section">
@@ -62,7 +62,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Ornamental — Single Glyphs ---- */}
       <div className="cg-section">
@@ -76,7 +76,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Ornamental — Dinkus Patterns ---- */}
       <div className="cg-section">
@@ -88,7 +88,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Capped ---- */}
       <div className="cg-section">
@@ -108,7 +108,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Length & Alignment ---- */}
       <div className="cg-section">
@@ -137,7 +137,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Vertical ---- */}
       <div className="cg-section">
@@ -186,7 +186,7 @@ export function GallerySeparator() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- SVG Ornament ---- */}
       <div className="cg-section">

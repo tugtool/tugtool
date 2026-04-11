@@ -17,6 +17,7 @@ import {
 } from "@/components/tugways/tug-confirm-popover";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -108,7 +109,7 @@ export function GalleryConfirmPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Action Confirmation ---- */}
       <div className="cg-section">
@@ -131,7 +132,7 @@ export function GalleryConfirmPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Custom Labels ---- */}
       <div className="cg-section">
@@ -154,7 +155,7 @@ export function GalleryConfirmPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Positioning ---- */}
       <div className="cg-section">
@@ -189,7 +190,7 @@ export function GalleryConfirmPopover() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Promise API ---- */}
       <div className="cg-section">

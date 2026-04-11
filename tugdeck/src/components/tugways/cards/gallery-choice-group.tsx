@@ -29,6 +29,7 @@ import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -175,7 +176,7 @@ export function GalleryChoiceGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
@@ -208,7 +209,7 @@ export function GalleryChoiceGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
@@ -248,7 +249,7 @@ export function GalleryChoiceGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Instant Indicator ---- */}
       <div className="cg-section">
@@ -273,7 +274,7 @@ export function GalleryChoiceGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Animated ---- */}
       <div className="cg-section">
@@ -299,7 +300,7 @@ export function GalleryChoiceGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Icons ---- */}
       <div className="cg-section">

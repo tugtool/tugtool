@@ -69,6 +69,7 @@ import { GalleryPromptInput } from "./gallery-prompt-input";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // GALLERY_DEFAULT_TABS
@@ -236,7 +237,7 @@ export function GalleryBadge() {
               </div>
             </div>
           </div>
-          {emphasis !== ALL_BADGE_EMPHASES[ALL_BADGE_EMPHASES.length - 1] && <div className="cg-divider" />}
+          {emphasis !== ALL_BADGE_EMPHASES[ALL_BADGE_EMPHASES.length - 1] && <TugSeparator />}
         </React.Fragment>
       ))}
 

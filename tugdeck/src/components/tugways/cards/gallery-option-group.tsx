@@ -32,6 +32,7 @@ import type { TugOptionGroupRole } from "@/components/tugways/tug-option-group";
 import { TugBox } from "@/components/tugways/tug-box";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -146,7 +147,7 @@ export function GalleryOptionGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Icon + Label (Alignment) ---- */}
       <div className="cg-section">
@@ -175,7 +176,7 @@ export function GalleryOptionGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
@@ -226,7 +227,7 @@ export function GalleryOptionGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
@@ -253,7 +254,7 @@ export function GalleryOptionGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
@@ -292,7 +293,7 @@ export function GalleryOptionGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- TugBox Cascade ---- */}
       <div className="cg-section">

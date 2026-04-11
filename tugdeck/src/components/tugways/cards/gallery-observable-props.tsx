@@ -44,6 +44,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -307,7 +308,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Inspector panel: controls dispatch setProperty via sendToTarget.      */}
@@ -371,7 +372,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Source attribution — live circular guard display [D03]             */}

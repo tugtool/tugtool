@@ -15,6 +15,7 @@ import React from "react";
 import { TugBanner } from "@/components/tugways/tug-banner";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -116,7 +117,7 @@ export function GalleryBanner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Status variant — caution tone ---- */}
       <div className="cg-section">
@@ -150,7 +151,7 @@ export function GalleryBanner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Status variant — default tone ---- */}
       <div className="cg-section">
@@ -184,7 +185,7 @@ export function GalleryBanner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Status variant with icon ---- */}
       <div className="cg-section">
@@ -212,7 +213,7 @@ export function GalleryBanner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Error variant ---- */}
       <div className="cg-section">

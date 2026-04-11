@@ -14,6 +14,7 @@ import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,7 +70,7 @@ export function GallerySwitch() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- States (Controlled) ---- */}
       <div className="cg-section">
@@ -88,7 +89,7 @@ export function GallerySwitch() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Without Labels ---- */}
       <div className="cg-section">
@@ -99,7 +100,7 @@ export function GallerySwitch() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
@@ -110,7 +111,7 @@ export function GallerySwitch() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Settings Example ---- */}
       <div className="cg-section">
@@ -123,7 +124,7 @@ export function GallerySwitch() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Role Variants ---- */}
       <div className="cg-section">

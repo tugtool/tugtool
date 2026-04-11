@@ -123,15 +123,6 @@
   gap: 6px;
 }
 
-/* ============================================================================
-   Separator between sections
-   ========================================================================= */
-
-.cg-divider {
-  height: 1px;
-  background-color: var(--tug7-element-global-border-normal-default-rest);
-  margin: 4px 0;
-}
 
 /* ============================================================================
    Mutation Model Demo (Phase 4)

@@ -18,6 +18,7 @@ import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-grou
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // GalleryBox
@@ -156,7 +157,7 @@ export function GalleryBox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Label Positions ---- */}
       <div className="cg-section">
@@ -188,7 +189,7 @@ export function GalleryBox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Nested Boxes ---- */}
       <div className="cg-section">
@@ -216,7 +217,7 @@ export function GalleryBox() {
         </TugBox>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Interactive Disable Toggle ---- */}
       <div className="cg-section">
@@ -262,7 +263,7 @@ export function GalleryBox() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Rounded ---- */}
       <div className="cg-section">

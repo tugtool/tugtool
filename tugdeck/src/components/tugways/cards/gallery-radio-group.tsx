@@ -15,6 +15,7 @@ import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-grou
 import type { TugRadioRole } from "@/components/tugways/tug-radio-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,7 +106,7 @@ export function GalleryRadioGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Orientations ---- */}
       <div className="cg-section">
@@ -140,7 +141,7 @@ export function GalleryRadioGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Roles ---- */}
       <div className="cg-section">
@@ -159,7 +160,7 @@ export function GalleryRadioGroup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Group Label ---- */}
       <div className="cg-section">
@@ -177,7 +178,7 @@ export function GalleryRadioGroup() {
         </TugRadioGroup>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">

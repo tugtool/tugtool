@@ -10,6 +10,7 @@ import { Tag, Info, AlertTriangle, Star, Folder } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
 import type { TugLabelSize } from "@/components/tugways/tug-label";
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,7 +44,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Required Indicator ---- */}
       <div className="cg-section">
@@ -54,7 +55,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- With Icons ---- */}
       <div className="cg-section">
@@ -76,7 +77,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Icons at All Sizes ---- */}
       <div className="cg-section">
@@ -90,7 +91,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Multiline Wrapping ---- */}
       <div className="cg-section">
@@ -107,7 +108,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Ellipsis: End ---- */}
       <div className="cg-section">
@@ -128,7 +129,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Ellipsis: Start ---- */}
       <div className="cg-section">
@@ -145,7 +146,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Ellipsis: Middle ---- */}
       <div className="cg-section">
@@ -162,7 +163,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Paired with TugInput ---- */}
       <div className="cg-section">
@@ -181,7 +182,7 @@ export function GalleryLabel() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">

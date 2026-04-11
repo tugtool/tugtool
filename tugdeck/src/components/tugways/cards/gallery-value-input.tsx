@@ -7,6 +7,7 @@ import { TugValueInput } from "@/components/tugways/tug-value-input";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---- Formatters (module scope to avoid recreation on each render) ----
 
@@ -79,7 +80,7 @@ export function GalleryValueInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 2: Formatters ---- */}
       <div className="cg-section">
@@ -123,7 +124,7 @@ export function GalleryValueInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 3: Disabled ---- */}
       <div className="cg-section">

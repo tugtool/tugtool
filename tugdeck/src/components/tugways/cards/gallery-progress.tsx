@@ -14,6 +14,7 @@ import { TugProgress } from "@/components/tugways/tug-progress";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // GalleryProgress
@@ -63,7 +64,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Spinner — With Label ---- */}
       <div className="cg-section">
@@ -74,7 +75,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Bar — Indeterminate ---- */}
       <div className="cg-section">
@@ -86,7 +87,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Bar — Determinate ---- */}
       <div className="cg-section">
@@ -100,7 +101,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Ring — Indeterminate ---- */}
       <div className="cg-section">
@@ -112,7 +113,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 6. Ring — Determinate ---- */}
       <div className="cg-section">
@@ -126,7 +127,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 7. Pie — Indeterminate ---- */}
       <div className="cg-section">
@@ -138,7 +139,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 8. Pie — Determinate ---- */}
       <div className="cg-section">
@@ -152,7 +153,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 9. Transition Demo (was 7) ---- */}
       <div className="cg-section">
@@ -206,7 +207,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 8. Roles ---- */}
       <div className="cg-section">
@@ -219,7 +220,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 9. Disabled ---- */}
       <div className="cg-section">
@@ -231,7 +232,7 @@ export function GalleryProgress() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 10. TugBox Cascade ---- */}
       <div className="cg-section">

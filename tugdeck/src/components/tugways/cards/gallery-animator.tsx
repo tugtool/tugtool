@@ -32,6 +32,7 @@ import {
 } from "@/components/tugways/tug-animator";
 import type { TugAnimation } from "@/components/tugways/tug-animator";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -567,11 +568,11 @@ export function GalleryAnimator() {
   return (
     <div className="cg-content" data-testid="gallery-animator">
       <PhysicsCurvesDemo />
-      <div className="cg-divider" />
+      <TugSeparator />
       <DurationTokensDemo />
-      <div className="cg-divider" />
+      <TugSeparator />
       <CancelModesDemo />
-      <div className="cg-divider" />
+      <TugSeparator />
       <NamedSlotsDemo />
     </div>
   );

@@ -24,6 +24,7 @@ import { useResponderChain } from "@/components/tugways/responder-chain-provider
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -142,7 +143,7 @@ export function GallerySheet() {
         {renderSheet()}
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Basic Sheet ---- */}
       <div className="cg-section">
@@ -184,7 +185,7 @@ export function GallerySheet() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Sheet with Description ---- */}
       <div className="cg-section">
@@ -222,7 +223,7 @@ export function GallerySheet() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Imperative API ---- */}
       <div className="cg-section">
@@ -272,7 +273,7 @@ export function GallerySheet() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Rich Content ---- */}
       <div className="cg-section">

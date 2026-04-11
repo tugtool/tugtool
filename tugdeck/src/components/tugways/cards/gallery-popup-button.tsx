@@ -25,6 +25,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-popup-button.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---- Sample data ----
 //
@@ -128,7 +129,7 @@ export function GalleryPopupButton() {
         )}
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Custom triggers via TugPopupMenu ---- */}
       <div className="cg-section">
@@ -246,7 +247,7 @@ export function GalleryPopupButton() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- In-context: control bar mockup ---- */}
       <div className="cg-section">

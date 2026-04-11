@@ -19,6 +19,7 @@ import {
 } from "@/components/tugways/palette-engine";
 import "./gallery-badge.css";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---- Types ----
 
@@ -225,7 +226,7 @@ export function GalleryBadgeMockup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- All roles with current slider values ---- */}
       <div className="cg-section">
@@ -257,7 +258,7 @@ export function GalleryBadgeMockup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Side-by-side with real TugPushButton ---- */}
       <div className="cg-section">
@@ -293,7 +294,7 @@ export function GalleryBadgeMockup() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- In-context mockup ---- */}
       <div className="cg-section">

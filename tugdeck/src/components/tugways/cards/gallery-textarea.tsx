@@ -16,6 +16,7 @@ import { TugTextarea } from "@/components/tugways/tug-textarea";
 import type { TugTextareaSize, TugTextareaValidation } from "@/components/tugways/tug-textarea";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -53,7 +54,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Validation States ---- */}
       <div className="cg-section">
@@ -71,7 +72,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Resize Variants ---- */}
       <div className="cg-section">
@@ -114,7 +115,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Auto-Resize ---- */}
       <div className="cg-section">
@@ -147,7 +148,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Character Counter ---- */}
       <div className="cg-section">
@@ -182,7 +183,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- States ---- */}
       <div className="cg-section">
@@ -195,7 +196,7 @@ export function GalleryTextarea() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- TugBox Cascade ---- */}
       <div className="cg-section">

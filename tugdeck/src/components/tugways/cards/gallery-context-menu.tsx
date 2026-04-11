@@ -14,6 +14,7 @@ import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // Shared label style for section annotations
 const labelStyle: React.CSSProperties = {
@@ -58,7 +59,7 @@ export function GalleryContextMenu() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. With Icons ---- */}
       <div className="cg-section">
@@ -77,7 +78,7 @@ export function GalleryContextMenu() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. With Shortcuts ---- */}
       <div className="cg-section">
@@ -96,7 +97,7 @@ export function GalleryContextMenu() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Separators and Labels ---- */}
       <div className="cg-section">
@@ -122,7 +123,7 @@ export function GalleryContextMenu() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Disabled Items ---- */}
       <div className="cg-section">
@@ -141,7 +142,7 @@ export function GalleryContextMenu() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 6. On a Card ---- */}
       <div className="cg-section">

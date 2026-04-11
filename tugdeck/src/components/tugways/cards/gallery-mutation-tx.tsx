@@ -33,6 +33,7 @@ import { TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { StyleCascadeReader } from "@/components/tugways/style-cascade-reader";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -294,7 +295,7 @@ export function GalleryMutationTx() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Cascade reader display                                              */}
@@ -335,7 +336,7 @@ export function GalleryMutationTx() {
         </table>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Demo 1: Color input                                                 */}
@@ -377,7 +378,7 @@ export function GalleryMutationTx() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Demo 2: Pointer-scrub swatch                                        */}
@@ -440,7 +441,7 @@ export function GalleryMutationTx() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ------------------------------------------------------------------ */}
       {/* Demo 3: Position sliders                                            */}

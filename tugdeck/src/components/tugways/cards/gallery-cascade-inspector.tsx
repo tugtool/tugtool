@@ -31,6 +31,7 @@ import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -85,7 +86,7 @@ export function GalleryCascadeInspector() {
         <TugLabel size="2xs" color="muted" data-testid="inspector-instructions">Hold Shift+Option and hover the elements below to see the cascade inspector in action. Each sample exercises a different token chain depth. Click to pin the overlay; press Escape to close.</TugLabel>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- (a) TugPopupButton: three-layer chain --tugx-menu-* -> --tug-* -> palette ---- */}
       <div className="cg-section">
@@ -104,7 +105,7 @@ export function GalleryCascadeInspector() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- (b) TugButton: two-layer chain --tug-* -> palette (no comp token) ---- */}
       <div className="cg-section">
@@ -126,7 +127,7 @@ export function GalleryCascadeInspector() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- (c) Colored div: --tug7-element-global-fill-normal-accent-rest -> palette ---- */}
       <div className="cg-section">
@@ -147,7 +148,7 @@ export function GalleryCascadeInspector() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- (d) Surface-raised div: non-chromatic base token, terminal hex ---- */}
       <div className="cg-section">
@@ -169,7 +170,7 @@ export function GalleryCascadeInspector() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- (e) Direct palette reference: var(--tug-orange-light) -> TugColor provenance ---- */}
       <div className="cg-section">

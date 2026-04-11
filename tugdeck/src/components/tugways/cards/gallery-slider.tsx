@@ -19,6 +19,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./gallery-slider.css";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---- Formatters (module scope to avoid recreation on each render) ----
 
@@ -126,7 +127,7 @@ export function GallerySlider() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 2: Layouts ---- */}
       <div className="cg-section">
@@ -155,7 +156,7 @@ export function GallerySlider() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 3: Formatters ---- */}
       <div className="cg-section">
@@ -202,7 +203,7 @@ export function GallerySlider() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 4: Disabled ---- */}
       <div className="cg-section">
@@ -215,7 +216,7 @@ export function GallerySlider() {
         />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 5: No Value Input ---- */}
       <div className="cg-section">
@@ -229,7 +230,7 @@ export function GallerySlider() {
         />
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Section 6: Ticks + Icons ---- */}
       <div className="cg-section">

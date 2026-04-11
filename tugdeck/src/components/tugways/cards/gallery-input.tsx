@@ -14,6 +14,7 @@ import React from "react";
 import { TugInput } from "@/components/tugways/tug-input";
 import type { TugInputSize, TugInputValidation } from "@/components/tugways/tug-input";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -44,7 +45,7 @@ export function GalleryInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Validation States ---- */}
       <div className="cg-section">
@@ -61,7 +62,7 @@ export function GalleryInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
@@ -72,7 +73,7 @@ export function GalleryInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Read-only ---- */}
       <div className="cg-section">
@@ -83,7 +84,7 @@ export function GalleryInput() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- Input Types ---- */}
       <div className="cg-section">

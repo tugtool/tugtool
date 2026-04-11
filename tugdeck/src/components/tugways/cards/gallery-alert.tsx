@@ -13,6 +13,7 @@ import { TugAlert, useTugAlert } from "@/components/tugways/tug-alert";
 import type { TugAlertHandle } from "@/components/tugways/tug-alert";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -109,7 +110,7 @@ function GalleryAlertInner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Danger Confirmation ---- */}
       <div className="cg-section">
@@ -125,7 +126,7 @@ function GalleryAlertInner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Caution Warning ---- */}
       <div className="cg-section">
@@ -141,7 +142,7 @@ function GalleryAlertInner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. OK-Only (no cancel) ---- */}
       <div className="cg-section">
@@ -157,7 +158,7 @@ function GalleryAlertInner() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Ref-Based Imperative API ---- */}
       <div className="cg-section">

@@ -18,6 +18,7 @@ import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // Shared text style for paragraph content inside accordion items
 const paraStyle: React.CSSProperties = {
@@ -90,7 +91,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 2. Multiple Mode ---- */}
       <div className="cg-section">
@@ -120,7 +121,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 3. Default Open ---- */}
       <div className="cg-section">
@@ -144,7 +145,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 4. Variants ---- */}
       <div className="cg-section">
@@ -209,7 +210,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 5. Disabled ---- */}
       <div className="cg-section">
@@ -243,7 +244,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 6. TugBox Cascade ---- */}
       <div className="cg-section">
@@ -265,7 +266,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 7. Rich Triggers ---- */}
       <div className="cg-section">
@@ -316,7 +317,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 8. Nested Content ---- */}
       <div className="cg-section">
@@ -357,7 +358,7 @@ export function GalleryAccordion() {
         </div>
       </div>
 
-      <div className="cg-divider" />
+      <TugSeparator />
 
       {/* ---- 9. Chain-controlled (A2.4) ---- */}
       <div className="cg-section">
