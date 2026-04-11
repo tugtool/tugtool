@@ -14,6 +14,7 @@ import "./tug-label.css";
 import React, { useRef, useLayoutEffect, useState, useCallback } from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import { cn } from "@/lib/utils";
+import { useCopyableText } from "./use-copyable-text";
 
 // ---- Types ----
 
@@ -56,6 +57,13 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
   icon?: React.ReactNode;
   /** Icon color (CSS color value or token). Defaults to label text color. */
   iconColor?: string;
+  /**
+   * When true, the label is "copyable" — right-click shows a Copy menu
+   * that copies the label's text content to the clipboard. No visible
+   * selection or drag-to-select. See tuglaws/selection-model.md.
+   * @default false
+   */
+  copyable?: boolean;
 }
 
 // ---- Truncation helpers ----
@@ -94,12 +102,23 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       disabled = false,
       icon,
       iconColor,
+      copyable = false,
       className,
       ...rest
     },
     ref,
   ) {
     const textRef = useRef<HTMLSpanElement>(null);
+    const labelRef = useRef<HTMLLabelElement | null>(null);
+
+    // Copyable: right-click → Copy copies the label's text content.
+    // Only active when copyable prop is true.
+    const copyable_ = useCopyableText({
+      ref: labelRef as React.MutableRefObject<HTMLElement | null>,
+      getText: () => children,
+      disabled: !copyable,
+      forwardedRef: ref as React.Ref<HTMLElement>,
+    });
     const [truncatedText, setTruncatedText] = useState<string | null>(null);
 
     // For start/middle ellipsis, we need to measure whether the text overflows
@@ -202,31 +221,35 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       : undefined;
 
     return (
-      <LabelPrimitive.Root
-        ref={ref}
-        data-slot="tug-label"
-        htmlFor={htmlFor}
-        className={labelClassName}
-        {...rest}
-      >
-        {icon && (
-          <span
-            className="tug-label-icon"
-            style={iconColor ? { color: iconColor } : undefined}
-            aria-hidden="true"
-          >
-            {icon}
-          </span>
-        )}
-        <span
-          ref={textRef}
-          className={textClassName}
-          style={textStyle}
+      <>
+        <LabelPrimitive.Root
+          ref={copyable ? copyable_.composedRef as React.Ref<HTMLLabelElement> : ref}
+          data-slot="tug-label"
+          htmlFor={htmlFor}
+          className={labelClassName}
+          onContextMenu={copyable ? copyable_.handleContextMenu : undefined}
+          {...rest}
         >
-          {displayText}
-          {required && <span className="tug-label-required" aria-hidden="true"> *</span>}
-        </span>
-      </LabelPrimitive.Root>
+          {icon && (
+            <span
+              className="tug-label-icon"
+              style={iconColor ? { color: iconColor } : undefined}
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+          )}
+          <span
+            ref={textRef}
+            className={textClassName}
+            style={textStyle}
+          >
+            {displayText}
+            {required && <span className="tug-label-required" aria-hidden="true"> *</span>}
+          </span>
+        </LabelPrimitive.Root>
+        {copyable && copyable_.contextMenu}
+      </>
     );
   },
 );

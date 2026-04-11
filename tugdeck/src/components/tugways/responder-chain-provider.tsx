@@ -20,11 +20,75 @@
  * Spec S03, Spec S08
  */
 
-import React, { useContext, useEffect, useRef } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
+
+// ---- Fallback context menu ----
+
+import "./tug-menu.css";
+
+/**
+ * Minimal "No Actions" context menu shown when a right-click lands on an
+ * area with no component-specific context menu. Prevents the browser's
+ * native context menu from appearing anywhere in the app.
+ *
+ * Uses tug-menu CSS classes for visual consistency with TugContextMenu and
+ * TugEditorContextMenu. Dismisses on click-away, Escape, or any keypress.
+ */
+function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Position and dismiss listeners.
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    // Position: same two-pass approach as TugEditorContextMenu.
+    const rect = menu.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = x;
+    let top = y;
+    if (left + rect.width > vw - 8) left = Math.max(8, vw - rect.width - 8);
+    if (top + rect.height > vh - 8) top = Math.max(8, vh - rect.height - 8);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.visibility = "visible";
+
+    // Dismiss on click-away or keypress.
+    const dismiss = () => onClose();
+    const onMouseDown = (e: MouseEvent) => {
+      if (menu.contains(e.target as Node)) return;
+      dismiss();
+    };
+    const onKeyDown = () => dismiss();
+
+    window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [x, y, onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="tug-menu-content"
+      role="menu"
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ position: "fixed", left: -9999, top: -9999, visibility: "hidden" }}
+    >
+      <div className="tug-menu-label" role="presentation">
+        No Actions
+      </div>
+    </div>
+  );
+}
 
 // ---- ResponderChainProvider ----
 
@@ -231,11 +295,25 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       promoteFromTarget(event.target as Node | null);
     }
 
+    // ---- Fallback context menu ----
+    //
+    // Suppress the browser's native context menu everywhere in the app.
+    // Components that have their own menus (text inputs, markdown view,
+    // copyable labels) call preventDefault in their own handlers — those
+    // fire before this document-level handler. This catches everything
+    // else and shows a "No Actions" fallback menu.
+    function fallbackContextMenu(event: MouseEvent): void {
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      fallbackMenuRef.current?.({ x: event.clientX, y: event.clientY });
+    }
+
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
     document.addEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
     document.addEventListener("focusin", promoteOnFocusIn, { capture: true });
+    document.addEventListener("contextmenu", fallbackContextMenu);
 
     return () => {
       document.removeEventListener("keydown", captureListener, { capture: true });
@@ -243,13 +321,29 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
       document.removeEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
+      document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();
     };
   }, [manager]);
 
+  // Fallback "No Actions" context menu state. The document-level
+  // contextmenu handler calls the ref'd setter to open it.
+  const [fallbackMenu, setFallbackMenu] = useState<{ x: number; y: number } | null>(null);
+  const fallbackMenuRef = useRef(setFallbackMenu);
+  fallbackMenuRef.current = setFallbackMenu;
+  const closeFallbackMenu = useCallback(() => setFallbackMenu(null), []);
+
   return (
     <ResponderChainContext.Provider value={manager}>
       {children}
+      {fallbackMenu && createPortal(
+        <FallbackContextMenu
+          x={fallbackMenu.x}
+          y={fallbackMenu.y}
+          onClose={closeFallbackMenu}
+        />,
+        document.body,
+      )}
     </ResponderChainContext.Provider>
   );
 }

@@ -36,7 +36,7 @@ export function GalleryLabel() {
         <div className="cg-section-title">TugLabel — Size Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_SIZES.map((size) => (
-            <TugLabel key={size} size={size}>
+            <TugLabel key={size} size={size} copyable>
               {`Label size: ${size}`}
             </TugLabel>
           ))}
