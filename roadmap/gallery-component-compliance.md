@@ -183,14 +183,42 @@ Replace `cg-*` layout containers with `<TugBox>`. TugBox exists for exactly this
 
 ## Step 4: Raw HTML controls to tug components
 
+### Call sites
+
 | Raw element | Count | Files | Tug replacement |
 |------------|-------|-------|-----------------|
-| `<input type="range">` | 5 | gallery-scale-timing, gallery-animator, gallery-mutation-tx, gallery-badge | `<TugSlider>` |
+| `<input type="range">` | 7 | gallery-scale-timing (2), gallery-animator (1, used 4×), gallery-mutation-tx (2), gallery-badge (1, used 10×), gallery-observable-props (1) | `<TugSlider>` |
 | `<input type="checkbox">` | 2 | gallery-scale-timing, gallery-title-bar | `<TugCheckbox>` |
 | `<input type="number">` | 1 | gallery-observable-props | `<TugValueInput>` |
 | `<input type="color">` | 2 | gallery-mutation-tx, gallery-observable-props | No tug equivalent — keep for now |
 
-Each replacement requires wiring the control into the responder chain via `useResponderForm` or direct state management.
+### Blockers — component gaps that must be closed first
+
+Attempting to replace these raw inputs exposed three gaps in the component library. Each must be fixed in the core component before the gallery migration can proceed.
+
+**B1: TugSlider layout inflexibility.** TugSlider renders as a block-level div with its own label, track, and value-input in a fixed layout (inline or stacked). It cannot participate as a peer element inside a flex row alongside buttons, labels, or other content. The gallery's PercentSlider (gallery-animator) sits in a `cg-variant-row` next to Reset/Play buttons. TugSlider's label occupies the full width, pushing sibling content out.
+
+The gallery needs TugSlider to work in two modes:
+- **Standalone**: current behavior — label + track + value input as a self-contained block.
+- **Compact/trackOnly**: just the track (and optionally the value input), no label, no wrapper layout. The caller provides its own label and positions the slider in its own flex layout.
+
+Proposed fix: Add a `layout="track"` variant (or similar) that renders only the track element without wrapper chrome, or allow `label` to be omitted and have the slider render compactly as an inline-flex element that participates in its parent's layout.
+
+**B2: Phase semantics — RESOLVED.** Design decisions D-PH1, D-PH2, D-PH3 are documented in `tuglaws/responder-chain.md` under "Phase definitions", "Control-phase contract", and "Handler phase patterns". Summary:
+
+- Five canonical phases: `discrete`, `begin`, `change`, `commit`, `cancel` (modeled on Apple's `UIGestureRecognizer.State`).
+- Discrete controls dispatch `discrete` only. Continuous controls dispatch `begin` → `change`* → `commit` | `cancel`. A slider is continuous when dragged, discrete when arrow-keyed.
+- `useResponderForm` setters receive `(value, phase)`. The `commit || discrete` guard is the standard pattern for "do this when the value is finalized". No per-phase slots.
+
+**B3: TugCheckbox wiring is straightforward but blocked on testing.** TugCheckbox renders a `<button role="checkbox">` via Radix, not an `<input type="checkbox">`. Existing tests for gallery-scale-timing query by `#st-motion` and check `HTMLInputElement.checked`. These tests must be rewritten to use `[role="checkbox"]` and `data-state="checked"`. This is mechanical test work, not a design issue — but it must be done correctly.
+
+### Proposed execution order
+
+1. ~~**Document phase semantics** (D-PH1, D-PH2, D-PH3)~~ — DONE. Written in `tuglaws/responder-chain.md`.
+2. **Fix TugSlider layout** (B1) — allow `label` to be omitted so the slider renders compactly and participates in parent flex layout.
+3. **Replace checkboxes** (B3) — TugCheckbox replacements in gallery-title-bar and gallery-scale-timing, plus test updates.
+4. **Replace sliders** — all raw range inputs across gallery-animator, gallery-badge, gallery-scale-timing, gallery-mutation-tx, gallery-observable-props.
+5. **Replace number input** — gallery-observable-props `<input type="number">` → TugValueInput (already has the component, just needs responder wiring).
 
 ## Step 5: Remove dead CSS
 

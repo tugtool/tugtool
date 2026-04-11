@@ -53,17 +53,62 @@ interface ActionEvent<Extra extends string = never> {
 
 **`value`** is the typed payload. Its shape is action-specific and documented inline in `action-vocabulary.ts` alongside the constant. `set-value` carries a `number` (for numeric inputs) or a `string` (for text inputs); `jump-to-tab` carries a 1-based `number`; `set-property` carries a structured `{path, value, source?}`. Handlers narrow defensively with `typeof` or `Array.isArray` because the field is typed `unknown` — see the payload-narrowing commentary at the end of `action-vocabulary.ts` for the rationale and the two patterns (form-slot narrowing via `useResponderForm` vs. inline `typeof` gates).
 
-**`phase`** distinguishes one-shot actions from continuous interactions.
+**`phase`** distinguishes one-shot actions from continuous interactions. The phase model follows the same conceptual design as Apple's `UIGestureRecognizer.State`, adapted for a web responder chain.
 
-| Phase | Meaning |
-|---|---|
-| `discrete` | One-shot action (button click, menu item selection, keyboard shortcut). |
-| `begin` | Start of a continuous interaction (slider grab, drag start). |
-| `change` | Intermediate update during a continuous interaction. |
-| `commit` | End of a continuous interaction with the final value. |
-| `cancel` | Continuous interaction aborted; no value change committed. |
+### Phase definitions [D-PH1]
 
-Most dispatches are `discrete`. Sliders, scrubbers, draggable elements, and any other control whose interaction is a drag-release cycle use `begin`/`change`/`commit` so handlers can distinguish a *draft preview* from a *committed value*. [L08] defines the mutation-transaction semantics that the phase system enables; re-read [L08] if you are writing a control that needs to roll back a preview on release.
+Five phases. No more, no fewer.
+
+| Phase | Meaning | Apple equivalent |
+|---|---|---|
+| `discrete` | Atomic action — completed in a single gesture. No lifecycle. | `UIGestureRecognizer.State.recognized` / `UIControl.Event.primaryActionTriggered` |
+| `begin` | Continuous gesture started. Value is the initial value at gesture start. | `UIGestureRecognizer.State.began` |
+| `change` | Continuous gesture updating. Value is the current intermediate value. May fire many times. | `UIGestureRecognizer.State.changed` / `UIControl.Event.valueChanged` |
+| `commit` | Continuous gesture completed successfully. Value is the final committed value. | `UIGestureRecognizer.State.ended` |
+| `cancel` | Continuous gesture aborted. Handler should revert to pre-begin state. | `UIGestureRecognizer.State.cancelled` |
+
+In Apple's UIKit, `recognized` and `ended` share the same raw value — they are the same concept (successful completion), named differently for discrete vs. continuous gestures. Our `discrete` and `commit` are the analogous pair: both mean "the action completed successfully", but `discrete` signals there was no gesture lifecycle, while `commit` signals the end of a `begin`/`change` sequence.
+
+We omit Apple's `possible` (no speculative recognition — controls know what they are) and `failed` (no recognition ambiguity in a typed action system).
+
+### Control-phase contract [D-PH2]
+
+A control's interaction model determines which phases it dispatches. There are exactly two models:
+
+**Discrete controls** — dispatch `discrete` only. One action event per user action. No gesture lifecycle.
+- TugButton, TugPushButton: `discrete` on click
+- TugCheckbox, TugSwitch: `discrete` on toggle
+- TugPopupButton, TugContextMenu: `discrete` on menu item selection
+- TugValueInput: `discrete` on blur-commit, Enter-commit, arrow-key step
+- TugTabBar: `discrete` on tab selection
+- Keyboard shortcuts: `discrete` always
+
+**Continuous controls** — dispatch the full lifecycle: `begin` → `change`* → (`commit` | `cancel`).
+- TugSlider (pointer drag): `begin` on pointer-down, `change` on drag, `commit` on pointer-up, `cancel` on Escape/pointer-cancel
+- TugSlider (keyboard arrow): `discrete` — arrow-key steps are atomic, not gestures
+- Custom scrub surfaces (hue swatch, position drag): same `begin`/`change`/`commit`/`cancel` lifecycle
+
+A control is discrete or continuous based on the *interaction*, not the control type. A slider dispatches `discrete` for keyboard steps and the full lifecycle for pointer drags. The phase is determined by how the user is interacting, not by what the control is.
+
+### Handler phase patterns [D-PH3]
+
+`useResponderForm` setters receive `(value: T, phase: ActionPhase) => void`. Handlers that don't care about phase declare `(v: number) => void` — TypeScript's function assignability makes this work; the phase argument is passed but ignored.
+
+Handlers that need phase-aware behavior branch on it:
+
+```ts
+// Scale slider: update readout on every change, apply CSS zoom only on commit
+const handleScale = (v: number, phase: ActionPhase) => {
+  setScaleState(v);                                  // always — readout updates instantly
+  if (phase === "commit" || phase === "discrete") {
+    document.documentElement.style.setProperty("--tug-zoom", String(v));
+  }
+};
+```
+
+The phase is data on the event, not a separate dispatch path. There are no per-phase slots in `useResponderForm`. This matches Apple's pattern: `UIGestureRecognizer` fires its action at every state transition; the target checks `recognizer.state` and branches.
+
+The `commit || discrete` guard is the standard pattern for "do this when the value is finalized". Both phases mean "the user is done" — `commit` after a drag, `discrete` after a keyboard step. If a handler treats all phases the same (just updating local state), it doesn't need to check at all.
 
 ---
 
