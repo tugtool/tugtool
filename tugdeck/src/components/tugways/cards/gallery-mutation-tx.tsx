@@ -279,10 +279,7 @@ export function GalleryMutationTx() {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Mock Target Element</TugLabel>
-        <p className="cg-description">
-          A positioned div whose CSS properties are mutated by the demos below.
-          Commit keeps the final value; cancel restores the original.
-        </p>
+        <TugLabel size="xs" color="muted">A positioned div whose CSS properties are mutated by the demos below. Commit keeps the final value; cancel restores the original.</TugLabel>
         <div className="cg-mutation-tx-stage" data-testid="mutation-tx-stage">
           <div
             ref={mockCardRef}
@@ -304,9 +301,7 @@ export function GalleryMutationTx() {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Cascade Reader Display</TugLabel>
-        <p className="cg-description">
-          Updated via direct DOM writes during gestures — no React re-renders.
-        </p>
+        <TugLabel size="xs" color="muted">Updated via direct DOM writes during gestures — no React re-renders.</TugLabel>
         <table className="cg-cascade-table" data-testid="cascade-reader-display">
           <tbody>
             <tr>
@@ -347,11 +342,7 @@ export function GalleryMutationTx() {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-color-input">
         <TugLabel className="cg-section-title">Demo 1 — Color Input (background-color)</TugLabel>
-        <p className="cg-description">
-          The color picker dispatches <code>begin</code> on first input, <code>change</code>{" "}
-          on subsequent inputs (intermediate picks), and <code>commit</code> on the{" "}
-          <code>change</code> event (dialog closed). Cancel restores the original color.
-        </p>
+        <TugLabel size="xs" color="muted">The color picker dispatches begin on first input, change on subsequent inputs (intermediate picks), and commit on the change event (dialog closed). Cancel restores the original color.</TugLabel>
         <div className="cg-mutation-tx-controls">
           <input
             type="color"
@@ -382,7 +373,7 @@ export function GalleryMutationTx() {
               });
             }}
           />
-          <span className="cg-control-label">Pick a color to preview on the mock card</span>
+          <TugLabel size="xs" color="muted">Pick a color to preview on the mock card</TugLabel>
         </div>
       </div>
 
@@ -393,11 +384,7 @@ export function GalleryMutationTx() {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-hue-scrub">
         <TugLabel className="cg-section-title">Demo 2 — Hue Scrub (pointer drag)</TugLabel>
-        <p className="cg-description">
-          Drag horizontally across the swatch to scrub the hue of the mock card's
-          background-color. Release to commit; press Escape to cancel and restore
-          the original color.
-        </p>
+        <TugLabel size="xs" color="muted">Drag horizontally across the swatch to scrub the hue of the mock card's background-color. Release to commit; press Escape to cancel and restore the original color.</TugLabel>
         <div className="cg-mutation-tx-controls">
           <div
             className="cg-hue-swatch"
@@ -449,7 +436,7 @@ export function GalleryMutationTx() {
               }
             }}
           />
-          <span className="cg-control-label">Drag to scrub hue · Esc to cancel</span>
+          <TugLabel size="xs" color="muted">Drag to scrub hue · Esc to cancel</TugLabel>
         </div>
       </div>
 
@@ -460,15 +447,9 @@ export function GalleryMutationTx() {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="demo-position-sliders">
         <TugLabel className="cg-section-title">Demo 3 — Position Sliders (left + top)</TugLabel>
-        <p className="cg-description">
-          Two range sliders set the <code>left</code> and <code>top</code> inline
-          styles of the mock card, demonstrating multi-property snapshotting.
-          The transaction begins on pointerdown and commits on pointerup.
-        </p>
+        <TugLabel size="xs" color="muted">Two range sliders set the left and top inline styles of the mock card, demonstrating multi-property snapshotting. The transaction begins on pointerdown and commits on pointerup.</TugLabel>
         <div className="cg-mutation-tx-slider-group">
-          <label className="cg-control-label" htmlFor="slider-x">
-            X (left)
-          </label>
+          <TugLabel size="xs" color="muted" htmlFor="slider-x">X (left)</TugLabel>
           <input
             ref={sliderXRef}
             id="slider-x"
@@ -509,9 +490,7 @@ export function GalleryMutationTx() {
           />
         </div>
         <div className="cg-mutation-tx-slider-group">
-          <label className="cg-control-label" htmlFor="slider-y">
-            Y (top)
-          </label>
+          <TugLabel size="xs" color="muted" htmlFor="slider-y">Y (top)</TugLabel>
           <input
             ref={sliderYRef}
             id="slider-y"

@@ -179,7 +179,7 @@ export function GalleryPushButton() {
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <span className="cg-control-label">Emphasis</span>
+            <TugLabel size="xs" color="muted">Emphasis</TugLabel>
             <TugPopupButton
               label={previewEmphasis}
               size="sm"
@@ -192,7 +192,7 @@ export function GalleryPushButton() {
             />
           </div>
           <div className="cg-control-group">
-            <span className="cg-control-label">Role</span>
+            <TugLabel size="xs" color="muted">Role</TugLabel>
             <TugPopupButton
               label={roleDropdownLabel}
               size="sm"
@@ -202,7 +202,7 @@ export function GalleryPushButton() {
           </div>
 
           <div className="cg-control-group">
-            <span className="cg-control-label">Size</span>
+            <TugLabel size="xs" color="muted">Size</TugLabel>
             <TugPopupButton
               label={previewSize}
               size="sm"
@@ -425,10 +425,10 @@ export function GalleryPushButton() {
         <div className="cg-matrix">
           {ALL_SUBTYPES.map((subtype) => (
             <div key={subtype} className="cg-subtype-block">
-              <div className="cg-subtype-label">subtype: {subtype}</div>
+              <TugLabel size="xs" color="muted">{`subtype: ${subtype}`}</TugLabel>
               {ALL_COMBOS.map(({ emphasis, role }) => (
                 <div key={`${emphasis}-${role}`} className="cg-variant-row">
-                  <div className="cg-variant-label">{emphasis}-{role}</div>
+                  <TugLabel size="xs" color="muted">{`${emphasis}-${role}`}</TugLabel>
                   <div className="cg-size-group">
                     {ALL_SIZES.map((size) => (
                       <SubtypeButton

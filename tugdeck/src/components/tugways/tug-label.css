@@ -16,6 +16,7 @@
  * | --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label (color)                   |
  * | --tug7-element-field-text-normal-required-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-required (color)          |
  * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-disabled (color)          |
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-color-muted (color)       |
  */
 
 
@@ -42,6 +43,10 @@
    Size Variants
    ========================================================================= */
 
+.tug-label-size-xs {
+  font-size: 0.6875rem;
+}
+
 .tug-label-size-sm {
   font-size: 0.75rem;
 }
@@ -52,6 +57,23 @@
 
 .tug-label-size-lg {
   font-size: 0.875rem;
+}
+
+/* ============================================================================
+   Color Variants
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-color-muted {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ============================================================================
+   Monospace
+   ========================================================================= */
+
+.tug-label-mono {
+  font-family: var(--tug-font-family-mono);
 }
 
 /* ============================================================================

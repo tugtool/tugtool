@@ -13,7 +13,6 @@
  * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
  * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
  * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
- * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-status code (color)         |
  * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
  */
 
@@ -67,13 +66,6 @@
   gap: 6px;
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-control-label {
-  font-size: 11px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  user-select: none;
-  white-space: nowrap;
-}
 
 .cg-control-select {
   font-size: 12px;
@@ -116,14 +108,6 @@
   gap: 8px;
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-subtype-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-style: italic;
-  user-select: none;
-}
 
 .cg-variant-row {
   display: flex;
@@ -132,14 +116,6 @@
   flex-wrap: wrap;
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-variant-label {
-  font-size: 10px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  width: 76px;
-  flex-shrink: 0;
-  user-select: none;
-}
 
 .cg-size-group {
   display: flex;
@@ -225,22 +201,6 @@
   background-color: var(--tug7-surface-global-primary-normal-default-rest);
 }
 
-/* Shared status line for both demos */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-demo-status {
-  font-size: 11px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  user-select: none;
-}
-
-.cg-demo-status code {
-  font-family: var(--tug-font-family-mono);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-xs);
-  padding: 1px 5px;
-}
 
 /* ============================================================================
    Mutation Transaction Demo (Phase 5d3)
@@ -357,14 +317,6 @@
   padding: 4px 0;
 }
 
-/* Small description text used in demo sections. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-description {
-  font-size: 11px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  line-height: 1.5;
-  margin: 0;
-}
 
 /* ============================================================================
    Scale & Timing Demo (Phase 5d5b)
@@ -385,12 +337,6 @@
   flex-wrap: nowrap;
 }
 
-.cg-st-slider-label {
-  width: 200px;
-  flex-shrink: 0;
-  font-family: var(--tug-font-family-mono);
-  font-size: 11px;
-}
 
 .cg-st-range {
   flex: 0 0 180px;
@@ -398,26 +344,6 @@
   accent-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-st-value {
-  flex: 0 0 36px;
-  font-size: 11px;
-  font-family: var(--tug-font-family-mono);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  text-align: right;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-st-note {
-  font-size: 10px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-style: italic;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* JS helper readout: three rows showing function name and return value */
 .cg-st-readout {
@@ -438,18 +364,6 @@
   gap: 16px;
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-st-readout-fn {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  width: 200px;
-  flex-shrink: 0;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-st-readout-value {
-  color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  font-weight: 600;
-}
 
 /* Live preview area for scale/timing demo buttons. */
 .cg-st-preview {
@@ -473,14 +387,6 @@
    Custom Progress Indicators (Scale & Timing demo)
    ========================================================================= */
 
-/* --- Shared label for indicator demos --- */
-.cg-st-indicator-label {
-  font-size: 10px;
-  color: var(--td-text-soft);
-  user-select: none;
-  white-space: nowrap;
-  min-width: 30px;
-}
 
 /* --- Petals: spinning petal indicator ---
  *
@@ -699,14 +605,6 @@
   accent-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.cg-anim-pct-value {
-  font-family: var(--tug-font-family-mono);
-  font-size: 10px;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  width: 32px;
-  text-align: right;
-}
 
 /* ============================================================================
    TugMarkdownView Gallery Card

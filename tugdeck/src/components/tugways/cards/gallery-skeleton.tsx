@@ -59,10 +59,7 @@ export function GallerySkeleton() {
       {/* ---- TugSkeletonGroup: text block ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">TugSkeletonGroup — Text Block</TugLabel>
-        <p className="cg-description">
-          <code>TugSkeletonGroup</code> wraps skeletons in a flex column with configurable gap.
-          This group mimics a paragraph of loading text.
-        </p>
+        <TugLabel size="xs" color="muted">TugSkeletonGroup wraps skeletons in a flex column with configurable gap. This group mimics a paragraph of loading text.</TugLabel>
         <div style={{ maxWidth: "360px" }}>
           <TugSkeletonGroup gap={8}>
             <TugSkeleton width="100%" height={14} />
@@ -79,10 +76,7 @@ export function GallerySkeleton() {
       {/* ---- Multiple groups: synchronized shimmer ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">TugSkeleton — Multiple Groups Side by Side</TugLabel>
-        <p className="cg-description">
-          All skeleton elements share the same CSS pulse animation, so
-          elements across separate groups breathe in sync.
-        </p>
+        <TugLabel size="xs" color="muted">All skeleton elements share the same CSS pulse animation, so elements across separate groups breathe in sync.</TugLabel>
         <div style={{ display: "flex", gap: "24px" }}>
           {/* Column 1: card-like skeleton */}
           <div style={{ flex: 1 }}>

@@ -58,9 +58,7 @@ interface SliderRowProps {
 function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note }: SliderRowProps) {
   return (
     <div className="cg-control-group cg-st-slider-row">
-      <label className="cg-control-label cg-st-slider-label" htmlFor={id}>
-        {label}
-      </label>
+      <TugLabel size="xs" color="muted" mono htmlFor={id}>{label}</TugLabel>
       <input
         id={id}
         type="range"
@@ -77,8 +75,8 @@ function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note 
           }
         }}
       />
-      <span className="cg-st-value">{formatValue(value, step < 0.1 ? 2 : 1)}</span>
-      {note && <span className="cg-st-note">{note}</span>}
+      <TugLabel size="xs" mono>{formatValue(value, step < 0.1 ? 2 : 1)}</TugLabel>
+      {note && <TugLabel size="xs" color="muted">{note}</TugLabel>}
     </div>
   );
 }
@@ -202,12 +200,8 @@ export function GalleryScaleTiming() {
               checked={motionOn}
               onChange={(e) => setMotionOn(e.target.checked)}
             />
-            <label className="cg-control-label" htmlFor="st-motion">
-              Motion enabled (--tug-motion)
-            </label>
-            <span className="cg-st-note">
-              {motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}
-            </span>
+            <TugLabel size="xs" color="muted" htmlFor="st-motion">Motion enabled (--tug-motion)</TugLabel>
+            <TugLabel size="xs" color="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
           </div>
         </div>
       </div>
@@ -219,22 +213,16 @@ export function GalleryScaleTiming() {
         <TugLabel className="cg-section-title">JS Helper Readout</TugLabel>
         <div className="cg-st-readout" data-testid="st-readout">
           <div className="cg-st-readout-row">
-            <span className="cg-st-readout-fn">getTugZoom()</span>
-            <span className="cg-st-readout-value" data-testid="st-readout-scale">
-              {formatValue(readout.scale)}
-            </span>
+            <TugLabel size="xs" color="muted" mono>getTugZoom()</TugLabel>
+            <TugLabel size="xs" mono data-testid="st-readout-scale">{formatValue(readout.scale)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <span className="cg-st-readout-fn">getTugTiming()</span>
-            <span className="cg-st-readout-value" data-testid="st-readout-timing">
-              {formatValue(readout.timing)}
-            </span>
+            <TugLabel size="xs" color="muted" mono>getTugTiming()</TugLabel>
+            <TugLabel size="xs" mono data-testid="st-readout-timing">{formatValue(readout.timing)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <span className="cg-st-readout-fn">isTugMotionEnabled()</span>
-            <span className="cg-st-readout-value" data-testid="st-readout-motion">
-              {String(readout.motionEnabled)}
-            </span>
+            <TugLabel size="xs" color="muted" mono>isTugMotionEnabled()</TugLabel>
+            <TugLabel size="xs" mono data-testid="st-readout-motion">{String(readout.motionEnabled)}</TugLabel>
           </div>
         </div>
       </div>
@@ -270,7 +258,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Petals Spinner ---- */}
           <div className="cg-st-preview-row">
-            <span className="cg-st-indicator-label">Petals</span>
+            <TugLabel size="xs" color="muted">Petals</TugLabel>
             {[18].map((sz) => (
               <span
                 key={sz}
@@ -285,7 +273,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Pole Progress Bar ---- */}
           <div className="cg-st-preview-row">
-            <span className="cg-st-indicator-label">Pole</span>
+            <TugLabel size="xs" color="muted">Pole</TugLabel>
             <div style={{ width: "30%" }}>
               <div className="tug-pole"><div className="tug-pole-inner" /></div>
             </div>

@@ -101,7 +101,7 @@ export function GallerySlider() {
               senderId={smId}
               label="Small"
             />
-            <div className="cg-demo-status">Value: <code>{smValue}</code></div>
+            <TugLabel size="xs" color="muted">{`Value: ${smValue}`}</TugLabel>
           </div>
           <div className="gs-size-item">
             <span className="gs-demo-label">md</span>
@@ -111,7 +111,7 @@ export function GallerySlider() {
               senderId={mdId}
               label="Medium"
             />
-            <div className="cg-demo-status">Value: <code>{mdValue}</code></div>
+            <TugLabel size="xs" color="muted">{`Value: ${mdValue}`}</TugLabel>
           </div>
           <div className="gs-size-item">
             <span className="gs-demo-label">lg</span>
@@ -121,7 +121,7 @@ export function GallerySlider() {
               senderId={lgId}
               label="Large"
             />
-            <div className="cg-demo-status">Value: <code>{lgValue}</code></div>
+            <TugLabel size="xs" color="muted">{`Value: ${lgValue}`}</TugLabel>
           </div>
         </div>
       </div>

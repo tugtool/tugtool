@@ -174,9 +174,7 @@ export function TugPopupButtonDemo() {
         items={DEMO_POPUP_BUTTON_ITEMS}
       />
       {lastSelected !== null && (
-        <div className="cg-demo-status">
-          Selected: <code>{lastSelected}</code>
-        </div>
+        <TugLabel size="xs" color="muted">{`Selected: ${lastSelected}`}</TugLabel>
       )}
     </div>
     </ResponderScope>
@@ -207,10 +205,10 @@ export function GalleryBadge() {
             <TugLabel className="cg-section-title">{`TugBadge — ${emphasis}`}</TugLabel>
             <div className="cg-matrix">
               <div className="cg-subtype-block">
-                <div className="cg-subtype-label">text only</div>
+                <TugLabel size="xs" color="muted">text only</TugLabel>
                 {ALL_BADGE_ROLES.map((role) => (
                   <div key={role} className="cg-variant-row">
-                    <div className="cg-variant-label">{role}</div>
+                    <TugLabel size="xs" color="muted">{role}</TugLabel>
                     <div className="cg-size-group">
                       {ALL_BADGE_SIZES.map((size) => (
                         <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
@@ -222,10 +220,10 @@ export function GalleryBadge() {
                 ))}
               </div>
               <div className="cg-subtype-block">
-                <div className="cg-subtype-label">icon + text</div>
+                <TugLabel size="xs" color="muted">icon + text</TugLabel>
                 {ALL_BADGE_ROLES.map((role) => (
                   <div key={role} className="cg-variant-row">
-                    <div className="cg-variant-label">{role}</div>
+                    <TugLabel size="xs" color="muted">{role}</TugLabel>
                     <div className="cg-size-group">
                       {ALL_BADGE_SIZES.map((size) => (
                         <TugBadge key={size} emphasis={emphasis} role={role} size={size} icon={<Star />}>

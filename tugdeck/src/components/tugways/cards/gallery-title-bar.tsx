@@ -64,10 +64,7 @@ export function GalleryTitleBar() {
     >
       <div className="cg-section">
         <TugLabel className="cg-section-title">Title Bar Demo (Step 3)</TugLabel>
-        <p className="cg-description">
-          CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal
-          ellipsis), and close buttons.
-        </p>
+        <TugLabel size="xs" color="muted">CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal ellipsis), and close buttons.</TugLabel>
       </div>
 
       <div className="cg-divider" />
@@ -77,9 +74,7 @@ export function GalleryTitleBar() {
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <label className="cg-control-label">
-              Icon
-            </label>
+            <TugLabel size="xs" color="muted">Icon</TugLabel>
             <TugPopupButton
               label={iconName || "None"}
               size="sm"
@@ -102,9 +97,7 @@ export function GalleryTitleBar() {
               checked={closable}
               onChange={(e) => setClosable(e.target.checked)}
             />
-            <label className="cg-control-label" htmlFor="cg-title-closable-check">
-              Closable
-            </label>
+            <TugLabel size="xs" color="muted" htmlFor="cg-title-closable-check">Closable</TugLabel>
           </div>
         </div>
       </div>
@@ -147,9 +140,7 @@ export function GalleryTitleBar() {
         </div>
 
         {lastEvent !== null && (
-          <div className="cg-demo-status" data-testid="gallery-title-bar-event-status">
-            Last event: <code>{lastEvent}</code>
-          </div>
+          <TugLabel size="xs" color="muted" data-testid="gallery-title-bar-event-status">{`Last event: ${lastEvent}`}</TugLabel>
         )}
 
         <div style={{ marginTop: "8px" }}>

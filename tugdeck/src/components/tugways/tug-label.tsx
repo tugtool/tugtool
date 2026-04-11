@@ -18,8 +18,11 @@ import { useCopyableText } from "./use-copyable-text";
 
 // ---- Types ----
 
-/** TugLabel size names — matches TugInput sizes */
-export type TugLabelSize = "sm" | "md" | "lg";
+/** TugLabel size names — matches TugInput sizes, plus xs for annotations. */
+export type TugLabelSize = "xs" | "sm" | "md" | "lg";
+
+/** TugLabel color variants. */
+export type TugLabelColor = "default" | "muted";
 
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
@@ -27,10 +30,22 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
   children: string;
   /**
    * Size variant.
-   * @selector .tug-label-size-sm | .tug-label-size-md | .tug-label-size-lg
+   * @selector .tug-label-size-xs | .tug-label-size-sm | .tug-label-size-md | .tug-label-size-lg
    * @default "md"
    */
   size?: TugLabelSize;
+  /**
+   * Color variant.
+   * @selector .tug-label-color-muted
+   * @default "default"
+   */
+  color?: TugLabelColor;
+  /**
+   * Use monospace font.
+   * @selector .tug-label-mono
+   * @default false
+   */
+  mono?: boolean;
   /**
    * Maximum number of lines before truncation.
    * @default unlimited
@@ -89,6 +104,8 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       children,
       htmlFor,
       size = "md",
+      color = "default",
+      mono = false,
       maxLines,
       ellipsis = "end",
       required = false,
@@ -204,6 +221,8 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const labelClassName = cn(
       "tug-label",
       `tug-label-size-${size}`,
+      color !== "default" && `tug-label-color-${color}`,
+      mono && "tug-label-mono",
       disabled && "tug-label-disabled",
       className,
     );

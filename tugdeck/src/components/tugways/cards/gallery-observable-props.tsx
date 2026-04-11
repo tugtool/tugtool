@@ -291,12 +291,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Target Element</TugLabel>
-        <p className="cg-description">
-          Appearance driven by PropertyStore values via{" "}
-          <code>useSyncExternalStore</code>. Each property subscribes
-          independently — only the affected field re-renders when a value
-          changes.
-        </p>
+        <TugLabel size="xs" color="muted">Appearance driven by PropertyStore values via useSyncExternalStore. Each property subscribes independently — only the affected field re-renders when a value changes.</TugLabel>
         <div className="cg-observable-props-stage" data-testid="observable-props-stage">
           <div
             className="cg-observable-props-target"
@@ -321,21 +316,11 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="observable-props-inspector">
         <TugLabel className="cg-section-title">Inspector Panel</TugLabel>
-        <p className="cg-description">
-          Each control dispatches <code>setProperty</code> via{" "}
-          <code>sendToTarget(cardId, ...)</code>. The action routes through the
-          parent Tugcard's responder node to the registered PropertyStore.
-          Source is tagged <code>'inspector'</code> to prevent circular loops.
-        </p>
+        <TugLabel size="xs" color="muted">Each control dispatches setProperty via sendToTarget(cardId, ...). The action routes through the parent Tugcard's responder node to the registered PropertyStore. Source is tagged 'inspector' to prevent circular loops.</TugLabel>
 
         {/* Background Color */}
         <div className="cg-control-group" data-testid="inspector-bg-color-group">
-          <label
-            className="cg-control-label"
-            htmlFor="obs-props-bg-color"
-          >
-            {DEMO_SCHEMA[0].label}
-          </label>
+          <TugLabel size="xs" color="muted" htmlFor="obs-props-bg-color">{DEMO_SCHEMA[0].label}</TugLabel>
           <input
             id="obs-props-bg-color"
             type="color"
@@ -348,12 +333,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
 
         {/* Font Size */}
         <div className="cg-control-group" data-testid="inspector-font-size-group">
-          <label
-            className="cg-control-label"
-            htmlFor="obs-props-font-size"
-          >
-            {DEMO_SCHEMA[1].label}
-          </label>
+          <TugLabel size="xs" color="muted" htmlFor="obs-props-font-size">{DEMO_SCHEMA[1].label}</TugLabel>
           <input
             id="obs-props-font-size"
             type="number"
@@ -377,9 +357,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
 
         {/* Font Family */}
         <div className="cg-control-group" data-testid="inspector-font-family-group">
-          <label className="cg-control-label">
-            {DEMO_SCHEMA[2].label}
-          </label>
+          <TugLabel size="xs" color="muted">{DEMO_SCHEMA[2].label}</TugLabel>
           <TugPopupButton
             label={fontFamily}
             size="sm"
@@ -400,14 +378,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="observable-props-source-note">
         <TugLabel className="cg-section-title">Source Attribution (Circular Guard)</TugLabel>
-        <p className="cg-description">
-          A content-side <code>store.observe()</code> listener receives every{" "}
-          <code>PropertyChange</code> record and checks <code>change.source</code>:{" "}
-          when source is <code>'inspector'</code> it skips re-dispatch; when source
-          is <code>'content'</code> it applies secondary effects. The observer
-          count and last record below update via direct DOM writes — no React
-          state, no re-render. [D03, Rule #4]
-        </p>
+        <TugLabel size="xs" color="muted">A content-side store.observe() listener receives every PropertyChange record and checks change.source: when source is 'inspector' it skips re-dispatch; when source is 'content' it applies secondary effects. The observer count and last record below update via direct DOM writes — no React state, no re-render. [D03, Rule #4]</TugLabel>
 
         {/* Live observer output — updated via direct DOM writes in the observer */}
         <table className="cg-cascade-table" data-testid="observable-props-state-table">
