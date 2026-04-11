@@ -368,7 +368,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   // actions to the parent responder. The enclosing card's responder
   // handles them by matching `event.sender` against this tab bar's
   // senderId. Outside a provider the dispatch is a no-op.
-  const controlDispatch = useControlDispatch();
+  const { dispatch: controlDispatch } = useControlDispatch();
   const fallbackSenderId = useId();
   const effectiveSenderId = senderId ?? fallbackSenderId;
   const dispatchSelectTab = useCallback(

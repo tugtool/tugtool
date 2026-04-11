@@ -302,6 +302,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     }
 
     function promoteOnFocusIn(event: FocusEvent): void {
+      if (isFocusRefusing(event.target)) return;
       promoteFromTarget(event.target as Node | null);
     }
 

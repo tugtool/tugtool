@@ -248,7 +248,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     // in progress via `draggingRef`, flipped on `onPointerDown` and
     // cleared in `handleValueCommit`. See the module docstring for
     // the full sequence diagram.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const draggingRef = useRef(false);

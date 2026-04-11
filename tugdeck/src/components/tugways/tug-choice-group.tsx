@@ -162,7 +162,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
     // Chain dispatch [L11]: targeted dispatch of `selectValue` to
     // the parent responder. Arrow keys move selection (not just
     // focus), so they also dispatch via the same handler.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const dispatchSelectValue = useCallback(

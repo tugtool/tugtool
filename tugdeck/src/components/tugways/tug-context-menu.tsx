@@ -9,7 +9,7 @@
  * wrapped by Radix ContextMenu.Trigger with asChild. Items carry a typed
  * `action: TugAction` (optionally with a `value` payload). Activation plays
  * the shared double-blink WAAPI animation and then dispatches the action
- * through the responder chain via `manager.dispatchForContinuation`,
+ * through the responder chain via targeted `dispatchToForContinuation`,
  * matching the TugPopupButton precedent [L11].
  *
  * ## Chain-reactive dismissal via observeDispatch
@@ -47,6 +47,7 @@ import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { playMenuItemBlink } from "@/components/tugways/tug-menu-item-blink";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import type { TugAction } from "./action-vocabulary";
+import { useControlDispatch } from "./use-control-dispatch";
 
 // ---- Types ----
 
@@ -172,12 +173,10 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   // so we can gate the observeDispatch effect on open.
   const [open, setOpen] = useState(false);
 
-  // Chain manager — null when rendered outside a ResponderChainProvider
-  // (standalone previews, unit tests that don't mount a provider). In
-  // that case the observeDispatch subscription effect below is a no-op
-  // and the dispatch in handleItemSelect is skipped. The menu still
-  // renders and opens/closes normally via Radix.
+  // Chain manager for observeDispatch subscription. Null outside a provider.
   const manager = useResponderChain();
+  // Targeted dispatch to parent responder.
+  const { dispatchForContinuation } = useControlDispatch();
 
   const fallbackSenderId = useId();
   const effectiveSenderId = senderId ?? fallbackSenderId;
@@ -216,20 +215,19 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
       // self-dismiss path. After the dispatch, reset the guard and
       // synthesize an Escape keydown to close the Radix menu. [L06]
       playMenuItemBlink(target).then(() => {
-        if (manager) {
-          const { continuation } = manager.dispatchForContinuation({
-            action: entry.action,
-            value: entry.value,
-            sender: effectiveSenderId,
-            phase: "discrete",
-          });
-          continuation?.();
-        }
+        // Targeted dispatch to parent responder with continuation.
+        const { continuation } = dispatchForContinuation({
+          action: entry.action,
+          value: entry.value,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+        continuation?.();
         blinkingRef.current = false;
         synthesizeEscapeDismiss();
       });
     },
-    [manager, effectiveSenderId],
+    [dispatchForContinuation, effectiveSenderId],
   );
 
   return (

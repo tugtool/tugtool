@@ -368,7 +368,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
     // Targeted dispatch of `setValue` to the parent responder on
     // commit paths (blur, Enter, arrow key). Outside a provider
     // the dispatch is a no-op — native editing is unaffected.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const dispatchCommit = useCallback(

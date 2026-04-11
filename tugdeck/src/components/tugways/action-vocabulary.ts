@@ -19,7 +19,7 @@
  * always reference the constant, never a raw string literal:
  *
  * ```ts
- * manager.dispatch({ action: TUG_ACTIONS.CUT, phase: "discrete" });
+ * controlDispatch.dispatch({ action: TUG_ACTIONS.CUT, phase: "discrete" });
  *
  * useResponder({
  *   id: cardId,

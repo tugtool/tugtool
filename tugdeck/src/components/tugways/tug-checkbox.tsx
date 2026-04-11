@@ -160,7 +160,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     // Chain dispatch [L11]: targeted dispatch of `toggle` to the
     // parent responder with the new boolean state as `value` and a
     // stable sender id. Outside a provider the dispatch is a no-op.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const handleCheckedChange = useCallback(

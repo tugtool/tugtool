@@ -131,7 +131,7 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     // item id, or "" when collapsed); multi-mode payload is `string[]`.
     // Uncontrolled accordions still dispatch — Radix tracks the open
     // set internally and we just notify the chain.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const handleSingleValueChange = useCallback(

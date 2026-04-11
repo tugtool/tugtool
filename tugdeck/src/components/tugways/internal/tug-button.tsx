@@ -100,14 +100,12 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
 
   /**
    * Explicit-target dispatch: ID of the responder node that should receive
-   * the action directly (bypassing the chain walk). Requires `action` to be set.
+   * the action directly. Overrides the default parent-responder target.
+   * Requires `action` to be set.
    *
-   * When set and chainActive:
-   * - Enabled check uses `manager.nodeCanHandle(target, action)` instead of
-   *   `manager.canHandle(action)`. The button's enabled state reflects the
-   *   target node's capability, not the chain's.
-   * - Click calls `manager.dispatchTo(target, event)` instead of
-   *   `manager.dispatch(event)`.
+   * When omitted, the button dispatches to its parent responder via
+   * `useControlDispatch` (the standard targeted dispatch pattern).
+   * When set, the button dispatches to the named node instead.
    *
    * [D03] dispatchTo throws on unregistered target
    * [D04] TugButton target prop requires action prop
@@ -268,7 +266,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // Parent responder ID — the default dispatch and validation target.
   const parentId = useContext(ResponderParentContext);
   // Targeted dispatch to parent responder — same hook all controls use.
-  const controlDispatch = useControlDispatch();
+  const { dispatch: controlDispatch } = useControlDispatch();
 
   // useSyncExternalStore() called unconditionally on every render. [L02]
   // When the chain is inactive (no manager, or no action prop), use the

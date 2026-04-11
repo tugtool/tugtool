@@ -18,7 +18,7 @@
  *
  * ## Known limitation: continuation ordering
  *
- * TugPopupButton dispatches via `manager.dispatchForContinuation` and
+ * TugPopupButton dispatches via `manager.dispatchToForContinuation` and
  * runs any returned continuation callback immediately after the dispatch
  * returns. This differs from the `TugEditorContextMenu` precedent in one
  * detail: the precedent dispatches **before** the blink animation so the
@@ -58,9 +58,9 @@ import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
-import { useResponderChain } from "./responder-chain-provider";
 import type { TugAction } from "./action-vocabulary";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useControlDispatch } from "./use-control-dispatch";
 
 // ---- Types ----
 
@@ -207,7 +207,7 @@ export interface TugPopupButtonProps<V extends TugPopupButtonPayload = never> {
  * wiring is the caller's responsibility.
  *
  * On item activation, TugPopupButton dispatches `{action, value, sender,
- * phase: "discrete"}` via `dispatchForContinuation`. If the handling
+ * phase: "discrete"}` via targeted `dispatchToForContinuation`. If the handling
  * responder returns a continuation callback, it's invoked after the
  * dispatch returns (before the popup menu closes).
  */
@@ -220,11 +220,9 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
   "aria-label": ariaLabel,
   "data-testid": dataTestId,
 }: TugPopupButtonProps<V>) {
-  // Chain dispatch [L11]. manager is null in standalone previews / unit
-  // tests that don't mount a ResponderChainProvider — in that case the
-  // dispatch becomes a no-op and the popup still renders and closes
-  // correctly, matching the other A2 control conventions.
-  const manager = useResponderChain();
+  // Chain dispatch [L11]: targeted dispatch to parent responder.
+  // Outside a provider the dispatch is a no-op.
+  const { dispatchForContinuation } = useControlDispatch();
   const fallbackSenderId = useId();
   const effectiveSenderId = senderId ?? fallbackSenderId;
 
@@ -242,15 +240,12 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (!manager) return;
       const index = Number.parseInt(id, 10);
       if (Number.isNaN(index)) return;
       const item = items[index];
       if (!item) return;
-      // dispatchForContinuation returns { handled, continuation }. If the
-      // handler returns a function, run it now (for side effects deferred
-      // past the blink feedback — see the TugEditorContextMenu precedent).
-      const { continuation } = manager.dispatchForContinuation({
+      // Targeted dispatch to parent responder with continuation support.
+      const { continuation } = dispatchForContinuation({
         action: item.action,
         value: item.value,
         sender: effectiveSenderId,
@@ -258,7 +253,7 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
       });
       continuation?.();
     },
-    [manager, items, effectiveSenderId],
+    [dispatchForContinuation, items, effectiveSenderId],
   );
 
   const trigger = (

@@ -152,7 +152,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
     // Chain dispatch [L11]: targeted dispatch of `setValue` to the
     // parent responder. Arrow-key navigation dispatches
     // `focusNext`/`focusPrevious` as observable events.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
 

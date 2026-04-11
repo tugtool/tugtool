@@ -150,7 +150,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     // Chain dispatch [L11]: targeted dispatch of `selectValue` to
     // the parent responder with the newly selected item id as `value`
     // and a stable sender id. No-op outside a provider.
-    const controlDispatch = useControlDispatch();
+    const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
     const handleValueChange = useCallback(
