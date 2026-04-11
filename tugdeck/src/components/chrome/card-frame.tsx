@@ -86,6 +86,18 @@ function findSharedEdgesInExplicitSets(
 }
 
 // ---------------------------------------------------------------------------
+// updateSetAppearance suppression flag
+//
+// Set to true around drop/resize-end paths where store mutations (joinSet,
+// removeFromSet) are immediately followed by postActionSetUpdate, which calls
+// updateSetAppearance itself. Without this flag, the DeckCanvas store
+// subscriber would fire an identical updateSetAppearance call in between,
+// resulting in two full DOM traversals for no benefit.
+// ---------------------------------------------------------------------------
+
+let suppressSetAppearanceUpdate = false;
+
+// ---------------------------------------------------------------------------
 // Shadow extension constant
 //
 // px beyond border-box for exterior edges in clip-path: inset().
@@ -593,8 +605,13 @@ export function CardFrame({
             onCardMoved(member.id, memberPos, memberSize);
           }
           // Detach: clear set members so this card enters snap mode.
-          // Remove from explicit set in DeckManager.
+          // Remove from explicit set in DeckManager. Suppress the subscriber-driven
+          // updateSetAppearance — the detached card's visuals are handled by direct
+          // DOM manipulation below, and the remaining set members were already updated
+          // by the subscriber from the onCardMoved calls above.
+          suppressSetAppearanceUpdate = true;
           store.removeFromSet(id);
+          suppressSetAppearanceUpdate = false;
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
           // Directly clear clip-path and data-in-set on the detached card's .tugcard.
@@ -798,6 +815,13 @@ export function CardFrame({
 
         frame.style.left = `${finalPos.x}px`;
         frame.style.top = `${finalPos.y}px`;
+
+        // Suppress subscriber-driven updateSetAppearance calls during the commit
+        // sequence below. Multiple store mutations (onCardMoved, joinSet) each
+        // trigger notify() → subscriber → updateSetAppearance. postActionSetUpdate
+        // calls updateSetAppearance once at the end with the final state.
+        suppressSetAppearanceUpdate = true;
+
         onCardMoved(id, finalPos, { width: frame.offsetWidth, height: frame.offsetHeight });
 
         // Commit set members' final positions if set-move completed without break-out. [D02]
@@ -829,6 +853,10 @@ export function CardFrame({
             store.joinSet([id, ...adjacentIds]);
           }
         }
+
+        // Re-enable subscriber-driven updates before postActionSetUpdate, which
+        // calls updateSetAppearance once with the final committed state.
+        suppressSetAppearanceUpdate = false;
 
         // Flash set perimeter / break-out flash on drop. [D54, D55]
         postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement, store);
@@ -1151,6 +1179,10 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
+        // Suppress subscriber-driven updateSetAppearance calls during the commit
+        // sequence. postActionSetUpdate calls it once at the end.
+        suppressSetAppearanceUpdate = true;
+
         onCardMoved(id, { x: r.left, y: r.top }, { width: r.width, height: r.height });
 
         // Commit sash neighbor's final position if sash mode was active.
@@ -1180,6 +1212,8 @@ export function CardFrame({
             store.joinSet([id, ...adjacentIds]);
           }
         }
+
+        suppressSetAppearanceUpdate = false;
 
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
         postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement, store);
@@ -1348,6 +1382,10 @@ function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): stri
  *   explicit sets are considered for set visual treatment.
  */
 export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null, store: IDeckManagerStore): void {
+  // Skip when a gesture commit is in progress — postActionSetUpdate will call
+  // us after all store mutations are complete. See suppressSetAppearanceUpdate.
+  if (suppressSetAppearanceUpdate) return;
+
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
   const rects: { id: string; rect: Rect }[] = [];
   allFrameEls.forEach((el) => {
