@@ -125,6 +125,15 @@ export interface NativeInputSelectionAdapterExtras {
    * native inputs — offset comparison is exact, not geometric.
    */
   capturePreRightClick(): void;
+
+  /**
+   * Restore the selection state captured by `capturePreRightClick`.
+   *
+   * Call this after `classifyRightClick` returns `"within-range"` to put the
+   * original ranged selection back — the browser's mousedown collapsed it to
+   * a caret at the click point. No-op if no snapshot was captured.
+   */
+  restorePreRightClick(): void;
 }
 
 // ---------------------------------------------------------------------------

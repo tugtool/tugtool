@@ -125,7 +125,7 @@
  *       [L19] component authoring guide
  */
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
@@ -285,6 +285,15 @@ export function createNativeInputAdapter(
     },
 
     /**
+     * Restore the selection range captured by `capturePreRightClick`.
+     * No-op if no snapshot was captured.
+     */
+    restorePreRightClick(): void {
+      if (preRightClickStart === null || preRightClickEnd === null) return;
+      el.setSelectionRange(preRightClickStart, preRightClickEnd);
+    },
+
+    /**
      * Classify a right-click relative to the selection captured at the last
      * `capturePreRightClick()` call.
      *
@@ -316,9 +325,12 @@ export function createNativeInputAdapter(
       const capturedIsCollapsed = capturedStart === capturedEnd;
 
       if (capturedIsCollapsed) {
-        // Case 1: collapsed selection — click is near the caret if the browser
-        // placed the caret at the same position as the captured offset.
-        return newOffset === capturedStart ? "near-caret" : "elsewhere";
+        // Case 1: collapsed selection — click is near the caret if the
+        // browser placed the new caret within one character of the
+        // captured offset. Exact match is too strict — a right-click
+        // slightly to the left or right of the caret lands one offset
+        // away, and that should still count as "near".
+        return Math.abs(newOffset - capturedStart) <= 1 ? "near-caret" : "elsewhere";
       }
 
       // Case 2: ranged selection — click is within the range if the browser
@@ -661,6 +673,33 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [inputRef, forwardedRef, responderRef],
   );
 
+  // ---- Pre-right-click selection capture ----
+  //
+  // Native inputs move the caret on mousedown (before contextmenu
+  // fires), so we snapshot the selection at pointerdown (button === 2)
+  // to know what the user's selection looked like before the browser
+  // touched it. The adapter ref is created lazily per pointerdown so
+  // it always wraps the current element.
+
+  const preRightClickAdapterRef = useRef<
+    (TextSelectionAdapter & NativeInputSelectionAdapterExtras) | null
+  >(null);
+
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const onPointerDown = (e: Event) => {
+      if (!(e instanceof PointerEvent) || e.button !== 2) return;
+      const adapter = createNativeInputAdapter(el);
+      adapter.capturePreRightClick();
+      preRightClickAdapterRef.current = adapter;
+    };
+    el.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+    };
+  });
+
   // ---- Context menu state ----
 
   const [menuState, setMenuState] = useState<TextInputContextMenuState | null>(null);
@@ -683,13 +722,41 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
       e.preventDefault();
       const node = inputRef.current;
       if (!node) return;
-      // Native input right-click does not auto-select a word; it
-      // positions the caret and enables Cut/Copy only when a prior
-      // selection exists. Match that behavior.
-      const hasSelection =
-        node.selectionStart !== null &&
-        node.selectionEnd !== null &&
-        node.selectionStart !== node.selectionEnd;
+
+      const adapter = preRightClickAdapterRef.current;
+      if (!adapter) {
+        // No pointerdown capture — fall back to current selection state.
+        const hasSelection =
+          node.selectionStart !== null &&
+          node.selectionEnd !== null &&
+          node.selectionStart !== node.selectionEnd;
+        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        return;
+      }
+
+      // Classify the right-click against the pre-click selection.
+      const classification = adapter.classifyRightClick(e.clientX, e.clientY, 0);
+
+      let hasSelection: boolean;
+      if (classification === "elsewhere") {
+        // Click landed away from the selection — the browser already
+        // moved the caret to the click point during mousedown. Expand
+        // to word boundaries from the browser-placed caret.
+        adapter.selectWordAtPoint(e.clientX, e.clientY);
+        hasSelection = adapter.hasRangedSelection();
+      } else if (classification === "within-range") {
+        // Click inside a ranged selection — restore the pre-click range
+        // (browser mousedown collapsed it to a caret at the click point).
+        adapter.restorePreRightClick();
+        hasSelection = true;
+      } else {
+        // "near-caret" — restore the original caret position (browser
+        // may have shifted it by one offset during mousedown).
+        adapter.restorePreRightClick();
+        hasSelection = false;
+      }
+
+      preRightClickAdapterRef.current = null;
       setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
     },
     [disabled, manager, inputRef],
