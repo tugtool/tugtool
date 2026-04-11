@@ -281,17 +281,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     }
 
     function promoteOnPointerDown(event: PointerEvent): void {
-      // Focus-refusing controls (data-tug-focus="refuse") do NOT skip
-      // responder promotion. The control itself isn't a responder — it
-      // has no data-responder-id — so findResponderForTarget naturally
-      // walks past it and finds the correct ancestor responder. This is
-      // essential: controls dispatch actions through the chain, and the
-      // chain walks from the first responder. If we skipped promotion,
-      // the first responder would be stale and dispatches would fail.
-      //
-      // Focus refusal only prevents BROWSER focus transfer (via
-      // mousedown preventDefault below). The responder chain always
-      // promotes on click.
+      // Focus-refusing controls skip first-responder promotion.
+      // This is safe because controls use targeted dispatch
+      // (dispatchTo parent) — the first responder is irrelevant
+      // for their actions. Keyboard shortcuts use nil-targeted
+      // dispatch and need the first responder to stay on the
+      // editor, so skipping promotion here is correct for both.
+      if (isFocusRefusing(event.target)) return;
       promoteFromTarget(event.target as Node | null);
     }
 
