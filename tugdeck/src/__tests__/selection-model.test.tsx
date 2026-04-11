@@ -5,7 +5,7 @@
  * - T13: Tugcard does NOT handle selectAll (boundary enforcer model — content components own it)
  * - T14: Dispatching selectAll to card is unhandled (no selectAllChildren call)
  * - T15: Tugcard content area is registered with SelectionGuard on mount
- * - T15a: Contenteditable region with data-td-select="custom" inside card content
+ * - T15a: Contenteditable region with data-tug-select="custom" inside card content
  *         receives full selection autonomy (guard does not clip within the custom region)
  * - T16: Existing tugcard.test.tsx passes (no regressions) -- covered by running
  *         both test suites; this file tests the selection model additions only.
@@ -202,12 +202,12 @@ describe("T15 – Tugcard registers content area with SelectionGuard", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T15a: contenteditable with data-td-select="custom" receives full autonomy
+// T15a: contenteditable with data-tug-select="custom" receives full autonomy
 // ---------------------------------------------------------------------------
 
-describe("T15a – contenteditable data-td-select=custom is autonomous", () => {
-  it("contenteditable region with data-td-select=custom is inside card content (not blocked)", () => {
-    // Verify the structure: a contenteditable div with data-td-select="custom"
+describe("T15a – contenteditable data-tug-select=custom is autonomous", () => {
+  it("contenteditable region with data-tug-select=custom is inside card content (not blocked)", () => {
+    // Verify the structure: a contenteditable div with data-tug-select="custom"
     // is rendered inside the card content area without error.
     let container!: HTMLElement;
     act(() => {
@@ -215,7 +215,7 @@ describe("T15a – contenteditable data-td-select=custom is autonomous", () => {
         <Tugcard {...defaultProps} cardId="card-t15a">
           <div
             contentEditable
-            data-td-select="custom"
+            data-tug-select="custom"
             data-testid="custom-editable"
             suppressContentEditableWarning
           >
@@ -230,7 +230,7 @@ describe("T15a – contenteditable data-td-select=custom is autonomous", () => {
       "[data-testid='custom-editable']"
     );
     expect(editableEl).not.toBeNull();
-    expect(editableEl?.getAttribute("data-td-select")).toBe("custom");
+    expect(editableEl?.getAttribute("data-tug-select")).toBe("custom");
     expect(editableEl?.getAttribute("contenteditable")).toBe("true");
 
     // The editable element is inside the card's content area
@@ -246,7 +246,7 @@ describe("T15a – contenteditable data-td-select=custom is autonomous", () => {
         <Tugcard {...defaultProps} cardId="card-t15a-sel">
           <div
             contentEditable
-            data-td-select="custom"
+            data-tug-select="custom"
             data-testid="custom-editable"
             suppressContentEditableWarning
           >
@@ -292,7 +292,7 @@ describe("T15a – contenteditable data-td-select=custom is autonomous", () => {
         <Tugcard {...defaultProps} cardId="card-t15a-noclip">
           <div
             contentEditable
-            data-td-select="custom"
+            data-tug-select="custom"
             data-testid="custom-region"
             suppressContentEditableWarning
           >

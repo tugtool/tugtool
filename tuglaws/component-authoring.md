@@ -442,22 +442,21 @@ Ask one question: **does this component own the state that the action is going t
 
 - **Both** — the action's state lives inside your component, AND your component also emits the action from its own internal UI. A text editor with a built-in context menu is the classic both-shape: the "Cut" menu item dispatches `cut`, the chain walks back to the editor (because it's the first responder), and the editor's registered `cut` handler runs on its own selection. Both shapes are not unusual — they are the norm for self-contained widgets with their own action surfaces.
 
-The three shapes all use the same two hooks (`useResponderChain` for emitting, `useResponder` / `useOptionalResponder` for registering). Components that are only controls skip the registration; components that are only responders skip the dispatch; "both" components do both in the same file.
+The three shapes use different hooks: `useControlDispatch` for emitting (controls), `useResponder` / `useOptionalResponder` for registering (responders). Components that are only controls skip the registration; components that are only responders skip the dispatch; "both" components do both in the same file.
 
 ### Emitting an action (controls)
 
-Read the chain manager from context, build an `ActionEvent`, dispatch.
+Controls use `useControlDispatch` — targeted dispatch to the parent responder.
 
 ```tsx
-import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useControlDispatch } from "@/components/tugways/use-control-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
-  const manager = useResponderChain();  // null-safe — for standalone previews
+  const controlDispatch = useControlDispatch(); // null-safe — no-op outside a provider
 
   const handleClick = () => {
-    if (!manager) return;
-    manager.dispatch({
+    controlDispatch({
       action: TUG_ACTIONS.CLOSE,
       phase: "discrete",
     });
@@ -467,9 +466,13 @@ export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
 }
 ```
 
+The hook reads the parent responder ID from context and calls `dispatchTo(parentId, event)`. The action goes directly to the parent handler regardless of the first responder. Outside a provider the dispatch is a no-op (returns `false`).
+
+**Why targeted dispatch?** Controls have a specific receiver — their parent responder. The nil-targeted `dispatch()` walks from the first responder, which may be a sibling or descendant of the parent. Targeted dispatch bypasses the first responder entirely and always reaches the handler. See [responder-chain.md § Dispatching from a control](responder-chain.md#dispatching-from-a-control) for the full rationale.
+
 Rules:
 
-- **`useResponderChain` is null-safe.** Controls must render outside a chain provider (standalone previews, unit tests without a provider) without throwing. Guard the dispatch call with `if (!manager) return` and fall through to whatever standalone behavior makes sense for the component. Use `useRequiredResponderChain` only if chain presence is load-bearing for correctness — most controls don't meet that bar.
+- **Controls never call `manager.dispatch()`.** Always use `useControlDispatch()`. The nil-targeted `dispatch()` is reserved for keyboard shortcuts and menu items.
 
 - **Callback props for user interactions are prohibited.** [L11] A `TugCloseButton` must NOT expose an `onClose: () => void` prop. The close action routes through the chain; a callback prop lets the consumer bypass the chain and breaks keyboard shortcuts, first-responder semantics, and observer notification. Non-user-interaction callbacks (state mirror callbacks like `onOpenChange` for Radix integration, lifecycle observers) are fine.
 
@@ -477,9 +480,7 @@ Rules:
 
 - **Always the constant, never the raw string.** `action: TUG_ACTIONS.CLOSE`, not `action: "close"`. See [action-naming.md](action-naming.md).
 
-- **`dispatch` vs `dispatchForContinuation`.** Use `dispatch` unless you need the `handled` flag or a continuation callback. Buttons in a card use `dispatch`. Context-menu items and the keyboard pipeline use `dispatchForContinuation` because the continuation runs after a menu blink (or immediately for keyboard shortcuts). See [responder-chain.md § Two-phase execution](responder-chain.md#two-phase-execution-via-continuations).
-
-**Form-shaped shortcut.** Components built on form patterns (inputs, toggles, radios, choice groups, tab bars, accordions, popup buttons) should use `useResponderForm` instead of hand-rolling `dispatch` + narrowing. The form hook exposes typed slot callbacks (`toggle`, `setValueNumber`, `selectValue`, `selectTab`, etc.) that narrow `event.value` at the slot boundary and call your setter with the already-typed value. This is the dominant pattern; reach for it whenever the component fits one of the existing slot shapes. See `use-responder-form.tsx` for the slot catalog.
+**Form-shaped shortcut.** Components built on form patterns (inputs, toggles, radios, choice groups, tab bars, accordions, popup buttons) should use `useResponderForm` instead of hand-rolling `useResponder` with narrowing. The form hook exposes typed slot callbacks (`toggle`, `setValueNumber`, `selectValue`, `selectTab`, etc.) that narrow `event.value` at the slot boundary and call your setter with the already-typed value. This is the dominant pattern; reach for it whenever the component fits one of the existing slot shapes. See `use-responder-form.tsx` for the slot catalog.
 
 ### Handling actions (responders)
 
@@ -912,7 +913,7 @@ Before a component is done:
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
 - [ ] Compound composition: own tokens scoped to own component slot; no descendant restyling of children; pairings cover only own elements; composed children documented in docstring [L20]
 - [ ] Internal components: lives in `internal/`, docstring says "Internal building block — use [public component] instead", public wrapper re-exports needed types
-- [ ] **Controls emit actions via the chain.** [L11] Every interactive component that responds to user input dispatches a typed action via `manager.dispatch` or `manager.dispatchForContinuation`. No callback props for user interactions.
+- [ ] **Controls emit actions via targeted dispatch.** [L11] Every interactive component that responds to user input dispatches a typed action via `useControlDispatch()`. No `manager.dispatch()` calls from controls. No callback props for user interactions.
 - [ ] **Responders register via `useResponder` / `useOptionalResponder`.** Every component that handles actions calls one of the two hooks with a typed `actions` map; the strict form for load-bearing chain participants, the tolerant form for standalone-capable leaves.
 - [ ] **`data-slot` + `data-responder-id` on the root element.** `data-slot` via the literal attribute, `data-responder-id` via attaching `responderRef` from the hook to the root DOM element.
 - [ ] **No `makeFirstResponder` calls from component code.** First responder is managed by the chain's pointerdown / focusin promotion path. The only sanctioned exception is `DeckCanvas` promoting a freshly-opened card, and it is documented inline where it occurs.

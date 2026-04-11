@@ -515,7 +515,7 @@ export class ResponderChainManager {
     event: ActionEvent<Extra>,
   ): DispatchResult {
     if (!this.nodes.has(targetId)) {
-      throw new Error(`dispatchTo: target "${targetId}" is not registered`);
+      throw new Error(`dispatchToForContinuation: target "${targetId}" is not registered`);
     }
     const { handled, continuation, handledBy } = this.walkFromNode(
       targetId,

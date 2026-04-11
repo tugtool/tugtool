@@ -236,6 +236,21 @@ Throwing on an unregistered target is deliberate: dispatching to a node that doe
 
 If you specifically want "deliver to this one node only, do not walk to ancestors if the node doesn't handle it," there is no single method for that. Check `nodeCanHandle(targetId, action)` first and only call `dispatchTo` if it returns true. In the current codebase no consumer needs that shape; every targeted dispatch has the "start walk here and let it bubble" semantic that the new behavior provides.
 
+### `manager.dispatchToForContinuation(targetId, event) → { handled, continuation }`
+
+The targeted sibling of `dispatchForContinuation`. Same walk semantics as `dispatchTo` (starts at the named node and walks upward via `parentId`), same error handling (throws if `targetId` is not registered), but returns the full `{ handled, continuation }` result instead of discarding the continuation. Callers that need two-phase execution against a specific target use this method and invoke the returned continuation at their commit point.
+
+### `manager.nodeCanHandle(nodeId, action) → boolean`
+
+Query whether a specific registered node can handle the given action. Checks the node's `actions` map first, then the optional `canHandle` function. Returns `false` if the node is not registered.
+
+This is the per-node counterpart to `canHandle(action)` (which walks from the first responder). Used by `TugButton` to determine its enabled/disabled state when dispatching to a specific target — the button's visual state should reflect whether its *dispatch target* can handle the action, not whether the first responder can.
+
+```ts
+// Button validates against its effective dispatch target
+const canHandle = manager.nodeCanHandle(effectiveTarget, action);
+```
+
 ### `manager.observeDispatch(callback) → unsubscribe`
 
 Subscribe to every action flowing through the chain, regardless of which node handled it or whether any node did. The callback runs after the walk with `(event, handled)`. This is the mechanism for "close on unrelated chain traffic" — a context menu, a tooltip, a transient popover can subscribe while open and dismiss itself whenever anything flows past it.
@@ -369,18 +384,17 @@ Leave both out unless you know you need them. The audit recommendation in A6 is 
 
 ## Dispatching from a control
 
-A control dispatches by calling `manager.dispatch` (or `dispatchForContinuation` if it needs the continuation). There is no intermediate event emitter, no custom hook to memorize, no callback-prop bridge. The control asks context for the manager, builds an `ActionEvent`, and dispatches.
+Controls use **targeted dispatch** — the action goes directly to the control's parent responder, not the first responder. The `useControlDispatch` hook encapsulates this:
 
 ```tsx
-import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { useControlDispatch } from "@/components/tugways/use-control-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
-  const manager = useResponderChain(); // null-safe — for standalone previews
+  const controlDispatch = useControlDispatch(); // null-safe — no-op outside a provider
 
   const handleClick = () => {
-    if (!manager) return; // fall through to whatever "standalone" means for this control
-    manager.dispatch({
+    controlDispatch({
       action: TUG_ACTIONS.CLOSE,
       phase: "discrete",
     });
@@ -390,13 +404,22 @@ export function TugCloseButton({ ariaLabel }: TugCloseButtonProps) {
 }
 ```
 
+`useControlDispatch` reads the parent responder ID from `ResponderParentContext` and calls `manager.dispatchTo(parentId, event)`. The first responder is irrelevant — the action always reaches the parent handler. This is the web equivalent of Cocoa's targeted action pattern (`[NSApp sendAction:action to:target from:sender]` where `target` is non-nil).
+
+**Why not `manager.dispatch()`?** The nil-targeted form walks from the first responder. A control's handler is typically on the control's parent responder — which may not be an ancestor of the first responder. Keyboard shortcuts use `dispatch()` because they should go to "whatever the user is working with." Controls use `useControlDispatch()` because they have a specific receiver.
+
+| Dispatch mode | Used by | Method | Walks from |
+|--------------|---------|--------|-----------|
+| **Targeted** | Controls | `useControlDispatch()` → `dispatchTo(parentId)` | Parent responder |
+| **Nil-targeted** | Keyboard shortcuts, menu items | `dispatch()` | First responder |
+
 Three conventions enforced across every control:
 
 1. **Callback props for user interactions are prohibited.** [L11] is a one-way door: once a control exists in the chain's vocabulary, it dispatches through the chain instead of calling a callback. `onClick` on the HTML element is fine (that's how the button receives the browser event), but an `onClose` prop at the TugCloseButton level is not — it would let a consumer bypass the chain and route the close through a direct callback, which means the walk never happens and shortcuts, validation, and the logging all break. If a control today exposes an interaction callback prop, it has not finished migrating to L11 and the callback must be removed.
 
 2. **Sender id convention.** Controls that might coexist with siblings in the same form supply a stable opaque sender id so handlers can tell them apart. The default is `useId()`; callers can override via a `senderId` prop for tests that want determinism. See `tug-popup-button.tsx:223-229` for the canonical pattern.
 
-3. **`dispatch` vs `dispatchForContinuation`.** Use `dispatch` unless the control specifically needs the handled flag or the continuation. Buttons in a card: `dispatch`, fire and forget. Context menu item: `dispatchForContinuation` because the continuation runs after the blink. Keybinding map: `dispatchForContinuation` because the pipeline needs `handled` to decide whether to `event.preventDefault()` and swallow the native keystroke.
+3. **Controls never call `manager.dispatch()`.** Controls always use `useControlDispatch()`. The nil-targeted `dispatch()` is reserved for keyboard shortcuts and menu items — code paths where the action should route to the first responder.
 
 ### The `useResponderForm` shortcut
 

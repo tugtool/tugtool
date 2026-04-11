@@ -22,7 +22,7 @@
  *        - Pointer-clamped clipping on every `pointermove` (primary path)
  *        - `selectionchange` safety net for keyboard-driven extension
  *        - RAF-based autoscroll for overflow cards
- *   3. `data-td-select` attribute API: four modes (default, none, all,
+ *   3. `data-tug-select` attribute API: four modes (default, none, all,
  *      custom) give card authors fine-grained per-region control.
  *
  * See tuglaws/selection-model.md for the full system documentation.
@@ -116,7 +116,7 @@ export function clampPointToRect(
 
 /**
  * Walk from `node` up through its ancestors to check whether any ancestor
- * (up to but not including `boundary`) has `data-td-select="custom"`.
+ * (up to but not including `boundary`) has `data-tug-select="custom"`.
  *
  * When found, SelectionGuard skips clipping for that subtree ([D05]).
  */
@@ -125,7 +125,7 @@ function hasCustomSelectAncestor(node: Node, boundary: HTMLElement): boolean {
   while (current !== null && current !== boundary) {
     if (
       current instanceof HTMLElement &&
-      current.dataset["tdSelect"] === "custom"
+      current.dataset["tugSelect"] === "custom"
     ) {
       return true;
     }
@@ -791,7 +791,7 @@ class SelectionGuard {
     // If focus is inside the same boundary, nothing to clip
     if (boundary.contains(focusNode)) return;
 
-    // Check for data-td-select="custom" — skip clipping for custom subtrees
+    // Check for data-tug-select="custom" — skip clipping for custom subtrees
     if (hasCustomSelectAncestor(anchorNode, boundary)) return;
 
     // Focus escaped the boundary. Clip the selection to the boundary edge.

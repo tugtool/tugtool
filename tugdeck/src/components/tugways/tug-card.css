@@ -405,11 +405,11 @@ body {
   color: inherit;
 }
 
-[data-td-select="none"] {
+[data-tug-select="none"] {
   user-select: none;
 }
 
-[data-td-select="all"] {
+[data-tug-select="all"] {
   user-select: all;
 }
 

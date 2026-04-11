@@ -5,7 +5,7 @@
  * - T08: registerBoundary / unregisterBoundary
  * - T09: reset clears all boundaries and saved selections
  * - T10: clampPointToRect (pure geometry)
- * - T11: data-td-select="custom" skips clipping
+ * - T11: data-tug-select="custom" skips clipping
  * - T11a: saveSelection returns null when card does not own active selection
  * - T11b: saveSelection/restoreSelection round-trip
  * - T11c: restoreSelection is a no-op when boundary is not registered
@@ -219,16 +219,16 @@ describe("T10 – clampPointToRect (pure geometry)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T11: data-td-select="custom" skips clipping (including contenteditable)
+// T11: data-tug-select="custom" skips clipping (including contenteditable)
 // ---------------------------------------------------------------------------
 
-describe("T11 – data-td-select=custom skips clipping", () => {
+describe("T11 – data-tug-select=custom skips clipping", () => {
   it("saveSelection returns null for card that doesn't own active selection — no interference with custom subtree", () => {
     // This test verifies the guard does not error on a card with a custom
-    // data-td-select subtree when the selection is elsewhere.
+    // data-tug-select subtree when the selection is elsewhere.
     const boundary = makeBoundary();
     const customDiv = happyWindow.document.createElement("div") as unknown as HTMLElement;
-    customDiv.setAttribute("data-td-select", "custom");
+    customDiv.setAttribute("data-tug-select", "custom");
     (customDiv as unknown as Element).setAttribute("contenteditable", "true");
     (boundary as unknown as Element).appendChild(customDiv as unknown as Node);
 

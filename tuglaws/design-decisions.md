@@ -160,13 +160,13 @@
 
 ## Selection
 
-**D34.** Three-layer selection containment: CSS `user-select: none` baseline, `SelectionGuard` runtime clipping, `data-td-select` developer API. [L12]
+**D34.** Three-layer selection containment: CSS `user-select: none` baseline, `SelectionGuard` runtime clipping, `data-tug-select` developer API. [L12]
 
 **D35.** `SelectionGuard` is a module-level singleton, not React state. [L01, L12]
 
 **D36.** Pointer-clamped selection uses `caretPositionFromPoint` (with `caretRangeFromPoint` fallback). [L12]
 
-**D37.** Four select modes via `data-td-select` attribute: `default`, `none`, `all`, `custom`. [L12]
+**D37.** Four select modes via `data-tug-select` attribute: `default`, `none`, `all`, `custom`. [L12]
 
 **D38.** Cmd+A scoped to focused card via responder chain `selectAll` action. [L12]
 
