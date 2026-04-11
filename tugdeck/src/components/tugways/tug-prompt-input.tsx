@@ -687,8 +687,25 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         if (captured !== null) {
           engine.setSelectedRange(captured.start, captured.end);
         }
-        const range = engine.getSelectedRange();
-        const hasSelection = range !== null && range.end > range.start;
+
+        // Classify the right-click against the restored selection and
+        // reposition if the click landed away from it.
+        const adapter = createEngineAdapter(engine);
+        const threshold = parseFloat(getComputedStyle(engine.root).fontSize);
+        const classification = adapter.classifyRightClick(e.clientX, e.clientY, threshold);
+
+        let hasSelection: boolean;
+        if (classification === "elsewhere") {
+          // Click landed away from the selection — move to click point
+          // and expand to word boundaries.
+          adapter.selectWordAtPoint(e.clientX, e.clientY);
+          hasSelection = adapter.hasRangedSelection();
+        } else {
+          // "near-caret" or "within-range" — leave the restored selection
+          // as-is. hasSelection is true only for "within-range".
+          hasSelection = classification === "within-range";
+        }
+
         setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
       };
       container.addEventListener("pointerdown", onPointerDown);
