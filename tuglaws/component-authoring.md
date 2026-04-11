@@ -763,6 +763,57 @@ For form inputs that follow the field token family.
 
 ---
 
+## Selection and Focus
+
+Every component participates in the selection model. See [selection-model.md](selection-model.md) for the full design.
+
+### Selection categories
+
+Determine your component's category and apply the corresponding pattern:
+
+**Selectable** (user can directly select text via click-drag or ⌘A):
+- Set `user-select: text` in the component's CSS
+- Handle `selectAll` in the responder registration
+- Handle `copy` (and `cut`/`paste` if editable)
+- Examples: `TugInput`, `TugTextarea`, `TugValueInput`, `TugPromptInput`, `TugMarkdownView`
+
+**Copyable** (informational text the user might want to copy, but not directly select):
+- Do NOT set `user-select: text` — inherit `user-select: none`
+- Use the `useCopyableText` hook — it handles responder registration, context menu, and clipboard write
+- Set `data-tug-select="copy"` on the root element
+- Example: `TugLabel` with `copyable` prop
+
+**Chrome** (UI controls with no copyable text content):
+- Do NOT set `user-select: text` — inherit `user-select: none`
+- No selection handlers needed
+- Right-click shows the app-wide "No Actions" fallback menu automatically
+- Examples: buttons, toolbars, section headers, decorative elements
+
+### Focus refusal for controls
+
+Controls that dispatch actions but don't need keyboard input should refuse focus on click. This prevents the control from stealing focus from an active editor.
+
+Add `data-tug-focus="refuse"` to the control's root element. That's all — the `ResponderChainProvider` handles both browser focus prevention and first-responder promotion skipping centrally.
+
+```tsx
+// Example: a control that refuses focus
+<button data-tug-focus="refuse" onClick={handleClick}>
+  Action
+</button>
+```
+
+Controls that accept focus (text inputs, textareas, contentEditable) do NOT add this attribute.
+
+### Context menus
+
+The browser's native context menu is suppressed app-wide. Every right-click produces one of:
+- A component-specific `TugEditorContextMenu` (selectable or copyable components)
+- The "No Actions" fallback menu (chrome)
+
+Never let the native browser context menu appear — it reveals the web implementation.
+
+---
+
 ## Accessibility
 
 Every component must be accessible. This is not optional.

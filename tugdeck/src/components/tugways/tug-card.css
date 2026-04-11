@@ -348,10 +348,11 @@ body {
   overflow: auto;
   background-color: var(--tugx-card-bg);
   min-height: 0; /* needed for flex children to allow scroll */
-  /* user-select inherits none from body. Individual content components
-     (tug-markdown-view, tug-input, tug-textarea, tug-value-input, etc.)
-     opt in to user-select: text in their own CSS. Card chrome within
-     the content area (titles, toolbars, labels) stays non-selectable. */
+  /* Explicitly none — do not rely on inheritance from body through
+     intermediate elements. Individual content components opt in to
+     user-select: text in their own CSS. Card chrome stays non-selectable. */
+  user-select: none;
+  -webkit-user-select: none;
   overscroll-behavior: contain;
 }
 

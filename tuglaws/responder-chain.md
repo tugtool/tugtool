@@ -85,8 +85,7 @@ Dispatch walks from the first responder upward through `parentId` links until a 
                     │   actions: {            │       close
                     │     close: ...          │       previous-tab / next-tab
                     │     previous-tab: ...   │       jump-to-tab
-                    │     next-tab: ...       │       select-all (its own content)
-                    │     select-all: ...     │
+                    │     next-tab: ...       │
                     │   }                     │
                     └───────────▲─────────────┘
                                 │ parentId
@@ -106,6 +105,7 @@ Dispatch walks from the first responder upward through `parentId` links until a 
        dispatch({action: "close"})  → walks past TugPromptInput, matches on TugCard
        dispatch({action: "cycle-card"}) → walks past both, matches on DeckCanvas
        dispatch({action: "select-all"}) → matches on TugPromptInput (innermost wins)
+       dispatch({action: "select-all"}) with no editor focused → unhandled (no-op)
 
        dispatchTo(cardId, {action: "close"})  → walk starts at TugCard (not at first responder),
                                                  matches on TugCard
@@ -116,7 +116,7 @@ Dispatch walks from the first responder upward through `parentId` links until a 
 
 Two more points worth noticing on the diagram:
 
-- `select-all` is registered on both `TugPromptInput` and `TugCard`, and the innermost-first walk means the editor wins while its caret is active. Move the caret out of the editor and first responder leaves it; a later ⌘A now walks past the editor (no handler because the walk starts elsewhere) and the card handles it instead. Same action, different semantics, resolved by first-responder position. No per-component keyboard wiring.
+- `select-all` is registered only on content components (`TugPromptInput`, `TugInput`, `TugTextarea`, `TugValueInput`, `TugMarkdownView`) — NOT on `TugCard`. When an editor is focused, ⌘A selects within that editor. When no editor is focused, the action is unhandled — it walks all the way to the root and falls off. There is no "select everything in the card" behavior.
 
 - An action that no node handles walks all the way to the root and falls off. `dispatch` returns `false`. That is the correct outcome for unhandled shortcuts: the browser's native handling (or nothing at all) runs. The chain does not need an "unhandled" sink.
 
@@ -126,11 +126,11 @@ After the walk — handled or not — every registered dispatch observer fires. 
 
 ## First responder
 
-The *first responder* is the node the walk starts from. Exactly one node (or none) holds the title at any instant. It is how "the innermost thing the user is working with" gets routed its shortcuts, and it is the reason `select-all` means the editor's content when the caret is in an editor and the card's content when it is not.
+The *first responder* is the node the walk starts from. Exactly one node (or none) holds the title at any instant. It is how "the innermost thing the user is working with" gets routed its shortcuts, and it is the reason `select-all` selects the editor's content when the caret is in an editor and does nothing when no editor is focused.
 
 The first responder is promoted in four ways, in rough order of how often you'll see each:
 
-1. **Pointer down.** A document-level capture-phase `pointerdown` listener installed by `ResponderChainProvider` walks from `event.target` up through DOM ancestors, looking for an element with `data-responder-id` whose value is a registered node. The innermost match becomes first responder. Click inside the editor → editor promotes. Click on the card chrome → card promotes.
+1. **Pointer down.** A document-level capture-phase `pointerdown` listener installed by `ResponderChainProvider` walks from `event.target` up through DOM ancestors, looking for an element with `data-responder-id` whose value is a registered node. The innermost match becomes first responder. Click inside the editor → editor promotes. Click on the card chrome → card promotes. **Exception:** controls marked with `data-tug-focus="refuse"` (buttons, checkboxes, switches, sliders, etc.) are skipped — the first responder does not change when a focus-refusing control is clicked. See [Focus acceptance](#focus-acceptance) below.
 
 2. **Focus in.** The same walk on a document-level capture-phase `focusin` listener. Needed because keyboard-only users reach responders via Tab, programmatic `.focus()`, or the browser's initial focus restoration on page load — none of which fire a pointerdown. `focusin` bubbles (unlike `focus`), so one listener catches every descendant.
 
@@ -151,6 +151,31 @@ The two debug attributes this writes to the DOM are worth knowing about:
 - **`data-responder-id="<id>"`** on every registered responder's root element. Written by `useResponder`'s `responderRef` callback. Devtools query: `document.querySelectorAll('[data-responder-id]')` lists every responder currently registered.
 
 - **`data-first-responder="<id>"`** on exactly one element at a time — the current first responder. The value is the id itself (not `"true"`), so devtools search for `[data-first-responder]` shows the attribute inline with its id and you can tell immediately who the chain considers active. The chain logs every change to the console with a gray `[responder-chain] first responder → <id>` marker; filter the console for `[responder-chain]` to see the full first-responder history.
+
+---
+
+## Focus acceptance
+
+Controls and responders differ in whether they accept keyboard focus on click. This mirrors Cocoa's `acceptsFirstResponder` concept.
+
+**Focus-accepting components** need keyboard input to function. Clicking them moves both browser focus and first-responder status to them. Examples: `TugInput`, `TugTextarea`, `TugValueInput`, `TugPromptInput`, `TugMarkdownView`.
+
+**Focus-refusing components** are controls that dispatch actions but don't need keyboard focus. Clicking them fires their action but does NOT steal focus from the active editor. The first responder stays wherever it was. Examples: `TugButton` (and `TugPushButton`, `TugPopupButton`), `TugCheckbox`, `TugSwitch`, `TugSlider`, `TugChoiceGroup`, `TugOptionGroup`, `TugTabBar`.
+
+### Mechanism
+
+Focus-refusing controls add `data-tug-focus="refuse"` to their root element. Two document-level listeners in `ResponderChainProvider` handle both concerns centrally:
+
+1. **`pointerdown` (capture):** if the click target is inside a `[data-tug-focus="refuse"]` element, skip first-responder promotion.
+2. **`mousedown` (capture):** if the click target is inside a `[data-tug-focus="refuse"]` element, call `preventDefault()` to prevent the browser from moving focus.
+
+Controls add ONE attribute — both behaviors are handled centrally. The `click` event is unaffected: mousedown+mouseup on the same element still fires `click` normally. Keyboard Tab navigation is preserved: controls keep their default `tabindex`, so keyboard users can reach them via Tab and activate with Enter/Space.
+
+### Why this matters
+
+Without focus refusal, clicking a toolbar button while a text editor has focus causes a visual flash — the editor briefly loses focus (and its selection dims), then the button's action refocuses the editor. The user sees a flicker. With focus refusal, focus never leaves the editor — the button activates on the first click with no flash.
+
+This also resolves the WebKit double-click issue in sheets: previously, clicking a button inside a sheet while a text input had an active selection would consume the first click as a selection-clear action, requiring the user to click twice.
 
 ---
 
