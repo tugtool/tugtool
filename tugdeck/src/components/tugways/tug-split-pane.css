@@ -49,25 +49,35 @@ body {
   height: 100%;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
 
   /* Visible sash line thickness. Shown via .tug-split-sash::before. */
   --tug-split-sash-thickness: 3px;
-  /* Interactive hit-target height. Wider than the visible line so the
-     sash is easy to grab. Step 11 may expand per size variant. */
+  /* Interactive hit-target width (perpendicular to the sash line).
+     Wider than the visible thickness so the sash is easy to grab.
+     Step 11 may expand per size variant. */
   --tug-split-sash-hit-area: 16px;
-  /* Grip icon dimensions. Lucide GripHorizontal has a 24x24 viewBox;
-     at 14x14 the dots read as a compact drag handle that fills most
-     of the pill. */
-  --tug-split-grip-width: 16px;
-  --tug-split-grip-height: 8px;
+  /* Grip icon dimensions, along the long and short axes of the sash
+     line. For a horizontal sash the long axis is horizontal, so
+     `long` = width and `short` = height; for a vertical sash the two
+     swap. Orientation-specific rules below apply the mapping. */
+  --tug-split-grip-long: 16px;
+  --tug-split-grip-short: 8px;
 }
 
-/* Horizontal-orientation modifier. Empty in step 4 because the library
-   handles flex-direction internally (our "horizontal" = library "vertical").
-   The class is still attached so step 7 (vertical orientation) has a
-   ready hook for orientation-specific overrides. */
+/* Horizontal-orientation modifier: horizontal dividing line, panels
+   stacked top/bottom. Flex-direction comes from the library (enforced
+   as `column` because we pass library orientation "vertical"). */
 .tug-split-pane-horizontal {
-  /* intentionally empty */
+  /* Shared root rules live on .tug-split-pane. This hook exists for
+     orientation-specific descendant selectors on the sash and grip. */
+}
+
+/* Vertical-orientation modifier: vertical dividing line, panels
+   side-by-side. Flex-direction comes from the library (enforced as
+   `row` because we pass library orientation "horizontal"). */
+.tug-split-pane-vertical {
+  /* Shared root rules live on .tug-split-pane. */
 }
 
 /* ============================================================================
@@ -75,20 +85,26 @@ body {
    ============================================================================
    Panels are sized by the library via inline flex styles derived from
    defaultSize/minSize/maxSize. We add no visual chrome — panel content
-   owns its own appearance. */
+   owns its own appearance. The `min-height: 0; min-width: 0` overrides
+   the flexbox default (`min-{height,width}: auto`, which resolves to
+   content's min-content size) so panel content can shrink freely during
+   drag, matching the hygiene the library applies to its own panel outer
+   wrapper. */
 .tug-split-panel {
-  /* intentionally empty in step 4 */
+  min-height: 0;
+  min-width: 0;
 }
 
 /* ============================================================================
    Sash (.tug-split-sash)
    ============================================================================
-   Layout / stacking:
+   Layout / stacking (horizontal orientation; vertical is the same shape
+   rotated 90°, with width and height swapped):
 
-     .tug-split-sash                        (14px tall hit area, flex row, transparent bg)
-     ├── ::before                           (3px line, absolute, centered vertically, full width)
-     └── .tug-split-sash-handle             (pill ~26x12, position: relative → above ::before)
-         └── .tug-split-sash-grip           (Lucide GripHorizontal dots)
+     .tug-split-sash                        (16px hit area on cross axis, flex row, transparent bg)
+     ├── ::before                           (3px line, absolute, centered, full length)
+     └── .tug-split-sash-handle             (pill, position: relative → above ::before)
+         └── .tug-split-sash-grip           (Lucide GripHorizontal or GripVertical dots)
 
    ## State model: four solid fills, no rings
 
@@ -134,14 +150,15 @@ body {
    library drives those in real time and any CSS transition would fight
    them. Duration is `--tug-motion-duration-fast` throughout. */
 
+/* Base — orientation-neutral properties shared by horizontal and
+   vertical sashes. Sizing and cursor are orientation-specific and
+   live in the two blocks below. */
 .tug-split-sash {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: var(--tug-split-sash-hit-area);
   background-color: transparent;
-  cursor: ns-resize;
   outline: none;
 }
 
@@ -149,18 +166,57 @@ body {
   outline: none;
 }
 
-/* Visible line — centered vertically in the hit area. */
+/* Horizontal sash: line stretches full width, hit area is the
+   perpendicular (vertical) dimension. ns-resize cursor.
+
+   ## Why the sash-{horizontal,vertical} class is on the sash itself
+
+   These orientation-specific rules target `.tug-split-sash-horizontal`
+   directly, not `.tug-split-pane-horizontal .tug-split-sash` (descendant
+   of the pane). The descendant form has a leak: when a horizontal pane
+   contains a nested vertical pane, the nested sashes are descendants of
+   BOTH orientation classes, so the outer horizontal rule leaks its
+   `height` / `right` properties onto the nested vertical sash, which
+   collapses the nested line to a 3×3px dot. The TSX attaches the
+   orientation class directly to the Separator element, so selectors
+   match the sash they target and never any descendant. */
+.tug-split-sash-horizontal {
+  height: var(--tug-split-sash-hit-area);
+  cursor: ns-resize;
+}
+
+/* Vertical sash: line stretches full height, hit area is the
+   perpendicular (horizontal) dimension. ew-resize cursor. */
+.tug-split-sash-vertical {
+  width: var(--tug-split-sash-hit-area);
+  cursor: ew-resize;
+}
+
+/* Visible line — orientation-neutral properties. */
 .tug-split-sash::before {
   content: "";
   position: absolute;
+  background-color: var(--tugx-split-sash-bg);
+  pointer-events: none;
+  transition: background-color var(--tug-motion-duration-fast);
+}
+
+/* Horizontal line: full-width band centered vertically in the sash. */
+.tug-split-sash-horizontal::before {
   left: 0;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
   height: var(--tug-split-sash-thickness);
-  background-color: var(--tugx-split-sash-bg);
-  pointer-events: none;
-  transition: background-color var(--tug-motion-duration-fast);
+}
+
+/* Vertical line: full-height band centered horizontally in the sash. */
+.tug-split-sash-vertical::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--tug-split-sash-thickness);
 }
 
 .tug-split-sash:focus-visible::before {
@@ -186,11 +242,20 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 3px;
   border-radius: 9999px;
   background-color: var(--tugx-split-sash-bg-focus);
   pointer-events: none;
   transition: background-color var(--tug-motion-duration-fast);
+}
+
+/* Pill padding is asymmetric: more padding along the long axis of the
+   sash so the pill elongates in the direction of the line. */
+.tug-split-sash-horizontal .tug-split-sash-handle {
+  padding: 1px 3px;
+}
+
+.tug-split-sash-vertical .tug-split-sash-handle {
+  padding: 3px 1px;
 }
 
 /* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */
@@ -208,17 +273,27 @@ body {
   background-color: var(--tugx-split-sash-bg-active);
 }
 
-/* Grip icon inside the pill. Sized via CSS variables from .tug-split-pane
-   so step 11 size variants can override. */
+/* Grip icon inside the pill. The `long` / `short` axis variables are
+   mapped to `width` / `height` per orientation — horizontal sash uses
+   long-as-width (wide grip), vertical sash uses long-as-height (tall
+   grip). Step 11 size variants can override the variables. */
 
 /* @tug-renders-on: --tug7-surface-split-primary-normal-sash-focus */
 .tug-split-sash-grip {
   display: block;
-  width: var(--tug-split-grip-width);
-  height: var(--tug-split-grip-height);
   color: var(--tugx-split-grip-color);
   pointer-events: none;
   transition: color var(--tug-motion-duration-fast);
+}
+
+.tug-split-sash-horizontal .tug-split-sash-grip {
+  width: var(--tug-split-grip-long);
+  height: var(--tug-split-grip-short);
+}
+
+.tug-split-sash-vertical .tug-split-sash-grip {
+  width: var(--tug-split-grip-short);
+  height: var(--tug-split-grip-long);
 }
 
 /* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */

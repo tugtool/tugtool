@@ -6,12 +6,10 @@
  * stacked along one axis, separated by draggable sashes. Panels declare
  * their own size constraints via TugSplitPanel.
  *
- * **Step 2 state:** horizontal orientation only (horizontal dividing line,
- * panels stacked top-to-bottom). Two-or-more panel children are supported
- * in the same call (Sashes are auto-interleaved). The sash is a bare 1px
- * line with no chrome. Vertical orientation, sash styling, size variants,
- * snap-to-close, persistence, keyboard focus rings, and tokens all arrive
- * in subsequent steps of roadmap/tug-split-pane.md.
+ * Supports both horizontal and vertical orientations via the `orientation`
+ * prop. Two-or-more panel children are supported in the same call (Sashes
+ * are auto-interleaved). Nesting is supported — a TugSplitPanel may
+ * contain another TugSplitPane.
  *
  * ## Orientation inversion
  *
@@ -55,11 +53,24 @@ import "./tug-split-pane.css";
 
 import React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { GripHorizontal } from "lucide-react";
+import { GripHorizontal, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
+
+/**
+ * TugSplitPane orientation. Named after the *dividing line* (matching
+ * NSSplitView / VS Code convention), not the axis along which panels
+ * are arranged. `horizontal` = horizontal sash, panels stacked
+ * top-to-bottom; `vertical` = vertical sash, panels side-by-side.
+ *
+ * This is the inverse of `react-resizable-panels`' own `orientation`
+ * value, which names the axis instead of the divider. The wrapper
+ * inverts internally when calling the library — see the
+ * "Orientation inversion" section of the module docstring.
+ */
+export type TugSplitPaneOrientation = "horizontal" | "vertical";
 
 /**
  * Size specification for TugSplitPanel's defaultSize / minSize / maxSize.
@@ -78,6 +89,18 @@ export type TugSplitSize = number | string;
 export interface TugSplitPaneProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "children"> {
   /**
+   * Orientation of the dividing line between panels.
+   * - `"horizontal"` (default): horizontal sash, panels stacked top-to-bottom.
+   * - `"vertical"`: vertical sash, panels arranged side-by-side.
+   *
+   * Named after the dividing line, matching NSSplitView / VS Code
+   * terminology — the inverse of the library's own convention, which
+   * names the arrangement axis. The wrapper inverts internally.
+   * @selector .tug-split-pane-horizontal | .tug-split-pane-vertical
+   * @default "horizontal"
+   */
+  orientation?: TugSplitPaneOrientation;
+  /**
    * Disables drag-to-resize on all sashes in this group. Cascades from an
    * enclosing TugBox via TugBoxContext — a disabled parent TugBox disables
    * every sash inside.
@@ -90,11 +113,24 @@ export interface TugSplitPaneProps
 }
 
 export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
-  function TugSplitPane({ disabled = false, className, children, ...rest }, ref) {
+  function TugSplitPane(
+    { orientation = "horizontal", disabled = false, className, children, ...rest },
+    ref,
+  ) {
     // Merge with any ancestor TugBox's disabled cascade so a disabled outer
     // TugBox disables every sash in this split pane.
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
+
+    // Pick the grip icon that reads visually along the sash direction.
+    // A horizontal sash (horizontal dividing line) runs left-to-right,
+    // so GripHorizontal's wide row of dots matches. A vertical sash
+    // runs top-to-bottom, so GripVertical's vertical column matches.
+    const GripIcon = orientation === "vertical" ? GripVertical : GripHorizontal;
+
+    // Invert TugSplitPane's orientation to the library's convention.
+    // See "Orientation inversion" in the module docstring.
+    const libraryOrientation = orientation === "horizontal" ? "vertical" : "horizontal";
 
     // Interleave a Separator between each pair of consecutive children.
     // react-resizable-panels requires Separator elements to be *direct* DOM
@@ -108,7 +144,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
         interleaved.push(
           <Separator
             key={`tug-split-sash-${i}`}
-            className="tug-split-sash"
+            className={cn("tug-split-sash", `tug-split-sash-${orientation}`)}
             data-slot="tug-split-sash"
             disabled={effectiveDisabled}
           >
@@ -120,10 +156,9 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
                 step ahead of the line (rest line + focus pill, focus
                 line + hover pill, etc.), so the pill reads as a
                 distinct "grabbable node" without needing separate
-                handle tokens. Lucide GripHorizontal inside; vertical
-                orientation (step 7) will swap to GripVertical. */}
+                handle tokens. GripIcon swaps per orientation. */}
             <span className="tug-split-sash-handle">
-              <GripHorizontal
+              <GripIcon
                 className="tug-split-sash-grip"
                 aria-hidden="true"
                 strokeWidth={2}
@@ -137,11 +172,9 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
 
     return (
       <Group
-        // Inversion: TugSplitPane "horizontal" = library "vertical". See
-        // the Orientation inversion section in the module docstring.
-        orientation="vertical"
+        orientation={libraryOrientation}
         elementRef={ref as React.Ref<HTMLDivElement | null>}
-        className={cn("tug-split-pane", "tug-split-pane-horizontal", className)}
+        className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
         data-slot="tug-split-pane"
         data-disabled={effectiveDisabled || undefined}
         {...rest}
