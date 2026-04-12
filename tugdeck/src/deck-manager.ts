@@ -851,11 +851,16 @@ export class DeckManager implements IDeckManagerStore {
     // Look up size policy for the detached tab's component type.
     const tabSizePolicy = getSizePolicy(removedTab.componentId);
 
-    // Clamp position to canvas bounds.
+    // Finder-style position clamping: title bar must stay reachable.
+    const TITLE_BAR_VISIBLE_MIN_X = 100;
+    const TITLE_BAR_HEIGHT = 36;
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
-    const clampedX = Math.max(0, Math.min(position.x, canvasWidth - tabSizePolicy.preferred.width));
-    const clampedY = Math.max(0, Math.min(position.y, canvasHeight - tabSizePolicy.preferred.height));
+    const clampedX = Math.max(
+      -(tabSizePolicy.preferred.width - TITLE_BAR_VISIBLE_MIN_X),
+      Math.min(position.x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X),
+    );
+    const clampedY = Math.max(0, Math.min(position.y, canvasHeight - TITLE_BAR_HEIGHT));
 
     // Create the new card.
     const newCardId = crypto.randomUUID();

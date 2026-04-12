@@ -54,13 +54,27 @@ function snapshotCardRects(
 }
 
 // ---------------------------------------------------------------------------
-// Canvas padding configuration
+// Canvas padding for resize clamping
 //
-// Uniform padding applied to all four sides of the canvas for move/resize
-// clamping. Set to 0 for flush edges. Increase for a gutter around the canvas.
+// Resize handles are hard-clamped to the canvas edges with this padding.
+// Dragging uses the relaxed Finder-style rules below instead.
 // ---------------------------------------------------------------------------
 
 const CANVAS_PADDING = 2;
+
+// ---------------------------------------------------------------------------
+// Finder-style title bar visibility constraints (drag only)
+//
+// When dragging, cards may overhang canvas edges, but enough of the title bar
+// must remain visible and grabbable. Modeled after macOS Finder window
+// constraining.
+// ---------------------------------------------------------------------------
+
+/** Minimum horizontal px of title bar visible when card overhangs left/right. */
+const TITLE_BAR_VISIBLE_MIN_X = 100;
+
+/** Minimum vertical px of title bar visible when card overhangs bottom. */
+const TITLE_BAR_VISIBLE_MIN_Y = CARD_TITLE_BAR_HEIGHT;
 
 // ---------------------------------------------------------------------------
 // Snap gap configuration
@@ -792,8 +806,13 @@ export function CardFrame({
 // ---------------------------------------------------------------------------
 
 /**
- * Compute drag position from current pointer, start pointer, start position,
- * and optional canvas bounds clamping.
+ * Compute drag position with Finder-style constraining.
+ *
+ * The card may overhang any edge, but enough of its title bar must stay
+ * visible and grabbable:
+ * - Top: title bar top stays at or below y = 0 (cannot move above canvas).
+ * - Bottom: at least TITLE_BAR_VISIBLE_MIN_Y of the title bar stays visible.
+ * - Left/Right: at least TITLE_BAR_VISIBLE_MIN_X of the title bar stays visible.
  */
 function clampedPosition(
   pointer: { x: number; y: number },
@@ -806,8 +825,12 @@ function clampedPosition(
   let y = startPosition.y + (pointer.y - startPointer.y);
 
   if (canvasBounds) {
-    x = Math.max(CANVAS_PADDING, Math.min(x, canvasBounds.width - frameSize.width - CANVAS_PADDING));
-    y = Math.max(CANVAS_PADDING, Math.min(y, canvasBounds.height - frameSize.height - CANVAS_PADDING));
+    // Left/right: card can hang off either side, but TITLE_BAR_VISIBLE_MIN_X must stay visible.
+    x = Math.max(-(frameSize.width - TITLE_BAR_VISIBLE_MIN_X),
+                 Math.min(x, canvasBounds.width - TITLE_BAR_VISIBLE_MIN_X));
+    // Top: title bar stays at or below CANVAS_PADDING (matches resize top constraint).
+    // Bottom: at least TITLE_BAR_VISIBLE_MIN_Y of title bar stays visible.
+    y = Math.max(CANVAS_PADDING, Math.min(y, canvasBounds.height - TITLE_BAR_VISIBLE_MIN_Y));
   }
 
   return { x, y };
@@ -815,9 +838,11 @@ function clampedPosition(
 
 /**
  * Compute new bounding rect after resizing on the given edge.
+ *
  * Width and height are clamped to minSize (floor) and maxSize (ceiling).
- * When canvasBounds is provided, the resulting rect is also clamped so the
+ * When canvasBounds is provided, the resulting rect is hard-clamped so the
  * card cannot extend beyond the canvas edges (accounting for CANVAS_PADDING).
+ * Unlike drag (which uses relaxed Finder-style rules), resize is rigid.
  */
 function resizeDelta(
   pointer: { x: number; y: number },
@@ -860,7 +885,7 @@ function resizeDelta(
     height = newH;
   }
 
-  // Clamp to canvas bounds so the card cannot be resized past any canvas edge. [D04]
+  // Hard-clamp to canvas bounds so the card cannot be resized past any canvas edge.
   if (canvasBounds) {
     const maxRight = canvasBounds.width - CANVAS_PADDING;
     const maxBottom = canvasBounds.height - CANVAS_PADDING;
@@ -868,10 +893,8 @@ function resizeDelta(
     // Clamp right edge: prevent card from extending past canvas right.
     if (left + width > maxRight) {
       if (edge.includes("e")) {
-        // Shrink width when resizing from east edge.
         width = Math.max(minSize.width, maxRight - left);
       } else if (edge.includes("w")) {
-        // Resizing from west: the right edge is fixed; clamp left so left >= CANVAS_PADDING.
         left = Math.max(CANVAS_PADDING, left);
         width = startLeft + startW - left;
         if (width < minSize.width) {
@@ -880,9 +903,7 @@ function resizeDelta(
         }
       }
     }
-    // Clamp left edge: prevent card from going left of canvas left.
-    // Preserve the current right edge (left + width) so resize deltas are
-    // not discarded when the card starts inside the padding zone.
+    // Clamp left edge.
     if (left < CANVAS_PADDING) {
       const rightEdge = left + width;
       left = CANVAS_PADDING;
@@ -902,8 +923,7 @@ function resizeDelta(
         }
       }
     }
-    // Clamp top edge: prevent card from going above canvas top.
-    // Preserve the current bottom edge so resize deltas are not discarded.
+    // Clamp top edge.
     if (top < CANVAS_PADDING) {
       const bottomEdge = top + height;
       top = CANVAS_PADDING;

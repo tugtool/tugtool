@@ -1049,7 +1049,7 @@ describe("DeckManager.detachTab", () => {
     expect(cards[cards.length - 1].id).toBe(newCardId);
   });
 
-  it("detached card position is clamped to canvas bounds", () => {
+  it("detached card position is clamped with Finder-style rules", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
 
@@ -1060,9 +1060,9 @@ describe("DeckManager.detachTab", () => {
     const newCardId = manager.detachTab(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
 
     const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
-    // Position should be clamped: canvasWidth - DEFAULT_CARD_WIDTH = 1280 - 400 = 880
-    expect(newCard.position.x).toBe(1280 - 400);
-    expect(newCard.position.y).toBe(800 - 300);
+    // Finder-style: x clamped to canvasWidth - 100 = 1180, y clamped to canvasHeight - 36 = 764
+    expect(newCard.position.x).toBe(1280 - 100);
+    expect(newCard.position.y).toBe(800 - 36);
   });
 });
 

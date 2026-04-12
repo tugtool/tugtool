@@ -71,13 +71,16 @@ export function deserialize(
       const width = Math.max(100, sz.width);
       const height = Math.max(100, sz.height);
 
-      // Clamp position to canvas bounds
+      // Finder-style position clamping: title bar must stay reachable.
+      // At least TITLE_BAR_VISIBLE_MIN_X (100px) horizontally visible,
+      // title bar top at or below y = 0, at least TITLE_BAR_HEIGHT (36px) visible vertically.
+      const TITLE_BAR_VISIBLE_MIN_X = 100;
+      const TITLE_BAR_HEIGHT = 36;
       let x = pos.x;
       let y = pos.y;
-      if (x + width > canvasWidth) x = canvasWidth - width;
-      if (y + height > canvasHeight) y = canvasHeight - height;
-      if (x < 0) x = 0;
-      if (y < 0) y = 0;
+      x = Math.max(-(width - TITLE_BAR_VISIBLE_MIN_X),
+                   Math.min(x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X));
+      y = Math.max(0, Math.min(y, canvasHeight - TITLE_BAR_HEIGHT));
 
       // Validate activeTabId references an existing tab
       if (!activeTabId || !tabs.find((t) => t.id === activeTabId)) {

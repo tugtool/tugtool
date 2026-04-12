@@ -291,14 +291,16 @@ describe("serialize and deserialize", () => {
     expect(result.cards.length).toBe(0);
   });
 
-  test("deserialize clamps card positions to canvas bounds", () => {
+  test("deserialize clamps card positions with Finder-style rules", () => {
     const tab: TabItem = {
       id: "tab-clamp-1",
       componentId: "terminal",
       title: "Terminal",
       closable: true,
     };
-    const v5 = {
+    // Card position allows 100px of title bar visible horizontally,
+    // and title bar fully visible vertically — Finder-style clamping allows it.
+    const v5moderateOverhang = {
       version: 5,
       cards: [
         {
@@ -310,12 +312,32 @@ describe("serialize and deserialize", () => {
         },
       ],
     };
-    const result = deserialize(JSON.stringify(v5), 1920, 1080);
-    expect(result.cards.length).toBe(1);
-    // x + width(400) = 1800 + 400 = 2200 > 1920 -> x = 1920 - 400 = 1520
-    expect(result.cards[0].position.x).toBe(1520);
-    // y + height(300) = 900 + 300 = 1200 > 1080 -> y = 1080 - 300 = 780
-    expect(result.cards[0].position.y).toBe(780);
+    const result1 = deserialize(JSON.stringify(v5moderateOverhang), 1920, 1080);
+    expect(result1.cards.length).toBe(1);
+    // x=1800: title bar right = 1800+400=2200 > 1920, but left=1800 < 1920-100=1820 → allowed
+    expect(result1.cards[0].position.x).toBe(1800);
+    // y=900: title bar bottom = 900+36=936 < 1080 → allowed
+    expect(result1.cards[0].position.y).toBe(900);
+
+    // Card pushed far off-screen: clamped so 100px of title bar stays visible.
+    const v5extreme = {
+      version: 5,
+      cards: [
+        {
+          id: "card-clamp-2",
+          position: { x: 5000, y: 5000 },
+          size: { width: 400, height: 300 },
+          tabs: [tab],
+          activeTabId: "tab-clamp-1",
+        },
+      ],
+    };
+    const result2 = deserialize(JSON.stringify(v5extreme), 1920, 1080);
+    expect(result2.cards.length).toBe(1);
+    // x clamped to canvasWidth - 100 = 1820
+    expect(result2.cards[0].position.x).toBe(1820);
+    // y clamped to canvasHeight - 36 = 1044
+    expect(result2.cards[0].position.y).toBe(1044);
   });
 
   test("deserialize enforces 100px minimum sizes", () => {
