@@ -4,6 +4,7 @@
 //! (terminal, filesystem, git, etc.) and manages their lifecycle.
 
 pub mod agent_bridge;
+pub mod agent_supervisor;
 pub mod code;
 pub mod defaults;
 pub mod file_watcher;
