@@ -574,13 +574,17 @@ Phase T0: Naming Cleanup                 — rename binaries, crates, directorie
 Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
 
 ─── TIDE: INPUT ───────────────────────────────────────────
-Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history
+Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history, turn state, live surface
   T3.0: Text Model Spike                   — DONE — contentEditable as input surface + own document model
-  T3.1: tug-atom                           — inline token pill component
-  T3.2: tug-prompt-input                   — rich input with atoms, prefix detection, completions
-  T3.3: Stores                             — SessionMetadataStore + PromptHistoryStore
-  T3.4: tug-prompt-entry                   — composition surface: input + route indicator + submit
-  T3.5: Integration + Polish               — wire into Tide, end-to-end, CJK, a11y
+  T3.1: tug-atom                           — DONE — inline token component (atoms as <img>)
+  T3.2: tug-prompt-input                   — DONE — rich input with atoms, route atoms, @/ completions, maximize, persistence
+  T3.3: Stores                             — DONE — SessionMetadataStore + PromptHistoryStore (SESSION_METADATA snapshot feed)
+  T3.4: Tide Card                          — prompt-entry + CodeSessionStore (turn state) + live Tide card
+    T3.4.a: CodeSessionStore                 — L02 store observing CODE_OUTPUT; owns turn state machine + send/interrupt/approve
+    T3.4.b: tug-prompt-entry                 — compose input + route indicator + submit/stop driven by CodeSessionStore
+    T3.4.c: Tide card                        — registered card, TugSplitPane (markdown-view top, prompt-entry bottom)
+    T3.4.d: Polish & exit                    — end-to-end CODE_INPUT round-trip, CJK, a11y, Cmd+K focus, persistence
+  [T3.5 folded into T3.4 — the Tide card is the integration surface, not a separate polish phase]
 
 ─── TIDE: RENDERING ───────────────────────────────────────
 Phase T1: Content Block Types            — markdown, code, thinking, tool use, monospace
@@ -1119,17 +1123,24 @@ The fixes have dependencies. Organized into dashes:
 
 | Component | Kind | Description |
 |-----------|------|-------------|
-| tug-atom | Original | Inline token pill: resolved file, slash command, or doc reference. Pill with icon + label + dismiss. Deletable as unit. Draggable into prompt. |
-| tug-prompt-input | Original | Rich input field with atom support, prefix detection, typeahead/tab-completion, history navigation. The text model is mixed: runs of plain text interspersed with atom nodes. |
-| tug-prompt-entry | Composition | Composes tug-prompt-input + submit button + route indicator (tug-choice-group) + progress/disabled state. The complete "enter a prompt" experience. |
-| SessionMetadataStore | Store (L02) | Captures `system_metadata` from CODE_OUTPUT feed. Provides slash commands, skills, and model info for typeahead. |
-| PromptHistoryStore | Store (L02) | Per-route, per-card command history. IndexedDB backing. |
+| tug-atom | Original | Inline token: resolved file, slash command, or doc reference. Icon + label, deletable as a unit. Draggable from Finder. Shipped in T3.1/T3.2 as `<img>` atoms with `data-atom-*` attributes. |
+| tug-prompt-input | Original | Rich input field with atoms, first-character **route atoms** (`>`, `$`, `:`, `/`), `@` and `/` completion providers, history navigation, IME, undo/redo, drag-and-drop, maximize mode, and tugbank persistence [L23]. |
+| tug-prompt-entry | Composition | Composes tug-prompt-input + route indicator (tug-choice-group) + submit/stop button. Turn state and all dispatch logic come from **CodeSessionStore** via `useSyncExternalStore`; the component itself is tokenable and free of business logic. |
+| SessionMetadataStore | Store (L02) | Subscribes to **`SESSION_METADATA` (0x51)** snapshot feed. Provides slash commands (local), skills, model, cwd, permission mode. Late subscribers receive current state via watch channel — see [session-metadata-feed.md](session-metadata-feed.md). |
+| PromptHistoryStore | Store (L02) | Per-route, per-card submission history. IndexedDB backing. `HistoryProvider` consumed directly by tug-prompt-input. |
+| CodeSessionStore | Store (L02) | **New in T3.4.a.** Subscribes to `CODE_OUTPUT` (0x40) via `FeedStore`. Owns the prompt→turn state machine, accumulates streaming deltas into a `PropertyStore` path for `TugMarkdownView`, and exposes `send(text, atoms, route)` / `interrupt()` / `respondApproval()` / `respondQuestion()` — each serializing the corresponding payload onto `CODE_INPUT` (0x41). |
+| Tide card | Card registration | **New in T3.4.c.** `registerTideCard()` — `TugSplitPane` (horizontal) with `TugMarkdownView` on top bound to `CodeSessionStore` streaming region, `TugPromptEntry` on bottom. Default feeds: `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`. The functional peer of `git-card`. |
 
 **Design decisions:**
 
 - **D-T3-01: Route selection.** Three routes: `>` (Claude Code), `$` (Shell), `:` (Surface built-ins). Route is set by either (a) typing the prefix character as the first character of input, or (b) clicking the route indicator (tug-choice-group in tug-prompt-entry). The two are bidirectionally synced. `/` as first character is an implicit `>` (slash command mode). No "default" route — the route indicator always shows the active route, and the user explicitly selects it.
 - **D-T3-02: `@` is route-independent.** Typing `@` anywhere in any route triggers file completion. The `@` trigger may also offer doc links in the future.
 - **D-T3-03: Atoms.** Inline token pills embedded in the text stream (like Apple Mail address tokens or Cursor file references). An atom is inserted when a completion resolves (e.g., `@file` tab-completes to a file atom pill). Atoms are atomic — backspace deletes the whole pill. Atoms can be inserted via drag-and-drop (files from Finder). Atoms contribute structured data to the submitted message (file paths, slash command names) separately from the plain text.
+- **D-T3-04: The first consumer of tug-prompt-entry is the functional Tide card, not a gallery card.** tug-prompt-input already has its own gallery card (isolated input testing). A second gallery card for tug-prompt-entry would require a mock turn-state environment that differs from the live `CODE_OUTPUT` / `CODE_INPUT` wire protocol — exactly the "tests must match user reality" trap. The Tide card is the testbed. Component-level tests live as Vitest suites against a mock `CodeSessionStore`, not a rendered gallery.
+- **D-T3-05: Turn state lives in a store, not the component.** `CodeSessionStore` owns the state machine (phases: `idle → submitting → awaiting_first_token → streaming → tool_work → (awaiting_approval) → complete | interrupted | errored → idle`). tug-prompt-entry reads the snapshot and renders CSS-token-driven states per [L06]/[L15]. This keeps the component pure, lets future alternate input surfaces share one source of truth, and makes integration tests a matter of driving the store.
+- **D-T3-06: Submit is the interrupt button.** When `CodeSessionStore.canInterrupt === true`, the submit control flips to "Stop" and dispatches `{ type: "interrupt" }` on `CODE_INPUT`. Per transport-exploration.md Test 6, interrupt produces `turn_complete(result: "error")` with the accumulated text preserved — the store consumes this as the `interrupted → idle` transition.
+- **D-T3-07: Message queueing during turn (U19).** Sending a `user_message` mid-stream does not interrupt Claude Code — it queues. The store mirrors this: while `phase !== idle` and `phase !== complete`, submit enqueues locally and the UI shows a pending-queue indicator. The store flushes the queue to `CODE_INPUT` in order on `idle`. Interrupt drains the queue.
+- **D-T3-08: `control_request_forward` is a single gate event.** Per transport-exploration.md Test 8/11, permission prompts and `AskUserQuestion` are both `control_request_forward`, differentiated by `is_question`. The store exposes `pendingApproval` / `pendingQuestion` on its snapshot and `respondApproval({ decision, updatedInput?, message? })` / `respondQuestion({ answers })`. T3.4 renders the approval/question UI inside the Tide card's output pane (as block-level content), not inside tug-prompt-entry — the entry stays a composition surface, not a dialog host.
 
 ---
 
@@ -1312,82 +1323,257 @@ PromptHistoryStore:
 
 ---
 
-#### T3.4: tug-prompt-entry {#t3-prompt-entry}
+#### T3.4: Tide Card — prompt-entry + turn state + live surface {#t3-prompt-entry}
 
-**Goal:** The complete prompt composition surface.
+**Goal:** Deliver the complete **TIDE: INPUT** experience as a working, registered Tide card. This phase supplies the three missing pieces — the turn-state store, the composition component, and the card registration — and closes out T3 by driving a real `user_message` round-trip through `CODE_INPUT` / `CODE_OUTPUT`.
 
-**Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores).
+**Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores), `tug-split-pane` (archived plan, shipped), `tug-markdown-view` streaming API, [session-metadata-feed.md](session-metadata-feed.md) (SESSION_METADATA feed wired to tugcast).
 
 **Governing documents:**
 - [Component Authoring Guide](../tuglaws/component-authoring.md) — compound composition pattern, token sovereignty [L20], `@tug-pairings`, checklist
 - [Token Naming](../tuglaws/token-naming.md) — seven-slot `--tug7-` convention for prompt-entry theme tokens
-- Laws: [L06] appearance via CSS, [L11] controls emit actions, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide, [L20] token sovereignty
-
-**Work:**
-
-Composition:
-- Layout: tug-prompt-input fills the width. Below (or beside) the input: route indicator (tug-choice-group with `>` `$` `:` segments), submit button, utility area
-- Route indicator bidirectionally synced with tug-prompt-input's prefix detection
-- Submit button: enabled when input is non-empty and no active turn. Disabled + spinner during active Claude Code turn (U19)
-- Interrupt: during active turn, submit button becomes "Stop" (sends `interrupt` to CODE_INPUT)
-
-Message dispatch:
-- On submit, serialize the input: plain text content + atom attachments (file paths, etc.)
-- Route to the correct feed: `>` route → CODE_INPUT as `user_message`, `$` route → SHELL_INPUT (future), `:` route → local surface command handler
-- Clear input after successful send
-- `/` commands in `>` route: may need special handling (some slash commands are local, some are remote)
-
-Turn state:
-- Observe CODE_OUTPUT for `turn_complete` / streaming indicators
-- During active turn: disable send, show progress indicator, optionally allow message queueing (U19)
-
-**Exit criteria:**
-- Complete prompt entry with route indicator, submit, and input
-- Route switching works via indicator and prefix
-- Submit dispatches to correct feed per route
-- Send disabled during active Claude Code turn
-- Interrupt (stop) works during active turn
-- End-to-end: type `> hello` → message arrives at Claude Code via CODE_INPUT
-- Token-compliant styling: own tokens scoped to `prompt` component; no descendant restyling of composed children [L20]
-- Conforms to component authoring guide checklist
-- Gallery card + live integration test
+- [transport-exploration.md](transport-exploration.md) — authoritative catalog of outbound `CODE_OUTPUT` events and inbound `CODE_INPUT` messages; Test 1, 2, 6, 8, 11 are directly load-bearing for the state machine
+- [ws-verification.md](ws-verification.md) — end-to-end WebSocket contract; `session_init` now on watch channel, safe to rely on during card mount
+- [session-metadata-feed.md](session-metadata-feed.md) — `SessionMetadataStore` reads from `SESSION_METADATA` (0x51) snapshot feed, not `CODE_OUTPUT`
+- [tug-feed.md](tug-feed.md) — reserved feed slot / future tug-feed integration; the Tide card should not couple to tug-feed yet, but CodeSessionStore's `phase` taxonomy should remain compatible with the event types listed there
+- Laws: [L02] external state via `useSyncExternalStore`, [L06] appearance via CSS/DOM, [L11] controls emit actions, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide, [L20] token sovereignty, [L22] direct DOM updates, [L23] persistence
+- **Covers:** U4 (interrupt), U5 (streaming indicator), U12 (slash commands), U13 (`@` file completion), U19 (message queueing)
 
 ---
 
-#### T3.5: Integration + Polish {#t3-integration}
+##### T3.4.a — CodeSessionStore (turn state machine)
 
-**Goal:** Wire tug-prompt-entry into the live Tide UI and polish the end-to-end experience.
-
-**Prerequisites:** T3.4, [tug-split-pane](tug-split-pane.md) (layout primitive for mounting tug-prompt-entry below tug-markdown-view inside the Tide card).
-
-**Governing documents:**
-- [Component Authoring Guide](../tuglaws/component-authoring.md) — accessibility audit criteria, testing requirements
-- [Token Naming](../tuglaws/token-naming.md) — verify all T3 components use properly-scoped `--tug7-` tokens
+**Goal:** A new L02 store that owns everything the prompt entry needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in tug-prompt-input, or in tug-prompt-entry.
 
 **Work:**
-- Mount tug-prompt-entry in the Tide card (replacing any existing input stub)
-- End-to-end test: type a prompt → Claude Code receives it → response streams back
-- CJK end-to-end test
-- Keyboard shortcut discovery: Cmd+K or similar to focus the prompt from anywhere
-- Atom drag-and-drop from Finder end-to-end
-- Performance: ensure no jank during typeahead with large file lists
-- Accessibility audit: VoiceOver navigation through atoms, route indicator, submit button
 
-**Exit criteria (overall T3):**
-- Prefix routing works: `>`, `$`, `:` dispatch to correct handler
-- Route indicator (tug-choice-group) syncs with prefix character
-- `@` file completion works in all routes, resolves to inline atom
-- `/` slash command completion works in `>` route
-- Atoms display correctly, delete as units, support drag-and-drop
-- History navigation works per-route
-- Send disabled during active Claude Code turn; interrupt works
-- IME composition (Japanese, Chinese) works correctly
-- CJK input end-to-end verified
-- Undo works including atom insertion/deletion
-- VoiceOver reads atoms and route indicator correctly
-- All T3 components pass component authoring guide checklist
-- All T3 tokens conform to seven-slot naming convention
-- `bun run audit:tokens lint` exits 0
+File: `tugdeck/src/lib/code-session-store.ts` (new).
+
+- Constructor takes `{ feedStore: FeedStore, codeOutputFeedId, codeInputFeedId, dispatch, streamingStore: PropertyStore, streamingPath: string }`. Built per-card alongside `SessionMetadataStore`, `PromptHistoryStore`, and `FileTreeStore` — see the gallery card's `buildCardStores()` pattern.
+- Subscribes to `CODE_OUTPUT` via `FeedStore.subscribe`. Decodes each payload as JSON-line per [transport-exploration.md](transport-exploration.md).
+- Maintains a **turn-state machine** with phases:
+
+  ```
+  idle → submitting → awaiting_first_token → streaming
+       ↘                                   ↘ tool_work ↔ streaming
+                                            ↘ awaiting_approval ↔ streaming
+                                            ↘ complete → idle
+                                            ↘ interrupted → idle
+                                            ↘ errored → idle
+  ```
+
+  Transition table (event source → target phase):
+
+  | From | Event | To | Notes |
+  |------|-------|----|----|
+  | `idle` | `send()` action | `submitting` | Write `user_message` frame to `CODE_INPUT` |
+  | `submitting` | First `system_metadata`/`thinking_text`/`assistant_text` partial for a new `msg_id` | `awaiting_first_token` → `streaming` | Fast collapse; `awaiting_first_token` exists so the UI can show a "connecting..." affordance distinct from streaming |
+  | `streaming` | `assistant_text` partial (delta) | `streaming` | Append to `streamingStore` at `streamingPath` |
+  | `streaming` | `thinking_text` partial | `streaming` | Routed to a separate region key (e.g. `stream.thinking.<msgId>`) |
+  | `streaming` | `tool_use` partial/complete | `tool_work` | Sub-state; `canInterrupt` remains true |
+  | `tool_work` | `tool_use_structured` / `tool_result` | `streaming` | Back to streaming until next event |
+  | `streaming` / `tool_work` | `control_request_forward` (permission or question) | `awaiting_approval` | Parse `is_question` to select `pendingApproval` vs `pendingQuestion`. Still a sub-state of the running turn; `canInterrupt` remains true. |
+  | `awaiting_approval` | `respondApproval()` / `respondQuestion()` | previous phase | Writes `tool_approval` / `question_answer` frame to `CODE_INPUT` |
+  | any non-idle | `turn_complete(result: "success")` | `complete → idle` | Finalize: replace streamed text with `assistant_text` `complete` payload per Test 2 |
+  | any non-idle | `turn_complete(result: "error")` | `interrupted → idle` | Per Test 6: interrupt surfaces as `turn_complete(error)`; preserve accumulated text |
+  | any non-idle | transport error / close | `errored → idle` | `lastError` set, UI shows an inline error block |
+  | `interrupted` / `complete` | idle-transition tick | `idle` | Flush any queued user_messages (see U19) |
+
+- Snapshot shape (exposed via `getSnapshot`):
+
+  ```ts
+  interface CodeSessionSnapshot {
+    phase: "idle" | "submitting" | "awaiting_first_token" | "streaming"
+         | "tool_work" | "awaiting_approval" | "complete" | "interrupted" | "errored";
+    sessionId: string | null;          // from session_init (watch-channel snapshot, ws-verification.md T8)
+    activeMsgId: string | null;
+    canSubmit: boolean;                // phase === "idle" && !isEmptyInput (component supplies emptiness)
+    canInterrupt: boolean;              // phase ∈ { submitting, awaiting_first_token, streaming, tool_work, awaiting_approval }
+    pendingApproval: ControlRequestForward | null;
+    pendingQuestion: ControlRequestForward | null;
+    queuedSends: number;                // U19 depth
+    lastCostUsd: number | null;         // from cost_update
+    lastError: { message: string; at: number } | null;
+    streamRegionKey: string;            // the PropertyStore path TugMarkdownView should observe
+  }
+  ```
+
+- Actions:
+  - `send(text: string, atoms: AtomSegment[], route: Route): void` — serializes `{ type: "user_message", text, attachments: atoms.map(...) }` and dispatches on `CODE_INPUT`. If `phase !== idle`, enqueue locally instead per D-T3-07.
+  - `interrupt(): void` — dispatches `{ type: "interrupt" }` on `CODE_INPUT`. Drains the local queue. Relies on `turn_complete(error)` arriving to clear phase.
+  - `respondApproval(req_id, { decision, updatedInput?, message? })` — dispatches `{ type: "tool_approval", request_id, ... }`.
+  - `respondQuestion(req_id, { answers })` — dispatches `{ type: "question_answer", request_id, answers }`.
+  - `dispose()` — unsubscribes from feed, clears listeners.
+
+- Streaming accumulator: on each `assistant_text` partial, append delta to a scratch buffer keyed by `msg_id`, then `streamingStore.set(streamingPath, accumulated)`. On the partial's `complete` event per Test 1/2, replace the buffer with the authoritative full text. `TugMarkdownView` mounted with `streamingStore` + `streamingPath` picks this up via its existing `observe` path.
+
+- `SESSION_METADATA` is consumed by `SessionMetadataStore`, not by `CodeSessionStore`. The two stores are independent; the Tide card holds references to both.
+
+**Exit criteria:**
+- Unit tests drive the store through each transition using mock `FeedStore` frames replayed from transport-exploration.md fixtures (Test 1, 2, 5, 6, 8, 11).
+- Interrupt test: while `phase === "streaming"`, call `interrupt()`, inject a `turn_complete(error)` frame, assert `phase → interrupted → idle` and that the streamed text is preserved (per Test 6).
+- Queue test: three `send()` calls during `streaming` leave `queuedSends === 3`; on `turn_complete(success)`, the store flushes one queued send and transitions back through `submitting`.
+- Approval test: inject `control_request_forward({is_question: false})` → `phase === "awaiting_approval"`, `pendingApproval` populated; `respondApproval("allow")` writes a `tool_approval` frame.
+- Question test: same via `is_question: true` / `question_answer`.
+- No React code imported. Store is pure TS + L02.
+
+---
+
+##### T3.4.b — tug-prompt-entry (composition component)
+
+**Goal:** A compound React component that composes `tug-prompt-input` + route indicator + submit/stop into a single token-scoped surface. All turn behavior is read from a `CodeSessionStore` passed in as a prop.
+
+**Work:**
+
+Files: `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` (new).
+
+- Props:
+
+  ```ts
+  interface TugPromptEntryProps {
+    codeSessionStore: CodeSessionStore;
+    sessionMetadataStore: SessionMetadataStore;
+    historyStore: PromptHistoryStore;
+    fileCompletionProvider: CompletionProvider;
+    dropHandler?: DropHandler;
+    sessionId: string;           // from CodeSessionStore snapshot
+    className?: string;
+  }
+  ```
+
+- Layout: a single flex column — `tug-prompt-input` (maximized, fills) on top, a bottom toolbar row with the route indicator on the left and the submit/stop button on the right. Token scope `--tug7-*-prompt-entry-*`. `@tug-pairings (compact, expanded)`. No descendant restyling of composed children per [L20].
+- Snapshot subscription: `const snap = useSyncExternalStore(store.subscribe, store.getSnapshot)` — one call. React state is confined to transient UI concerns (e.g., focus-ring scope); turn state is never mirrored into React state.
+- Route indicator: `TugChoiceGroup` with items `[">", "$", ":"]`. Bidirectional sync:
+  - Input → indicator: `<TugPromptInput onRouteChange={...}>` writes indicator value via a direct DOM ref write per [L06] (no React re-render).
+  - Indicator → input: clicking a segment calls a new delegate method `delegate.setRoute(char)` that clears + inserts the route atom at position 0 (`clear()` + `insertText(char)` triggers the existing route-atom detection path).
+- Submit/stop button: single `TugPushButton` whose label, icon, and disabled state come from CSS attribute selectors driven by `data-phase={snap.phase}` and `data-empty={isEmpty ? "" : undefined}` on the entry root. Per [L06]/[L15], all visual state is token-driven; no conditional JSX for "Send" vs "Stop" labels (the label sits in `::before` content from a token). The click handler dispatches `store.send(...)` or `store.interrupt()` based on `snap.canInterrupt`.
+- Queue indicator: `snap.queuedSends > 0` flips a `data-queued` attribute that surfaces a small badge beside the button. No React state.
+- Focus affordance: Cmd+K (or user-chosen shortcut) focuses the input via delegate; the Tide card registers a global keyboard handler that forwards to the entry's delegate.
+- `/` dispatch hook: before calling `store.send()`, inspect the serialized atoms. If the first non-route atom is a local `:`-surface command (e.g. `:help`), short-circuit into a local handler rather than writing to `CODE_INPUT`. The list of local commands is provided by a small registry the Tide card owns; the surface built-ins phase (T10) populates it. Until then the registry is empty and everything routes through `CODE_INPUT`.
+- `tug-prompt-input` remains unchanged in this sub-step except possibly adding `delegate.setRoute(char)` as a tiny method on the imperative handle (if `clear()` + `insertText()` proves insufficient).
+
+**Exit criteria:**
+- Component is tokenable: opening the Theme Gallery for `--tug7-*-prompt-entry-*` shows full compact/expanded pairings; `bun run audit:tokens lint` exits 0.
+- Vitest suite renders the component against a mock `CodeSessionStore`, drives phase transitions, and asserts:
+  - Button label/icon change via CSS selector match on `data-phase`.
+  - Submit becomes Stop on `canInterrupt` and dispatches `store.interrupt()`.
+  - Typing ">" in an empty input fires `onRouteChange(">")` and the indicator's DOM reflects it.
+  - Clicking the `$` segment calls `delegate.setRoute("$")` and the input's first character is the `$` route atom.
+  - `snap.queuedSends` changes are reflected purely via `data-queued` without a React state update in the component.
+- Conforms to the component authoring guide checklist.
+- **No gallery card is added** per D-T3-04.
+
+---
+
+##### T3.4.c — Tide card (functional registration)
+
+**Goal:** Register `tide` as a full card type in the card registry, alongside `git` and `hello`. This is the Tide card — the Unified Command Surface envisioned in the Vision section of this document — in its first shippable form.
+
+**Work:**
+
+Files:
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (new).
+- `tugdeck/src/main.tsx` (edit: call `registerTideCard()` alongside `registerGitCard()`).
+- `tugdeck/src/components/tugways/cards/tide-card.css` (new, if the card content needs layout tweaks above the component layer).
+
+Content factory:
+
+```tsx
+export function TideCardContent({ cardId }: { cardId: string }) {
+  const services = useTideCardServices(cardId);   // builds stores once, memoized by cardId
+  return (
+    <TugSplitPane
+      orientation="horizontal"
+      storageKey={`tide.card.${cardId}`}
+    >
+      <TugSplitPanel id="tide-output" defaultSize="70%" minSize="30%">
+        <TugMarkdownView
+          streamingStore={services.codeSessionStore.streamingStore}
+          streamingPath={services.codeSessionStore.streamingPath}
+        />
+      </TugSplitPanel>
+      <TugSplitPanel id="tide-entry" defaultSize="30%" minSize="15%" collapsible>
+        <TugPromptEntry
+          codeSessionStore={services.codeSessionStore}
+          sessionMetadataStore={services.sessionMetadataStore}
+          historyStore={services.historyStore}
+          fileCompletionProvider={services.fileCompletionProvider}
+          sessionId={services.sessionId}
+        />
+      </TugSplitPanel>
+    </TugSplitPane>
+  );
+}
+```
+
+Registration:
+
+```ts
+export function registerTideCard(): void {
+  registerCard({
+    componentId: "tide",
+    contentFactory: (cardId) => <TideCardContent cardId={cardId} />,
+    defaultMeta: { title: "Tide", icon: "Waves", closable: true },
+    defaultFeedIds: [
+      FeedId.CODE_INPUT,
+      FeedId.CODE_OUTPUT,
+      FeedId.SESSION_METADATA,
+      FeedId.FILETREE,
+    ],
+    sizePolicy: {
+      min: { width: 480, height: 320 },
+      preferred: { width: 820, height: 560 },
+    },
+  });
+}
+```
+
+- `useTideCardServices(cardId)` is a local hook that constructs (once, per cardId) the `FeedStore`s, the four stores (`SessionMetadataStore`, `PromptHistoryStore`, `FileTreeStore`, `CodeSessionStore`), and the shared `PropertyStore` used as the streaming target. Follow the pattern in `gallery-prompt-input.tsx`'s `buildCardStores()`, but scoped to a card instance instead of a module singleton.
+- The card inherits `tugcard-content`'s `flex: 1; overflow: auto; min-height: 0`. `TugSplitPane` already expects that shape.
+- `sessionId` comes from `CodeSessionStore.snapshot.sessionId`. Per ws-verification.md T8, `session_init` is now delivered as a watch-channel snapshot, so the card can rely on having a session ID by the time any user input fires.
+- Persistence: `TugSplitPane` already persists layout via tugbank, and `TugPromptInput` already persists editing state via tugbank `[L23]`. The Tide card itself adds no new persistence.
+
+**Exit criteria:**
+- `registerTideCard()` called from `main.tsx`; opening the card in the running tugdeck shows the split pane with a markdown-view top pane and a prompt-entry bottom pane.
+- Default feeds `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]` are subscribed on card mount and released on close.
+- Split-pane layout persists across reload; bottom pane collapsible via snap-to-close.
+- Opening the card for the first time with no prior state shows the `preferred` size.
+
+---
+
+##### T3.4.d — Polish & exit criteria (folded from old T3.5)
+
+**Goal:** Everything needed to declare Phase T3 done.
+
+**Work & exit criteria (T3 overall):**
+
+End-to-end round-trip:
+- Type `> hello` → `CodeSessionStore.send` writes `user_message` on `CODE_INPUT` → `assistant_text` deltas arrive on `CODE_OUTPUT` → `TugMarkdownView` renders streaming output in the top pane → `turn_complete(success)` → entry returns to idle.
+- Mid-stream Stop → `interrupt` frame on `CODE_INPUT` → `turn_complete(error)` → phase `interrupted → idle`, accumulated text preserved (Test 6).
+- Mid-stream `user_message` sends → queued → auto-flush on idle (U19).
+- `tool_use` and `tool_use_structured` events drive the `tool_work` sub-state; the submit button remains in Stop mode throughout.
+- `control_request_forward` with `is_question: false` surfaces a permission block in the output pane; approving or denying writes a `tool_approval` frame and resumes the turn.
+- `control_request_forward` with `is_question: true` surfaces a question block; answering writes a `question_answer` frame.
+
+Feature coverage:
+- `>`, `$`, `:` routes dispatch to the correct target. Today only `>` has a live target; `$` is inert (pre-tugshell) and `:` routes through the local surface registry (empty at T3 exit, populated in T10).
+- Route indicator ↔ route atom stay bidirectionally synced.
+- `@` file completion returns `FILETREE`-backed results and inserts file atoms.
+- `/` slash command completion merges `SessionMetadataStore.slashCommands` and skills.
+- History navigation (Cmd+Up/Down) works per-route from `PromptHistoryStore`.
+
+Quality:
+- CJK end-to-end (Japanese, Chinese) verified — IME compose → submit → streamed response.
+- VoiceOver announces atoms, route indicator, and the submit/stop button correctly.
+- Cmd+K (or chosen equivalent) focuses the prompt input from anywhere in the card.
+- Atom drag-and-drop from Finder into the Tide card produces file atoms.
+- No jank during typeahead over full-project file listings.
+
+Compliance:
+- All new/changed components pass the component authoring guide checklist.
+- All new tokens conform to the seven-slot naming convention.
+- `bun run audit:tokens lint` exits 0.
+- Vitest + Rust nextest suites pass with `-D warnings`.
 
 ---
 
