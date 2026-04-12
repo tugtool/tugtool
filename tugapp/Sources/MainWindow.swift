@@ -17,6 +17,7 @@ protocol BridgeDelegate: AnyObject {
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
     private var containerView: NSView!
+    private var spinnerView: NSView?
     private var contentController: WKUserContentController!
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
@@ -69,6 +70,51 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         containerView.addSubview(webView)
         webView.frame = containerView.bounds
         webView.autoresizingMask = [.width, .height]
+
+        // Startup splash: app icon + indeterminate spinner, visible until
+        // frontendReady fires. Sits behind the WebView in the container.
+        let splashView = NSView(frame: contentRect)
+        splashView.autoresizingMask = [.width, .height]
+
+        let iconSize: CGFloat = 128
+        let iconView = NSImageView(frame: NSRect(x: 0, y: 0, width: iconSize, height: iconSize))
+        // Request the icon at the exact display size so AppKit picks the
+        // best representation (128pt icon on 1x, 256px rep on 2x Retina).
+        let icon = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        icon.size = NSSize(width: iconSize, height: iconSize)
+        iconView.image = icon
+        iconView.imageScaling = .scaleNone
+        iconView.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .regular
+        spinner.sizeToFit()
+        spinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+
+        // Determine light/dark appearance from the startup background color
+        // so the spinner renders with the correct vibrancy.
+        let bgHex = MainWindow.resolveStartupBackgroundHex()
+        let bgColor = NSColor(hexString: bgHex) ?? NSColor.black
+        var brightness: CGFloat = 0
+        bgColor.usingColorSpace(.sRGB)?.getHue(nil, saturation: nil, brightness: &brightness, alpha: nil)
+        splashView.appearance = NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
+
+        // Layout: icon and spinner stacked vertically, centered.
+        let gap: CGFloat = 20
+        let stackHeight = iconSize + gap + spinner.frame.height
+        let topY = (contentRect.height - stackHeight) / 2
+        iconView.frame.origin.x = (contentRect.width - iconSize) / 2
+        iconView.frame.origin.y = topY + gap + spinner.frame.height
+        spinner.frame.origin.x = (contentRect.width - spinner.frame.width) / 2
+        spinner.frame.origin.y = topY
+
+        spinner.startAnimation(nil)
+        splashView.addSubview(iconView)
+        splashView.addSubview(spinner)
+        containerView.addSubview(splashView, positioned: .below, relativeTo: webView)
+        self.spinnerView = splashView
+
         self.contentView = containerView
         // Background color is set by AppDelegate after init, not here.
     }
@@ -290,6 +336,9 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.makeFirstResponder(self.webView)
+            // Remove the startup spinner after the WebView is fully revealed.
+            self.spinnerView?.removeFromSuperview()
+            self.spinnerView = nil
         }
     }
 
