@@ -57,8 +57,6 @@ const COMPONENT_CSS_FILES = [
   "tug-dock.css",
   "tug-hue-strip.css",
   "tug-skeleton.css",
-  "tug-inspector.css",
-  "style-inspector-overlay.css",
   "cards/gallery-card.css",
   "cards/gallery-badge-mockup.css",
   "cards/gallery-popup-button.css",

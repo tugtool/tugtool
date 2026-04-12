@@ -443,7 +443,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       ["Feedback & Status", "Activity", ["gallery-progress", "gallery-badge", "gallery-banner", "gallery-bulletin", "gallery-skeleton", "gallery-marquee"]],
       ["Layout & Structure", "Box", ["gallery-box", "gallery-atom", "gallery-accordion", "gallery-separator", "gallery-tabbar", "gallery-title-bar"]],
       ["Animation & Theming", "Play", ["gallery-animator", "gallery-scale-timing", "gallery-palette", "gallery-theme-generator"]],
-      ["Architecture", "GitBranch", ["gallery-mutation", "gallery-mutation-tx", "gallery-observable-props", "gallery-chain-actions", "gallery-cascade-inspector"]],
+      ["Architecture", "GitBranch", ["gallery-mutation", "gallery-mutation-tx", "gallery-observable-props", "gallery-chain-actions"]],
     ];
 
     const regMap = new Map(regs.map((r) => [r.componentId, r]));

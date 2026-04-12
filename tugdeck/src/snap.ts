@@ -2,16 +2,11 @@
  * Snap geometry module for the canvas card system.
  *
  * Pure functions with no DOM or state dependencies.
- * Handles snap-during-move, snap-during-resize, shared-edge detection,
- * and set (connected component) computation.
+ * Handles snap-during-move, snap-during-resize, and edge visibility.
  *
  * Spec S01: Canvas Data Model Types
- * Spec S03: Shared-Edge Detection
  * D01: Pure-function snap module
- * D07: Shared-edge detection algorithm
  */
-
-import type { CardState } from "./layout-tree";
 
 // ---- Types ----
 
@@ -33,30 +28,6 @@ export interface SnapResult {
   x: number | null;
   y: number | null;
   guides: GuidePosition[];
-  /** Index into the `others` array of the card that produced the x-axis snap, or -1 if no x snap. */
-  snappedToXIndex: number;
-  /** Index into the `others` array of the card that produced the y-axis snap, or -1 if no y snap. */
-  snappedToYIndex: number;
-}
-
-/**
- * A shared edge between two cards.
- * axis: "vertical" means the cards share a vertical boundary (one card's right ~ other's left).
- * axis: "horizontal" means the cards share a horizontal boundary (one card's bottom ~ other's top).
- * overlapStart/overlapEnd: the perpendicular range of the overlap.
- * boundaryPosition: the coordinate of the shared boundary line.
- */
-export interface SharedEdge {
-  cardAId: string;
-  cardBId: string;
-  axis: "vertical" | "horizontal";
-  overlapStart: number;
-  overlapEnd: number;
-  boundaryPosition: number;
-}
-
-export interface CardSet {
-  cardIds: string[];
 }
 
 // ---- Constants ----
@@ -87,20 +58,6 @@ export type EdgeValidator = (
   otherRect: Rect,
   otherIndex: number
 ) => boolean;
-
-// ---- Helper: convert CardState to Rect ----
-
-/**
- * Convert a CardState to a Rect for use in snap computations.
- */
-export function cardToRect(card: CardState): Rect {
-  return {
-    x: card.position.x,
-    y: card.position.y,
-    width: card.size.width,
-    height: card.size.height,
-  };
-}
 
 // ---- computeSnap ----
 
@@ -137,13 +94,11 @@ export function computeSnap(
   let bestXDist = Infinity;
   let bestXDelta = 0;
   let bestXGuide = 0;
-  let bestXIndex = -1;
   let snapX = false;
 
   let bestYDist = Infinity;
   let bestYDelta = 0;
   let bestYGuide = 0;
-  let bestYIndex = -1;
   let snapY = false;
 
   for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
@@ -193,7 +148,6 @@ export function computeSnap(
         bestXDist = candidate.dist;
         bestXDelta = candidate.delta;
         bestXGuide = candidate.guide;
-        bestXIndex = otherIdx;
         snapX = true;
       }
     }
@@ -238,7 +192,6 @@ export function computeSnap(
         bestYDist = candidate.dist;
         bestYDelta = candidate.delta;
         bestYGuide = candidate.guide;
-        bestYIndex = otherIdx;
         snapY = true;
       }
     }
@@ -255,7 +208,7 @@ export function computeSnap(
     guides.push({ axis: "y", position: bestYGuide });
   }
 
-  return { x, y, guides, snappedToXIndex: snapX ? bestXIndex : -1, snappedToYIndex: snapY ? bestYIndex : -1 };
+  return { x, y, guides };
 }
 
 // ---- computeResizeSnap ----
@@ -278,7 +231,7 @@ export function computeResizeSnap(
   resizingEdges: { top?: number; bottom?: number; left?: number; right?: number },
   others: Rect[],
   borderWidth?: number
-): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[]; snappedToIndices: number[] } {
+): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[] } {
   const bw = borderWidth ?? 0;
 
   // Snap each edge independently; track best snap (minimum distance) per edge key.
@@ -288,22 +241,18 @@ export function computeResizeSnap(
   let leftSnapped: number | undefined;
   let leftGuide: number | undefined;
   let leftDist = Infinity;
-  let leftIndex = -1;
 
   let rightSnapped: number | undefined;
   let rightGuide: number | undefined;
   let rightDist = Infinity;
-  let rightIndex = -1;
 
   let topSnapped: number | undefined;
   let topGuide: number | undefined;
   let topDist = Infinity;
-  let topIndex = -1;
 
   let bottomSnapped: number | undefined;
   let bottomGuide: number | undefined;
   let bottomDist = Infinity;
-  let bottomIndex = -1;
 
   for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
     const other = others[otherIdx];
@@ -321,7 +270,6 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherLeft;
           leftGuide = otherLeft;
-          leftIndex = otherIdx;
         }
       }
       // left vs otherRight (adjacent-edge: resizing left toward other's right, overlap by bw)
@@ -331,7 +279,6 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherRight - bw;
           leftGuide = otherRight;
-          leftIndex = otherIdx;
         }
       }
     }
@@ -345,7 +292,6 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherLeft + bw;
           rightGuide = otherLeft;
-          rightIndex = otherIdx;
         }
       }
       // right vs otherRight (same-edge, no offset)
@@ -355,7 +301,6 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherRight;
           rightGuide = otherRight;
-          rightIndex = otherIdx;
         }
       }
     }
@@ -369,7 +314,6 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherTop;
           topGuide = otherTop;
-          topIndex = otherIdx;
         }
       }
       // top vs otherBottom (adjacent-edge: resizing top toward other's bottom, overlap by bw)
@@ -379,7 +323,6 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherBottom - bw;
           topGuide = otherBottom;
-          topIndex = otherIdx;
         }
       }
     }
@@ -393,7 +336,6 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherTop + bw;
           bottomGuide = otherTop;
-          bottomIndex = otherIdx;
         }
       }
       // bottom vs otherBottom (same-edge, no offset)
@@ -403,7 +345,6 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherBottom;
           bottomGuide = otherBottom;
-          bottomIndex = otherIdx;
         }
       }
     }
@@ -428,403 +369,13 @@ export function computeResizeSnap(
     }
   }
 
-  // Collect unique indices of all cards that were snapped to.
-  const snappedToIndices: number[] = [];
-  const seen = new Set<number>();
-  for (const idx of [leftIndex, rightIndex, topIndex, bottomIndex]) {
-    if (idx >= 0 && !seen.has(idx)) {
-      seen.add(idx);
-      snappedToIndices.push(idx);
-    }
-  }
-
   return {
     ...(leftSnapped !== undefined ? { left: leftSnapped } : {}),
     ...(rightSnapped !== undefined ? { right: rightSnapped } : {}),
     ...(topSnapped !== undefined ? { top: topSnapped } : {}),
     ...(bottomSnapped !== undefined ? { bottom: bottomSnapped } : {}),
     guides,
-    snappedToIndices,
   };
-}
-
-// ---- findSharedEdges ----
-
-/**
- * Detect shared edges between all pairs of cards.
- *
- * A shared vertical edge exists when one card's right edge is within SNAP_THRESHOLD_PX
- * of another card's left edge, AND the cards have overlapping perpendicular ranges (top-to-bottom).
- *
- * A shared horizontal edge exists when one card's bottom edge is within SNAP_THRESHOLD_PX
- * of another card's top edge, AND the cards have overlapping perpendicular ranges (left-to-right).
- *
- * Pairwise check (i < j) avoids duplicates per pair. Each direction is checked
- * separately — A.right~B.left and B.right~A.left are different boundaries.
- */
-export function findSharedEdges(cards: { id: string; rect: Rect }[]): SharedEdge[] {
-  const edges: SharedEdge[] = [];
-
-  for (let i = 0; i < cards.length; i++) {
-    for (let j = i + 1; j < cards.length; j++) {
-      const a = cards[i];
-      const b = cards[j];
-
-      const aLeft = a.rect.x;
-      const aRight = a.rect.x + a.rect.width;
-      const aTop = a.rect.y;
-      const aBottom = a.rect.y + a.rect.height;
-
-      const bLeft = b.rect.x;
-      const bRight = b.rect.x + b.rect.width;
-      const bTop = b.rect.y;
-      const bBottom = b.rect.y + b.rect.height;
-
-      // Vertical shared edge: A.right ~ B.left
-      if (Math.abs(aRight - bLeft) <= SNAP_THRESHOLD_PX) {
-        const overlapStart = Math.max(aTop, bTop);
-        const overlapEnd = Math.min(aBottom, bBottom);
-        if (overlapStart < overlapEnd) {
-          edges.push({
-            cardAId: a.id,
-            cardBId: b.id,
-            axis: "vertical",
-            overlapStart,
-            overlapEnd,
-            boundaryPosition: (aRight + bLeft) / 2,
-          });
-        }
-      }
-
-      // Vertical shared edge: B.right ~ A.left
-      if (Math.abs(bRight - aLeft) <= SNAP_THRESHOLD_PX) {
-        const overlapStart = Math.max(aTop, bTop);
-        const overlapEnd = Math.min(aBottom, bBottom);
-        if (overlapStart < overlapEnd) {
-          edges.push({
-            cardAId: b.id,
-            cardBId: a.id,
-            axis: "vertical",
-            overlapStart,
-            overlapEnd,
-            boundaryPosition: (bRight + aLeft) / 2,
-          });
-        }
-      }
-
-      // Horizontal shared edge: A.bottom ~ B.top
-      if (Math.abs(aBottom - bTop) <= SNAP_THRESHOLD_PX) {
-        const overlapStart = Math.max(aLeft, bLeft);
-        const overlapEnd = Math.min(aRight, bRight);
-        if (overlapStart < overlapEnd) {
-          edges.push({
-            cardAId: a.id,
-            cardBId: b.id,
-            axis: "horizontal",
-            overlapStart,
-            overlapEnd,
-            boundaryPosition: (aBottom + bTop) / 2,
-          });
-        }
-      }
-
-      // Horizontal shared edge: B.bottom ~ A.top
-      if (Math.abs(bBottom - aTop) <= SNAP_THRESHOLD_PX) {
-        const overlapStart = Math.max(aLeft, bLeft);
-        const overlapEnd = Math.min(aRight, bRight);
-        if (overlapStart < overlapEnd) {
-          edges.push({
-            cardAId: b.id,
-            cardBId: a.id,
-            axis: "horizontal",
-            overlapStart,
-            overlapEnd,
-            boundaryPosition: (bBottom + aTop) / 2,
-          });
-        }
-      }
-    }
-  }
-
-  return edges;
-}
-
-// ---- computeSets ----
-
-/**
- * Compute connected components (sets) of cards sharing edges.
- *
- * Uses union-find with path compression.
- * Returns only sets with 2+ cards — singletons are not included.
- */
-export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardSet[] {
-  // Union-find parent map
-  const parent = new Map<string, string>();
-
-  for (const id of cardIds) {
-    parent.set(id, id);
-  }
-
-  function find(x: string): string {
-    const p = parent.get(x);
-    if (p === undefined || p === x) return x;
-    const root = find(p);
-    parent.set(x, root);
-    return root;
-  }
-
-  function union(a: string, b: string): void {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) {
-      parent.set(rootA, rootB);
-    }
-  }
-
-  for (const edge of sharedEdges) {
-    // Only union cards that are in our cardIds list
-    if (parent.has(edge.cardAId) && parent.has(edge.cardBId)) {
-      union(edge.cardAId, edge.cardBId);
-    }
-  }
-
-  // Group by root
-  const groups = new Map<string, string[]>();
-  for (const id of cardIds) {
-    const root = find(id);
-    const group = groups.get(root);
-    if (group !== undefined) {
-      group.push(id);
-    } else {
-      groups.set(root, [id]);
-    }
-  }
-
-  // Return only groups with 2+ members
-  const sets: CardSet[] = [];
-  for (const group of groups.values()) {
-    if (group.length > 1) {
-      sets.push({ cardIds: group });
-    }
-  }
-
-  return sets;
-}
-
-// ---- Point type and computeSetHullPolygon ----
-
-/**
- * A 2D point in canvas coordinates.
- */
-export interface Point {
-  x: number;
-  y: number;
-}
-
-/**
- * Compute the outer perimeter polygon of a union of axis-aligned rectangles.
- * Returns vertices in canvas coordinates, ordered clockwise.
- * Returns empty array for degenerate input (no rects, zero-area rects).
- *
- * Algorithm:
- * 1. Coordinate compression: collect unique X and Y values from rect edges.
- * 2. Fill a boolean grid: cell (i,j) is filled if any rect covers that sub-region.
- * 3. Find topmost-leftmost filled cell; trace clockwise boundary.
- * 4. Remove collinear vertices for minimal polygon representation.
- *
- * References: [D01] Hull in snap.ts, Spec S01, Spec S02, #hull-algorithm
- */
-export function computeSetHullPolygon(rects: Rect[]): Point[] {
-  // Filter to non-degenerate rects only
-  const validRects = rects.filter((r) => r.width > 0 && r.height > 0);
-  if (validRects.length === 0) return [];
-
-  // Step 1: Collect unique X and Y coordinates (sorted)
-  const xSet = new Set<number>();
-  const ySet = new Set<number>();
-  for (const r of validRects) {
-    xSet.add(r.x);
-    xSet.add(r.x + r.width);
-    ySet.add(r.y);
-    ySet.add(r.y + r.height);
-  }
-  const xs = Array.from(xSet).sort((a, b) => a - b);
-  const ys = Array.from(ySet).sort((a, b) => a - b);
-
-  const cols = xs.length - 1;
-  const rows = ys.length - 1;
-  if (cols <= 0 || rows <= 0) return [];
-
-  // Step 2: Build boolean grid — cell (ci, ri) is filled if any rect covers it
-  const grid: boolean[] = new Array(cols * rows).fill(false);
-  for (const r of validRects) {
-    // Find the column/row range this rect covers
-    const ciStart = xs.indexOf(r.x);
-    const ciEnd = xs.indexOf(r.x + r.width);
-    const riStart = ys.indexOf(r.y);
-    const riEnd = ys.indexOf(r.y + r.height);
-    for (let ci = ciStart; ci < ciEnd; ci++) {
-      for (let ri = riStart; ri < riEnd; ri++) {
-        grid[ri * cols + ci] = true;
-      }
-    }
-  }
-
-  // Helper: is cell (ci, ri) filled?
-  function cellFilled(ci: number, ri: number): boolean {
-    if (ci < 0 || ci >= cols || ri < 0 || ri >= rows) return false;
-    return grid[ri * cols + ci];
-  }
-
-  // Step 3: Find topmost-leftmost filled cell
-  let startCi = -1;
-  let startRi = -1;
-  outer: for (let ri = 0; ri < rows; ri++) {
-    for (let ci = 0; ci < cols; ci++) {
-      if (cellFilled(ci, ri)) {
-        startCi = ci;
-        startRi = ri;
-        break outer;
-      }
-    }
-  }
-  if (startCi === -1) return [];
-
-  // Step 4: Clockwise boundary trace (in screen/canvas coordinates, y-down)
-  // Traces the outer perimeter with the filled interior on the LEFT as we walk.
-  // Directions indexed as: 0=RIGHT, 1=DOWN, 2=LEFT, 3=UP (clockwise sequence in screen space).
-  // Position is a grid corner in range [0..cols] x [0..rows].
-  // Starting corner is top-left of topmost-leftmost filled cell, facing RIGHT.
-  //
-  // At each step (cellAhead = the interior cell we are hugging on our LEFT):
-  //   - If the cell to our interior-right (cellToRight) is filled: concave corner, turn
-  //     counterclockwise in screen (= (dir+3)%4), step forward, record vertex.
-  //   - Else if cell ahead (cellAhead) is filled: continue straight, step forward, record vertex.
-  //   - Else: convex outer corner, turn clockwise in screen (= (dir+1)%4), no step.
-  //
-  // Corner (col, row) cell lookups (derived from the spec's clockwise boundary trace spec):
-  //   RIGHT → cellAhead = (col, row)       DOWN  → cellAhead = (col-1, row)
-  //   LEFT  → cellAhead = (col-1, row-1)   UP    → cellAhead = (col, row-1)
-  //   RIGHT → cellToRight = (col, row-1)   DOWN  → cellToRight = (col, row)
-  //   LEFT  → cellToRight = (col-1, row)   UP    → cellToRight = (col-1, row-1)
-  const DIR_RIGHT = 0;
-  const DIR_DOWN = 1;
-  const DIR_LEFT = 2;
-  const DIR_UP = 3;
-
-  function cellAheadOf(col: number, row: number, dir: number): [number, number] {
-    switch (dir) {
-      case DIR_RIGHT: return [col, row];
-      case DIR_DOWN:  return [col - 1, row];
-      case DIR_LEFT:  return [col - 1, row - 1];
-      case DIR_UP:    return [col, row - 1];
-      default:        return [col, row];
-    }
-  }
-
-  function cellToRightOf(col: number, row: number, dir: number): [number, number] {
-    switch (dir) {
-      case DIR_RIGHT: return [col, row - 1];
-      case DIR_DOWN:  return [col, row];
-      case DIR_LEFT:  return [col - 1, row];
-      case DIR_UP:    return [col - 1, row - 1];
-      default:        return [col, row];
-    }
-  }
-
-  function stepDir(dir: number): [number, number] {
-    switch (dir) {
-      case DIR_RIGHT: return [1, 0];
-      case DIR_DOWN:  return [0, 1];
-      case DIR_LEFT:  return [-1, 0];
-      case DIR_UP:    return [0, -1];
-      default:        return [0, 0];
-    }
-  }
-
-  // Start at top-left corner of the topmost-leftmost filled cell, facing RIGHT
-  let col = startCi;
-  let row = startRi;
-  let dir = DIR_RIGHT;
-  const startCol = col;
-  const startRow = row;
-  const startDir = dir;
-
-  const vertices: Array<[number, number]> = [[col, row]];
-
-  // Safety limit to prevent infinite loops
-  const maxIter = (cols + rows) * 4 * 4 + 8;
-  let iter = 0;
-
-  for (;;) {
-    iter++;
-    if (iter > maxIter) break; // Safety exit
-
-    // At a concave inner corner (cellToRight is filled): turn counterclockwise in screen (dir+3)%4
-    const [rci, rri] = cellToRightOf(col, row, dir);
-    if (cellFilled(rci, rri)) {
-      dir = (dir + 3) % 4;
-      const [dx, dy] = stepDir(dir);
-      col += dx;
-      row += dy;
-      vertices.push([col, row]);
-    } else {
-      // Check cell ahead (interior is still to our left: go straight)
-      const [aci, ari] = cellAheadOf(col, row, dir);
-      if (cellFilled(aci, ari)) {
-        const [dx, dy] = stepDir(dir);
-        col += dx;
-        row += dy;
-        vertices.push([col, row]);
-      } else {
-        // Convex outer corner: turn clockwise in screen (dir+1)%4, no step
-        dir = (dir + 1) % 4;
-      }
-    }
-
-    // Check if we've completed the loop
-    if (col === startCol && row === startRow && dir === startDir) {
-      break;
-    }
-  }
-
-  // The last vertex is the same as the first (loop closure); remove it
-  if (
-    vertices.length > 1 &&
-    vertices[vertices.length - 1][0] === vertices[0][0] &&
-    vertices[vertices.length - 1][1] === vertices[0][1]
-  ) {
-    vertices.pop();
-  }
-
-  // Step 5: Remove collinear vertices
-  // A vertex is collinear if it lies on a straight line between its neighbors
-  function removeCollinear(pts: Array<[number, number]>): Array<[number, number]> {
-    if (pts.length <= 2) return pts;
-    const result: Array<[number, number]> = [];
-    const n = pts.length;
-    for (let i = 0; i < n; i++) {
-      const prev = pts[(i + n - 1) % n];
-      const cur = pts[i];
-      const next = pts[(i + 1) % n];
-      // Direction prev→cur
-      const dx1 = cur[0] - prev[0];
-      const dy1 = cur[1] - prev[1];
-      // Direction cur→next
-      const dx2 = next[0] - cur[0];
-      const dy2 = next[1] - cur[1];
-      // Collinear if same direction (cross product = 0)
-      if (dx1 * dy2 !== dx2 * dy1) {
-        result.push(cur);
-      }
-    }
-    return result;
-  }
-
-  const minimal = removeCollinear(vertices);
-
-  // Step 6: Convert grid indices back to canvas coordinates
-  return minimal.map(([ci, ri]) => ({ x: xs[ci], y: ys[ri] }));
 }
 
 // ---- computeEdgeVisibility ----

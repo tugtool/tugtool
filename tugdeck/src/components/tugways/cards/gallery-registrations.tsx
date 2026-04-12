@@ -35,7 +35,6 @@ import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
 import { GalleryPalette } from "./gallery-palette";
 import { GalleryScaleTiming } from "./gallery-scale-timing";
-import { GalleryCascadeInspector } from "./gallery-cascade-inspector";
 import { GalleryAnimator } from "./gallery-animator";
 import { GallerySkeleton } from "./gallery-skeleton";
 import { GalleryInput } from "./gallery-input";
@@ -134,7 +133,6 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-mutation-tx",       title: "Mutation Transactions", closable: true },
   { id: "template", componentId: "gallery-observable-props",  title: "Observable Props",     closable: true },
   { id: "template", componentId: "gallery-chain-actions",     title: "Chain Actions",        closable: true },
-  { id: "template", componentId: "gallery-cascade-inspector", title: "Cascade Inspector",    closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -630,14 +628,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-chain-actions",
     contentFactory: (_cardId) => <GalleryChainActions />,
     defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-  });
-
-  registerCard({
-    componentId: "gallery-cascade-inspector",
-    contentFactory: (_cardId) => <GalleryCascadeInspector />,
-    defaultMeta: { title: "Cascade Inspector", icon: "Search", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

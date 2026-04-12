@@ -143,25 +143,4 @@ export interface IDeckManagerStore {
    */
   toggleCardCollapse: (cardId: string) => void;
 
-  // ---- Explicit set membership (option-key-only snapping) ----
-
-  /**
-   * Return the card IDs in the same explicit set as `cardId`.
-   * Returns an empty array if the card is not in any set.
-   * The returned array includes `cardId` itself.
-   */
-  getCardSet: (cardId: string) => string[];
-
-  /**
-   * Join cards into an explicit set. If any card is already in a set,
-   * the sets are merged. Cards not currently in any set are added.
-   * The resulting set is the union of all involved sets plus the given IDs.
-   */
-  joinSet: (cardIds: string[]) => void;
-
-  /**
-   * Remove a card from its explicit set. If the remaining set has fewer
-   * than 2 members, the set is dissolved entirely.
-   */
-  removeFromSet: (cardId: string) => void;
 }

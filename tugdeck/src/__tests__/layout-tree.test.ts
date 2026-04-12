@@ -11,7 +11,7 @@ import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
 describe("DeckState", () => {
   test("DeckState with empty cards array is valid", () => {
-    const state: DeckState = { cards: [], sets: [] };
+    const state: DeckState = { cards: [] };
     expect(state.cards).toBeDefined();
     expect(Array.isArray(state.cards)).toBe(true);
     expect(state.cards.length).toBe(0);
@@ -138,7 +138,7 @@ describe("serialize and deserialize", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card], sets: [] };
+    const canvasState: DeckState = { cards: [card] };
 
     const serialized = serialize(canvasState);
     const json = JSON.stringify(serialized);
@@ -172,7 +172,7 @@ describe("serialize and deserialize", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card], sets: [] };
+    const canvasState: DeckState = { cards: [card] };
 
     const json = JSON.stringify(serialize(canvasState));
     const restored = deserialize(json, 1920, 1080);
@@ -260,7 +260,7 @@ describe("serialize and deserialize", () => {
       acceptsFamilies: ["standard"],
     };
 
-    const json = JSON.stringify(serialize({ cards: [cardA, cardB], sets: [] }));
+    const json = JSON.stringify(serialize({ cards: [cardA, cardB] }));
     const restored = deserialize(json, 1920, 1080);
 
     expect(restored.cards.length).toBe(2);
@@ -343,37 +343,6 @@ describe("serialize and deserialize", () => {
     expect(result.cards[0].size.height).toBe(100);
   });
 
-  test("deserialize merges sets that share a card ID (single-set invariant)", () => {
-    const v5 = {
-      version: 5,
-      cards: [
-        { id: "a", position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t1", componentId: "hello", title: "H", closable: true }], activeTabId: "t1" },
-        { id: "b", position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t2", componentId: "hello", title: "H", closable: true }], activeTabId: "t2" },
-        { id: "c", position: { x: 0, y: 600 }, size: { width: 400, height: 300 }, tabs: [{ id: "t3", componentId: "hello", title: "H", closable: true }], activeTabId: "t3" },
-      ],
-      // Card "b" appears in two sets — corrupted data.
-      sets: [["a", "b"], ["b", "c"]],
-    };
-    const result = deserialize(JSON.stringify(v5), 1920, 1080);
-    // Should be merged into a single set containing all three.
-    expect(result.sets.length).toBe(1);
-    expect(result.sets[0].sort()).toEqual(["a", "b", "c"]);
-  });
-
-  test("deserialize does not merge sets with no overlapping card IDs", () => {
-    const v5 = {
-      version: 5,
-      cards: [
-        { id: "a", position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t1", componentId: "hello", title: "H", closable: true }], activeTabId: "t1" },
-        { id: "b", position: { x: 0, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t2", componentId: "hello", title: "H", closable: true }], activeTabId: "t2" },
-        { id: "c", position: { x: 400, y: 0 }, size: { width: 400, height: 300 }, tabs: [{ id: "t3", componentId: "hello", title: "H", closable: true }], activeTabId: "t3" },
-        { id: "d", position: { x: 400, y: 300 }, size: { width: 400, height: 300 }, tabs: [{ id: "t4", componentId: "hello", title: "H", closable: true }], activeTabId: "t4" },
-      ],
-      sets: [["a", "b"], ["c", "d"]],
-    };
-    const result = deserialize(JSON.stringify(v5), 1920, 1080);
-    expect(result.sets.length).toBe(2);
-  });
 });
 
 // ---- Card management data-layer tests (D01, D06) ----
@@ -397,7 +366,7 @@ describe("focusCard data model (D06)", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
     const p2 = makeCard("files");
-    const canvasState: DeckState = { cards: [p0, p1, p2], sets: [] };
+    const canvasState: DeckState = { cards: [p0, p1, p2] };
 
     // Simulate focusCard(p0.id): splice and push
     const idx = canvasState.cards.findIndex((p) => p.id === p0.id);
@@ -414,7 +383,7 @@ describe("focusCard data model (D06)", () => {
   test("focusing already-last card does not reorder", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
-    const canvasState: DeckState = { cards: [p0, p1], sets: [] };
+    const canvasState: DeckState = { cards: [p0, p1] };
 
     // p1 is already last — focusCard would early-return
     const idx = canvasState.cards.findIndex((p) => p.id === p1.id);
@@ -429,7 +398,7 @@ describe("focusCard data model (D06)", () => {
 
 describe("addNewCard data model (D01)", () => {
   test("pushing a new CardState adds it at canvas center", () => {
-    const canvasState: DeckState = { cards: [], sets: [] };
+    const canvasState: DeckState = { cards: [] };
     const canvasW = 800;
     const canvasH = 600;
     const CARD_W = 400;
@@ -462,7 +431,7 @@ describe("removeCard data model (D01)", () => {
   test("splicing a card from the array removes it", () => {
     const p0 = makeCard("terminal");
     const p1 = makeCard("git");
-    const canvasState: DeckState = { cards: [p0, p1], sets: [] };
+    const canvasState: DeckState = { cards: [p0, p1] };
 
     // Simulate removeCard: filter out the card whose tab matches
     const tabIdToRemove = p0.tabs[0].id;
@@ -493,7 +462,7 @@ describe("removeCard data model (D01)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const canvasState: DeckState = { cards: [card], sets: [] };
+    const canvasState: DeckState = { cards: [card] };
 
     // Remove tab1
     canvasState.cards = canvasState.cards
@@ -616,7 +585,7 @@ describe("CardState collapsed field (Phase 5f, Step 1)", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const state: DeckState = { cards: [card], sets: [] };
+    const state: DeckState = { cards: [card] };
     const serialized = serialize(state) as { version: number; cards: CardState[] };
     expect(serialized.cards.length).toBe(1);
     expect(serialized.cards[0].collapsed).toBe(true);
@@ -633,7 +602,7 @@ describe("CardState collapsed field (Phase 5f, Step 1)", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const json = JSON.stringify(serialize({ cards: [card], sets: [] }));
+    const json = JSON.stringify(serialize({ cards: [card] }));
     const restored = deserialize(json, 1920, 1080);
     expect(restored.cards[0].collapsed).toBe(true);
   });
@@ -673,12 +642,12 @@ describe("TabStateBag type (Phase 5f, Step 1)", () => {
 
 describe("DeckState focusedCardId field (Phase 5f, Step 1)", () => {
   test("DeckState accepts optional focusedCardId", () => {
-    const state: DeckState = { cards: [], sets: [], focusedCardId: "card-abc" };
+    const state: DeckState = { cards: [], focusedCardId: "card-abc" };
     expect(state.focusedCardId).toBe("card-abc");
   });
 
   test("DeckState without focusedCardId has undefined field", () => {
-    const state: DeckState = { cards: [], sets: [] };
+    const state: DeckState = { cards: [] };
     expect(state.focusedCardId).toBeUndefined();
   });
 });

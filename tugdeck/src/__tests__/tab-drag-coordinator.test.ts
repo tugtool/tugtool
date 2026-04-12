@@ -39,7 +39,7 @@ function makeMockStore() {
   };
   return {
     subscribe: () => () => {},
-    getSnapshot: () => ({ cards: [], sets: [] }),
+    getSnapshot: () => ({ cards: [] }),
     getVersion: () => 0,
     handleCardMoved: () => {},
     handleCardClosed: () => {},
@@ -72,10 +72,6 @@ function makeMockStore() {
     unregisterSaveCallback: () => {},
     // Collapse toggle
     toggleCardCollapse: () => {},
-    // Explicit set membership
-    getCardSet: () => [],
-    joinSet: () => {},
-    removeFromSet: () => {},
     _calls: calls,
   };
 }

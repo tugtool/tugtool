@@ -63,7 +63,7 @@ function makeMockConnection() {
  */
 const mockStore: IDeckManagerStore = {
   subscribe: (_cb: () => void) => () => {},
-  getSnapshot: () => ({ cards: [], sets: [] }),
+  getSnapshot: () => ({ cards: [] }),
   getVersion: () => 0,
   handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
   handleCardClosed: (_id: string) => {},
@@ -81,9 +81,6 @@ const mockStore: IDeckManagerStore = {
   registerSaveCallback: (_id: string, _callback: () => void) => {},
   unregisterSaveCallback: (_id: string) => {},
   toggleCardCollapse: (_id: string) => {},
-  getCardSet: (_cardId: string) => [],
-  joinSet: (_cardIds: string[]) => {},
-  removeFromSet: (_cardId: string) => {},
 };
 
 // ---------------------------------------------------------------------------
@@ -303,7 +300,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { container } = render(
       <ResponderChainProvider>
         <CardFrame
-          store={mockStore}
+
           cardState={collapsedState}
           renderContent={(injected: CardFrameInjectedProps) => (
             <div data-testid="card-content">
@@ -328,7 +325,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { container } = render(
       <ResponderChainProvider>
         <CardFrame
-          store={mockStore}
+
           cardState={expandedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
@@ -348,7 +345,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const { getByTestId } = render(
       <ResponderChainProvider>
         <CardFrame
-          store={mockStore}
+
           cardState={collapsedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
@@ -428,7 +425,6 @@ describe("Serialization – collapsed state round-trip", () => {
       cards: [
         makeCardState({ id: "c1", collapsed: true }),
       ],
-      sets: [],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);
@@ -440,7 +436,6 @@ describe("Serialization – collapsed state round-trip", () => {
       cards: [
         makeCardState({ id: "c1" }), // no collapsed field
       ],
-      sets: [],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);

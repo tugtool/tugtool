@@ -23,7 +23,6 @@ import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
-import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deserialize } from "./serialization";
 
@@ -100,14 +99,6 @@ if (!container) {
   registerHelloWorldCard();
   registerGitCard();
   registerGalleryCards();
-
-  // Initialize the cascade inspector in dev mode only. The cleanup function is
-  // intentionally not called during normal app lifetime (same pattern as
-  // initMotionObserver) -- the inspector should live for the entire app session.
-  // [D02] Dev-only gating via NODE_ENV
-  if (process.env.NODE_ENV !== "production") {
-    initStyleInspector();
-  }
 
   // Extract tab IDs from the loaded layout and read tab states from cache.
   let tabStates = new Map<string, import("./layout-tree").TabStateBag>();

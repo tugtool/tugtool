@@ -1,8 +1,7 @@
 /**
  * TugDock + Canvas + Snap component tokens.
  *
- * Token prefix: --tug-dock-*, --tug-canvas-*, --tug-snap-*, --tug-sash-*,
- *               --tug-flash-*, --tug-set-*
+ * Token prefix: --tug-dock-*, --tug-canvas-*, --tug-snap-*
  * Drops the "base" segment per CSS reorganization.
  * No CSS rules yet — tokens only. Rules live in chrome.css for now.
  */
@@ -36,14 +35,4 @@ body {
 
   /* --- Snap / Sash / Flash --- */
   --tug-snap-guide: --tug-color(cyan, i: 50, t: 50, a: 60);
-  --tug-sash-hover: --tug-color(orange, i: 50, t: 50, a: 40);
-  --tug-flash-perimeter: --tug-color(cyan, i: 50, t: 50, a: 70);
-
-  /* --- Snap Sets --- */
-  --tug-set-member-border-collapsed: --tug-color(cyan, i: 50, t: 50, a: 30);
-  --tug-set-member-corner-squared: --tug-color(cyan);
-  --tug-set-focused-outline: --tug-color(cyan, i: 50, t: 50, a: 50);
-  --tug-set-hull-flash: --tug-color(cyan, i: 50, t: 50, a: 25);
-  --tug-set-breakout-flash: --tug-color(orange, i: 50, t: 50, a: 35);
-  --tug-set-dropTarget: --tug-color(cyan, i: 50, t: 50, a: 18);
 }

@@ -18,7 +18,6 @@ export function serialize(deckState: DeckState): object {
   return {
     version: 5,
     cards: deckState.cards,
-    sets: deckState.sets,
   };
 }
 
@@ -111,25 +110,7 @@ export function deserialize(
       });
     }
 
-    // Deserialize explicit sets (backward compatible: missing = empty array).
-    const rawSets = raw["sets"];
-    let sets: string[][] = [];
-    if (Array.isArray(rawSets)) {
-      const validCardIds = new Set(cards.map((c) => c.id));
-      for (const s of rawSets) {
-        if (!Array.isArray(s)) continue;
-        // Filter to only card IDs that exist in the deserialized cards.
-        const filtered = (s as string[]).filter((id) => validCardIds.has(id));
-        if (filtered.length >= 2) {
-          sets.push(filtered);
-        }
-      }
-      // Enforce single-set invariant: if a card appears in multiple sets
-      // (e.g. from a corrupted or hand-edited layout blob), merge those sets.
-      sets = mergeOverlappingSets(sets);
-    }
-
-    return { cards, sets };
+    return { cards };
   } catch {
     return buildDefaultLayout(canvasWidth, canvasHeight);
   }
@@ -153,64 +134,5 @@ export function buildDefaultLayout(
   _canvasWidth: number,
   _canvasHeight: number
 ): DeckState {
-  return { cards: [], sets: [] };
-}
-
-// ---- Helpers ----
-
-/**
- * Merge sets that share any card ID so each card appears in at most one set.
- * Uses union-find: if card X appears in sets A and B, those sets are merged.
- * Returns only merged sets with 2+ members.
- */
-function mergeOverlappingSets(sets: string[][]): string[][] {
-  // Map each card ID to the index of its first-seen set.
-  const parent = new Map<string, number>();
-  const setCount = sets.length;
-
-  // Union-find over set indices.
-  const setParent: number[] = [];
-  for (let i = 0; i < setCount; i++) setParent.push(i);
-
-  function find(x: number): number {
-    while (setParent[x] !== x) {
-      setParent[x] = setParent[setParent[x]];
-      x = setParent[x];
-    }
-    return x;
-  }
-  function union(a: number, b: number): void {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) setParent[ra] = rb;
-  }
-
-  for (let i = 0; i < setCount; i++) {
-    for (const id of sets[i]) {
-      const prev = parent.get(id);
-      if (prev !== undefined) {
-        union(prev, i);
-      } else {
-        parent.set(id, i);
-      }
-    }
-  }
-
-  // Group set indices by root.
-  const groups = new Map<number, Set<string>>();
-  for (let i = 0; i < setCount; i++) {
-    const root = find(i);
-    let group = groups.get(root);
-    if (!group) {
-      group = new Set();
-      groups.set(root, group);
-    }
-    for (const id of sets[i]) group.add(id);
-  }
-
-  const result: string[][] = [];
-  for (const group of groups.values()) {
-    if (group.size >= 2) result.push(Array.from(group));
-  }
-  return result;
+  return { cards: [] };
 }

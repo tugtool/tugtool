@@ -41,8 +41,7 @@
  *   useRequiredResponderChain -> useCallback -> useResponder ->
  *   useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
  *   useLayoutEffect (startup overlay fade-out) ->
- *   useLayoutEffect (selection highlight sync) -> useLayoutEffect (initial clip-path) ->
- *   useEffect (store subscriber for clip-path updates)
+ *   useLayoutEffect (selection highlight sync)
  *
  * The canvas div with grid background is provided by #deck-container in
  * index.html and styled by globals.css. DeckCanvas renders inside it.
@@ -66,7 +65,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tug-card";
-import { CardFrame, updateSetAppearance } from "./card-frame";
+import { CardFrame } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -169,9 +168,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const galleryCardIdRef = useRef<string | null>(null);
 
   /**
-   * containerRef: ref to the positioning wrapper div that card frames, snap guides,
-   * and SVG flash elements are rendered into. Passed to updateSetAppearance for
-   * initial-load clip-path and data-in-set setup. [D03, Spec S04]
+   * containerRef: ref to the positioning wrapper div that card frames and snap guides
+   * are rendered into. [D03, Spec S04]
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -211,8 +209,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   //             useRequiredResponderChain -> useCallback -> useResponder ->
   //             useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
   //             useLayoutEffect (startup overlay fade-out) ->
-  //             useLayoutEffect (selection highlight sync) -> useLayoutEffect (initial clip-path) ->
-  //             useEffect (store subscriber for clip-path updates)
+  //             useLayoutEffect (selection highlight sync)
 
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
@@ -373,34 +370,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     }
   }, [focusedCardId]);
 
-  // Run updateSetAppearance once after initial mount so clip-path and data-in-set are
-  // applied for any cards that are already in sets when the layout is first rendered. [D08, D03]
-  useLayoutEffect(() => {
-    const containerEl = containerRef.current;
-    if (!containerEl) return;
-    const canvasBounds = containerEl.getBoundingClientRect();
-    updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl, store);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Subscribe to store mutations and update set appearance on every notification. [D03, S03]
-  // This ensures clip-path and data-in-set stay current after card close, undo, and redo
-  // without requiring a React re-render. The callback is a DOM side-effect (not a state
-  // update), so useEffect + store.subscribe() is correct here — useSyncExternalStore is not
-  // used because no React state is being read or derived. [D40 compliance]
-  //
-  // No gesture gating needed: updateSetAppearance now only writes clip-path and
-  // data-in-set to existing elements (no DOM creation/removal), making it safe to call at
-  // any time, including mid-gesture. [D05]
-  useEffect(() => {
-    const unsubscribe = store.subscribe(() => {
-      const containerEl = containerRef.current;
-      if (!containerEl) return;
-      const canvasBounds = containerEl.getBoundingClientRect();
-      updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl, store);
-    });
-    return unsubscribe;
-  }, [store]);
-
   return (
     <ResponderScope>
       {/*
@@ -423,7 +392,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       {/*
         * containerRef wrapper: positioning context for card frames, snap guides,
         * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).
-        * The ref is used by updateSetAppearance for initial-load clip-path setup. [D03]
+        * [D03]
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
@@ -468,7 +437,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         return (
           <CardFrame
             key={cardState.id}
-            store={store}
             cardState={cardState}
             zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}

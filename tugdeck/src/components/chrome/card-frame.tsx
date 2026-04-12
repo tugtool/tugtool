@@ -16,17 +16,9 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
-import type { IDeckManagerStore } from "@/deck-manager-store";
-import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
-import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
-import { animate } from "@/components/tugways/tug-animator";
+import { computeSnap, computeResizeSnap } from "@/snap";
+import type { Rect, GuidePosition, SnapResult } from "@/snap";
 import { CARD_TITLE_BAR_HEIGHT } from "../tugways/tug-card";
-
-// ---------------------------------------------------------------------------
-// Module-level counter for unique SVG flash filter IDs
-// ---------------------------------------------------------------------------
-
-let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
 // snapshotCardRects
@@ -60,67 +52,6 @@ function snapshotCardRects(
 }
 
 // ---------------------------------------------------------------------------
-// findSharedEdgesInExplicitSets
-// ---------------------------------------------------------------------------
-
-/**
- * Find shared edges only among cards that belong to the same explicit set.
- *
- * For each explicit set in the store, filters `rects` to that set's members
- * and runs `findSharedEdges` on the subset. Returns the concatenation of all
- * per-set results. Cards not in any explicit set are never considered.
- */
-function findSharedEdgesInExplicitSets(
-  rects: { id: string; rect: Rect }[],
-  store: IDeckManagerStore,
-): SharedEdge[] {
-  const edges: SharedEdge[] = [];
-  const snapshot = store.getSnapshot();
-  for (const setIds of snapshot.sets) {
-    const setRects = rects.filter((r) => setIds.includes(r.id));
-    if (setRects.length >= 2) {
-      edges.push(...findSharedEdges(setRects));
-    }
-  }
-  return edges;
-}
-
-// ---------------------------------------------------------------------------
-// updateSetAppearance suppression flag
-//
-// Set to true around drop/resize-end paths where store mutations (joinSet,
-// removeFromSet) are immediately followed by postActionSetUpdate, which calls
-// updateSetAppearance itself. Without this flag, the DeckCanvas store
-// subscriber would fire an identical updateSetAppearance call in between,
-// resulting in two full DOM traversals for no benefit.
-// ---------------------------------------------------------------------------
-
-let suppressSetAppearanceUpdate = false;
-
-// ---------------------------------------------------------------------------
-// Shadow extension constant
-//
-// px beyond border-box for exterior edges in clip-path: inset().
-// Derived from --tugx-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
-// 20px = blur(8) * 2 + offset(2) + margin — generous enough to show full shadow.
-// ---------------------------------------------------------------------------
-
-const SHADOW_EXTEND_PX = 20;
-
-// ---------------------------------------------------------------------------
-// Snap modifier key configuration [D01]
-//
-// To change the snap modifier, update SNAP_MODIFIER_KEY. All behavior follows.
-// ---------------------------------------------------------------------------
-
-const SNAP_MODIFIER_KEY: keyof Pick<PointerEvent, "altKey" | "ctrlKey" | "shiftKey" | "metaKey"> =
-  "altKey";
-
-function isSnapModifier(e: PointerEvent): boolean {
-  return e[SNAP_MODIFIER_KEY];
-}
-
-// ---------------------------------------------------------------------------
 // Canvas padding configuration
 //
 // Uniform padding applied to all four sides of the canvas for move/resize
@@ -128,6 +59,15 @@ function isSnapModifier(e: PointerEvent): boolean {
 // ---------------------------------------------------------------------------
 
 const CANVAS_PADDING = 2;
+
+// ---------------------------------------------------------------------------
+// Snap gap configuration
+//
+// Gap in pixels between adjacent card edges when snapping. Positive values
+// keep cards visually separated. Set to 0 for flush edges.
+// ---------------------------------------------------------------------------
+
+const SNAP_GAP_PX = 5;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,8 +91,6 @@ export interface CardFrameInjectedProps {
  * Props for the CardFrame component.
  */
 export interface CardFrameProps {
-  /** DeckManager store for explicit set membership access. */
-  store: IDeckManagerStore;
   /** Card position, size, and id from DeckState. */
   cardState: CardState;
   /**
@@ -215,7 +153,6 @@ const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
  * CardFrame -- positions, drags, resizes, and stacks a single card on the canvas.
  */
 export function CardFrame({
-  store,
   cardState,
   renderContent,
   onCardMoved,
@@ -260,28 +197,20 @@ export function CardFrame({
   // The drag mechanic is a three-phase state machine:
   //
   //   1. START (handleDragStart): snapshot all state, set up pointer capture,
-  //      build caches for snap/set/merge hit-testing, attach move/up listeners.
+  //      build caches for snap/merge hit-testing, attach move/up listeners.
   //
   //   2. FRAME (applyDragFrame, called via rAF from onPointerMove): compute
-  //      clamped position, apply snap or set-move or free-drag, detect break-out,
-  //      hit-test tab bars for merge feedback. All DOM mutations are appearance-zone.
+  //      clamped position, apply snap or free-drag, hit-test tab bars for
+  //      merge feedback. All DOM mutations are appearance-zone.
   //
   //   3. END (onPointerUp): commit final position to store, handle merge-on-drop,
-  //      flash set perimeter, clean up listeners and state.
+  //      clean up listeners and state.
   //
-  // All drag state lives in refs — zero React re-renders during drag. The three
-  // nested functions (applyDragFrame, onPointerMove, onPointerUp) close over
-  // drag-start snapshots captured in handleDragStart. This closure architecture
-  // is intentional: the functions MUST see the drag-start state, and passing
-  // 15+ parameters would be worse than nesting.
+  // All drag state lives in refs — zero React re-renders during drag.
   //
-  // Three drag modes (determined per-frame in applyDragFrame):
-  //   - Free drag: solo card, no modifier. Position = clamped pointer delta.
-  //   - Snap mode: solo card + Alt held. Position snapped to other card edges.
-  //   - Set-move: card is in a set, no modifier. All set members move together.
-  //
-  // Break-out: pressing Alt during set-move detaches this card from the set,
-  // commits set member positions, and transitions to snap mode.
+  // Two drag modes (determined per-frame in applyDragFrame):
+  //   - Free drag: no modifier. Position = clamped pointer delta.
+  //   - Snap mode: Option held. Position snapped to other card edges.
   //
   // Merge: dragging over another card's tab bar highlights the drop target.
   // Releasing on the tab bar merges this card's active tab into the target.
@@ -315,31 +244,10 @@ export function CardFrame({
   const dragOtherRects = useRef<{ id: string; rect: Rect }[]>([]);
   // Active snap guide DOM elements; cleared on drop and on each rAF if guides change. [D03]
   const dragGuideEls = useRef<HTMLElement[]>([]);
-  // Set member card IDs and their frame elements, excluding the dragged card. [D02]
-  const dragSetMembers = useRef<{ id: string; el: HTMLElement }[]>([]);
-  // Canvas-relative top-left positions of each dragSetMembers entry at drag-start. [D02]
-  const dragSetOrigins = useRef<{ x: number; y: number }[]>([]);
-  // Whether the snap modifier (Alt) was held as of the most recent pointermove. [D01]
-  const latestSnapModifier = useRef(false);
-  // Snap modifier value from the previous rAF; compared each frame to detect break-out. [D05]
-  const prevSnapModifier = useRef(false);
+  // Whether alt key is held during drag.
+  const latestAltKey = useRef(false);
   // Snap result computed in the last rAF; read in onPointerUp to finalise snapped position. [D01]
   const lastSnapResult = useRef<SnapResult | null>(null);
-  // Computed border width of the .tugcard element, read once at drag-start. [D56]
-  // Passed to computeSnap so adjacent card borders collapse into a single visual line.
-  const dragBorderWidth = useRef(0);
-  // Set member IDs at drag-start (including this card if in a set). Used at drop
-  // to detect whether the card has newly joined a set (flash only on new membership). [D54]
-  const dragSetMemberIdsAtDragStart = useRef<string[]>([]);
-  // Bounding-box extension of the set beyond the dragged card at drag-start. [D02]
-  // Stored as { left, top, right, bottom } offsets (non-negative px amounts) so the
-  // clamp logic can use the full set bounding box when constraining to canvas bounds.
-  const dragSetBBoxOffset = useRef<{ left: number; top: number; right: number; bottom: number }>({
-    left: 0,
-    top: 0,
-    right: 0,
-    bottom: 0,
-  });
 
   /**
    * Set a tab bar element as the current drag drop target (appearance-zone).
@@ -465,183 +373,29 @@ export function CardFrame({
       const canvasBounds = dragCanvasBounds.current;
       dragOtherRects.current = snapshotCardRects(canvasBounds, id);
 
-      // Compute set membership at drag-start from explicit sets (not geometry). [D02]
-      // Explicit sets are tracked in DeckManager and only form through Option+drag snapping.
-      const explicitSetIds = store.getCardSet(id);
-      dragSetMembers.current = [];
-      dragSetOrigins.current = [];
-      dragSetMemberIdsAtDragStart.current = [];
-      if (explicitSetIds.length >= 2) {
-        dragSetMemberIdsAtDragStart.current = explicitSetIds.slice();
-        for (const memberId of explicitSetIds) {
-          if (memberId === id) continue;
-          const memberEl = document.querySelector<HTMLElement>(
-            `.card-frame[data-card-id="${memberId}"]`,
-          );
-          if (memberEl) {
-            dragSetMembers.current.push({ id: memberId, el: memberEl });
-            dragSetOrigins.current.push({
-              x: parseFloat(memberEl.style.left) || 0,
-              y: parseFloat(memberEl.style.top) || 0,
-            });
-          }
-        }
-      }
-
-      // Compute the bounding-box extension of the set relative to the dragged card. [D02]
-      // This measures how far the set extends beyond the card's own edges so that
-      // clampedPosition can use the full set bounding box during set-move clamping.
-      {
-        const cardLeft = position.x;
-        const cardTop = position.y;
-        const cardRight = position.x + frame.offsetWidth;
-        const cardBottom = position.y + frame.offsetHeight;
-        let setBBoxLeft = cardLeft;
-        let setBBoxTop = cardTop;
-        let setBBoxRight = cardRight;
-        let setBBoxBottom = cardBottom;
-        for (let i = 0; i < dragSetOrigins.current.length; i++) {
-          const origin = dragSetOrigins.current[i];
-          // member frame dimensions from the DOM element (already pushed into dragSetMembers)
-          const memberEl = dragSetMembers.current[i]?.el;
-          if (!memberEl) continue;
-          const mRight = origin.x + memberEl.offsetWidth;
-          const mBottom = origin.y + memberEl.offsetHeight;
-          if (origin.x < setBBoxLeft) setBBoxLeft = origin.x;
-          if (origin.y < setBBoxTop) setBBoxTop = origin.y;
-          if (mRight > setBBoxRight) setBBoxRight = mRight;
-          if (mBottom > setBBoxBottom) setBBoxBottom = mBottom;
-        }
-        dragSetBBoxOffset.current = {
-          left: cardLeft - setBBoxLeft,
-          top: cardTop - setBBoxTop,
-          right: setBBoxRight - cardRight,
-          bottom: setBBoxBottom - cardBottom,
-        };
-      }
-
-      // Read .tugcard computed border width once at drag-start for border collapse. [D56]
-      // Parsed to a number for use as computeSnap's borderWidth parameter.
-      const tugcardEl = frame.querySelector<HTMLElement>(".tugcard");
-      dragBorderWidth.current = tugcardEl
-        ? parseFloat(getComputedStyle(tugcardEl).borderTopWidth) || 0
-        : 0;
-
-      // Initialize snap modifier state. [D01]
-      latestSnapModifier.current = false;
-      prevSnapModifier.current = false;
+      // Initialize drag state.
+      latestAltKey.current = false;
       lastSnapResult.current = null;
 
       // === PHASE 2: FRAME (rAF callback) ===
       // Called once per animation frame during drag. Computes position,
-      // applies snap/set-move/free-drag, detects break-out, hit-tests merge.
+      // applies snap or free-drag, hit-tests merge.
       // All mutations are appearance-zone (direct DOM, no React state).
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
-        // Compute clamped position. Two paths:
-        //   - Set-move: clamp the entire set bounding box within the canvas,
-        //     then recover this card's position within the set.
-        //   - Solo: clamp just this card's frame within the canvas.
-        //
-        // During set-move, clamp using the full set bounding box so no set member
-        // can be dragged outside the canvas. During solo drag, use just the frame size. [D02]
-        //
-        // clampedPosition returns the card top-left after clamping. For set-move we
-        // instead clamp the set bounding box top-left (= card pos - bbo.{left,top}), then
-        // add bbo.{left,top} back to recover the card position.
-        const bbo = dragSetBBoxOffset.current;
-        const setMoveActive = dragSetMembers.current.length > 0 && !latestSnapModifier.current;
-        let pos: { x: number; y: number };
-        if (setMoveActive) {
-          // Shift the effective start position to the set's top-left corner, clamp the full
-          // set bounding box within the canvas, then restore the card's position within the set.
-          const setBBoxStart = {
-            x: dragStartPosition.current.x - bbo.left,
-            y: dragStartPosition.current.y - bbo.top,
-          };
-          const setBBoxSize = {
-            width: frame.offsetWidth + bbo.left + bbo.right,
-            height: frame.offsetHeight + bbo.top + bbo.bottom,
-          };
-          const setPos = clampedPosition(
-            latestDragPointer.current,
-            dragStartPointer.current,
-            setBBoxStart,
-            dragCanvasBounds.current,
-            setBBoxSize,
-          );
-          pos = { x: setPos.x + bbo.left, y: setPos.y + bbo.top };
-        } else {
-          pos = clampedPosition(
-            latestDragPointer.current,
-            dragStartPointer.current,
-            dragStartPosition.current,
-            dragCanvasBounds.current,
-            { width: frame.offsetWidth, height: frame.offsetHeight },
-          );
-        }
 
-        // Break-out detection: snap modifier pressed during set-move. [D05]
-        // If modifier transitions false->true while set members exist, detach.
-        if (
-          dragSetMembers.current.length > 0 &&
-          latestSnapModifier.current === true &&
-          prevSnapModifier.current === false
-        ) {
-          // Snapshot remaining members before clearing (used for corner recompute below).
-          const remainingMembers = dragSetMembers.current.slice();
+        // Always solo card clamping.
+        const pos = clampedPosition(
+          latestDragPointer.current,
+          dragStartPointer.current,
+          dragStartPosition.current,
+          dragCanvasBounds.current,
+          { width: frame.offsetWidth, height: frame.offsetHeight },
+        );
 
-          // Commit each set member's current DOM position to the store.
-          for (const member of remainingMembers) {
-            const memberPos = {
-              x: parseFloat(member.el.style.left) || 0,
-              y: parseFloat(member.el.style.top) || 0,
-            };
-            const memberSize = {
-              width: member.el.offsetWidth,
-              height: member.el.offsetHeight,
-            };
-            onCardMoved(member.id, memberPos, memberSize);
-          }
-          // Detach: clear set members so this card enters snap mode.
-          // Remove from explicit set in DeckManager. Suppress the subscriber-driven
-          // updateSetAppearance — the detached card's visuals are handled by direct
-          // DOM manipulation below, and the remaining set members were already updated
-          // by the subscriber from the onCardMoved calls above.
-          suppressSetAppearanceUpdate = true;
-          store.removeFromSet(id);
-          suppressSetAppearanceUpdate = false;
-          dragSetMembers.current = [];
-          dragSetOrigins.current = [];
-          // Directly clear clip-path and data-in-set on the detached card's .tugcard.
-          // Break-out detection runs BEFORE frame.style.left/top is written, so
-          // getBoundingClientRect still sees the previous frame's position. Calling
-          // updateSetAppearance here would incorrectly see the detached card as still
-          // adjacent to the set. Direct DOM manipulation gives immediate visual
-          // correctness without position dependency. [D07]
-          // The remaining set members' clip-paths are updated by the store subscriber,
-          // which fires synchronously from the onCardMoved calls above. [D07]
-          const breakoutTugcard = frame.querySelector<HTMLElement>(".tugcard");
-          if (breakoutTugcard) {
-            breakoutTugcard.style.clipPath = "";
-          }
-          frame.removeAttribute("data-in-set");
-
-          // Flash full perimeter of the detached card. [D55]
-          flashCardPerimeter(frame);
-
-          // Clear the pre-drag set snapshot so the drag-end postActionSetUpdate
-          // does not see "was in set, now solo" and fire a second break-out flash. [D55]
-          dragSetMemberIdsAtDragStart.current = [];
-        }
-
-        // Update previous snap modifier for next frame's break-out check.
-        prevSnapModifier.current = latestSnapModifier.current;
-
-        // Determine behavior based on modifier and set membership.
-        if (latestSnapModifier.current && dragSetMembers.current.length === 0) {
-          // Snap mode: modifier held, solo card or just broke out. [D01]
+        if (latestAltKey.current) {
+          // Snap mode: Option held. [D01]
           const movingRect: Rect = {
             x: pos.x,
             y: pos.y,
@@ -652,7 +406,7 @@ export function CardFrame({
             movingRect,
             dragOtherRects.current.map((r) => r.rect),
             undefined,
-            dragBorderWidth.current,
+            -SNAP_GAP_PX,
           );
           lastSnapResult.current = snapResult;
           if (snapResult.x !== null) {
@@ -666,26 +420,10 @@ export function CardFrame({
           if (container) {
             syncGuideElements(dragGuideEls, snapResult.guides, container);
           }
-        } else if (!latestSnapModifier.current && dragSetMembers.current.length === 0) {
-          // Free drag: solo card, no snap modifier. Clear guides and snap result.
+        } else {
+          // Free drag: no snap modifier. Clear guides and snap result.
           lastSnapResult.current = null;
           clearGuideElements(dragGuideEls);
-        } else if (dragSetMembers.current.length > 0 && !latestSnapModifier.current) {
-          // Set-move: modifier not held, move all set members by the same clamped delta
-          // as the main card so no member slides relative to any other. [D02]
-          // Use the clamped card position (pos) minus the drag-start position to get
-          // the actual effective displacement (which may differ from raw pointer delta
-          // when the set bounding box is clamped at the canvas edge).
-          const clampedDeltaX = pos.x - dragStartPosition.current.x;
-          const clampedDeltaY = pos.y - dragStartPosition.current.y;
-          for (let i = 0; i < dragSetMembers.current.length; i++) {
-            const member = dragSetMembers.current[i];
-            const origin = dragSetOrigins.current[i];
-            member.el.style.left = `${origin.x + clampedDeltaX}px`;
-            member.el.style.top = `${origin.y + clampedDeltaY}px`;
-          }
-          // No shadow element to translate — clip-path is intrinsic to each card and
-          // moves automatically with the card's box model. [D01, D05]
         }
 
         frame.style.left = `${pos.x}px`;
@@ -708,8 +446,7 @@ export function CardFrame({
       // === POINTER HANDLERS ===
       function onPointerMove(e: PointerEvent) {
         latestDragPointer.current = { x: e.clientX, y: e.clientY };
-        // Update snap modifier state from pointer event. [D01]
-        latestSnapModifier.current = isSnapModifier(e);
+        latestAltKey.current = e.altKey;
         if (dragRafId.current === null) {
           dragRafId.current = requestAnimationFrame(applyDragFrame);
         }
@@ -717,7 +454,7 @@ export function CardFrame({
 
       // === PHASE 3: DROP ===
       // Pointer released. Commit final position to store, handle merge,
-      // flash set perimeter, clean up listeners and reset all drag state.
+      // clean up listeners and reset all drag state.
       function onPointerUp(e: PointerEvent) {
         if (!dragActive.current) return;
         dragActive.current = false;
@@ -744,7 +481,6 @@ export function CardFrame({
         }
 
         // Hit-test tab bars for merge on drop. [D45]
-        // Merge takes priority over snap-on-drop. [D06]
         if (onCardMerged && activeTabId) {
           const cx = e.clientX;
           const cy = e.clientY;
@@ -754,19 +490,10 @@ export function CardFrame({
               const insertIndex = computeMergeInsertIndex(entry.el, cx);
               onCardMerged(id, entry.cardId, insertIndex);
               dragTabBarCache.current = [];
-              // Reset all drag state. This block appears in both the merge path
-              // and normal drop path — intentionally duplicated for clarity over
-              // a shared helper, since the two paths have different preceding logic.
+              // Reset all drag state.
               dragOtherRects.current = [];
-              dragSetMembers.current = [];
-              dragSetOrigins.current = [];
-              dragSetMemberIdsAtDragStart.current = [];
-              dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
-              latestSnapModifier.current = false;
-              prevSnapModifier.current = false;
+              latestAltKey.current = false;
               lastSnapResult.current = null;
-              // Recompute clip-path after merge so set appearance reflects the new layout. [D01]
-              updateSetAppearance(dragCanvasBounds.current, frame.parentElement, store);
               return;
             }
           }
@@ -774,37 +501,14 @@ export function CardFrame({
 
         dragTabBarCache.current = [];
 
-        // Compute final position for the dragged card.
-        // During set-move, clamp using the full set bounding box (same logic as applyDragFrame). [D02]
-        const bboUp = dragSetBBoxOffset.current;
-        const setMoveActiveUp = dragSetMembers.current.length > 0;
-        let clampedPos: { x: number; y: number };
-        if (setMoveActiveUp) {
-          const setBBoxStart = {
-            x: dragStartPosition.current.x - bboUp.left,
-            y: dragStartPosition.current.y - bboUp.top,
-          };
-          const setBBoxSize = {
-            width: frame.offsetWidth + bboUp.left + bboUp.right,
-            height: frame.offsetHeight + bboUp.top + bboUp.bottom,
-          };
-          const setPos = clampedPosition(
-            { x: e.clientX, y: e.clientY },
-            dragStartPointer.current,
-            setBBoxStart,
-            dragCanvasBounds.current,
-            setBBoxSize,
-          );
-          clampedPos = { x: setPos.x + bboUp.left, y: setPos.y + bboUp.top };
-        } else {
-          clampedPos = clampedPosition(
-            { x: e.clientX, y: e.clientY },
-            dragStartPointer.current,
-            dragStartPosition.current,
-            dragCanvasBounds.current,
-            { width: frame.offsetWidth, height: frame.offsetHeight },
-          );
-        }
+        // Compute final clamped position.
+        const clampedPos = clampedPosition(
+          { x: e.clientX, y: e.clientY },
+          dragStartPointer.current,
+          dragStartPosition.current,
+          dragCanvasBounds.current,
+          { width: frame.offsetWidth, height: frame.offsetHeight },
+        );
 
         // Apply snapped position if snap was active at drop.
         const snapResult = lastSnapResult.current;
@@ -816,61 +520,11 @@ export function CardFrame({
         frame.style.left = `${finalPos.x}px`;
         frame.style.top = `${finalPos.y}px`;
 
-        // Suppress subscriber-driven updateSetAppearance calls during the commit
-        // sequence below. Multiple store mutations (onCardMoved, joinSet) each
-        // trigger notify() → subscriber → updateSetAppearance. postActionSetUpdate
-        // calls updateSetAppearance once at the end with the final state.
-        suppressSetAppearanceUpdate = true;
-
         onCardMoved(id, finalPos, { width: frame.offsetWidth, height: frame.offsetHeight });
 
-        // Commit set members' final positions if set-move completed without break-out. [D02]
-        for (const member of dragSetMembers.current) {
-          const memberPos = {
-            x: parseFloat(member.el.style.left) || 0,
-            y: parseFloat(member.el.style.top) || 0,
-          };
-          const memberSize = {
-            width: member.el.offsetWidth,
-            height: member.el.offsetHeight,
-          };
-          onCardMoved(member.id, memberPos, memberSize);
-        }
-
-        // After snap-mode drop: if the card snapped to specific cards, form/extend
-        // an explicit set with only those cards. Uses the snappedToXIndex/YIndex from
-        // the snap result to identify exactly which cards were targeted, rather than
-        // joining all geometrically adjacent cards.
-        if (snapResult && (snapResult.x !== null || snapResult.y !== null)) {
-          const snappedToIds = new Set<string>();
-          if (snapResult.snappedToXIndex >= 0) {
-            snappedToIds.add(dragOtherRects.current[snapResult.snappedToXIndex].id);
-          }
-          if (snapResult.snappedToYIndex >= 0) {
-            snappedToIds.add(dragOtherRects.current[snapResult.snappedToYIndex].id);
-          }
-          if (snappedToIds.size > 0) {
-            store.joinSet([id, ...snappedToIds]);
-          }
-        }
-
-        // Re-enable subscriber-driven updates before postActionSetUpdate, which
-        // calls updateSetAppearance once with the final committed state.
-        suppressSetAppearanceUpdate = false;
-
-        // Flash set perimeter / break-out flash on drop. [D54, D55]
-        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement, store);
-
-        // Reset all drag state. This block appears in both the merge path
-        // and normal drop path — intentionally duplicated for clarity over
-        // a shared helper, since the two paths have different preceding logic.
+        // Reset all drag state.
         dragOtherRects.current = [];
-        dragSetMembers.current = [];
-        dragSetOrigins.current = [];
-        dragSetMemberIdsAtDragStart.current = [];
-        dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
-        latestSnapModifier.current = false;
-        prevSnapModifier.current = false;
+        latestAltKey.current = false;
         lastSnapResult.current = null;
       }
 
@@ -880,7 +534,7 @@ export function CardFrame({
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
     // onCardMerged, and activeTabId are stable or handled via closure capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y, store],
+    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y],
   );
 
   // ---------------------------------------------------------------------------
@@ -888,14 +542,11 @@ export function CardFrame({
   //
   // Same three-phase pattern as drag: snapshot at start, rAF frame updates,
   // commit on pointer-up. Supports 8 edge/corner handles, min-size clamping,
-  // sash co-resize (shared edge between set members), and snap-to-edge.
+  // and snap-to-edge.
   // ---------------------------------------------------------------------------
 
   // Snap guide DOM elements for resize (separate from drag guides). [D03]
   const resizeGuideEls = useRef<HTMLElement[]>([]);
-
-  // syncResizeGuides and clearResizeGuides are now handled by the shared
-  // syncGuideElements(resizeGuideEls, ...) and clearGuideElements(resizeGuideEls) calls. [D03]
 
   const handleResizeStart = useCallback(
     (edge: ResizeEdge, event: React.PointerEvent) => {
@@ -930,75 +581,10 @@ export function CardFrame({
       const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id);
       const resizeOtherRects = resizeOtherCardRects.map((r) => r.rect);
 
-      // Snapshot set membership at resize-start from explicit sets (not geometry). [D54]
-      const resizeExplicitSetIds = store.getCardSet(id);
-      const resizePreSetMemberIds: string[] = resizeExplicitSetIds.length >= 2 ? resizeExplicitSetIds.slice() : [];
-
-      // Detect sash neighbor: if this card is in an explicit set AND the edge being resized
-      // is a shared edge with a set neighbor, store the sash neighbor info for co-resize.
-      // Only single-edge resizes (n, s, e, w) can be sash; corners skip sash detection.
-      // Use geometry to find which set member shares the resized edge.
-      let sashNeighborId: string | null = null;
-      let sashNeighborEdge: "n" | "s" | "e" | "w" | null = null;
-      let sashNeighborEl: HTMLElement | null = null;
-      let sashNeighborStartLeft = 0;
-      let sashNeighborStartTop = 0;
-      let sashNeighborStartW = 0;
-      let sashNeighborStartH = 0;
-
-      const isSingleEdge = edge === "n" || edge === "s" || edge === "e" || edge === "w";
-      if (isSingleEdge && resizeExplicitSetIds.length >= 2) {
-        // Only look for shared edges among explicit set members.
-        const resizeSetRects = snapshotCardRects(resizeCanvasBounds)
-          .filter((r) => resizeExplicitSetIds.includes(r.id));
-        const resizePreSharedEdges = findSharedEdges(resizeSetRects);
-        for (const sharedEdge of resizePreSharedEdges) {
-          // Check if this shared edge involves the current card and the resize edge.
-          let neighborId: string | null = null;
-          let neighborEdge: "n" | "s" | "e" | "w" | null = null;
-
-          if (edge === "e" && sharedEdge.axis === "vertical" && sharedEdge.cardAId === id) {
-            // This card's right edge = neighbor's left edge; neighbor's left moves east.
-            neighborId = sharedEdge.cardBId;
-            neighborEdge = "w";
-          } else if (edge === "w" && sharedEdge.axis === "vertical" && sharedEdge.cardBId === id) {
-            // This card's left edge = neighbor's right edge; neighbor's right moves west.
-            neighborId = sharedEdge.cardAId;
-            neighborEdge = "e";
-          } else if (edge === "s" && sharedEdge.axis === "horizontal" && sharedEdge.cardAId === id) {
-            // This card's bottom edge = neighbor's top edge; neighbor's top moves south.
-            neighborId = sharedEdge.cardBId;
-            neighborEdge = "n";
-          } else if (edge === "n" && sharedEdge.axis === "horizontal" && sharedEdge.cardBId === id) {
-            // This card's top edge = neighbor's bottom edge; neighbor's bottom moves north.
-            neighborId = sharedEdge.cardAId;
-            neighborEdge = "s";
-          }
-
-          if (neighborId && neighborEdge) {
-            const neighborEl = document.querySelector<HTMLElement>(
-              `.card-frame[data-card-id="${neighborId}"]`,
-            );
-            if (neighborEl) {
-              sashNeighborId = neighborId;
-              sashNeighborEdge = neighborEdge;
-              sashNeighborEl = neighborEl;
-              sashNeighborStartLeft = parseFloat(neighborEl.style.left) || 0;
-              sashNeighborStartTop = parseFloat(neighborEl.style.top) || 0;
-              sashNeighborStartW = neighborEl.offsetWidth;
-              sashNeighborStartH = neighborEl.offsetHeight;
-            }
-            break;
-          }
-        }
-      }
-
       const latestResizePointer = { x: startX, y: startY };
-      let latestResizeModifier = isSnapModifier(event.nativeEvent);
+      let latestResizeModifier = event.nativeEvent.altKey;
       let resizeRafId: number | null = null;
       let resizeActive = true;
-      /** Indices into resizeOtherCardRects of cards snapped to on the last resize snap. */
-      let lastResizeSnappedToIndices: number[] = [];
 
       function computeAndApplyResize(pointer: { x: number; y: number }, snapModifier: boolean): {
         left: number; top: number; width: number; height: number;
@@ -1015,77 +601,6 @@ export function CardFrame({
           resizeCanvasBounds,
         );
 
-        // Sash co-resize: when a shared edge is grabbed and modifier is NOT held,
-        // apply the opposite resize to the neighbor so the shared edge moves as a sash.
-        if (sashNeighborEl && sashNeighborEdge && !snapModifier) {
-          const minW = minSizeRef.current.width;
-          const minH = minSizeRef.current.height;
-          let neighborLeft = sashNeighborStartLeft;
-          let neighborTop = sashNeighborStartTop;
-          let neighborW = sashNeighborStartW;
-          let neighborH = sashNeighborStartH;
-
-          if (edge === "e" && sashNeighborEdge === "w") {
-            // Grabbed card grows right → neighbor's left moves right (neighbor gets narrower).
-            // delta for the shared edge = r.left + r.width - (startLeft + startW)
-            const sharedEdgePos = r.left + r.width;
-            const neighborRight = sashNeighborStartLeft + sashNeighborStartW;
-            neighborLeft = sharedEdgePos;
-            neighborW = Math.max(minW, neighborRight - sharedEdgePos);
-            // If neighbor would be clamped, clamp the grabbed card's right edge too.
-            if (neighborRight - sharedEdgePos < minW) {
-              const clampedSharedEdge = neighborRight - minW;
-              neighborLeft = clampedSharedEdge;
-              neighborW = minW;
-              r.width = Math.max(minW, clampedSharedEdge - r.left);
-            }
-          } else if (edge === "w" && sashNeighborEdge === "e") {
-            // Grabbed card grows left → neighbor's right moves left (neighbor gets narrower).
-            const sharedEdgePos = r.left;
-            const neighborLeft0 = sashNeighborStartLeft;
-            neighborW = Math.max(minW, sharedEdgePos - neighborLeft0);
-            if (sharedEdgePos - neighborLeft0 < minW) {
-              const clampedSharedEdge = neighborLeft0 + minW;
-              neighborW = minW;
-              r.left = clampedSharedEdge;
-              r.width = Math.max(minW, startLeft + startW - clampedSharedEdge);
-            }
-          } else if (edge === "s" && sashNeighborEdge === "n") {
-            // Grabbed card grows down → neighbor's top moves down (neighbor gets shorter).
-            const sharedEdgePos = r.top + r.height;
-            const neighborBottom = sashNeighborStartTop + sashNeighborStartH;
-            neighborTop = sharedEdgePos;
-            neighborH = Math.max(minH, neighborBottom - sharedEdgePos);
-            if (neighborBottom - sharedEdgePos < minH) {
-              const clampedSharedEdge = neighborBottom - minH;
-              neighborTop = clampedSharedEdge;
-              neighborH = minH;
-              r.height = Math.max(minH, clampedSharedEdge - r.top);
-            }
-          } else if (edge === "n" && sashNeighborEdge === "s") {
-            // Grabbed card grows up → neighbor's bottom moves up (neighbor gets shorter).
-            const sharedEdgePos = r.top;
-            const neighborTop0 = sashNeighborStartTop;
-            neighborH = Math.max(minH, sharedEdgePos - neighborTop0);
-            if (sharedEdgePos - neighborTop0 < minH) {
-              const clampedSharedEdge = neighborTop0 + minH;
-              neighborH = minH;
-              r.top = clampedSharedEdge;
-              r.height = Math.max(minH, startTop + startH - clampedSharedEdge);
-            }
-          }
-
-          // Apply neighbor dimensions to its DOM element.
-          sashNeighborEl.style.left = `${neighborLeft}px`;
-          sashNeighborEl.style.top = `${neighborTop}px`;
-          sashNeighborEl.style.width = `${neighborW}px`;
-          sashNeighborEl.style.height = `${neighborH}px`;
-
-          // No snap guides for sash resize (cards are already aligned).
-          clearGuideElements(resizeGuideEls);
-          return r;
-        }
-
         // Apply snap-to-edge if modifier is held. [D01]
         if (snapModifier) {
           // Build the set of edges being actively resized (absolute canvas coords).
@@ -1097,8 +612,7 @@ export function CardFrame({
           if (edge.includes("e")) resizingEdges.right = r.left + r.width;
 
           // Pass borderWidth=1 so adjacent-edge resize snaps overlap by 1px for border collapse. [D56]
-          const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects, 1);
-          lastResizeSnappedToIndices = snapResult.snappedToIndices;
+          const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects, -SNAP_GAP_PX);
 
           // Apply snapped values back to the rect, clamped to minSize.
           let { left, top, width, height } = r;
@@ -1127,7 +641,6 @@ export function CardFrame({
 
           return { left, top, width, height };
         } else {
-          lastResizeSnappedToIndices = [];
           clearGuideElements(resizeGuideEls);
           return r;
         }
@@ -1141,19 +654,12 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
-        // During sash co-resize both cards change size/position each frame, so the shared
-        // edge moves and each card's interior vs exterior edges may change proportionally.
-        // Call updateSetAppearance once per frame to keep clip-path values correct for both
-        // the resizing card and the sash neighbor throughout the gesture. [D06]
-        if (sashNeighborEl && !latestResizeModifier) {
-          updateSetAppearance(resizeCanvasBounds, frame.parentElement, store);
-        }
       }
 
       function onPointerMove(e: PointerEvent) {
         latestResizePointer.x = e.clientX;
         latestResizePointer.y = e.clientY;
-        latestResizeModifier = isSnapModifier(e);
+        latestResizeModifier = e.altKey;
         if (resizeRafId === null) {
           resizeRafId = requestAnimationFrame(applyResizeFrame);
         }
@@ -1174,47 +680,14 @@ export function CardFrame({
         frame.removeAttribute("data-gesture");
 
         // Compute final resize with snap applied first, THEN clear guides. [D03]
-        // clearGuideElements must come AFTER computeAndApplyResize so that when snap
-        // is active, syncGuideElements inside computeAndApplyResize does not re-create
-        // guides that were already cleared.
-        const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, isSnapModifier(e));
+        const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, e.altKey);
         clearGuideElements(resizeGuideEls);
         frame.style.left = `${r.left}px`;
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
-        // Suppress subscriber-driven updateSetAppearance calls during the commit
-        // sequence. postActionSetUpdate calls it once at the end.
-        suppressSetAppearanceUpdate = true;
 
         onCardMoved(id, { x: r.left, y: r.top }, { width: r.width, height: r.height });
-
-        // Commit sash neighbor's final position if sash mode was active.
-        if (sashNeighborId && sashNeighborEl && !isSnapModifier(e)) {
-          const neighborPos = {
-            x: parseFloat(sashNeighborEl.style.left) || 0,
-            y: parseFloat(sashNeighborEl.style.top) || 0,
-          };
-          const neighborSize = {
-            width: sashNeighborEl.offsetWidth,
-            height: sashNeighborEl.offsetHeight,
-          };
-          onCardMoved(sashNeighborId, neighborPos, neighborSize);
-        }
-
-        // After snap-mode resize: if the card's resized edge snapped to specific
-        // cards, form/extend an explicit set with only those cards.
-        if (isSnapModifier(e) && lastResizeSnappedToIndices.length > 0) {
-          const snappedToIds = lastResizeSnappedToIndices.map(
-            (idx) => resizeOtherCardRects[idx].id,
-          );
-          store.joinSet([id, ...snappedToIds]);
-        }
-
-        suppressSetAppearanceUpdate = false;
-
-        // Flash set perimeter / break-out flash on resize end. [D54, D55]
-        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement, store);
       }
 
       frame.addEventListener("pointermove", onPointerMove);
@@ -1222,7 +695,7 @@ export function CardFrame({
     },
     // minSizeRef.current is always current; position/size are start values read at resize-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height, store],
+    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
   // ---------------------------------------------------------------------------
@@ -1290,315 +763,6 @@ export function CardFrame({
       {renderContent(injected)}
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Set appearance: squared corners and clip-path shadow control [D08, D01, D02]
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the `clip-path: inset(...)` CSS value for a single card based on its
- * shared edges within the set. [D04]
- *
- * For each of the four sides (top, right, bottom, left):
- * - Interior (shared with a neighbor): inset = `0px` (clips shadow at border-box edge).
- * - Exterior (no shared neighbor): inset = `-SHADOW_EXTEND_PX` (extends clip region to show shadow).
- *
- * SharedEdge convention:
- * - `axis: "vertical"`, `cardAId` → cardA's **right** edge is shared (interior for cardA).
- * - `axis: "vertical"`, `cardBId` → cardB's **left** edge is shared (interior for cardB).
- * - `axis: "horizontal"`, `cardAId` → cardA's **bottom** edge is shared (interior for cardA).
- * - `axis: "horizontal"`, `cardBId` → cardB's **top** edge is shared (interior for cardB).
- *
- * Returns an empty string when the card has no interior edges (all exterior — full shadow visible).
- *
- * @param cardId - The id of the card to compute clip-path for.
- * @param sharedEdges - All shared edges in the current layout.
- */
-function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): string {
-  let topInterior = false;
-  let rightInterior = false;
-  let bottomInterior = false;
-  let leftInterior = false;
-
-  for (const edge of sharedEdges) {
-    if (edge.axis === "vertical") {
-      if (edge.cardAId === cardId) {
-        // cardA's right edge is shared.
-        rightInterior = true;
-      } else if (edge.cardBId === cardId) {
-        // cardB's left edge is shared.
-        leftInterior = true;
-      }
-    } else {
-      // axis === "horizontal"
-      if (edge.cardAId === cardId) {
-        // cardA's bottom edge is shared.
-        bottomInterior = true;
-      } else if (edge.cardBId === cardId) {
-        // cardB's top edge is shared.
-        topInterior = true;
-      }
-    }
-  }
-
-  // If no edges are interior, return empty string (no clip-path needed — full shadow visible).
-  if (!topInterior && !rightInterior && !bottomInterior && !leftInterior) {
-    return "";
-  }
-
-  const ext = `-${SHADOW_EXTEND_PX}px`;
-  const top = topInterior ? "0px" : ext;
-  const right = rightInterior ? "0px" : ext;
-  const bottom = bottomInterior ? "0px" : ext;
-  const left = leftInterior ? "0px" : ext;
-
-  return `inset(${top} ${right} ${bottom} ${left})`;
-}
-
-/**
- * Update the visual appearance of all cards based on their current set membership.
- *
- * For cards in a set:
- *   - Sets `data-in-set="true"` on `.card-frame` (CSS squares corners). [D08]
- *   - Computes `clip-path: inset(...)` and applies it to the `.tugcard`
- *     child element, clipping shadow on interior (shared) edges while showing shadow
- *     on exterior edges. [D01, D02, D04]
- *
- * For solo cards:
- *   - Removes `data-in-set` attribute (CSS restores rounded corners).
- *   - Clears `clip-path` on `.tugcard` (full shadow visible on all sides).
- *
- * No DOM elements are created or removed. All mutations are direct style/attribute
- * writes on existing elements, safe to call at any time including mid-gesture. [D05]
- *
- * Called after any move or resize action completes, and once on initial load. [D08, D09]
- *
- * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
- * @param containerEl - The ResponderScope element (kept for API compatibility; used for z-index reordering context).
- * @param store - DeckManager store for reading explicit set membership. Only cards in
- *   explicit sets are considered for set visual treatment.
- */
-export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null, store: IDeckManagerStore): void {
-  // Skip when a gesture commit is in progress — postActionSetUpdate will call
-  // us after all store mutations are complete. See suppressSetAppearanceUpdate.
-  if (suppressSetAppearanceUpdate) return;
-
-  const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-  const rects: { id: string; rect: Rect }[] = [];
-  allFrameEls.forEach((el) => {
-    const cid = el.getAttribute("data-card-id");
-    if (!cid) return;
-    const domRect = el.getBoundingClientRect();
-    rects.push({
-      id: cid,
-      rect: {
-        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-        width: domRect.width,
-        height: domRect.height,
-      },
-    });
-  });
-
-  const sharedEdges = findSharedEdgesInExplicitSets(rects, store);
-  const sets = computeSets(rects.map((c) => c.id), sharedEdges);
-
-  // Build a set membership lookup: cardId → true if in any set.
-  const inSetIds = new Set<string>();
-  for (const cardSet of sets) {
-    for (const cid of cardSet.cardIds) {
-      inSetIds.add(cid);
-    }
-  }
-
-  allFrameEls.forEach((el) => {
-    const cardId = el.getAttribute("data-card-id");
-    if (!cardId) return;
-
-    const tugcardEl = el.querySelector<HTMLElement>(".tugcard");
-
-    if (inSetIds.has(cardId)) {
-      // Mark as in-set (CSS squares corners). [D08]
-      el.setAttribute("data-in-set", "true");
-      // Apply clip-path: inset() to .tugcard to control shadow visibility on each edge. [D01, D02, D04]
-      if (tugcardEl) {
-        const clipPath = computeClipPathForCard(cardId, sharedEdges);
-        tugcardEl.style.clipPath = clipPath;
-      }
-    } else {
-      // Solo card: restore rounded corners and clear clip-path (full shadow visible on all sides).
-      el.removeAttribute("data-in-set");
-      if (tugcardEl) {
-        tugcardEl.style.clipPath = "";
-      }
-    }
-  });
-
-  // Adjust z-indices so that set members are consecutive (no non-set card between them). [D08]
-  // This is an appearance-zone change: direct DOM mutation, not React state.
-  //
-  // Algorithm:
-  // 1. Collect all card elements with their current z-index.
-  // 2. Sort by current z-index (ascending).
-  // 3. Build a new z-order where, when we encounter the highest-z member of a set,
-  //    all set members are emitted consecutively at that position.
-  // 4. Apply new z-indices to DOM elements.
-  {
-    // Build list of all card elements with current z-index values.
-    const cardZList: Array<{ id: string; el: HTMLElement; z: number }> = [];
-    allFrameEls.forEach((el) => {
-      const cid = el.getAttribute("data-card-id");
-      if (!cid) return;
-      const z = parseInt(el.style.zIndex, 10);
-      cardZList.push({ id: cid, el, z: isNaN(z) ? 0 : z });
-    });
-
-    // Sort by current z-index ascending.
-    cardZList.sort((a, b) => a.z - b.z);
-
-    // Build a map from cardId to which set it belongs to (index into sets array).
-    const cardSetIndex = new Map<string, number>();
-    for (let i = 0; i < sets.length; i++) {
-      for (const cid of sets[i].cardIds) {
-        cardSetIndex.set(cid, i);
-      }
-    }
-
-    // For each set, find the highest z-index among its members (the "anchor" position).
-    const setMaxZ: number[] = sets.map(() => -Infinity);
-    for (const entry of cardZList) {
-      const si = cardSetIndex.get(entry.id);
-      if (si !== undefined && entry.z > setMaxZ[si]) {
-        setMaxZ[si] = entry.z;
-      }
-    }
-
-    // Rebuild z-order: process cards in ascending z-index order.
-    // When we encounter the anchor of a set (highest-z member), emit all set members
-    // consecutively. Non-set cards and set members that have already been emitted are skipped/placed normally.
-    const emittedSets = new Set<number>();
-    const newZOrder: Array<{ el: HTMLElement; newZ: number }> = [];
-    let nextZ = cardZList.length > 0 ? cardZList[0].z : 1;
-
-    // We need to assign z-indices while keeping relative order.
-    // Strategy: iterate cards in ascending z order. When we hit a set's anchor (highest-z member),
-    // first emit all other members of that set (lowest-z first), then the anchor itself.
-    // Skip cards already emitted as part of their set's earlier anchor pass.
-    const alreadyEmitted = new Set<string>();
-
-    for (const entry of cardZList) {
-      if (alreadyEmitted.has(entry.id)) continue;
-
-      const si = cardSetIndex.get(entry.id);
-      if (si !== undefined && !emittedSets.has(si)) {
-        // Check if this is the anchor (highest-z) member of the set.
-        if (entry.z === setMaxZ[si]) {
-          // Emit all set members consecutively at this position.
-          // Sort set members by their original z-index to preserve relative order within set.
-          const setMembers = cardZList.filter((e) => cardSetIndex.get(e.id) === si);
-          setMembers.sort((a, b) => a.z - b.z);
-          for (const member of setMembers) {
-            newZOrder.push({ el: member.el, newZ: nextZ });
-            nextZ++;
-            alreadyEmitted.add(member.id);
-          }
-          emittedSets.add(si);
-        } else {
-          // Not the anchor yet — skip this card; it will be emitted when we reach the anchor.
-          continue;
-        }
-      } else if (si === undefined) {
-        // Non-set card: emit at next available position.
-        newZOrder.push({ el: entry.el, newZ: nextZ });
-        nextZ++;
-        alreadyEmitted.add(entry.id);
-      }
-      // If si is defined but set already emitted, card was already handled — skip.
-    }
-
-    // Apply new z-indices to DOM.
-    for (const { el, newZ } of newZOrder) {
-      el.style.zIndex = String(newZ);
-    }
-  }
-
-}
-
-// ---------------------------------------------------------------------------
-// Post-action set detection and flash (shared by move and resize) [D54]
-// ---------------------------------------------------------------------------
-
-/**
- * After a move or resize action completes, detect whether the card has joined,
- * left, or changed sets and fire the appropriate flash animation. [D54, D55]
- *
- * This function:
- * 1. Queries all `.card-frame[data-card-id]` elements from the DOM.
- * 2. Builds rects relative to canvas bounds.
- * 3. Calls `findSharedEdges(rects)` and `computeSets(ids, sharedEdges)`.
- * 4. Finds the set containing `cardId` (if any).
- * 5. Compares sorted `preActionSetMemberIds` vs post-action set member IDs.
- * 6. If set membership CHANGED and card is now in a set → `flashSetPerimeter`.
- * 7. If card WAS in a set but is now NOT in any set → `flashCardPerimeter` (break-out flash).
- *
- * @param cardId - The id of the moved or resized card.
- * @param preActionSetMemberIds - Set member IDs captured before the action started (empty if solo).
- * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
- * @param store - DeckManager store for explicit set membership.
- */
-function postActionSetUpdate(
-  cardId: string,
-  preActionSetMemberIds: string[],
-  canvasBounds: DOMRect | null,
-  containerEl: HTMLElement | null,
-  store: IDeckManagerStore,
-): void {
-  const postRects: { id: string; rect: Rect }[] = [];
-  const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-  allFrameEls.forEach((el) => {
-    const cid = el.getAttribute("data-card-id");
-    if (!cid) return;
-    const domRect = el.getBoundingClientRect();
-    postRects.push({
-      id: cid,
-      rect: {
-        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-        width: domRect.width,
-        height: domRect.height,
-      },
-    });
-  });
-
-  const postSharedEdges = findSharedEdgesInExplicitSets(postRects, store);
-  const postSets = computeSets(
-    postRects.map((c) => c.id),
-    postSharedEdges,
-  );
-  const mySet = postSets.find((s) => s.cardIds.includes(cardId));
-
-  if (mySet) {
-    // Card is now in a set — flash only if membership changed. [D54]
-    const startIds = preActionSetMemberIds.slice().sort();
-    const endIds = mySet.cardIds.slice().sort();
-    const setChanged =
-      startIds.length !== endIds.length || startIds.some((sid, i) => sid !== endIds[i]);
-    if (setChanged) {
-      flashSetPerimeter(mySet.cardIds, postRects, containerEl);
-    }
-  } else if (preActionSetMemberIds.length > 0) {
-    // Card was in a set but is now solo — break-out flash. [D55]
-    const frameEl = document.querySelector<HTMLElement>(
-      `.card-frame[data-card-id="${cardId}"]`,
-    );
-    if (frameEl) {
-      flashCardPerimeter(frameEl);
-    }
-  }
-
-  // Update set appearance (squared corners, clip-path) after any move/resize. [D08]
-  updateSetAppearance(canvasBounds, containerEl, store);
 }
 
 // ---------------------------------------------------------------------------
@@ -1721,147 +885,4 @@ function resizeDelta(
   }
 
   return { left, top, width, height };
-}
-
-// ---------------------------------------------------------------------------
-// Flash overlay helpers (appearance-zone, [D54])
-// ---------------------------------------------------------------------------
-
-/** Glow expansion in px for the SVG flash glow filter. */
-const SVG_FLASH_GLOW_BLUR = 4;
-
-/**
- * Create a single SVG hull flash element for a newly formed set. [D02]
- *
- * Replaces the per-card overlay approach. Computes the outer hull polygon of
- * all set cards, draws a single SVG <path> with accent stroke and glow filter,
- * and appends it to the ResponderScope (containerEl). Self-removes on
- * animate().finished (programmatic lane). [D01]
- *
- * @param setCardIds - IDs of all cards in the set.
- * @param cardRects - Canvas-relative rects for all cards.
- * @param containerEl - The ResponderScope element to append the SVG to.
- */
-export function flashSetPerimeter(
-  setCardIds: string[],
-  cardRects: { id: string; rect: Rect }[],
-  containerEl: HTMLElement | null,
-): void {
-  if (!containerEl) return;
-
-  // Collect rects for all cards in the set.
-  const rects: Rect[] = [];
-  for (const cardId of setCardIds) {
-    const entry = cardRects.find((r) => r.id === cardId);
-    if (entry) rects.push(entry.rect);
-  }
-
-  // Compute hull polygon. Guard against degenerate input per [D06].
-  const hull = computeSetHullPolygon(rects);
-  if (hull.length < 3) return;
-
-  // Compute hull bounding box with glow padding so the filter has room to breathe.
-  const pad = SVG_FLASH_GLOW_BLUR * 2;
-  const hullMinX = hull.reduce((m, p) => Math.min(m, p.x), Infinity);
-  const hullMinY = hull.reduce((m, p) => Math.min(m, p.y), Infinity);
-  const hullMaxX = hull.reduce((m, p) => Math.max(m, p.x), -Infinity);
-  const hullMaxY = hull.reduce((m, p) => Math.max(m, p.y), -Infinity);
-  const bx = hullMinX - pad;
-  const by = hullMinY - pad;
-  const bw = hullMaxX - hullMinX + pad * 2;
-  const bh = hullMaxY - hullMinY + pad * 2;
-
-  // Unique filter ID to avoid cross-SVG filter collisions when multiple flashes are active.
-  const uid = nextFlashId++;
-
-  // Build SVG path data in SVG-local coordinates (hull coords minus bounding box origin).
-  const svgPath =
-    hull.map((p, i) => `${i === 0 ? "M" : "L"}${p.x - bx},${p.y - by}`).join(" ") + " Z";
-
-  // Create SVG element.
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.classList.add("set-flash-svg");
-  svg.style.left = `${bx}px`;
-  svg.style.top = `${by}px`;
-  svg.style.width = `${bw}px`;
-  svg.style.height = `${bh}px`;
-
-  // Glow filter: feGaussianBlur + feMerge to render both blurred glow and crisp stroke.
-  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-  const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-  filter.setAttribute("id", `set-flash-glow-${uid}`);
-  filter.setAttribute("x", "-50%");
-  filter.setAttribute("y", "-50%");
-  filter.setAttribute("width", "200%");
-  filter.setAttribute("height", "200%");
-
-  const blur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-  blur.setAttribute("in", "SourceGraphic");
-  blur.setAttribute("stdDeviation", String(SVG_FLASH_GLOW_BLUR));
-  blur.setAttribute("result", "blur");
-
-  const merge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
-  const mergeNodeBlur = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-  mergeNodeBlur.setAttribute("in", "blur");
-  const mergeNodeSrc = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-  mergeNodeSrc.setAttribute("in", "SourceGraphic");
-
-  merge.appendChild(mergeNodeBlur);
-  merge.appendChild(mergeNodeSrc);
-  filter.appendChild(blur);
-  filter.appendChild(merge);
-  defs.appendChild(filter);
-  svg.appendChild(defs);
-
-  // Hull path with accent stroke and glow filter.
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", svgPath);
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "var(--tug7-element-global-fill-normal-accent-rest)");
-  path.setAttribute("stroke-width", "3");
-  path.setAttribute("filter", `url(#set-flash-glow-${uid})`);
-  svg.appendChild(path);
-
-  containerEl.appendChild(svg);
-
-  // Drive opacity fade via TugAnimator; self-remove on animate().finished.
-  // glacial = 500ms, preserving the original 0.5s flash duration.
-  // WAAPI animate() works on SVG elements for the opacity property.
-  animate(svg, [{ opacity: 1 }, { opacity: 0 }], {
-    duration: "--tug-motion-duration-glacial",
-    easing: "ease-out",
-    fill: "forwards",
-  }).finished.then(() => {
-    if (svg.parentNode) svg.parentNode.removeChild(svg);
-  });
-}
-
-/**
- * Create a full-perimeter .card-flash-overlay on a single card's frame.
- *
- * Used on break-out to flash the detached card's entire perimeter. All four
- * borders are intact (no suppression). Cards are always fully rounded. [D55]
- *
- * Opacity fade is driven by TugAnimator.animate().finished (programmatic lane). [D01]
- *
- * @param cardFrameEl - The .card-frame element of the detached card.
- */
-export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
-  const overlay = document.createElement("div");
-  overlay.classList.add("card-flash-overlay");
-
-  // Full perimeter: no edge suppression, no clip-path restriction.
-  // Cards are always fully rounded — use CSS default border-radius.
-
-  cardFrameEl.appendChild(overlay);
-
-  // Drive opacity fade via TugAnimator; self-remove on animate().finished.
-  // glacial = 500ms, preserving the original 0.5s flash duration.
-  animate(overlay, [{ opacity: 1 }, { opacity: 0 }], {
-    duration: "--tug-motion-duration-glacial",
-    easing: "ease-out",
-    fill: "forwards",
-  }).finished.then(() => {
-    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-  });
 }

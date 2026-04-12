@@ -70,7 +70,7 @@ beforeEach(() => {
  * Build a minimal mock IDeckManagerStore for e2e tests.
  * DeckCanvas requires a DeckManagerContext.Provider since Phase 5a2.
  */
-function makeMockStore(deckState: DeckState = { cards: [], sets: [] }): IDeckManagerStore {
+function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
   return {
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
@@ -94,10 +94,6 @@ function makeMockStore(deckState: DeckState = { cards: [], sets: [] }): IDeckMan
     unregisterSaveCallback: (_id: string) => {},
     // Collapse toggle
     toggleCardCollapse: (_id: string) => {},
-    // Explicit set membership
-    getCardSet: (_cardId: string) => [],
-    joinSet: (_cardIds: string[]) => {},
-    removeFromSet: (_cardId: string) => {},
   };
 }
 
@@ -123,7 +119,7 @@ class ReactiveStore implements IDeckManagerStore {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
-  constructor(initial: DeckState = { cards: [], sets: [] }) {
+  constructor(initial: DeckState = { cards: [] }) {
     this._state = initial;
   }
 
@@ -154,10 +150,6 @@ class ReactiveStore implements IDeckManagerStore {
   unregisterSaveCallback = (_id: string): void => {};
   // Collapse toggle
   toggleCardCollapse = (_id: string): void => {};
-  // Explicit set membership
-  getCardSet = (_cardId: string): string[] => [];
-  joinSet = (_cardIds: string[]): void => {};
-  removeFromSet = (_cardId: string): void => {};
 
   setState(next: DeckState): void {
     this._state = next;
@@ -205,12 +197,11 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
     const GALLERY_CARD_ID = "e2e-gallery-card-uuid";
     const addCardCalls: string[] = [];
 
-    const reactiveStore = new ReactiveStore({ cards: [], sets: [] });
+    const reactiveStore = new ReactiveStore({ cards: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
       reactiveStore.setState({
         cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
-        sets: [],
       });
       return GALLERY_CARD_ID;
     };
@@ -274,12 +265,11 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
     const addCardCalls: string[] = [];
     const focusedIds: string[] = [];
 
-    const reactiveStore = new ReactiveStore({ cards: [], sets: [] });
+    const reactiveStore = new ReactiveStore({ cards: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
       reactiveStore.setState({
         cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
-        sets: [],
       });
       return GALLERY_CARD_ID;
     };
