@@ -1,6 +1,6 @@
 /* @tug-pairings {
   --tug7-surface-split-primary-normal-sash-rest | --tug7-surface-global-primary-normal-default-rest | informational
-  --tug7-element-split-icon-normal-grip-rest | --tug7-surface-split-primary-normal-sash-rest | control
+  --tug7-element-split-icon-normal-grip-rest | --tug7-surface-split-primary-normal-sash-focus | control
 } */
 
 /**
@@ -8,12 +8,13 @@
  * | Element                                             | Surface                                            | Role          | Context                                           |
  * |-----------------------------------------------------|----------------------------------------------------|---------------|---------------------------------------------------|
  * | --tug7-surface-split-primary-normal-sash-rest       | --tug7-surface-global-primary-normal-default-rest  | informational | .tug-split-sash::before (background-color)        |
- * | --tug7-element-split-icon-normal-grip-rest          | --tug7-surface-split-primary-normal-sash-rest      | control       | .tug-split-sash-grip (color)                      |
+ * | --tug7-element-split-icon-normal-grip-rest          | --tug7-surface-split-primary-normal-sash-focus     | control       | .tug-split-sash-grip (color) inside handle pill   |
  *
  * The sash's visible line is a thin surface juxtaposed with the card
  * content area behind the split pane — informational (no text). The grip
- * icon sits on top of the sash line and is a control-role mark because
- * it signals "grab me." Both relationships cover all four states
+ * icon sits inside the handle pill (not on the line itself) — the pill's
+ * background is the sash color "one step ahead" of the line, which in
+ * rest state is `sash-focus`. Both relationships cover all four states
  * (rest / hover / focus-visible / active) — states share topology, so
  * only the rest entry is declared per the slider convention.
  */
@@ -234,9 +235,10 @@ body {
 /* Handle pill — centered on the line by the sash's flex layout. Uses
    `position: relative` to establish a stacking context above the
    absolutely-positioned ::before line. The pill's background is the
-   sash color "one step ahead" of the line. */
+   sash color "one step ahead" of the line. These rules set
+   `background-color` and therefore do not need a `@tug-renders-on`
+   annotation — they are self-documenting per [L16]. */
 
-/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-focus */
 .tug-split-sash-handle {
   position: relative;
   display: inline-flex;
@@ -258,17 +260,14 @@ body {
   padding: 3px 1px;
 }
 
-/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */
 .tug-split-sash:focus-visible .tug-split-sash-handle {
   background-color: var(--tugx-split-sash-bg-hover);
 }
 
-/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
 .tug-split-sash:hover .tug-split-sash-handle {
   background-color: var(--tugx-split-sash-bg-active);
 }
 
-/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
 .tug-split-sash:active .tug-split-sash-handle {
   background-color: var(--tugx-split-sash-bg-active);
 }
@@ -296,7 +295,7 @@ body {
   height: var(--tug-split-grip-long);
 }
 
-/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
 .tug-split-sash:hover .tug-split-sash-grip {
   color: var(--tugx-split-grip-color-hover);
 }
