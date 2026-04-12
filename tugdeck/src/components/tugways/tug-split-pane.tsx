@@ -55,6 +55,7 @@ import "./tug-split-pane.css";
 
 import React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
+import { GripHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 
@@ -110,7 +111,25 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
             className="tug-split-sash"
             data-slot="tug-split-sash"
             disabled={effectiveDisabled}
-          />,
+          >
+            {/* Handle pill wraps the grip icon and provides a
+                badge-shaped visual affordance centered on the sash
+                line. aria-hidden so screen readers skip the
+                decoration — the sash's own separator role conveys
+                purpose. The pill's background uses the sash color one
+                step ahead of the line (rest line + focus pill, focus
+                line + hover pill, etc.), so the pill reads as a
+                distinct "grabbable node" without needing separate
+                handle tokens. Lucide GripHorizontal inside; vertical
+                orientation (step 7) will swap to GripVertical. */}
+            <span className="tug-split-sash-handle">
+              <GripHorizontal
+                className="tug-split-sash-grip"
+                aria-hidden="true"
+                strokeWidth={2}
+              />
+            </span>
+          </Separator>,
         );
       }
       interleaved.push(child);

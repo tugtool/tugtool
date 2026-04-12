@@ -1,24 +1,32 @@
 /* @tug-pairings {
   --tug7-surface-split-primary-normal-sash-rest | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-split-icon-normal-grip-rest | --tug7-surface-split-primary-normal-sash-rest | control
 } */
 
 /**
  * @tug-pairings
- * | Element                                             | Surface                                            | Role          | Context                          |
- * |-----------------------------------------------------|----------------------------------------------------|---------------|----------------------------------|
- * | --tug7-surface-split-primary-normal-sash-rest       | --tug7-surface-global-primary-normal-default-rest  | informational | .tug-split-sash (background-color) |
+ * | Element                                             | Surface                                            | Role          | Context                                           |
+ * |-----------------------------------------------------|----------------------------------------------------|---------------|---------------------------------------------------|
+ * | --tug7-surface-split-primary-normal-sash-rest       | --tug7-surface-global-primary-normal-default-rest  | informational | .tug-split-sash::before (background-color)        |
+ * | --tug7-element-split-icon-normal-grip-rest          | --tug7-surface-split-primary-normal-sash-rest      | control       | .tug-split-sash-grip (color)                      |
  *
- * The sash is a thin horizontal/vertical surface visually juxtaposed with
- * the card content area behind the split pane. The pairing is
- * informational because the sash is a visual divider, not a control
- * carrying content that needs text-contrast guarantees. (When step 6 adds
- * the grip icon, a second pairing — icon on sash surface, control role —
- * will join this block.)
+ * The sash's visible line is a thin surface juxtaposed with the card
+ * content area behind the split pane — informational (no text). The grip
+ * icon sits on top of the sash line and is a control-role mark because
+ * it signals "grab me." Both relationships cover all four states
+ * (rest / hover / focus-visible / active) — states share topology, so
+ * only the rest entry is declared per the slider convention.
  */
 
 body {
-  /* Component-tier color alias — resolves to base tier in one hop [L17]. */
+  /* Component-tier color aliases — resolve to base tier in one hop [L17]. */
   --tugx-split-sash-bg: var(--tug7-surface-split-primary-normal-sash-rest);
+  --tugx-split-sash-bg-focus: var(--tug7-surface-split-primary-normal-sash-focus);
+  --tugx-split-sash-bg-hover: var(--tug7-surface-split-primary-normal-sash-hover);
+  --tugx-split-sash-bg-active: var(--tug7-surface-split-primary-normal-sash-active);
+  --tugx-split-grip-color: var(--tug7-element-split-icon-normal-grip-rest);
+  --tugx-split-grip-color-hover: var(--tug7-element-split-icon-normal-grip-hover);
+  --tugx-split-grip-color-active: var(--tug7-element-split-icon-normal-grip-active);
 }
 
 /* ============================================================================
@@ -42,7 +50,16 @@ body {
   flex: 1 1 auto;
   min-height: 0;
 
-  --tug-split-sash-thickness: var(--tug-space-2xs);
+  /* Visible sash line thickness. Shown via .tug-split-sash::before. */
+  --tug-split-sash-thickness: 3px;
+  /* Interactive hit-target height. Wider than the visible line so the
+     sash is easy to grab. Step 11 may expand per size variant. */
+  --tug-split-sash-hit-area: 16px;
+  /* Grip icon dimensions. Lucide GripHorizontal has a 24x24 viewBox;
+     at 14x14 the dots read as a compact drag handle that fills most
+     of the pill. */
+  --tug-split-grip-width: 16px;
+  --tug-split-grip-height: 8px;
 }
 
 /* Horizontal-orientation modifier. Empty in step 4 because the library
@@ -66,22 +83,157 @@ body {
 /* ============================================================================
    Sash (.tug-split-sash)
    ============================================================================
-   Step 4: themed rest state only. The sash takes its color from a
-   --tug7- token (with a --tugx- alias for readability) so theme switches
-   update it live. Thickness is driven by the component-local
-   --tug-split-sash-thickness variable so step 11 can expand it per size
-   variant.
+   Layout / stacking:
 
-   Focus outline is still neutralized so the browser default blue ring
-   doesn't flash during smoke testing — step 5 replaces this with a
-   proper token-driven focus-visible ring alongside the hover/active
-   states.
+     .tug-split-sash                        (14px tall hit area, flex row, transparent bg)
+     ├── ::before                           (3px line, absolute, centered vertically, full width)
+     └── .tug-split-sash-handle             (pill ~26x12, position: relative → above ::before)
+         └── .tug-split-sash-grip           (Lucide GripHorizontal dots)
 
-   Hover / active state selectors and grip icon both arrive in later
-   steps (5 and 6 respectively). */
+   ## State model: four solid fills, no rings
+
+   Every state is a pure background-color change. No box-shadow rings,
+   no borders. The progression in increasing accent intensity is:
+
+     rest  →  focus-visible  →  hover  →  active
+
+   Each state colors both the visible line (`::before`) and the handle
+   pill. The pill uses the color **one step ahead** of the line, so the
+   pill always reads as a distinct "grabbable node" raised off the line:
+
+     | State           | Line uses       | Pill uses      |
+     | --------------- | --------------- | -------------- |
+     | rest            | sash-rest       | sash-focus     |
+     | focus-visible   | sash-focus      | sash-hover     |
+     | hover           | sash-hover      | sash-active    |
+     | active          | sash-active     | sash-active    |  ← clamped
+
+   Focus and hover use identical cascade priorities on different
+   selectors, so the later selector wins: we order the rules
+   `rest → :focus-visible → :hover → :active` so hover overrides focus
+   when both apply, and active overrides hover. An earlier iteration
+   used a box-shadow focus ring, which layered an accent-colored border
+   around the visible line and visually fought with the hover/active
+   fills. That approach is gone — everything is fills now.
+
+   ## Pointer events
+   `::before`, `.tug-split-sash-handle`, and `.tug-split-sash-grip` all
+   have `pointer-events: none`. Every drag interaction routes to the
+   sash container (the Separator element) where the library's internal
+   tracking lives. Decorative children must not intercept events.
+
+   ## Why `:active` and not a library data attribute
+   react-resizable-panels v4 does not emit a `data-resize-handle-active`
+   attribute during drag — only `data-separator`, `data-group`,
+   `data-panel`, `data-disabled` (verified against the v4 dist).
+   `:active` remains true across pointer-capture scenarios because the
+   mousedown originated on the element.
+
+   ## Transitions
+   Only background-color and color. No size changes during drag; the
+   library drives those in real time and any CSS transition would fight
+   them. Duration is `--tug-motion-duration-fast` throughout. */
+
 .tug-split-sash {
-  height: var(--tug-split-sash-thickness);
-  background-color: var(--tugx-split-sash-bg);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--tug-split-sash-hit-area);
+  background-color: transparent;
   cursor: ns-resize;
   outline: none;
+}
+
+.tug-split-sash:focus-visible {
+  outline: none;
+}
+
+/* Visible line — centered vertically in the hit area. */
+.tug-split-sash::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--tug-split-sash-thickness);
+  background-color: var(--tugx-split-sash-bg);
+  pointer-events: none;
+  transition: background-color var(--tug-motion-duration-fast);
+}
+
+.tug-split-sash:focus-visible::before {
+  background-color: var(--tugx-split-sash-bg-focus);
+}
+
+.tug-split-sash:hover::before {
+  background-color: var(--tugx-split-sash-bg-hover);
+}
+
+.tug-split-sash:active::before {
+  background-color: var(--tugx-split-sash-bg-active);
+}
+
+/* Handle pill — centered on the line by the sash's flex layout. Uses
+   `position: relative` to establish a stacking context above the
+   absolutely-positioned ::before line. The pill's background is the
+   sash color "one step ahead" of the line. */
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-focus */
+.tug-split-sash-handle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 3px;
+  border-radius: 9999px;
+  background-color: var(--tugx-split-sash-bg-focus);
+  pointer-events: none;
+  transition: background-color var(--tug-motion-duration-fast);
+}
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */
+.tug-split-sash:focus-visible .tug-split-sash-handle {
+  background-color: var(--tugx-split-sash-bg-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
+.tug-split-sash:hover .tug-split-sash-handle {
+  background-color: var(--tugx-split-sash-bg-active);
+}
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
+.tug-split-sash:active .tug-split-sash-handle {
+  background-color: var(--tugx-split-sash-bg-active);
+}
+
+/* Grip icon inside the pill. Sized via CSS variables from .tug-split-pane
+   so step 11 size variants can override. */
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-focus */
+.tug-split-sash-grip {
+  display: block;
+  width: var(--tug-split-grip-width);
+  height: var(--tug-split-grip-height);
+  color: var(--tugx-split-grip-color);
+  pointer-events: none;
+  transition: color var(--tug-motion-duration-fast);
+}
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-hover */
+.tug-split-sash:hover .tug-split-sash-grip {
+  color: var(--tugx-split-grip-color-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-split-primary-normal-sash-active */
+.tug-split-sash:active .tug-split-sash-grip {
+  color: var(--tugx-split-grip-color-active);
+}
+
+/* Disabled cascade: the sash container's cursor becomes default and the
+   whole subtree (line + pill + grip) fades via opacity. */
+.tug-split-pane[data-disabled="true"] .tug-split-sash {
+  cursor: default;
+  opacity: var(--tugx-control-disabled-opacity, 0.5);
 }

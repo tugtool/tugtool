@@ -214,7 +214,13 @@ body {
   --tug7-element-slider-fill-normal-range-rest: --tug-color(orange, i: 80, t: 45);
 
   /* Split — Sash */
-  --tug7-surface-split-primary-normal-sash-rest: --tug-color(indigo, i: 8, t: 60);
+  --tug7-surface-split-primary-normal-sash-rest: --tug-color(indigo, i: 8, t: 80);
+  --tug7-surface-split-primary-normal-sash-focus: --tug-color(indigo, i: 8, t: 70);
+  --tug7-surface-split-primary-normal-sash-hover: --tug-color(indigo, i: 8, t: 50);
+  --tug7-surface-split-primary-normal-sash-active: --tug-color(indigo, i: 8, t: 40);
+  --tug7-element-split-icon-normal-grip-rest: --tug-color(indigo, i: 6, t: 20);
+  --tug7-element-split-icon-normal-grip-hover: --tug-color(indigo, i: 10, t: 20);
+  --tug7-element-split-icon-normal-grip-active: --tug-color(indigo, i: 20, t: 70);
 
   /* Card — Title Bar */
   --tug7-surface-card-primary-normal-titlebar-active: --tug-color(blue, i: 2, t: 99);
