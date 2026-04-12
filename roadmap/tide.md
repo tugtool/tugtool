@@ -933,31 +933,24 @@ Concretely:
 - The `FeedStore` gains a lightweight filter API so `CodeSessionStore` subscribes as `FeedStore([CODE_OUTPUT], { sessionId: key })` and only sees its own frames.
 - Opening a second Tide card spawns a second tugtalk (or asks an existing tugtalk supervisor to fork a new session) and receives a new session_id on the card's first `session_init`. From the card's perspective nothing about the feed API changes — only the filter key differs.
 
-The dynamic-map refactor below is still part of P2, but the session_id filter is the load-bearing piece for multi-session Tide cards. The dynamic map is about supporting *different kinds* of backends (Claude Code, shell, …); session_id is about supporting *multiple instances* of the same backend.
+**Already landed — the dynamic-backend refactor.** An earlier draft of this section described a refactor from hardcoded `terminal_tx` / `code_tx` / `code_input_tx` fields on `FeedRouter` to dynamic `HashMap<FeedId, …>` maps, together with a `register_stream` / `register_input` / `add_snapshot_watches` registration pattern. That work is **already in the tree** (see `tugrust/crates/tugcast/src/router.rs:157` and `main.rs:319–360`). `handle_client` already dispatches inputs via map lookup, and the server→client loop already fans in broadcast receivers dynamically via `tokio_stream::StreamMap`. No struct rewrite is required for P2. The remaining work — and the load-bearing piece — is the multi-session half below.
 
-**Fix (dynamic backends):** Replace named channel fields with dynamic maps:
+**What P2 actually has to build.** The wire contract above is only a sketch of the contract. The runtime architecture needs:
 
-```rust
-pub struct FeedRouter {
-    /// FeedId → broadcast::Sender for stream feeds (server→client)
-    stream_outputs: HashMap<FeedId, broadcast::Sender<Frame>>,
-    /// FeedId → mpsc::Sender for input feeds (client→server)
-    input_sinks: HashMap<FeedId, mpsc::Sender<Frame>>,
-    /// All snapshot watch receivers (sent to every client on connect)
-    snapshot_watches: Vec<watch::Receiver<Frame>>,
-    /// Shared state
-    auth: SharedAuthState,
-    dev_state: SharedDevState,
-    shutdown_tx: mpsc::Sender<u8>,
-    client_action_tx: broadcast::Sender<Frame>,
-}
-```
+1. **A tugcode supervisor.** Today `main.rs:309` spawns exactly one `spawn_agent_bridge`. Multi-session requires a supervisor module (proposed: `tugcast/src/feeds/agent_supervisor.rs`) that spawns tugcode subprocesses on demand, tracks them by session key, and reaps them on close.
+2. **session_id stamping in the bridge.** Claude Code's stream-json only emits `session_id` inside `session_init`. Every other event (`assistant_text`, `tool_use`, `turn_complete`, …) omits it. After the bridge learns `session_id` from `session_init`, it must stamp it onto every subsequent CODE_OUTPUT payload (cheap byte-splice of `"session_id":"…",` into the JSON line).
+3. **CODE_INPUT input demux.** The current `input_sinks` abstraction is one mpsc sender per FeedId. With N subprocesses, the CODE_INPUT entry has to become a dispatcher task that peeks at payload `session_id` and forwards to the matching per-session sender.
+4. **CODE_OUTPUT output merge.** StreamMap allows one broadcast sender per FeedId, so N bridges must funnel through a merger task that owns the single CODE_OUTPUT broadcast and the replay buffer. This also keeps P4's lag-recovery story intact.
+5. **Bootstrap-race resolution.** Between card mount and the arrival of `session_init`, the card doesn't yet know its session_id — so it can't filter inbound frames or tag outbound ones. The card generates a local `session_key` at mount, sends it on a `spawn_session` control frame, and the supervisor associates the real Claude Code `session_id` with the local key once `session_init` arrives. The client filter keys on the local handle during the handoff window.
+6. **Control-frame surface.** New CONTROL (0xc0) actions: `spawn_session`, `close_session`, possibly `resume_session`.
+7. **FeedStore client filter API.** `FeedStore` gains an optional per-instance filter so `CodeSessionStore` subscribes as `new FeedStore(conn, [CODE_OUTPUT], decode, (fid, decoded) => decoded.session_id === key)`. Small change in `tugdeck/src/lib/feed-store.ts`.
+8. **P5 ownership relaxation or scope cut.** `router.rs:663` currently locks CODE_INPUT single-writer per-FeedId. Either relax the lock to `(FeedId, session_key)`, or declare v1 as "multi-session works intra-client only; cross-browser multi-session is future work."
+9. **tugbank persistence** of the card ↔ session_key mapping, to satisfy D-T3-09's reload-survival requirement.
+10. **Test strategy** for multi-session without a real Claude Code — fake tugcode binary or a test-mode short-circuit in the bridge.
 
-Client input dispatch becomes a map lookup: `if let Some(tx) = self.input_sinks.get(&frame.feed_id) { tx.send(frame).await; }`. The select! loop subscribes to all `stream_outputs` receivers dynamically.
+**This is plan-sized work.** P2 wants its own plan document (proposed title: `tug-multi-session-router.md`), not a direct implementation pass out of this section. See `roadmap/code-session-remediation.md` for the full assessment that informed this rewrite.
 
-Registration is: insert a channel pair keyed by FeedId. Main.rs builds the router by registering each backend's channels, not by passing named arguments.
-
-**Scope:** tugcast `router.rs` (major rewrite of `FeedRouter` and `handle_client`), `main.rs` (registration pattern), `server.rs` (if it references router fields directly).
+**Scope:** new `tugcast/src/feeds/agent_supervisor.rs`; modifications to `tugcast/src/feeds/agent_bridge.rs` (stamping, per-session lifecycle), `tugcast/src/router.rs` (CODE_INPUT dispatcher, P5 decision), `tugcast/src/main.rs` (register supervisor instead of single bridge), `tugcast/src/feeds/code.rs` (payload helpers), `tugdeck/src/lib/feed-store.ts` (filter API), plus control-frame additions in `tugcast-core` and `tugdeck/src/protocol.ts`.
 
 #### P3: FeedId slot collision (LOW)
 
