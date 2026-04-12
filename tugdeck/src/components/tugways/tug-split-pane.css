@@ -1,0 +1,54 @@
+/* @tug-pairings: none — step 2 scaffold has no theme tokens yet; real pairings arrive in step 4 */
+
+/* ============================================================================
+   Root (.tug-split-pane)
+   ============================================================================
+   TugSplitPane renders a react-resizable-panels Group, which enforces
+   display: flex, flex-direction, flex-wrap, and overflow itself. We add
+   sizing (width/height/flex fallback) here. The combination of
+   `height: 100%` + `flex: 1 1 auto` + `min-height: 0` lets the component
+   fill its parent whether the parent is a block with concrete height or
+   a flex column, matching the host-agnostic contract. */
+.tug-split-pane {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Horizontal-orientation modifier. Empty in step 2 because the library
+   handles flex-direction internally (our "horizontal" = library "vertical").
+   The class is still attached so step 7 (vertical orientation) has a
+   ready hook for orientation-specific styles. */
+.tug-split-pane-horizontal {
+  /* intentionally empty */
+}
+
+/* ============================================================================
+   Panel (.tug-split-panel)
+   ============================================================================
+   Panels are sized by the library via inline flex styles derived from
+   defaultSize/minSize/maxSize. We add no visual chrome — panel content
+   owns its own appearance. */
+.tug-split-panel {
+  /* intentionally empty in step 2 */
+}
+
+/* ============================================================================
+   Sash (.tug-split-sash)
+   ============================================================================
+   Step 2: bare 1px scaffold line. Real sash chrome (thickness, hit area,
+   grip icon, hover/active/focus states, tokens) arrives in steps 4–6.
+   The hardcoded #888 here is intentional throwaway — it lets us see
+   where the sash is without depending on tokens that don't exist yet.
+   Step 4 replaces this with --tug7-surface-split-primary-normal-sash-rest.
+
+   Focus outline is neutralized so the browser default blue ring doesn't
+   flash during step-2 smoke testing. Step 5 replaces this with a proper
+   token-driven focus-visible ring. */
+.tug-split-sash {
+  height: 1px;
+  background-color: #888;
+  cursor: ns-resize;
+  outline: none;
+}
