@@ -220,49 +220,12 @@ impl LedgerEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Ledger alias + SessionMetadataRegistry
+// Ledger alias
 // ---------------------------------------------------------------------------
 
 /// Shared ledger map. Outer mutex guards membership; per-session mutex guards
 /// the entry's mutable fields.
 pub type Ledger = Arc<Mutex<HashMap<TugSessionId, Arc<Mutex<LedgerEntry>>>>>;
-
-/// Thin wrapper around the ledger that exposes only the per-session
-/// `latest_metadata` slot. Consumed by Step 6's per-session metadata routing
-/// and Step 8's on-subscribe replay per [D14].
-#[derive(Clone)]
-pub struct SessionMetadataRegistry {
-    ledger: Ledger,
-}
-
-impl SessionMetadataRegistry {
-    pub fn new(ledger: Ledger) -> Self {
-        Self { ledger }
-    }
-
-    /// Read the latest `system_metadata` frame recorded for a session.
-    pub async fn get_latest_metadata(&self, id: &TugSessionId) -> Option<Frame> {
-        let entry = {
-            let map = self.ledger.lock().await;
-            map.get(id).cloned()
-        }?;
-        let entry = entry.lock().await;
-        entry.latest_metadata.clone()
-    }
-
-    /// Record a new `system_metadata` frame for a session. No-op if the
-    /// session has no ledger entry.
-    pub async fn set_latest_metadata(&self, id: &TugSessionId, frame: Frame) {
-        let entry = {
-            let map = self.ledger.lock().await;
-            map.get(id).cloned()
-        };
-        if let Some(entry) = entry {
-            let mut entry = entry.lock().await;
-            entry.latest_metadata = Some(frame);
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // SessionKeysStore — narrow persistence trait for card↔session bindings
@@ -332,7 +295,7 @@ pub enum ControlError {
     #[error("control payload missing tug_session_id")]
     MissingSessionId,
     #[error("control payload is not valid JSON")]
-    MalformedPayload,
+    Malformed,
     #[error("tugbank persistence failed: {0}")]
     PersistenceFailure(String),
 }
@@ -365,7 +328,7 @@ struct OwnedControlPayload {
 
 fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, ControlError> {
     let value: serde_json::Value =
-        serde_json::from_slice(payload).map_err(|_| ControlError::MalformedPayload)?;
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
     let card_id = value
         .get("card_id")
         .and_then(|v| v.as_str())
