@@ -786,8 +786,15 @@ export function Tugcard({
   // ---------------------------------------------------------------------------
 
   const handleClose = useCallback(() => {
-    onClose?.();
-  }, [onClose]);
+    // Multi-tab: close the active tab. Single tab: close the card.
+    const currentTabs = tabsRef.current;
+    const currentActiveId = activeTabIdRef.current;
+    if (currentTabs && currentTabs.length > 1 && currentActiveId) {
+      store.removeTab(cardId, currentActiveId);
+    } else {
+      onClose?.();
+    }
+  }, [onClose, store, cardId]);
 
   // selectAll is NOT handled at the card level. Content components
   // (tug-input, tug-textarea, tug-prompt-input, tug-markdown-view)

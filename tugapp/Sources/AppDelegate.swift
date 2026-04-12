@@ -12,6 +12,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
 
+    // File menu state
+    private var closeMenuItem: NSMenuItem!
+
     // View menu state
     private var viewMenu: NSMenu!
     private var cachedCardList: [[String: Any]] = []
@@ -256,12 +259,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
-        // Close Card: routes through the web view's responder chain rather than
+        // Close Card/Tab: routes through the web view's responder chain rather than
         // NSWindow.performClose. The custom selector sends a Control frame that
         // action-dispatch.ts turns into a `close` chain dispatch, which lands on
         // tug-card's registered handler. Without the round-trip, AppKit would
         // swallow ⌘W at the menubar and the WKWebView would never see the keystroke.
-        fileMenu.addItem(NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w"))
+        // Title updates dynamically based on focused card's tab count.
+        closeMenuItem = NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        fileMenu.addItem(closeMenuItem)
 
         // Edit Menu - position 2
         let editMenuItem = NSMenuItem()
@@ -455,6 +460,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Update the cached card list from the frontend (called by MainWindow on cardList message).
     func updateCardList(_ list: [[String: Any]]) {
         cachedCardList = list
+
+        // Update Close menu item title based on focused card's tab count.
+        let focusedCard = list.first { ($0["focused"] as? Bool) == true }
+        let tabCount = focusedCard?["tabCount"] as? Int ?? 0
+        closeMenuItem?.title = tabCount > 1 ? "Close Tab" : "Close Card"
     }
 
     // MARK: - UDS control commands

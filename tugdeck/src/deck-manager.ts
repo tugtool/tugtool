@@ -367,7 +367,7 @@ export class DeckManager implements IDeckManagerStore {
       // Resolve display title: card-level title, or active tab title, or first tab title.
       const activeTab = c.tabs.find((t) => t.id === c.activeTabId);
       const title = c.title || activeTab?.title || c.tabs[0]?.title || "Untitled";
-      return { id: c.id, title, focused: c.id === focusedId };
+      return { id: c.id, title, focused: c.id === focusedId, tabCount: c.tabs.length };
     }).reverse();
     handler.postMessage(list);
   }
