@@ -16,8 +16,9 @@ Motivation: in T3.4 we will place `tug-prompt-entry` at the bottom of the Tide c
 - **Stylable sash.** The sash is a tokened element that accepts a width (thickness), color, and optional icon (grip indicator). Hover / active / focus states are CSS tokens.
 - **Persistent layouts.** Optional `storageKey` saves the split ratio across reloads.
 - **Composable with TugBox.** Each pane's content is opaque — typically a TugBox, but anything is allowed. The split pane does not impose visual chrome on its children.
+- **Host-agnostic.** `TugSplitPane` has zero knowledge of any particular mount site — not the Component Gallery, not the Tide card, not a settings sheet, not any other host. Its contract is the standard flexbox one: *my parent must have a concrete height (or width, for a vertical split); I fill it.* Any host-specific layout plumbing (padding overrides, scroll containers, grid cell chrome) lives at the mount site, never inside the component. This is the principle that keeps the component reusable: the day a new consumer shows up, nothing in `tug-split-pane.tsx` needs to change.
 
-Non-goals: animation choreography during snap (we use plain CSS transitions), multi-touch, drag-to-reorder panes.
+Non-goals: animation choreography during snap (we use plain CSS transitions), multi-touch, drag-to-reorder panes. **Also a non-goal: the Component Gallery as a design constraint.** The gallery is a test harness for iterating on the component visually under HMR. It is not a target environment. If the gallery's default card chrome (`.cg-content` padding, gap, scroll) needs to be overridden to host a fullsize demo, those overrides are a property of the demo card file (`cards/gallery-split-pane.tsx`), not a property of `TugSplitPane`. The component must never import gallery class names, never branch on whether a gallery host is present, never carry a "if this is the gallery, do X" path. When the gallery goes away — and eventually it will, the Tide/Tugdeck product surfaces do not include a component gallery — nothing in the component should need to change.
 
 ---
 
@@ -311,9 +312,11 @@ Per [L20] token sovereignty, `tug-split-pane` does not restyle its children. Pan
 
 ---
 
-## Gallery card
+## Gallery demo card
 
-`cards/gallery-split-pane.tsx` is an interactive demo showing:
+`cards/gallery-split-pane.tsx` is an interactive demo we use to iterate on the component visually under HMR. It is a **test harness**, not a target environment: none of the behavior it exercises is gallery-specific, and any layout plumbing the demo card needs to integrate with the gallery's `.cg-content` wrapper (padding/gap/scroll overrides) lives in this file only — `tug-split-pane.tsx` itself never references `.cg-content`, never imports gallery styles, never knows the gallery exists. See the Host-agnostic goal above.
+
+The demo shows:
 
 - Horizontal split (the Tide use case): markdown above, prompt below
 - Vertical split: a 2-pane side-by-side layout
@@ -326,7 +329,9 @@ Per [L20] token sovereignty, `tug-split-pane` does not restyle its children. Pan
 - Disabled pane (non-resizable sash)
 - Live readout of current layout ratio (demonstrates `onSizeCommit` callback)
 
-Each sub-demo has a short caption explaining what it shows. The gallery is the reference the Tide card integration will look at when mounting T3.4 content.
+Each sub-demo has a short caption explaining what it shows.
+
+The Tide card integration for T3.4 does **not** look at this gallery file as a reference. When T3.4 mounts `TugSplitPane` in the Tide card, the API is the same, the props are the same, and any layout plumbing the Tide card needs is the Tide card's own business — it won't resemble the gallery's plumbing and it shouldn't have to. The gallery demo is for us, during development; the Tide card is for the product.
 
 ---
 
@@ -366,7 +371,7 @@ Instead: small visible chunks under HMR. After each chunk we stop, look at it in
 
 1. **Dependency + smoke test.** `bun add react-resizable-panels`, verify MIT license in the resolved package, verify the React 19.2 peer range, mount a raw `PanelGroup` in a throwaway gallery card to prove it renders at all.
 2. **Minimal `TugSplitPane` + `TugSplitPanel`.** Unstyled, horizontal only, two-pane only, no sash chrome beyond a 1px line. Works in HMR.
-3. **Gallery card scaffold** with a horizontal 2-pane demo (two TugBoxes labelled "top" and "bottom"). This becomes the visual harness we iterate against for the rest of the steps.
+3. **Gallery demo card scaffold** with a horizontal 2-pane demo (two TugBoxes labelled "top" and "bottom"). This is our HMR test harness for the rest of the steps — explicitly *not* a component design target. Any gallery-specific layout plumbing (`.cg-content` overrides, padding resets, etc.) lives in `cards/gallery-split-pane.tsx` only; `tug-split-pane.tsx` itself stays host-agnostic.
 4. **Tokens + pairings** in `brio.css` and `harmony.css`. Sash uses tokens for thickness and color. Theme switching should update it live.
 5. **Sash states** — rest / hover / active / focus-visible — driven by CSS and data attributes.
 6. **Grip icon + hit area.** Optional Lucide grip icon, hit area wider than visible thickness.
@@ -556,6 +561,19 @@ Nothing in the prep pass invalidates the step breakdown. One small amendment: **
 **Decision:** demote `collapsePanel`, `expandPanel`, `getLayout`, `setLayout` from a blocker step to an optional polish step *after* the audit pass. YAGNI — the Tide card only needs the uncontrolled API with `storageKey`, and the forwarding is cheap enough to retrofit if a caller actually materializes.
 
 The step list has been updated: audit pass is now step 13, tide.md link is step 14, imperative ref API is step 15 (optional, only if a caller shows up).
+
+### 13. Principle: the Component Gallery is a test harness, not a design target
+
+Surfaced during the step-1 smoke test. The original gallery-card section of this doc framed the gallery demo as "the reference the Tide card integration will look at when mounting T3.4 content" — that framing was wrong and has been rewritten.
+
+The correct posture:
+
+- `TugSplitPane` has zero knowledge of the Component Gallery. It never imports `.cg-content`, never references gallery class names, never branches on whether a gallery host is present, never carries special paths for gallery use.
+- The component's contract is the standard flexbox one: *parent must have a concrete size along the split axis; I fill it.* That contract is satisfied the same way in the gallery, in the Tide card, in a settings sheet, or anywhere else the component is mounted.
+- If a specific host needs layout plumbing to satisfy that contract — for example, `.cg-content` defaults to padding + gap + scroll, so the gallery demo card overrides it inline with `{ padding: 0, gap: 0, overflow: hidden, height: "100%" }` — that plumbing lives at the mount site, not in the component.
+- The gallery is a short-term convenience for iterating on the component under HMR. It will not exist in the shipped Tugdeck product surface. Anything written against the gallery's conventions is throwaway.
+
+Why this is in the prep findings and not just the Goals section: I caught myself, during step 1, phrasing the layout work as "I know what to fight" and "composing with the gallery conventions." That framing was sloppy and revealed a posture where the gallery was creeping into the component's design space. The user pushed back. This finding is the written receipt so the posture doesn't creep back in during steps 2–14. Reread this before each step.
 
 ---
 

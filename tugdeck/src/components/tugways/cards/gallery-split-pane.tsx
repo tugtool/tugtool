@@ -5,8 +5,8 @@
  * `Group`/`Panel`/`Separator` primitives with plain inline styles. No
  * TugSplitPane wrapper yet (that arrives in step 2), no TugBox content
  * (step 3), no tokens (step 4). The only job of this file right now is
- * to prove the library is installed correctly and renders at all under
- * HMR.
+ * to prove the library is installed correctly, renders at all under
+ * HMR, fills its container, and supports nesting.
  *
  * Important orientation note for step 2:
  * react-resizable-panels v4 uses `orientation="vertical"` to mean
@@ -19,11 +19,17 @@
  * `orientation` through to the library.
  *
  * Layout note: react-resizable-panels requires its Group to have a
- * concrete height to size its children. Gallery card content areas
- * don't universally propagate height, so this smoke test uses a fixed
- * 400px-tall outer box. The step-2 wrapper will address this more
- * carefully (probably by requiring the consumer to constrain the
- * parent, and documenting it in the prop JSDoc).
+ * concrete height. The fill-the-card pattern is to override .cg-content
+ * with `{ padding: 0, gap: 0, overflow: hidden, height: "100%" }` so
+ * the gallery wrapper stops adding its default padding/gap/scroll and
+ * the Group's `height: 100%` resolves against a real pixel height.
+ * This pattern is borrowed from gallery-markdown-view.tsx.
+ *
+ * Focus styling note: the library's Separator is keyboard-focusable
+ * (good — we want arrow-key resize in step 12). The browser's default
+ * focus outline is distracting in the smoke test, so we set
+ * `outline: none` on the separator inline style for now. Proper
+ * sash focus-visible styling arrives in step 5 as part of sash states.
  *
  * This file will be rewritten in each subsequent step. Everything here
  * is throwaway.
@@ -36,52 +42,96 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 
 export function GallerySplitPane() {
   return (
-    <div className="cg-content" data-testid="gallery-split-pane">
-      <div style={{ padding: 16 }}>
-        <div style={{ height: 400 }}>
+    <div
+      className="cg-content"
+      data-testid="gallery-split-pane"
+      style={{
+        padding: 0,
+        gap: 0,
+        overflow: "hidden",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <Group
+        orientation="vertical"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+        }}
+      >
+        <Panel
+          defaultSize="50%"
+          minSize="10%"
+          style={{
+            padding: 12,
+            background: "rgba(100, 150, 255, 0.08)",
+            fontFamily: "monospace",
+            fontSize: 12,
+          }}
+        >
+          top pane (fills full card width)
+        </Panel>
+        <Separator
+          style={{
+            height: 6,
+            background: "#666",
+            cursor: "ns-resize",
+            outline: "none",
+          }}
+        />
+        {/* Bottom panel contains a nested horizontal split to prove
+            nesting works. The inner Group is side-by-side; its Separator
+            is a vertical bar with ew-resize cursor. */}
+        <Panel
+          defaultSize="50%"
+          minSize="10%"
+          style={{
+            background: "rgba(255, 180, 100, 0.08)",
+          }}
+        >
           <Group
-            orientation="vertical"
+            orientation="horizontal"
             style={{
               width: "100%",
               height: "100%",
-              border: "1px dashed #888",
-              borderRadius: 4,
             }}
           >
             <Panel
-              defaultSize="60%"
+              defaultSize="50%"
               minSize="10%"
               style={{
                 padding: 12,
-                background: "rgba(100, 150, 255, 0.08)",
                 fontFamily: "monospace",
                 fontSize: 12,
               }}
             >
-              top pane (60%)
+              nested left
             </Panel>
             <Separator
               style={{
-                height: 6,
+                width: 6,
                 background: "#666",
-                cursor: "ns-resize",
+                cursor: "ew-resize",
+                outline: "none",
               }}
             />
             <Panel
-              defaultSize="40%"
+              defaultSize="50%"
               minSize="10%"
               style={{
                 padding: 12,
-                background: "rgba(255, 180, 100, 0.08)",
                 fontFamily: "monospace",
                 fontSize: 12,
               }}
             >
-              bottom pane (40%)
+              nested right
             </Panel>
           </Group>
-        </div>
-      </div>
+        </Panel>
+      </Group>
     </div>
   );
 }
