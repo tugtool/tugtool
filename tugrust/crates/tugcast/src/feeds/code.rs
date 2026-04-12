@@ -65,7 +65,6 @@ pub fn splice_tug_session_id(line: &[u8], tug_session_id: &str) -> Vec<u8> {
 /// keystroke interarrival time dominates parser overhead — a full JSON parse
 /// is acceptable here. CODE_OUTPUT uses a byte-window scan in
 /// `session_metadata.rs` because that path runs per stream token.
-#[allow(dead_code)]
 pub fn parse_tug_session_id(payload: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
     value

@@ -1,14 +1,30 @@
-//! Agent supervisor module (scaffold)
+//! Agent supervisor module
 //!
-//! Houses the per-session ledger, SPAWN/METADATA broadcast senders, and the
-//! state machine that will eventually own the spawn/dispatch/merge lifecycle
-//! for Claude Code sessions. This step introduces only the types and method
-//! stubs; subsequent steps in `tugplan-multi-session-router` wire the
-//! behavior.
+//! Houses the per-session ledger, SESSION_STATE / SESSION_METADATA broadcast
+//! senders, the CODE_INPUT dispatcher, and the state machine that owns the
+//! spawn/dispatch/merge lifecycle for Claude Code sessions.
 //!
-//! Types defined here are referenced from `router.rs` and will be consumed by
-//! subsequent steps, so the whole module allows dead code until the wiring
-//! lands.
+//! # Lock-order invariant
+//!
+//! The supervisor holds three async mutexes: the outer ledger map, the
+//! `client_sessions` map, and per-session `Mutex<LedgerEntry>` entries
+//! reached through the outer map. To avoid deadlock, all code in this module
+//! acquires locks in the following order and never in reverse:
+//!
+//! 1. **Ledger outer mutex** (`self.ledger`).
+//! 2. **`client_sessions` mutex** (`self.client_sessions`) — may be acquired
+//!    while the ledger mutex is held, during an atomic get-or-insert +
+//!    affinity update.
+//! 3. **Per-session `Mutex<LedgerEntry>`** — acquired only after releasing
+//!    the outer locks, never while the outer locks are held.
+//!
+//! The TOCTOU fix for [R06] depends on this ordering: `do_spawn_session` and
+//! `do_close_session` take the ledger mutex + `client_sessions` mutex as a
+//! single atomic critical section so a concurrent close/spawn cannot
+//! interleave between the ledger mutation and the affinity mutation.
+//!
+//! Downstream steps still rely on `#[allow(dead_code)]` for types whose
+//! consumers have not yet landed in the router wiring.
 
 #![allow(dead_code)]
 
@@ -24,6 +40,7 @@ use tugbank_core::{TugbankClient, Value};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_bridge::CrashBudget;
+use super::code::parse_tug_session_id;
 
 /// Tugbank domain used to persist the `(card_id → tug_session_id)` mapping
 /// so the router can rebind sessions on restart.
@@ -77,8 +94,11 @@ impl SpawnState {
                 // Failure paths
                 | (Spawning, Errored)
                 | (Live, Errored)
-                // Close paths
+                // Close paths (close is legal from any non-terminal state;
+                // `Spawning → Closed` covers the "user kills card while
+                // subprocess is coming up" case)
                 | (Idle, Closed)
+                | (Spawning, Closed)
                 | (Live, Closed)
                 | (Errored, Closed)
                 // Reset paths (close → re-arm)
@@ -101,7 +121,10 @@ impl SpawnState {
 // BoundedQueue
 // ---------------------------------------------------------------------------
 
-/// Result of pushing onto a [`BoundedQueue`].
+/// Result of pushing onto a [`BoundedQueue`]. Marked `#[must_use]` so callers
+/// cannot silently drop frames on overflow — every push site must either
+/// branch on the result or explicitly acknowledge the known-safe invariant.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueuePush {
     /// Item accepted.
@@ -314,6 +337,9 @@ pub struct AgentSupervisor {
     pub client_sessions: Arc<Mutex<HashMap<ClientId, HashSet<TugSessionId>>>>,
     /// Shared supervisor-wide CODE_OUTPUT broadcast sender.
     pub code_output_tx: broadcast::Sender<Frame>,
+    /// Outbound CONTROL broadcast sender — used for `session_unknown`,
+    /// `session_backpressure`, and other supervisor-emitted error frames.
+    pub control_tx: broadcast::Sender<Frame>,
     /// Narrow persistence surface for card↔session bindings.
     pub store: Arc<dyn SessionKeysStore>,
     /// Runtime configuration.
@@ -361,6 +387,39 @@ fn build_session_state_frame(
     Frame::new(FeedId::SESSION_STATE, bytes)
 }
 
+fn build_session_unknown_frame(tug_session_id: &TugSessionId) -> Frame {
+    let body = serde_json::json!({
+        "type": "error",
+        "detail": "session_unknown",
+        "tug_session_id": tug_session_id.as_str(),
+    });
+    Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("session_unknown payload serializes"),
+    )
+}
+
+fn build_backpressure_frame(tug_session_id: &TugSessionId) -> Frame {
+    let body = serde_json::json!({
+        "type": "session_backpressure",
+        "tug_session_id": tug_session_id.as_str(),
+    });
+    Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("session_backpressure payload serializes"),
+    )
+}
+
+/// Routing decision produced by the CODE_INPUT dispatcher under the per-session
+/// lock and consumed outside the lock so await-heavy sends never race the
+/// lock's critical section.
+enum Decision {
+    Drop,
+    Spawn,
+    Forward(mpsc::Sender<Frame>, Frame),
+    Backpressure,
+}
+
 impl AgentSupervisor {
     /// Construct a supervisor with pre-made broadcast senders and a session
     /// keys store.
@@ -368,6 +427,7 @@ impl AgentSupervisor {
         session_state_tx: broadcast::Sender<Frame>,
         session_metadata_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
+        control_tx: broadcast::Sender<Frame>,
         store: Arc<dyn SessionKeysStore>,
         config: AgentSupervisorConfig,
     ) -> Self {
@@ -377,6 +437,7 @@ impl AgentSupervisor {
             session_metadata_tx,
             client_sessions: Arc::new(Mutex::new(HashMap::new())),
             code_output_tx,
+            control_tx,
             store,
             config,
         }
@@ -429,31 +490,33 @@ impl AgentSupervisor {
         tug_session_id: TugSessionId,
         client_id: ClientId,
     ) -> Result<(), ControlError> {
-        // 1) Ledger get-or-insert. Reconnect flows MUST NOT overwrite an
-        //    existing entry — its `latest_metadata` is what the replay step
-        //    below hands back to the client.
+        // Phase 1: ledger get-or-insert + per-client affinity insert, atomic
+        // under the outer ledger lock AND the client_sessions lock. Holding
+        // both together closes the TOCTOU window per [R06] — a concurrent
+        // close cannot interleave between the ledger insert and the
+        // client_sessions insert. Lock order invariant: ledger first, then
+        // client_sessions; applied everywhere in this module.
         let entry_arc: Arc<Mutex<LedgerEntry>> = {
-            let mut map = self.ledger.lock().await;
-            map.entry(tug_session_id.clone())
+            let mut ledger = self.ledger.lock().await;
+            let arc = ledger
+                .entry(tug_session_id.clone())
                 .or_insert_with(|| {
                     Arc::new(Mutex::new(LedgerEntry::new(
                         tug_session_id.clone(),
                         CrashBudget::new(3, Duration::from_secs(60)),
                     )))
                 })
-                .clone()
-        };
-
-        // 2) Per-client session affinity.
-        {
+                .clone();
             let mut cs = self.client_sessions.lock().await;
             cs.entry(client_id)
                 .or_default()
                 .insert(tug_session_id.clone());
-        }
+            arc
+        };
 
-        // 3) Strict tugbank write ([D12]). Partial ledger/client_sessions
-        //    state is tolerable (rewritten on retry); silent failure is not.
+        // Phase 2: strict tugbank write per [D12]. Partial ledger/
+        // client_sessions state on failure is tolerable (rewritten on retry);
+        // silent failure is not.
         if let Err(e) = self.store.set_session_key(card_id, &tug_session_id) {
             warn!(
                 card_id,
@@ -464,19 +527,21 @@ impl AgentSupervisor {
             return Err(ControlError::PersistenceFailure(e.0));
         }
 
-        // 4) Publish `pending` on SESSION_STATE.
+        // Phase 3: per-session mutation + publish + replay, under the
+        // per-session lock. Reconnect flows observe the existing entry and
+        // its `latest_metadata`; fresh flows observe a just-minted Idle
+        // entry with `latest_metadata: None`.
+        let replay_frame = {
+            let entry = entry_arc.lock().await;
+            entry.latest_metadata.clone()
+        };
+
         let _ = self.session_state_tx.send(build_session_state_frame(
             &tug_session_id,
             "pending",
             None,
         ));
 
-        // 5) Event-driven metadata replay ([D14]). Read under per-session lock
-        //    and, if present, publish exactly one frame on SESSION_METADATA.
-        let replay_frame = {
-            let entry = entry_arc.lock().await;
-            entry.latest_metadata.clone()
-        };
         if let Some(frame) = replay_frame {
             let _ = self.session_metadata_tx.send(frame);
         }
@@ -488,34 +553,54 @@ impl AgentSupervisor {
         &self,
         card_id: &str,
         tug_session_id: &TugSessionId,
-        client_id: ClientId,
+        _client_id: ClientId,
     ) {
-        // Lookup: unknown-id close is a no-op (no tugbank interaction, no
-        // SESSION_STATE publish).
+        // Phase 1: remove the ledger entry AND drop the id from every client's
+        // affinity set, atomically under ledger_lock + client_sessions_lock.
+        // Cleaning across all clients (not just `_client_id`) guarantees the
+        // close/spawn race test's self-consistency invariant: after a close,
+        // NO client_sessions set references the removed id. An unknown id
+        // short-circuits here with no side effects (no tugbank interaction,
+        // no SESSION_STATE publish, no lock on `client_sessions`).
         let entry_arc = {
-            let map = self.ledger.lock().await;
-            match map.get(tug_session_id) {
-                Some(e) => e.clone(),
-                None => return,
+            let mut ledger = self.ledger.lock().await;
+            let removed = ledger.remove(tug_session_id);
+            if removed.is_some() {
+                let mut cs = self.client_sessions.lock().await;
+                for set in cs.values_mut() {
+                    set.remove(tug_session_id);
+                }
             }
+            removed
         };
 
-        // Cancel the per-session worker.
+        let Some(entry_arc) = entry_arc else {
+            return;
+        };
+
+        // Phase 2: per-session mutation. Cancel the worker token AND flip
+        // `spawn_state` to `Closed`. Flipping the state matters even though
+        // the entry has just been removed from the map: a `spawn_session_worker`
+        // that raced us — dispatcher flipped `Idle → Spawning`, called
+        // `spawn_session_worker`, and the worker grabbed its own `Arc` clone
+        // via `ledger.get(id)` BEFORE our `HashMap::remove` — is still
+        // holding an `Arc<Mutex<LedgerEntry>>` clone and would otherwise
+        // observe `spawn_state == Spawning` and proceed to publish
+        // `SESSION_STATE = spawning` AFTER our `closed`. Setting the state to
+        // `Closed` here lets the worker's early-bail check (`if state !=
+        // Spawning { return }`) catch the close and skip its publish,
+        // preserving frame order on the wire.
         {
-            let entry = entry_arc.lock().await;
+            let mut entry = entry_arc.lock().await;
             entry.cancel.cancel();
+            // Bare assignment (not `try_transition`) because the entry is
+            // about to be dropped; we only care that any Arc-clone holder
+            // observes `Closed` on its next lock acquire.
+            entry.spawn_state = SpawnState::Closed;
         }
 
-        // Remove from client_sessions[client_id].
-        {
-            let mut cs = self.client_sessions.lock().await;
-            if let Some(set) = cs.get_mut(&client_id) {
-                set.remove(tug_session_id);
-            }
-        }
-
-        // Best-effort tugbank delete ([D12]). Lingering tugbank entries are
-        // benign; a warn! is the loudest signal we want on this path.
+        // Phase 3: best-effort tugbank delete per [D12]. Lingering entries
+        // are benign; a warn! is the loudest signal we want on this path.
         if let Err(e) = self.store.delete_session_key(card_id) {
             warn!(
                 card_id,
@@ -525,15 +610,8 @@ impl AgentSupervisor {
             );
         }
 
-        // Drop the ledger entry. This also clears latest_metadata — reset
-        // flows rely on this so their follow-up spawn reads None and fires
-        // no replay.
-        {
-            let mut map = self.ledger.lock().await;
-            map.remove(tug_session_id);
-        }
-
-        // Publish `closed`.
+        // Phase 4: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
+        // is dropped at the end of this scope.)
         let _ = self.session_state_tx.send(build_session_state_frame(
             tug_session_id,
             "closed",
@@ -541,14 +619,165 @@ impl AgentSupervisor {
         ));
     }
 
-    /// Per-session dispatcher task. Implemented in Step 5.
-    pub async fn dispatcher_task(&self) {}
+    /// CODE_INPUT dispatcher task. Consumes CODE_INPUT frames from a single
+    /// mpsc receiver (fed by the router in Step 8), parses `tug_session_id`,
+    /// and routes each frame based on the ledger entry's `SpawnState`.
+    pub async fn dispatcher_task(self: Arc<Self>, mut rx: mpsc::Receiver<Frame>) {
+        while let Some(frame) = rx.recv().await {
+            self.dispatch_one(frame).await;
+        }
+    }
+
+    /// Dispatch a single CODE_INPUT frame. Extracted from `dispatcher_task` so
+    /// tests can exercise the routing logic without spinning up a task + mpsc.
+    pub async fn dispatch_one(&self, frame: Frame) {
+        // Extract `tug_session_id` from the payload.
+        let tug_session_id = match parse_tug_session_id(&frame.payload) {
+            Some(id) => TugSessionId::new(id),
+            None => {
+                warn!(
+                    "dispatcher: CODE_INPUT frame missing tug_session_id, dropping"
+                );
+                return;
+            }
+        };
+
+        // Look up the ledger entry.
+        let entry_arc = {
+            let ledger = self.ledger.lock().await;
+            ledger.get(&tug_session_id).cloned()
+        };
+
+        let Some(entry_arc) = entry_arc else {
+            // No intent record — the client must `spawn_session` via CONTROL
+            // before sending CODE_INPUT.
+            let _ = self
+                .control_tx
+                .send(build_session_unknown_frame(&tug_session_id));
+            return;
+        };
+
+        // Decide the routing action under the per-session lock. We extract
+        // the decision and release the lock before doing any await-heavy
+        // work (mpsc send, broadcast publish, spawn_session_worker).
+        let decision: Decision = {
+            let mut entry = entry_arc.lock().await;
+            match entry.spawn_state {
+                SpawnState::Idle => {
+                    // This thread owns the Idle → Spawning transition per
+                    // [R02]. Transition, queue the frame for the worker,
+                    // and tell the caller to spawn.
+                    entry
+                        .spawn_state
+                        .try_transition(SpawnState::Spawning)
+                        .ok();
+                    // Idle-entry invariant: the queue is freshly minted
+                    // empty, so push always succeeds. If this ever fails
+                    // we've bungled the invariant and the frame would be
+                    // silently dropped — log loudly rather than panic.
+                    match entry.queue.push(frame) {
+                        QueuePush::Ok => {}
+                        QueuePush::Overflow => {
+                            tracing::error!(
+                                session = %tug_session_id,
+                                "BUG: Idle ledger entry had a non-empty queue on first CODE_INPUT"
+                            );
+                        }
+                    }
+                    Decision::Spawn
+                }
+                SpawnState::Spawning => {
+                    // Buffer the frame until the worker drains.
+                    match entry.queue.push(frame) {
+                        QueuePush::Ok => Decision::Drop,
+                        QueuePush::Overflow => Decision::Backpressure,
+                    }
+                }
+                SpawnState::Live => {
+                    if let Some(tx) = entry.input_tx.clone() {
+                        Decision::Forward(tx, frame)
+                    } else {
+                        warn!("dispatcher: Live state but no input_tx set");
+                        drop(frame);
+                        Decision::Drop
+                    }
+                }
+                SpawnState::Errored | SpawnState::Closed => {
+                    warn!(
+                        state = ?entry.spawn_state,
+                        "dispatcher: dropping frame in terminal state"
+                    );
+                    drop(frame);
+                    Decision::Drop
+                }
+            }
+        };
+
+        match decision {
+            Decision::Drop => {}
+            Decision::Spawn => self.spawn_session_worker(&tug_session_id).await,
+            Decision::Forward(tx, frame) => {
+                let _ = tx.send(frame).await;
+            }
+            Decision::Backpressure => {
+                let _ = self
+                    .control_tx
+                    .send(build_backpressure_frame(&tug_session_id));
+            }
+        }
+    }
 
     /// Per-bridge merger task. Implemented in Step 6.
     pub async fn merger_task(&self) {}
 
-    /// Spawn the per-session worker subprocess. Implemented in Step 5.
-    pub async fn spawn_session_worker(&self, _id: &TugSessionId) {}
+    /// Scaffold spawn worker: wires the per-session `mpsc` and
+    /// `CancellationToken`, publishes `SESSION_STATE = spawning`, transitions
+    /// the ledger state to `Live`, and starts a no-op consumer task. Real
+    /// subprocess spawning lands in Step 6.
+    pub async fn spawn_session_worker(&self, tug_session_id: &TugSessionId) {
+        let entry_arc = {
+            let map = self.ledger.lock().await;
+            match map.get(tug_session_id) {
+                Some(e) => e.clone(),
+                None => return,
+            }
+        };
+
+        let (input_tx, mut input_rx) = mpsc::channel::<Frame>(256);
+
+        // Install the sender, drain any queued frames, transition to Live.
+        {
+            let mut entry = entry_arc.lock().await;
+            if entry.spawn_state != SpawnState::Spawning {
+                // Another task already handled the transition (or the entry
+                // was closed out from under us). Give up cleanly.
+                return;
+            }
+            entry.input_tx = Some(input_tx.clone());
+            // Drain the bounded queue into the worker channel. The queue is
+            // cap 256 and the channel is cap 256, so try_send always succeeds
+            // during a drain from an empty channel.
+            while let Some(queued) = entry.queue.pop() {
+                if input_tx.try_send(queued).is_err() {
+                    break;
+                }
+            }
+            entry.spawn_state.try_transition(SpawnState::Live).ok();
+        }
+
+        let _ = self.session_state_tx.send(build_session_state_frame(
+            tug_session_id,
+            "spawning",
+            None,
+        ));
+
+        // Scaffold consumer: Step 6 replaces this with the real agent_bridge.
+        tokio::spawn(async move {
+            while input_rx.recv().await.is_some() {
+                // no-op
+            }
+        });
+    }
 
     /// Drop per-client affinity state on WebSocket teardown. Does NOT touch
     /// ledger state or tugbank — a client disconnecting is not a session
@@ -667,18 +896,21 @@ mod tests {
         AgentSupervisor,
         broadcast::Receiver<Frame>,
         broadcast::Receiver<Frame>,
+        broadcast::Receiver<Frame>,
     ) {
-        let (state_tx, state_rx) = broadcast::channel(32);
+        let (state_tx, state_rx) = broadcast::channel(512);
         let (meta_tx, meta_rx) = broadcast::channel(32);
         let (code_tx, _code_rx) = broadcast::channel(32);
+        let (control_tx, control_rx) = broadcast::channel(512);
         let sup = AgentSupervisor::new(
             state_tx,
             meta_tx,
             code_tx,
+            control_tx,
             store,
             AgentSupervisorConfig::default(),
         );
-        (sup, state_rx, meta_rx)
+        (sup, state_rx, meta_rx, control_rx)
     }
 
     fn spawn_payload(card_id: &str, tug_session_id: &str) -> Vec<u8> {
@@ -793,7 +1025,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_writes_pending() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -808,7 +1040,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_writes_tugbank_entry() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -822,7 +1054,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_inserts_into_client_sessions() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -836,7 +1068,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_rejects_missing_card_id() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "spawn_session",
@@ -861,7 +1093,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_rejects_empty_card_id() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         let err = sup
             .handle_control("spawn_session", &spawn_payload("", "sess-1"), 10)
@@ -875,7 +1107,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_idempotent() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         let tug_id = TugSessionId::new("sess-1");
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
@@ -903,7 +1135,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_replays_latest_metadata_for_known_session() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, mut meta_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         // Pre-populate a ledger entry with latest_metadata (simulates reconnect
         // after a previous session had produced a system_metadata frame).
@@ -931,7 +1163,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_with_no_prior_metadata_fires_no_replay() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, mut meta_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 7)
             .await
@@ -946,7 +1178,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_returns_err_on_tugbank_failure_injects_error_frame() {
         let store = Arc::new(FailingWriteStore::new());
-        let (sup, mut state_rx, mut meta_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, mut meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         let err = sup
             .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 42)
@@ -969,7 +1201,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_session_publishes_closed_and_removes_entry() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -990,7 +1222,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_session_deletes_tugbank_entry() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -1007,7 +1239,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_session_removes_from_client_sessions() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -1024,7 +1256,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_session_unknown_is_noop() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         sup.handle_control(
             "close_session",
@@ -1042,7 +1274,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_session_logs_on_tugbank_delete_failure_and_continues() {
         let store = Arc::new(FailingDeleteStore::new());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         // Pre-populate a ledger entry and a client_sessions affinity.
         let tug_id = TugSessionId::new("sess-1");
@@ -1077,7 +1309,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset_session_publishes_closed_then_pending() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx) = make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -1096,12 +1328,274 @@ mod tests {
         assert_eq!(second, ("sess-1".into(), "pending".into()));
     }
 
+    // ---- dispatch_one / dispatcher_task ----
+
+    fn code_input_frame(tug_session_id: &str) -> Frame {
+        let body = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "user_message",
+            "text": "hi",
+        });
+        Frame::new(FeedId::CODE_INPUT, serde_json::to_vec(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_missing_tug_session_id_drops_silently() {
+        // A CODE_INPUT payload that carries no `tug_session_id` field has
+        // nothing to attribute a `session_unknown` CONTROL frame to, so the
+        // dispatcher drops it (with a warn! log) rather than fabricate an
+        // error frame. This test pins that behavior so a future "emit a
+        // control frame on every drop" refactor can't silently add noise
+        // on the CONTROL feed.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, mut state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store);
+
+        // Payload with no `tug_session_id` field.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "user_message",
+            "text": "hi",
+        }))
+        .unwrap();
+        sup.dispatch_one(Frame::new(FeedId::CODE_INPUT, payload))
+            .await;
+
+        assert!(
+            control_rx.try_recv().is_err(),
+            "missing tug_session_id must not emit a CONTROL frame"
+        );
+        assert!(
+            state_rx.try_recv().is_err(),
+            "missing tug_session_id must not emit a SESSION_STATE frame"
+        );
+        assert!(
+            sup.ledger.lock().await.is_empty(),
+            "missing tug_session_id must not mutate the ledger"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_orphan_input_rejected() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+
+        sup.dispatch_one(code_input_frame("sess-unknown")).await;
+
+        let ctrl = control_rx.try_recv().expect("session_unknown control frame");
+        assert_eq!(ctrl.feed_id, FeedId::CONTROL);
+        let v: serde_json::Value = serde_json::from_slice(&ctrl.payload).unwrap();
+        assert_eq!(v["type"], "error");
+        assert_eq!(v["detail"], "session_unknown");
+        assert_eq!(v["tug_session_id"], "sess-unknown");
+
+        // Ledger untouched — dispatching unknown input must not create an entry.
+        assert!(sup.ledger.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_first_input_triggers_spawn() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let (_, pending_state) = session_state_of(&state_rx.try_recv().unwrap());
+        assert_eq!(pending_state, "pending");
+
+        // First CODE_INPUT frame: transitions Idle → Spawning, spawns worker.
+        sup.dispatch_one(code_input_frame("sess-1")).await;
+
+        let (_, state) = session_state_of(&state_rx.try_recv().unwrap());
+        assert_eq!(state, "spawning");
+        assert!(
+            state_rx.try_recv().is_err(),
+            "only one SESSION_STATE frame should be emitted by the scaffold"
+        );
+
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        let entry = entry_arc.lock().await;
+        assert_eq!(entry.spawn_state, SpawnState::Live);
+        assert!(
+            entry.queue.is_empty(),
+            "worker drained the queued first frame"
+        );
+        assert!(entry.input_tx.is_some(), "worker installed input_tx");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_first_inputs_spawn_once() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let _ = state_rx.try_recv().unwrap();
+
+        // Two CODE_INPUT frames back-to-back. The per-session mutex guarantees
+        // only the first flips Idle → Spawning; the second is buffered (or
+        // forwarded to input_tx once Live).
+        sup.dispatch_one(code_input_frame("sess-1")).await;
+        sup.dispatch_one(code_input_frame("sess-1")).await;
+
+        let (_, state) = session_state_of(&state_rx.try_recv().unwrap());
+        assert_eq!(state, "spawning");
+        assert!(
+            state_rx.try_recv().is_err(),
+            "only a single `spawning` frame — no double-spawn"
+        );
+
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        let entry = entry_arc.lock().await;
+        assert_eq!(entry.spawn_state, SpawnState::Live);
+        assert!(entry.queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_queue_overflow_emits_backpressure() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // Pin the entry to Spawning so the dispatcher buffers into the queue
+        // without triggering a worker drain.
+        let tug_id = TugSessionId::new("sess-1");
+        {
+            let map = sup.ledger.lock().await;
+            let entry_arc = map.get(&tug_id).unwrap().clone();
+            drop(map);
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+        }
+
+        // First 256 frames fit.
+        for _ in 0..256 {
+            sup.dispatch_one(code_input_frame("sess-1")).await;
+        }
+        assert!(
+            control_rx.try_recv().is_err(),
+            "no backpressure within the 256-frame cap"
+        );
+
+        // The 257th frame overflows → emit session_backpressure CONTROL.
+        sup.dispatch_one(code_input_frame("sess-1")).await;
+
+        let ctrl = control_rx
+            .try_recv()
+            .expect("session_backpressure control frame");
+        assert_eq!(ctrl.feed_id, FeedId::CONTROL);
+        let v: serde_json::Value = serde_json::from_slice(&ctrl.payload).unwrap();
+        assert_eq!(v["type"], "session_backpressure");
+        assert_eq!(v["tug_session_id"], "sess-1");
+
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        let entry = entry_arc.lock().await;
+        assert_eq!(entry.queue.len(), 256);
+    }
+
+    // ---- close/spawn race ([R06]) ----
+
+    /// Pin for [R06]: concurrent `close_session` and `spawn_session` for the
+    /// same `tug_session_id` from different clients must never leave the
+    /// supervisor in a state where `client_sessions` references a
+    /// `tug_session_id` that no longer has a ledger entry, nor leave a
+    /// ledger entry whose only affinity is from the closing (not the
+    /// spawning) client.
+    ///
+    /// Uses `flavor = "multi_thread"` so the two `tokio::spawn`ed tasks can
+    /// actually interleave across threads at Tokio-mutex acquisition points.
+    /// A single-threaded runtime would serialize the two tasks to
+    /// completion and not exercise the race at all. The scenario is looped
+    /// so CI has a chance to surface scheduling-dependent regressions; each
+    /// iteration is independent with a fresh supervisor.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_close_spawn_race_does_not_leak_entry() {
+        const ITERATIONS: usize = 64;
+
+        for iter in 0..ITERATIONS {
+            let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+            let (sup, _state_rx, _meta_rx, _control_rx) =
+                make_supervisor_with_store(store);
+            let sup = Arc::new(sup);
+
+            // Pre-spawn from client 10 so both racers start from a populated
+            // ledger entry; otherwise there's nothing for close to remove.
+            sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+                .await
+                .unwrap();
+
+            let sup_close = sup.clone();
+            let sup_spawn = sup.clone();
+            let close_task = tokio::spawn(async move {
+                sup_close
+                    .handle_control(
+                        "close_session",
+                        &close_payload("card-1", "sess-1"),
+                        10,
+                    )
+                    .await
+            });
+            let spawn_task = tokio::spawn(async move {
+                sup_spawn
+                    .handle_control(
+                        "spawn_session",
+                        &spawn_payload("card-2", "sess-1"),
+                        20,
+                    )
+                    .await
+            });
+
+            let close_result = close_task.await.expect("close task panic");
+            let spawn_result = spawn_task.await.expect("spawn task panic");
+            assert!(close_result.is_ok(), "close_task failed on iter {iter}");
+            assert!(spawn_result.is_ok(), "spawn_task failed on iter {iter}");
+
+            // Final-state self-consistency: either the ledger has the entry
+            // AND only the spawn client has affinity, OR the ledger has no
+            // entry AND neither client has affinity. No orphaned
+            // client_sessions entries referring to a missing ledger entry.
+            let ledger = sup.ledger.lock().await;
+            let cs = sup.client_sessions.lock().await;
+            let tug_id = TugSessionId::new("sess-1");
+
+            let has_ledger_entry = ledger.contains_key(&tug_id);
+            let client_10_has = cs.get(&10).is_some_and(|s| s.contains(&tug_id));
+            let client_20_has = cs.get(&20).is_some_and(|s| s.contains(&tug_id));
+
+            if has_ledger_entry {
+                assert!(
+                    client_20_has,
+                    "iter {iter}: ledger has entry but spawn client (20) has no affinity"
+                );
+                assert!(
+                    !client_10_has,
+                    "iter {iter}: ledger has entry but close client (10) still has affinity"
+                );
+            } else {
+                assert!(
+                    !client_20_has,
+                    "iter {iter}: ledger empty but spawn client (20) still has affinity"
+                );
+                assert!(
+                    !client_10_has,
+                    "iter {iter}: ledger empty but close client (10) still has affinity"
+                );
+            }
+        }
+    }
+
     // ---- on_client_disconnect ----
 
     #[tokio::test]
     async fn test_on_client_disconnect_drops_client_sessions_entry() {
         let store = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx) = make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
