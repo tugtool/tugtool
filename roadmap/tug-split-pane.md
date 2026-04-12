@@ -354,17 +354,209 @@ Each sub-demo has a short caption explaining what it shows. The gallery is the r
 
 ---
 
-## Plan-of-work summary
+## Implementation plan
 
-This document is the design spec. Implementation will follow the standard tugplug plan/implement workflow with roughly these steps:
+We are deliberately *not* using the `tugplug:plan` workflow for this component. That workflow has been producing too much boilerplate, too much ceremony, and too little introspection on the work in between — which is exactly wrong for a user interface component where every step should be something you can look at and touch.
 
-1. Add `react-resizable-panels` dependency; verify license
-2. Author `tug-split-pane.tsx` wrapping `PanelGroup` + `Panel` + `PanelResizeHandle`, with `TugSplitPane` and `TugSplitPanel` exports
-3. Author `tug-split-pane.css` with tokens, pairings, size variants, states
-4. Add tokens to `brio.css` and `harmony.css`
-5. Author `gallery-split-pane.tsx` demo card
-6. Add gallery registration
-7. Polish: keyboard behavior, snap thresholds, focus rings, ARIA verification
-8. Update `component-library-roadmap.md` and link this doc from the Tide roadmap's T3.4 prerequisites
+Instead: small visible chunks under HMR. After each chunk we stop, look at it in the browser, discuss what's off, and move on. No sub-agents, no committer-agent, no big nugget of work at the end. The user commits when satisfied with a chunk (or a cluster of chunks).
 
-Once `tug-split-pane` is in place, T3.4 picks up with confidence: the Tide card's content area becomes a `<TugSplitPane orientation="horizontal">` with `tug-markdown-view` on top and `tug-prompt-entry` on the bottom, and the rest of T3.4 is about the prompt-entry composition itself.
+**The discipline:** never write a chunk that can't be verified until the next chunk lands. If a step produces nothing visible, it is too big or it is in the wrong order.
+
+### Steps
+
+1. **Dependency + smoke test.** `bun add react-resizable-panels`, verify MIT license in the resolved package, verify the React 19.2 peer range, mount a raw `PanelGroup` in a throwaway gallery card to prove it renders at all.
+2. **Minimal `TugSplitPane` + `TugSplitPanel`.** Unstyled, horizontal only, two-pane only, no sash chrome beyond a 1px line. Works in HMR.
+3. **Gallery card scaffold** with a horizontal 2-pane demo (two TugBoxes labelled "top" and "bottom"). This becomes the visual harness we iterate against for the rest of the steps.
+4. **Tokens + pairings** in `brio.css` and `harmony.css`. Sash uses tokens for thickness and color. Theme switching should update it live.
+5. **Sash states** — rest / hover / active / focus-visible — driven by CSS and data attributes.
+6. **Grip icon + hit area.** Optional Lucide grip icon, hit area wider than visible thickness.
+7. **Vertical orientation.** Add the `orientation` prop and demo variant.
+8. **Size constraints** (`minSize`, `maxSize`), enforced on drag and on container resize.
+9. **Snap-to-close.** `collapsible`, `collapsedSize`, `snapThreshold`, `onCollapsedChange`. Demo: drag below min, watch collapse, drag back, watch reopen.
+10. **Persistence.** `storageKey`. Reload the page, layout restored.
+11. **Size variants** (sm / md / lg) and the 3-pane + nested gallery demos.
+12. **Keyboard + ARIA verification.** Tab, arrow keys, Home/End, Enter to toggle collapsible panels.
+13. **Imperative ref API** — `collapsePanel`, `expandPanel`, `getLayout`, `setLayout`.
+14. **Audit pass.** `bun run audit:tokens lint`, component authoring checklist, `bun run build`, `bun run test`.
+15. **Link from tide.md T3.4** as a prerequisite.
+
+Steps 1–3 are the first useful pause. After step 3 you can resize two panes on screen; everything after that is refinement.
+
+Once `tug-split-pane` is in place, T3.4 picks up cleanly: the Tide card's content area becomes a `<TugSplitPane orientation="horizontal">` with `tug-markdown-view` on top and `tug-prompt-entry` on the bottom, and the rest of T3.4 is about the prompt-entry composition itself.
+
+---
+
+## Prep findings
+
+Pass completed before step 1. Reads: `tuglaws/component-authoring.md`, `tug-slider.tsx` + `tug-slider.css`, `tug-accordion.tsx` (section headers), `gallery-registrations.tsx`, `gallery-slider.tsx`, `styles/themes/brio.css` (header + slider tokens), live fetch of `react-resizable-panels@4.10.0` manifest from the npm registry.
+
+### 1. `react-resizable-panels` is green for our use
+
+- **Latest version:** `4.10.0`
+- **License:** MIT ✓
+- **Author:** Brian Vaughn (@bvaughn), same maintainer over 160+ releases
+- **Peer deps:** `"react": "^18.0.0 || ^19.0.0"`, `"react-dom": "^18.0.0 || ^19.0.0"` — React 19 explicitly supported
+- **Actively tested against React 19:** the library's own `devDependencies` pin `react@^19.2.3`, i.e. the same minor we're on (`^19.2.4`)
+- **Not currently installed** in `tugdeck/node_modules`
+
+No blockers. Step 1's `bun add react-resizable-panels` should land cleanly.
+
+### 2. File layout (no surprises)
+
+`tugdeck/src/components/tugways/` is the public API. Top-level = what app code imports. `internal/` = building blocks. `tug-split-pane` is public, top-level — two files only:
+
+```
+tugdeck/src/components/tugways/tug-split-pane.tsx
+tugdeck/src/components/tugways/tug-split-pane.css
+```
+
+Both `TugSplitPane` and `TugSplitPanel` live in the same `.tsx` file, banner-delimited, per the compound component convention (same as `tug-accordion.tsx` with its `TugAccordion` + `TugAccordionItem`).
+
+Gallery demo lives in `tugdeck/src/components/tugways/cards/gallery-split-pane.tsx`. No barrel exports anywhere.
+
+### 3. TSX structure to follow (verbatim from authoring guide)
+
+1. Module docstring (name + purpose, then details, then law citations — no plan/spec references)
+2. CSS import (`import "./tug-split-pane.css";`) — first, before React
+3. Library imports (React, `react-resizable-panels`)
+4. Internal imports (`cn`, `useTugBoxDisabled` if we cascade disabled, `TugIconName` if we type the grip icon)
+5. Types
+6. Exported props interfaces
+7. `TugSplitPane` (forwardRef with named function for DevTools)
+8. Banner: `/* --- TugSplitPanel --- */`
+9. `TugSplitPanel` (forwardRef with named function)
+
+Required boilerplate on the root of every forwarded component:
+- `data-slot="tug-split-pane"` / `data-slot="tug-split-panel"` / `data-slot="tug-split-sash"`
+- `className` via `cn("tug-split-pane", ...variantClasses, className)`
+- `...rest` spread last
+- Inline `style` merged, not replaced (`style={{ ...internal, ...style }}`)
+
+### 4. Required law citations in the module docstring
+
+Minimum set we must cite:
+- **[L06]** appearance via CSS, never React state
+- **[L15]** token-driven states (sash rest/hover/active/focus)
+- **[L16]** every foreground rule declares its rendering surface
+- **[L19]** component authoring guide
+- **[L20]** token sovereignty — composed children (pane contents) keep their own tokens
+
+Plus a scoped comment on why **we do not cite [L11]**: see §6 below — split-pane resize is not a chain-dispatched action, it is a state-mirror callback pattern, which the authoring guide explicitly permits.
+
+### 5. CSS file structure to follow
+
+```
+/* @tug-pairings { ... } */          ← compact block (machine-parsed by audit-tokens lint)
+/**
+ * @tug-pairings                      ← expanded table (human/agent readable)
+ * | Element | Surface | Role | Context |
+ * ...
+ */
+body {                                ← optional component-tier aliases, one hop only [L17]
+  --tugx-split-sash-bg: var(--tug7-surface-split-primary-normal-sash-rest);
+  ...
+}
+.tug-split-pane { ... }                ← root
+.tug-split-pane-horizontal { ... }     ← orientation variants
+.tug-split-pane-vertical { ... }
+.tug-split-panel { ... }
+.tug-split-panel[data-collapsed="true"] { ... }
+.tug-split-sash { ... }                ← sash base
+.tug-split-sash-grip { ... }           ← grip icon
+.tug-split-sash:hover { ... }          ← rest → hover → active → focus → disabled, in that order
+.tug-split-sash[data-resize-handle-active] { ... }
+.tug-split-sash:focus-visible { ... }
+.tug-split-pane-sm { ... }             ← size variants
+.tug-split-pane-md { ... }
+.tug-split-pane-lg { ... }
+```
+
+Every rule that sets `color`, `fill`, `stroke`, or `border-color` without also setting `background-color` must have a `/* @tug-renders-on: <surface-token> */` annotation above it. This is non-negotiable — `audit-tokens lint` will fail the build otherwise.
+
+Use component-tier `--tugx-split-*` aliases because the component has enough tokens to benefit. Resolve in one hop to `--tug7-*` per [L17].
+
+### 6. [L11] and the state-mirror callback question
+
+This is the one real design subtlety in the guide we need to resolve before writing any code.
+
+**The rule:** controls that own user interactions emit actions through the chain (`useControlDispatch`), and callback props for user interactions are explicitly prohibited. A `TugCloseButton` must not expose `onClose`. `TugSlider` dispatches `SET_VALUE` via the chain.
+
+**Why split-pane is different:** the authoring guide carves out an explicit exception for *state mirror callbacks*:
+
+> Callback props for user interactions are prohibited. […] Non-user-interaction callbacks (state mirror callbacks like `onOpenChange` for Radix integration, lifecycle observers) are fine.
+
+A split pane's layout state lives *inside the split pane* (specifically, inside `react-resizable-panels`' own state + optional `localStorage`). There is no external responder that owns layout. A consumer who wants to react to layout changes (e.g. "the inspector pane just collapsed — hide its toolbar") is asking for a state mirror, not dispatching a user action to some other component's responder.
+
+**Decision:** `onSizeCommit` and `onCollapsedChange` are state mirror callbacks, not user-action callbacks. They do not need to go through the chain. `TugSplitPane` is a **layout primitive**, not a control in the [L11] sense. We cite [L06, L15, L16, L19, L20] in the module docstring and **do not cite [L11]**, with a short comment explaining why so a future auditor doesn't assume it was an oversight.
+
+If we later decide we want chain-dispatched split-pane actions (e.g. `SPLIT_COLLAPSE_PANE` so a menu item can collapse the inspector), we add that on top — a menu item dispatches through the chain normally, the split pane registers via `useOptionalResponder` for those specific actions, and the state-mirror callbacks keep doing what they do.
+
+### 7. Token naming — component slot is `split`
+
+Seven-slot: `--tug7-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>`
+
+Component slot value: **`split`** (singular, no hyphen — matches `slider`, `toggle`, `field`, etc.).
+
+Initial token sketch, refined from the roadmap spec using the seven-slot shape correctly:
+
+| Token                                                  | Plane   | Purpose |
+|--------------------------------------------------------|---------|---------|
+| `--tug7-surface-split-primary-normal-sash-rest`        | surface | sash fill, resting |
+| `--tug7-surface-split-primary-normal-sash-hover`       | surface | sash fill, hover |
+| `--tug7-surface-split-primary-normal-sash-active`      | surface | sash fill, dragging |
+| `--tug7-element-split-icon-normal-grip-rest`           | element | grip icon color, resting |
+| `--tug7-element-split-icon-normal-grip-hover`          | element | grip icon color, hover |
+| `--tug7-element-split-border-normal-focus-rest`        | element | keyboard focus ring |
+
+Non-contrast effect-like values (thickness, hit area size, grip icon size) are *not* pairings. Use plain CSS custom props outside the seven-slot convention, defined locally in the component CSS (e.g. `--tugx-split-sash-thickness-md: 6px;`) and scaled by size variants. This mirrors how tug-slider handles track height and thumb size — those are local values in `tug-slider.css`, not theme tokens.
+
+Tokens must be added to **both** `tugdeck/styles/themes/brio.css` (dark) and `tugdeck/styles/themes/harmony.css` (light) with the same names. Theme files use a `--tug-color(palette, i: N, t: M)` palette-addressing syntax for values — reference pattern is `--tug7-surface-slider-primary-normal-track-rest` at brio.css:213. No generation script — hand-authored.
+
+### 8. Gallery registration mechanics
+
+Two files to touch when adding `gallery-split-pane`:
+
+1. **`gallery-split-pane.tsx`** (new) — the demo card component. Follow `gallery-slider.tsx` pattern: module docstring, imports, component function, `cg-content` root className, `cg-section` blocks with `cg-section-title` labels, `TugSeparator` between sections. No `ResponderScope` needed unless we add chain-dispatched actions (we're not, per §6).
+
+2. **`cards/gallery-registrations.tsx`** — two edits:
+   - Import `GallerySplitPane` at the top with the other gallery imports
+   - Add a tab template entry in `GALLERY_DEFAULT_TABS` under the "Layout & Structure" section (alongside `gallery-box`, `gallery-accordion`, `gallery-separator`)
+   - Add a `registerCard({...})` call inside `registerGalleryCards()` with this exact shape (from `gallery-slider` at line 433-440):
+     ```ts
+     registerCard({
+       componentId: "gallery-split-pane",
+       contentFactory: (_cardId) => <GallerySplitPane />,
+       defaultMeta: { title: "TugSplitPane", icon: "<lucide icon name>", closable: true },
+       family: "developer",
+       acceptsFamilies: ["developer"],
+       sizePolicy: GALLERY_COMPLEX_SIZE,  // we want room for nested-split demos
+     });
+     ```
+   - A good lucide icon candidate: `PanelLeftRight` or `Columns2` or `Rows2`. We'll pick during step 3.
+
+### 9. TugBox disabled cascade
+
+`tug-slider.tsx` uses `useTugBoxDisabled()` from `./internal/tug-box-context` to inherit the disabled cascade from a parent `TugBox`. Our split pane should do the same: when placed inside a disabled `TugBox`, all sashes become non-interactive. This is a one-line addition (`const boxDisabled = useTugBoxDisabled(); const effectiveDisabled = disabled || boxDisabled;`), applied to the panel group's disabled state. Worth remembering so I don't miss it in step 2.
+
+### 10. Things the roadmap doc under-specified that I now have answers for
+
+- **`data-orientation` attribute** on the root — the `@selector` annotation in the props doc lists class names, but the guide's convention is that a data attribute is equally acceptable. I'll use class names (`.tug-split-pane-horizontal`, `-vertical`) for consistency with `tug-slider-inline`/`-stacked`.
+- **`data-slot` attributes**: root = `tug-split-pane`, panel = `tug-split-panel`, sash = `tug-split-sash`.
+- **`data-collapsed="true"` on collapsed panels** drives CSS-only collapse visual. React state tracks the collapsed boolean (it's data — consumer code cares) but the visual change is pure CSS per [L06].
+- **Sash focusability**: the sash *is* keyboard-focusable (we want arrow-key resize), so unlike `tug-slider` we do *not* set `data-tug-focus="refuse"` on it. `react-resizable-panels`' `PanelResizeHandle` is focusable by default.
+- **State selectors for the sash**: `react-resizable-panels` emits `data-resize-handle-active` during drag. We use that for the active-state CSS rather than `:active` (which wouldn't survive pointer-capture scenarios).
+- **Transition policy**: no transitions on size during drag (they'd fight the library's real-time updates). Transitions only on hover/focus state changes of the sash.
+
+### 11. Confirmed step order is still correct
+
+Nothing in the prep pass invalidates the step breakdown. One small amendment: **step 2 should also wire the TugBox disabled cascade** so we don't have to circle back later. That's a 3-line addition, belongs in step 2, not a new step.
+
+### 12. Open question to raise with the user before step 1
+
+**Imperative ref API scope.** The roadmap doc includes `collapsePanel`, `expandPanel`, `getLayout`, `setLayout` as step 13. `react-resizable-panels` exposes these directly on its `PanelGroup` and `Panel` refs — we'd just forward them. But: we don't yet have a concrete consumer (Tide card only uses the uncontrolled API). YAGNI says punt until we have a caller. Counterargument: the forwarding is ~10 lines and having it there when T3.4 or T3.5 reaches for it is nicer than retrofitting.
+
+My vote: **keep step 13, but move it after step 14 (audit pass)**, so it's an optional polish rather than a blocker for "this component is shippable." If we ship without it and nobody misses it, delete step 13.
+
+---
+
+**Assessment:** Ready for step 1. One open question (§12) for the user to weigh in on. Everything else is decided, written down, and unblocked.
