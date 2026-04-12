@@ -433,55 +433,52 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     const regs = Array.from(getAllRegistrations().values())
       .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"));
 
-    // Group definitions: ordered list of [label, icon, componentId[]] tuples.
-    // Registrations not listed here fall through at the end as top-level items.
-    const groups: [string, string | undefined, string[]][] = [
-      ["Buttons", "MousePointerClick", ["gallery-buttons", "gallery-default-button", "gallery-popup-button"]],
-      ["Text Input & Display", "TextCursorInput", ["gallery-input", "gallery-value-input", "gallery-textarea", "gallery-prompt-input", "gallery-label", "gallery-markdown-view"]],
-      ["Selection", "CheckSquare", ["gallery-checkbox", "gallery-switch", "gallery-radio-group", "gallery-choice-group", "gallery-option-group", "gallery-slider"]],
-      ["Overlays", "MessageSquareMore", ["gallery-popover", "gallery-confirm-popover", "gallery-context-menu", "gallery-tooltip", "gallery-sheet", "gallery-alert"]],
-      ["Feedback & Status", "Activity", ["gallery-progress", "gallery-badge", "gallery-banner", "gallery-bulletin", "gallery-skeleton", "gallery-marquee"]],
-      ["Layout & Structure", "Box", ["gallery-box", "gallery-atom", "gallery-accordion", "gallery-separator", "gallery-tabbar", "gallery-title-bar"]],
-      ["Animation & Theming", "Play", ["gallery-animator", "gallery-scale-timing", "gallery-palette", "gallery-theme-generator"]],
-      ["Architecture", "GitBranch", ["gallery-mutation", "gallery-mutation-tx", "gallery-observable-props", "gallery-chain-actions"]],
-    ];
+    // Group registrations by their declared `category` (see
+    // CardRegistration.category in card-registry.ts). Sections appear in
+    // first-encountered order — whichever category is seen first on a
+    // registration defines that section's position. Items within a section
+    // appear in registration order. Registrations without a category fall
+    // through at the end as top-level items.
+    //
+    // TugTabBar has no knowledge of which categories exist — grouping data
+    // lives on the registration, not in this component.
+    const sections = new Map<
+      string,
+      { label: string; iconName: string | undefined; items: TugPopupMenuItem[] }
+    >();
+    const ungrouped: TugPopupMenuItem[] = [];
 
-    const regMap = new Map(regs.map((r) => [r.componentId, r]));
-    const entries: TugPopupMenuEntry[] = [];
-    const placed = new Set<string>();
-
-    for (const [label, iconName, ids] of groups) {
-      const subItems: TugPopupMenuItem[] = [];
-      for (const id of ids) {
-        const reg = regMap.get(id);
-        if (!reg) continue;
-        subItems.push({
-          id: reg.componentId,
-          label: reg.defaultMeta.title,
-          icon: renderIcon(reg.defaultMeta.icon),
-        });
-        placed.add(id);
+    for (const reg of regs) {
+      const item: TugPopupMenuItem = {
+        id: reg.componentId,
+        label: reg.defaultMeta.title,
+        icon: renderIcon(reg.defaultMeta.icon),
+      };
+      if (!reg.category) {
+        ungrouped.push(item);
+        continue;
       }
-      if (subItems.length === 0) continue;
-      entries.push({
-        type: "sub",
-        label,
-        icon: renderIcon(iconName),
-        items: subItems,
-      });
+      const key = reg.category.label;
+      let section = sections.get(key);
+      if (!section) {
+        section = { label: reg.category.label, iconName: reg.category.icon, items: [] };
+        sections.set(key, section);
+      }
+      section.items.push(item);
     }
 
-    // Append any registrations not covered by the groups above.
-    const remaining = regs.filter((r) => !placed.has(r.componentId));
-    if (remaining.length > 0) {
+    const entries: TugPopupMenuEntry[] = [];
+    for (const section of sections.values()) {
+      entries.push({
+        type: "sub",
+        label: section.label,
+        icon: renderIcon(section.iconName),
+        items: section.items,
+      });
+    }
+    if (ungrouped.length > 0) {
       if (entries.length > 0) entries.push({ type: "separator" });
-      for (const reg of remaining) {
-        entries.push({
-          id: reg.componentId,
-          label: reg.defaultMeta.title,
-          icon: renderIcon(reg.defaultMeta.icon),
-        });
-      }
+      for (const item of ungrouped) entries.push(item);
     }
 
     return entries;

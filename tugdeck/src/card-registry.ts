@@ -94,6 +94,16 @@ export interface CardRegistration {
   defaultTitle?: string;
   /** Size policy for this card type. Falls back to DEFAULT_SIZE_POLICY when omitted. */
   sizePolicy?: CardSizePolicy;
+  /**
+   * Category this card belongs to in the type picker menu of a multi-tab
+   * host. Registrations sharing a `category.label` are grouped together in
+   * the [+] popup, ordered by first-encountered appearance in the registry.
+   * Unsectioned registrations fall through as top-level items.
+   *
+   * This field is how type-picker grouping is declared — TugTabBar never
+   * hardcodes category IDs.
+   */
+  category?: { label: string; icon?: string };
 }
 
 /** Module-level registry map. Keyed by componentId. */

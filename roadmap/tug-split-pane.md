@@ -376,9 +376,9 @@ Instead: small visible chunks under HMR. After each chunk we stop, look at it in
 10. **Persistence.** `storageKey`. Reload the page, layout restored.
 11. **Size variants** (sm / md / lg) and the 3-pane + nested gallery demos.
 12. **Keyboard + ARIA verification.** Tab, arrow keys, Home/End, Enter to toggle collapsible panels.
-13. **Imperative ref API** — `collapsePanel`, `expandPanel`, `getLayout`, `setLayout`.
-14. **Audit pass.** `bun run audit:tokens lint`, component authoring checklist, `bun run build`, `bun run test`.
-15. **Link from tide.md T3.4** as a prerequisite.
+13. **Audit pass.** `bun run audit:tokens lint`, component authoring checklist, `bun run build`, `bun run test`.
+14. **Link from tide.md T3.4** as a prerequisite.
+15. *(Optional polish — only if a caller materializes)* **Imperative ref API** — `collapsePanel`, `expandPanel`, `getLayout`, `setLayout`.
 
 Steps 1–3 are the first useful pause. After step 3 you can resize two panes on screen; everything after that is refinement.
 
@@ -551,12 +551,12 @@ Two files to touch when adding `gallery-split-pane`:
 
 Nothing in the prep pass invalidates the step breakdown. One small amendment: **step 2 should also wire the TugBox disabled cascade** so we don't have to circle back later. That's a 3-line addition, belongs in step 2, not a new step.
 
-### 12. Open question to raise with the user before step 1
+### 12. Resolved: imperative ref API demoted to optional polish
 
-**Imperative ref API scope.** The roadmap doc includes `collapsePanel`, `expandPanel`, `getLayout`, `setLayout` as step 13. `react-resizable-panels` exposes these directly on its `PanelGroup` and `Panel` refs — we'd just forward them. But: we don't yet have a concrete consumer (Tide card only uses the uncontrolled API). YAGNI says punt until we have a caller. Counterargument: the forwarding is ~10 lines and having it there when T3.4 or T3.5 reaches for it is nicer than retrofitting.
+**Decision:** demote `collapsePanel`, `expandPanel`, `getLayout`, `setLayout` from a blocker step to an optional polish step *after* the audit pass. YAGNI — the Tide card only needs the uncontrolled API with `storageKey`, and the forwarding is cheap enough to retrofit if a caller actually materializes.
 
-My vote: **keep step 13, but move it after step 14 (audit pass)**, so it's an optional polish rather than a blocker for "this component is shippable." If we ship without it and nobody misses it, delete step 13.
+The step list has been updated: audit pass is now step 13, tide.md link is step 14, imperative ref API is step 15 (optional, only if a caller shows up).
 
 ---
 
-**Assessment:** Ready for step 1. One open question (§12) for the user to weigh in on. Everything else is decided, written down, and unblocked.
+**Assessment:** Ready for step 1. All open questions resolved. Going.

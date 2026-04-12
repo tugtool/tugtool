@@ -65,6 +65,7 @@ import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptInput } from "./gallery-prompt-input";
+import { GallerySplitPane } from "./gallery-split-pane";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -120,6 +121,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-box",               title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-atom",              title: "TugAtom",              closable: true },
   { id: "template", componentId: "gallery-accordion",         title: "TugAccordion",         closable: true },
+  { id: "template", componentId: "gallery-split-pane",        title: "TugSplitPane",         closable: true },
   { id: "template", componentId: "gallery-separator",         title: "TugSeparator",         closable: true },
   { id: "template", componentId: "gallery-tabbar",            title: "TugTabBar",            closable: true },
   { id: "template", componentId: "gallery-title-bar",         title: "TugTitleBar",          closable: true },
@@ -287,6 +289,23 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
  */
+/**
+ * Category declarations for the [+] type picker. Each gallery card
+ * registration passes one of these as its `category` field. TugTabBar
+ * groups registrations by `category.label` in first-encountered order —
+ * there is no hardcoded list of component IDs in the tab bar anymore.
+ */
+const CATEGORIES = {
+  buttons: { label: "Buttons", icon: "MousePointerClick" },
+  textInput: { label: "Text Input & Display", icon: "TextCursorInput" },
+  selection: { label: "Selection", icon: "CheckSquare" },
+  overlays: { label: "Overlays", icon: "MessageSquareMore" },
+  feedback: { label: "Feedback & Status", icon: "Activity" },
+  layout: { label: "Layout & Structure", icon: "Box" },
+  animation: { label: "Animation & Theming", icon: "Play" },
+  architecture: { label: "Architecture", icon: "GitBranch" },
+} as const;
+
 export function registerGalleryCards(): void {
 
   // ===========================================================================
@@ -303,6 +322,7 @@ export function registerGalleryCards(): void {
     defaultTabs: GALLERY_DEFAULT_TABS,
     defaultTitle: "Component Gallery",
     sizePolicy: GALLERY_ENTRY_SIZE,
+    category: CATEGORIES.buttons,
   });
 
   registerCard({
@@ -312,6 +332,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
   });
 
   registerCard({
@@ -321,6 +342,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
   });
 
   // ===========================================================================
@@ -334,6 +356,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
@@ -343,6 +366,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
@@ -352,6 +376,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
@@ -361,6 +386,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
@@ -370,6 +396,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
@@ -379,6 +406,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   // ===========================================================================
@@ -392,6 +420,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
@@ -401,6 +430,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
@@ -410,6 +440,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
@@ -419,6 +450,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
@@ -428,6 +460,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
@@ -437,6 +470,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   // ===========================================================================
@@ -450,6 +484,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   registerCard({
@@ -459,6 +494,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   registerCard({
@@ -468,6 +504,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   registerCard({
@@ -477,6 +514,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   registerCard({
@@ -486,6 +524,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   registerCard({
@@ -495,6 +534,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
   });
 
   // ===========================================================================
@@ -508,6 +548,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
@@ -517,6 +558,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
@@ -526,6 +568,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
@@ -535,6 +578,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
@@ -544,6 +588,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
@@ -553,6 +598,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   // ===========================================================================
@@ -566,6 +612,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   registerCard({
@@ -575,6 +622,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   registerCard({
@@ -584,6 +632,17 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-split-pane",
+    contentFactory: (_cardId) => <GallerySplitPane />,
+    defaultMeta: { title: "TugSplitPane", icon: "Rows2", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.layout,
   });
 
   registerCard({
@@ -593,6 +652,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   registerCard({
@@ -602,6 +662,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   registerCard({
@@ -611,6 +672,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   // ===========================================================================
@@ -624,6 +686,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.animation,
   });
 
   registerCard({
@@ -633,6 +696,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.animation,
   });
 
   registerCard({
@@ -642,6 +706,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.animation,
   });
 
   registerCard({
@@ -651,6 +716,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.animation,
   });
 
   // ===========================================================================
@@ -664,6 +730,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
   });
 
   registerCard({
@@ -673,6 +740,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.architecture,
   });
 
   // The cardId is passed through to GalleryObservableProps so inspector
@@ -685,6 +753,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
   });
 
   registerCard({
@@ -694,6 +763,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
   });
 
 }
