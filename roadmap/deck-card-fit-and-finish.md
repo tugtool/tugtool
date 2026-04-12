@@ -134,11 +134,35 @@ View
 
 ---
 
+---
+
+## 5. Eliminate Reload Flash
+
+**Problem:** A full-window flash occurs on both HMR updates and the Developer > Reload command. The flash is a brief white (or theme-mismatch) frame that appears while the WebView tears down and re-renders. This looks terrible and must be eliminated in both cases.
+
+**Approach:** Investigate the root cause — likely the WebView briefly shows its default background between teardown and the new render. Possible fixes include keeping the WebView hidden (or opacity 0) during reload until `frontendReady` fires again, or ensuring the WebView's background color matches the canvas at all times so any intermediate frame is invisible.
+
+**Scope:** Likely Swift (`MainWindow.swift` — reload handling, WebView background color) and possibly tugdeck (`main.tsx` — frontendReady signaling on HMR).
+
+---
+
+## 6. Tighten Active Card Shadow
+
+**Problem:** The drop shadow on the focused (active) card spreads too wide, visually overwhelming adjacent cards and making the layout feel heavy.
+
+**Approach:** Reduce the shadow spread to no more than 5px (matching `SNAP_GAP_PX`) so the shadow fits cleanly in the gap between snapped cards. The shadow should still be visible enough to convey depth/focus but should not bleed past the snap gap.
+
+**Scope:** tugdeck CSS (`chrome.css` or equivalent — the `.card-frame` focused shadow rule).
+
+---
+
 ## Implementation Order
 
 Suggested sequencing based on dependencies and risk:
 
-1. **Card size policies (2)** — foundational for arrange commands and for relaxed placement (need to know minimum sizes to enforce title-bar visibility).
+1. ~~**Card size policies (2)**~~ — done.
 2. **Relaxed placement (3)** — depends on size policies for safety; straightforward once those exist.
-3. **View menu (4)** — depends on size policies (for tile/cascade) and explicit sets (for correct card list). Largest scope item.
+3. **View menu (4)** — depends on size policies (for tile/cascade). Largest scope item.
 4. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.
+5. **Reload flash (5)** — independent, can be done at any point.
+6. **Active card shadow (6)** — independent, quick CSS fix.
