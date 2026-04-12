@@ -16,6 +16,8 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
+import type { CardSizePolicy } from "@/card-registry";
+import { DEFAULT_SIZE_POLICY } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
 import { CARD_TITLE_BAR_HEIGHT } from "../tugways/tug-card";
@@ -135,6 +137,12 @@ export interface CardFrameProps {
    * DeckCanvas wires this to store.toggleCardCollapse(id).
    */
   onCardCollapsed?: (id: string) => void;
+  /**
+   * Size policy for this card type. Enforces min as a floor (content-reported
+   * min cannot go below this) and max as a ceiling during resize.
+   * Falls back to DEFAULT_SIZE_POLICY when omitted.
+   */
+  sizePolicy?: CardSizePolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +165,7 @@ export function CardFrame({
   renderContent,
   onCardMoved,
   onCardFocused,
+  sizePolicy: sizePolicyProp,
   onCardMerged,
   activeTabId,
   zIndex,
@@ -169,10 +178,13 @@ export function CardFrame({
   // Ref to the frame DOM element for appearance-zone style mutations.
   const frameRef = useRef<HTMLDivElement>(null);
 
-  // Min-size reported by Tugcard. Default per spec: 150×100.
+  // Resolved size policy: use prop or fall back to DEFAULT_SIZE_POLICY.
+  const sizePolicy = sizePolicyProp ?? DEFAULT_SIZE_POLICY;
+
+  // Min-size reported by Tugcard, floored to sizePolicy.min.
   const [minSize, setMinSize] = useState<{ width: number; height: number }>({
-    width: 150,
-    height: 100,
+    width: sizePolicy.min.width,
+    height: sizePolicy.min.height,
   });
 
   // Latest minSize held in a ref so resize closure always sees current value
@@ -180,15 +192,24 @@ export function CardFrame({
   const minSizeRef = useRef(minSize);
   minSizeRef.current = minSize;
 
+  // Max-size from policy (undefined = unbounded). Held in a ref so the resize
+  // closure always reads the current value without re-creation.
+  const maxSizeRef = useRef(sizePolicy.max);
+  maxSizeRef.current = sizePolicy.max;
+
   // ---------------------------------------------------------------------------
   // onMinSizeChange (injected into Tugcard via renderContent)
   // ---------------------------------------------------------------------------
 
   const handleMinSizeChange = useCallback(
     (newSize: { width: number; height: number }) => {
-      setMinSize(newSize);
+      // Enforce policy min as floor: content cannot report a min below the policy.
+      setMinSize({
+        width: Math.max(newSize.width, sizePolicy.min.width),
+        height: Math.max(newSize.height, sizePolicy.min.height),
+      });
     },
-    [],
+    [sizePolicy.min.width, sizePolicy.min.height],
   );
 
   // ---------------------------------------------------------------------------
@@ -599,6 +620,7 @@ export function CardFrame({
           edge,
           minSizeRef.current,
           resizeCanvasBounds,
+          maxSizeRef.current,
         );
 
         // Apply snap-to-edge if modifier is held. [D01]
@@ -793,7 +815,7 @@ function clampedPosition(
 
 /**
  * Compute new bounding rect after resizing on the given edge.
- * Width and height are clamped to minSize.
+ * Width and height are clamped to minSize (floor) and maxSize (ceiling).
  * When canvasBounds is provided, the resulting rect is also clamped so the
  * card cannot extend beyond the canvas edges (accounting for CANVAS_PADDING).
  */
@@ -807,6 +829,7 @@ function resizeDelta(
   edge: ResizeEdge,
   minSize: { width: number; height: number },
   canvasBounds?: DOMRect | null,
+  maxSize?: { width: number; height: number },
 ): { left: number; top: number; width: number; height: number } {
   const dx = pointer.x - startPointer.x;
   const dy = pointer.y - startPointer.y;
@@ -818,17 +841,21 @@ function resizeDelta(
 
   if (edge.includes("e")) {
     width = Math.max(minSize.width, startW + dx);
+    if (maxSize) width = Math.min(maxSize.width, width);
   }
   if (edge.includes("w")) {
-    const newW = Math.max(minSize.width, startW - dx);
+    let newW = Math.max(minSize.width, startW - dx);
+    if (maxSize) newW = Math.min(maxSize.width, newW);
     left = startLeft + (startW - newW);
     width = newW;
   }
   if (edge.includes("s")) {
     height = Math.max(minSize.height, startH + dy);
+    if (maxSize) height = Math.min(maxSize.height, height);
   }
   if (edge.includes("n")) {
-    const newH = Math.max(minSize.height, startH - dy);
+    let newH = Math.max(minSize.height, startH - dy);
+    if (maxSize) newH = Math.min(maxSize.height, newH);
     top = startTop + (startH - newH);
     height = newH;
   }

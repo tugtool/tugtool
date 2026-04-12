@@ -18,7 +18,7 @@
 
 import React, { useId, useState } from "react";
 import { Star } from "lucide-react";
-import { registerCard } from "@/card-registry";
+import { registerCard, type CardSizePolicy } from "@/card-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
@@ -250,6 +250,29 @@ export function GalleryBadge() {
 /**
  * Register all gallery card types in the global card registry.
  *
+// ---------------------------------------------------------------------------
+// Gallery size policies
+// ---------------------------------------------------------------------------
+
+/** Component Gallery (multi-tab entry point): large enough to show content. */
+const GALLERY_ENTRY_SIZE: CardSizePolicy = {
+  min: { width: 450, height: 350 },
+  preferred: { width: 900, height: 720 },
+};
+
+/** Standard gallery component card (most variant grids, form demos). */
+const GALLERY_COMPONENT_SIZE: CardSizePolicy = {
+  min: { width: 300, height: 250 },
+  preferred: { width: 500, height: 400 },
+};
+
+/** Complex gallery cards (palette, theme generator, animator, markdown, sheet). */
+const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
+  min: { width: 400, height: 350 },
+  preferred: { width: 640, height: 520 },
+};
+
+/**
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
  *
@@ -279,6 +302,7 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
     defaultTabs: GALLERY_DEFAULT_TABS,
     defaultTitle: "Component Gallery",
+    sizePolicy: GALLERY_ENTRY_SIZE,
   });
 
   registerCard({
@@ -287,6 +311,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugDefaultButton", icon: "CornerDownLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -295,6 +320,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   // ===========================================================================
@@ -307,6 +333,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -315,6 +342,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugValueInput", icon: "Hash", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -323,6 +351,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugTextarea", icon: "AlignLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -331,6 +360,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugPromptInput", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   registerCard({
@@ -339,6 +369,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugLabel", icon: "Type", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -347,6 +378,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   // ===========================================================================
@@ -359,6 +391,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugCheckbox", icon: "CheckSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -367,6 +400,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -375,6 +409,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -383,6 +418,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -391,6 +427,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -399,6 +436,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugSlider", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   // ===========================================================================
@@ -411,6 +449,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugPopover", icon: "MessageSquareMore", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -419,6 +458,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugConfirmPopover", icon: "ShieldAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -427,6 +467,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugContextMenu", icon: "MousePointer2", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -435,6 +476,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugTooltip", icon: "MessageSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -443,6 +485,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugSheet", icon: "PanelTopOpen", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   registerCard({
@@ -451,6 +494,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugAlert", icon: "AlertCircle", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   // ===========================================================================
@@ -463,6 +507,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -471,6 +516,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -479,6 +525,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugBanner", icon: "AlertTriangle", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -487,6 +534,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -495,6 +543,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugSkeleton", icon: "Loader", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -503,6 +552,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugMarquee", icon: "MoveHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   // ===========================================================================
@@ -515,6 +565,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugBox", icon: "Box", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -523,6 +574,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -531,6 +583,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugAccordion", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   registerCard({
@@ -539,6 +592,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -547,6 +601,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugTabBar", icon: "PanelTop", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -555,6 +610,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugTitleBar", icon: "PanelTop", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   // ===========================================================================
@@ -567,6 +623,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugAnimator", icon: "Play", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   registerCard({
@@ -575,6 +632,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Scale & Timing", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -583,6 +641,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   registerCard({
@@ -591,6 +650,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   // ===========================================================================
@@ -603,6 +663,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Mutation Model", icon: "GitBranch", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -611,6 +672,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
   });
 
   // The cardId is passed through to GalleryObservableProps so inspector
@@ -622,6 +684,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
   registerCard({
@@ -630,6 +693,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
   });
 
 }

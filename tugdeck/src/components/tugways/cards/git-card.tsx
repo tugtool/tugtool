@@ -313,5 +313,9 @@ export function registerGitCard(): void {
     contentFactory: () => <GitCardContent />,
     defaultMeta: { title: "Git", icon: "GitBranch", closable: true },
     defaultFeedIds: [FeedId.GIT],
+    sizePolicy: {
+      min: { width: 280, height: 200 },
+      preferred: { width: 650, height: 350 },
+    },
   });
 }

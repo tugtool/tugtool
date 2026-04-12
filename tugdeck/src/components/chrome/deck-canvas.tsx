@@ -66,7 +66,7 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { CardFrame } from "./card-frame";
-import { getRegistration } from "@/card-registry";
+import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { tabDragCoordinator } from "@/tab-drag-coordinator";
@@ -438,6 +438,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           <CardFrame
             key={cardState.id}
             cardState={cardState}
+            sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}
             onCardMoved={store.handleCardMoved}

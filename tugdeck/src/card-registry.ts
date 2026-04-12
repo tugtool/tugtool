@@ -26,6 +26,28 @@ import type { FeedIdValue } from "./protocol";
 import type { TabItem } from "./layout-tree";
 
 /**
+ * Size policy for a card type. Governs default sizing of new cards and
+ * resize clamping in CardFrame.
+ *
+ * - `min`: hard floor for resize (content can report a larger min, but not smaller).
+ * - `max`: hard ceiling for resize (omit for unbounded).
+ * - `preferred`: size for new cards with no saved state.
+ */
+export interface CardSizePolicy {
+  min: { width: number; height: number };
+  max?: { width: number; height: number };
+  preferred: { width: number; height: number };
+}
+
+/**
+ * Default size policy applied when a card registration omits `sizePolicy`.
+ */
+export const DEFAULT_SIZE_POLICY: CardSizePolicy = {
+  min: { width: 250, height: 180 },
+  preferred: { width: 400, height: 300 },
+};
+
+/**
  * Metadata describing a card's default appearance and behavior.
  *
  * **Authoritative reference:** Spec S01 TugcardMeta.
@@ -70,6 +92,8 @@ export interface CardRegistration {
   defaultTabs?: readonly TabItem[];
   /** Default card-level title (e.g. "Component Gallery"). Defaults to `""`. */
   defaultTitle?: string;
+  /** Size policy for this card type. Falls back to DEFAULT_SIZE_POLICY when omitted. */
+  sizePolicy?: CardSizePolicy;
 }
 
 /** Module-level registry map. Keyed by componentId. */
@@ -110,6 +134,16 @@ export function getRegistration(componentId: string): CardRegistration | undefin
  */
 export function getAllRegistrations(): Map<string, CardRegistration> {
   return registry;
+}
+
+/**
+ * Return the size policy for a registered card type.
+ *
+ * Returns the registration's `sizePolicy` if set, otherwise `DEFAULT_SIZE_POLICY`.
+ * Returns `DEFAULT_SIZE_POLICY` when the componentId is not registered.
+ */
+export function getSizePolicy(componentId: string): CardSizePolicy {
+  return registry.get(componentId)?.sizePolicy ?? DEFAULT_SIZE_POLICY;
 }
 
 /**

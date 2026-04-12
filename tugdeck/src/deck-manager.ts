@@ -37,7 +37,7 @@
 
 import { type DeckState, type CardState, type TabItem, type TabStateBag } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
-import { getRegistration } from "./card-registry";
+import { getRegistration, getSizePolicy } from "./card-registry";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -57,10 +57,6 @@ import { BASE_THEME_NAME } from "./theme-constants";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
-
-/** Default card size for new cards (Spec S05) */
-const DEFAULT_CARD_WIDTH = 400;
-const DEFAULT_CARD_HEIGHT = 300;
 
 /** Cascade step between consecutive new cards (pixels) */
 const CASCADE_STEP = 30;
@@ -381,8 +377,8 @@ export class DeckManager implements IDeckManagerStore {
    *
    * Looks up `componentId` in the card registry. If not found, logs a warning
    * and returns null. Otherwise creates a new CardState with a cascaded position
-   * and default 400×300 size, appends it to deckState, re-renders, and schedules
-   * a save.
+   * and the registration's preferred size (from CardSizePolicy), appends it to
+   * deckState, notifies subscribers, and schedules a save.
    *
    * @returns The generated card ID, or null if the component is not registered.
    */
@@ -397,7 +393,8 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     const cardId = crypto.randomUUID();
-    const position = this.nextCascadePosition();
+    const sizePolicy = getSizePolicy(componentId);
+    const position = this.nextCascadePosition(sizePolicy.preferred);
 
     let tabs: TabItem[];
     let activeTabId: string;
@@ -426,7 +423,7 @@ export class DeckManager implements IDeckManagerStore {
     const card: CardState = {
       id: cardId,
       position,
-      size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
+      size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
       tabs,
       activeTabId,
       title: registration.defaultTitle ?? "",
@@ -851,18 +848,21 @@ export class DeckManager implements IDeckManagerStore {
 
     if (!removedTab) return null;
 
+    // Look up size policy for the detached tab's component type.
+    const tabSizePolicy = getSizePolicy(removedTab.componentId);
+
     // Clamp position to canvas bounds.
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
-    const clampedX = Math.max(0, Math.min(position.x, canvasWidth - DEFAULT_CARD_WIDTH));
-    const clampedY = Math.max(0, Math.min(position.y, canvasHeight - DEFAULT_CARD_HEIGHT));
+    const clampedX = Math.max(0, Math.min(position.x, canvasWidth - tabSizePolicy.preferred.width));
+    const clampedY = Math.max(0, Math.min(position.y, canvasHeight - tabSizePolicy.preferred.height));
 
     // Create the new card.
     const newCardId = crypto.randomUUID();
     const newCard: CardState = {
       id: newCardId,
       position: { x: clampedX, y: clampedY },
-      size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
+      size: { width: tabSizePolicy.preferred.width, height: tabSizePolicy.preferred.height },
       tabs: [removedTab],
       activeTabId: removedTab.id,
       // Detached cards lose the card-level title (they are generic containers).
@@ -969,9 +969,11 @@ export class DeckManager implements IDeckManagerStore {
    *
    * Offsets by (CASCADE_STEP * cascadeIndex, CASCADE_STEP * cascadeIndex).
    * If the card's right or bottom edge would exceed canvas bounds, resets
-   * the cascade counter to 0 and returns (0, 0).
+   * the cascade counter to 0 and returns the origin.
+   *
+   * @param cardSize - The preferred width/height of the card being placed.
    */
-  private nextCascadePosition(): { x: number; y: number } {
+  private nextCascadePosition(cardSize: { width: number; height: number }): { x: number; y: number } {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
 
@@ -981,7 +983,7 @@ export class DeckManager implements IDeckManagerStore {
     const x = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
     const y = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
 
-    if (x + DEFAULT_CARD_WIDTH > canvasWidth || y + DEFAULT_CARD_HEIGHT > canvasHeight) {
+    if (x + cardSize.width > canvasWidth || y + cardSize.height > canvasHeight) {
       this.cascadeIndex = 0;
       return { x: CASCADE_ORIGIN, y: CASCADE_ORIGIN };
     }
