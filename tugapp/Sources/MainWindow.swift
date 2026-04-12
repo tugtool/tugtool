@@ -16,6 +16,7 @@ protocol BridgeDelegate: AnyObject {
 /// Main window containing the WKWebView for tugdeck dashboard
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
+    private var containerView: NSView!
     private var contentController: WKUserContentController!
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
@@ -60,7 +61,15 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.setValue(false, forKey: "drawsBackground")
         webView.isHidden = true
 
-        self.contentView = webView
+        // Container view holds both the WebView and any snapshot overlays.
+        // The snapshot overlay is a sibling of the WebView (not a child) so
+        // it is unaffected by WKWebView's compositing during navigation.
+        containerView = NSView(frame: contentRect)
+        containerView.autoresizingMask = [.width, .height]
+        containerView.addSubview(webView)
+        webView.frame = containerView.bounds
+        webView.autoresizingMask = [.width, .height]
+        self.contentView = containerView
         // Background color is set by AppDelegate after init, not here.
     }
 
@@ -158,6 +167,53 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
     }
 
+    /// Tag used to identify the reload snapshot overlay.
+    private static let reloadSnapshotTag = 9999
+
+    /// Capture the current WebView content as a snapshot overlay so the user
+    /// sees a frozen frame while the page reloads. The overlay is added to
+    /// the container view (sibling of the WebView, not a child) so WKWebView's
+    /// compositing during navigation cannot cause it to flicker. Removed by
+    /// thawAfterReload() when frontendReady fires.
+    func freezeForReload(completion: @escaping () -> Void) {
+        // Snapshot the entire window contents so the capture includes
+        // everything visible — web content, native scrollbars, all of it.
+        guard let contentView = self.contentView,
+              let bitmapRep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds) else {
+            completion()
+            return
+        }
+        contentView.cacheDisplay(in: contentView.bounds, to: bitmapRep)
+        let image = NSImage(size: contentView.bounds.size)
+        image.addRepresentation(bitmapRep)
+
+        let overlay = NSImageView(frame: containerView.bounds)
+        overlay.image = image
+        overlay.imageScaling = .scaleNone
+        overlay.autoresizingMask = [.width, .height]
+        overlay.tag = MainWindow.reloadSnapshotTag
+        containerView.addSubview(overlay)
+        completion()
+    }
+
+    /// Remove the reload snapshot overlay with a brief crossfade so the
+    /// freshly-loaded content appears smoothly.
+    func thawAfterReload() {
+        guard let overlay = containerView.viewWithTag(MainWindow.reloadSnapshotTag) else { return }
+        overlay.wantsLayer = true
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = 1
+        anim.toValue = 0
+        anim.duration = 0.15
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        anim.isRemovedOnCompletion = false
+        anim.fillMode = .forwards
+        overlay.layer?.add(anim, forKey: "thawFade")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            overlay.removeFromSuperview()
+        }
+    }
+
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
@@ -167,6 +223,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "frontendReady")
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
+        contentController.removeScriptMessageHandler(forName: "clipboardRead")
+        contentController.removeScriptMessageHandler(forName: "cardList")
         bridgeCleaned = true
     }
 
@@ -205,6 +263,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// that would occur if we revealed on didFinishNavigation.
     func revealWebView() {
         NSLog("MainWindow: revealWebView called (isHidden=%d)", webView.isHidden ? 1 : 0)
+
+        // If a reload snapshot overlay is present, hold it for 0.5s so the
+        // WebView content is fully composited before the crossfade begins.
+        if containerView.viewWithTag(MainWindow.reloadSnapshotTag) != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                self.thawAfterReload()
+            }
+            return
+        }
+
         guard webView.isHidden else { return }
         webView.wantsLayer = true
         webView.layer?.opacity = 0
@@ -234,14 +302,17 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // Intercept reload navigation: save state via JS bridge BEFORE
-        // the page tears down. WKWebView's network stack is killed during
-        // teardown, so fetch/XHR from beforeunload/visibilitychange fail.
+        // Intercept reload navigation: freeze the display as a snapshot overlay,
+        // save state via JS bridge BEFORE the page tears down, then reload.
+        // The snapshot keeps cards visible during teardown/rebuild. It is removed
+        // by revealWebView() when frontendReady fires after the reload completes.
         if navigationAction.navigationType == .reload {
             decisionHandler(.cancel)
-            webView.evaluateJavaScript("window.__tugdeckSaveState?.()") { [weak webView] _, _ in
-                if let url = webView?.url {
-                    webView?.load(URLRequest(url: url))
+            freezeForReload { [weak self] in
+                self?.webView.evaluateJavaScript("window.__tugdeckSaveState?.()") { [weak self] _, _ in
+                    if let url = self?.webView.url {
+                        self?.webView.load(URLRequest(url: url))
+                    }
                 }
             }
             return
