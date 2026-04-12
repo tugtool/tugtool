@@ -1,25 +1,38 @@
 /**
  * GallerySplitPane — TugSplitPane demos for the Component Gallery.
  *
- * STEP 2 STATE: now uses the TugSplitPane / TugSplitPanel wrappers instead
- * of raw react-resizable-panels primitives. Horizontal 2-pane split only —
- * vertical orientation and nesting return in later steps as the wrapper
- * grows to support them. The sash is still a 1px scaffold line (tokens
- * and chrome arrive in steps 4–6).
+ * STEP 3 STATE: each TugSplitPanel hosts plain placeholder content (no
+ * TugBox wrapper, no visual chrome). This reflects the actual Tide
+ * target: panels are invisible slots, and the content components that
+ * eventually mount in them (tug-markdown-view on top, tug-prompt-entry
+ * on bottom) will identify themselves by what they are. Wrapping them
+ * in a TugBox would add ugly rounded-corner legend chrome that nobody
+ * actually wants in a split-pane layout.
  *
  * This file is a test harness for iterating on TugSplitPane under HMR.
- * It is **not** a target environment and TugSplitPane knows nothing about
- * it. The `.cg-content` inline-style override below is a gallery-demo
- * concern — it resets the gallery wrapper's default padding/gap/scroll so
- * the split pane can fill the card edge-to-edge. That override is a
- * property of this demo file, not of the component. See
- * roadmap/tug-split-pane.md (Host-agnostic goal, §13).
+ * It is **not** a target environment. The `.cg-content` inline-style
+ * override below resets the gallery wrapper's default padding/gap/scroll
+ * so the split pane can fill the card edge-to-edge — a gallery-demo
+ * concern, not a component concern. TugSplitPane itself knows nothing
+ * about .cg-content. See roadmap/tug-split-pane.md (Host-agnostic goal,
+ * §13).
  *
  * This file continues to evolve in each subsequent step.
  */
 
 import React from "react";
 import { TugSplitPane, TugSplitPanel } from "@/components/tugways/tug-split-pane";
+import { TugLabel } from "@/components/tugways/tug-label";
+
+// Placeholder pane content — a padded div with a muted label. No border,
+// no fill, no chrome. The panel is an invisible slot; this content sits
+// directly on the card background as the eventual markdown view / prompt
+// entry will.
+const PANE_CONTENT: React.CSSProperties = {
+  padding: 16,
+  height: "100%",
+  boxSizing: "border-box",
+};
 
 // ---- GallerySplitPane ----
 
@@ -36,29 +49,19 @@ export function GallerySplitPane() {
       }}
     >
       <TugSplitPane>
-        <TugSplitPanel
-          defaultSize={60}
-          minSize={10}
-          style={{
-            padding: 12,
-            background: "rgba(100, 150, 255, 0.08)",
-            fontFamily: "monospace",
-            fontSize: 12,
-          }}
-        >
-          top pane (60%)
+        <TugSplitPanel defaultSize={60} minSize={10}>
+          <div style={PANE_CONTENT}>
+            <TugLabel size="sm" color="muted">
+              markdown view (T1)
+            </TugLabel>
+          </div>
         </TugSplitPanel>
-        <TugSplitPanel
-          defaultSize={40}
-          minSize={10}
-          style={{
-            padding: 12,
-            background: "rgba(255, 180, 100, 0.08)",
-            fontFamily: "monospace",
-            fontSize: 12,
-          }}
-        >
-          bottom pane (40%)
+        <TugSplitPanel defaultSize={40} minSize={10}>
+          <div style={PANE_CONTENT}>
+            <TugLabel size="sm" color="muted">
+              prompt entry (T3.4)
+            </TugLabel>
+          </div>
         </TugSplitPanel>
       </TugSplitPane>
     </div>
