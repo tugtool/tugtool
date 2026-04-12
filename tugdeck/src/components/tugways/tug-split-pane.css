@@ -1,4 +1,25 @@
-/* @tug-pairings: none — step 2 scaffold has no theme tokens yet; real pairings arrive in step 4 */
+/* @tug-pairings {
+  --tug7-surface-split-primary-normal-sash-rest | --tug7-surface-global-primary-normal-default-rest | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                             | Surface                                            | Role          | Context                          |
+ * |-----------------------------------------------------|----------------------------------------------------|---------------|----------------------------------|
+ * | --tug7-surface-split-primary-normal-sash-rest       | --tug7-surface-global-primary-normal-default-rest  | informational | .tug-split-sash (background-color) |
+ *
+ * The sash is a thin horizontal/vertical surface visually juxtaposed with
+ * the card content area behind the split pane. The pairing is
+ * informational because the sash is a visual divider, not a control
+ * carrying content that needs text-contrast guarantees. (When step 6 adds
+ * the grip icon, a second pairing — icon on sash surface, control role —
+ * will join this block.)
+ */
+
+body {
+  /* Component-tier color alias — resolves to base tier in one hop [L17]. */
+  --tugx-split-sash-bg: var(--tug7-surface-split-primary-normal-sash-rest);
+}
 
 /* ============================================================================
    Root (.tug-split-pane)
@@ -8,18 +29,26 @@
    sizing (width/height/flex fallback) here. The combination of
    `height: 100%` + `flex: 1 1 auto` + `min-height: 0` lets the component
    fill its parent whether the parent is a block with concrete height or
-   a flex column, matching the host-agnostic contract. */
+   a flex column, matching the host-agnostic contract.
+
+   The `--tug-split-sash-thickness` variable scopes the sash's visible
+   thickness to the component root, so size variants in step 11 can
+   override it via `.tug-split-pane-sm`, `-md`, `-lg`. It uses a plain
+   `--tug-*` prefix (not `--tugx-*`) because it is a dimensional value,
+   not a color alias. */
 .tug-split-pane {
   width: 100%;
   height: 100%;
   flex: 1 1 auto;
   min-height: 0;
+
+  --tug-split-sash-thickness: var(--tug-space-2xs);
 }
 
-/* Horizontal-orientation modifier. Empty in step 2 because the library
+/* Horizontal-orientation modifier. Empty in step 4 because the library
    handles flex-direction internally (our "horizontal" = library "vertical").
    The class is still attached so step 7 (vertical orientation) has a
-   ready hook for orientation-specific styles. */
+   ready hook for orientation-specific overrides. */
 .tug-split-pane-horizontal {
   /* intentionally empty */
 }
@@ -31,24 +60,28 @@
    defaultSize/minSize/maxSize. We add no visual chrome — panel content
    owns its own appearance. */
 .tug-split-panel {
-  /* intentionally empty in step 2 */
+  /* intentionally empty in step 4 */
 }
 
 /* ============================================================================
    Sash (.tug-split-sash)
    ============================================================================
-   Step 2: bare 1px scaffold line. Real sash chrome (thickness, hit area,
-   grip icon, hover/active/focus states, tokens) arrives in steps 4–6.
-   The hardcoded #888 here is intentional throwaway — it lets us see
-   where the sash is without depending on tokens that don't exist yet.
-   Step 4 replaces this with --tug7-surface-split-primary-normal-sash-rest.
+   Step 4: themed rest state only. The sash takes its color from a
+   --tug7- token (with a --tugx- alias for readability) so theme switches
+   update it live. Thickness is driven by the component-local
+   --tug-split-sash-thickness variable so step 11 can expand it per size
+   variant.
 
-   Focus outline is neutralized so the browser default blue ring doesn't
-   flash during step-2 smoke testing. Step 5 replaces this with a proper
-   token-driven focus-visible ring. */
+   Focus outline is still neutralized so the browser default blue ring
+   doesn't flash during smoke testing — step 5 replaces this with a
+   proper token-driven focus-visible ring alongside the hover/active
+   states.
+
+   Hover / active state selectors and grip icon both arrive in later
+   steps (5 and 6 respectively). */
 .tug-split-sash {
-  height: 1px;
-  background-color: #888;
+  height: var(--tug-split-sash-thickness);
+  background-color: var(--tugx-split-sash-bg);
   cursor: ns-resize;
   outline: none;
 }
