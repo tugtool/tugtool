@@ -75,9 +75,15 @@ export type TugSplitPaneOrientation = "horizontal" | "vertical";
 /**
  * Size specification for TugSplitPanel's defaultSize / minSize / maxSize.
  *
- * Accepts either a plain number (interpreted by the library as percent
- * out of 100) or a string with a unit suffix (`"50%"`, `"200px"`). The
- * library supports `px`, `%`, `em`, `rem`, `vh`, `vw`.
+ * Accepts either a number or a string:
+ * - **number** → pixels (e.g. `200` = 200px). Matches the library's v4
+ *   convention (`react-resizable-panels.d.ts:177`).
+ * - **string with unit suffix** → `"50%"`, `"200px"`, `"4rem"`, `"1.5em"`,
+ *   `"30vh"`, `"20vw"`. Supported units: `%`, `px`, `em`, `rem`, `vh`, `vw`.
+ * - **string without unit** → percent. `"50"` is equivalent to `"50%"`.
+ *
+ * Prefer explicit percentage strings (`"60%"`) for proportional layouts
+ * so the intent is clear at the call site.
  */
 export type TugSplitSize = number | string;
 
@@ -192,11 +198,23 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
 /** TugSplitPanel props. */
 export interface TugSplitPanelProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "children"> {
-  /** Initial size. Default: auto-assigned equally across siblings. */
+  /**
+   * Initial size. Default: auto-assigned equally across siblings by the
+   * library. See {@link TugSplitSize} for accepted value formats.
+   */
   defaultSize?: TugSplitSize;
-  /** Minimum size. Enforced during drag and on container resize. */
+  /**
+   * Minimum size. Enforced during drag (the sash stops advancing when a
+   * panel would go below `minSize`) and on container resize (the library
+   * redistributes space while respecting every panel's min). Default: 0.
+   * See {@link TugSplitSize} for accepted value formats.
+   */
   minSize?: TugSplitSize;
-  /** Maximum size. Optional. */
+  /**
+   * Maximum size. Enforced during drag and on container resize, mirroring
+   * `minSize`. Default: 100% (no upper clamp). See {@link TugSplitSize}
+   * for accepted value formats.
+   */
   maxSize?: TugSplitSize;
   /** Panel content. */
   children?: React.ReactNode;

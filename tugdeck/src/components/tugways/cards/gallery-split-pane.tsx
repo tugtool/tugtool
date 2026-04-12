@@ -1,11 +1,13 @@
 /**
  * GallerySplitPane — TugSplitPane demos for the Component Gallery.
  *
- * STEP 7 STATE: nested composition showing both orientations in a
- * single TugSplitPane tree. Outer is a horizontal split (top/bottom).
- * The top panel contains a nested vertical split (left/right). The
- * bottom panel is a single region. Both orientations, both grip
- * icons, and nesting are all exercised in one realistic composition.
+ * STEP 8 STATE: nested composition showing both orientations plus
+ * size constraints. Outer is a horizontal split (top/bottom) with a
+ * `maxSize` clamp on the top panel — drag down and it stops well
+ * before the bottom edge. The top panel contains a nested vertical
+ * split (left/right) with `minSize` clamps you can feel from either
+ * direction. All size values are explicit percentage strings so the
+ * proportional intent reads at a glance.
  *
  * This file is a test harness for iterating on TugSplitPane under HMR.
  * It is **not** a target environment. The `.cg-content` inline-style
@@ -43,16 +45,16 @@ export function GallerySplitPane() {
       }}
     >
       <TugSplitPane orientation="horizontal">
-        <TugSplitPanel defaultSize={60} minSize={10}>
+        <TugSplitPanel defaultSize="60%" minSize="20%" maxSize="80%">
           <TugSplitPane orientation="vertical">
-            <TugSplitPanel defaultSize={50} minSize={10}>
+            <TugSplitPanel defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
                 <TugLabel size="sm" color="muted">
                   top left
                 </TugLabel>
               </div>
             </TugSplitPanel>
-            <TugSplitPanel defaultSize={50} minSize={10}>
+            <TugSplitPanel defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
                 <TugLabel size="sm" color="muted">
                   top right
@@ -61,7 +63,7 @@ export function GallerySplitPane() {
             </TugSplitPanel>
           </TugSplitPane>
         </TugSplitPanel>
-        <TugSplitPanel defaultSize={40} minSize={10}>
+        <TugSplitPanel defaultSize="40%" minSize="20%">
           <div style={PANE_CONTENT}>
             <TugLabel size="sm" color="muted">
               bottom
