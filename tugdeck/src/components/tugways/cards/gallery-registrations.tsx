@@ -348,7 +348,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-textarea",
     contentFactory: (_cardId) => <GalleryTextarea />,
-    defaultMeta: { title: "TugTextarea", icon: "AlignLeft", closable: true },
+    defaultMeta: { title: "TugTextarea", icon: "TextAlignStart", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -388,7 +388,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-checkbox",
     contentFactory: (_cardId) => <GalleryCheckbox />,
-    defaultMeta: { title: "TugCheckbox", icon: "CheckSquare", closable: true },
+    defaultMeta: { title: "TugCheckbox", icon: "SquareCheck", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -491,7 +491,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-alert",
     contentFactory: (_cardId) => <GalleryAlert />,
-    defaultMeta: { title: "TugAlert", icon: "AlertCircle", closable: true },
+    defaultMeta: { title: "TugAlert", icon: "CircleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -522,7 +522,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-banner",
     contentFactory: (_cardId) => <GalleryBanner />,
-    defaultMeta: { title: "TugBanner", icon: "AlertTriangle", closable: true },
+    defaultMeta: { title: "TugBanner", icon: "TriangleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

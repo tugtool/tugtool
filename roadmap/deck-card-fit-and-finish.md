@@ -156,13 +156,51 @@ View
 
 ---
 
+## 7. Gallery Tab Icons Not Promoted to Title Bar
+
+**Problem:** Some gallery card tabs (e.g. TugTextarea) use the generic diamond icon instead of their registered icon. When these tabs are active, the title bar shows the diamond instead of the correct icon. Other tabs (e.g. TugValueInput with `#`) correctly promote their icon to the title bar. All tabs must show their registered icon in the title bar when active.
+
+**Approach:** Audit the icon promotion path from tab registration through to the title bar render. The title bar icon comes from the active tab's registration `defaultMeta.icon`. Tabs with missing or incorrect icons need their registrations fixed, or the icon lookup path has a bug for certain componentIds.
+
+**Scope:** tugdeck (`gallery-registrations.tsx` icon values, `tug-card.tsx` / `deck-canvas.tsx` icon resolution logic).
+
+---
+
+## 8. Close Card vs. Close Tab (⌘W)
+
+**Problem:** The File > Close Card (⌘W) command always closes the entire card, even when the card has multiple tabs. On a multi-tab card, ⌘W should close the active tab. Only when one tab remains should ⌘W close the card.
+
+**Approach:** Change the `close` action handler to check whether the focused card has multiple tabs. If yes, close the active tab (via `store.removeTab`). If only one tab remains, close the card (via `store.handleCardClosed`). The menu item title should update dynamically: "Close Tab" when the focused card has multiple tabs, "Close Card" when it has one.
+
+**Details:**
+- The `close` chain action currently walks to `tug-card.tsx`'s registered handler, which calls `onClose` unconditionally.
+- Change the handler to check `tabs.length > 1`: if so, call `store.removeTab(cardId, activeTabId)` instead of `onClose`.
+- For the dynamic menu title: the Swift side can read the tab count from the cached card list (already pushed via WKScriptMessage) and update the File menu item title in `menuNeedsUpdate`.
+
+**Scope:** tugdeck (`tug-card.tsx` close handler), Swift (`AppDelegate.swift` File menu delegate).
+
+---
+
+## 9. Inactive Card Dim Overlay Scrolls With Content
+
+**Problem:** The dimming overlay on inactive (unfocused) cards is applied at a level in the card hierarchy that scrolls with the content. When a user scrolls an inactive card's content, the dim overlay scrolls out of view, leaving un-dimmed content visible. The overlay must cover the entire visible card area at all times, regardless of scroll position.
+
+**Approach:** Move the dim overlay from its current position (inside the scrollable content area) to a fixed-position layer above the content but inside the card frame. It should be a `position: absolute` or `position: sticky` element that covers the full card content viewport and does not participate in scroll.
+
+**Scope:** tugdeck CSS (`tug-card.css` — the `.tugcard-content::before` / `::after` pseudo-elements that implement the dim overlay).
+
+---
+
 ## Implementation Order
 
 Suggested sequencing based on dependencies and risk:
 
 1. ~~**Card size policies (2)**~~ — done.
-2. **Relaxed placement (3)** — depends on size policies for safety; straightforward once those exist.
-3. **View menu (4)** — depends on size policies (for tile/cascade). Largest scope item.
-4. **Reload flash (5)** — independent, can be done at any point.
-5. **Active card shadow (6)** — independent, quick CSS fix.
-6. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.
+2. ~~**Relaxed placement (3)**~~ — done.
+3. ~~**View menu (4)**~~ — done.
+4. ~~**Reload flash (5)**~~ — done.
+5. ~~**Active card shadow (6)**~~ — done.
+6. **Gallery tab icons (7)** — quick audit and fix.
+7. **Close Card vs. Close Tab (8)** — moderate scope, touches Swift and tugdeck.
+8. **Inactive card dim overlay (9)** — CSS fix, needs careful positioning.
+9. **Startup spinner (1)** — fully independent, cosmetic, low-risk.
