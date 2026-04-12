@@ -572,18 +572,23 @@ Phase 3A.7: SmartScroll Hardening        — DONE
 ─── TIDE: FOUNDATION ──────────────────────────────────────
 Phase T0: Naming Cleanup                 — rename binaries, crates, directories for Tide
 Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
+  P2: Dynamic router                       — **NEXT WORK ITEM; HARD BLOCKER ON TIDE: INPUT MULTI-SESSION.**
+                                             Approved approach: keep CODE_OUTPUT (0x40) / CODE_INPUT (0x41)
+                                             as single FeedId slots, encode session_id in each frame's
+                                             payload, demux in the router, filter client-side. Enables
+                                             Tide card ↔ CodeSessionStore 1:1 per D-T3-09.
 
 ─── TIDE: INPUT ───────────────────────────────────────────
 Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history, turn state, live surface
   T3.0: Text Model Spike                   — DONE — contentEditable as input surface + own document model
   T3.1: tug-atom                           — DONE — inline token component (atoms as <img>)
   T3.2: tug-prompt-input                   — DONE — rich input with atoms, route atoms, @/ completions, maximize, persistence
-  T3.3: Stores                             — DONE — SessionMetadataStore + PromptHistoryStore (SESSION_METADATA snapshot feed)
+  T3.3: Stores                             — DONE (modulo IndexedDB→tugbank rewrite of PromptHistoryStore per D-T3-10)
   T3.4: Tide Card                          — prompt-entry + CodeSessionStore (turn state) + live Tide card
-    T3.4.a: CodeSessionStore                 — L02 store observing CODE_OUTPUT; owns turn state machine + send/interrupt/approve
+    T3.4.a: CodeSessionStore                 — per-card L02 store observing CODE_OUTPUT (session-id filtered); owns turn state machine + send/interrupt/approve
     T3.4.b: tug-prompt-entry                 — compose input + route indicator + submit/stop driven by CodeSessionStore
-    T3.4.c: Tide card                        — registered card, TugSplitPane (markdown-view top, prompt-entry bottom)
-    T3.4.d: Polish & exit                    — end-to-end CODE_INPUT round-trip, CJK, a11y, Cmd+K focus, persistence
+    T3.4.c: Tide card                        — registered card, TugSplitPane (markdown-view top, prompt-entry bottom), one CodeSessionStore per instance
+    T3.4.d: Polish & exit                    — end-to-end CODE_INPUT round-trip, CJK, a11y, Cmd+K focus, persistence; multi-session gated on T0.5 P2
   [T3.5 folded into T3.4 — the Tide card is the integration surface, not a separate polish phase]
 
 ─── TIDE: RENDERING ───────────────────────────────────────
@@ -915,11 +920,22 @@ Frame decoding accepts any byte. Routing decisions move to the router, not the p
 
 **Scope:** tugcast-core `protocol.rs`, all `match` statements on `FeedId` across tugcast (add `_ =>` arms or use if/else), tests.
 
-#### P2: Dynamic router — the multi-backend gate (HIGH)
+#### P2: Dynamic router — the multi-backend gate (HIGH) — **NEXT WORK ITEM; BLOCKER ON TIDE: INPUT**
 
-**Problem:** `FeedRouter` has hardcoded named fields (`terminal_tx`, `code_tx`, `code_input_tx`) and a hardcoded `select!` loop. Adding tugshell means adding fields, modifying the select!, modifying bootstrap logic. Every new backend is a code change in the router.
+**Status:** Approved for immediate implementation. This is the next work item after the current state and is a hard blocker on any further progress in TIDE: INPUT — specifically, the multi-session story that T3.4 (Tide Card) depends on per **D-T3-09**. No follow-on Tide-card work ships until P2 lands.
 
-**Fix:** Replace named channel fields with dynamic maps:
+**Approved approach — session-ID-tagged payloads, not new FeedIds.** Keep `CODE_OUTPUT` (0x40) and `CODE_INPUT` (0x41) as single slots in the FeedId table. Each frame's JSON payload carries a `session_id` field identifying which tugtalk/Claude-Code session it belongs to. The router multiplexes multiple tugtalk bridges onto the same FeedId pair; the client filters inbound frames by session_id and tags outbound frames with it. This keeps the FeedId namespace clean (no `CODE_OUTPUT_1`, `CODE_OUTPUT_2`, …), avoids having to renumber anything when a third backend shows up, and makes per-session subscription a client-side concern rather than a wire-level one.
+
+Concretely:
+- Every `CODE_OUTPUT` frame payload gains a top-level `session_id: string` field, populated by the emitting tugtalk bridge.
+- Every `CODE_INPUT` frame payload also carries `session_id`; the router demuxes to the tugtalk whose session matches.
+- `session_init` remains the authoritative source of session_id for a given tugtalk — the value a card learns there is the one it tags all subsequent inputs with.
+- The `FeedStore` gains a lightweight filter API so `CodeSessionStore` subscribes as `FeedStore([CODE_OUTPUT], { sessionId: key })` and only sees its own frames.
+- Opening a second Tide card spawns a second tugtalk (or asks an existing tugtalk supervisor to fork a new session) and receives a new session_id on the card's first `session_init`. From the card's perspective nothing about the feed API changes — only the filter key differs.
+
+The dynamic-map refactor below is still part of P2, but the session_id filter is the load-bearing piece for multi-session Tide cards. The dynamic map is about supporting *different kinds* of backends (Claude Code, shell, …); session_id is about supporting *multiple instances* of the same backend.
+
+**Fix (dynamic backends):** Replace named channel fields with dynamic maps:
 
 ```rust
 pub struct FeedRouter {
@@ -1127,9 +1143,9 @@ The fixes have dependencies. Organized into dashes:
 | tug-prompt-input | Original | Rich input field with atoms, first-character **route atoms** (`>`, `$`, `:`, `/`), `@` and `/` completion providers, history navigation, IME, undo/redo, drag-and-drop, maximize mode, and tugbank persistence [L23]. |
 | tug-prompt-entry | Composition | Composes tug-prompt-input + route indicator (tug-choice-group) + submit/stop button. Turn state and all dispatch logic come from **CodeSessionStore** via `useSyncExternalStore`; the component itself is tokenable and free of business logic. |
 | SessionMetadataStore | Store (L02) | Subscribes to **`SESSION_METADATA` (0x51)** snapshot feed. Provides slash commands (local), skills, model, cwd, permission mode. Late subscribers receive current state via watch channel — see [session-metadata-feed.md](session-metadata-feed.md). |
-| PromptHistoryStore | Store (L02) | Per-route, per-card submission history. IndexedDB backing. `HistoryProvider` consumed directly by tug-prompt-input. |
-| CodeSessionStore | Store (L02) | **New in T3.4.a.** Subscribes to `CODE_OUTPUT` (0x40) via `FeedStore`. Owns the prompt→turn state machine, accumulates streaming deltas into a `PropertyStore` path for `TugMarkdownView`, and exposes `send(text, atoms, route)` / `interrupt()` / `respondApproval()` / `respondQuestion()` — each serializing the corresponding payload onto `CODE_INPUT` (0x41). |
-| Tide card | Card registration | **New in T3.4.c.** `registerTideCard()` — `TugSplitPane` (horizontal) with `TugMarkdownView` on top bound to `CodeSessionStore` streaming region, `TugPromptEntry` on bottom. Default feeds: `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`. The functional peer of `git-card`. |
+| PromptHistoryStore | Store (L02) | Per-route, per-card submission history. **Current implementation uses IndexedDB — that's a wart we intend to remove in favor of a tugbank-backed rewrite per D-T3-10. The existing IndexedDB dependency is tabled, not blocking; no new IndexedDB usage is permitted.** `HistoryProvider` consumed directly by tug-prompt-input. |
+| CodeSessionStore | Store (L02) | **New in T3.4.a.** Per-card, keyed by a `sessionKey` per D-T3-09. Subscribes to `CODE_OUTPUT` (0x40) via `FeedStore` with a session-ID filter, owns the prompt→turn state machine, accumulates streaming deltas into a per-card `PropertyStore` path for `TugMarkdownView`, and exposes `send(text, atoms, route)` / `interrupt()` / `respondApproval()` / `respondQuestion()` — each serializing the corresponding payload onto `CODE_INPUT` (0x41) tagged with the session_id. |
+| Tide card | Card registration | **New in T3.4.c.** `registerTideCard()` — `TugSplitPane` (horizontal) with `TugMarkdownView` on top bound to `CodeSessionStore` streaming region, `TugPromptEntry` on bottom. Default feeds: `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`. The functional peer of `git-card`. One `CodeSessionStore` per Tide card instance (D-T3-09). |
 
 **Design decisions:**
 
@@ -1141,6 +1157,40 @@ The fixes have dependencies. Organized into dashes:
 - **D-T3-06: Submit is the interrupt button.** When `CodeSessionStore.canInterrupt === true`, the submit control flips to "Stop" and dispatches `{ type: "interrupt" }` on `CODE_INPUT`. Per transport-exploration.md Test 6, interrupt produces `turn_complete(result: "error")` with the accumulated text preserved — the store consumes this as the `interrupted → idle` transition.
 - **D-T3-07: Message queueing during turn (U19).** Sending a `user_message` mid-stream does not interrupt Claude Code — it queues. The store mirrors this: while `phase !== idle` and `phase !== complete`, submit enqueues locally and the UI shows a pending-queue indicator. The store flushes the queue to `CODE_INPUT` in order on `idle`. Interrupt drains the queue.
 - **D-T3-08: `control_request_forward` is a single gate event.** Per transport-exploration.md Test 8/11, permission prompts and `AskUserQuestion` are both `control_request_forward`, differentiated by `is_question`. The store exposes `pendingApproval` / `pendingQuestion` on its snapshot and `respondApproval({ decision, updatedInput?, message? })` / `respondQuestion({ answers })`. T3.4 renders the approval/question UI inside the Tide card's output pane (as block-level content), not inside tug-prompt-entry — the entry stays a composition surface, not a dialog host.
+- **D-T3-09: Tide card ↔ CodeSessionStore is 1:1; one session per card.** Each Tide card owns its own `CodeSessionStore`, keyed by a per-card `sessionKey` that matches the `session_id` assigned by the backing tugtalk. This mirrors terminal semantics — opening a second terminal window gives you a second `claude` subprocess with a separate session — and is the foundation for running multiple independent conversations side by side. The store API is session-scoped from day one (the constructor takes `sessionKey`; inbound frames are filtered by session_id; outbound frames are tagged with it). The multi-session wire protocol (session_id embedded in `CODE_OUTPUT` / `CODE_INPUT` payloads, routed via a dynamic tugtalk supervisor) is **Phase T0.5 P2**, which is the next work item after the current state and is a hard blocker on any follow-on TIDE: INPUT progress that requires genuine multi-session behavior. T3.4.a/b/c can be built against this contract today; T3.4.d's multi-session exit criteria are gated on P2.
+- **D-T3-10: Prompt history does not depend on IndexedDB — tugbank is the persistence engine.** All new client-side persistence in tugdeck goes through tugbank (SQLite). The current `PromptHistoryStore` implementation is IndexedDB-backed; that is a wart inherited from T3.3 and will be rewritten to a tugbank-backed form in a follow-up (new `dev.tugtool.tugways.prompt-history` domain, typed API in `settings-api.ts`, L02 store as a write-through in-memory recent window over the persisted collection). **The rewrite is tabled, not urgent — but no new IndexedDB dependencies are permitted anywhere in tugdeck from here forward.** If a T3.4 sub-step would otherwise reach for IndexedDB, it goes through tugbank instead.
+- **D-T3-11: Stores do not persist their own observed state — they rehydrate from feeds.** The division is: (a) **feed infrastructure** (snapshot feeds via `watch::channel`, broadcast replay buffers, Phase T0.5 P4 lag recovery) is how derived/observed state comes back after a reload or reconnect; (b) **tugbank** is how mutable state the store itself writes (prompt drafts via L23, prompt history, split-pane layouts, card state) persists. In concrete terms: `SessionMetadataStore` and `FileTreeStore` are in-memory because `SESSION_METADATA` and `FILETREE` are snapshot feeds — late subscribers receive the current state immediately. `CodeSessionStore` is in-memory because `session_init` is watch-channel-promoted and `CODE_OUTPUT` has a replay buffer; long-turn reload recovery beyond the replay window is the Phase T0.5 P4 concern and not a store responsibility. This rule keeps stores thin, prevents duplicated persistence, and makes reconnect semantics the same everywhere.
+
+---
+
+#### Stores, Feeds, and Documents {#stores-feeds-documents}
+
+This phase (T3) establishes the vocabulary we'll use through the rest of Tide. A short forward reference to keep future-us honest.
+
+A **feed** is a tugcast/Rust wire concept. One byte of namespace (`FeedId`), one frame format (`[FeedId][length][payload]`), two delivery shapes (broadcast for streams, `watch::channel` for snapshots). Feeds are defined server-side. They do not know what a React component is.
+
+A **store** is a tugdeck/TypeScript observability primitive. An L02-compliant class (`subscribe(cb)` + `getSnapshot()`) that components read via `useSyncExternalStore`. Stores are thin; they turn feed frames into snapshot objects, or own a state machine that dispatches actions back onto an input feed. Stores live in `tugdeck/src/lib/*.ts` — they are not feeds and they are not bound to a React tree. There is a spectrum of store shapes worth naming:
+
+| Shape | Examples (current / near-term) | What it owns |
+|---|---|---|
+| **Leaf observer** | `SessionMetadataStore`, `FileTreeStore` | Derived read-only state from a snapshot feed. |
+| **Orchestrator** | `CodeSessionStore` (T3.4.a) | A derived state machine + action dispatch back onto an input feed. |
+| **Persistence-backed mutable collection** | `PromptHistoryStore` (post-rewrite per D-T3-10) | An in-memory recent window over a tugbank-persisted collection, append/read API. |
+| **Document** | Future `TugRichTextDocument`, Monaco-style file-backed editors; `tug-prompt-input`'s L23 buffer is a proto-document today. | A mutable content body + range mutation API + dirty/save lifecycle + a backing URI. Still L02-subscribable — `getSnapshot` returns a content body + version. |
+
+A **document** is a richer subtype of store, not a separate thing. It still exposes `subscribe` + `getSnapshot`; the snapshot just happens to carry editable content. What additionally makes it a document:
+
+1. A content body rich enough to be edited (text engine, Monaco `TextModel`, segment tree, etc.).
+2. A mutation API — `insertText`, `deleteRange`, `replaceRange`, plus transactional semantics for undo.
+3. A backing URI — the address of the persistent representation: `tugbank://card-XYZ/prompt-draft`, `file:///path/to/README.md`, etc. The URI scheme determines how writes are persisted.
+4. A dirty/save lifecycle — modified-since-save, explicit save/revert, conflict detection when the backing store changes underneath.
+5. Multi-reader coordination — two cards opening the same URI share one document handle. This is the first place the "per-card store" rule flips to "shared store keyed by URI," and it's orthogonal to the session-per-card rule from D-T3-09.
+
+`tug-prompt-input` is already a proto-document: the engine holds editing state, `captureState` / `restoreState` persists it to tugbank via [L23], scoped to the card. When tug-rich-text lands (deferred, but coming), a formal `DocumentRegistry` keyed by URI becomes the right home for the pattern: cards call `documentRegistry.open(uri)` to get a shared handle; closing the last consuming card releases it. The Tide card built in T3.4 does not need any of this — L23 persistence on tug-prompt-input is sufficient — but T3.4 must not *contradict* the future document model. Specifically:
+
+- The per-card `sessionKey` from D-T3-09 is already the right kind of stable address.
+- The "stores rehydrate from feeds, mutations persist through tugbank" rule from D-T3-11 is the same rule documents follow.
+- The card-owns-its-stores lifetime model is the same lifetime model documents will use, generalized: resources (stores or documents) are opened by cards and released when the last consuming card closes.
 
 ---
 
@@ -1299,27 +1349,30 @@ Persistence:
 
 **Prerequisites:** None (can be built in parallel with T3.1).
 
-**Work:**
+**Status:** Shipped for the live Tide work, **modulo the PromptHistoryStore IndexedDB wart** (see D-T3-10). The current implementation uses IndexedDB; the tugbank rewrite is tabled but no new IndexedDB dependencies may be added from here forward.
+
+**Work (as built):**
 
 SessionMetadataStore:
-- Subscribes to CODE_OUTPUT feed via FeedStore
-- Captures `session_init` and `system_metadata` events
-- Extracts: `slash_commands[]`, `skills[]`, `model`, `session_id`, `permission_mode`
-- L02: exposes `subscribe` + `getSnapshot` for `useSyncExternalStore`
-- Merges slash commands + skills into a unified completion list (skills use `tugplug:` prefix per U12)
+- Subscribes to **`SESSION_METADATA` (0x51) snapshot feed** via FeedStore (per [session-metadata-feed.md](session-metadata-feed.md) — the original "subscribe to CODE_OUTPUT" design was reworked once we discovered the replay-buffer race).
+- Parses `system_metadata` payloads: `slash_commands[]`, `skills[]`, `model`, `session_id`, `permission_mode`, `cwd`.
+- L02: exposes `subscribe` + `getSnapshot` for `useSyncExternalStore`.
+- Provides `getCommandCompletionProvider()` — the `/` trigger hooks directly into it.
+- In-memory per D-T3-11: rehydrates from the snapshot feed on every (re)connect.
 
-PromptHistoryStore:
-- Per-route, per-card history
-- IndexedDB backing for persistence across sessions
-- L02: `subscribe` + `getSnapshot`
-- API: `push(route, cardId, text)`, `navigate(route, cardId, direction)`, `current(route, cardId)`
-- History entries store the raw text (not atoms — atoms are resolved references, not reproducible)
+PromptHistoryStore (current, with known wart):
+- Per-route, per-card history.
+- **Current backing: IndexedDB.** This is a wart per D-T3-10; the tugbank-backed rewrite is tabled and will happen in a follow-up (`dev.tugtool.tugways.prompt-history` domain, typed API in `settings-api.ts`, L02 store as a write-through in-memory recent window). Until then the existing IndexedDB implementation stays put but **nothing new may take an IndexedDB dependency.**
+- L02: `subscribe` + `getSnapshot`.
+- API: `push(entry)`, `navigate(route, cardId, direction)`, `current(route, cardId)`.
+- History entries store the raw text (not atoms — atoms are resolved references, not reproducible).
 
 **Exit criteria:**
-- SessionMetadataStore receives and stores metadata from a live CODE_OUTPUT feed
-- PromptHistoryStore persists history to IndexedDB
-- Both stores are L02 compliant
-- Unit tests for both
+- SessionMetadataStore receives and stores metadata from the live `SESSION_METADATA` feed (shipped).
+- PromptHistoryStore persists history across reloads (shipped; IndexedDB, to be rewritten per D-T3-10).
+- Both stores are L02 compliant (shipped).
+- Unit tests for both (shipped).
+- **Follow-up (not blocking T3.4):** Rewrite PromptHistoryStore onto tugbank, delete IndexedDB code, remove the dependency from tugdeck.
 
 ---
 
@@ -1349,8 +1402,9 @@ PromptHistoryStore:
 
 File: `tugdeck/src/lib/code-session-store.ts` (new).
 
-- Constructor takes `{ feedStore: FeedStore, codeOutputFeedId, codeInputFeedId, dispatch, streamingStore: PropertyStore, streamingPath: string }`. Built per-card alongside `SessionMetadataStore`, `PromptHistoryStore`, and `FileTreeStore` — see the gallery card's `buildCardStores()` pattern.
-- Subscribes to `CODE_OUTPUT` via `FeedStore.subscribe`. Decodes each payload as JSON-line per [transport-exploration.md](transport-exploration.md).
+- **Per Tide card instance (D-T3-09).** Constructor takes `{ feedStore: FeedStore, sessionKey: string, codeOutputFeedId, codeInputFeedId, dispatch, streamingStore: PropertyStore, streamingPath: string }`. The `sessionKey` identifies which Claude Code session this store talks to and is used both as the inbound filter and as the outbound tag on every `CODE_INPUT` frame. Built per-card; `SessionMetadataStore` and `FileTreeStore` remain shared lazy singletons for now (they will become session-scoped when session-aware metadata feeds ship in a later phase), `PromptHistoryStore` remains shared but keys on `(sessionKey, route, cardId)`.
+- **Wire contract per Phase T0.5 P2 (approved approach: session_id in payload, filter client-side).** Every `CODE_OUTPUT` frame the store sees is parsed as JSON-line and accepted only if `payload.session_id === sessionKey`. Every `CODE_INPUT` frame the store dispatches carries `session_id: sessionKey` as a top-level field. Until P2 lands, the first Tide card opened gets the default session and the store runs without a filter; subsequent cards either share that default session (with a visible "single-session mode" indicator) or are blocked from opening — D-T3-09's exit criteria for multi-session are gated on P2.
+- Subscribes to `CODE_OUTPUT` via `FeedStore.subscribe`. Decodes each payload as JSON-line per [transport-exploration.md](transport-exploration.md), then applies the `sessionKey` filter.
 - Maintains a **turn-state machine** with phases:
 
   ```
@@ -1528,10 +1582,10 @@ export function registerTideCard(): void {
 }
 ```
 
-- `useTideCardServices(cardId)` is a local hook that constructs (once, per cardId) the `FeedStore`s, the four stores (`SessionMetadataStore`, `PromptHistoryStore`, `FileTreeStore`, `CodeSessionStore`), and the shared `PropertyStore` used as the streaming target. Follow the pattern in `gallery-prompt-input.tsx`'s `buildCardStores()`, but scoped to a card instance instead of a module singleton.
+- `useTideCardServices(cardId)` is a local hook. It constructs **per-card** a `CodeSessionStore` (keyed by a per-card `sessionKey` — see below) and a per-card `PropertyStore` used as the streaming target for that card's `TugMarkdownView`. It reaches for **shared lazy singletons** for `SessionMetadataStore`, `PromptHistoryStore`, and `FileTreeStore`, following the existing `gallery-prompt-input.tsx` module-singleton pattern (`_cardServices`, `_fileTreeStore`). Per D-T3-11, the shared observers rehydrate from their snapshot feeds on (re)connect, so sharing them across cards is correct; only `CodeSessionStore` — which owns per-session turn state — is strictly per-card.
+- **Session keying per D-T3-09 and Phase T0.5 P2:** `sessionKey` comes from the first `session_init` frame the store sees after mount (watch-channel snapshot per ws-verification.md T8). Until P2 ships, the first Tide card opened takes the default session and stores its `sessionKey`; subsequent cards either share that default (single-session mode, visible indicator) or are blocked from opening. Post-P2, each card's `sessionKey` routes to a distinct tugtalk supervisor session via the session_id field in frame payloads, and the cards are fully independent.
 - The card inherits `tugcard-content`'s `flex: 1; overflow: auto; min-height: 0`. `TugSplitPane` already expects that shape.
-- `sessionId` comes from `CodeSessionStore.snapshot.sessionId`. Per ws-verification.md T8, `session_init` is now delivered as a watch-channel snapshot, so the card can rely on having a session ID by the time any user input fires.
-- Persistence: `TugSplitPane` already persists layout via tugbank, and `TugPromptInput` already persists editing state via tugbank `[L23]`. The Tide card itself adds no new persistence.
+- Persistence: `TugSplitPane` already persists layout via tugbank, and `TugPromptInput` already persists editing state via tugbank `[L23]`. The Tide card itself adds no new persistence. Crucially, **none of the new stores introduced in T3.4 may depend on IndexedDB (D-T3-10).** All fresh persistence goes through tugbank.
 
 **Exit criteria:**
 - `registerTideCard()` called from `main.tsx`; opening the card in the running tugdeck shows the split pane with a markdown-view top pane and a prompt-entry bottom pane.
@@ -1569,11 +1623,17 @@ Quality:
 - Atom drag-and-drop from Finder into the Tide card produces file atoms.
 - No jank during typeahead over full-project file listings.
 
+Multi-session (gated on Phase T0.5 P2 — the next work item):
+- Two Tide cards open simultaneously run two independent `CodeSessionStore` instances against two distinct backing sessions, each keyed by its own `sessionKey` and filtering/tagging frames by session_id per the approved P2 wire contract.
+- Submitting in one card does not affect the phase, streaming, or queue of the other.
+- Until P2 lands, single-session mode is acceptable: the first Tide card captures the default session, any second card is blocked or explicitly shares with a visible single-session indicator. **This is the only T3.4 exit criterion that is deliberately gated on P2; everything else above is achievable without it.**
+
 Compliance:
 - All new/changed components pass the component authoring guide checklist.
 - All new tokens conform to the seven-slot naming convention.
 - `bun run audit:tokens lint` exits 0.
 - Vitest + Rust nextest suites pass with `-D warnings`.
+- **No new IndexedDB dependencies introduced (D-T3-10).** Any new persistence goes through tugbank.
 
 ---
 
