@@ -46,7 +46,7 @@ body {
   /* --- Card --- */
   --tugx-card-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
   --tugx-card-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-card-shadow-active: 0 2px 8px var(--tug7-element-global-shadow-normal-md-rest);
+  --tugx-card-shadow-active: 0 1px 4px var(--tug7-element-global-shadow-normal-md-rest);
   --tugx-card-shadow-inactive: 0 1px 4px var(--tug7-element-global-shadow-normal-xs-rest);
   --tugx-card-dim-overlay: var(--tug7-surface-overlay-primary-normal-highlight-rest);
 
