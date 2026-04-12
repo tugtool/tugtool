@@ -52,7 +52,13 @@
 import "./tug-split-pane.css";
 
 import React from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import {
+  Group,
+  Panel,
+  type PanelImperativeHandle,
+  type PanelSize,
+  Separator,
+} from "react-resizable-panels";
 import { GripHorizontal, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
@@ -216,20 +222,91 @@ export interface TugSplitPanelProps
    * for accepted value formats.
    */
   maxSize?: TugSplitSize;
+  /**
+   * Panel can snap closed when the user drags its neighboring sash past
+   * this panel's `minSize`. Default: false.
+   *
+   * When `true`, crossing `minSize` during drag collapses the panel to
+   * `collapsedSize` (default 0). Dragging back out of the collapsed
+   * region reopens the panel at its `minSize`. This matches macOS /
+   * VS Code split behavior.
+   *
+   * ℹ️ Note: react-resizable-panels v4 triggers snap-to-close at the
+   * `minSize` boundary itself — there is no separately-tunable
+   * "threshold px past min" value. A future version of the library
+   * (or a patch) could add that knob; for now we take what the library
+   * gives us.
+   */
+  collapsible?: boolean;
+  /**
+   * Size this panel takes when collapsed. Default: 0. Only meaningful
+   * when `collapsible` is true. See {@link TugSplitSize} for accepted
+   * value formats.
+   */
+  collapsedSize?: TugSplitSize;
+  /**
+   * Fires when the panel's collapsed state toggles. Called with `true`
+   * when the panel snaps closed and `false` when it reopens.
+   *
+   * State-mirror callback (same category as Radix's `onOpenChange`),
+   * not a chain-dispatched control action — see the "[L11] is
+   * deliberately absent" note in the module docstring.
+   */
+  onCollapsedChange?: (collapsed: boolean) => void;
   /** Panel content. */
   children?: React.ReactNode;
 }
 
 export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps>(
   function TugSplitPanel(
-    { defaultSize, minSize, maxSize, className, children, ...rest },
+    {
+      defaultSize,
+      minSize,
+      maxSize,
+      collapsible,
+      collapsedSize,
+      onCollapsedChange,
+      className,
+      children,
+      ...rest
+    },
     ref,
   ) {
+    // Internal handle on the library's Panel imperative API. We use it to
+    // query `isCollapsed()` from inside `onResize` so we can synthesize
+    // `onCollapsedChange` — v4 does not expose a collapse-change callback
+    // of its own.
+    const panelRef = React.useRef<PanelImperativeHandle | null>(null);
+    // Last observed collapsed state. A ref (not useState) so reading and
+    // writing it from the onResize callback never triggers a re-render:
+    // appearance changes go through CSS / DOM, not React state [L06].
+    const wasCollapsedRef = React.useRef(false);
+
+    // Stable handler so identity only changes when the user's callback
+    // does. Reads `isCollapsed()` from the imperative handle, compares to
+    // the last observed value, and fires the change callback on flip.
+    const handleResize = React.useCallback(
+      (_size: PanelSize, _id: string | number | undefined, _prev: PanelSize | undefined) => {
+        const panel = panelRef.current;
+        if (!panel || !onCollapsedChange) return;
+        const isCollapsed = panel.isCollapsed();
+        if (isCollapsed !== wasCollapsedRef.current) {
+          wasCollapsedRef.current = isCollapsed;
+          onCollapsedChange(isCollapsed);
+        }
+      },
+      [onCollapsedChange],
+    );
+
     return (
       <Panel
         defaultSize={defaultSize}
         minSize={minSize}
         maxSize={maxSize}
+        collapsible={collapsible}
+        collapsedSize={collapsedSize}
+        panelRef={panelRef}
+        onResize={onCollapsedChange ? handleResize : undefined}
         elementRef={ref as React.Ref<HTMLDivElement | null>}
         className={cn("tug-split-panel", className)}
         data-slot="tug-split-panel"

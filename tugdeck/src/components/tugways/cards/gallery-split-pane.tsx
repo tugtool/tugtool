@@ -1,13 +1,10 @@
 /**
  * GallerySplitPane — TugSplitPane demos for the Component Gallery.
  *
- * STEP 8 STATE: nested composition showing both orientations plus
- * size constraints. Outer is a horizontal split (top/bottom) with a
- * `maxSize` clamp on the top panel — drag down and it stops well
- * before the bottom edge. The top panel contains a nested vertical
- * split (left/right) with `minSize` clamps you can feel from either
- * direction. All size values are explicit percentage strings so the
- * proportional intent reads at a glance.
+ * STEP 9 STATE: the composition from step 8, plus snap-to-close on
+ * the bottom panel. Drag the outer sash down past the bottom panel's
+ * `minSize` and it collapses to zero; drag back up and it reopens at
+ * its min.
  *
  * This file is a test harness for iterating on TugSplitPane under HMR.
  * It is **not** a target environment. The `.cg-content` inline-style
@@ -45,7 +42,7 @@ export function GallerySplitPane() {
       }}
     >
       <TugSplitPane orientation="horizontal">
-        <TugSplitPanel defaultSize="60%" minSize="20%" maxSize="80%">
+        <TugSplitPanel defaultSize="60%" minSize="20%">
           <TugSplitPane orientation="vertical">
             <TugSplitPanel defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
@@ -63,7 +60,7 @@ export function GallerySplitPane() {
             </TugSplitPanel>
           </TugSplitPane>
         </TugSplitPanel>
-        <TugSplitPanel defaultSize="40%" minSize="20%">
+        <TugSplitPanel defaultSize="40%" minSize="20%" collapsible>
           <div style={PANE_CONTENT}>
             <TugLabel size="sm" color="muted">
               bottom
