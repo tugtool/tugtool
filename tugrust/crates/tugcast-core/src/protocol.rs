@@ -71,6 +71,8 @@ impl FeedId {
     pub const DEFAULTS: Self = Self(0x50);
     /// Session metadata snapshot (tugcast → tugdeck)
     pub const SESSION_METADATA: Self = Self(0x51);
+    /// Session lifecycle state feed (tugcast → tugdeck)
+    pub const SESSION_STATE: Self = Self(0x52);
 
     // -- Shell (reserved for Phase T2+) --
     /// Shell command output (tugcast → tugdeck)
@@ -110,6 +112,8 @@ impl FeedId {
             Self::CODE_OUTPUT => Some("CodeOutput"),
             Self::CODE_INPUT => Some("CodeInput"),
             Self::DEFAULTS => Some("Defaults"),
+            Self::SESSION_METADATA => Some("SessionMetadata"),
+            Self::SESSION_STATE => Some("SessionState"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
             Self::SHELL_INPUT => Some("ShellInput"),
             Self::TUG_FEED => Some("TugFeed"),
@@ -135,6 +139,36 @@ impl fmt::Display for FeedId {
             Some(name) => write!(f, "{name}(0x{:02x})", self.0),
             None => write!(f, "0x{:02x}", self.0),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TugSessionId — wire-level session identifier
+// ---------------------------------------------------------------------------
+
+/// Opaque session identifier used by the session state feed and agent supervisor.
+///
+/// Defined here (rather than inside a feed module) because both the router and
+/// `feeds::agent_supervisor` reference it; colocating it with the wire types
+/// avoids a cyclic dependency between them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct TugSessionId(pub String);
+
+impl TugSessionId {
+    /// Construct a `TugSessionId` from anything convertible into a `String`.
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    /// Borrow the underlying string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TugSessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -356,11 +390,34 @@ mod tests {
         assert_eq!(FeedId::CODE_OUTPUT.as_byte(), 0x40);
         assert_eq!(FeedId::CODE_INPUT.as_byte(), 0x41);
         assert_eq!(FeedId::DEFAULTS.as_byte(), 0x50);
+        assert_eq!(FeedId::SESSION_METADATA.as_byte(), 0x51);
+        assert_eq!(FeedId::SESSION_STATE.as_byte(), 0x52);
+        assert_eq!(FeedId::SESSION_METADATA.name(), Some("SessionMetadata"));
+        assert_eq!(FeedId::SESSION_STATE.name(), Some("SessionState"));
         assert_eq!(FeedId::SHELL_OUTPUT.as_byte(), 0x60);
         assert_eq!(FeedId::SHELL_INPUT.as_byte(), 0x61);
         assert_eq!(FeedId::TUG_FEED.as_byte(), 0x70);
         assert_eq!(FeedId::CONTROL.as_byte(), 0xC0);
         assert_eq!(FeedId::HEARTBEAT.as_byte(), 0xFF);
+    }
+
+    #[test]
+    fn test_tug_session_id_hashable_and_cloneable() {
+        use std::collections::HashMap;
+        let a = TugSessionId::new("sess-abc");
+        let b = TugSessionId::new("sess-xyz");
+        let a_clone = a.clone();
+
+        let mut map: HashMap<TugSessionId, u32> = HashMap::new();
+        map.insert(a.clone(), 1);
+        map.insert(b.clone(), 2);
+
+        assert_eq!(map.get(&a_clone), Some(&1));
+        assert_eq!(map.get(&b), Some(&2));
+        assert_eq!(a, a_clone);
+        assert_ne!(a, b);
+        assert_eq!(a.as_str(), "sess-abc");
+        assert_eq!(format!("{a}"), "sess-abc");
     }
 
     #[test]

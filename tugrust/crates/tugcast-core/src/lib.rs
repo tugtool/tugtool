@@ -29,6 +29,7 @@ pub use protocol::{
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
     ProtocolError,
+    TugSessionId,
 };
 pub use types::{FileStatus, FileTreeSnapshot, FsEvent, GitStatus, ScoredResult, StatSnapshot};
 
