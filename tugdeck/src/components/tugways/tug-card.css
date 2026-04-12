@@ -107,6 +107,7 @@ body {
    ========================================================================= */
 
 .tugcard {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -360,8 +361,10 @@ body {
 }
 
 /* Layer 1: partial saturation reduction — desaturates colored content.
-   Opacity controls the strength: 0 = no effect, 1 = full desaturation. */
-.card-frame[data-focused="false"] .tugcard-content::before {
+   Opacity controls the strength: 0 = no effect, 1 = full desaturation.
+   Positioned on .tugcard (not .tugcard-content) so the overlay covers the
+   full card bounds and does not scroll with content. */
+.card-frame[data-focused="false"] .tugcard::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -369,18 +372,18 @@ body {
   mix-blend-mode: saturation;
   opacity: var(--tugx-card-content-dim-desat-amount);
   pointer-events: none;
-  z-index: 1;
+  z-index: 10;
 }
 
 /* Layer 2: lightness wash — dims achromatic content (screen for dark, multiply for light) */
-.card-frame[data-focused="false"] .tugcard-content::after {
+.card-frame[data-focused="false"] .tugcard::after {
   content: "";
   position: absolute;
   inset: 0;
   background-color: var(--tugx-card-content-dim-wash-color);
   mix-blend-mode: var(--tugx-card-content-dim-wash-blend);
   pointer-events: none;
-  z-index: 2;
+  z-index: 11;
 }
 
 /*
