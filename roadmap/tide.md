@@ -1358,7 +1358,7 @@ Turn state:
 
 **Goal:** Wire tug-prompt-entry into the live Tide UI and polish the end-to-end experience.
 
-**Prerequisites:** T3.4.
+**Prerequisites:** T3.4, [tug-split-pane](tug-split-pane.md) (layout primitive for mounting tug-prompt-entry below tug-markdown-view inside the Tide card).
 
 **Governing documents:**
 - [Component Authoring Guide](../tuglaws/component-authoring.md) — accessibility audit criteria, testing requirements
