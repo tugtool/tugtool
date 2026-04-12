@@ -1,10 +1,11 @@
 /**
  * GallerySplitPane — TugSplitPane demos for the Component Gallery.
  *
- * STEP 9 STATE: the composition from step 8, plus snap-to-close on
- * the bottom panel. Drag the outer sash down past the bottom panel's
- * `minSize` and it collapses to zero; drag back up and it reopens at
- * its min.
+ * STEP 10 STATE: the step-9 composition with tugbank persistence.
+ * Both the outer and the nested inner split panes declare a
+ * `storageKey`; every TugSplitPanel declares a stable `id`. The
+ * layout (including the bottom panel's collapsed state, which is
+ * just a flex-grow of 0 in the Layout map) survives reloads.
  *
  * This file is a test harness for iterating on TugSplitPane under HMR.
  * It is **not** a target environment. The `.cg-content` inline-style
@@ -41,17 +42,17 @@ export function GallerySplitPane() {
         height: "100%",
       }}
     >
-      <TugSplitPane orientation="horizontal">
-        <TugSplitPanel defaultSize="60%" minSize="20%">
-          <TugSplitPane orientation="vertical">
-            <TugSplitPanel defaultSize="50%" minSize="25%">
+      <TugSplitPane orientation="horizontal" storageKey="gallery.outer">
+        <TugSplitPanel id="outer-top" defaultSize="60%" minSize="20%">
+          <TugSplitPane orientation="vertical" storageKey="gallery.inner">
+            <TugSplitPanel id="inner-left" defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
                 <TugLabel size="sm" color="muted">
                   top left
                 </TugLabel>
               </div>
             </TugSplitPanel>
-            <TugSplitPanel defaultSize="50%" minSize="25%">
+            <TugSplitPanel id="inner-right" defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
                 <TugLabel size="sm" color="muted">
                   top right
@@ -60,7 +61,7 @@ export function GallerySplitPane() {
             </TugSplitPanel>
           </TugSplitPane>
         </TugSplitPanel>
-        <TugSplitPanel defaultSize="40%" minSize="20%" collapsible>
+        <TugSplitPanel id="outer-bottom" defaultSize="40%" minSize="20%" collapsible>
           <div style={PANE_CONTENT}>
             <TugLabel size="sm" color="muted">
               bottom

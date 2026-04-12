@@ -44,7 +44,8 @@
  * permitted by the component authoring guide. TugSplitPane therefore does
  * not cite [L11] and does not call `useControlDispatch`.
  *
- * Laws: [L06] appearance via CSS, [L15] token-driven states,
+ * Laws: [L02] external state enters React through useSyncExternalStore,
+ *       [L06] appearance via CSS, [L15] token-driven states,
  *       [L16] pairings declared, [L19] component authoring guide,
  *       [L20] token sovereignty
  */
@@ -54,6 +55,7 @@ import "./tug-split-pane.css";
 import React from "react";
 import {
   Group,
+  type Layout,
   Panel,
   type PanelImperativeHandle,
   type PanelSize,
@@ -61,7 +63,37 @@ import {
 } from "react-resizable-panels";
 import { GripHorizontal, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getTugbankClient } from "@/lib/tugbank-singleton";
+import { putSplitPaneLayout, readSplitPaneLayout } from "@/settings-api";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+
+// ---- Persistence ----
+
+/**
+ * Tugbank domain under which every TugSplitPane with a `storageKey` stores
+ * its layout. The domain is shared; per-instance disambiguation happens in
+ * the key (the caller's `storageKey`). Mirrors the "one domain per feature"
+ * convention in `settings-api.ts`.
+ */
+const SPLIT_PANE_DOMAIN = "dev.tugtool.tugways.split-pane";
+
+/**
+ * Stable `subscribe` callback for `useSyncExternalStore`. Wires into the
+ * shared TugbankClient's `onDomainChanged` feed and only fires `notify`
+ * when the split-pane domain updates — other domains are filtered out so
+ * unrelated tugbank traffic never triggers a split-pane re-render.
+ *
+ * Module-scoped so its identity is stable across every render of every
+ * TugSplitPane instance (`useSyncExternalStore` re-subscribes whenever
+ * `subscribe`'s identity changes; a fresh closure per render would thrash).
+ */
+function subscribeSplitPaneDomain(notify: () => void): () => void {
+  const client = getTugbankClient();
+  if (!client) return () => {};
+  return client.onDomainChanged((domain) => {
+    if (domain === SPLIT_PANE_DOMAIN) notify();
+  });
+}
 
 // ---- Types ----
 
@@ -120,19 +152,85 @@ export interface TugSplitPaneProps
    * @default false
    */
   disabled?: boolean;
+  /**
+   * Persist the sash layout across reloads under this key in tugbank
+   * (domain: `dev.tugtool.tugways.split-pane`). When set, the layout is
+   * read on mount and re-saved on pointer release. Omit to run a
+   * non-persistent split pane whose state lives only in the library.
+   *
+   * ⚠️ When set, every child TugSplitPanel MUST declare a stable `id` —
+   * the stored layout is keyed by panel id, and `useId` fallbacks will
+   * not round-trip across reloads reliably if the tree restructures.
+   *
+   * ⚠️ Nested TugSplitPane instances each need their own distinct
+   * storageKey. Reusing one key across nested panes would collide in
+   * tugbank.
+   *
+   * Implementation note: the value is read via `useSyncExternalStore`
+   * hooked into the TugbankClient's `onDomainChanged` feed — the only
+   * law-compliant way to get external state into React state [L02].
+   */
+  storageKey?: string;
   /** TugSplitPanel children. Each child must be a TugSplitPanel element. */
   children: React.ReactNode;
 }
 
 export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
   function TugSplitPane(
-    { orientation = "horizontal", disabled = false, className, children, ...rest },
+    {
+      orientation = "horizontal",
+      disabled = false,
+      storageKey,
+      className,
+      children,
+      ...rest
+    },
     ref,
   ) {
     // Merge with any ancestor TugBox's disabled cascade so a disabled outer
     // TugBox disables every sash in this split pane.
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
+
+    // Persistence via tugbank. L02-compliant: external state enters React
+    // exclusively through `useSyncExternalStore`. We never copy the stored
+    // layout into `useState` or `useEffect` — the hook is the only bridge.
+    //
+    // Why this shape:
+    //   - `subscribe` is module-scoped (see subscribeSplitPaneDomain) so its
+    //     identity is stable across every render; useSyncExternalStore
+    //     resubscribes whenever that identity changes and we don't want
+    //     thrash.
+    //   - `getSnapshot` closes over `storageKey` so it's memoized with that
+    //     as the only dep. It reads from the TugbankClient cache directly;
+    //     `readSplitPaneLayout` returns the cached entry's `.value`, which
+    //     is a stable reference until tugbank broadcasts a fresh DEFAULTS
+    //     frame for this domain. Stable-reference semantics are required by
+    //     useSyncExternalStore — otherwise identical-value reads would
+    //     trigger infinite re-renders.
+    //   - The post-write echo (our PUT → server broadcasts → cache → notify
+    //     → re-render) is benign: `defaultLayout` is a mount-time prop in
+    //     v4, so any re-render with an identical-value layout is a no-op.
+    const getSnapshot = React.useCallback((): Layout | null => {
+      if (!storageKey) return null;
+      const client = getTugbankClient();
+      if (!client) return null;
+      return readSplitPaneLayout(client, storageKey);
+    }, [storageKey]);
+    const storedLayout = React.useSyncExternalStore(
+      subscribeSplitPaneDomain,
+      getSnapshot,
+    );
+
+    // Write path: `onLayoutChanged` fires only on pointer release, which
+    // matches the library's recommended save hook — no debouncing needed.
+    const handleLayoutChanged = React.useCallback(
+      (layout: Layout) => {
+        if (!storageKey) return;
+        putSplitPaneLayout(storageKey, layout);
+      },
+      [storageKey],
+    );
 
     // Pick the grip icon that reads visually along the sash direction.
     // A horizontal sash (horizontal dividing line) runs left-to-right,
@@ -185,6 +283,8 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     return (
       <Group
         orientation={libraryOrientation}
+        defaultLayout={storedLayout ?? undefined}
+        onLayoutChanged={storageKey ? handleLayoutChanged : undefined}
         elementRef={ref as React.Ref<HTMLDivElement | null>}
         className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
         data-slot="tug-split-pane"

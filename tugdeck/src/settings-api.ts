@@ -203,6 +203,47 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
   }
 }
 
+// ── Split pane layouts ──────────────────────────────────────────────────────
+
+/**
+ * Split-pane layout persisted in tugbank. Matches react-resizable-panels'
+ * `Layout` type: a map of panel id to flex-grow value.
+ */
+export type SplitPaneLayout = Record<string, number>;
+
+/**
+ * Read a split-pane layout from the TugbankClient cache.
+ *
+ * Domain: `dev.tugtool.tugways.split-pane`, key: caller-provided `storageKey`.
+ * Returns the layout object, or null if not stored.
+ */
+export function readSplitPaneLayout(
+  client: TugbankClient,
+  storageKey: string,
+): SplitPaneLayout | null {
+  const entry = client.get("dev.tugtool.tugways.split-pane", storageKey);
+  if (entry && entry.kind === "json" && entry.value !== undefined) {
+    return entry.value as SplitPaneLayout;
+  }
+  return null;
+}
+
+/**
+ * PUT a split-pane layout to tugbank (fire-and-forget).
+ *
+ * Domain: `dev.tugtool.tugways.split-pane`, key: caller-provided `storageKey`.
+ */
+export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout): void {
+  const url = `/api/defaults/dev.tugtool.tugways.split-pane/${encodeURIComponent(storageKey)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: layout }),
+  }).catch((err) => {
+    console.warn("[settings] PUT splitPaneLayout failed for key", storageKey, err);
+  });
+}
+
 /**
  * PUT prompt history for a session to tugbank (fire-and-forget).
  *
