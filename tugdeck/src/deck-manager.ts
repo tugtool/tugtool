@@ -282,6 +282,10 @@ export class DeckManager implements IDeckManagerStore {
     // and call subscribe/getSnapshot during it.
     this.deckState = this.loadLayout();
 
+    // Push the initial card list to the Swift host so the View menu
+    // is populated before the user triggers any state changes.
+    this.pushCardListToHost();
+
     // Single root.render() -- the only call that ever executes.
     // DeckManagerContext.Provider wraps DeckCanvas so it can access the store
     // via useDeckManager(). DeckCanvas no longer receives deckState/callback props;
@@ -343,6 +347,29 @@ export class DeckManager implements IDeckManagerStore {
   private notify(): void {
     this.stateVersion += 1;
     this.subscribers.forEach((cb) => cb());
+    this.pushCardListToHost();
+  }
+
+  /**
+   * Push the current card list (id, title, focused state) to the Swift host
+   * via WKScriptMessage so the View menu can build a dynamic card list.
+   * No-op when running outside a WKWebView (browser dev mode).
+   */
+  private pushCardListToHost(): void {
+    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
+    const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
+    const handler = messageHandlers?.cardList as { postMessage: (v: unknown) => void } | undefined;
+    if (!handler) return;
+
+    const cards = this.deckState.cards;
+    const focusedId = cards.length > 0 ? cards[cards.length - 1].id : null;
+    const list = cards.map((c) => {
+      // Resolve display title: card-level title, or active tab title, or first tab title.
+      const activeTab = c.tabs.find((t) => t.id === c.activeTabId);
+      const title = c.title || activeTab?.title || c.tabs[0]?.title || "Untitled";
+      return { id: c.id, title, focused: c.id === focusedId };
+    }).reverse();
+    handler.postMessage(list);
   }
 
   /**
@@ -502,6 +529,71 @@ export class DeckManager implements IDeckManagerStore {
     this.deckState = { ...this.deckState, cards };
     this.notify();
     // Phase 5f: persist z-order change so reload reflects the correct focus order.
+    this.scheduleSave();
+  }
+
+  // ---- Arrange cards (cascade / tile) ----
+
+  /**
+   * Rearrange all cards on the canvas.
+   *
+   * - `cascade`: diagonal cascade from top-left, each offset by CASCADE_STEP.
+   *   Uses each card's preferred size from its size policy.
+   * - `tile`: grid layout filling the canvas. Computes rows/cols to approximate
+   *   each card's preferred aspect ratio. Respects min sizes.
+   */
+  arrangeCards(mode: "cascade" | "tile"): void {
+    const cards = this.deckState.cards;
+    if (cards.length === 0) return;
+
+    const canvasWidth = this.container.clientWidth || 800;
+    const canvasHeight = this.container.clientHeight || 600;
+
+    let arranged: CardState[];
+
+    if (mode === "cascade") {
+      const ORIGIN = 10;
+      arranged = cards.map((card, i) => {
+        const x = ORIGIN + CASCADE_STEP * i;
+        const y = ORIGIN + CASCADE_STEP * i;
+        // Use the card's current size (don't resize on cascade).
+        return { ...card, position: { x, y } };
+      });
+    } else {
+      // Tile: compute grid dimensions.
+      const n = cards.length;
+      const cols = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / cols);
+      const GAP = 5;
+      const tileW = Math.floor((canvasWidth - GAP * (cols + 1)) / cols);
+      const tileH = Math.floor((canvasHeight - GAP * (rows + 1)) / rows);
+
+      arranged = cards.map((card, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = GAP + col * (tileW + GAP);
+        const y = GAP + row * (tileH + GAP);
+
+        // Clamp tile size to the card's min size from its size policy.
+        const activeComponentId =
+          card.tabs.find((t) => t.id === card.activeTabId)?.componentId ??
+          card.tabs[0]?.componentId;
+        const policy = activeComponentId ? getSizePolicy(activeComponentId) : undefined;
+        const minW = policy?.min.width ?? 250;
+        const minH = policy?.min.height ?? 180;
+        const width = Math.max(minW, tileW);
+        const height = Math.max(minH, tileH);
+
+        return {
+          ...card,
+          position: { x, y },
+          size: { width, height },
+        };
+      });
+    }
+
+    this.deckState = { ...this.deckState, cards: arranged };
+    this.notify();
     this.scheduleSave();
   }
 

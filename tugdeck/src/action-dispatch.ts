@@ -278,6 +278,28 @@ export function initActionDispatch(
     }
   });
 
+  // arrange-cards: Rearrange all cards on the canvas.
+  // Swift sends arrange-cards with mode: "cascade" | "tile".
+  registerAction("arrange-cards", (payload) => {
+    const mode = payload.mode;
+    if (mode !== "cascade" && mode !== "tile") {
+      console.warn("arrange-cards: invalid mode", payload);
+      return;
+    }
+    deckManager.arrangeCards(mode);
+  });
+
+  // focus-card: Bring a card to front by ID.
+  // Swift sends focus-card with cardId: string from the View menu card list.
+  registerAction("focus-card", (payload) => {
+    const cardId = payload.cardId;
+    if (typeof cardId !== "string") {
+      console.warn("focus-card: missing or invalid cardId", payload);
+      return;
+    }
+    deckManager.focusCard(cardId);
+  });
+
   // show-card: Add a card by componentId (Spec S08)
   // The AppDelegate already sends show-card with component: "settings" and
   // component: "about" -- those will log a warning and return null from addCard

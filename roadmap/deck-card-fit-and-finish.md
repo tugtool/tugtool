@@ -163,6 +163,6 @@ Suggested sequencing based on dependencies and risk:
 1. ~~**Card size policies (2)**~~ — done.
 2. **Relaxed placement (3)** — depends on size policies for safety; straightforward once those exist.
 3. **View menu (4)** — depends on size policies (for tile/cascade). Largest scope item.
-4. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.
-5. **Reload flash (5)** — independent, can be done at any point.
-6. **Active card shadow (6)** — independent, quick CSS fix.
+4. **Reload flash (5)** — independent, can be done at any point.
+5. **Active card shadow (6)** — independent, quick CSS fix.
+6. **Startup spinner (1)** — fully independent, can be done at any point. Saved for last since it's cosmetic and low-risk.

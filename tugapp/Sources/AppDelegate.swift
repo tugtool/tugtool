@@ -12,6 +12,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
 
+    // View menu state
+    private var viewMenu: NSMenu!
+    private var cachedCardList: [[String: Any]] = []
+
     // Theme menu state
     private var themeMenu: NSMenu!
     private var activeThemeName: String?
@@ -292,7 +296,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         findMenu.addItem(useSelectionItem)
         editMenu.addItem(findMenuItem)
 
-        // Developer Menu - position 3
+        // View Menu - position 3
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let vMenu = NSMenu(title: "View")
+        vMenu.delegate = self
+        viewMenuItem.submenu = vMenu
+        self.viewMenu = vMenu
+        vMenu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]))
+        vMenu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]))
+        // Card list and dev-mode items are populated dynamically in menuNeedsUpdate.
+
+        // Developer Menu - position 4
         developerMenu = NSMenuItem()
         mainMenu.addItem(developerMenu)
         let devMenu = NSMenu(title: "Developer")
@@ -302,10 +317,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
@@ -372,6 +383,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.openWebInspector()
     }
 
+    @objc private func cascadeCards(_ sender: Any?) {
+        sendControl("arrange-cards", params: ["mode": "cascade"])
+    }
+
+    @objc private func tileCards(_ sender: Any?) {
+        sendControl("arrange-cards", params: ["mode": "tile"])
+    }
+
+    @objc private func focusCardFromMenu(_ sender: NSMenuItem) {
+        guard let cardId = sender.representedObject as? String else { return }
+        sendControl("focus-card", params: ["cardId": cardId])
+    }
+
     @objc private func showComponentGallery(_ sender: Any?) {
         sendControl("show-component-gallery")
     }
@@ -426,6 +450,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateDeveloperMenuVisibility() {
         developerMenu.isHidden = !devModeEnabled
+    }
+
+    /// Update the cached card list from the frontend (called by MainWindow on cardList message).
+    func updateCardList(_ list: [[String: Any]]) {
+        cachedCardList = list
     }
 
     // MARK: - UDS control commands
@@ -568,10 +597,14 @@ extension AppDelegate: BridgeDelegate {
     }
 }
 
-// MARK: - NSMenuDelegate (dynamic Theme menu)
+// MARK: - NSMenuDelegate (dynamic View + Theme menus)
 
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === viewMenu {
+            rebuildViewMenu(menu)
+            return
+        }
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
@@ -638,6 +671,37 @@ extension AppDelegate: NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option])
         menu.addItem(nextItem)
+    }
+
+    /// Rebuild the View menu with arrangement commands, card list, and dev-mode items.
+    private func rebuildViewMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        // Arrangement commands
+        menu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]))
+        menu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]))
+
+        // Card list section (from cached card list pushed by the frontend)
+        if !cachedCardList.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for entry in cachedCardList {
+                guard let cardId = entry["id"] as? String,
+                      let title = entry["title"] as? String else { continue }
+                let focused = entry["focused"] as? Bool ?? false
+                let item = NSMenuItem(title: title, action: #selector(focusCardFromMenu(_:)), keyEquivalent: "")
+                item.representedObject = cardId
+                item.state = focused ? .on : .off
+                menu.addItem(item)
+            }
+        }
+
+        // Dev-mode items (moved from Developer menu)
+        if devModeEnabled {
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
+        }
     }
 }
 

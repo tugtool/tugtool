@@ -35,6 +35,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "clipboardRead")
+        contentController.add(self, name: "cardList")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -393,6 +394,13 @@ extension MainWindow: WKScriptMessageHandler {
                 if let error = error {
                     NSLog("MainWindow: evaluateJavaScript failed for clipboardRead: %@", error.localizedDescription)
                 }
+            }
+        case "cardList":
+            // Card list pushed from the frontend on every deck state change.
+            // Cache it on AppDelegate for the View menu's dynamic card list.
+            if let list = message.body as? [[String: Any]],
+               let appDelegate = NSApp.delegate as? AppDelegate {
+                appDelegate.updateCardList(list)
             }
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
