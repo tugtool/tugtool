@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | in progress |
 | Target branch | main |
 | Last updated | 2026-04-13 |
 
@@ -102,19 +102,27 @@ Anchors follow the tugplan-skeleton v2 convention: `step-N` for execution steps,
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does tugcast's CODE_INPUT path already pass arbitrary tugcode JSON? (OPEN) {#q01-code-input-passthrough}
+#### [Q01] Does tugcast's CODE_INPUT path already pass arbitrary tugcode JSON? (RESOLVED) {#q01-code-input-passthrough}
 
 **Question:** Does the `FeedRouter`'s `authorize_and_claim_input` path forward any well-formed tugcode JSON payload verbatim to the correct per-session bridge worker, or does it parse/validate/shape-check assuming a `user_message` shape?
 
-**Why it matters:** Probes 6, 11, 13, 17, 20, 35 send non-`user_message` inbound shapes (`interrupt`, `tool_approval`, `question_answer`, `session_command`, `model_change`, `permission_mode`). If the router assumes `user_message`, the capture binary cannot drive these probes without widening the router, which pulls router code into this plan's scope.
+**Why it matters:** Probes 6, 11, 13, 17, 20, 35 send non-`user_message` inbound shapes (`interrupt`, `tool_approval`, `question_answer`, `session_command`, `model_change`, `permission_mode`). If the router assumes `user_message`, the capture binary cannot drive these probes without widening the router.
 
 **Options:**
 - **Opaque pass-through already exists** — cleanest. Step 1 becomes a code-reading audit + N/A commit. Step 2 writes `TestWs` helpers on top.
 - **User-message-only assumption** — Step 1 widens the router: remove the user_message shape-check and treat the payload as opaque JSON whose only constraint is `tug_session_id` extraction.
 
-**Plan to resolve:** Read `tugrust/crates/tugcast/src/router.rs` + `agent_supervisor.rs` + `agent_bridge.rs` focusing on the `CODE_INPUT` path from `authorize_and_claim_input` through `dispatcher_task` into each per-session worker's input channel. Determine whether anything between the socket and the tugcode stdin writer inspects payload shape.
+**Plan to resolve:** Read `tugrust/crates/tugcast/src/router.rs` + `agent_supervisor.rs` + `agent_bridge.rs` focusing on the `CODE_INPUT` path from `authorize_and_claim_input` through `dispatcher_task` into each per-session worker's input channel.
 
-**Resolution:** OPEN — resolved at the end of [#step-1].
+**Resolution:** **RESOLVED — opaque pass-through already exists** (2026-04-13, audit only). The CODE_INPUT path inspects payloads only for the `tug_session_id` field. It does not inspect `type`, `command`, or any other shape field. Three code sites audited:
+
+1. **`src/router.rs::authorize_and_claim_input`** (line 578) — calls `parse_tug_session_id(payload)` only to extract the session id for ownership checking. Agnostic to `type`.
+2. **`src/feeds/agent_supervisor.rs::dispatch_one`** (line 719) — calls `parse_tug_session_id` again for per-session routing, then forwards the frame verbatim into the per-session `input_tx` mpsc channel. No type inspection.
+3. **`src/feeds/agent_bridge.rs::relay_session_io`** (line 456) — receives frames from `input_rx`, calls `parse_code_input` (which is just `String::from_utf8(frame.payload)` per `src/feeds/code.rs:18`), appends `\n`, writes to tugcode's stdin unchanged.
+
+`parse_tug_session_id` itself (`src/feeds/code.rs:68`) is a full `serde_json::from_slice` followed by `value.get("tug_session_id")` — it parses the payload as JSON but only extracts the one field; it does not care what other fields are present or absent.
+
+Tugcode is the authority on message validation. Any well-formed JSON with a `tug_session_id` field routes correctly regardless of whether `type` is `user_message`, `interrupt`, `tool_approval`, `question_answer`, `session_command`, `model_change`, or `permission_mode`. **No router widening required. Step 1 commit: N/A.**
 
 ---
 
@@ -614,28 +622,30 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 #### Step 1: Router CODE_INPUT pass-through audit + conditional widening {#step-1}
 
-**Commit:** `feat(tugcast): widen CODE_INPUT router pass-through for tugcode control JSON` *(N/A if audit confirms existing opaque pass-through)*
+**Status:** **DONE** (2026-04-13) — audit only, no commit. [Q01] resolved: opaque pass-through already exists; no widening required.
+
+**Commit:** `N/A (audit only — opaque pass-through confirmed)`
 
 **References:** [D07] WebSocket layer capture, [Q01] CODE_INPUT pass-through audit, [R05] Router widening regression, (#strategy)
 
 **Artifacts:**
-- Resolution of [Q01] in this plan (audit result + rationale)
-- **Conditional:** patch to `src/router.rs` widening `CODE_INPUT` handling to opaque JSON pass-through
+- Resolution of [Q01] in this plan with specific file/line citations (audit finding: opaque pass-through already exists).
+- ~~Conditional: patch to `src/router.rs` widening `CODE_INPUT` handling~~ — **not needed**.
 
 **Tasks:**
-- [ ] Read `FeedRouter::authorize_and_claim_input` — does it inspect payload beyond `tug_session_id` extraction?
-- [ ] Trace the dispatcher → bridge → stdin-writer path — is there any `type == "user_message"` shape-check?
-- [ ] If pass-through already opaque: mark [Q01] RESOLVED (no change), update this plan, move to Step 2 with no commit.
-- [ ] If user-message-only: write the widening patch, confirm `tug_session_id` extraction is the only structural constraint on inbound payloads.
-- [ ] Update [Q01] resolution section in this plan.
+- [x] Read `FeedRouter::authorize_and_claim_input` (`src/router.rs:578`) — confirmed it inspects payload only for `tug_session_id` field via `parse_tug_session_id`.
+- [x] Trace the dispatcher → bridge → stdin-writer path — confirmed no `type == "user_message"` shape-check at any of the three sites (`agent_supervisor.rs:719`, `agent_bridge.rs:456`, `code.rs:18`).
+- [x] Pass-through already opaque: [Q01] marked RESOLVED; moving to Step 2 with no commit.
+- [ ] ~~If user-message-only: write the widening patch~~ — not applicable.
+- [x] [Q01] resolution section updated with audit findings and file/line citations.
 
 **Tests:**
-- [ ] **Conditional** (only if widening landed): re-run `TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` — all 9 multi-session real-claude tests pass.
+- [x] ~~Conditional: re-run `--run-ignored only`~~ — not applicable (no widening landed).
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugcast` passes with zero warnings.
-- [ ] [Q01] marked RESOLVED.
-- [ ] Conditional: multi-session real-claude suite passes against widened router.
+- [x] `cargo nextest run -p tugcast` passes with zero warnings. **(318 passed, 13 skipped, 0 failed, 0 warnings.)**
+- [x] [Q01] marked RESOLVED.
+- [x] Conditional: ~~multi-session real-claude suite~~ — not needed; no widening.
 
 ---
 
