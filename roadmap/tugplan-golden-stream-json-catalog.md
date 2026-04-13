@@ -913,7 +913,7 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 ---
 
-#### Step 5: Prose rename + version banner + known divergences {#step-5}
+#### Step 5: Prose rename + version banner + known divergences {#step-5} — DONE
 
 **Depends on:** #step-4
 
@@ -925,19 +925,23 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 - `roadmap/transport-exploration.md` — all `tugtalk` → `tugcode` replacements (except historical methodology footnote for `tugtalk/probe.ts`), top-of-doc version banner, "Known divergences from prose catalog" section.
 
 **Tasks:**
-- [ ] Find all `tugtalk` references in `roadmap/transport-exploration.md`. Replace with `tugcode` unless the context specifically refers to the legacy `tugtalk/probe.ts` probe harness (preserve historical accuracy in the methodology footnote).
-- [ ] Add version banner at the top:
-  > *This document was empirically verified against `claude 2.1.87` (initial capture, 2026-03-29) and `2.1.104` (multi-session router Step 10 integration run, 2026-04-12). The **authoritative machine-readable golden fixtures** live at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/` and are ground truth — this prose catalog is a human-readable summary that may lag behind the fixtures. If the drift test fails, the fixtures are correct and this document is stale; update the prose to match.*
-- [ ] Add a "Known divergences from prose catalog" section at the top listing any deltas Step 4 surfaced between the prose and the fixtures.
-- [ ] Cross-link from the banner to [`roadmap/tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) and to `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md`.
+- [x] Replaced all `tugtalk` references in `roadmap/transport-exploration.md` with `tugcode`. Only the historical `tugtalk/probe.ts` file path remains (annotated as "legacy probe harness, preserved as historical path"). `grep -c tugtalk` returns **1**, exactly the allowed historical footnote.
+- [x] Added version banner at the top referencing both `claude 2.1.87` (2026-03-29 initial capture) and `2.1.104` (2026-04-12 multi-session router Step 10 integration run), pointing at the authoritative fixtures directory, and explicitly stating the fixtures win on any drift-test conflict.
+- [x] Added "Known divergences from prose catalog" section at the top covering:
+  - **New `2.1.104` fields** not present in the original prose: `modelUsage`, `speed`, `service_tier` (in `cost_update`); `inference_geo` (in `system_metadata`); `ipc_version` (consistently `2`); `task_id` correlation field on `tool_use` / subagent events.
+  - **Inherent optional-event variance** (accepted per [D08]): test-05 (`thinking_text` optionality before tool use) and test-18 (trailing `assistant_text complete` after `turn_complete`).
+  - **Probes skipped at capture time**: test-10/25/35 (§T0.5 P19 — 45s WebSocket reset on long-running probes), test-13/17/20 (§T0.5 P16 — session_command routing bug).
+  - **Correction on test-08 `control_request_forward`**: the original prose was correct; `2.1.104` confirms CRF is required. An earlier capture attempt briefly looked like drift but root-caused to a `WaitForEvent` buffer-consumption bug; the `peek_code_output_event` fix landed in Step 4.
+  - **Streaming partial counts are non-deterministic**: the canonical-sequence comparator collapses consecutive duplicate event types before stability checks.
+- [x] Cross-linked from the banner to [`roadmap/tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) and to `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md` (README landing in Step 7 — the link will go live when that step commits).
 
 **Tests:**
-- [ ] `grep -c tugtalk roadmap/transport-exploration.md` returns ≤ 1 (only the historical methodology footnote permitted).
+- [x] `grep -c tugtalk roadmap/transport-exploration.md` returns `1` (only the historical methodology footnote — the `tugtalk/probe.ts` file path).
 
 **Checkpoint:**
-- [ ] `roadmap/transport-exploration.md` opens with the version banner.
-- [ ] "Known divergences from prose catalog" section exists at the top.
-- [ ] Zero raw `tugtalk` references outside the historical methodology footnote.
+- [x] `roadmap/transport-exploration.md` opens with the version banner (immediately after the one-line *Live document* subtitle, before the tug-conversation.md action-items pointer).
+- [x] "Known divergences from prose catalog" section exists at the top.
+- [x] Zero raw `tugtalk` references outside the historical methodology footnote.
 
 ---
 

@@ -1,9 +1,49 @@
 # Transport Exploration — Phase 1 Findings
 
-*Live document. Updated as we probe the tugcast/tugtalk transport.*
+*Live document. Updated as we probe the tugcast/tugcode transport.*
 
-**Date:** 2026-03-29
-**Method:** Direct tugtalk probing via `tugtalk/probe.ts` — bypasses tugcast, connects to tugtalk's stdin/stdout JSON-lines protocol. 35 tests completed.
+> **Version banner.** This document was empirically verified against `claude 2.1.87` (initial capture, 2026-03-29) and `2.1.104` (multi-session router Step 10 integration run, 2026-04-12). The **authoritative machine-readable golden fixtures** live at [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/) and are ground truth — this prose catalog is a human-readable summary that may lag behind the fixtures. If the drift test fails, the fixtures are correct and this document is stale; update the prose to match.
+>
+> **Cross-links:** [`tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) (originating tide item) · [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md) (developer-facing recovery guide and runbook — landing in Step 7).
+
+**Date:** 2026-03-29 (initial), 2026-04-12 (2.1.104 re-baseline)
+**Method:** Direct tugcode probing via `tugtalk/probe.ts` (legacy probe harness, preserved as historical path) — bypasses tugcast, connects to tugcode's stdin/stdout JSON-lines protocol. 35 tests completed.
+
+---
+
+## Known divergences from prose catalog
+
+Deltas surfaced by the Step 4 `2.1.104` baseline capture run. The fixtures at [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/) are authoritative; the bullets below flag where this prose lags or where `2.1.104` behaves differently from the `2.1.87` snapshot this document was originally written against.
+
+### New fields in `2.1.104` (not mentioned in original prose)
+
+The following top-level fields surfaced in the `2.1.104` capture and are now recorded in `v2.1.104/schema.json`. They are additive — no breaking changes to existing fields.
+
+- `cost_update`: `modelUsage` (per-model token breakdown), `speed`, `service_tier`, plus richer `usage` nesting.
+- `system_metadata`: `inference_geo` (region-of-inference hint), additional slots in the tools/skills arrays.
+- `session_init` / various: `ipc_version` (now consistently `2`).
+- `tool_use` / subagent events: `task_id` correlation field.
+
+The original `2.1.87` prose described the *shapes* we observed at that time — the `2.1.104` captures extend them, and the golden schemas track the extended shapes.
+
+### Probes with inherent optional-event variance (classified `shape_unstable` but accepted)
+
+Two probes produced different canonical event sequences across `TUG_STABILITY=3` runs. This is real streaming optionality from Claude, not drift, and is accepted per [D08] REQUIRED vs OPTIONAL semantics.
+
+- **test-05** — `thinking_text` is sometimes emitted before `tool_use`, sometimes not. Treated as OPTIONAL.
+- **test-18** — a trailing `assistant_text complete` event is sometimes emitted after `turn_complete`, sometimes not. Treated as OPTIONAL.
+
+### Probes skipped at capture time (upstream bugs blocking full run)
+
+Six probes are marked with `skip_reason` in `v2.1.104/manifest.json` and emit empty JSONL files. They point at the relevant tide.md §T0.5 entries:
+
+- **test-10** (long streaming), **test-25** (`/tugplug:plan` invocation), **test-35** (`AskUserQuestion` flow) — blocked by **§T0.5 P19** (HIGH): 45s WebSocket reset on long-running capture probes. Every probe with a wall-clock > ~45s dies with "Connection reset without closing handshake" regardless of per-probe `timeout_secs`.
+- **test-13, test-17, test-20** (`session_command: new`/`continue`/`fork`) — blocked by **§T0.5 P16**: session_command routing bug. Step 4 canary confirmed the symptom extends beyond the original probe.
+
+### Corrections against the original prose
+
+- **test-08 `control_request_forward`.** The original prose said CRF is required for permission-deny flows; `2.1.104` confirms this. An earlier capture attempt briefly suggested CRF was missing, but root-cause analysis showed it was a `WaitForEvent` buffer-consumption bug in the capture harness, not prose drift. After the `peek_code_output_event` fix landed, the event ships as originally documented.
+- **Stream partial counts are non-deterministic.** Any prose-level expectation about "N partial `assistant_text` events" should be read as *shape*, not *count*. The Step 4 canonical-sequence comparator collapses consecutive duplicate event types before stability checks — count variance is not drift.
 
 ---
 
@@ -13,7 +53,7 @@
 
 ## Setup
 
-Tugtalk spawns Claude Code as a subprocess with `--output-format stream-json --input-format stream-json --verbose --permission-prompt-tool stdio --include-partial-messages --replay-user-messages`. Communication is JSON-lines over stdin (inbound) and stdout (outbound). Stderr carries tugtalk's own logs.
+Tugcode spawns Claude Code as a subprocess with `--output-format stream-json --input-format stream-json --verbose --permission-prompt-tool stdio --include-partial-messages --replay-user-messages`. Communication is JSON-lines over stdin (inbound) and stdout (outbound). Stderr carries tugcode's own logs.
 
 ---
 
@@ -194,9 +234,9 @@ Sent at the start of every turn. Contains everything the UI needs for chrome/sta
 
 ## Process Management Issue
 
-**Found before any messages were sent.** After ~2 weeks of use, 137 orphaned tugtalk (bun) processes were running. Tugcast exits when the app quits, but its child tugtalk processes are not killed — they become orphans and accumulate indefinitely.
+**Found before any messages were sent.** After ~2 weeks of use, 137 orphaned tugcode (bun) processes were running. Tugcast exits when the app quits, but its child tugcode processes are not killed — they become orphans and accumulate indefinitely.
 
-**Root cause:** No process group management. Tugcast spawns tugtalk but doesn't SIGTERM children on shutdown. Card close doesn't kill the associated tugtalk.
+**Root cause:** No process group management. Tugcast spawns tugcode but doesn't SIGTERM children on shutdown. Card close doesn't kill the associated tugcode.
 
 **Added to Phase 2 (Transport Hardening) work list.**
 
@@ -218,7 +258,7 @@ Sent at the start of every turn. Contains everything the UI needs for chrome/sta
 - **Interrupt works quickly.** Generation stops after the next chunk boundary.
 - **No `turn_cancelled` event.** Instead, `turn_complete` fires with `result: "error"`.
 - **The final complete event still arrives.** It contains the accumulated text up to the interrupt point, with `is_partial: false, status: "complete"`. The text isn't lost.
-- **Tugtalk logs:** `"Interrupting current turn via control_request interrupt"` → receives `control_response` with `subtype: "success"`.
+- **Tugcode logs:** `"Interrupting current turn via control_request interrupt"` → receives `control_response` with `subtype: "success"`.
 - **Implication for UI:** Listen for `turn_complete` with `result: "error"` as the interrupt signal. Don't wait for a separate `turn_cancelled` event — it doesn't exist.
 
 ---
@@ -357,7 +397,7 @@ Sent at the start of every turn. Contains everything the UI needs for chrome/sta
 7. `turn_complete` — `result: "success"`
 
 **Findings:**
-- **Permission round-trip works.** UI sends `tool_approval` (not `control_response`), tugtalk translates to `control_response` for Claude.
+- **Permission round-trip works.** UI sends `tool_approval` (not `control_response`), tugcode translates to `control_response` for Claude.
 - **Inbound format for permissions:** `{ type: "tool_approval", request_id, decision: "allow" | "deny", updatedInput?, message? }`
 - **Inbound format for questions:** `{ type: "question_answer", request_id, answers: { key: value } }`
 - On deny, `tool_result` arrives with `is_error: true` and the deny message as output.
@@ -409,7 +449,7 @@ This is the single most important event for UI interaction beyond text streaming
 
 ---
 
-## Inbound Message Types (UI → Tugtalk)
+## Inbound Message Types (UI → Tugcode)
 
 Complete catalog of messages the UI can send:
 
@@ -453,7 +493,7 @@ Complete catalog of messages the UI can send:
 1. `session_init` — original session `05086f97...`
 2. **>>> `session_command: new` sent**
 3. `error` — `"Claude process stream ended unexpectedly"` (recoverable: true)
-4. Tugtalk respawns claude: `--permission-mode acceptEdits` (no `--resume` — fresh session)
+4. Tugcode respawns claude: `--permission-mode acceptEdits` (no `--resume` — fresh session)
 5. `session_init` — new session, but `session_id: "pending"`
 6. **>>> `user_message` sent** (too early!)
 7. Timeout — new process not ready
@@ -469,7 +509,7 @@ Complete catalog of messages the UI can send:
 
 ## `AskUserQuestion` Flow (Documented from Code, Not Yet Tested Live)
 
-From reading `tugtalk/src/session.ts` and `tugtalk/src/control.ts`:
+From reading `tugcode/src/session.ts` and `tugcode/src/control.ts`:
 
 When an agent calls `AskUserQuestion`, it arrives as `control_request_forward` with:
 - `is_question: true`
@@ -485,13 +525,13 @@ The UI responds with:
 }
 ```
 
-Tugtalk translates this into a `control_response` with `behavior: "allow"` and the answers nested in `updatedInput.answers`. This hasn't been tested end-to-end yet — it would require running a `/plan` skill that triggers the clarifier agent.
+Tugcode translates this into a `control_response` with `behavior: "allow"` and the answers nested in `updatedInput.answers`. This hasn't been tested end-to-end yet — it would require running a `/plan` skill that triggers the clarifier agent.
 
 ---
 
 ## Updated Event Type Catalog (Final)
 
-### Outbound Events (Tugtalk → UI)
+### Outbound Events (Tugcode → UI)
 
 | Event | When | Key Fields | Response Required? |
 |-------|------|-----------|-------------------|
@@ -508,7 +548,7 @@ Tugtalk translates this into a `control_response` with `behavior: "allow"` and t
 | `turn_complete` | End of turn | `msg_id`, `seq`, `result` (`"success"` or `"error"`) | No |
 | `error` | Error occurred | `message`, `recoverable` | No |
 
-### Inbound Messages (UI → Tugtalk)
+### Inbound Messages (UI → Tugcode)
 
 | Type | Purpose | Key Fields |
 |------|---------|-----------|
@@ -548,7 +588,7 @@ Comprehensive review of code.claude.com docs. Key items that affect the transpor
 
 ### Stream-JSON Event Types (from docs, not yet observed in probes)
 
-- **`stream_event`** — wraps raw Anthropic API streaming deltas. Contains `.event.delta.type == "text_delta"` with `.event.delta.text` for token-by-token text. We haven't seen this in our probes — tugtalk may be translating these into `assistant_text` events before forwarding.
+- **`stream_event`** — wraps raw Anthropic API streaming deltas. Contains `.event.delta.type == "text_delta"` with `.event.delta.text` for token-by-token text. We haven't seen this in our probes — tugcode may be translating these into `assistant_text` events before forwarding.
 - **`system` with `subtype: "api_retry"`** — emitted on retryable API errors. Fields: `attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error` (type: `authentication_failed`, `billing_error`, `rate_limit`, etc.). The UI should show retry status.
 - **`system` with `subtype: "compact_boundary"`** — emitted during compaction. Contains `compactMetadata: { trigger: "auto"|"manual", preTokens }`.
 
@@ -629,14 +669,14 @@ Each option can clear planning context. The UI should present these choices when
 
 ## Phase 2 Work Items (Accumulated)
 
-### Transport Fixes (tugcast/tugtalk code changes)
+### Transport Fixes (tugcast/tugcode code changes)
 
-1. **Process lifecycle management.** Tugtalk processes outlive tugcast. 137 zombies after 2 weeks. Tugcast must SIGTERM children on shutdown and use process groups. Card close must kill associated tugtalk.
+1. **Process lifecycle management.** Tugcode processes outlive tugcast. 137 zombies after 2 weeks. Tugcast must SIGTERM children on shutdown and use process groups. Card close must kill associated tugcode.
 2. **Session command readiness.** After `session_command: "new"` or `"fork"`, `session_init` fires with pending ID before new process is ready. Need clear readiness signal.
-3. **`api_retry` event forwarding.** Tugtalk drops these. Add forwarding in `routeTopLevelEvent`. Audit for other dropped `system` subtypes.
+3. **`api_retry` event forwarding.** Tugcode drops these. Add forwarding in `routeTopLevelEvent`. Audit for other dropped `system` subtypes.
 4. **`--no-auth` CLI flag for tugcast.** Skip session cookie and origin validation for local development/testing. Needed to test the full WebSocket path.
-5. **Slash command invocation mechanism.** ALL slash commands (both built-in and plugin) are consumed by Claude Code's client-side dispatcher with no stream-json output. This affects every command — `/cost`, `/model`, `/compact`, `/dash`, `/plan`, etc. The graphical UI needs a new inbound message type (e.g., `{ type: "slash_command", command, args }`) that tugtalk routes to Claude Code's slash command handler, with output forwarded to the stream. This is the single biggest transport gap.
-6. **`@` file reference handling.** Terminal injects file content client-side. Tugtalk/tugcast need either: (a) a mechanism for the UI to send file content with messages, or (b) the UI handles this entirely client-side via attachments.
+5. **Slash command invocation mechanism.** ALL slash commands (both built-in and plugin) are consumed by Claude Code's client-side dispatcher with no stream-json output. This affects every command — `/cost`, `/model`, `/compact`, `/dash`, `/plan`, etc. The graphical UI needs a new inbound message type (e.g., `{ type: "slash_command", command, args }`) that tugcode routes to Claude Code's slash command handler, with output forwarded to the stream. This is the single biggest transport gap.
+6. **`@` file reference handling.** Terminal injects file content client-side. Tugcode/tugcast need either: (a) a mechanism for the UI to send file content with messages, or (b) the UI handles this entirely client-side via attachments.
 
 ### UI Requirements (graphical UI must implement)
 
@@ -688,7 +728,7 @@ Each option can clear planning context. The UI should present these choices when
 - **Model change is immediate.** Takes effect on the very next turn.
 - **Produces a synthetic `assistant_text` event** confirming the change. Not from the model — instant, not streamed.
 - **`system_metadata` updates** to reflect the new model.
-- **Goes through control_request mechanism** internally (tugtalk translates to `control_request` for Claude CLI).
+- **Goes through control_request mechanism** internally (tugcode translates to `control_request` for Claude CLI).
 - Model changed back to opus at end of test.
 
 ---
@@ -725,7 +765,7 @@ Documented above in Test 14.
 
 **Sent:** "Say 'one'" → turn_complete → "/compact"
 
-**Result:** `/compact` behaves like other slash commands — `system_metadata` → `cost_update` → `turn_complete`. **No `compact_boundary` event observed.** Tugtalk may filter these, or they only appear in raw Claude CLI stream-json, not in tugtalk's translated output.
+**Result:** `/compact` behaves like other slash commands — `system_metadata` → `cost_update` → `turn_complete`. **No `compact_boundary` event observed.** Tugcode may filter these, or they only appear in raw Claude CLI stream-json, not in tugcode's translated output.
 
 **Bonus finding — rich `cost_update`:** The cost event contains detailed token usage:
 ```json
@@ -822,7 +862,7 @@ These features exist in the Claude Code terminal but produce **no events in stre
 | **Tool use display** | `tool_use` → `tool_result` → `tool_use_structured` | Rich tool call visualization: tool name, input, output, duration. | High |
 | **Interrupt button** | Sends `interrupt` | Stop button during streaming. State: `turn_complete(result: "error")`. | High |
 | **API retry indicator** | `system` (`subtype: "api_retry"`) | Show retry count, delay, error type during retries. | Medium |
-| **Compaction indicator** | `compact_boundary` (if tugtalk exposes it) | Show when context is being compacted. | Medium |
+| **Compaction indicator** | `compact_boundary` (if tugcode exposes it) | Show when context is being compacted. | Medium |
 | **Cost per turn** | `cost_update` | Running cost display, updated per turn. | Medium |
 
 ### Content Features
@@ -919,7 +959,7 @@ These features exist in the Claude Code terminal but produce **no events in stre
 **Findings:**
 - **Image attachments work through the transport.** Base64-encoded image in `attachments[]` with `media_type: "image/png"`.
 - **No special event types** — the image is part of the `user_message`, not a separate event. Response arrives as normal `assistant_text`.
-- **Supported types** (from tugtalk code): `image/png`, `image/jpeg`, `image/gif`, `image/webp`. Max ~5MB decoded.
+- **Supported types** (from tugcode code): `image/png`, `image/jpeg`, `image/gif`, `image/webp`. Max ~5MB decoded.
 - **UI needs:** Drag-drop/paste → base64 encode → attach to `user_message`. Show thumbnail preview before send.
 
 ---
@@ -989,7 +1029,7 @@ Claude then pivoted to `EnterPlanMode` and spawned two Explore agents that read 
 1. **Tugplug skills (`/plan`, `/implement`, `/merge`, `/dash`) cannot be invoked via `user_message`.** The `/plan` slash command is consumed client-side with no stream-json output. The `Skill` tool rejects it as "not a prompt-based skill."
 
 2. **This is a fundamental gap for the graphical UI.** These are the most important tugplug commands and they don't work through the transport. The UI needs a different invocation mechanism — either:
-   - (a) A new inbound message type (e.g., `{ type: "skill_invoke", skill: "plan", args: "..." }`) that tugtalk handles specially
+   - (a) A new inbound message type (e.g., `{ type: "skill_invoke", skill: "plan", args: "..." }`) that tugcode handles specially
    - (b) Changing tugplug skill definitions to be invocable via the Skill tool
    - (c) Having the UI spawn a separate Claude Code process for skill execution
 
@@ -1003,7 +1043,7 @@ Claude then pivoted to `EnterPlanMode` and spawned two Explore agents that read 
 
 ## `api_retry` — Confirmed Gap
 
-**Tugtalk drops `api_retry` events.** Verified by reading `session.ts` `routeTopLevelEvent`:
+**Tugcode drops `api_retry` events.** Verified by reading `session.ts` `routeTopLevelEvent`:
 
 The `system` event handler only routes two subtypes:
 - `subtype: "init"` → `session_init`
@@ -1013,7 +1053,7 @@ All other `system` subtypes — including `api_retry` — fall through with no o
 
 **Impact:** During API failures, the user sees a spinner with no explanation. No retry count, no delay indicator, no error type. Bad UX.
 
-**Fix (Phase 2):** Add `api_retry` forwarding in tugtalk's `routeTopLevelEvent`:
+**Fix (Phase 2):** Add `api_retry` forwarding in tugcode's `routeTopLevelEvent`:
 ```typescript
 } else if (subtype === "api_retry") {
   messages.push({
@@ -1063,7 +1103,7 @@ In the terminal, `/dash` shows output (agent spawning, progress, results) becaus
 
 ---
 
-## Deep Dive: How Slash Command Output Actually Works in Tugtalk
+## Deep Dive: How Slash Command Output Actually Works in Tugcode
 
 **Discovered by reading `session.ts` `routeTopLevelEvent`.**
 
@@ -1073,11 +1113,11 @@ Claude Code's slash command mechanism works like this:
 2. Claude Code's harness intercepts it as a slash command and processes it internally — the model never sees it.
 3. For simple commands (`/cost`, `/status`), Claude Code emits a `result` event containing the formatted output text.
 4. **Then, on session replay**, Claude Code emits a `{ type: "user", isReplay: true, message: { content: "<local-command-stdout>...</local-command-stdout>" } }` event.
-5. Tugtalk's `case "user"` handler (lines 318-347) detects `isReplay === true`, extracts `<local-command-stdout>` content, and emits it as `assistant_text`.
+5. Tugcode's `case "user"` handler (lines 318-347) detects `isReplay === true`, extracts `<local-command-stdout>` content, and emits it as `assistant_text`.
 
 **This explains our Test 3 (`/cost`):** We saw `cost_update` (from the `result` event) + `turn_complete`, but no `assistant_text` with the formatted cost text. The text only appears on **replay** (session resume), not on first execution.
 
-**Critical question for orchestrator skills (`/dash`, `/plan`):** When these run, they spawn agents, make tool calls, produce progress output. Does this output go through `<local-command-stdout>` on replay? Or does the orchestrator's output come as normal streaming events (`tool_use`, `assistant_text`, `control_request`)? If the latter, tugtalk should already be forwarding those events — but our tests showed zero events.
+**Critical question for orchestrator skills (`/dash`, `/plan`):** When these run, they spawn agents, make tool calls, produce progress output. Does this output go through `<local-command-stdout>` on replay? Or does the orchestrator's output come as normal streaming events (`tool_use`, `assistant_text`, `control_request`)? If the latter, tugcode should already be forwarding those events — but our tests showed zero events.
 
 **Possible explanations for why orchestrator skills produce zero events:**
 1. The orchestrator skill runs in a **separate execution context** whose stdout isn't connected to the stream-json pipe.
@@ -1091,7 +1131,7 @@ Claude Code's slash command mechanism works like this:
 
 **Root cause: `--plugin-dir` was pointing to the wrong directory.**
 
-Tugtalk's `getTugtoolRoot()` resolves to the project root (`/u/src/tugtool`), which finds the root-level `.claude-plugin/plugin.json` (name: `tugtool`). But the tugplug skills live under `tugplug/skills/`, and the `tugplug` plugin definition is at `tugplug/.claude-plugin/plugin.json`. The root-level plugin doesn't expose the skills.
+Tugcode's `getTugtoolRoot()` resolves to the project root (`/u/src/tugtool`), which finds the root-level `.claude-plugin/plugin.json` (name: `tugtool`). But the tugplug skills live under `tugplug/skills/`, and the `tugplug` plugin definition is at `tugplug/.claude-plugin/plugin.json`. The root-level plugin doesn't expose the skills.
 
 **Fix:** Point `--plugin-dir` to `tugplug/` instead of the project root.
 
@@ -1126,12 +1166,12 @@ RESULT → success (44 events, 5.2s)
 **What this means:**
 1. **Slash commands DO work through stream-json** — they produce full event streams including tool calls, streaming text, and result events.
 2. **The problem was never the protocol** — it was a misconfigured `--plugin-dir` that prevented the plugin from loading.
-3. **tugtalk needs a fix:** `getTugtoolRoot()` must resolve to `tugplug/` (or the root plugin must properly reference the tugplug skills). This is a one-line fix in tugtalk.
+3. **tugcode needs a fix:** `getTugtoolRoot()` must resolve to `tugplug/` (or the root plugin must properly reference the tugplug skills). This is a one-line fix in tugcode.
 4. **The graphical UI sends `/tugplug:dash args` as a normal `user_message`** and it just works. No special invocation mechanism needed.
 
 **Phase 2 work items:**
-- **Item #5 updated:** "fix `--plugin-dir` in tugtalk to point to `tugplug/`" — one-line fix.
-- **New item:** Tugtalk's `case "assistant"` handler drops text from synthetic messages (`model: "<synthetic>"`). Built-in skill commands like `/cost` and `/compact` produce their text output as an `assistant` message with `model: "<synthetic>"`, but tugtalk skips all `assistant` text assuming it was already delivered via `stream_event`. Fix: detect `model === "<synthetic>"` and emit the text as `assistant_text`.
+- **Item #5 updated:** "fix `--plugin-dir` in tugcode to point to `tugplug/`" — one-line fix.
+- **New item:** Tugcode's `case "assistant"` handler drops text from synthetic messages (`model: "<synthetic>"`). Built-in skill commands like `/cost` and `/compact` produce their text output as an `assistant` message with `model: "<synthetic>"`, but tugcode skips all `assistant` text assuming it was already delivered via `stream_event`. Fix: detect `model === "<synthetic>"` and emit the text as `assistant_text`.
 
 ---
 
@@ -1141,8 +1181,8 @@ With the correct `--plugin-dir`, testing built-in commands directly against Clau
 
 | Command | Raw CLI Output | Category |
 |---------|---------------|----------|
-| `/cost` | `assistant` text: "Total cost: $0.00..." + `result` | **Skill** (text available but tugtalk drops it) |
-| `/compact` | `assistant` text: "Error: No messages to compact" + `result` | **Skill** (text available but tugtalk drops it) |
+| `/cost` | `assistant` text: "Total cost: $0.00..." + `result` | **Skill** (text available but tugcode drops it) |
+| `/compact` | `assistant` text: "Error: No messages to compact" + `result` | **Skill** (text available but tugcode drops it) |
 | `/status` | `result`: "Unknown skill: status" | **Terminal-only** (not a skill) |
 | `/model` | `result`: "Unknown skill: model" | **Terminal-only** (not a skill) |
 
@@ -1150,7 +1190,7 @@ With the correct `--plugin-dir`, testing built-in commands directly against Clau
 
 | Category | In `system_metadata.slash_commands`? | Stream-JSON? | Text? |
 |----------|--------------------------------------|-------------|-------|
-| **Skills** (`/cost`, `/compact`, `/commit`, `/review`, `/tugplug:dash`, etc.) | Yes | Full events | Yes (needs tugtalk fix for synthetic messages) |
+| **Skills** (`/cost`, `/compact`, `/commit`, `/review`, `/tugplug:dash`, etc.) | Yes | Full events | Yes (needs tugcode fix for synthetic messages) |
 | **Terminal-only** (`/status`, `/model`, `/clear`, `/vim`, `/btw`, `/resume`, etc.) | No | "Unknown skill" | No — must be reimplemented in UI |
 | **Name collision** (`/plan` = built-in terminal command AND `tugplug:plan` skill) | `tugplug:plan` is in skills list | Use fully-qualified `tugplug:plan` | Yes |
 
@@ -1260,7 +1300,7 @@ plugins: [{ name: "tugplug", path: ".../tugplug", source: "tugplug@inline" }]
 | `system:task_progress` | Agent working | `task_id`, `description` (current tool), `usage` (token count) |
 | `system:task_completed` | Agent done | `task_id` |
 
-**AskUserQuestion confirmed:** Arrives as `control_request` with `subtype: "can_use_tool"`, `tool_name: "AskUserQuestion"`, `input.questions[]` with `question`, `header`, `options[]`. Tugtalk would forward this as `control_request_forward` with `is_question: true`. The UI responds with `question_answer`.
+**AskUserQuestion confirmed:** Arrives as `control_request` with `subtype: "can_use_tool"`, `tool_name: "AskUserQuestion"`, `input.questions[]` with `question`, `header`, `options[]`. Tugcode would forward this as `control_request_forward` with `is_question: true`. The UI responds with `question_answer`.
 
 ---
 
