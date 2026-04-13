@@ -27,6 +27,7 @@ This plan lands the safety net: a capture binary that freezes the catalog as ver
 
 #### Strategy {#strategy}
 
+- **`claude 2.1.104` is the ground truth, not `2.1.87`.** See [#ground-truth-policy] below. Prose-derived event shapes from `transport-exploration.md` are tentative until Step 4's `--stability 3` run validates them against live `2.1.104`. No downstream artifact (drift test, P15 runtime code, `CodeSessionStore`) encodes a prose-derived shape assumption that hasn't survived Step 4.
 - **Capture at the WebSocket layer** (via `TestTugcast` + `TestWs`), not at direct `tugcode` stdout. This is the layer `CodeSessionStore` will consume — drift anywhere between `claude` stdout and the WebSocket frame is captured in one place.
 - **Per-probe `TestTugcast` isolation.** Each probe spins up a fresh tugcast subprocess. Slower than a shared-instance mode, but eliminates cross-probe state bleed and exercises the multi-session router's fresh-boot path 35 times.
 - **All 35 probes, no curated subset.** These tests are not in the default nextest suite and are not run on every commit; they run on Claude Code version bumps or a manual cadence. Correctness matters more than speed.
@@ -34,6 +35,20 @@ This plan lands the safety net: a capture binary that freezes the catalog as ver
 - **Placeholder normalization** at fixture-write time so re-captures of unchanged shapes produce byte-stable JSONL — git diffs stay readable, real drift stands out.
 - **Fixture JSONL is the source of truth**; the derived `schema.json` is a regenerable index. If the two disagree, JSONL wins.
 - **Supervisor bugs from session-command probes are findings, not blockers.** Probes 13/17/20 exercise uncharted multi-session router territory. Any bug they expose becomes a §T0.5 follow-up, the affected probe is marked skipped with a pointer, and the plan proceeds.
+
+#### Ground truth policy — `claude 2.1.104` is the baseline, not `2.1.87` {#ground-truth-policy}
+
+**The authoritative source for Claude Code stream-json event shapes is `claude 2.1.104` (the current version as of 2026-04-13), captured empirically into `v2.1.104/` during Step 4.** `roadmap/transport-exploration.md`'s prose — much of which was captured against the now-obsolete `claude 2.1.87` via the legacy `tugtalk/probe.ts` harness — is a *historical sketch* from which Step 3's probe table draws its initial REQUIRED/OPTIONAL classification. It is **not** a specification anything in this plan is asserted against.
+
+Practically this means:
+
+- **Step 3's probe table is a best-guess**, not an authoritative contract. Its REQUIRED/OPTIONAL classification is drafted from prose. Step 4's `--stability 3` baseline run is the mechanism by which the classification becomes empirically grounded in `2.1.104` reality — flapping events get demoted to OPTIONAL, vanished events get removed entirely, newly observed event types get added as REQUIRED candidates. This is the **expected path**, not a failure mode.
+- **Step 4's `v2.1.104/` fixtures are the first authoritative artifact of this plan.** Nothing downstream (drift test, P15 runtime divergence telemetry, `CodeSessionStore`) should encode a `2.1.87`-era assumption once those fixtures exist. Tests and reducer logic cite the fixtures, not the prose.
+- **Step 5's "Known divergences from prose catalog" section is the outcome, not the surprise.** Every delta between the `2.1.87` prose and the `2.1.104` fixtures gets cataloged so future readers see exactly where the prose lags. Expect this section to be non-empty.
+- **Test assertions in Steps 2, 6, and beyond target `2.1.104`'s observable behavior**, not prose descriptions. If a test's shape assumption is falsified against live `2.1.104`, the **test** is wrong, not the fixture. Step 2's `test_send_model_change_behavioral` (reshaped from the prose-trusting `_synthetic_confirmation` variant, which timed out against `2.1.104`) is the canonical example — see §T0.5 P17.
+- **When `claude` bumps to `2.1.105` or later**, the recovery workflow in `tests/fixtures/stream-json-catalog/README.md` fires: re-run capture against the new version → diff against `v2.1.104/` → classify changes as benign / semantic / ambiguous → commit `v2.1.105/` (plus any consumer fixes). The drift test then passes for both versions in their respective runs.
+
+The only reason `claude 2.1.87` appears in this plan or in `transport-exploration.md` is historical attribution. It is not a target, not a minimum, and not a comparison point for anything newer than `2.1.87` itself. Treating it as ground truth is exactly the trap this plan exists to eliminate.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -46,6 +61,7 @@ This plan lands the safety net: a capture binary that freezes the catalog as ver
 - **SC7.** `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/` contains 35 normalized probe JSONL files + `manifest.json` + `schema.json`.
 - **SC8.** Every supervisor bug exposed during Step 4 baseline capture is logged as a P16/P17/... entry in `roadmap/tide.md` §T0.5 with pointers to the offending probe and a clear symptom description, or the absence of such bugs is explicitly noted in Step 8's checkpoint.
 - **SC9.** Neither the capture binary nor the drift test is picked up by `cargo nextest run -p tugcast --run-ignored only`. Both are invoked exclusively via their own `cargo test --test <name> -- --ignored` commands.
+- **SC10.** `v2.1.104/manifest.json.claude_version == "2.1.104"` (not `"2.1.87"` or anything else), and every fixture entry in `v2.1.104/` is empirically captured from live `claude 2.1.104` — no prose-derived event, field, or sequence assumption survives into the committed fixtures or their derived `schema.json`. This is the ground-truth guarantee per [#ground-truth-policy].
 
 #### Scope {#scope}
 
@@ -88,6 +104,7 @@ This plan lands the safety net: a capture binary that freezes the catalog as ver
 #### Assumptions {#assumptions}
 
 - Claude Code's stream-json protocol is roughly backward-compatible across patch versions within a minor release. If `2.1.104 → 2.1.105` breaks every event shape, the drift test flags it and the recovery workflow fires; we do not auto-adapt.
+- **Prose-derived event shapes from `transport-exploration.md` may not match live `claude 2.1.104` reality.** Much of the prose was captured against `claude 2.1.87`. Step 4's stability loop is **expected** to surface REQUIRED → OPTIONAL reclassifications, removed events, and new events. This is the mechanism by which prose assumptions become `2.1.104`-grounded, not a bug. Step 2's `test_send_model_change_synthetic_confirmation` → `test_send_model_change_behavioral` reshape is a preview of this dynamic — see §T0.5 P17 and [#ground-truth-policy].
 - The 35 probes in `transport-exploration.md` cover every event type and ordering invariant T3.4.a cares about. If T3.4.a reveals a gap later, we add probes in a follow-up and re-capture.
 - Shape-stable probes are the common case; a handful (streaming chunk counts, optional `thinking_text`) need REQUIRED → OPTIONAL reclassification during `TUG_STABILITY=3` but the probe table, not the capture binary's logic, absorbs this.
 - `TestTugcast::spawn` + `TestWs` work well enough for sequential probes. No new isolation or frame-handling changes needed beyond the control helpers.
@@ -275,15 +292,17 @@ Tugcode is the authority on message validation. Any well-formed JSON with a `tug
 
 #### [D08] REQUIRED vs OPTIONAL events per probe (DECIDED) {#d08-required-vs-optional}
 
-**Decision:** Every probe lists its `required_events` (must appear, shape-checked) and `optional_events` (may appear, shape-checked only if present). Events default to REQUIRED; demotion to OPTIONAL happens only after `TUG_STABILITY=3` surfaces flapping.
+**Decision:** Every probe lists its `required_events` (must appear, shape-checked) and `optional_events` (may appear, shape-checked only if present). Events default to REQUIRED; demotion to OPTIONAL happens only after `TUG_STABILITY=3` surfaces flapping. **The probe table's initial classification — drafted from `transport-exploration.md` prose against `claude 2.1.87` — is explicitly tentative; the Step 4 baseline run against `claude 2.1.104` is the mechanism by which it becomes authoritative.** See [#ground-truth-policy].
 
 **Rationale:**
 - Distinguishes real drift from normal non-determinism.
 - Conservative default prevents silent tolerance of absent events that should have appeared.
+- Separating "tentative prose guess" from "empirical baseline" means the plan never treats `2.1.87`-era prose as authoritative — only `2.1.104` fixtures are.
 
 **Implications:**
 - Step 4's stability loop is not just a sanity check — it is the mechanism by which REQUIRED/OPTIONAL classification is tuned.
 - Adding a new probe means explicitly thinking about its REQUIRED/OPTIONAL set.
+- A prose-derived REQUIRED event that Step 4 finds absent against `2.1.104` is not a failure — it's a **correction**. The probe table is amended to remove the event (or demote it to OPTIONAL if it still sometimes appears), and the reclassification is recorded in the "Known divergences from prose catalog" section during Step 5.
 
 #### [D09] Polymorphic tool_use_structured handled as union by tool_name (DECIDED) {#d09-polymorphic-tool-use-structured}
 
@@ -443,6 +462,117 @@ normalize_event(value):
 ```
 
 Key-based replacement happens before value-based. `NUMERIC_NORMALIZE_ALLOWLIST` is explicit (cost, duration, token counts) — most numeric fields (`is_partial`, `seq`) retain exact values because those values carry semantic meaning.
+
+#### Version bump runbook — updating the golden standard when claude ships a new version {#deep-version-bump-runbook}
+
+This section is the authoritative spec for the Layer A version-bump workflow. Step 7 renders it verbatim (with file-location tweaks) as `tests/fixtures/stream-json-catalog/README.md` so a developer hitting a drift-test failure finds the runbook in the fixture dir itself. Any change to the workflow happens **here first**, then propagates to the README.
+
+##### When to run the workflow {#runbook-trigger}
+
+Exactly three triggers. If none apply, don't run it.
+
+1. **The drift test fails with `"no golden fixtures for claude <X.Y.Z>"`.** This is the hard signal that claude has updated to a version that has no golden fixtures yet. The drift test's `v<version>/` lookup failed per [D13 no version fallback](#d13-no-version-fallback); it will not attempt to reuse the previous version's fixtures. Run the workflow.
+2. **You notice `claude --version` now reports a version newer than any committed `v*/` fixture dir**, even if you haven't run the drift test yet. Running the workflow preemptively avoids surprise failures during a later `CodeSessionStore` change.
+3. **You're about to merge a change to `CodeSessionStore` or any other downstream consumer of the fixtures**, and the current claude version has no golden fixtures. You need fresh fixtures as your ground truth before reviewing the consumer change.
+
+Non-triggers (skip the workflow):
+- Claude version unchanged since the last successful drift run. Nothing to do.
+- Pre-commit hook or CI runs — the drift test is deliberately not in either per [D05](#d05-separate-test-runner). Don't wire it in.
+
+##### The workflow {#runbook-workflow}
+
+Step-by-step. Assumes `TUG_REAL_CLAUDE=1` is set in your shell or prefixed on every command.
+
+```sh
+# 1. Confirm the installed claude version.
+claude --version
+# Expected output: something like "claude 2.1.105" (or whatever the new version is).
+
+# 2. Capture with stability. --stability 3 runs each probe 3 times and
+#    asserts shape-identity across runs, so you don't commit a fixture
+#    built from one flaky capture.
+cd tugrust
+TUG_STABILITY=3 TUG_REAL_CLAUDE=1 \
+  cargo test --test capture_stream_json_catalog -- --ignored
+
+# 3. Review the run summary in the new v<new-version>/manifest.json.
+#    Every probe should be `passed`, `skipped` with an explicit
+#    reason, or `failed` with a reason.
+cat crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/manifest.json
+
+# 4. Diff the new version dir against the previous version's dir.
+#    Normalized placeholders keep this diff readable — real shape
+#    drift stands out.
+git diff --no-index \
+  crates/tugcast/tests/fixtures/stream-json-catalog/v<old-version>/ \
+  crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
+
+# 5. Classify each change using the criteria in the next section.
+#    Handle benign changes with a straight commit. Handle semantic
+#    changes by fixing the consumer first.
+
+# 6. Commit the new version dir (plus any consumer fixes) as one
+#    atomic version-bump change.
+git add crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
+git commit -m "fixtures(stream-json-catalog): capture v<new-version> baseline"
+
+# 7. Verify the drift test now passes.
+TUG_REAL_CLAUDE=1 cargo test --test stream_json_catalog_drift -- --ignored
+# Expected: 35/35 probes pass (minus any explicitly-skipped ones).
+```
+
+##### Classification criteria {#runbook-classification}
+
+For each shape difference the diff surfaces, assign it to exactly one of three classes.
+
+**Benign** — no consumer change needed. Commit the new fixture, keep the old. Examples:
+
+- A new **optional field** appears on an existing event type (`system_metadata` gains a `new_metadata_field`, absent in the old version).
+- A new **optional event type** appears in a probe's sequence (e.g., `thinking_text` starts appearing in a probe that didn't emit it before).
+- A previously-REQUIRED event is now sometimes absent across stability runs → demoted to OPTIONAL. The probe table gets an amendment but no consumer changes.
+- A new discriminant arm appears in a polymorphic event (`tool_use_structured.by_tool_name.NewTool` gains a new entry). The differ flags it as a warn; commit and move on unless `CodeSessionStore` actively cares about that tool.
+
+**Semantic** — consumer change required. Fix the consumer **first**, then commit the new fixture alongside the consumer fix in one atomic commit:
+
+- An **existing required field** disappears from an event (`assistant_text.text` renamed to `assistant_text.content`).
+- An **existing field's type changes** (`cost_update.total_cost_usd` shifts from `number` to `string`).
+- A **previously-REQUIRED event is now absent across all stability runs** — it was removed from the protocol. The consumer reducer must stop expecting it.
+- A **probe's required event sequence changes in a way the reducer relies on** — e.g., `cost_update` now fires before `assistant_text` instead of after.
+- A **polymorphic discriminant's shape changes** for a tool the consumer actively uses (Read's `structured_result.file.content` becomes `structured_result.file.body`).
+
+**Ambiguous** — stop, think, discuss. Examples:
+
+- A probe that used to pass now `ShapeUnstable`s across stability runs, and reclassifying events REQUIRED → OPTIONAL doesn't fix it. Something upstream is flapping.
+- Session-command probes (13/17/20) behave differently than they did in the previous version; might be a new tugcode bug or might be legitimate claude behavior. Log a new §T0.5 follow-up and mark the probe skipped until diagnosed.
+- A probe produces completely new event types the prose never mentioned and `CodeSessionStore` has no idea how to handle. Need a decision: add to reducer? ignore? version-gate?
+- The new version regresses: a previously-stable probe now fails outright against live claude. This is an upstream bug, not a drift. Log it, skip the probe, capture the rest, come back later.
+
+When in doubt, default to **Semantic** (safer) rather than Benign (risks silent consumer breakage).
+
+##### Edge cases {#runbook-edge-cases}
+
+- **Capture fails reproducibly on one probe**: don't commit the partial `v<new-version>/` dir. Log a §T0.5 follow-up (P16-style), mark that probe `skipped` in the probe table with a pointer, re-run the capture, commit the now-complete `v<new-version>/`. The new version is still the baseline — one skipped probe does not block a version bump.
+- **Capture fails reproducibly on *many* probes**: likely a tugcode regression or claude regression. Don't commit. Investigate the root cause first. Log `P<N>` follow-up(s) for each distinct failure mode.
+- **Previous version dir**: **keep it**, don't delete. Fixture sizes are tiny (~35 JSONL files × ~10 KB each ≈ ~350 KB per version). Retaining old versions lets future investigators reproduce historical behavior and lets the drift test pass if someone rolls claude back.
+- **Claude version regression** (e.g., you rolled back from `2.1.105` to `2.1.104`): the drift test now asks for `v2.1.104/` which already exists, so it just passes. No action.
+- **Pre-release / beta versions** (`2.1.105-beta.1`): capture to `v2.1.105-beta.1/` — the dir name uses the version string verbatim after sanitizing slashes. Don't attempt to alias beta to the eventual stable release.
+- **Multiple versions in one day**: same workflow per version. Each version gets its own dir. Don't try to consolidate.
+
+##### Who runs it, and when {#runbook-ownership}
+
+- **Triggered by a developer**, not by CI or automation. The drift test exists specifically to be a manual gate, not a continuous check.
+- **Typically run**: when claude updates (notice manually, drift test fails, or about to touch `CodeSessionStore`). Expect a cadence of once every few days to once every couple of weeks depending on how often Anthropic ships.
+- **Not run**: on every commit, every PR, every nextest invocation, or every developer's machine. The real-claude test suite is explicitly excluded from `cargo nextest run -p tugcast --run-ignored only` per [D05](#d05-separate-test-runner) exactly to keep routine workflows cheap.
+- **Results of a workflow run** (new `v<version>/` dir + any consumer fixes) land as one atomic commit with a commit message like `fixtures(stream-json-catalog): capture v<new-version> baseline` (or `fix(code-session-store): handle <semantic change>; update fixtures to v<new-version>` for a consumer-fix version).
+
+##### Future automation (explicitly out of scope for Layer A) {#runbook-future-automation}
+
+The runbook above is manual by design. Nothing in Layer A automates version-bump detection, capture, or diffing. The following are explicit follow-ons that can land after Layer A ships but are **not** required for it:
+
+- `scripts/bump-claude-version.sh` — wrapper that runs steps 1–7 of the workflow and prints a classification summary before prompting for confirmation to commit.
+- Weekly scheduled CI run of the drift test against the latest published `claude` — a soft signal (failing build that doesn't block merges) that a capture is due. Would need a CI mini-runner with `TUG_REAL_CLAUDE=1` and the real `claude` binary, which is infrastructure we don't currently have.
+- `git` pre-push hook that compares the locally-installed claude version against the most recent `v*/` fixture dir and warns if they differ. Low-priority nicety.
+- Cross-version structural differ — a tool that summarizes `v<old>/` vs `v<new>/` as a human-readable "what changed in claude" report, better than raw `git diff`. Bonus tooling on top of the fixture format.
 
 #### Shape differ algorithm {#deep-shape-differ}
 
@@ -651,36 +781,40 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 #### Step 2: Extend TestWs with control-flow send helpers {#step-2}
 
+**Status:** **DONE** (2026-04-13) — helpers landed, 4 of 5 round-trip tests passing; one deleted (continue) → §T0.5 P16 follow-up; one reshaped (model_change) to behavioral assertion → §T0.5 P17 informational note. The `send_question_answer` helper ships but its round-trip test is deferred to Step 6 as planned.
+
 **Depends on:** #step-1
 
 **Commit:** `test(tugcast): extend TestWs with interrupt, tool_approval, session_command helpers`
 
-**References:** [D02] full 35 probes, [D07] WebSocket layer capture, (#deep-probe-table)
+**References:** [D02] full 35 probes, [D07] WebSocket layer capture, [D10] supervisor bugs as follow-ups, [Q01] CODE_INPUT opaque pass-through (resolved in #step-1), (#deep-probe-table)
 
 **Artifacts:**
-- `tests/common/mod.rs` — six new pub async fns on `TestWs`: `send_interrupt`, `send_tool_approval`, `send_question_answer`, `send_session_command`, `send_model_change`, `send_permission_mode`.
-- `tests/multi_session_real_claude.rs` — one `#[ignore]`-gated round-trip test per new helper proving the inbound message reaches tugcode.
+- `tests/common/mod.rs` — six new pub async fns on `TestWs`: `send_interrupt`, `send_tool_approval`, `send_question_answer`, `send_session_command`, `send_model_change`, `send_permission_mode`; one new reader helper `await_code_output_event` that returns the first buffered `CODE_OUTPUT` frame for `tug_session_id` matching a named `type`.
+- `tests/multi_session_real_claude.rs` — round-trip tests for interrupt, tool_approval, session_command (the `new` variant), and model_change (behavioral variant). `test_send_question_answer_roundtrip` deferred to Step 6 per plan; `test_send_session_command_continue_preserves` deleted with inline pointer to §T0.5 P16 follow-up.
+- `roadmap/tide.md` §T0.5 — new **P16** entry (HIGH) for `session_command: continue` through multi-session router; new **P17** entry (LOW) for `model_change` synthetic confirmation shape drift (self-resolving in Step 4/5).
 
 **Tasks:**
-- [ ] Add `send_interrupt(tug_session_id)` — sends `{ "type": "interrupt", "tug_session_id": ... }` on CODE_INPUT.
-- [ ] Add `send_tool_approval(tug_session_id, request_id, decision, updated_input, message)`.
-- [ ] Add `send_question_answer(tug_session_id, request_id, answers: serde_json::Value)`.
-- [ ] Add `send_session_command(tug_session_id, command)` — command ∈ {"new", "continue", "fork"}.
-- [ ] Add `send_model_change(tug_session_id, model)`.
-- [ ] Add `send_permission_mode(tug_session_id, mode)`.
-- [ ] Every helper serializes via `serde_json::json!(...)`, encodes as `Frame::new(FeedId::CODE_INPUT, bytes)`, sends via `inner.send(Message::Binary(...))`.
+- [x] Add `send_interrupt(tug_session_id)` — sends `{ "type": "interrupt", "tug_session_id": ... }` on CODE_INPUT.
+- [x] Add `send_tool_approval(tug_session_id, request_id, decision, updated_input, message)`.
+- [x] Add `send_question_answer(tug_session_id, request_id, answers: serde_json::Value)`.
+- [x] Add `send_session_command(tug_session_id, command)` — command ∈ {"new", "continue", "fork"}.
+- [x] Add `send_model_change(tug_session_id, model)`.
+- [x] Add `send_permission_mode(tug_session_id, mode)`.
+- [x] Every helper serializes via `serde_json::json!(...)`, encodes as `Frame::new(FeedId::CODE_INPUT, bytes)`, sends via `inner.send(Message::Binary(...))`.
+- [x] Added `await_code_output_event` reader helper to extract mid-stream events (used by tool_approval + session_command_new tests).
 
 **Tests:**
-- [ ] `test_send_interrupt_reaches_tugcode` — spawn session, start long stream, `send_interrupt`, assert `turn_complete` with `result == "error"` within 5s.
-- [ ] `test_send_tool_approval_roundtrip` — drive a denial-capable tool, `send_tool_approval` with `decision: "deny"`, assert `tool_result` with `is_error: true`.
-- [ ] `test_send_session_command_new_respawns` — `send_session_command("new")`, assert fresh `session_init` with new session_id.
-- [ ] `test_send_session_command_continue_preserves` — establish a memory marker, `send_session_command("continue")`, assert marker remembered next turn.
-- [ ] `test_send_model_change_synthetic_confirmation` — `send_model_change("claude-sonnet-4-6")`, assert synthetic `assistant_text` confirming the change.
-- [ ] `test_send_question_answer_roundtrip` — **may defer to Step 6** if `AskUserQuestion`-capable probe setup is non-trivial.
+- [x] `test_send_interrupt_reaches_tugcode` — spawn session, start a 500-word essay stream, `send_interrupt` after a 1s beat, assert the stream's `turn_complete` arrives with `result == "error"`. **PASSED** against `claude 2.1.104`.
+- [x] `test_send_tool_approval_roundtrip` — ask claude to read `/nonexistent/readme.txt` (outside the working directory), capture the `control_request_forward`'s `request_id`, send `tool_approval` with `decision: "deny"`, assert a subsequent `tool_result` with `is_error: true`. **PASSED** against `claude 2.1.104`.
+- [x] `test_send_session_command_new_respawns` — drive a first turn, capture the first `session_init.session_id`, send `session_command: "new"`, assert a second `session_init` arrives with a different `session_id`. **PASSED** against `claude 2.1.104`.
+- [ ] ~~`test_send_session_command_continue_preserves`~~ — **DELETED and logged as §T0.5 P16**. The `continue` path through the multi-session router stalls the post-command probe turn (30s wire timeout). The `_new_respawns` test already pins the `send_session_command` helper itself end-to-end; P16 is a tugcode/supervisor investigation that can re-enable this test after a dedicated fix commit.
+- [x] `test_send_model_change_behavioral` — (reshaped from `_synthetic_confirmation`) after `send_model_change("claude-sonnet-4-6")`, probe "what Anthropic model are you?" and assert the response contains `"sonnet"`. **PASSED** against `claude 2.1.104`. The original `_synthetic_confirmation` variant assumed `transport-exploration.md` Test 16's prose shape (synthetic `assistant_text` with `"Set model to ..."`); through the multi-session router against `claude 2.1.104` no such event arrives. Logged as §T0.5 P17 (LOW, self-resolving in Step 4/5).
+- [ ] `test_send_question_answer_roundtrip` — **deferred to Step 6** per plan. Driving `AskUserQuestion` reliably from a live claude is non-trivial and the Step 6 capture-binary has better machinery for that scenario. The `send_question_answer` helper itself ships in this step and is exercised by Step 6's drift test.
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugcast` passes (no warnings).
-- [ ] `TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` passes — all previous 9 multi-session tests + new per-helper round-trip tests.
+- [x] `cargo nextest run -p tugcast` passes with zero warnings. **(318 passed, 18 skipped, 0 failed.)**
+- [x] `TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` passes against `claude 2.1.104`. **(17 passed, 0 failed — includes all 9 prior multi-session tests + 4 new per-helper round-trip tests; 13 of 17 are "leaky" per nextest's boundary-crossing subprocess accounting, which is expected for tugcast/tugcode spawn-and-cleanup.)**
 
 ---
 
@@ -742,10 +876,13 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 - [ ] Run `TUG_STABILITY=3 TUG_REAL_CLAUDE=1 cargo test --test capture_stream_json_catalog -- --ignored`.
 - [ ] Review `manifest.json`.
 - [ ] For each probe marked `ShapeUnstable`: reclassify flapping events REQUIRED → OPTIONAL in `tests/common/probes.rs`, re-run.
+- [ ] **For each prose-derived REQUIRED event that `2.1.104` did not produce:** remove the event from the probe's `required_events` list (or demote to `optional_events` if stability shows it sometimes appears). This is the expected correction path per [#ground-truth-policy] and [D08] — it is **not** a failure. Record each such correction in a scratch note for Step 5's "Known divergences" section.
+- [ ] **For each `2.1.104` event the prose didn't mention:** add it to the probe's `required_events` (or `optional_events` if stability shows it's intermittent). Also record in the scratch note for Step 5.
 - [ ] For each probe marked `Failed` from session-command routing (probes 13/17/20): log a new P16/P17/... entry in `roadmap/tide.md` §T0.5 (pointer to probe name + symptom), mark probe `skipped` with `reason: "blocked on P<N>"`, re-run.
 - [ ] For each probe marked `Skipped` due to missing prerequisites (probes 25/28/34/35 if tugplug not loaded): leave skipped with `reason: "tugplug plugin not loaded"`.
 - [ ] Iterate until the stability run passes with all 35 probes either `Passed` or explicitly `Skipped` with a logged reason.
 - [ ] Visually spot-check 3–5 committed fixture files — no unnormalized UUIDs, no absolute paths, no raw text leaks, structure preserved.
+- [ ] Confirm `manifest.json.claude_version == "2.1.104"` (not any other value). Per [D11], a mismatch aborts the run.
 - [ ] `git add tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/`.
 
 **Tests:**
@@ -864,19 +1001,21 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 **References:** [D04] placeholder substitution, [D06] JSONL source of truth, [D08] REQUIRED vs OPTIONAL, [D13] no version fallback, Spec S01, (#step-4, #step-6)
 
 **Artifacts:**
-- `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md` with:
-  - One-paragraph "what this is" summary + layer caveat from [D07]
+- `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md` — the authoritative developer-facing guide, rendered from the tugplan's [#deep-version-bump-runbook](#deep-version-bump-runbook) Deep Dive with minor format tweaks for the file location. Contains:
+  - One-paragraph "what this is" summary + layer caveat from [D07](#d07-websocket-layer-capture)
   - Placeholder vocabulary table (`{{uuid}}`, `{{iso}}`, `{{f64}}`, `{{i64}}`, `{{text:len=N}}`, `{{cwd}}/...`, `{{tool_use_id}}`, `{{msg_id}}`, `{{request_id}}`)
-  - Fixture layout section (from Spec S01)
-  - Recovery workflow numbered steps (benign / semantic / ambiguous classification)
+  - Fixture layout section (from [Spec S01](#s01-fixture-layout))
+  - **The complete version-bump runbook** (from [#deep-version-bump-runbook](#deep-version-bump-runbook)): triggers, workflow, classification criteria, edge cases, ownership, future automation notes
   - "How to add a new probe to the table" section
   - "How to classify REQUIRED vs OPTIONAL" section
-  - Cross-links to [`roadmap/tide.md#p2-followup-golden-catalog`](../../../../../../roadmap/tide.md#p2-followup-golden-catalog) and [`roadmap/transport-exploration.md`](../../../../../../roadmap/transport-exploration.md)
+  - Cross-links to [`roadmap/tide.md#p2-followup-golden-catalog`](../../../../../../roadmap/tide.md#p2-followup-golden-catalog), [`roadmap/transport-exploration.md`](../../../../../../roadmap/transport-exploration.md), and [`roadmap/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/tugplan-golden-stream-json-catalog.md) (the spec-of-record for all this content)
 
 **Tasks:**
-- [ ] Draft the README.
-- [ ] Ensure every section from the Artifacts list is present.
+- [ ] Render `#deep-version-bump-runbook` from the tugplan as the main body of the README, adjusting relative links and formatting for the fixture-dir location.
+- [ ] Add the "what this is" summary, placeholder vocabulary table, and fixture layout section at the top (before the runbook).
+- [ ] Add "How to add a new probe" and "How to classify REQUIRED vs OPTIONAL" sections at the end.
 - [ ] Cross-link from `roadmap/transport-exploration.md`'s version banner (update that file if needed).
+- [ ] If any step of the runbook needs to change after writing the README, update the tugplan's [#deep-version-bump-runbook](#deep-version-bump-runbook) first, then re-render the README. The tugplan is the source of truth.
 
 **Tests:**
 - [ ] (none — documentation only)

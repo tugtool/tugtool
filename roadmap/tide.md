@@ -1501,6 +1501,51 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 
 **Schedule:** Lands after T3.4.a's first working version. Layer C's version-adaptive reducer scaffold is informed by what fields `CodeSessionStore` actually depends on, which is only legible once the store exists. T3.4.b/c/d can proceed in parallel with P15 once T3.4.a is in.
 
+#### P16: `session_command: continue` through multi-session router (HIGH) {#p16-session-command-continue}
+
+**Problem:** The `session_command: continue` message, sent via tugcast's `CODE_INPUT` feed to a per-session tugcode worker, does not produce a working post-command turn. Discovered during tugplan-golden-stream-json-catalog Step 2 while writing the per-helper round-trip test `test_send_session_command_continue_preserves`:
+
+1. Spawn a session, plant a memory marker via the first turn (`"Remember GAZEBO"`). First turn completes normally.
+2. Send `session_command: continue` via `TestWs::send_session_command`.
+3. Send a probe `user_message` asking which word the model was told to remember.
+4. `collect_code_output` for the probe turn times out at 30s — no `turn_complete` arrives.
+
+Stderr shows `[tugcode] Plugin dir:` appearing twice within a single session lifetime, suggesting tugcode re-spawns its claude child on `continue` (likely with `--resume <session_id>`). From tugcast's side the bridge worker's stdin/stdout are the same tugcode pipes, so the new claude's events should flow back through. Something in that handoff — either tugcode's own state tracking across the respawn, or a mismatched session-id on the user_message, or claude rejecting the replayed message — stalls the probe turn.
+
+Per transport-exploration.md Test 17 (captured via the legacy direct-tugtalk probe), `continue` was "seamless, in-place, no process kill." The multi-session router path may be exposing a real tugcode bug that the direct probe path didn't, **or** the router is mishandling the frame in a way the direct probe sidestepped, **or** `claude 2.1.104` handles `continue` differently than `2.1.87`. All three are plausible; diagnosis requires instrumenting tugcode's session_command handler and comparing its post-continue state to a known-good direct-probe capture.
+
+**Evidence:**
+- `test_send_session_command_continue_preserves` was deleted from `tests/multi_session_real_claude.rs` in the Step 2 commit (log: "surfaced a tugcode/supervisor bug on the `continue` path").
+- `test_send_session_command_new_respawns` (the `new` variant) passes — the `send_session_command` helper itself is sound; the bug is specific to `continue`.
+
+**Fix:**
+- Instrument tugcode's session_command handler to log the exact sequence of actions on `continue` (kill? respawn? `--resume`? preserve pipes?).
+- Reproduce via direct tugtalk probe against `claude 2.1.104` and compare against the multi-session router path.
+- If the bug is in tugcode: fix tugcode's state tracking.
+- If the bug is in the multi-session router: extend Step 2's opaque pass-through audit to cover the specific continue handoff pattern.
+- Re-enable `test_send_session_command_continue_preserves` (or a minimal equivalent) and land a Step 6 drift probe for session_command: continue end-to-end.
+
+**Scope:** `tugcode/src/session.ts` (likely), `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` (possibly), `tugrust/crates/tugcast/tests/multi_session_real_claude.rs` (restoration).
+
+**Schedule:** Land before tugplan-golden-stream-json-catalog Step 4 (baseline capture) so probe 17 can ship unskipped in the `v2.1.104/` fixtures. If diagnosis takes longer than a quick round, allow probe 17 to be marked `skipped` in the initial baseline and land the fix as a follow-up.
+
+#### P17: `model_change` synthetic confirmation shape drift (LOW) {#p17-model-change-confirmation-shape}
+
+**Problem:** `transport-exploration.md` Test 16 (captured via the legacy direct-tugtalk probe against `claude 2.1.87`) documented that `model_change` produces a synthetic `assistant_text` with the literal text `"Set model to <model>"`. Through the tugcast multi-session router path against `claude 2.1.104`, no such `assistant_text` arrives — the `test_send_model_change_synthetic_confirmation` test (written from the prose) timed out after 30s waiting for that event type.
+
+The `send_model_change` helper itself is sound: `test_send_model_change_behavioral` (the replacement test, which probes "what model are you?" after the change and asserts "sonnet" in the response) passes. The model change takes effect; only the confirmation event's shape differs from the prose.
+
+**Why LOW:** This is exactly the class of drift the P2-follow-up golden catalog is designed to catch, and it's informational (behavioral functionality intact). The right fix is to capture `v2.1.104/` fixtures in Step 4 and let them be the ground truth for `model_change`'s observable event sequence. The prose is then downgraded as expected.
+
+**Fix:**
+- Step 4 baseline capture records whatever events `model_change` actually produces against `claude 2.1.104`.
+- Step 5 "Known divergences from prose catalog" section notes the delta from Test 16's prose.
+- No code change needed in tugcast or tugcode.
+
+**Scope:** `roadmap/transport-exploration.md` (known-divergences section, updated in Step 5).
+
+**Schedule:** Self-resolves during tugplan-golden-stream-json-catalog Step 4 + Step 5. No separate landing required.
+
 #### P8: Auth for remote use (LOW)
 
 **Problem:** Session cookie + origin validation for localhost only. The "remote use comes for free" architecture works at the transport level, but auth doesn't survive network deployment.

@@ -277,6 +277,148 @@ impl TestWs {
             .expect("send code_input frame");
     }
 
+    // -----------------------------------------------------------------
+    // Control-flow CODE_INPUT helpers (tugplan Step 2)
+    //
+    // Each helper serializes a typed tugcode inbound message into a
+    // CODE_INPUT frame. The router's `CODE_INPUT` path is opaque
+    // pass-through — see [Q01] resolution in
+    // `roadmap/tugplan-golden-stream-json-catalog.md` — so tugcast
+    // never inspects the payload beyond the `tug_session_id` field.
+    // Tugcode is the authority on message validation.
+    // -----------------------------------------------------------------
+
+    /// Send an `interrupt` control message to stop the current turn.
+    /// Per transport-exploration.md Test 6, interrupt produces
+    /// `turn_complete` with `result: "error"` (not a separate
+    /// `turn_cancelled` event).
+    pub async fn send_interrupt(&mut self, tug_session_id: &str) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "interrupt",
+        });
+        let bytes = serde_json::to_vec(&payload).expect("interrupt json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send interrupt frame");
+    }
+
+    /// Answer a `control_request_forward` carrying a permission
+    /// prompt. Shape per transport-exploration.md Test 11.
+    /// `updated_input` and `message` are optional and omitted when
+    /// `None`.
+    pub async fn send_tool_approval(
+        &mut self,
+        tug_session_id: &str,
+        request_id: &str,
+        decision: &str,
+        updated_input: Option<serde_json::Value>,
+        message: Option<&str>,
+    ) {
+        let mut payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "tool_approval",
+            "request_id": request_id,
+            "decision": decision,
+        });
+        let obj = payload
+            .as_object_mut()
+            .expect("tool_approval payload is object");
+        if let Some(input) = updated_input {
+            obj.insert("updatedInput".to_string(), input);
+        }
+        if let Some(msg) = message {
+            obj.insert(
+                "message".to_string(),
+                serde_json::Value::String(msg.to_string()),
+            );
+        }
+        let bytes = serde_json::to_vec(&payload).expect("tool_approval json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send tool_approval frame");
+    }
+
+    /// Answer a `control_request_forward` carrying an
+    /// `AskUserQuestion` prompt. Shape per the "Inbound Message Types"
+    /// table in transport-exploration.md.
+    pub async fn send_question_answer(
+        &mut self,
+        tug_session_id: &str,
+        request_id: &str,
+        answers: serde_json::Value,
+    ) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "question_answer",
+            "request_id": request_id,
+            "answers": answers,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("question_answer json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send question_answer frame");
+    }
+
+    /// Send a `session_command` message (`"new"` | `"continue"` |
+    /// `"fork"`). Per transport-exploration.md Tests 13, 17, 20, `new`
+    /// and `fork` kill and respawn the underlying claude subprocess
+    /// (readiness gap); `continue` is in-place with context preserved.
+    pub async fn send_session_command(&mut self, tug_session_id: &str, command: &str) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "session_command",
+            "command": command,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("session_command json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send session_command frame");
+    }
+
+    /// Send a `model_change` message. Per transport-exploration.md
+    /// Test 16, this produces a synthetic `assistant_text` confirming
+    /// the change and updates `system_metadata.model` on the next
+    /// turn.
+    pub async fn send_model_change(&mut self, tug_session_id: &str, model: &str) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "model_change",
+            "model": model,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("model_change json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send model_change frame");
+    }
+
+    /// Send a `permission_mode` message. Per the "Inbound Message
+    /// Types" catalog in transport-exploration.md, mode ∈
+    /// {`"default"`, `"acceptEdits"`, `"bypassPermissions"`, ...}.
+    pub async fn send_permission_mode(&mut self, tug_session_id: &str, mode: &str) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "permission_mode",
+            "mode": mode,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("permission_mode json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send permission_mode frame");
+    }
+
     /// Wait for a `SESSION_STATE` frame whose payload announces
     /// `target_state` for `tug_session_id`. Consumes the matching frame
     /// from the buffer on success.
@@ -296,6 +438,33 @@ impl TestWs {
             .await?;
         self.buffer.remove(idx);
         Ok(())
+    }
+
+    /// Wait for the first `CODE_OUTPUT` event for `tug_session_id`
+    /// whose `type` field matches `event_type`. Returns the matching
+    /// frame's payload and removes it from the buffer. Non-matching
+    /// frames stay buffered for later collectors.
+    ///
+    /// Useful when a test needs to inspect a mid-stream event (e.g.,
+    /// `control_request_forward` to extract a `request_id`, or
+    /// `session_init` to capture the underlying `session_id`) without
+    /// waiting for the terminal `turn_complete`.
+    pub async fn await_code_output_event(
+        &mut self,
+        tug_session_id: &str,
+        event_type: &str,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + timeout;
+        let idx = self
+            .pump_until(deadline, |f| {
+                f.feed_id == FeedId::CODE_OUTPUT
+                    && f.payload["tug_session_id"] == tug_session_id
+                    && f.payload["type"] == event_type
+            })
+            .await?;
+        let frame = self.buffer.remove(idx);
+        Ok(frame.payload)
     }
 
     /// Collect `CODE_OUTPUT` payloads for `tug_session_id` from the

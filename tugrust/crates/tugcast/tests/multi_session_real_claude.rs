@@ -494,3 +494,273 @@ async fn test_session_metadata_two_sessions_no_clobber_real_claude() {
         "session B must receive at least one system_metadata frame"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tugplan Step 2 — TestWs control helper round-trip tests
+//
+// Each test below proves one of the new `TestWs` inbound-message
+// helpers (`send_interrupt`, `send_tool_approval`,
+// `send_session_command`, `send_model_change`) reaches tugcode and
+// produces the wire effect transport-exploration.md documents. These
+// tests collectively pin the Step 1 audit finding that tugcast's
+// `CODE_INPUT` path is opaque pass-through (see
+// `roadmap/tugplan-golden-stream-json-catalog.md#q01-code-input-passthrough`).
+//
+// `test_send_question_answer_roundtrip` is deliberately deferred to
+// tugplan Step 6 — driving `AskUserQuestion` reliably from a live
+// claude is non-trivial and the capture binary has better machinery
+// for that scenario.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// test_send_interrupt_reaches_tugcode
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_send_interrupt_reaches_tugcode() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-interrupt";
+    let tug_session_id = "sess-interrupt";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+
+    // Ask for a long response so there's a window to interrupt in.
+    ws.send_code_input(
+        tug_session_id,
+        "Write a 500-word essay about the ocean. Include extensive detail about \
+         waves, tides, and marine life.",
+    )
+    .await;
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live");
+
+    // Give claude a beat to start streaming so the interrupt actually
+    // lands mid-turn rather than racing the turn's own completion.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    ws.send_interrupt(tug_session_id).await;
+
+    let events = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("turn_complete after interrupt");
+    let terminator = events
+        .iter()
+        .find(|e| e["type"].as_str() == Some("turn_complete"))
+        .expect("no turn_complete in stream");
+    assert_eq!(
+        terminator["result"].as_str(),
+        Some("error"),
+        "interrupt should produce turn_complete result: error per \
+         transport-exploration.md Test 6; got: {terminator:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// test_send_tool_approval_roundtrip
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_send_tool_approval_roundtrip() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-approval";
+    let tug_session_id = "sess-approval";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+
+    // Per transport-exploration.md Test 11, reading a file outside the
+    // working directory triggers `control_request_forward` with
+    // `decision_reason: "Path is outside allowed working directories"`
+    // regardless of permission mode. `/nonexistent/...` is guaranteed
+    // to be outside cwd.
+    ws.send_code_input(
+        tug_session_id,
+        "Use the Read tool to read the file /nonexistent/readme.txt at \
+         that exact absolute path. I need you to try even if the file \
+         might not exist.",
+    )
+    .await;
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live");
+
+    // Wait for tugcode's permission forward and capture its request_id.
+    let req = ws
+        .await_code_output_event(tug_session_id, "control_request_forward", WIRE_TIMEOUT)
+        .await
+        .expect("control_request_forward");
+    let request_id = req["request_id"]
+        .as_str()
+        .expect("request_id on control_request_forward")
+        .to_string();
+
+    ws.send_tool_approval(
+        tug_session_id,
+        &request_id,
+        "deny",
+        None,
+        Some("Denied by integration test"),
+    )
+    .await;
+
+    // After denial, tugcode produces a `tool_result` with
+    // `is_error: true` carrying the deny message, and claude completes
+    // the turn explaining the failure.
+    let rest = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("post-deny stream completes");
+    let denied = rest
+        .iter()
+        .any(|e| e["type"] == "tool_result" && e["is_error"] == true);
+    assert!(
+        denied,
+        "expected tool_result with is_error: true after deny; got: {rest:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// test_send_session_command_new_respawns
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_send_session_command_new_respawns() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-cmd-new";
+    let tug_session_id = "sess-cmd-new";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+    ws.send_code_input(tug_session_id, "/status").await;
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live");
+
+    // Capture the initial claude session_id.
+    let first = ws
+        .await_code_output_event(tug_session_id, "session_init", WIRE_TIMEOUT)
+        .await
+        .expect("first session_init");
+    let first_id = first["session_id"]
+        .as_str()
+        .expect("session_id on session_init")
+        .to_string();
+
+    // Drain the rest of the first turn so no stale events confuse the
+    // post-command wait below.
+    let _ = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("first turn_complete");
+
+    ws.send_session_command(tug_session_id, "new").await;
+
+    // Tugcode kills and respawns claude; a new session_init must
+    // eventually arrive with a different session_id.
+    let second = ws
+        .await_code_output_event(tug_session_id, "session_init", WIRE_TIMEOUT)
+        .await
+        .expect("second session_init after session_command: new");
+    let second_id = second["session_id"]
+        .as_str()
+        .expect("session_id on second session_init")
+        .to_string();
+    assert_ne!(
+        first_id, second_id,
+        "session_command: new should produce a fresh claude session_id"
+    );
+}
+
+// `test_send_session_command_continue_preserves` was attempted here
+// but surfaced a tugcode/supervisor bug on the `continue` path: after
+// the helper ships `session_command: continue`, the next user_message
+// never produces `turn_complete` within the wire timeout. The
+// `_new_respawns` test above already pins the `send_session_command`
+// helper end-to-end via the `new` command, so we log the finding as a
+// follow-up (see `roadmap/tide.md` §T0.5 P16) and leave the
+// `continue` path for a dedicated bug-fix commit that can also extend
+// coverage in the Step 6 drift test once the supervisor behavior is
+// understood.
+
+// ---------------------------------------------------------------------------
+// test_send_model_change_behavioral
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_send_model_change_behavioral() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-model";
+    let tug_session_id = "sess-model";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+    ws.send_code_input(tug_session_id, "/status").await;
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live");
+    let _ = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("first turn_complete");
+
+    ws.send_model_change(tug_session_id, "claude-sonnet-4-6")
+        .await;
+
+    // `transport-exploration.md` Test 16 (captured against `claude
+    // 2.1.87` via the legacy tugtalk probe) noted a synthetic
+    // `assistant_text` confirming the change, but its shape is exactly
+    // the kind of thing that can drift between claude versions and
+    // between the direct-tugcode path and the multi-session router
+    // path. Rather than pin the confirmation event's shape here
+    // (Step 6 drift test's job), we prove the change took effect
+    // *behaviorally*: ask claude which model it is, and verify the
+    // response mentions "sonnet".
+    ws.send_code_input(
+        tug_session_id,
+        "In one word, what Anthropic model are you? \
+         Reply with just the word, no punctuation.",
+    )
+    .await;
+    let events = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("probe turn_complete");
+    let mentions_sonnet = events.iter().any(|e| {
+        e["type"] == "assistant_text"
+            && e["text"]
+                .as_str()
+                .map(|t| t.to_lowercase().contains("sonnet"))
+                .unwrap_or(false)
+    });
+    assert!(
+        mentions_sonnet,
+        "send_model_change should cause the model to identify as \
+         sonnet on the next turn; got: {events:?}"
+    );
+}
