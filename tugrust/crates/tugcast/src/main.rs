@@ -280,22 +280,18 @@ async fn main() {
         });
     }
 
-    // Session metadata snapshot — filters system_metadata from CODE_OUTPUT.
-    let (session_meta_tx, session_meta_rx) =
-        watch::channel(Frame::new(FeedId::SESSION_METADATA, vec![]));
-    let session_meta_feed = feeds::session_metadata::SessionMetadataFeed::new(code_tx.subscribe());
-    let session_meta_cancel = cancel.clone();
-    tokio::spawn(async move {
-        session_meta_feed
-            .run(session_meta_tx, session_meta_cancel)
-            .await;
-    });
+    // SESSION_METADATA wiring moved into the supervisor's merger_task per
+    // [D14] — a single router-owned watch::channel can clobber concurrent
+    // per-session metadata updates. The supervisor publishes on a dedicated
+    // broadcast sender; full plumbing lands in Step 8.
 
     // Create replay buffer for CodeOutput lag recovery (P4)
     use crate::router::{LagPolicy, ReplayBuffer};
     let code_replay = ReplayBuffer::new(1000);
 
-    // Resolve tugcode path and start agent bridge
+    // Resolve tugcode path — held here but only consumed by the supervisor
+    // once the multi-session router lands in Step 8. In the interim the
+    // tugcode subprocess is not spawned at tugcast startup.
     let tugcode_path =
         feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref(), &watch_dir);
     if !tugcode_path.exists() {
@@ -304,16 +300,12 @@ async fn main() {
             tugcode_path.display()
         );
     }
-    let agent_cancel = cancel.clone();
-    let agent_watch_dir = watch_dir.clone();
-    let agent_handles = feeds::agent_bridge::spawn_agent_bridge(
-        code_tx.clone(),
-        code_input_rx,
-        tugcode_path,
-        agent_watch_dir,
-        agent_cancel,
-        code_replay.clone(),
-    );
+    let _tugcode_path_step8 = tugcode_path;
+    // Drain CODE_INPUT into a no-op consumer until the supervisor dispatcher
+    // is wired in Step 8. Keeping the receiver alive prevents the input sink
+    // channel from closing and turning every router-side send into an error.
+    let mut code_input_rx_drain = code_input_rx;
+    tokio::spawn(async move { while code_input_rx_drain.recv().await.is_some() {} });
 
     // Build feed router with dynamic registration
     let mut feed_router = FeedRouter::new(
@@ -351,12 +343,11 @@ async fn main() {
         stats_proc_rx,
         stats_token_rx,
         stats_build_rx,
-        session_meta_rx,
     ];
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
-    snapshot_watches.extend(agent_handles.snapshot_watches);
+    // SESSION_METADATA and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
 
     // Start FileWatcher (event source) and FilesystemFeed (broadcast consumer)

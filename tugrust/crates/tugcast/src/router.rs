@@ -69,6 +69,7 @@ impl ReplayBuffer {
     }
 
     /// Push a frame into the buffer, evicting the oldest if at capacity.
+    #[allow(dead_code)]
     pub fn push(&self, frame: Frame) {
         let mut buf = self.frames.lock().unwrap();
         if buf.len() >= self.capacity {

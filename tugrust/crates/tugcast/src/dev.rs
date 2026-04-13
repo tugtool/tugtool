@@ -212,6 +212,7 @@ pub(crate) fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
 /// `/Users/kocienda/Mounts/u/src/tugtool`, it returns `/u/src/tugtool`.
 ///
 /// On non-macOS platforms, returns the path unchanged.
+#[allow(dead_code)]
 pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     {

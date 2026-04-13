@@ -9,6 +9,7 @@ use tugcast_core::protocol::{FeedId, Frame};
 pub const CODE_BROADCAST_CAPACITY: usize = 1024;
 
 /// Create a code output frame from JSON-lines data
+#[allow(dead_code)]
 pub fn code_output_frame(json_line: &[u8]) -> Frame {
     Frame::new(FeedId::CODE_OUTPUT, json_line.to_vec())
 }
@@ -33,7 +34,6 @@ pub fn parse_code_input(frame: &Frame) -> Option<String> {
 /// Scanning for the first `{` — rather than stamping at a hardcoded byte
 /// offset — guards against a Claude Code stream-json update that prepends
 /// whitespace or a BOM silently disabling session stamping.
-#[allow(dead_code)]
 pub fn splice_tug_session_id(line: &[u8], tug_session_id: &str) -> Vec<u8> {
     let Some(brace_idx) = line.iter().position(|b| *b == b'{') else {
         tracing::warn!(

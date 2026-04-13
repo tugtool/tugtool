@@ -1,63 +1,27 @@
-//! Session metadata snapshot feed.
+//! Session metadata detection helper.
 //!
-//! Subscribes to the CODE_OUTPUT broadcast, filters for `system_metadata`
-//! events, and republishes the latest one on a dedicated watch channel
-//! (FeedId::SESSION_METADATA). Late-connecting clients receive the current
-//! metadata via the watch channel's `borrow_and_update()` on handshake.
+//! Historically this module latched `system_metadata` frames from the shared
+//! CODE_OUTPUT broadcast onto a single `watch::channel<Frame>` owned by the
+//! router. Under the multi-session router, latching a single slot would
+//! clobber concurrent per-session metadata updates — see [D14] in
+//! `roadmap/tugplan-multi-session-router.md`. The supervisor now owns the
+//! detection inline in its merger task and stores the frame on
+//! `LedgerEntry::latest_metadata` (per-session) AND publishes it on a
+//! dedicated SESSION_METADATA broadcast sender.
 //!
-//! This follows the same snapshot-feed pattern as FILESYSTEM, GIT, and
-//! DEFAULTS — the router delivers the current watch value to every new
-//! client before streaming begins.
+//! All that remains of this module is the byte-level needle-scan helper:
+//! scanning the payload for `"type":"system_metadata"` is significantly
+//! cheaper than a full JSON parse on every CODE_OUTPUT frame, and the
+//! merger is called per-token so the hot-path micro-optimization still
+//! matters.
 
-use tokio::sync::{broadcast, watch};
-use tokio_util::sync::CancellationToken;
-use tracing::info;
-use tugcast_core::{FeedId, Frame};
-
-/// Needle bytes for identifying system_metadata events without a full
-/// JSON parse. The CODE_OUTPUT stream is high-volume; scanning bytes
-/// is significantly cheaper than deserializing every frame.
+/// Needle bytes for identifying `system_metadata` events without a full
+/// JSON parse.
 const SYSTEM_METADATA_NEEDLE: &[u8] = b"\"type\":\"system_metadata\"";
 
-/// Filters `system_metadata` events from the CODE_OUTPUT broadcast and
-/// publishes them as snapshot frames on SESSION_METADATA.
-pub struct SessionMetadataFeed {
-    code_rx: broadcast::Receiver<Frame>,
-}
-
-impl SessionMetadataFeed {
-    pub fn new(code_rx: broadcast::Receiver<Frame>) -> Self {
-        Self { code_rx }
-    }
-
-    pub async fn run(mut self, tx: watch::Sender<Frame>, cancel: CancellationToken) {
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => break,
-                result = self.code_rx.recv() => {
-                    match result {
-                        Ok(frame) => {
-                            if is_system_metadata(&frame.payload) {
-                                info!("session_metadata: publishing snapshot ({} bytes)", frame.payload.len());
-                                let meta_frame = Frame::new(
-                                    FeedId::SESSION_METADATA,
-                                    frame.payload.clone(),
-                                );
-                                let _ = tx.send(meta_frame);
-                            }
-                        }
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => break,
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Check if a payload contains a system_metadata event by scanning for
-/// the type field. This avoids a full JSON parse on every CODE_OUTPUT frame.
-fn is_system_metadata(payload: &[u8]) -> bool {
+/// Check if a payload contains a `system_metadata` event by scanning for
+/// the type field. Avoids a full JSON parse on every CODE_OUTPUT frame.
+pub fn is_system_metadata(payload: &[u8]) -> bool {
     payload
         .windows(SYSTEM_METADATA_NEEDLE.len())
         .any(|w| w == SYSTEM_METADATA_NEEDLE)

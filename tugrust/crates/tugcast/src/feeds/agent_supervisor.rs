@@ -29,18 +29,24 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use tugbank_core::{TugbankClient, Value};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
-use super::agent_bridge::CrashBudget;
+use super::agent_bridge::{
+    ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, TugcodeSpawner, run_session_bridge,
+};
 use super::code::parse_tug_session_id;
+use super::session_metadata::is_system_metadata;
 
 /// Tugbank domain used to persist the `(card_id → tug_session_id)` mapping
 /// so the router can rebind sessions on restart.
@@ -306,7 +312,32 @@ impl SessionKeysStore for TugbankClient {
 /// Runtime configuration for [`AgentSupervisor`]. Concrete fields are added as
 /// subsequent steps in the plan require them.
 #[derive(Debug, Clone, Default)]
-pub struct AgentSupervisorConfig {}
+pub struct AgentSupervisorConfig {
+    /// Absolute path to the tugcode binary (or `.ts` entry for bun fallback).
+    /// Only consumed by the default [`TugcodeSpawner`] factory.
+    pub tugcode_path: PathBuf,
+    /// Working directory passed to tugcode as `--dir`.
+    pub project_dir: PathBuf,
+}
+
+/// Factory that yields a fresh [`ChildSpawner`] for each session spawn. The
+/// default factory returns [`TugcodeSpawner`]; tests pass a closure returning
+/// a mock spawner so they can drive the bridge without a real subprocess.
+pub type SpawnerFactory = Arc<dyn Fn() -> Arc<dyn ChildSpawner> + Send + Sync>;
+
+/// Build the default production spawner factory from an
+/// [`AgentSupervisorConfig`]. Each call to the factory clones the configured
+/// paths into a fresh [`TugcodeSpawner`].
+pub fn default_spawner_factory(config: &AgentSupervisorConfig) -> SpawnerFactory {
+    let tugcode_path = config.tugcode_path.clone();
+    let project_dir = config.project_dir.clone();
+    Arc::new(move || {
+        Arc::new(TugcodeSpawner::new(
+            tugcode_path.clone(),
+            project_dir.clone(),
+        )) as Arc<dyn ChildSpawner>
+    })
+}
 
 /// Errors returned from [`AgentSupervisor::handle_control`]. Consumed by
 /// `handle_client` (wired in Step 8) to emit a CONTROL error frame on the
@@ -342,9 +373,22 @@ pub struct AgentSupervisor {
     pub control_tx: broadcast::Sender<Frame>,
     /// Narrow persistence surface for card↔session bindings.
     pub store: Arc<dyn SessionKeysStore>,
+    /// Per-spawn factory for the backing subprocess. Swapped for a mock in
+    /// tests so unit tests do not need a real tugcode binary.
+    pub spawner_factory: SpawnerFactory,
+    /// Register side of the merger task's per-session stream map. Each
+    /// `spawn_session_worker` call pushes a `(tug_session_id, output_rx)`
+    /// pair through here; `merger_task` inserts it into its internal
+    /// `StreamMap` and fans the frames into the shared CODE_OUTPUT
+    /// broadcast + SESSION_METADATA broadcast.
+    pub merger_register_tx: mpsc::Sender<MergerRegistration>,
     /// Runtime configuration.
     pub config: AgentSupervisorConfig,
 }
+
+/// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
+/// merger task learns about a newly-spawned session worker's output stream.
+pub type MergerRegistration = (TugSessionId, mpsc::Receiver<Frame>);
 
 /// Owned form of a parsed CONTROL payload.
 struct OwnedControlPayload {
@@ -373,7 +417,12 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
     })
 }
 
-fn build_session_state_frame(
+/// Canonical constructor for `SESSION_STATE` wire frames. Shared between
+/// `agent_supervisor` (pending/spawning/closed/errored on control events)
+/// and `agent_bridge` (live after session_init, errored on crash-budget
+/// exhaustion). A single source of truth prevents wire-level drift between
+/// publish sites.
+pub(super) fn build_session_state_frame(
     tug_session_id: &TugSessionId,
     state: &str,
     detail: Option<&str>,
@@ -421,17 +470,21 @@ enum Decision {
 }
 
 impl AgentSupervisor {
-    /// Construct a supervisor with pre-made broadcast senders and a session
-    /// keys store.
+    /// Construct a supervisor with pre-made broadcast senders, a session
+    /// keys store, and a spawner factory. Returns `(supervisor,
+    /// merger_register_rx)` — the caller is expected to `tokio::spawn`
+    /// [`AgentSupervisor::merger_task`] with the returned receiver.
     pub fn new(
         session_state_tx: broadcast::Sender<Frame>,
         session_metadata_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
         store: Arc<dyn SessionKeysStore>,
+        spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
-    ) -> Self {
-        Self {
+    ) -> (Self, mpsc::Receiver<MergerRegistration>) {
+        let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
+        let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
             session_state_tx,
             session_metadata_tx,
@@ -439,8 +492,11 @@ impl AgentSupervisor {
             code_output_tx,
             control_tx,
             store,
+            spawner_factory,
+            merger_register_tx,
             config,
-        }
+        };
+        (sup, merger_register_rx)
     }
 
     /// Handle a CONTROL frame's spawn/close/reset action. `client_id` is the
@@ -727,13 +783,93 @@ impl AgentSupervisor {
         }
     }
 
-    /// Per-bridge merger task. Implemented in Step 6.
-    pub async fn merger_task(&self) {}
+    /// Per-bridge merger task. Consumes registrations from
+    /// `merger_register_rx` and fans in each per-session output mpsc into
+    /// the shared CODE_OUTPUT broadcast, the SESSION_METADATA broadcast
+    /// ([D14]), and `LedgerEntry::latest_metadata` (per-session). Runs until
+    /// `cancel` is fired.
+    pub async fn merger_task(
+        self: Arc<Self>,
+        mut register_rx: mpsc::Receiver<MergerRegistration>,
+        cancel: CancellationToken,
+    ) {
+        use tokio_stream::StreamMap;
+        let mut streams: StreamMap<TugSessionId, ReceiverStream<Frame>> = StreamMap::new();
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                maybe_register = register_rx.recv() => {
+                    match maybe_register {
+                        Some((id, rx)) => {
+                            streams.insert(id, ReceiverStream::new(rx));
+                        }
+                        None => {
+                            // Register side dropped — no new sessions will
+                            // arrive but we keep draining existing streams.
+                            // When they all close and `streams` is empty,
+                            // the next iteration exits via the else arm.
+                        }
+                    }
+                }
+                maybe_frame = streams.next(), if !streams.is_empty() => {
+                    let Some((id, frame)) = maybe_frame else { continue };
+                    // Forward to shared CODE_OUTPUT broadcast (feeds the
+                    // shared router-level replay ring per [D06], unchanged).
+                    let _ = self.code_output_tx.send(frame.clone());
+                    // Per-session system_metadata capture + broadcast per [D14].
+                    if is_system_metadata(&frame.payload) {
+                        let entry_arc = {
+                            let ledger = self.ledger.lock().await;
+                            ledger.get(&id).cloned()
+                        };
+                        if let Some(entry_arc) = entry_arc {
+                            let mut entry = entry_arc.lock().await;
+                            entry.latest_metadata = Some(frame.clone());
+                        }
+                        let _ = self.session_metadata_tx.send(frame);
+                    }
+                }
+            }
+        }
+    }
 
-    /// Scaffold spawn worker: wires the per-session `mpsc` and
-    /// `CancellationToken`, publishes `SESSION_STATE = spawning`, transitions
-    /// the ledger state to `Live`, and starts a no-op consumer task. Real
-    /// subprocess spawning lands in Step 6.
+    /// Spawn the per-session agent bridge. Creates per-session stdin/stdout
+    /// mpscs, registers the output rx with the merger, installs `input_tx`
+    /// in the ledger entry, and launches [`run_session_bridge`] in a
+    /// detached tokio task. The bridge task supervises the subprocess
+    /// lifecycle (handshake, crash budget, splice stamping) per [D07].
+    ///
+    /// # Ledger state transitions
+    ///
+    /// Unlike Step 5's scaffold, this function does **not** promote the
+    /// ledger entry to `SpawnState::Live`. The state stays at `Spawning`
+    /// until the bridge reads `session_init` from the subprocess — at that
+    /// point the bridge itself performs the atomic promote (flip state,
+    /// drain the per-session queue into `input_tx`, publish the wire
+    /// `SESSION_STATE = live` frame) inside a single ledger-entry lock
+    /// acquisition. This keeps ledger `Live` and wire `live` semantically
+    /// identical ("handshake succeeded and Claude reported its session_id")
+    /// and eliminates the window where the dispatcher could forward frames
+    /// to an un-handshaken subprocess through a bridge that had not yet
+    /// started pumping stdin.
+    ///
+    /// While the state is `Spawning`, the dispatcher's `Spawning` branch
+    /// buffers CODE_INPUT into `LedgerEntry::queue`. The bridge's
+    /// `session_init` promote drains that queue into `input_tx` atomically
+    /// with the state flip, so frame order is preserved across the
+    /// transition.
+    ///
+    /// # Ordering invariant
+    ///
+    /// 1. Lookup the ledger entry.
+    /// 2. Register the per-session output receiver with the merger.
+    /// 3. *Only then* install `input_tx`.
+    ///
+    /// Step 3 must not run before step 2: if the merger has died and the
+    /// register send fails after `input_tx` is installed, the dispatcher
+    /// would happily forward frames into a Sender whose Receiver is owned
+    /// by nothing. Registering first means a dead merger is detected
+    /// before any visible ledger state is mutated.
     pub async fn spawn_session_worker(&self, tug_session_id: &TugSessionId) {
         let entry_arc = {
             let map = self.ledger.lock().await;
@@ -743,27 +879,60 @@ impl AgentSupervisor {
             }
         };
 
-        let (input_tx, mut input_rx) = mpsc::channel::<Frame>(256);
+        let (input_tx, input_rx) = mpsc::channel::<Frame>(256);
+        let (merger_per_session_tx, merger_per_session_rx) = mpsc::channel::<Frame>(256);
 
-        // Install the sender, drain any queued frames, transition to Live.
+        // Step 2: register the per-session output receiver with the merger
+        // BEFORE touching ledger state. A dead merger is detected here and
+        // short-circuits the spawn with no ledger mutation — preventing
+        // the B2-class bug where a failed register would leave `input_tx`
+        // set against a Receiver that no merger owns.
+        if self
+            .merger_register_tx
+            .send((tug_session_id.clone(), merger_per_session_rx))
+            .await
+            .is_err()
         {
+            warn!(
+                session = %tug_session_id,
+                "merger register channel closed; flipping session to errored"
+            );
+            // Transition the entry out of Spawning so subsequent CODE_INPUT
+            // drops (via the dispatcher's terminal-state branch) rather
+            // than stalls forever in the queue.
+            let mut entry = entry_arc.lock().await;
+            if entry.spawn_state == SpawnState::Spawning {
+                entry.spawn_state = SpawnState::Errored;
+                drop(entry);
+                let _ = self.session_state_tx.send(build_session_state_frame(
+                    tug_session_id,
+                    "errored",
+                    Some("merger_unavailable"),
+                ));
+            }
+            return;
+        }
+
+        // Step 3: install the dispatcher-side sender and clone the
+        // cancellation token. Do **not** drain the queue or transition to
+        // Live — that's the bridge's job on `session_init` (see above).
+        let cancel_for_bridge = {
             let mut entry = entry_arc.lock().await;
             if entry.spawn_state != SpawnState::Spawning {
-                // Another task already handled the transition (or the entry
-                // was closed out from under us). Give up cleanly.
+                // Another task already handled the transition (or the
+                // entry was closed out from under us). The stream we just
+                // registered is orphaned — when `merger_per_session_tx`
+                // drops at end of function, the merger's ReceiverStream
+                // will yield None and be auto-removed from the StreamMap.
                 return;
             }
             entry.input_tx = Some(input_tx.clone());
-            // Drain the bounded queue into the worker channel. The queue is
-            // cap 256 and the channel is cap 256, so try_send always succeeds
-            // during a drain from an empty channel.
-            while let Some(queued) = entry.queue.pop() {
-                if input_tx.try_send(queued).is_err() {
-                    break;
-                }
-            }
-            entry.spawn_state.try_transition(SpawnState::Live).ok();
-        }
+            entry.cancel.clone()
+        };
+        // `input_tx` is stashed in the ledger entry; the bridge drains it
+        // via the per-session queue on session_init. Drop our local clone
+        // so only the dispatcher owns the send side after this point.
+        drop(input_tx);
 
         let _ = self.session_state_tx.send(build_session_state_frame(
             tug_session_id,
@@ -771,11 +940,23 @@ impl AgentSupervisor {
             None,
         ));
 
-        // Scaffold consumer: Step 6 replaces this with the real agent_bridge.
+        // Launch the real bridge in a detached task.
+        let spawner = (self.spawner_factory)();
+        let state_tx = self.session_state_tx.clone();
+        let tug_session_id_owned = tug_session_id.clone();
+        let entry_arc_bridge = entry_arc.clone();
         tokio::spawn(async move {
-            while input_rx.recv().await.is_some() {
-                // no-op
-            }
+            run_session_bridge(
+                tug_session_id_owned,
+                entry_arc_bridge,
+                input_rx,
+                merger_per_session_tx,
+                state_tx,
+                spawner,
+                cancel_for_bridge,
+                DEFAULT_RETRY_DELAY,
+            )
+            .await;
         });
     }
 
@@ -795,7 +976,30 @@ impl AgentSupervisor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::pending;
     use std::sync::Mutex as StdMutex;
+
+    use super::super::agent_bridge::{
+        RelayOutcome, SessionChild, SpawnFuture, relay_session_io, run_session_bridge,
+    };
+
+    // ---- Test-only ChildSpawner fakes ----
+
+    /// Spawner that never resolves. Used as the default in tests so
+    /// `spawn_session_worker` installs the per-session plumbing + publishes
+    /// `SESSION_STATE = spawning` without the bridge task emitting any
+    /// further frames. Any test that needs a specific bridge behavior passes
+    /// its own spawner via [`make_supervisor_with_spawner`].
+    struct StallSpawner;
+    impl ChildSpawner for StallSpawner {
+        fn spawn_child(&self) -> SpawnFuture {
+            Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
+        }
+    }
+
+    fn stall_spawner_factory() -> SpawnerFactory {
+        Arc::new(|| Arc::new(StallSpawner) as Arc<dyn ChildSpawner>)
+    }
 
     // ---- Test-only SessionKeysStore fakes ----
 
@@ -898,19 +1102,48 @@ mod tests {
         broadcast::Receiver<Frame>,
         broadcast::Receiver<Frame>,
     ) {
+        let ((sup, state_rx, meta_rx, control_rx), mut register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+        // Drain the merger register channel so `spawn_session_worker`'s
+        // `merger_register_tx.send(...).await` succeeds without an actual
+        // merger task attached. Dropping the receiver would short-circuit
+        // the bridge wiring and suppress the `SESSION_STATE = spawning`
+        // publish that existing tests rely on.
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        (sup, state_rx, meta_rx, control_rx)
+    }
+
+    /// Variant that also returns the merger register receiver so tests can
+    /// spawn `merger_task` against it. The primary tuple still matches the
+    /// original `make_supervisor_with_store` shape so existing tests compile
+    /// unchanged after going through the thin wrapper above.
+    #[allow(clippy::type_complexity)]
+    fn make_supervisor_with_spawner(
+        store: Arc<dyn SessionKeysStore>,
+        spawner_factory: SpawnerFactory,
+    ) -> (
+        (
+            AgentSupervisor,
+            broadcast::Receiver<Frame>,
+            broadcast::Receiver<Frame>,
+            broadcast::Receiver<Frame>,
+        ),
+        mpsc::Receiver<MergerRegistration>,
+    ) {
         let (state_tx, state_rx) = broadcast::channel(512);
         let (meta_tx, meta_rx) = broadcast::channel(32);
         let (code_tx, _code_rx) = broadcast::channel(32);
         let (control_tx, control_rx) = broadcast::channel(512);
-        let sup = AgentSupervisor::new(
+        let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
             code_tx,
             control_tx,
             store,
+            spawner_factory,
             AgentSupervisorConfig::default(),
         );
-        (sup, state_rx, meta_rx, control_rx)
+        ((sup, state_rx, meta_rx, control_rx), register_rx)
     }
 
     fn spawn_payload(card_id: &str, tug_session_id: &str) -> Vec<u8> {
@@ -1394,6 +1627,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_first_input_triggers_spawn() {
+        // Under the aligned state model (B3 fix), dispatching the first
+        // CODE_INPUT flips the ledger entry Idle → Spawning and calls
+        // `spawn_session_worker`, which publishes the wire `spawning`
+        // frame and installs `input_tx`. The ledger entry *stays* at
+        // `Spawning` — promotion to `Live` is done by the bridge on
+        // `session_init`, not eagerly by the worker. The StallSpawner
+        // used in this test never produces `session_init`, so the state
+        // remains `Spawning` and the queued first frame stays in the
+        // queue (the bridge's session_init handler is the drain point).
         let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
@@ -1403,29 +1645,35 @@ mod tests {
         let (_, pending_state) = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(pending_state, "pending");
 
-        // First CODE_INPUT frame: transitions Idle → Spawning, spawns worker.
         sup.dispatch_one(code_input_frame("sess-1")).await;
 
         let (_, state) = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(state, "spawning");
         assert!(
             state_rx.try_recv().is_err(),
-            "only one SESSION_STATE frame should be emitted by the scaffold"
+            "no further SESSION_STATE frame until the bridge reads session_init"
         );
 
         let tug_id = TugSessionId::new("sess-1");
         let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
         let entry = entry_arc.lock().await;
-        assert_eq!(entry.spawn_state, SpawnState::Live);
-        assert!(
-            entry.queue.is_empty(),
-            "worker drained the queued first frame"
+        assert_eq!(entry.spawn_state, SpawnState::Spawning);
+        assert_eq!(
+            entry.queue.len(),
+            1,
+            "first CODE_INPUT is buffered in the queue until session_init drains it"
         );
         assert!(entry.input_tx.is_some(), "worker installed input_tx");
     }
 
     #[tokio::test]
     async fn test_concurrent_first_inputs_spawn_once() {
+        // Two CODE_INPUT frames back-to-back. The first flips Idle →
+        // Spawning and spawns the worker; the second lands in the
+        // dispatcher's `Spawning` branch and is buffered in the queue.
+        // Under the aligned state model (B3 fix), the ledger state
+        // remains `Spawning` until the bridge reads `session_init` —
+        // StallSpawner never produces one, so both frames stay queued.
         let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
@@ -1434,9 +1682,6 @@ mod tests {
             .unwrap();
         let _ = state_rx.try_recv().unwrap();
 
-        // Two CODE_INPUT frames back-to-back. The per-session mutex guarantees
-        // only the first flips Idle → Spawning; the second is buffered (or
-        // forwarded to input_tx once Live).
         sup.dispatch_one(code_input_frame("sess-1")).await;
         sup.dispatch_one(code_input_frame("sess-1")).await;
 
@@ -1450,8 +1695,12 @@ mod tests {
         let tug_id = TugSessionId::new("sess-1");
         let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
         let entry = entry_arc.lock().await;
-        assert_eq!(entry.spawn_state, SpawnState::Live);
-        assert!(entry.queue.is_empty());
+        assert_eq!(entry.spawn_state, SpawnState::Spawning);
+        assert_eq!(
+            entry.queue.len(),
+            2,
+            "both frames are buffered in the queue awaiting session_init"
+        );
     }
 
     #[tokio::test]
@@ -1608,5 +1857,393 @@ mod tests {
         // Ledger and tugbank are untouched.
         assert_eq!(sup.ledger.lock().await.len(), 1);
         assert_eq!(store.entries_snapshot().len(), 1);
+    }
+
+    // ---- Step 6: merger_task, per-session bridge, metadata routing ----
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    /// Spawner that returns an `io::Error` on every call. Used by the
+    /// crash-budget test to drive `run_session_bridge` through its retry
+    /// loop without spinning up a real subprocess.
+    struct CrashingSpawner;
+    impl ChildSpawner for CrashingSpawner {
+        fn spawn_child(&self) -> SpawnFuture {
+            Box::pin(async { Err(std::io::Error::other("injected crash")) })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merger_fans_in_two_sessions() {
+        // Spin up two per-session output mpscs, register both with the
+        // merger, push one frame through each, and assert both frames
+        // reach the shared CODE_OUTPUT broadcast. This pins the merger's
+        // StreamMap-based fan-in.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let ((sup, _state_rx, _meta_rx, _control_rx), register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+        let sup = Arc::new(sup);
+        let mut code_rx = sup.code_output_tx.subscribe();
+        let cancel = CancellationToken::new();
+        let merger_handle =
+            tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+
+        let id_a = TugSessionId::new("sess-a");
+        let id_b = TugSessionId::new("sess-b");
+
+        let (tx_a, rx_a) = mpsc::channel::<Frame>(4);
+        let (tx_b, rx_b) = mpsc::channel::<Frame>(4);
+        sup.merger_register_tx
+            .send((id_a.clone(), rx_a))
+            .await
+            .unwrap();
+        sup.merger_register_tx
+            .send((id_b.clone(), rx_b))
+            .await
+            .unwrap();
+
+        let frame_a = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-a","type":"x"}"#.to_vec(),
+        );
+        let frame_b = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-b","type":"y"}"#.to_vec(),
+        );
+        tx_a.send(frame_a.clone()).await.unwrap();
+        tx_b.send(frame_b.clone()).await.unwrap();
+
+        let first = tokio::time::timeout(Duration::from_millis(500), code_rx.recv())
+            .await
+            .expect("first frame timeout")
+            .expect("first frame recv err");
+        let second = tokio::time::timeout(Duration::from_millis(500), code_rx.recv())
+            .await
+            .expect("second frame timeout")
+            .expect("second frame recv err");
+
+        let payloads: HashSet<Vec<u8>> = [first.payload, second.payload].into_iter().collect();
+        assert!(
+            payloads.contains(&frame_a.payload),
+            "session A frame missing from CODE_OUTPUT broadcast"
+        );
+        assert!(
+            payloads.contains(&frame_b.payload),
+            "session B frame missing from CODE_OUTPUT broadcast"
+        );
+
+        cancel.cancel();
+        let _ = merger_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_merger_routes_metadata_per_session_no_clobber() {
+        // Pins [D14]: two sessions emit distinct `system_metadata` frames
+        // in rapid succession. Both frames must land on the SESSION_METADATA
+        // broadcast (a single-slot watch would drop one), AND each ledger
+        // entry's `latest_metadata` must hold its own payload with no
+        // cross-pollination.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let ((sup, _state_rx, mut meta_rx, _control_rx), register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+        let sup = Arc::new(sup);
+        let cancel = CancellationToken::new();
+        let merger_handle =
+            tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+
+        let id_a = TugSessionId::new("sess-a");
+        let id_b = TugSessionId::new("sess-b");
+        insert_ledger_entry(&sup, &id_a).await;
+        insert_ledger_entry(&sup, &id_b).await;
+
+        let (tx_a, rx_a) = mpsc::channel::<Frame>(4);
+        let (tx_b, rx_b) = mpsc::channel::<Frame>(4);
+        sup.merger_register_tx
+            .send((id_a.clone(), rx_a))
+            .await
+            .unwrap();
+        sup.merger_register_tx
+            .send((id_b.clone(), rx_b))
+            .await
+            .unwrap();
+
+        let meta_a = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-a","type":"system_metadata","model":"opus-a"}"#.to_vec(),
+        );
+        let meta_b = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-b","type":"system_metadata","model":"opus-b"}"#.to_vec(),
+        );
+        tx_a.send(meta_a.clone()).await.unwrap();
+        tx_b.send(meta_b.clone()).await.unwrap();
+
+        let first = tokio::time::timeout(Duration::from_millis(500), meta_rx.recv())
+            .await
+            .expect("first metadata timeout")
+            .expect("first metadata recv err");
+        let second = tokio::time::timeout(Duration::from_millis(500), meta_rx.recv())
+            .await
+            .expect("second metadata timeout")
+            .expect("second metadata recv err");
+
+        let received: HashSet<Vec<u8>> = [first.payload, second.payload].into_iter().collect();
+        assert!(
+            received.contains(&meta_a.payload),
+            "session A metadata missing from SESSION_METADATA broadcast"
+        );
+        assert!(
+            received.contains(&meta_b.payload),
+            "session B metadata missing from SESSION_METADATA broadcast"
+        );
+
+        // Each ledger entry's latest_metadata must hold its own distinct
+        // payload. A single-slot watch would have one session's payload
+        // clobber the other.
+        let entry_a = sup.ledger.lock().await.get(&id_a).unwrap().clone();
+        let entry_b = sup.ledger.lock().await.get(&id_b).unwrap().clone();
+        let stored_a = entry_a
+            .lock()
+            .await
+            .latest_metadata
+            .clone()
+            .expect("session A stored metadata");
+        let stored_b = entry_b
+            .lock()
+            .await
+            .latest_metadata
+            .clone()
+            .expect("session B stored metadata");
+        assert_eq!(stored_a.payload, meta_a.payload);
+        assert_eq!(stored_b.payload, meta_b.payload);
+
+        cancel.cancel();
+        let _ = merger_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_init_populates_claude_session_id() {
+        // Drives `relay_session_io` directly with duplex streams so we can
+        // simulate a child emitting `protocol_ack` + `session_init` without
+        // spawning a real subprocess. This pins the aligned state model
+        // (B3 fix): on session_init the bridge must **atomically**
+        //
+        //   (a) populate `claude_session_id`,
+        //   (b) transition the ledger from `Spawning` → `Live`,
+        //   (c) drain the per-session queue into `input_tx`,
+        //   (d) publish the wire `SESSION_STATE = live` frame,
+        //
+        // all under a single ledger-entry lock so no observer can see a
+        // state where `spawn_state == Live` while the queue still holds
+        // undelivered frames.
+        //
+        // Also note: no `watch::channel` is constructed anywhere in this
+        // test — that pins the deletion of `session_watch_tx` from
+        // `agent_bridge.rs`. There is no longer any watch sender that a
+        // `session_init` line can be latched onto.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+
+        // Pre-install a queued frame + input_tx + Spawning state so the
+        // bridge's session_init promote path has something to drain and
+        // something to transition from. This mirrors what the dispatcher
+        // + spawn_session_worker would have done in production.
+        let (input_tx_for_ledger, mut input_rx_for_assert) =
+            mpsc::channel::<Frame>(16);
+        let pre_queued = code_input_frame("sess-1");
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+            entry.input_tx = Some(input_tx_for_ledger.clone());
+            assert_eq!(entry.queue.push(pre_queued.clone()), QueuePush::Ok);
+        }
+        drop(input_tx_for_ledger);
+
+        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(4096);
+        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(4096);
+
+        // Spawn a "child" that reads protocol_init, writes protocol_ack +
+        // session_init, then drops its stdout write end to signal EOF.
+        let child_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut child_stdin_read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert!(line.contains("protocol_init"));
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
+                .await
+                .unwrap();
+            child_stdout_write
+                .write_all(
+                    b"{\"type\":\"session_init\",\"session_id\":\"claude-xyz\"}\n",
+                )
+                .await
+                .unwrap();
+            drop(child_stdout_write);
+        });
+
+        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
+        let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(4);
+        let state_tx = sup.session_state_tx.clone();
+        let mut state_rx = state_tx.subscribe();
+        let cancel = CancellationToken::new();
+
+        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
+        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
+        let lines = BufReader::new(stdout_box).lines();
+
+        let outcome = relay_session_io(
+            &tug_id,
+            &entry_arc,
+            &mut input_rx_bridge,
+            &merger_tx,
+            &state_tx,
+            stdin_box,
+            lines,
+            &cancel,
+        )
+        .await;
+
+        child_task.await.unwrap();
+
+        // EOF after session_init → relay returns Crashed.
+        assert_eq!(outcome, RelayOutcome::Crashed);
+
+        // (a) claude_session_id populated, (b) ledger state promoted to
+        // Live, (c) queue drained.
+        {
+            let entry = entry_arc.lock().await;
+            assert_eq!(entry.claude_session_id.as_deref(), Some("claude-xyz"));
+            assert_eq!(entry.spawn_state, SpawnState::Live);
+            assert!(
+                entry.queue.is_empty(),
+                "session_init must atomically drain the queue into input_tx"
+            );
+        }
+
+        // The drained queue frame reached `input_tx` (which in this test
+        // is wired into `input_rx_for_assert`).
+        let drained = input_rx_for_assert
+            .try_recv()
+            .expect("queued frame drained to input_tx");
+        assert_eq!(drained.payload, pre_queued.payload);
+
+        // The session_init frame must have been forwarded to the merger
+        // channel with `tug_session_id` spliced in.
+        let spliced = merger_rx.try_recv().expect("session_init forwarded");
+        assert_eq!(spliced.feed_id, FeedId::CODE_OUTPUT);
+        let parsed: serde_json::Value = serde_json::from_slice(&spliced.payload).unwrap();
+        assert_eq!(parsed["tug_session_id"], "sess-1");
+        assert_eq!(parsed["type"], "session_init");
+        assert_eq!(parsed["session_id"], "claude-xyz");
+
+        // (d) SESSION_STATE = live must have been published.
+        let live_frame = state_rx.try_recv().expect("live state frame");
+        let (id, state) = session_state_of(&live_frame);
+        assert_eq!(id, "sess-1");
+        assert_eq!(state, "live");
+    }
+
+    #[tokio::test]
+    async fn test_crash_budget_per_session() {
+        // Two sessions spawn in parallel. A's spawner always errors; B's
+        // stalls forever. After 3 retries A exhausts its budget, publishes
+        // `errored{crash_budget_exhausted}`, and its bridge task returns.
+        // B remains untouched. This test pins that each session has its
+        // own `CrashBudget` instance per [D07] — one session's crash loop
+        // does not disable a sibling. The retry delay is injected as a
+        // sub-millisecond value so the test completes in wall-clock-time.
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let ((sup, mut state_rx, _meta_rx, _control_rx), _register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+
+        let id_a = TugSessionId::new("sess-a");
+        let id_b = TugSessionId::new("sess-b");
+        let entry_a = insert_ledger_entry(&sup, &id_a).await;
+        let entry_b = insert_ledger_entry(&sup, &id_b).await;
+
+        let (_input_tx_a, input_rx_a) = mpsc::channel::<Frame>(4);
+        let (_input_tx_b, input_rx_b) = mpsc::channel::<Frame>(4);
+        let (merger_tx_a, _merger_rx_a) = mpsc::channel::<Frame>(4);
+        let (merger_tx_b, _merger_rx_b) = mpsc::channel::<Frame>(4);
+
+        let cancel_a = { entry_a.lock().await.cancel.clone() };
+        let cancel_b = { entry_b.lock().await.cancel.clone() };
+
+        let state_tx = sup.session_state_tx.clone();
+
+        let retry_delay = Duration::from_micros(100);
+
+        let a_handle = tokio::spawn(run_session_bridge(
+            id_a.clone(),
+            entry_a.clone(),
+            input_rx_a,
+            merger_tx_a,
+            state_tx.clone(),
+            Arc::new(CrashingSpawner) as Arc<dyn ChildSpawner>,
+            cancel_a,
+            retry_delay,
+        ));
+        let b_handle = tokio::spawn(run_session_bridge(
+            id_b.clone(),
+            entry_b.clone(),
+            input_rx_b,
+            merger_tx_b,
+            state_tx.clone(),
+            Arc::new(StallSpawner) as Arc<dyn ChildSpawner>,
+            cancel_b.clone(),
+            retry_delay,
+        ));
+
+        // Poll until session A's task finishes (3 crashes + the exhaustion
+        // bail). With a 100µs retry delay this completes in well under a
+        // millisecond; we give it up to 2 seconds to tolerate CI latency.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !a_handle.is_finished() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        // Session A's task must have completed.
+        assert!(
+            a_handle.is_finished(),
+            "session A bridge must exit after crash budget exhaustion"
+        );
+
+        // Session B's task must still be running (stalled in spawn_child).
+        assert!(
+            !b_handle.is_finished(),
+            "session B bridge must not be disabled by session A's crash loop"
+        );
+
+        // Session A's ledger entry is in Errored state with no input_tx.
+        {
+            let entry = entry_a.lock().await;
+            assert_eq!(entry.spawn_state, SpawnState::Errored);
+            assert!(entry.input_tx.is_none());
+        }
+
+        // SESSION_STATE = errored{crash_budget_exhausted} must have been
+        // published exactly for session A; no errored for session B.
+        let mut a_errored = false;
+        while let Ok(frame) = state_rx.try_recv() {
+            let (id, state) = session_state_of(&frame);
+            if state == "errored" {
+                assert_eq!(id, "sess-a", "only session A should error");
+                let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+                assert_eq!(v["detail"], "crash_budget_exhausted");
+                a_errored = true;
+            }
+        }
+        assert!(a_errored, "session A must publish errored state");
+
+        // Tear down session B. Aborting rather than awaiting so a
+        // regression where cancel doesn't reach a stalled spawner still
+        // terminates the test quickly.
+        b_handle.abort();
     }
 }
