@@ -93,7 +93,16 @@ function nowRfc3339(): string {
 // ── TugbankClient ─────────────────────────────────────────────────────────────
 
 /**
- * Direct bun:sqlite client for the tugbank defaults store at ~/.tugbank.db.
+ * Direct bun:sqlite client for the tugbank defaults store.
+ *
+ * Resolves the database path in this order:
+ * 1. Explicit `dbPath` argument (highest priority).
+ * 2. `TUGBANK_PATH` environment variable (so tugcast integration tests
+ *    can isolate per-test tugbank state without patching tugcode). The
+ *    same env var is respected by the Rust side of tugcast's tests when
+ *    spawning the subprocess, so both tugcast and tugcode point at the
+ *    same file in test scenarios.
+ * 3. `~/.tugbank.db` default (production path).
  *
  * Provides get/set/readDomain/listDomains with an in-memory domain cache.
  * Broadcasts Darwin notifications on write so other processes can react.
@@ -107,7 +116,9 @@ export class TugbankClient {
   private readonly domainCache = new Map<string, Record<string, TugbankValue>>();
 
   constructor(dbPath?: string) {
-    const path = dbPath ?? join(homedir(), ".tugbank.db");
+    const envPath = process.env.TUGBANK_PATH;
+    const path =
+      dbPath ?? (envPath && envPath.length > 0 ? envPath : join(homedir(), ".tugbank.db"));
     this.db = new Database(path, { create: true });
 
     // Match the pragmas applied by tugbank-core on every open.
