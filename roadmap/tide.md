@@ -1582,6 +1582,29 @@ The canary's 29-probe happy path (everything that completes in < 45 s) proves th
 
 **Schedule:** **Deferred past Step 4.** The baseline capture commits with probes 10/13/17/20/25/35 marked `skipped` and this follow-up linked in `manifest.json`. Fix must land before Step 6 drift regression test so the drift path has either working probes or the same explicit skip list.
 
+#### P20: Claude 2.1.105 `rate_limit_event` dropped by tugcode router (MEDIUM) {#p20-rate-limit-event-dropped}
+
+**Problem:** During tugplan-golden-stream-json-catalog Step 6's drift regression run and subsequent v2.1.105 baseline capture, every real-claude probe logged `[tugcode] Unhandled top-level event type=rate_limit_event` once (sometimes more) while claude's stream-json output was being relayed. The event is emitted by `claude 2.1.105` at the upstream level but tugcode's `routeTopLevelEvent` in `tugcode/src/session.ts` has no handler for it, so it is dropped before ever reaching tugcast's `CODE_OUTPUT` feed. `CodeSessionStore` therefore never sees it.
+
+This is structurally the same class of bug as the `api_retry` drop documented in `roadmap/transport-exploration.md` — claude adds a new top-level `system`-style event, tugcode's allowlist doesn't include it, the event silently vanishes.
+
+**Why MEDIUM:** Unlike `api_retry`, `rate_limit_event` is believed to be a subscription-tier rate-limit signal that users will actually want to see in the UI (so they know when they're about to hit a rate cap). Until it's routed, any future tugdeck rate-limit banner or tugapp rate-limit indicator will be working blind. Not a drift-test failure — the drift test's probes never see the event because it's filtered at the tugcode layer, so there's no shape to pin — but it is a real transport gap.
+
+**Evidence:**
+- Step 6 drift verify run (2026-04-13): `[tugcode] Unhandled top-level event type=rate_limit_event` appeared in `/tmp/drift-verify2.log` for ~25 of 29 non-skipped probes across a single 122.7 s real-claude run. Frequency suggests claude is emitting it as a metadata sidecar on most turns, not as a threshold alert.
+- Not present in the v2.1.104 fixtures (the drift test against 2.1.104 → 2.1.105 would have surfaced it as a new event type otherwise). Matches the Step 6 "Known divergences" table entry for 2.1.105 additions.
+- `test_subscription_auth_source` (from commit `e437c423`) also observed `[tugcode] Unhandled top-level event type=rate_limit_event` in its `/status` round-trip — confirms the event fires regardless of tool use, slash commands, or turn length.
+
+**Fix:**
+1. Add a `rate_limit_event` case to `routeTopLevelEvent` in `tugcode/src/session.ts`, mirroring the `api_retry` forwarding that transport-exploration.md's Phase 2 work list already specifies.
+2. Choose an outbound shape: either forward the raw `rate_limit_event` payload under a new outbound event type (e.g., `rate_limit_event` with whatever fields claude ships), or map it into the existing `system` event family with a `subtype` discriminator.
+3. Add a capture probe that asks claude to produce a rate-limit sidecar (trivial — any prompt seems to do it on 2.1.105) and pin the event shape in the golden catalog.
+4. Tugdeck/tugapp UI work to surface the rate-limit state is follow-on.
+
+**Scope:** `tugcode/src/session.ts` (1-line allowlist extension + shape translation), new probe in `tugrust/crates/tugcast/tests/common/probes.rs`, golden catalog re-capture after the tugcode change lands. Optionally: a `roadmap/transport-exploration.md` known-divergences update to document the new event.
+
+**Schedule:** Not a Step 8 blocker. P20 fix can land after the tugplan-golden-stream-json-catalog closes, as its own focused change with an atomic tugcode + fixture + probe commit. When it lands, re-run the version-bump runbook in `tests/fixtures/stream-json-catalog/README.md` to re-capture whichever version is current at that time.
+
 #### P8: Auth for remote use (LOW)
 
 **Problem:** Session cookie + origin validation for localhost only. The "remote use comes for free" architecture works at the transport level, but auth doesn't survive network deployment.
