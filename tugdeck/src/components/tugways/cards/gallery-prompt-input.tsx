@@ -114,6 +114,10 @@ function buildCardStores(): {
 } {
   const historyStore = new PromptHistoryStore();
   const connection = getConnection()!;
+  // Gallery is a test harness (see gallery-split-pane.tsx header). No
+  // tug_session_id filter: under multi-session this is last-writer-wins,
+  // explicitly accepted per the multi-session-router plan #non-goals.
+  // Real per-card filters land in T3.4 via CodeSessionStore.
   const metaFeedStore = new FeedStore(connection, [FeedId.SESSION_METADATA]);
   const metadataStore = new SessionMetadataStore(metaFeedStore, FeedId.SESSION_METADATA);
   return { metadataStore, historyStore };

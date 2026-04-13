@@ -35,6 +35,7 @@ export const FeedId = {
   // Defaults / Session
   DEFAULTS: 0x50,
   SESSION_METADATA: 0x51,
+  SESSION_STATE: 0x52,
   // Shell (reserved for Phase T2+)
   SHELL_OUTPUT: 0x60,
   SHELL_INPUT: 0x61,
@@ -46,6 +47,19 @@ export const FeedId = {
 } as const;
 
 export type FeedIdValue = (typeof FeedId)[keyof typeof FeedId];
+
+/**
+ * Legacy numeric alias for `FeedId.SESSION_STATE`. Duplicates the entry
+ * in [`FeedId`] and exists only to satisfy the plan's requirement for a
+ * named top-level protocol constant. Prefer `FeedId.SESSION_STATE` in new
+ * code.
+ */
+export const FEED_ID_SESSION_STATE = FeedId.SESSION_STATE;
+
+/** CONTROL action names routed to `AgentSupervisor::handle_control`. */
+export const CONTROL_ACTION_SPAWN_SESSION = "spawn_session";
+export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
+export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 
 /** Frame flags */
 export const FrameFlags = {
@@ -157,10 +171,16 @@ export function resizeFrame(cols: number, rows: number): Frame {
 }
 
 /**
- * Create a code input frame from a message object
+ * Create a code input frame from a message object.
+ *
+ * Injects `tug_session_id` as the first field of the JSON payload so the
+ * tugcast router's CODE_INPUT dispatcher can parse it before consulting
+ * the supervisor ledger. The server hard-rejects CODE_INPUT frames that
+ * are missing `tug_session_id` (Step 7's `missing_tug_session_id`
+ * control error), so passing a real session id is required.
  */
-export function encodeCodeInput(msg: object): ArrayBuffer {
-  const json = JSON.stringify(msg);
+export function encodeCodeInput(msg: object, tugSessionId: string): ArrayBuffer {
+  const json = JSON.stringify({ tug_session_id: tugSessionId, ...msg });
   const payload = new TextEncoder().encode(json);
   const frame: Frame = {
     feedId: FeedId.CODE_INPUT,
@@ -180,4 +200,47 @@ export function controlFrame(action: string, params?: Record<string, unknown>): 
     flags: FrameFlags.DATA,
     payload: new TextEncoder().encode(json),
   };
+}
+
+/**
+ * Build a `spawn_session` CONTROL frame for the supervisor.
+ *
+ * Payload shape per Spec S03:
+ * ```json
+ * { "action": "spawn_session", "card_id": "...", "tug_session_id": "..." }
+ * ```
+ *
+ * Both arguments are required: the server-side supervisor hard-rejects
+ * CONTROL frames missing `card_id` or `tug_session_id` via
+ * `send_control_json` (Step 4's `missing_card_id` / `missing_tug_session_id`
+ * error details), so optional arguments on the client side would only
+ * create silent failure modes.
+ */
+export function encodeSpawnSession(cardId: string, tugSessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_SPAWN_SESSION, {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+  });
+}
+
+/**
+ * Build a `close_session` CONTROL frame for the supervisor.
+ * See [`encodeSpawnSession`] for payload shape and rationale.
+ */
+export function encodeCloseSession(cardId: string, tugSessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_CLOSE_SESSION, {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+  });
+}
+
+/**
+ * Build a `reset_session` CONTROL frame for the supervisor.
+ * See [`encodeSpawnSession`] for payload shape and rationale.
+ */
+export function encodeResetSession(cardId: string, tugSessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_RESET_SESSION, {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+  });
 }

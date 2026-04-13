@@ -1,0 +1,196 @@
+/**
+ * FeedStore unit tests.
+ *
+ * Covers:
+ * - Filter rejects a live frame → snapshot unchanged, listeners not notified.
+ * - Filter accepts a live frame → snapshot updated, listeners notified.
+ * - Filter runs on the replay path: pre-seed a cached `lastPayload` before
+ *   constructing the FeedStore; the filter must run against the replayed
+ *   payload inside the synchronous `onFrame` → cached-replay callback.
+ * - Filter is optional: omitting it is passthrough (original behavior).
+ */
+
+import { describe, test, expect } from "bun:test";
+
+import { FeedStore, type FeedStoreFilter } from "../lib/feed-store";
+import { FeedId, type FeedIdValue } from "../protocol";
+import type { TugConnection } from "../connection";
+
+// ---------------------------------------------------------------------------
+// Minimal TugConnection mock that implements just what FeedStore uses.
+// ---------------------------------------------------------------------------
+
+class MockConnection {
+  private callbacks: Map<number, Array<(payload: Uint8Array) => void>> = new Map();
+  private cached: Map<number, Uint8Array> = new Map();
+
+  onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {
+    if (!this.callbacks.has(feedId)) {
+      this.callbacks.set(feedId, []);
+    }
+    this.callbacks.get(feedId)!.push(callback);
+    // Mirror `TugConnection.onFrame`'s synchronous replay-on-subscribe
+    // behavior so the filter-runs-on-replay test exercises the same code
+    // path the real connection uses.
+    const cached = this.cached.get(feedId);
+    if (cached) {
+      callback(cached);
+    }
+  }
+
+  /** Dispatch a frame on the live path. */
+  emit(feedId: number, payload: Uint8Array): void {
+    this.cached.set(feedId, payload);
+    const cbs = this.callbacks.get(feedId);
+    if (cbs) {
+      for (const cb of cbs) cb(payload);
+    }
+  }
+
+  /** Pre-seed the replay cache without running any callback. */
+  seedCache(feedId: number, payload: Uint8Array): void {
+    this.cached.set(feedId, payload);
+  }
+}
+
+function makeMockConn(): { conn: TugConnection; mock: MockConnection } {
+  const mock = new MockConnection();
+  return { conn: mock as unknown as TugConnection, mock };
+}
+
+function encodeJson(obj: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(obj));
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("FeedStore filter", () => {
+  test("rejects a live frame — snapshot unchanged, listeners not notified", () => {
+    const { conn, mock } = makeMockConn();
+    const filter: FeedStoreFilter = (_feedId, decoded) => {
+      const obj = decoded as { tug_session_id?: string };
+      return obj.tug_session_id === "keep";
+    };
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      undefined,
+      filter,
+    );
+
+    let notifyCount = 0;
+    store.subscribe(() => {
+      notifyCount += 1;
+    });
+
+    // Snapshot starts empty.
+    expect(store.getSnapshot().size).toBe(0);
+
+    // Emit a frame that the filter should reject.
+    mock.emit(
+      FeedId.SESSION_METADATA,
+      encodeJson({ tug_session_id: "drop", type: "system_metadata" }),
+    );
+
+    expect(store.getSnapshot().size).toBe(0);
+    expect(store.getSnapshot().has(FeedId.SESSION_METADATA)).toBe(false);
+    expect(notifyCount).toBe(0);
+  });
+
+  test("accepts a live frame — snapshot updated, listeners notified", () => {
+    const { conn, mock } = makeMockConn();
+    const filter: FeedStoreFilter = (_feedId, decoded) => {
+      const obj = decoded as { tug_session_id?: string };
+      return obj.tug_session_id === "keep";
+    };
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      undefined,
+      filter,
+    );
+
+    let notifyCount = 0;
+    store.subscribe(() => {
+      notifyCount += 1;
+    });
+
+    const payload = { tug_session_id: "keep", type: "system_metadata", model: "opus" };
+    mock.emit(FeedId.SESSION_METADATA, encodeJson(payload));
+
+    expect(store.getSnapshot().size).toBe(1);
+    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+    expect(notifyCount).toBe(1);
+  });
+
+  test("runs on the replay path — cached payload flows through filter", () => {
+    // Scenario: by the time the FeedStore is constructed, the connection
+    // already has a cached `lastPayload` for SESSION_METADATA from a
+    // prior emission. `TugConnection.onFrame` synchronously replays the
+    // cached payload into the newly registered callback. Our filter MUST
+    // run against that replayed payload; otherwise any multi-session
+    // filter would silently admit stale frames intended for another
+    // session when a card mounts after the frame arrived.
+    const { conn, mock } = makeMockConn();
+
+    // Pre-seed a cached payload for a session the filter will reject.
+    mock.seedCache(
+      FeedId.SESSION_METADATA,
+      encodeJson({ tug_session_id: "drop", type: "system_metadata" }),
+    );
+
+    const filter: FeedStoreFilter = (_feedId, decoded) => {
+      const obj = decoded as { tug_session_id?: string };
+      return obj.tug_session_id === "keep";
+    };
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      undefined,
+      filter,
+    );
+
+    // The filter was invoked with the cached payload during
+    // `FeedStore`'s constructor (via onFrame → replay). It rejected,
+    // so the snapshot is still empty.
+    expect(store.getSnapshot().size).toBe(0);
+  });
+
+  test("runs on the replay path — cached payload flows through and is kept", () => {
+    // Mirror of the previous test: when the filter accepts the cached
+    // payload, the snapshot must reflect it immediately on construction.
+    const { conn, mock } = makeMockConn();
+    const payload = { tug_session_id: "keep", type: "system_metadata" };
+    mock.seedCache(FeedId.SESSION_METADATA, encodeJson(payload));
+
+    const filter: FeedStoreFilter = (_feedId, decoded) => {
+      const obj = decoded as { tug_session_id?: string };
+      return obj.tug_session_id === "keep";
+    };
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      undefined,
+      filter,
+    );
+
+    expect(store.getSnapshot().size).toBe(1);
+    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+  });
+
+  test("no filter is passthrough — every decoded frame admitted", () => {
+    const { conn, mock } = makeMockConn();
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+    );
+
+    const payload = { tug_session_id: "anything", type: "system_metadata" };
+    mock.emit(FeedId.SESSION_METADATA, encodeJson(payload));
+
+    expect(store.getSnapshot().size).toBe(1);
+    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+  });
+});

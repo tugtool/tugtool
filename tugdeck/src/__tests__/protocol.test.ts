@@ -1,12 +1,20 @@
 import { describe, test, expect } from "bun:test";
 import {
+  CONTROL_ACTION_CLOSE_SESSION,
+  CONTROL_ACTION_RESET_SESSION,
+  CONTROL_ACTION_SPAWN_SESSION,
+  FEED_ID_SESSION_STATE,
   FeedId,
   FrameFlags,
   HEADER_SIZE,
   MAX_PAYLOAD_SIZE,
   controlFrame,
-  encodeFrame,
   decodeFrame,
+  encodeCloseSession,
+  encodeCodeInput,
+  encodeFrame,
+  encodeResetSession,
+  encodeSpawnSession,
   isControlFrame,
 } from "../protocol";
 
@@ -103,5 +111,87 @@ describe("wire format v1", () => {
     const decoded = decodeFrame(encoded);
     expect(decoded.feedId).toBe(0x99 as typeof decoded.feedId);
     expect(new TextDecoder().decode(decoded.payload)).toBe("opaque");
+  });
+});
+
+describe("session protocol constants", () => {
+  test("FEED_ID_SESSION_STATE is 0x52", () => {
+    expect(FEED_ID_SESSION_STATE).toBe(0x52);
+    expect(FeedId.SESSION_STATE).toBe(0x52);
+  });
+
+  test("CONTROL_ACTION_* names match supervisor expectations", () => {
+    expect(CONTROL_ACTION_SPAWN_SESSION).toBe("spawn_session");
+    expect(CONTROL_ACTION_CLOSE_SESSION).toBe("close_session");
+    expect(CONTROL_ACTION_RESET_SESSION).toBe("reset_session");
+  });
+});
+
+describe("encodeCodeInput", () => {
+  test("injects tug_session_id as the first field of the JSON payload", () => {
+    // Plan: the supervisor's dispatcher parses `tug_session_id` from the
+    // CODE_INPUT payload to route the frame to the right per-session
+    // worker. The field must be present on every CODE_INPUT emission —
+    // tugcast's router hard-rejects missing-session payloads per Step 7
+    // (`missing_tug_session_id` CONTROL error).
+    const buffer = encodeCodeInput(
+      { type: "user_text", text: "hi" },
+      "abc-123",
+    );
+    const frame = decodeFrame(buffer);
+    expect(frame.feedId).toBe(FeedId.CODE_INPUT);
+    const jsonStr = new TextDecoder().decode(frame.payload);
+    const parsed = JSON.parse(jsonStr);
+    expect(parsed.tug_session_id).toBe("abc-123");
+    expect(parsed.type).toBe("user_text");
+    expect(parsed.text).toBe("hi");
+
+    // The spec says tug_session_id is the FIRST field of the payload.
+    // Walk the stringified JSON to assert ordering (serde on the Rust
+    // side doesn't care about order but some test-side assertions and
+    // log inspections are friendlier when ordering is stable).
+    const firstKeyMatch = /^\{"([^"]+)"/.exec(jsonStr);
+    expect(firstKeyMatch).not.toBeNull();
+    expect(firstKeyMatch![1]).toBe("tug_session_id");
+  });
+});
+
+describe("session CONTROL frame builders", () => {
+  function parsePayload(frame: { feedId: number; payload: Uint8Array }) {
+    return JSON.parse(new TextDecoder().decode(frame.payload));
+  }
+
+  test("encodeSpawnSession produces a CONTROL frame with card_id and tug_session_id", () => {
+    const frame = encodeSpawnSession("card-1", "sess-1");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    expect(frame.flags).toBe(FrameFlags.DATA);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "spawn_session",
+      card_id: "card-1",
+      tug_session_id: "sess-1",
+    });
+  });
+
+  test("encodeCloseSession produces a CONTROL frame with card_id and tug_session_id", () => {
+    const frame = encodeCloseSession("card-1", "sess-1");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "close_session",
+      card_id: "card-1",
+      tug_session_id: "sess-1",
+    });
+  });
+
+  test("encodeResetSession produces a CONTROL frame with card_id and tug_session_id", () => {
+    const frame = encodeResetSession("card-1", "sess-1");
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = parsePayload(frame);
+    expect(payload).toEqual({
+      action: "reset_session",
+      card_id: "card-1",
+      tug_session_id: "sess-1",
+    });
   });
 });
