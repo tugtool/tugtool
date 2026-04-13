@@ -888,6 +888,29 @@ async fn capture_all_probes() {
         eprintln!("skipping capture_all_probes: TUG_REAL_CLAUDE not set");
         return;
     }
+    // Hard refusal: if ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) is
+    // present in the shell that invoked this test, the value would
+    // normally flow through cargo → test binary → tugcast → tugcode →
+    // claude and cause claude to authenticate via per-token API billing
+    // instead of `~/.claude.json` (the Max/Pro subscription). The
+    // spawn-site scrubs defend against this but we also refuse to run at
+    // all so the developer has a chance to `unset` it rather than
+    // discovering the leak by reading an `apiKeySource` field in a
+    // committed fixture. Belt and suspenders.
+    for var in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"] {
+        if std::env::var_os(var).is_some() {
+            panic!(
+                "{var} is set in the environment. The capture binary spawns real \
+                 claude and this variable would cause claude to authenticate via \
+                 per-token API billing instead of your Max/Pro subscription at \
+                 ~/.claude.json. Run `unset {var}` in this shell and re-run.\n\
+                 \n\
+                 (Spawn sites also scrub this variable defensively, so this \
+                 refusal is a warning — not a hard dependency — but we prefer \
+                 to fail loudly rather than silently change auth mode.)"
+            );
+        }
+    }
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

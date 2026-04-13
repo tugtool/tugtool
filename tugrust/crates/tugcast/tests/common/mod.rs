@@ -109,6 +109,13 @@ impl TestTugcast {
         // persisted `(dev.tugtool.app, session-id)` — which makes
         // tugcode boot with `--resume <stale-uuid>`, which claude
         // rejects, which causes every live-session test to hang.
+        // Scrub Anthropic auth env vars so the downstream claude CLI falls
+        // back to `~/.claude.json` (the user's Max/Pro subscription login)
+        // instead of per-token API billing via `ANTHROPIC_API_KEY`. Without
+        // this, whatever key is exported in the developer's shell flows
+        // through tugcast → tugcode → claude and every test run bills the
+        // API account instead of the subscription. See
+        // `capture_all_probes`'s pre-flight check for the hard refusal.
         let child = Command::new(bin)
             .arg("--port")
             .arg(port.to_string())
@@ -120,6 +127,8 @@ impl TestTugcast {
             .arg("--bank-path")
             .arg(&bank_path)
             .env("TUGBANK_PATH", &bank_path)
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .kill_on_drop(true)

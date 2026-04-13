@@ -697,11 +697,22 @@ export class SessionManager {
 
     console.log(`Spawning claude with args: ${args.join(" ")}`);
 
+    // Scrub Anthropic auth env vars so the claude CLI authenticates via
+    // `~/.claude.json` (the user's Max/Pro subscription) rather than
+    // per-token API billing via `ANTHROPIC_API_KEY`. Bun.spawn inherits
+    // the parent process environment by default when `env` is omitted,
+    // so we must pass an explicit env with these keys removed.
+    const { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ...scrubbedEnv } =
+      process.env as Record<string, string | undefined>;
+    void ANTHROPIC_API_KEY;
+    void CLAUDE_CODE_OAUTH_TOKEN;
+
     return Bun.spawn([claudePath, ...args], {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "inherit",
       cwd: this.projectDir,
+      env: scrubbedEnv,
     });
   }
 

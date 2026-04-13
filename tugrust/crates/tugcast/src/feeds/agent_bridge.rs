@@ -179,10 +179,18 @@ impl ChildSpawner for TugcodeSpawner {
                     )
                 };
             info!(cmd, ?args, "Spawning tugcode");
+            // Scrub Anthropic auth env vars so the downstream claude CLI
+            // authenticates via `~/.claude.json` (the user's Max/Pro
+            // subscription) rather than per-token API billing via
+            // `ANTHROPIC_API_KEY`. If the developer has that variable
+            // exported for other work (e.g. direct API scripts), we do
+            // NOT want it to leak into tugcode → claude.
             let mut child = Command::new(&cmd)
                 .args(&args)
                 .arg("--dir")
                 .arg(&project_dir)
+                .env_remove("ANTHROPIC_API_KEY")
+                .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::inherit())
