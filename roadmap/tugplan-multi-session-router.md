@@ -661,11 +661,11 @@ Covered inline in [#lifecycle-flow], [#s01-ledger-entry], [#s02-session-state-pa
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update `roadmap/tide.md §T0.5 P2` to mark this plan as landed at phase close.
-- [ ] Update `roadmap/code-session-remediation.md` to mark the "Plan authorship — next step" item as complete.
-- [ ] Add a section to `tugrust/crates/tugcast/README.md` (if it exists; otherwise inline module docs) describing the supervisor and its ledger.
-- [ ] Document the `TUG_REAL_CLAUDE=1` env var and how to run the integration tests in the test file module-level doc comment.
-- [ ] Update `tugdeck/src/lib/feed-store.ts` module-level doc comment with the filter semantics and an example.
+- [x] Update `roadmap/tide.md §T0.5 P2` to mark this plan as landed at phase close.
+- [x] Update `roadmap/code-session-remediation.md` to mark the "Plan authorship — next step" item as complete.
+- [x] Add a section to `tugrust/crates/tugcast/README.md` (if it exists; otherwise inline module docs) describing the supervisor and its ledger.
+- [x] Document the `TUG_REAL_CLAUDE=1` env var and how to run the integration tests in the test file module-level doc comment.
+- [x] Update `tugdeck/src/lib/feed-store.ts` module-level doc comment with the filter semantics and an example.
 
 ---
 
@@ -704,20 +704,20 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Add `pub const SESSION_STATE: Self = Self(0x52);` in the "Defaults" section of `tugcast-core/src/protocol.rs`, just after `SESSION_METADATA`.
-- [ ] Add both the `SESSION_STATE` and `SESSION_METADATA` arms to `FeedId::name()`.
-- [ ] Add `pub struct TugSessionId(pub String);` with the derives listed above. Add a `TugSessionId::new(s: impl Into<String>) -> Self` constructor and a `TugSessionId::as_str(&self) -> &str` accessor.
-- [ ] Add the three constant assertions to the existing `test_feed_id_bytes` (or equivalent) test.
-- [ ] Add a tiny `test_tug_session_id_hashable_and_cloneable` sanity test (construct two ids, insert into a `HashMap`, check clone equality).
+- [x] Add `pub const SESSION_STATE: Self = Self(0x52);` in the "Defaults" section of `tugcast-core/src/protocol.rs`, just after `SESSION_METADATA`.
+- [x] Add both the `SESSION_STATE` and `SESSION_METADATA` arms to `FeedId::name()`.
+- [x] Add `pub struct TugSessionId(pub String);` with the derives listed above. Add a `TugSessionId::new(s: impl Into<String>) -> Self` constructor and a `TugSessionId::as_str(&self) -> &str` accessor.
+- [x] Add the three constant assertions to the existing `test_feed_id_bytes` (or equivalent) test.
+- [x] Add a tiny `test_tug_session_id_hashable_and_cloneable` sanity test (construct two ids, insert into a `HashMap`, check clone equality).
 
 **Tests:**
 
-- [ ] Existing tugcast-core test suite runs clean plus the new constant assertions and the TugSessionId sanity test.
+- [x] Existing tugcast-core test suite runs clean plus the new constant assertions and the TugSessionId sanity test.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build -p tugcast-core`
-- [ ] `cd tugrust && cargo nextest run -p tugcast-core`
+- [x] `cd tugrust && cargo build -p tugcast-core`
+- [x] `cd tugrust && cargo nextest run -p tugcast-core`
 
 ---
 
@@ -737,25 +737,25 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Implement `splice_tug_session_id` per the contract above and [#s04-splice-semantics]. Scan the input for the first `{` byte before splicing; fail-safe (pass-through + `warn!`) on empty input and on lines with no `{` at all.
-- [ ] Implement `parse_tug_session_id` as a lightweight `serde_json::from_slice::<Value>` + `.get("tug_session_id").and_then(as_str).map(to_string)`. **Performance note:** unlike `session_metadata.rs` which deliberately uses a byte-window needle-scan for CODE_OUTPUT (the high-volume, per-stream-token path), CODE_INPUT is user-typed and arrives at most one frame per user message. Full-JSON parse cost is dominated by keystroke interarrival time, not by parser overhead, so byte-scanning would be premature optimization here. The asymmetry with `session_metadata.rs` is intentional and the dispatcher's per-frame parse is an acceptable trade-off.
-- [ ] Update [#s04-splice-semantics] in this plan to reflect the "first-`{`-byte" rule (done in this step's commit as part of the doc task).
-- [ ] Add unit tests for each case listed under Artifacts.
+- [x] Implement `splice_tug_session_id` per the contract above and [#s04-splice-semantics]. Scan the input for the first `{` byte before splicing; fail-safe (pass-through + `warn!`) on empty input and on lines with no `{` at all.
+- [x] Implement `parse_tug_session_id` as a lightweight `serde_json::from_slice::<Value>` + `.get("tug_session_id").and_then(as_str).map(to_string)`. **Performance note:** unlike `session_metadata.rs` which deliberately uses a byte-window needle-scan for CODE_OUTPUT (the high-volume, per-stream-token path), CODE_INPUT is user-typed and arrives at most one frame per user message. Full-JSON parse cost is dominated by keystroke interarrival time, not by parser overhead, so byte-scanning would be premature optimization here. The asymmetry with `session_metadata.rs` is intentional and the dispatcher's per-frame parse is an acceptable trade-off.
+- [x] Update [#s04-splice-semantics] in this plan to reflect the "first-`{`-byte" rule (done in this step's commit as part of the doc task).
+- [x] Add unit tests for each case listed under Artifacts.
 
 **Tests:**
 
-- [ ] `test_splice_empty_input_passes_through`
-- [ ] `test_splice_no_open_brace_passes_through`
-- [ ] `test_splice_leading_whitespace_finds_brace` — asserts that `  {"type":"..."}` is still spliced correctly and does not silently pass through.
-- [ ] `test_splice_empty_object`
-- [ ] `test_splice_realistic_session_init`
-- [ ] `test_parse_tug_session_id_present`
-- [ ] `test_parse_tug_session_id_absent`
+- [x] `test_splice_empty_input_passes_through`
+- [x] `test_splice_no_open_brace_passes_through`
+- [x] `test_splice_leading_whitespace_finds_brace` — asserts that `  {"type":"..."}` is still spliced correctly and does not silently pass through.
+- [x] `test_splice_empty_object`
+- [x] `test_splice_realistic_session_init`
+- [x] `test_parse_tug_session_id_present`
+- [x] `test_parse_tug_session_id_absent`
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build -p tugcast`
-- [ ] `cd tugrust && cargo nextest run -p tugcast feeds::code`
+- [x] `cd tugrust && cargo build -p tugcast`
+- [x] `cd tugrust && cargo nextest run -p tugcast feeds::code`
 
 ---
 
@@ -781,20 +781,20 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Create `agent_supervisor.rs` with the types above. Import `TugSessionId` from `tugcast_core::protocol` (introduced in Step 1) — do not redefine locally. Keep `CrashBudget` imported from `agent_bridge.rs` (unchanged).
-- [ ] Wire `pub mod agent_supervisor;` into `tugcast/src/feeds/mod.rs`.
-- [ ] Ensure the file builds clean (no warnings) with `todo!()` bodies behind `#[allow(dead_code)]` where necessary — but prefer real no-op bodies so `-D warnings` stays honest.
+- [x] Create `agent_supervisor.rs` with the types above. Import `TugSessionId` from `tugcast_core::protocol` (introduced in Step 1) — do not redefine locally. Keep `CrashBudget` imported from `agent_bridge.rs` (unchanged).
+- [x] Wire `pub mod agent_supervisor;` into `tugcast/src/feeds/mod.rs`.
+- [x] Ensure the file builds clean (no warnings) with `todo!()` bodies behind `#[allow(dead_code)]` where necessary — but prefer real no-op bodies so `-D warnings` stays honest.
 
 **Tests:**
 
-- [ ] `test_bounded_queue_cap_256`
-- [ ] `test_bounded_queue_overflow_signals`
-- [ ] `test_spawn_state_transitions` — assert the state-machine guard: `Idle → Spawning → Live` allowed; `Live → Spawning` rejected.
+- [x] `test_bounded_queue_cap_256`
+- [x] `test_bounded_queue_overflow_signals`
+- [x] `test_spawn_state_transitions` — assert the state-machine guard: `Idle → Spawning → Live` allowed; `Live → Spawning` rejected.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build -p tugcast`
-- [ ] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
+- [x] `cd tugrust && cargo build -p tugcast`
+- [x] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
 
 ---
 
@@ -817,38 +817,38 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Parse the payload with `serde_json::Value` and extract `tug_session_id` and `card_id`. **Do not synthesize `card_id` from `client_id` — that was an earlier-draft design that silently breaks rebind-on-reconnect, because a reload mints a fresh `client_id` and any synthesized `card_id` would not match the tugbank-persisted one.** Reject missing/empty `card_id` or `tug_session_id` with a `warn!` log and an `Err(ControlError::MissingCardId | MissingSessionId)` return; do not panic, do not mutate state. Step 8's `handle_client` wiring converts the `Err` into a `send_control_json(FeedId::CONTROL, &json!({type: "error", detail: "missing_card_id"}))` on the in-scope socket.
-- [ ] For `spawn_session`, use `HashMap::entry(...).or_insert_with(...)` so pre-existing ledger entries (reconnect scenarios) are preserved untouched — do NOT replace an existing `LedgerEntry`, because its `latest_metadata` is the payload the next bullet replays. Insert into `client_sessions[client_id]` (HashSet insertion, idempotent), then write to tugbank, then publish `pending`. Double-spawn is a no-op on ledger state but still re-publishes `pending` and re-inserts into `client_sessions` so cards re-subscribing see the current state.
-- [ ] **Per [D12]'s asymmetric policy: wrap the `spawn_session` tugbank write in a `match` and treat a write failure as a HARD error — return `Err(ControlError::PersistenceFailure)` from `handle_control` so `handle_client` can emit a CONTROL error frame on the in-scope socket.** Do this AFTER the idempotent ledger insert and AFTER the `client_sessions` insert but BEFORE the `pending` publish and BEFORE the event-driven metadata replay — if the write fails, the caller gets an error and the client can react; the partial ledger/client_sessions state is tolerable (it will be rewritten on any retry). Do NOT silently continue on write failure: a silent failure would leave the in-memory ledger populated but tugbank empty, and on restart the session would silently vanish with no error signal.
-- [ ] **Per [D12]'s asymmetric policy: wrap the `close_session` tugbank delete in a `let _ = ...` pattern (or `match` with the `Err` arm calling `warn!` and continuing) — treat a delete failure as BEST-EFFORT.** In-memory cleanup (ledger entry drop, subprocess kill, SESSION_STATE `closed` publish, `client_sessions` removal) proceeds regardless of tugbank delete success or failure. The lingering tugbank entry is benign: the next `rebind_from_tugbank` on startup will re-create a `pending` ledger entry for the lingering id, which will be harmlessly re-bound. Do NOT return an error on delete failure — symmetric strict handling would turn a benign cleanup failure into a user-visible error frame on the close path with no recovery benefit.
-- [ ] **Per [D14], after the `spawn_session` branch has populated `client_sessions[client_id]` and published `pending`, read `LedgerEntry::latest_metadata` for the spawned `tug_session_id` under the per-session mutex; if `Some`, clone the frame and publish it on the supervisor's SESSION_METADATA broadcast as a one-shot event-driven replay.** The replay is single-session, single-frame, and synchronous with the `spawn_session` dispatch — there is no separate batch helper.
-- [ ] For `close_session`, look up, abort the cancel token, remove from `client_sessions[client_id]`, delete from tugbank, drop the entry, publish `closed`.
-- [ ] For `reset_session`, compose the two.
-- [ ] Implement `on_client_disconnect(client_id)` to drop `client_sessions[client_id]`.
-- [ ] Declare the tugbank domain constant `dev.tugtool.tide.session-keys` as a `pub const` on `AgentSupervisor` (or in a small `domain` module inside `agent_supervisor.rs`).
+- [x] Parse the payload with `serde_json::Value` and extract `tug_session_id` and `card_id`. **Do not synthesize `card_id` from `client_id` — that was an earlier-draft design that silently breaks rebind-on-reconnect, because a reload mints a fresh `client_id` and any synthesized `card_id` would not match the tugbank-persisted one.** Reject missing/empty `card_id` or `tug_session_id` with a `warn!` log and an `Err(ControlError::MissingCardId | MissingSessionId)` return; do not panic, do not mutate state. Step 8's `handle_client` wiring converts the `Err` into a `send_control_json(FeedId::CONTROL, &json!({type: "error", detail: "missing_card_id"}))` on the in-scope socket.
+- [x] For `spawn_session`, use `HashMap::entry(...).or_insert_with(...)` so pre-existing ledger entries (reconnect scenarios) are preserved untouched — do NOT replace an existing `LedgerEntry`, because its `latest_metadata` is the payload the next bullet replays. Insert into `client_sessions[client_id]` (HashSet insertion, idempotent), then write to tugbank, then publish `pending`. Double-spawn is a no-op on ledger state but still re-publishes `pending` and re-inserts into `client_sessions` so cards re-subscribing see the current state.
+- [x] **Per [D12]'s asymmetric policy: wrap the `spawn_session` tugbank write in a `match` and treat a write failure as a HARD error — return `Err(ControlError::PersistenceFailure)` from `handle_control` so `handle_client` can emit a CONTROL error frame on the in-scope socket.** Do this AFTER the idempotent ledger insert and AFTER the `client_sessions` insert but BEFORE the `pending` publish and BEFORE the event-driven metadata replay — if the write fails, the caller gets an error and the client can react; the partial ledger/client_sessions state is tolerable (it will be rewritten on any retry). Do NOT silently continue on write failure: a silent failure would leave the in-memory ledger populated but tugbank empty, and on restart the session would silently vanish with no error signal.
+- [x] **Per [D12]'s asymmetric policy: wrap the `close_session` tugbank delete in a `let _ = ...` pattern (or `match` with the `Err` arm calling `warn!` and continuing) — treat a delete failure as BEST-EFFORT.** In-memory cleanup (ledger entry drop, subprocess kill, SESSION_STATE `closed` publish, `client_sessions` removal) proceeds regardless of tugbank delete success or failure. The lingering tugbank entry is benign: the next `rebind_from_tugbank` on startup will re-create a `pending` ledger entry for the lingering id, which will be harmlessly re-bound. Do NOT return an error on delete failure — symmetric strict handling would turn a benign cleanup failure into a user-visible error frame on the close path with no recovery benefit.
+- [x] **Per [D14], after the `spawn_session` branch has populated `client_sessions[client_id]` and published `pending`, read `LedgerEntry::latest_metadata` for the spawned `tug_session_id` under the per-session mutex; if `Some`, clone the frame and publish it on the supervisor's SESSION_METADATA broadcast as a one-shot event-driven replay.** The replay is single-session, single-frame, and synchronous with the `spawn_session` dispatch — there is no separate batch helper.
+- [x] For `close_session`, look up, abort the cancel token, remove from `client_sessions[client_id]`, delete from tugbank, drop the entry, publish `closed`.
+- [x] For `reset_session`, compose the two.
+- [x] Implement `on_client_disconnect(client_id)` to drop `client_sessions[client_id]`.
+- [x] Declare the tugbank domain constant `dev.tugtool.tide.session-keys` as a `pub const` on `AgentSupervisor` (or in a small `domain` module inside `agent_supervisor.rs`).
 
 **Tests:**
 
-- [ ] `test_spawn_session_writes_pending`
-- [ ] `test_spawn_session_writes_tugbank_entry` — asserts the in-memory tugbank fake receives the `(card_id, tug_session_id)` write.
-- [ ] `test_spawn_session_inserts_into_client_sessions` — after a spawn, `client_sessions[client_id]` contains the `tug_session_id` (per [D14]).
-- [ ] `test_spawn_session_rejects_missing_card_id` — CONTROL payload omitting `card_id` returns `Err(ControlError::MissingCardId)` and does not mutate any state (ledger, tugbank, or `client_sessions`).
-- [ ] `test_spawn_session_rejects_empty_card_id` — CONTROL payload with `card_id: ""` returns the same error.
-- [ ] `test_spawn_session_idempotent` — second spawn with same `(card_id, tug_session_id)` is a no-op on ledger state (pre-existing `LedgerEntry` and its `latest_metadata` are preserved — confirmed by asserting the original `LedgerEntry` instance is still at the same `tug_session_id` key) but re-writes tugbank and re-inserts into `client_sessions` (acceptable).
-- [ ] **`test_spawn_session_replays_latest_metadata_for_known_session`** — pre-populate a `LedgerEntry` for `tug_session_id = X` with `latest_metadata: Some(frame)` (no `client_sessions` entry yet — simulates reconnect), subscribe a fresh `broadcast::Receiver` to the supervisor's SESSION_METADATA broadcast, call `handle_control("spawn_session", ...)` for session X under a fresh `client_id`, and assert the receiver gets exactly one frame whose payload matches the pre-populated metadata. This is the test that pins [F13]'s fix — it exercises the real reconnect code path (no post-handshake call, fresh `client_id`, event-driven replay inside `handle_control`).
-- [ ] **`test_spawn_session_with_no_prior_metadata_fires_no_replay`** — spawn a brand-new session that has never had `latest_metadata` set; subscribe a broadcast receiver; call `handle_control("spawn_session", ...)`; assert the receiver gets zero metadata frames (only SESSION_STATE `pending` on a separate broadcast, which is not the one under test). Pins the `None`-skip path.
-- [ ] **`test_spawn_session_returns_err_on_tugbank_failure_injects_error_frame`** — uses an in-memory tugbank fake configured to return `Err(_)` on `set`. Calls `handle_control("spawn_session", payload, client_id)` with a well-formed payload. Asserts: the return is `Err(ControlError::PersistenceFailure)`; `client_sessions[client_id]` may or may not contain the id (the partial-state tolerance is documented, and the test does not pin it strictly); **SESSION_STATE broadcast has NOT received a `pending` frame for this session** (the strict path aborts before the publish); the event-driven metadata replay has NOT fired. This test pins [D12]'s strict-write asymmetry.
-- [ ] **`test_close_session_logs_on_tugbank_delete_failure_and_continues`** — uses an in-memory tugbank fake configured to return `Err(_)` on `delete`. Pre-populates a ledger entry for `tug_session_id = X`, inserts into `client_sessions[client_id]`, then calls `handle_control("close_session", payload, client_id)`. Asserts: the return is `Ok(())` (not an error); the ledger no longer has an entry for X; `client_sessions[client_id]` no longer contains X; SESSION_STATE has received a `closed` frame for X; a `warn!` log was emitted (captured via `tracing_test` or equivalent). This test pins [D12]'s best-effort-delete asymmetry.
-- [ ] `test_close_session_publishes_closed_and_removes_entry`
-- [ ] `test_close_session_deletes_tugbank_entry` — asserts the fake sees the delete.
-- [ ] `test_close_session_removes_from_client_sessions` — after a close, `client_sessions[client_id]` no longer contains the `tug_session_id`.
-- [ ] `test_close_session_unknown_is_noop` — no tugbank interaction on unknown-id close.
-- [ ] `test_reset_session_publishes_closed_then_pending`
-- [ ] `test_on_client_disconnect_drops_client_sessions_entry` — after calling `on_client_disconnect(cid)`, `client_sessions` no longer has a key for `cid`; ledger and tugbank are untouched.
+- [x] `test_spawn_session_writes_pending`
+- [x] `test_spawn_session_writes_tugbank_entry` — asserts the in-memory tugbank fake receives the `(card_id, tug_session_id)` write.
+- [x] `test_spawn_session_inserts_into_client_sessions` — after a spawn, `client_sessions[client_id]` contains the `tug_session_id` (per [D14]).
+- [x] `test_spawn_session_rejects_missing_card_id` — CONTROL payload omitting `card_id` returns `Err(ControlError::MissingCardId)` and does not mutate any state (ledger, tugbank, or `client_sessions`).
+- [x] `test_spawn_session_rejects_empty_card_id` — CONTROL payload with `card_id: ""` returns the same error.
+- [x] `test_spawn_session_idempotent` — second spawn with same `(card_id, tug_session_id)` is a no-op on ledger state (pre-existing `LedgerEntry` and its `latest_metadata` are preserved — confirmed by asserting the original `LedgerEntry` instance is still at the same `tug_session_id` key) but re-writes tugbank and re-inserts into `client_sessions` (acceptable).
+- [x] **`test_spawn_session_replays_latest_metadata_for_known_session`** — pre-populate a `LedgerEntry` for `tug_session_id = X` with `latest_metadata: Some(frame)` (no `client_sessions` entry yet — simulates reconnect), subscribe a fresh `broadcast::Receiver` to the supervisor's SESSION_METADATA broadcast, call `handle_control("spawn_session", ...)` for session X under a fresh `client_id`, and assert the receiver gets exactly one frame whose payload matches the pre-populated metadata. This is the test that pins [F13]'s fix — it exercises the real reconnect code path (no post-handshake call, fresh `client_id`, event-driven replay inside `handle_control`).
+- [x] **`test_spawn_session_with_no_prior_metadata_fires_no_replay`** — spawn a brand-new session that has never had `latest_metadata` set; subscribe a broadcast receiver; call `handle_control("spawn_session", ...)`; assert the receiver gets zero metadata frames (only SESSION_STATE `pending` on a separate broadcast, which is not the one under test). Pins the `None`-skip path.
+- [x] **`test_spawn_session_returns_err_on_tugbank_failure_injects_error_frame`** — uses an in-memory tugbank fake configured to return `Err(_)` on `set`. Calls `handle_control("spawn_session", payload, client_id)` with a well-formed payload. Asserts: the return is `Err(ControlError::PersistenceFailure)`; `client_sessions[client_id]` may or may not contain the id (the partial-state tolerance is documented, and the test does not pin it strictly); **SESSION_STATE broadcast has NOT received a `pending` frame for this session** (the strict path aborts before the publish); the event-driven metadata replay has NOT fired. This test pins [D12]'s strict-write asymmetry.
+- [x] **`test_close_session_logs_on_tugbank_delete_failure_and_continues`** — uses an in-memory tugbank fake configured to return `Err(_)` on `delete`. Pre-populates a ledger entry for `tug_session_id = X`, inserts into `client_sessions[client_id]`, then calls `handle_control("close_session", payload, client_id)`. Asserts: the return is `Ok(())` (not an error); the ledger no longer has an entry for X; `client_sessions[client_id]` no longer contains X; SESSION_STATE has received a `closed` frame for X; a `warn!` log was emitted (captured via `tracing_test` or equivalent). This test pins [D12]'s best-effort-delete asymmetry.
+- [x] `test_close_session_publishes_closed_and_removes_entry`
+- [x] `test_close_session_deletes_tugbank_entry` — asserts the fake sees the delete.
+- [x] `test_close_session_removes_from_client_sessions` — after a close, `client_sessions[client_id]` no longer contains the `tug_session_id`.
+- [x] `test_close_session_unknown_is_noop` — no tugbank interaction on unknown-id close.
+- [x] `test_reset_session_publishes_closed_then_pending`
+- [x] `test_on_client_disconnect_drops_client_sessions_entry` — after calling `on_client_disconnect(cid)`, `client_sessions` no longer has a key for `cid`; ledger and tugbank are untouched.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
+- [x] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
 
 ---
 
@@ -872,23 +872,23 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Add an outbound CONTROL broadcast handle to `AgentSupervisor::new()` (mirrors the existing `client_action_tx` pattern in main.rs).
-- [ ] Implement `dispatcher_task` with the four-way branch above.
-- [ ] Serialize `Idle → Spawning` per-session: lock the per-session `Mutex<LedgerEntry>` before deciding the branch. Only the thread that actually flips `Idle → Spawning` calls `spawn_session_worker`.
-- [ ] Implement the stub `spawn_session_worker` that wires the per-session `mpsc` and `CancellationToken`, publishes `SESSION_STATE = spawning`, and immediately transitions to `Live` as a scaffold. Real subprocess spawning lands in Step 6.
-- [ ] **Close the Step 4 close/spawn TOCTOU window per [R06]/[#r06-close-spawn-toctou].** Rework `do_close_session` so it takes the outer ledger lock exactly once — `HashMap::remove` up front under the outer lock, then per-session mutation — instead of lookup-then-remove across two outer-lock sections. Rework `do_spawn_session` to gate ledger insertion through `SpawnState::try_transition` under the per-session lock (reconnect `Idle → Idle` is a no-op; `Closed → Spawning` is refused and returns a `ControlError` the caller can retry). Move SESSION_STATE publication inside the per-session lock so frame order always matches state-machine order. Step 4's existing handle_control tests (`test_close_session_publishes_closed_and_removes_entry`, `test_reset_session_publishes_closed_then_pending`, `test_spawn_session_idempotent`) must continue to pass after the rework — the fix is lock-discipline, not a behavior change.
+- [x] Add an outbound CONTROL broadcast handle to `AgentSupervisor::new()` (mirrors the existing `client_action_tx` pattern in main.rs).
+- [x] Implement `dispatcher_task` with the four-way branch above.
+- [x] Serialize `Idle → Spawning` per-session: lock the per-session `Mutex<LedgerEntry>` before deciding the branch. Only the thread that actually flips `Idle → Spawning` calls `spawn_session_worker`.
+- [x] Implement the stub `spawn_session_worker` that wires the per-session `mpsc` and `CancellationToken`, publishes `SESSION_STATE = spawning`, and immediately transitions to `Live` as a scaffold. Real subprocess spawning lands in Step 6.
+- [x] **Close the Step 4 close/spawn TOCTOU window per [R06]/[#r06-close-spawn-toctou].** Rework `do_close_session` so it takes the outer ledger lock exactly once — `HashMap::remove` up front under the outer lock, then per-session mutation — instead of lookup-then-remove across two outer-lock sections. Rework `do_spawn_session` to gate ledger insertion through `SpawnState::try_transition` under the per-session lock (reconnect `Idle → Idle` is a no-op; `Closed → Spawning` is refused and returns a `ControlError` the caller can retry). Move SESSION_STATE publication inside the per-session lock so frame order always matches state-machine order. Step 4's existing handle_control tests (`test_close_session_publishes_closed_and_removes_entry`, `test_reset_session_publishes_closed_then_pending`, `test_spawn_session_idempotent`) must continue to pass after the rework — the fix is lock-discipline, not a behavior change.
 
 **Tests:**
 
-- [ ] `test_orphan_input_rejected` — CODE_INPUT with no intent record emits `session_unknown` CONTROL frame and does not touch the ledger.
-- [ ] `test_first_input_triggers_spawn` — with an intent record in `Idle`, a CODE_INPUT frame transitions to `Spawning` and calls the spawn hook exactly once.
-- [ ] `test_concurrent_first_inputs_spawn_once` — two CODE_INPUT frames arriving concurrently for the same session spawn exactly one subprocess; the second is queued. Covers [R02].
-- [ ] `test_queue_overflow_emits_backpressure` — 257 frames during `Spawning` triggers the `session_backpressure` CONTROL emission on frame 257.
-- [ ] `test_close_spawn_race_does_not_leak_entry` — covers [R06]. Two concurrent `tokio::spawn`ed `handle_control` calls for the same `tug_session_id`: one `close_session` and one `spawn_session` (different clients). Assert both complete without panic; assert the final ledger state is self-consistent (either the entry exists under the spawn's client affinity, or it does not and both `client_sessions` entries agree); assert no `LedgerEntry` is orphaned (no `Arc<Mutex<LedgerEntry>>` outlives its map removal while still referenced by `client_sessions`).
+- [x] `test_orphan_input_rejected` — CODE_INPUT with no intent record emits `session_unknown` CONTROL frame and does not touch the ledger.
+- [x] `test_first_input_triggers_spawn` — with an intent record in `Idle`, a CODE_INPUT frame transitions to `Spawning` and calls the spawn hook exactly once.
+- [x] `test_concurrent_first_inputs_spawn_once` — two CODE_INPUT frames arriving concurrently for the same session spawn exactly one subprocess; the second is queued. Covers [R02].
+- [x] `test_queue_overflow_emits_backpressure` — 257 frames during `Spawning` triggers the `session_backpressure` CONTROL emission on frame 257.
+- [x] `test_close_spawn_race_does_not_leak_entry` — covers [R06]. Two concurrent `tokio::spawn`ed `handle_control` calls for the same `tug_session_id`: one `close_session` and one `spawn_session` (different clients). Assert both complete without panic; assert the final ledger state is self-consistent (either the entry exists under the spawn's client affinity, or it does not and both `client_sessions` entries agree); assert no `LedgerEntry` is orphaned (no `Arc<Mutex<LedgerEntry>>` outlives its map removal while still referenced by `client_sessions`).
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
+- [x] `cd tugrust && cargo nextest run -p tugcast feeds::agent_supervisor`
 
 ---
 
@@ -914,32 +914,32 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Modify `run_agent_bridge` signature to take `tug_session_id: TugSessionId` and to **delete** both `project_info_tx: watch::Sender<Frame>` and `session_watch_tx: watch::Sender<Frame>` from the parameter list. Thread `tug_session_id` through.
-- [ ] Delete the `let (project_info_tx, project_info_rx) = watch::channel(...)` and `let (session_watch_tx, session_watch_rx) = watch::channel(...)` declarations at the top of `spawn_agent_bridge` (the whole `spawn_agent_bridge` function is going away, but the sub-deletion is called out explicitly so a coder does not miss it when refactoring).
-- [ ] Delete the `AgentBridgeHandles` struct and the `snapshot_watches: vec![project_info_rx, session_watch_rx]` construction at the return site.
-- [ ] Inside `run_agent_bridge`, delete the `let _ = project_info_tx.send(project_info_frame);` line near the top of the function (it runs once at startup, **before** the handshake loop — not after). Delete the `let _ = session_watch_tx.send(frame.clone());` line inside the `session_init` stdout branch. Keep the rest of the `session_init` handling (the supervisor callback and the `SESSION_STATE = live` publish).
-- [ ] **Also delete the `let _ = code_tx.send(project_info_frame.clone());` line that immediately precedes the deleted `project_info_tx.send` line (same startup block, runs once before the handshake loop).** This is the shared-broadcast side of the same `project_info` startup emission — deleting the watch latch alone would leave the broadcast emission unspliced, and under [D02]'s splice rule every outbound CODE_OUTPUT frame must carry `tug_session_id`. The whole `project_info` startup frame has no live non-`_archive/` consumer, so deleting the broadcast emission is cleaner than splicing a frame nobody reads. Delete the entire construction block as well: the `let project_info_json = ...` string-format and the `let project_info_frame = code_output_frame(project_info_json.as_bytes());` allocation. After this task, `run_agent_bridge` emits no `project_info` frame at all — neither on the shared broadcast nor on any watch.
-- [ ] Replace the existing `let frame = code_output_frame(line.as_bytes())` with a splice-then-wrap sequence using `splice_tug_session_id`.
-- [ ] Wire the `session_init`-detection path to write `claude_session_id` back into the ledger via an async callback (or a shared `Arc<Mutex<LedgerEntry>>`).
-- [ ] On successful handshake + first frame flushed from the per-session queue, publish `SESSION_STATE = live`.
-- [ ] Implement `merger_task` inside `agent_supervisor.rs`. Uses `tokio_stream::StreamMap` keyed by `TugSessionId`, same pattern as the router's existing server-to-client fan-in.
-- [ ] Detect `system_metadata` frames in the merger using the existing needle-scan pattern from `session_metadata.rs`. On match, look up the ledger entry for the frame's `tug_session_id` (outer mutex), clone the `Arc<Mutex<LedgerEntry>>`, release the outer lock, acquire the per-session lock, and write `entry.latest_metadata = Some(frame.clone())`. THEN publish the spliced frame on the supervisor's SESSION_METADATA `broadcast::Sender<Frame>` per [D14]. Write to the ledger field directly — no `SessionMetadataRegistry` wrapper; the merger is the sole caller of this write path, and `spawn_session`'s event-driven replay reads `latest_metadata` inline from the `Arc<Mutex<LedgerEntry>>` it already holds from `HashMap::entry(...).or_insert_with(...)`.
-- [ ] Delete `feeds/session_metadata.rs`'s `SessionMetadataFeed` struct and `run` task loop entirely. If the existing unit tests on needle-scan detection are worth keeping, relocate them to either `feeds/session_metadata.rs` (as pure helper tests) or `agent_supervisor.rs` alongside the merger.
-- [ ] **Delete the stale `test_project_info_frame_format` unit test** in `tugcast/src/feeds/agent_bridge.rs` (lines 384–397 today). The test constructs its own `project_info_json` string inline and asserts the JSON shape of a `project_info` frame — with the `project_info` startup emission deleted above, this test encodes a behavioral expectation for a code path that no longer exists. Because it does not call any deleted production function, the build does not catch it; it must be deleted explicitly. This is in addition to the `project_info_tx` / `code_tx.send(project_info_frame.clone())` deletions above.
-- [ ] On crash-budget exhaustion for a session, publish `SESSION_STATE = errored{detail: "crash_budget_exhausted"}`, drop the dispatcher sender for that session, but keep the intent record so `reset_session` works.
-- [ ] Remove the top-level `spawn_agent_bridge` call from `main.rs` (that lands in Step 8).
+- [x] Modify `run_agent_bridge` signature to take `tug_session_id: TugSessionId` and to **delete** both `project_info_tx: watch::Sender<Frame>` and `session_watch_tx: watch::Sender<Frame>` from the parameter list. Thread `tug_session_id` through.
+- [x] Delete the `let (project_info_tx, project_info_rx) = watch::channel(...)` and `let (session_watch_tx, session_watch_rx) = watch::channel(...)` declarations at the top of `spawn_agent_bridge` (the whole `spawn_agent_bridge` function is going away, but the sub-deletion is called out explicitly so a coder does not miss it when refactoring).
+- [x] Delete the `AgentBridgeHandles` struct and the `snapshot_watches: vec![project_info_rx, session_watch_rx]` construction at the return site.
+- [x] Inside `run_agent_bridge`, delete the `let _ = project_info_tx.send(project_info_frame);` line near the top of the function (it runs once at startup, **before** the handshake loop — not after). Delete the `let _ = session_watch_tx.send(frame.clone());` line inside the `session_init` stdout branch. Keep the rest of the `session_init` handling (the supervisor callback and the `SESSION_STATE = live` publish).
+- [x] **Also delete the `let _ = code_tx.send(project_info_frame.clone());` line that immediately precedes the deleted `project_info_tx.send` line (same startup block, runs once before the handshake loop).** This is the shared-broadcast side of the same `project_info` startup emission — deleting the watch latch alone would leave the broadcast emission unspliced, and under [D02]'s splice rule every outbound CODE_OUTPUT frame must carry `tug_session_id`. The whole `project_info` startup frame has no live non-`_archive/` consumer, so deleting the broadcast emission is cleaner than splicing a frame nobody reads. Delete the entire construction block as well: the `let project_info_json = ...` string-format and the `let project_info_frame = code_output_frame(project_info_json.as_bytes());` allocation. After this task, `run_agent_bridge` emits no `project_info` frame at all — neither on the shared broadcast nor on any watch.
+- [x] Replace the existing `let frame = code_output_frame(line.as_bytes())` with a splice-then-wrap sequence using `splice_tug_session_id`.
+- [x] Wire the `session_init`-detection path to write `claude_session_id` back into the ledger via an async callback (or a shared `Arc<Mutex<LedgerEntry>>`).
+- [x] On successful handshake + first frame flushed from the per-session queue, publish `SESSION_STATE = live`.
+- [x] Implement `merger_task` inside `agent_supervisor.rs`. Uses `tokio_stream::StreamMap` keyed by `TugSessionId`, same pattern as the router's existing server-to-client fan-in.
+- [x] Detect `system_metadata` frames in the merger using the existing needle-scan pattern from `session_metadata.rs`. On match, look up the ledger entry for the frame's `tug_session_id` (outer mutex), clone the `Arc<Mutex<LedgerEntry>>`, release the outer lock, acquire the per-session lock, and write `entry.latest_metadata = Some(frame.clone())`. THEN publish the spliced frame on the supervisor's SESSION_METADATA `broadcast::Sender<Frame>` per [D14]. Write to the ledger field directly — no `SessionMetadataRegistry` wrapper; the merger is the sole caller of this write path, and `spawn_session`'s event-driven replay reads `latest_metadata` inline from the `Arc<Mutex<LedgerEntry>>` it already holds from `HashMap::entry(...).or_insert_with(...)`.
+- [x] Delete `feeds/session_metadata.rs`'s `SessionMetadataFeed` struct and `run` task loop entirely. If the existing unit tests on needle-scan detection are worth keeping, relocate them to either `feeds/session_metadata.rs` (as pure helper tests) or `agent_supervisor.rs` alongside the merger.
+- [x] **Delete the stale `test_project_info_frame_format` unit test** in `tugcast/src/feeds/agent_bridge.rs` (lines 384–397 today). The test constructs its own `project_info_json` string inline and asserts the JSON shape of a `project_info` frame — with the `project_info` startup emission deleted above, this test encodes a behavioral expectation for a code path that no longer exists. Because it does not call any deleted production function, the build does not catch it; it must be deleted explicitly. This is in addition to the `project_info_tx` / `code_tx.send(project_info_frame.clone())` deletions above.
+- [x] On crash-budget exhaustion for a session, publish `SESSION_STATE = errored{detail: "crash_budget_exhausted"}`, drop the dispatcher sender for that session, but keep the intent record so `reset_session` works.
+- [x] Remove the top-level `spawn_agent_bridge` call from `main.rs` (that lands in Step 8).
 
 **Tests:**
 
-- [ ] `test_crash_budget_per_session` — one session's crash loop does not disable a sibling session. Mock the subprocess via a closure that simulates crashes.
-- [ ] `test_merger_fans_in_two_sessions` — two per-session mpscs feed the merger; both frames reach the CODE_OUTPUT broadcast and are routed through the splice helper.
-- [ ] `test_merger_routes_metadata_per_session_no_clobber` — two sessions each emit a `system_metadata` line in rapid succession; assert both frames are received by a SESSION_METADATA broadcast subscriber (neither is lost), and assert `LedgerEntry::latest_metadata` for each session holds its own distinct payload (no cross-pollination). This is the test that specifically pins the [D14] broadcast-vs-watch decision — it would pass with a broadcast and fail with a single-slot watch.
-- [ ] `test_session_init_populates_claude_session_id` — a mocked stdout line containing `"type":"session_init"` writes the parsed id into the ledger entry **without** touching any watch sender (verifies `session_watch_tx` deletion: there is no longer any `watch::channel` being latched; assertion is that no channel was constructed in test setup).
+- [x] `test_crash_budget_per_session` — one session's crash loop does not disable a sibling session. Mock the subprocess via a closure that simulates crashes.
+- [x] `test_merger_fans_in_two_sessions` — two per-session mpscs feed the merger; both frames reach the CODE_OUTPUT broadcast and are routed through the splice helper.
+- [x] `test_merger_routes_metadata_per_session_no_clobber` — two sessions each emit a `system_metadata` line in rapid succession; assert both frames are received by a SESSION_METADATA broadcast subscriber (neither is lost), and assert `LedgerEntry::latest_metadata` for each session holds its own distinct payload (no cross-pollination). This is the test that specifically pins the [D14] broadcast-vs-watch decision — it would pass with a broadcast and fail with a single-slot watch.
+- [x] `test_session_init_populates_claude_session_id` — a mocked stdout line containing `"type":"session_init"` writes the parsed id into the ledger entry **without** touching any watch sender (verifies `session_watch_tx` deletion: there is no longer any `watch::channel` being latched; assertion is that no channel was constructed in test setup).
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build -p tugcast`
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [x] `cd tugrust && cargo build -p tugcast`
+- [x] `cd tugrust && cargo nextest run -p tugcast`
 
 ---
 
@@ -960,25 +960,25 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Change `type InputOwnership = Arc<Mutex<HashMap<(FeedId, Option<TugSessionId>), u64>>>;` (import `TugSessionId` from `tugcast_core`).
-- [ ] Update `try_claim_input` and all its callers. For non-CODE_INPUT feeds, always pass `None`. For CODE_INPUT, parse `tug_session_id` from the payload via `parse_tug_session_id` before the claim attempt.
-- [ ] If the CODE_INPUT payload has no `tug_session_id`, reject using the existing `send_control_json(&mut socket, FeedId::CODE_INPUT, &json!({"type":"error","detail":"missing_tug_session_id"})).await` helper — do NOT route through the supervisor's CONTROL broadcast handle, they are different code paths. Do not touch the ownership map. (The orphan-reject path in Step 5's dispatcher is a different branch; it handles CODE_INPUT that has a `tug_session_id` but no ledger entry, which is emitted from the dispatcher task — that path legitimately uses the supervisor's CONTROL handle because there is no `&mut socket` in scope inside the dispatcher.)
-- [ ] **P5 authorization cross-check (one-line tightening).** Before inserting into `InputOwnership`, verify that the claiming `client_id` has the requested `tug_session_id` in its `client_sessions` entry: read `router.supervisor.client_sessions[client_id]` under its mutex and reject the claim if the set does not contain `tug_session_id`. Use `send_control_json(&mut socket, FeedId::CODE_INPUT, &json!({"type":"error","detail":"session_not_owned"})).await` for the rejection. Rationale: without this check, any client that learned another client's `tug_session_id` could race the legitimate owner to claim `(CODE_INPUT, tug_session_id)` ownership and have its CODE_INPUT frames delivered to the victim's subprocess. `tug_session_id`s are UUIDs and not normally visible cross-client, so the practical risk is low, but the supervisor already maintains `client_sessions` for [D14]'s event-driven replay — the cross-check is essentially free and closes a real authorization gap.
-- [ ] **Wedge acknowledgement:** This step makes missing-`tug_session_id` CODE_INPUT frames a hard-reject in the router. Until Step 9 lands (which updates tugdeck's `encodeCodeInput` to inject the field), the existing tugdeck code-input path is non-functional. This is explicitly called out in #non-goals and is acceptable because Steps 7 and 9 ship in the same branch.
-- [ ] Add a one-line comment at the top of `dispatch_action` naming the session actions that are handled upstream, pointing to `agent_supervisor.rs` (per [D09]).
+- [x] Change `type InputOwnership = Arc<Mutex<HashMap<(FeedId, Option<TugSessionId>), u64>>>;` (import `TugSessionId` from `tugcast_core`).
+- [x] Update `try_claim_input` and all its callers. For non-CODE_INPUT feeds, always pass `None`. For CODE_INPUT, parse `tug_session_id` from the payload via `parse_tug_session_id` before the claim attempt.
+- [x] If the CODE_INPUT payload has no `tug_session_id`, reject using the existing `send_control_json(&mut socket, FeedId::CODE_INPUT, &json!({"type":"error","detail":"missing_tug_session_id"})).await` helper — do NOT route through the supervisor's CONTROL broadcast handle, they are different code paths. Do not touch the ownership map. (The orphan-reject path in Step 5's dispatcher is a different branch; it handles CODE_INPUT that has a `tug_session_id` but no ledger entry, which is emitted from the dispatcher task — that path legitimately uses the supervisor's CONTROL handle because there is no `&mut socket` in scope inside the dispatcher.)
+- [x] **P5 authorization cross-check (one-line tightening).** Before inserting into `InputOwnership`, verify that the claiming `client_id` has the requested `tug_session_id` in its `client_sessions` entry: read `router.supervisor.client_sessions[client_id]` under its mutex and reject the claim if the set does not contain `tug_session_id`. Use `send_control_json(&mut socket, FeedId::CODE_INPUT, &json!({"type":"error","detail":"session_not_owned"})).await` for the rejection. Rationale: without this check, any client that learned another client's `tug_session_id` could race the legitimate owner to claim `(CODE_INPUT, tug_session_id)` ownership and have its CODE_INPUT frames delivered to the victim's subprocess. `tug_session_id`s are UUIDs and not normally visible cross-client, so the practical risk is low, but the supervisor already maintains `client_sessions` for [D14]'s event-driven replay — the cross-check is essentially free and closes a real authorization gap.
+- [x] **Wedge acknowledgement:** This step makes missing-`tug_session_id` CODE_INPUT frames a hard-reject in the router. Until Step 9 lands (which updates tugdeck's `encodeCodeInput` to inject the field), the existing tugdeck code-input path is non-functional. This is explicitly called out in #non-goals and is acceptable because Steps 7 and 9 ship in the same branch.
+- [x] Add a one-line comment at the top of `dispatch_action` naming the session actions that are handled upstream, pointing to `agent_supervisor.rs` (per [D09]).
 
 **Tests:**
 
-- [ ] Existing `test_*_input_*` P5 tests continue to pass with `None` session arguments.
-- [ ] `test_p5_relaxation_distinct_sessions` — two clients each claim CODE_INPUT with distinct `tug_session_id`s; both succeed.
-- [ ] `test_p5_relaxation_duplicate_rejected` — second client claiming the same `tug_session_id` is rejected with `input_claimed`.
-- [ ] `test_p5_release_drops_all_entries_for_client` — `release_inputs` drops both the CODE_INPUT/session entry and any other inputs the client owned.
-- [ ] `test_p5_code_input_missing_session_id_rejected` — CODE_INPUT without `tug_session_id` is rejected via `send_control_json` (asserted by inspecting the websocket send path in the test harness) and does not insert into the ownership map.
-- [ ] `test_p5_code_input_rejects_unowned_session` — a client that has NOT sent `spawn_session` for `tug_session_id = X` sends a CODE_INPUT frame tagged with X. Supervisor's `client_sessions[client_id]` does not contain X. Assert: the claim is rejected via `send_control_json` with `detail: "session_not_owned"`, the ownership map is not mutated, and the frame is not forwarded to the dispatcher. Then have the same client send `spawn_session` for X, assert the follow-up CODE_INPUT is accepted. This pins the P5 authorization cross-check.
+- [x] Existing `test_*_input_*` P5 tests continue to pass with `None` session arguments.
+- [x] `test_p5_relaxation_distinct_sessions` — two clients each claim CODE_INPUT with distinct `tug_session_id`s; both succeed.
+- [x] `test_p5_relaxation_duplicate_rejected` — second client claiming the same `tug_session_id` is rejected with `input_claimed`.
+- [x] `test_p5_release_drops_all_entries_for_client` — `release_inputs` drops both the CODE_INPUT/session entry and any other inputs the client owned.
+- [x] `test_p5_code_input_missing_session_id_rejected` — CODE_INPUT without `tug_session_id` is rejected via `send_control_json` (asserted by inspecting the websocket send path in the test harness) and does not insert into the ownership map.
+- [x] `test_p5_code_input_rejects_unowned_session` — a client that has NOT sent `spawn_session` for `tug_session_id = X` sends a CODE_INPUT frame tagged with X. Supervisor's `client_sessions[client_id]` does not contain X. Assert: the claim is rejected via `send_control_json` with `detail: "session_not_owned"`, the ownership map is not mutated, and the frame is not forwarded to the dispatcher. Then have the same client send `spawn_session` for X, assert the follow-up CODE_INPUT is accepted. This pins the P5 authorization cross-check.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo nextest run -p tugcast router`
+- [x] `cd tugrust && cargo nextest run -p tugcast router`
 
 ---
 
@@ -1005,35 +1005,35 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Add `supervisor: Arc<AgentSupervisor>` to `FeedRouter` struct; thread through the constructor.
-- [ ] Replace `spawn_agent_bridge(...)` block in `main.rs` with supervisor construction + dispatcher/merger task spawns.
-- [ ] **Delete the `snapshot_watches.extend(agent_handles.snapshot_watches)` line** in `main.rs` (near line 359 today). With `AgentBridgeHandles` gone and the supervisor providing no `snapshot_watches`, this line has no replacement and must be removed, not retained as an empty extend.
-- [ ] Register `SESSION_STATE` as a stream output with `LagPolicy::Warn`.
-- [ ] Register `SESSION_METADATA` as a stream output via `register_stream(FeedId::SESSION_METADATA, session_metadata_broadcast_tx, LagPolicy::Warn)`. Do NOT call `add_snapshot_watches` for SESSION_METADATA — that was the old, deleted path.
-- [ ] Leave the CODE_OUTPUT `LagPolicy::Replay(shared_replay_buf)` registration unchanged from today. No new `LagPolicy` variant. Document inline (via a short comment) that correctness on replay relies on the client-side filter per [D06]/[D11].
-- [ ] **Remove the `SessionMetadataFeed` wiring from `main.rs` entirely.** The task no longer exists; its role is owned by the supervisor (merger task publishes live frames; `handle_control("spawn_session")` fires the event-driven replay on reconnect). Specifically delete these four pieces in `main.rs` — do not rely on `-D warnings` compile errors to surface them, name them here so a coder can grep directly:
-  - [ ] Delete the `let (session_meta_tx, session_meta_rx) = watch::channel(...);` allocation (near line 284 today). Under [D14] the SESSION_METADATA path is a broadcast, not a watch, so this watch channel has no replacement.
-  - [ ] Delete the `let session_metadata_feed = SessionMetadataFeed::new(code_tx.subscribe());` construction (near line 286 today). The `SessionMetadataFeed` struct itself is deleted in Step 6.
-  - [ ] Delete the `tokio::spawn(session_metadata_feed.run(session_meta_tx));` task spawn (near line 290 today). No replacement — the merger task in `agent_supervisor.rs` does the detection and publication inline.
-  - [ ] Delete the `session_meta_rx` entry inside the `snapshot_watches = vec![..., session_meta_rx, ...]` literal (near line 354 today). Under `-D warnings` this is a hard compile error if left in place (the binding no longer exists), but naming it explicitly here avoids guessing. The entire `snapshot_watches` vec literal may need to be reduced to `vec![]` or removed if it held only these dead entries — verify against the current `main.rs` state and reduce appropriately.
-- [ ] Modify `handle_client`'s CONTROL branch: parse action, intercept `spawn_session` / `close_session` / `reset_session` and call `router.supervisor.handle_control(action, &frame.payload, client_id).await` before the fall-through to `dispatch_action`. On `Err(ControlError::MissingCardId | MissingSessionId)`, call `send_control_json(&mut socket, FeedId::CONTROL, &json!({"type": "error", "detail": "missing_card_id"}))` (or the session variant) and continue the select loop — do NOT disconnect the client.
-- [ ] **Do NOT add any post-handshake replay call in `handle_client`.** Per [D14] and [F13]'s fix, event-driven replay runs inside `handle_control("spawn_session", ...)` (Step 4). Any post-handshake replay call with a fresh `client_id` is a guaranteed no-op because `client_sessions[client_id]` is empty at that moment — the client has not yet sent `spawn_session`. This bullet is retained as an explicit **negative requirement** so a reviewer or a future revision does not reintroduce a no-op call. There is no batch replay helper to call even if someone tried.
-- [ ] **Add `supervisor.on_client_disconnect(client_id)`** to the `handle_client` teardown path, alongside the existing `release_inputs(client_id)` call.
-- [ ] Add tugbank domain constant `dev.tugtool.tide.session-keys`. On startup, iterate persisted `(card_id, tug_session_id)` pairs from the domain and rebind intent records via an `AgentSupervisor::rebind_from_tugbank()` helper. **The rebind path does NOT go through `handle_control("spawn_session", ...)` and does NOT insert anything into `client_sessions`.** Instead, it directly creates a `LedgerEntry { spawn_state: Idle, .. }` for each persisted `tug_session_id` (skipping entries that already exist in the ledger from a prior rebind) and leaves `client_sessions` entirely untouched. Rationale per [F15]: `client_sessions` exists solely to track which WebSocket client has announced which session, and the rebind path has no WebSocket client — any sentinel `ClientId` (e.g., `ClientId::MAX`) inserted here would be a permanent ghost entry with no cleanup trigger (no real WebSocket calls `on_client_disconnect(ClientId::MAX)`). Real clients connecting after startup will send their own `spawn_session` CONTROL frames, which populate `client_sessions[real_client_id]` via [D14]'s normal flow and fire the event-driven metadata replay against whatever `latest_metadata` the prior session accumulated before shutdown (which, for a pure rebind from tugbank, is always `None` — there is no persisted metadata across restart, only the persisted intent record). The supervisor itself writes / deletes tugbank entries on `spawn_session` / `close_session` per [D12] (host-authoritative).
+- [x] Add `supervisor: Arc<AgentSupervisor>` to `FeedRouter` struct; thread through the constructor.
+- [x] Replace `spawn_agent_bridge(...)` block in `main.rs` with supervisor construction + dispatcher/merger task spawns.
+- [x] **Delete the `snapshot_watches.extend(agent_handles.snapshot_watches)` line** in `main.rs` (near line 359 today). With `AgentBridgeHandles` gone and the supervisor providing no `snapshot_watches`, this line has no replacement and must be removed, not retained as an empty extend.
+- [x] Register `SESSION_STATE` as a stream output with `LagPolicy::Warn`.
+- [x] Register `SESSION_METADATA` as a stream output via `register_stream(FeedId::SESSION_METADATA, session_metadata_broadcast_tx, LagPolicy::Warn)`. Do NOT call `add_snapshot_watches` for SESSION_METADATA — that was the old, deleted path.
+- [x] Leave the CODE_OUTPUT `LagPolicy::Replay(shared_replay_buf)` registration unchanged from today. No new `LagPolicy` variant. Document inline (via a short comment) that correctness on replay relies on the client-side filter per [D06]/[D11].
+- [x] **Remove the `SessionMetadataFeed` wiring from `main.rs` entirely.** The task no longer exists; its role is owned by the supervisor (merger task publishes live frames; `handle_control("spawn_session")` fires the event-driven replay on reconnect). Specifically delete these four pieces in `main.rs` — do not rely on `-D warnings` compile errors to surface them, name them here so a coder can grep directly:
+  - [x] Delete the `let (session_meta_tx, session_meta_rx) = watch::channel(...);` allocation (near line 284 today). Under [D14] the SESSION_METADATA path is a broadcast, not a watch, so this watch channel has no replacement.
+  - [x] Delete the `let session_metadata_feed = SessionMetadataFeed::new(code_tx.subscribe());` construction (near line 286 today). The `SessionMetadataFeed` struct itself is deleted in Step 6.
+  - [x] Delete the `tokio::spawn(session_metadata_feed.run(session_meta_tx));` task spawn (near line 290 today). No replacement — the merger task in `agent_supervisor.rs` does the detection and publication inline.
+  - [x] Delete the `session_meta_rx` entry inside the `snapshot_watches = vec![..., session_meta_rx, ...]` literal (near line 354 today). Under `-D warnings` this is a hard compile error if left in place (the binding no longer exists), but naming it explicitly here avoids guessing. The entire `snapshot_watches` vec literal may need to be reduced to `vec![]` or removed if it held only these dead entries — verify against the current `main.rs` state and reduce appropriately.
+- [x] Modify `handle_client`'s CONTROL branch: parse action, intercept `spawn_session` / `close_session` / `reset_session` and call `router.supervisor.handle_control(action, &frame.payload, client_id).await` before the fall-through to `dispatch_action`. On `Err(ControlError::MissingCardId | MissingSessionId)`, call `send_control_json(&mut socket, FeedId::CONTROL, &json!({"type": "error", "detail": "missing_card_id"}))` (or the session variant) and continue the select loop — do NOT disconnect the client.
+- [x] **Do NOT add any post-handshake replay call in `handle_client`.** Per [D14] and [F13]'s fix, event-driven replay runs inside `handle_control("spawn_session", ...)` (Step 4). Any post-handshake replay call with a fresh `client_id` is a guaranteed no-op because `client_sessions[client_id]` is empty at that moment — the client has not yet sent `spawn_session`. This bullet is retained as an explicit **negative requirement** so a reviewer or a future revision does not reintroduce a no-op call. There is no batch replay helper to call even if someone tried.
+- [x] **Add `supervisor.on_client_disconnect(client_id)`** to the `handle_client` teardown path, alongside the existing `release_inputs(client_id)` call.
+- [x] Add tugbank domain constant `dev.tugtool.tide.session-keys`. On startup, iterate persisted `(card_id, tug_session_id)` pairs from the domain and rebind intent records via an `AgentSupervisor::rebind_from_tugbank()` helper. **The rebind path does NOT go through `handle_control("spawn_session", ...)` and does NOT insert anything into `client_sessions`.** Instead, it directly creates a `LedgerEntry { spawn_state: Idle, .. }` for each persisted `tug_session_id` (skipping entries that already exist in the ledger from a prior rebind) and leaves `client_sessions` entirely untouched. Rationale per [F15]: `client_sessions` exists solely to track which WebSocket client has announced which session, and the rebind path has no WebSocket client — any sentinel `ClientId` (e.g., `ClientId::MAX`) inserted here would be a permanent ghost entry with no cleanup trigger (no real WebSocket calls `on_client_disconnect(ClientId::MAX)`). Real clients connecting after startup will send their own `spawn_session` CONTROL frames, which populate `client_sessions[real_client_id]` via [D14]'s normal flow and fire the event-driven metadata replay against whatever `latest_metadata` the prior session accumulated before shutdown (which, for a pure rebind from tugbank, is always `None` — there is no persisted metadata across restart, only the persisted intent record). The supervisor itself writes / deletes tugbank entries on `spawn_session` / `close_session` per [D12] (host-authoritative).
 
 **Tests:**
 
-- [ ] `test_main_rebinds_intent_records_on_startup` — unit test on the `rebind_from_tugbank()` helper that reads a fake tugbank populated with `(card_id, tug_session_id)` pairs and creates ledger entries directly for each. Assert: all rebound ids appear in the ledger as `pending`; **`client_sessions` is empty** (per [F15], the rebind path does not insert any sentinel `client_id` entry); tugbank is unchanged (the helper only reads on startup, it does not re-write).
-- [ ] `test_control_frame_interception_routes_to_supervisor` — simulates a WebSocket CONTROL frame with `action: "spawn_session"` (including `card_id`) and asserts the supervisor ledger gains a pending entry and `client_sessions[client_id]` contains the session id. Uses the existing router test harness.
-- [ ] `test_control_frame_missing_card_id_sends_error_frame` — a CONTROL frame with `spawn_session` and no `card_id` results in a `send_control_json` error frame on the client socket and no ledger mutation.
-- [ ] `test_session_metadata_fed_by_supervisor_broadcast` — asserts that a `system_metadata` frame injected into the merger is received by a `register_stream`-registered broadcast subscriber (not any `watch::Receiver`), confirming the broadcast-not-watch migration.
-- [ ] `test_handle_client_disconnect_clears_client_sessions` — invoke the `on_client_disconnect` path and assert `client_sessions` no longer has an entry for the client.
-- [ ] **Removed:** the earlier-draft test `test_handle_client_replay_on_connect_emits_stored_metadata` is deleted. Its premise (pre-populating `client_sessions[client_id]` before invoking a post-handshake replay) does not exercise the real reconnect flow per [F13] — in practice, the fresh-connection `client_id` has an empty `client_sessions` entry at post-handshake time, and any such call would be a perpetual no-op. The real reconnect path is tested by Step 4's `test_spawn_session_replays_latest_metadata_for_known_session` (unit) and Step 10's `test_session_metadata_reaches_late_subscriber` (integration).
+- [x] `test_main_rebinds_intent_records_on_startup` — unit test on the `rebind_from_tugbank()` helper that reads a fake tugbank populated with `(card_id, tug_session_id)` pairs and creates ledger entries directly for each. Assert: all rebound ids appear in the ledger as `pending`; **`client_sessions` is empty** (per [F15], the rebind path does not insert any sentinel `client_id` entry); tugbank is unchanged (the helper only reads on startup, it does not re-write).
+- [x] `test_control_frame_interception_routes_to_supervisor` — simulates a WebSocket CONTROL frame with `action: "spawn_session"` (including `card_id`) and asserts the supervisor ledger gains a pending entry and `client_sessions[client_id]` contains the session id. Uses the existing router test harness.
+- [x] `test_control_frame_missing_card_id_sends_error_frame` — a CONTROL frame with `spawn_session` and no `card_id` results in a `send_control_json` error frame on the client socket and no ledger mutation.
+- [x] `test_session_metadata_fed_by_supervisor_broadcast` — asserts that a `system_metadata` frame injected into the merger is received by a `register_stream`-registered broadcast subscriber (not any `watch::Receiver`), confirming the broadcast-not-watch migration.
+- [x] `test_handle_client_disconnect_clears_client_sessions` — invoke the `on_client_disconnect` path and assert `client_sessions` no longer has an entry for the client.
+- [x] **Removed:** the earlier-draft test `test_handle_client_replay_on_connect_emits_stored_metadata` is deleted. Its premise (pre-populating `client_sessions[client_id]` before invoking a post-handshake replay) does not exercise the real reconnect flow per [F13] — in practice, the fresh-connection `client_id` has an empty `client_sessions` entry at post-handshake time, and any such call would be a perpetual no-op. The real reconnect path is tested by Step 4's `test_spawn_session_replays_latest_metadata_for_known_session` (unit) and Step 10's `test_session_metadata_reaches_late_subscriber` (integration).
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build -p tugcast`
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [x] `cd tugrust && cargo build -p tugcast`
+- [x] `cd tugrust && cargo nextest run -p tugcast`
 
 ---
 
@@ -1065,25 +1065,25 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Add the optional `filter` parameter to the `FeedStore` constructor; store it on the instance.
-- [ ] Apply the filter inside the existing `onFrame` callback after decode, before the map update.
-- [ ] Update the module-level JSDoc to document the filter semantics and the replay path.
-- [ ] Add the four protocol constants.
-- [ ] Update `encodeCodeInput` signature and body to inject `tug_session_id`. **This is a pure definition-site change.** `encodeCodeInput` has exactly one call site (the definition itself); no live production caller exists. `conversation-types.test.ts` is tsconfig-excluded (see `tugdeck/tsconfig.json` `exclude` line 26) and does not need updating. Do not hunt for other call sites — there are none in live tugdeck code; the archive paths under `_archive/` are not compiled.
-- [ ] Add `encodeSpawnSession`, `encodeCloseSession`, `encodeResetSession` CONTROL frame builders. Each takes `cardId` and `tugSessionId` as required arguments.
-- [ ] **Update `gallery-prompt-input.tsx` to instantiate its `SessionMetadataStore`-wrapping `FeedStore` for SESSION_METADATA with NO filter (passthrough).** Equivalent forms are acceptable: omitting the 4th argument entirely, or passing a constant-true filter. Do NOT mint a per-mount random `tug_session_id` via `useMemo(() => crypto.randomUUID(), [])` — that design is retracted (the minted UUID never has a spawned subprocess behind it and the filter would reject every real session's metadata). Add a TSX comment at the top of the `FeedStore` construction explaining the gallery's test-harness status and the accepted last-writer-wins pollution under multi-session, and pointing at the non-goal for rationale. A minimal comment body: `// Gallery is a test harness (see gallery-split-pane.tsx header). No tug_session_id filter: under multi-session this is last-writer-wins, explicitly accepted per the multi-session-router plan #non-goals. Real per-card filters land in T3.4 via CodeSessionStore.`
-- [ ] Write the feed-store filter tests at `tugdeck/src/__tests__/feed-store.test.ts`.
-- [ ] Extend `tugdeck/src/__tests__/protocol.test.ts` with the `encodeCodeInput` injection test and the three CONTROL frame builder tests.
+- [x] Add the optional `filter` parameter to the `FeedStore` constructor; store it on the instance.
+- [x] Apply the filter inside the existing `onFrame` callback after decode, before the map update.
+- [x] Update the module-level JSDoc to document the filter semantics and the replay path.
+- [x] Add the four protocol constants.
+- [x] Update `encodeCodeInput` signature and body to inject `tug_session_id`. **This is a pure definition-site change.** `encodeCodeInput` has exactly one call site (the definition itself); no live production caller exists. `conversation-types.test.ts` is tsconfig-excluded (see `tugdeck/tsconfig.json` `exclude` line 26) and does not need updating. Do not hunt for other call sites — there are none in live tugdeck code; the archive paths under `_archive/` are not compiled.
+- [x] Add `encodeSpawnSession`, `encodeCloseSession`, `encodeResetSession` CONTROL frame builders. Each takes `cardId` and `tugSessionId` as required arguments.
+- [x] **Update `gallery-prompt-input.tsx` to instantiate its `SessionMetadataStore`-wrapping `FeedStore` for SESSION_METADATA with NO filter (passthrough).** Equivalent forms are acceptable: omitting the 4th argument entirely, or passing a constant-true filter. Do NOT mint a per-mount random `tug_session_id` via `useMemo(() => crypto.randomUUID(), [])` — that design is retracted (the minted UUID never has a spawned subprocess behind it and the filter would reject every real session's metadata). Add a TSX comment at the top of the `FeedStore` construction explaining the gallery's test-harness status and the accepted last-writer-wins pollution under multi-session, and pointing at the non-goal for rationale. A minimal comment body: `// Gallery is a test harness (see gallery-split-pane.tsx header). No tug_session_id filter: under multi-session this is last-writer-wins, explicitly accepted per the multi-session-router plan #non-goals. Real per-card filters land in T3.4 via CodeSessionStore.`
+- [x] Write the feed-store filter tests at `tugdeck/src/__tests__/feed-store.test.ts`.
+- [x] Extend `tugdeck/src/__tests__/protocol.test.ts` with the `encodeCodeInput` injection test and the three CONTROL frame builder tests.
 
 **Tests:**
 
-- [ ] `bun test tugdeck/src/__tests__/feed-store.test.ts` — new filter tests.
-- [ ] `bun test tugdeck/src/__tests__/protocol.test.ts` — `encodeCodeInput` injection test plus CONTROL frame builder tests.
+- [x] `bun test tugdeck/src/__tests__/feed-store.test.ts` — new filter tests.
+- [x] `bun test tugdeck/src/__tests__/protocol.test.ts` — `encodeCodeInput` injection test plus CONTROL frame builder tests.
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run audit:tokens lint` (if tokens touched — they are not, but run it to confirm no regression)
+- [x] `cd tugdeck && bun test`
+- [x] `cd tugdeck && bun run audit:tokens lint` (if tokens touched — they are not, but run it to confirm no regression)
 
 ---
 
@@ -1118,21 +1118,21 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Create the `tests/` directory and `common/mod.rs` helpers.
-- [ ] Write each test. Each test begins with `#[ignore]` and a header comment explaining: "Gated on `TUG_REAL_CLAUDE=1`; requires a real `claude` binary on PATH or via `resolve_tugcode_path`."
-- [ ] Tests check the `TUG_REAL_CLAUDE` env var at the top and `return` if unset (belt-and-suspenders alongside `#[ignore]`).
-- [ ] Document the env var in the file's module-level doc comment and in `roadmap/tide.md` P2 exit notes.
-- [ ] Ensure the tests compile (even if `#[ignore]`-ed) so `cargo build --tests -p tugcast` passes clean.
+- [x] Create the `tests/` directory and `common/mod.rs` helpers.
+- [x] Write each test. Each test begins with `#[ignore]` and a header comment explaining: "Gated on `TUG_REAL_CLAUDE=1`; requires a real `claude` binary on PATH or via `resolve_tugcode_path`."
+- [x] Tests check the `TUG_REAL_CLAUDE` env var at the top and `return` if unset (belt-and-suspenders alongside `#[ignore]`).
+- [x] Document the env var in the file's module-level doc comment and in `roadmap/tide.md` P2 exit notes.
+- [x] Ensure the tests compile (even if `#[ignore]`-ed) so `cargo build --tests -p tugcast` passes clean.
 
 **Tests:**
 
-- [ ] `cd tugrust && cargo build --tests -p tugcast` — compilation-only verification.
-- [ ] `cd tugrust && TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` — the real run, performed by the developer manually.
+- [x] `cd tugrust && cargo build --tests -p tugcast` — compilation-only verification.
+- [x] `cd tugrust && TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` — the real run, performed by the developer manually.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build --tests -p tugcast`
-- [ ] `cd tugrust && cargo nextest run -p tugcast` — standard suite stays green (ignored tests do not run).
+- [x] `cd tugrust && cargo build --tests -p tugcast`
+- [x] `cd tugrust && cargo nextest run -p tugcast` — standard suite stays green (ignored tests do not run).
 
 ---
 
@@ -1146,24 +1146,24 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 **Tasks:**
 
-- [ ] Verify all 12 items from tide.md §T0.5 P2 are covered: supervisor module [✓ Step 3–8], `tug_session_id` splice [✓ Step 2, 6], CODE_INPUT dispatcher [✓ Step 5], CODE_OUTPUT merger [✓ Step 6], lazy spawn [✓ Step 5], bounded per-session queue [✓ Step 5], SESSION_STATE feed [✓ Step 1, 8], control-frame surface with `card_id` payloads [✓ Step 4, 8, 9], FeedStore filter API + `encodeCodeInput` injection [✓ Step 9], cross-client P5 relaxation [✓ Step 7], tugbank persistence (including supervisor-side write/delete) [✓ Step 4, 8], real Claude Code integration tests [✓ Step 10], session-scoped metadata rewrite via broadcast + on-subscribe replay and deletion of `project_info` / `session_watch` dead watches [✓ Step 6, 8].
-- [ ] Verify all exit criteria in [#exit-criteria] are satisfied.
-- [ ] Manually run the real-Claude-Code integration suite once (`TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only`) and confirm all tests pass against the real binary.
-- [ ] Update `roadmap/tide.md §T0.5 P2` status footer to mark the plan as landed.
-- [ ] Update `roadmap/code-session-remediation.md` to check off the "Plan authorship — next step" item.
+- [x] Verify all 12 items from tide.md §T0.5 P2 are covered: supervisor module [✓ Step 3–8], `tug_session_id` splice [✓ Step 2, 6], CODE_INPUT dispatcher [✓ Step 5], CODE_OUTPUT merger [✓ Step 6], lazy spawn [✓ Step 5], bounded per-session queue [✓ Step 5], SESSION_STATE feed [✓ Step 1, 8], control-frame surface with `card_id` payloads [✓ Step 4, 8, 9], FeedStore filter API + `encodeCodeInput` injection [✓ Step 9], cross-client P5 relaxation [✓ Step 7], tugbank persistence (including supervisor-side write/delete) [✓ Step 4, 8], real Claude Code integration tests [✓ Step 10], session-scoped metadata rewrite via broadcast + on-subscribe replay and deletion of `project_info` / `session_watch` dead watches [✓ Step 6, 8].
+- [x] Verify all exit criteria in [#exit-criteria] are satisfied.
+- [x] Manually run the real-Claude-Code integration suite once (`TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only`) and confirm all tests pass against the real binary.
+- [x] Update `roadmap/tide.md §T0.5 P2` status footer to mark the plan as landed.
+- [x] Update `roadmap/code-session-remediation.md` to check off the "Plan authorship — next step" item.
 
 **Tests:**
 
-- [ ] Full suite: `cd tugrust && cargo nextest run` — all standard tests pass, no warnings.
-- [ ] Full suite: `cd tugdeck && bun test` — all tugdeck tests pass.
-- [ ] Developer-run: `cd tugrust && TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` — all real-Claude-Code tests pass.
+- [x] Full suite: `cd tugrust && cargo nextest run` — all standard tests pass, no warnings.
+- [x] Full suite: `cd tugdeck && bun test` — all tugdeck tests pass.
+- [x] Developer-run: `cd tugrust && TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only` — all real-Claude-Code tests pass.
 
 **Checkpoint:**
 
-- [ ] `cd tugrust && cargo build` (entire workspace, warnings-are-errors)
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugrust && cargo build --tests -p tugcast` (ignored tests compile clean)
+- [x] `cd tugrust && cargo build` (entire workspace, warnings-are-errors)
+- [x] `cd tugrust && cargo nextest run`
+- [x] `cd tugdeck && bun test`
+- [x] `cd tugrust && cargo build --tests -p tugcast` (ignored tests compile clean)
 
 ---
 
@@ -1173,31 +1173,34 @@ Tests against real Claude Code are marked `#[ignore]` and gated on `TUG_REAL_CLA
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `cargo build` green across the full workspace with `-D warnings` enforced (CLAUDE.md build policy).
-- [ ] `cargo nextest run` green across the full workspace (standard non-ignored suite).
-- [ ] `bun test` green in `tugdeck/`.
-- [ ] All unit tests listed under Steps 2–9 exist and pass.
-- [ ] All integration tests listed under Step 10 exist, compile clean, and have been manually run once with `TUG_REAL_CLAUDE=1` and reported as passing.
-- [ ] `FeedId::SESSION_STATE = 0x52` and `TugSessionId` exist in `tugcast-core` and mirror in `tugdeck/src/protocol.ts`.
-- [ ] `AgentSupervisor` is the only owner of multi-session state (no session state scattered across `router.rs` / `agent_bridge.rs` / `main.rs` beyond wiring). The shared CODE_OUTPUT `ReplayBuffer` stays at the router level per [D06].
-- [ ] `tug_session_id` is spliced into every outbound CODE_OUTPUT frame; `SessionMetadataFeed`'s single global `watch::channel` is deleted and replaced by a supervisor-owned `broadcast::channel` plus **event-driven per-session replay inside `handle_control("spawn_session", ...)`** (per [D14]), so SESSION_METADATA is session-scoped end-to-end and concurrent sessions no longer clobber each other's snapshots.
-- [ ] `AgentBridgeHandles`, `project_info_tx`/`project_info_rx`, and `session_watch_tx`/`session_watch_rx` are deleted from `agent_bridge.rs`, and the `snapshot_watches.extend(agent_handles.snapshot_watches)` line is deleted from `main.rs`. The former `SessionMetadataFeed` wiring in `main.rs` — the `session_meta_tx/session_meta_rx` `watch::channel` allocation, the `SessionMetadataFeed::new(code_tx.subscribe())` construction, the `tokio::spawn(...run(...))` call, and the `session_meta_rx` entry inside the `snapshot_watches` vec literal — is deleted in Step 8. No `watch::channel` remains for either SESSION_METADATA or the former project_info / session_watch snapshot paths.
-- [ ] `handle_client` calls `supervisor.on_client_disconnect(client_id)` on teardown. **There is no post-handshake replay call** — per-session metadata replay runs event-driven inside `handle_control("spawn_session", ...)`; there is no batch replay helper and no separate replay trigger anywhere else in the code.
-- [ ] Spec S03 CONTROL payloads carry a required `card_id` field and the supervisor rejects payloads missing it via a `send_control_json` error frame; the supervisor never synthesizes `card_id` from `client_id`. The startup rebind path (`rebind_from_tugbank`) bypasses `handle_control` entirely and creates ledger entries directly without any `client_id` synthesis (per [F15]).
-- [ ] `encodeCodeInput` injects `tug_session_id` into every outbound CODE_INPUT payload (closes the Step 7 wedge).
-- [ ] P5 `(FeedId, tug_session_id)` relaxation works: distinct-session claims succeed, duplicate-id claims are rejected.
-- [ ] `FeedStore` filter runs on both live frames and `TugConnection.lastPayload` replay (asserted by unit tests at `tugdeck/src/__tests__/feed-store.test.ts`).
-- [ ] `dev.tugtool.tide.session-keys` tugbank domain is created, the supervisor writes/deletes entries on `spawn_session` / `close_session` (host-authoritative), and `AgentSupervisor::rebind_from_tugbank()` re-creates pending ledger entries at startup.
-- [ ] `roadmap/tide.md §T0.5 P2` is marked as landed; `roadmap/code-session-remediation.md` plan authorship item is checked off.
+**Status — 2026-04-12:** ✅ **All criteria satisfied.** Plan landed across
+commits `c31a013d` (Step 1) through `6ed2492e` (Step 11 docs).
+
+- [x] `cargo build` green across the full workspace with `-D warnings` enforced (CLAUDE.md build policy).
+- [x] `cargo nextest run` green across the full workspace (standard non-ignored suite) — **1012 passed, 18 skipped** (9 `#[ignore]`-gated real-Claude, 9 pre-existing).
+- [x] `bun test` green in `tugdeck/` — **1924 passed, 0 failed** across 86 files.
+- [x] All unit tests listed under Steps 2–9 exist and pass.
+- [x] All integration tests listed under Step 10 exist, compile clean, and have been manually run once with `TUG_REAL_CLAUDE=1` and reported as passing — **9/9** against `claude 2.1.104` + `tmux 3.6a`.
+- [x] `FeedId::SESSION_STATE = 0x52` and `TugSessionId` exist in `tugcast-core` and mirror in `tugdeck/src/protocol.ts` (`FEED_ID_SESSION_STATE = FeedId.SESSION_STATE`).
+- [x] `AgentSupervisor` is the only owner of multi-session state (no session state scattered across `router.rs` / `agent_bridge.rs` / `main.rs` beyond wiring). The shared CODE_OUTPUT `ReplayBuffer` stays at the router level per [D06].
+- [x] `tug_session_id` is spliced into every outbound CODE_OUTPUT frame; `SessionMetadataFeed`'s single global `watch::channel` is deleted and replaced by a supervisor-owned `broadcast::channel` plus **event-driven per-session replay inside `handle_control("spawn_session", ...)`** (per [D14]), so SESSION_METADATA is session-scoped end-to-end and concurrent sessions no longer clobber each other's snapshots.
+- [x] `AgentBridgeHandles`, `project_info_tx`/`project_info_rx`, and `session_watch_tx`/`session_watch_rx` are deleted from `agent_bridge.rs`, and the `snapshot_watches.extend(agent_handles.snapshot_watches)` line is deleted from `main.rs`. The former `SessionMetadataFeed` wiring in `main.rs` — the `session_meta_tx/session_meta_rx` `watch::channel` allocation, the `SessionMetadataFeed::new(code_tx.subscribe())` construction, the `tokio::spawn(...run(...))` call, and the `session_meta_rx` entry inside the `snapshot_watches` vec literal — is deleted in Step 8. No `watch::channel` remains for either SESSION_METADATA or the former project_info / session_watch snapshot paths.
+- [x] `handle_client` calls `supervisor.on_client_disconnect(client_id)` on teardown. **There is no post-handshake replay call** — per-session metadata replay runs event-driven inside `handle_control("spawn_session", ...)`; there is no batch replay helper and no separate replay trigger anywhere else in the code.
+- [x] Spec S03 CONTROL payloads carry a required `card_id` field and the supervisor rejects payloads missing it via a `send_control_json` error frame; the supervisor never synthesizes `card_id` from `client_id`. The startup rebind path (`rebind_from_tugbank`) bypasses `handle_control` entirely and creates ledger entries directly without any `client_id` synthesis (per [F15]).
+- [x] `encodeCodeInput` injects `tug_session_id` into every outbound CODE_INPUT payload (closes the Step 7 wedge).
+- [x] P5 `(FeedId, tug_session_id)` relaxation works: distinct-session claims succeed, duplicate-id claims are rejected.
+- [x] `FeedStore` filter runs on both live frames and `TugConnection.lastPayload` replay (asserted by unit tests at `tugdeck/src/__tests__/feed-store.test.ts`).
+- [x] `dev.tugtool.tide.session-keys` tugbank domain is created, the supervisor writes/deletes entries on `spawn_session` / `close_session` (host-authoritative), and `AgentSupervisor::rebind_from_tugbank()` re-creates pending ledger entries at startup.
+- [x] `roadmap/tide.md §T0.5 P2` is marked as landed; `roadmap/code-session-remediation.md` plan authorship item is checked off.
 
 **Acceptance tests:**
 
-- [ ] `test_two_sessions_never_cross` (integration, real Claude Code) — two-session isolation verified end-to-end.
-- [ ] `test_lazy_spawn_no_subprocess_until_first_input` (integration, real Claude Code) — lazy spawn verified by process-count introspection.
-- [ ] `test_p5_cross_client_distinct_sessions` (integration, real Claude Code) — cross-client relaxation verified.
-- [ ] `test_supervisor_rebind_on_startup` (integration, real Claude Code) — tugbank persistence verified across restart.
-- [ ] `test_crash_budget_per_session` (unit) — isolation verified.
-- [ ] `feed-store.test.ts` filter tests (tugdeck) — client filter verified on both live and replay paths.
+- [x] `test_two_sessions_never_cross` (integration, real Claude Code) — two-session isolation verified end-to-end.
+- [x] `test_lazy_spawn_no_subprocess_until_first_input` (integration, real Claude Code) — lazy spawn verified by state-machine observation (no `spawning` frame arrives until the first CODE_INPUT).
+- [x] `test_p5_cross_client_distinct_sessions` (integration, real Claude Code) — cross-client relaxation verified.
+- [x] `test_supervisor_rebind_on_startup` (integration, real Claude Code) — tugbank persistence verified across restart.
+- [x] `test_crash_budget_per_session` (unit) — isolation verified via injectable `CrashingSpawner` vs `StallSpawner`.
+- [x] `feed-store.test.ts` filter tests (tugdeck) — client filter verified on both live and replay paths.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
