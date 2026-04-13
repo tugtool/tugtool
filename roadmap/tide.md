@@ -988,6 +988,149 @@ Concretely:
 
 **Scope:** new `tugcast/src/feeds/agent_supervisor.rs` (supervisor + CODE_INPUT dispatcher + CODE_OUTPUT merger with per-session replay); modifications to `tugcast/src/feeds/agent_bridge.rs` (per-session lifecycle, `tug_session_id` splice on every frame, `claude_session_id` ledger entry on `session_init`), `tugcast/src/router.rs` (P5 ownership relaxation to `(FeedId, tug_session_id)`, bounded per-session queue on orphan CODE_INPUT rejection), `tugcast/src/main.rs` (register supervisor instead of single bridge, register `SESSION_STATE` broadcast), `tugcast/src/feeds/code.rs` (payload helpers for splice and parse); `tugcast-core/src/protocol.rs` (`SESSION_STATE = 0x52` constant); `tugdeck/src/lib/feed-store.ts` (optional filter argument), `tugdeck/src/protocol.ts` (`SESSION_STATE` constant and control action types); tugbank schema addition for the card ↔ `tug_session_id` map. Integration tests live under `tugrust/crates/tugcast/tests/multi_session_real_claude.rs` (name TBD), gated on Claude Code availability.
 
+#### P2 integration reference: driving the multi-session router from a client {#p2-integration-reference}
+
+This section is the **stabilized client-facing surface** of the multi-session router for follow-on work (T3.4.a/b/c/d, P13, P14). It is deliberately short and cross-references [`roadmap/tugplan-multi-session-router.md`](tugplan-multi-session-router.md) for full implementation history and rationale. A fresh session implementing a tugdeck store, a Rust-side follow-on, or a debugging probe should be able to read this section alone and know where to hook in without spelunking the plan doc.
+
+**Wire frames (stabilized):**
+
+| FeedId | Name | Payload shape (JSON) | Direction |
+|--------|------|----------------------|-----------|
+| `0x40` | `CODE_OUTPUT` | `{tug_session_id, ...Claude Code stream-json event}` — `tug_session_id` is spliced as the **first field** by `feeds::code::splice_tug_session_id`; subsequent fields are `type` + whatever Claude Code emits (`session_init`, `assistant_text`, `tool_use`, `turn_complete`, etc.). | server → client |
+| `0x41` | `CODE_INPUT` | `{tug_session_id, type: "user_message", text, attachments, ...}` — `tug_session_id` injected as the first field by `encodeCodeInput(msg, tugSessionId)`. tugcode's `isInboundMessage` ignores extra fields so `tug_session_id` passes through harmlessly. Supported `type`s are `user_message`, `tool_approval`, `question_answer`, `interrupt`, `permission_mode`, `model_change`, `session_command`, `stop_task` — see `tugcode/src/types.ts`. | client → server |
+| `0x51` | `SESSION_METADATA` | Claude `system_metadata` events, tagged with `tug_session_id`. **Broadcast feed**, not a watch channel — concurrent sessions can emit without clobber. Per-session latest-metadata replay on reconnect is fired event-driven inside `handle_control("spawn_session")` ([D14]/[F13]); there is no post-handshake replay hook. | server → client |
+| `0x52` | `SESSION_STATE` | `{tug_session_id, state, detail?}` with `state ∈ {pending, spawning, live, errored, closed}`. `detail` is set on `errored` (`crash_budget_exhausted`, `merger_unavailable`, future `concurrent_session_cap_exceeded`, `spawn_rate_limited` from P13). | server → client |
+| `0xc0` | `CONTROL` | Either **session lifecycle**: `{action: "spawn_session"\|"close_session"\|"reset_session", card_id, tug_session_id}` (both fields required — supervisor rejects missing with a CONTROL error frame), OR **error/signal**: `{type: "error", detail: "..."}` / `{type: "session_backpressure", tug_session_id}` / `{type: "session_unknown", tug_session_id}`. | bidirectional |
+
+**Lifecycle — expected frame order for a typical card:**
+
+```
+(client → server)  CONTROL  spawn_session{card_id, tug_session_id}
+(server → client)  SESSION_STATE  pending
+                   [if reconnect with persisted latest_metadata:
+                    SESSION_METADATA  system_metadata   ← event-driven replay]
+(client → server)  CODE_INPUT  user_message{tug_session_id, text, ...}
+(server → client)  SESSION_STATE  spawning
+                   CODE_OUTPUT    session_init{tug_session_id, session_id: claude_session_id, ...}
+                   SESSION_STATE  live                 ← atomic-promoted with queue drain
+                   SESSION_METADATA  system_metadata   ← live, ongoing
+                   CODE_OUTPUT    assistant_text{...}  ← streaming
+                   CODE_OUTPUT    turn_complete
+(client → server)  CONTROL  close_session{card_id, tug_session_id}
+(server → client)  SESSION_STATE  closed
+```
+
+Key properties (don't waste a session rediscovering these):
+
+- **Lazy spawn.** `spawn_session` alone does NOT launch a `claude` subprocess. The ledger enters `Idle` (wire `pending`). The first CODE_INPUT flips `Idle → Spawning` and fires the spawn. A UI can use this distinction to drive submit-button enablement.
+- **Ledger state vs wire state alignment** ([B3 alignment, 2026-04-12]). `SpawnState::Live` (ledger) means exactly the same thing as wire `"live"`: session_init received and queue drained. The promote is atomic under one ledger-entry lock inside `relay_session_io`'s session_init handler. Don't add intermediate interpretations.
+- **Idempotent `spawn_session`.** Duplicate spawns for the same `(card_id, tug_session_id)` are no-ops on the ledger entry but re-publish `pending` and re-fire the event-driven metadata replay — safe for reconnects.
+- **P5 authz cross-check.** A client MUST send `spawn_session` for a given `tug_session_id` before sending `CODE_INPUT` for it. Unregistered ids hit the router-side P5 authz check and get rejected with `{detail: "session_not_owned"}`. Missing `tug_session_id` on CODE_INPUT is rejected with `{detail: "missing_tug_session_id"}`. An actually orphaned session (owned by the client but missing from the ledger) falls through to the dispatcher and gets `{type: "session_unknown"}` — practically unreachable under the current wiring.
+- **P5 relaxation.** Two distinct clients can each claim `(CODE_INPUT, tug_session_id)` ownership for distinct `tug_session_id` values simultaneously. Same-id duplicate claims are rejected with `{type: "input_claimed", owner}`.
+
+**tugdeck client surface — protocol.ts exports:**
+
+```ts
+// FeedId and action names
+FeedId.SESSION_STATE    === 0x52;          // also exported as FEED_ID_SESSION_STATE
+FeedId.SESSION_METADATA === 0x51;
+FeedId.CODE_INPUT       === 0x41;
+FeedId.CODE_OUTPUT      === 0x40;
+FeedId.CONTROL          === 0xc0;
+CONTROL_ACTION_SPAWN_SESSION === "spawn_session";
+CONTROL_ACTION_CLOSE_SESSION === "close_session";
+CONTROL_ACTION_RESET_SESSION === "reset_session";
+
+// Wire frame builders
+encodeSpawnSession(cardId, tugSessionId): Frame;
+encodeCloseSession(cardId, tugSessionId): Frame;
+encodeResetSession(cardId, tugSessionId): Frame;
+encodeCodeInput(msg, tugSessionId): ArrayBuffer;  // returns already-encoded bytes
+```
+
+**Typical tugdeck client flow:**
+
+```ts
+import { FeedStore } from "@/lib/feed-store";
+import { getConnection } from "@/lib/connection-singleton";
+import {
+  FeedId, encodeFrame, encodeSpawnSession, encodeCloseSession, encodeCodeInput,
+} from "@/protocol";
+
+// 1. Mint a tug_session_id on card mount (persist alongside card_id in tugbank).
+const tugSessionId = crypto.randomUUID();
+const cardId = /* from card props */;
+const conn = getConnection()!;
+
+// 2. Subscribe to the session-scoped feeds with a per-card filter ([D11]).
+const filterForThisSession = (_feedId, decoded: unknown) =>
+  (decoded as any).tug_session_id === tugSessionId;
+
+const codeStore  = new FeedStore(conn, [FeedId.CODE_OUTPUT],     undefined, filterForThisSession);
+const stateStore = new FeedStore(conn, [FeedId.SESSION_STATE],   undefined, filterForThisSession);
+const metaStore  = new FeedStore(conn, [FeedId.SESSION_METADATA], undefined, filterForThisSession);
+
+// 3. Register the intent with the supervisor.
+const spawnFrame = encodeSpawnSession(cardId, tugSessionId);
+conn.send(spawnFrame.feedId, spawnFrame.payload);
+
+// 4. Send the first user message (this is what actually spawns the subprocess).
+const codeInputBytes = encodeCodeInput(
+  { type: "user_message", text: "/status", attachments: [] },
+  tugSessionId,
+);
+// `encodeCodeInput` returns an already-encoded ArrayBuffer for historical
+// reasons; to use conn.send() with its (feedId, payload) signature, slice off
+// the 6-byte header OR just call the low-level ws.send path. The cleanest
+// idiom is to reach into the Frame struct via encodeFrame in the future —
+// T3.4.a should unify these.
+
+// 5. Observe stateStore.getSnapshot() / codeStore.getSnapshot() via useSyncExternalStore.
+
+// 6. Teardown:
+const closeFrame = encodeCloseSession(cardId, tugSessionId);
+conn.send(closeFrame.feedId, closeFrame.payload);
+codeStore.dispose();
+stateStore.dispose();
+metaStore.dispose();
+```
+
+**Server-side entry points (Rust, for P13 / P14 / debugging):**
+
+| Symbol | File:line | Purpose |
+|--------|-----------|---------|
+| `AgentSupervisor` | `tugcast/src/feeds/agent_supervisor.rs` | Central owner of per-session state. Fields: `ledger`, `client_sessions`, `session_state_tx`, `session_metadata_tx`, `code_output_tx`, `control_tx`, `store: Arc<dyn SessionKeysStore>`, `spawner_factory`, `merger_register_tx`. |
+| `LedgerEntry` | same | Per-session record. Fields: `tug_session_id`, `claude_session_id: Option<String>`, `spawn_state`, `crash_budget`, `queue: BoundedQueue<Frame>`, `latest_metadata: Option<Frame>`, `input_tx: Option<mpsc::Sender<Frame>>`, `cancel`. |
+| `SpawnState` | same | `Idle → Spawning → Live → {Errored, Closed}`. See `try_transition` for the allowed edges. Ledger `Live` ≡ wire `live` ≡ session_init received. |
+| `AgentSupervisor::handle_control` | same | Entry point for CONTROL session actions. Called from `router::intercept_session_control`. Returns `ControlError` on payload-validation failure; caller converts to a `send_control_json` CONTROL error frame. |
+| `AgentSupervisor::dispatch_one` / `dispatcher_task` | same | CODE_INPUT routing: parse `tug_session_id`, lookup ledger, branch on state. `Idle` triggers lazy spawn; `Spawning` buffers in `LedgerEntry::queue`; `Live` forwards via `input_tx`. |
+| `AgentSupervisor::merger_task` | same | Fan-in of per-session bridge outputs. Re-tags `system_metadata` frames as `SESSION_METADATA` before publishing on `session_metadata_tx` and writing to `LedgerEntry::latest_metadata`. |
+| `AgentSupervisor::spawn_session_worker` | same | Per-session bridge spawn. Registers with merger, installs `input_tx`, launches `run_session_bridge`. **P13 hook point:** the concurrent-session cap + rate-limit check goes at the top of this function, before any channel allocation. |
+| `AgentSupervisor::rebind_from_tugbank` | same | Startup rebind from `SESSION_KEYS_DOMAIN`. Creates Idle ledger entries; does NOT touch `client_sessions`. **P14 hook point:** extend to read a JSON blob containing `claude_session_id`. |
+| `SessionKeysStore` trait | same | Narrow persistence surface (`set_session_key` / `delete_session_key` / `list_session_keys`). Implemented for `TugbankClient` (production) and three test fakes. **P14 hook point:** extend the trait and blob shape to persist `(tug_session_id, claude_session_id)`. |
+| `SESSION_KEYS_DOMAIN` | same | `"dev.tugtool.tide.session-keys"`. The tugbank domain the supervisor owns. |
+| `run_session_bridge` / `relay_session_io` | `tugcast/src/feeds/agent_bridge.rs` | Per-session subprocess loop + relay. `relay_session_io`'s `session_init` handler is the **atomic-promote point** for ledger `Live` — it's where `claude_session_id` is captured today. **P14 hook point:** add tugbank persistence inside the same lock-held block. |
+| `ChildSpawner` trait + `TugcodeSpawner` | same | Subprocess spawn abstraction. Tests inject mock spawners (`StallSpawner`, `CrashingSpawner`, `ScriptedSpawner` future). **P14 hook point:** `TugcodeSpawner::new` gains an optional `resume_claude_session_id` field that `run_session_bridge` reads from the ledger entry before calling `spawner.spawn_child()`. |
+| `authorize_and_claim_input` / `InputDecision` | `tugcast/src/router.rs` | P5 authz + ownership claim helper. Returns `Forward / MissingSession / NotOwned / Claimed(owner)`. |
+| `intercept_session_control` / `ControlIntercept` | same | CONTROL-branch intercept for session lifecycle actions. Routes to supervisor; converts `ControlError` variants to wire detail strings. |
+| `teardown_client` | same | Every `handle_client` exit path. Calls `release_inputs` + `supervisor.on_client_disconnect(client_id)`. |
+
+**Follow-on hook points (grep-friendly summary):**
+
+- **T3.4.a CodeSessionStore** — wraps `FeedStore(conn, [CODE_OUTPUT], _, filter)`, consumes the filter API from `tugdeck/src/lib/feed-store.ts`, dispatches via `encodeCodeInput(msg, tugSessionId)` from `tugdeck/src/protocol.ts`. Uses `encodeSpawnSession` / `encodeCloseSession` / `encodeResetSession` for lifecycle CONTROL frames. Detailed scope under §T3.4.a below.
+- **P13 spawn cap** — `AgentSupervisor::spawn_session_worker` early-exit; `AgentSupervisorConfig::{max_concurrent_sessions, max_spawns_per_minute}`; `ControlError::CapExceeded`. See §T0.5 P13.
+- **P14 --resume** — `LedgerEntry::claude_session_id` is captured today but not persisted; persist in `relay_session_io`'s atomic-promote block via an extended `SessionKeysStore`; thread through `TugcodeSpawner::resume_claude_session_id`; update `rebind_from_tugbank` to read the new blob shape. See §T0.5 P14.
+
+**Integration tests as living documentation:**
+
+`tugrust/crates/tugcast/tests/multi_session_real_claude.rs` is the authoritative integration-level behavior spec. Each test maps to a specific [D*] decision in `tugplan-multi-session-router.md`. Reading the nine tests is a faster way to understand expected wire behavior than walking the Rust code. Run them with:
+
+```sh
+cd tugrust && TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only
+```
+
+Requires a real `claude` binary on PATH (tested against `claude 2.1.104`) + `tmux 3.6a`+. The test helper (`tests/common/mod.rs`) also contains a minimal `TestWs` client wrapper with frame-preserving buffering — useful as a reference for any external tool that wants to drive the multi-session router over WebSocket.
+
 #### P3: FeedId slot collision (LOW)
 
 **Problem:** Tide.md proposed ShellOutput=0x50, ShellInput=0x51. But `Defaults = 0x50` already exists in the code. The roadmap's FeedId table is wrong.
@@ -1068,6 +1211,8 @@ The cost is 1 extra byte per frame — negligible at any realistic throughput. T
 
 #### P13: Session spawn rate limit + concurrent-session cap (HIGH)
 
+**Prerequisite reading:** [§P2 integration reference](#p2-integration-reference) — the entry-point table names `AgentSupervisor::spawn_session_worker` as the hook point and `AgentSupervisorConfig` as the config surface.
+
 **Problem:** The multi-session supervisor from P2 lets any number of Claude Code subprocesses spawn on demand. A user with 20 Tide cards open chews through 20 parallel `claude` processes (~hundreds of MB each, plus API token burn). A UI bug that loops `reset_session` becomes a resource bomb. `AgentSupervisorConfig` has no limits today.
 
 **Fix:** Two-layer cap on the supervisor.
@@ -1085,6 +1230,8 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 **Schedule:** Land opportunistically after T3.4.a as a single-commit drop. Cheap insurance before any real user gets hold of Tide.
 
 #### P14: Claude Code `--resume` for persistent session history (HIGH)
+
+**Prerequisite reading:** [§P2 integration reference](#p2-integration-reference) — the entry-point table names the specific hook points: `LedgerEntry::claude_session_id` is captured today in `relay_session_io`'s atomic-promote block; `SessionKeysStore` is the persistence trait to extend; `rebind_from_tugbank` is where reload-side re-hydration happens; `TugcodeSpawner` is where the resume id gets threaded into the subprocess spawn. The [B3 alignment note](#p2-integration-reference) in that section also documents the atomic-promote invariant you must preserve when adding the persistence write.
 
 **Problem:** `tugplan-multi-session-router.md §[D12]` decided "reload-with-same-key = fresh history" based on terminal-pane semantics. In practice, Tide cards are long-lived chat threads, not ephemeral terminal panes. A developer who closes their laptop at 6pm and reopens at 9am tomorrow expects their conversation to pick up where it left off. Losing accumulated context — edited files, tool_use history, slash-command state — on every reload is a severe regression for serious work. [D12]'s decision is **hereby overturned** for P14; the rationale in that section's "Implications" bullet about `--resume` not being used is superseded by this P-item.
 
@@ -1472,6 +1619,8 @@ PromptHistoryStore (current, with known wart):
 ##### T3.4.a — CodeSessionStore (turn state machine)
 
 **Goal:** A new L02 store that owns everything the prompt entry needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in tug-prompt-input, or in tug-prompt-entry.
+
+**Prerequisite reading:** The multi-session router (Phase T0.5 P2) is LANDED and stabilizes the wire contract this store is built against. Before writing any code for T3.4.a, read [§P2 integration reference](#p2-integration-reference) above — it covers the stabilized wire frames, the lifecycle order, the tugdeck client-side builders (`encodeSpawnSession` / `encodeCloseSession` / `encodeResetSession` / `encodeCodeInput`), and the `FeedStore` per-card filter API this store consumes. The plan that produced that surface is [`roadmap/tugplan-multi-session-router.md`](tugplan-multi-session-router.md); the nine `#[ignore]`-gated integration tests at `tugrust/crates/tugcast/tests/multi_session_real_claude.rs` are the authoritative behavior spec.
 
 **Work:**
 
