@@ -11,6 +11,11 @@ use crate::router::LagPolicy;
 /// Classifies the action and routes it to the appropriate channel(s).
 /// `raw_payload` is the full JSON body bytes, used to construct the Control frame for broadcasting.
 /// The `stream_outputs` map is used to look up the CONTROL broadcast sender.
+///
+/// NOTE: session-lifecycle actions (`spawn_session`, `close_session`,
+/// `reset_session`) are handled upstream by `AgentSupervisor::handle_control`
+/// in `feeds/agent_supervisor.rs` and never reach this function — per [D09]
+/// the supervisor owns the per-session state machine, not the router.
 pub async fn dispatch_action(
     action: &str,
     raw_payload: &[u8],

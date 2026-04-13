@@ -11,7 +11,7 @@
 //! Input dispatch enforces single-writer-per-FeedId: the first client to send
 //! on an input FeedId claims it; subsequent clients receive an error frame.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -30,10 +30,12 @@ use tracing::{debug, error, info, warn};
 
 use tugcast_core::{
     CLOSE_BAD_HANDSHAKE, CLOSE_HANDSHAKE_TIMEOUT, CLOSE_VERSION_MISMATCH, FeedId, Frame,
-    HANDSHAKE_TIMEOUT, PROTOCOL_NAME, PROTOCOL_VERSION,
+    HANDSHAKE_TIMEOUT, PROTOCOL_NAME, PROTOCOL_VERSION, TugSessionId,
 };
 
 use crate::auth::{self, SharedAuthState};
+use crate::feeds::agent_supervisor::AgentSupervisor;
+use crate::feeds::code::parse_tug_session_id;
 use crate::feeds::terminal;
 
 /// Broadcast channel capacity for stream feeds
@@ -127,12 +129,15 @@ impl std::fmt::Debug for ReplayBuffer {
 }
 
 // ---------------------------------------------------------------------------
-// InputOwnership — single-writer-per-FeedId enforcement (P5)
+// InputOwnership — single-writer-per-(FeedId, tug_session_id) enforcement (P5)
 // ---------------------------------------------------------------------------
 
-/// Shared map tracking which client (by ID) owns each input FeedId.
-/// `0` = unclaimed. A non-zero value is the owning client's ID.
-type InputOwnership = Arc<Mutex<HashMap<FeedId, u64>>>;
+/// Shared map tracking which client (by ID) owns each `(FeedId,
+/// Option<TugSessionId>)` key. Non-session-scoped inputs (TERMINAL_INPUT,
+/// FILETREE_QUERY, ...) use `None`; CODE_INPUT uses `Some(tug_session_id)`
+/// so distinct sessions can coexist under multiple writers, one per session.
+/// A non-zero value is the owning client's ID. Per [D08].
+type InputOwnership = Arc<Mutex<HashMap<(FeedId, Option<TugSessionId>), u64>>>;
 
 // ---------------------------------------------------------------------------
 // Per-client state machine
@@ -163,10 +168,18 @@ pub struct FeedRouter {
     /// Snapshot watch receivers (delivered to every client on connect).
     snapshot_watches: Vec<watch::Receiver<Frame>>,
 
-    /// Tracks which client owns each input FeedId (P5 single-writer guard).
+    /// Tracks which client owns each `(input FeedId, tug_session_id?)` key
+    /// (P5 single-writer guard, relaxed per [D08]).
     input_ownership: InputOwnership,
     /// Counter for assigning unique client IDs.
     client_id_counter: Arc<AtomicU64>,
+
+    /// Multi-session supervisor. `None` until Step 8 wires it in `main.rs`.
+    /// When present, the router cross-checks CODE_INPUT frames against
+    /// `supervisor.client_sessions[client_id]` before admitting them — a
+    /// client can only send CODE_INPUT for a `tug_session_id` it has
+    /// registered via `spawn_session`.
+    pub(crate) supervisor: Option<Arc<AgentSupervisor>>,
 
     session: String,
     auth: SharedAuthState,
@@ -194,6 +207,7 @@ impl FeedRouter {
             snapshot_watches: Vec::new(),
             input_ownership: Arc::new(Mutex::new(HashMap::new())),
             client_id_counter: Arc::new(AtomicU64::new(1)),
+            supervisor: None,
             session,
             auth,
             shutdown_tx,
@@ -408,14 +422,25 @@ async fn send_control_json(
 // Input ownership helpers (P5)
 // ---------------------------------------------------------------------------
 
-/// Try to claim an input FeedId for the given client.
-/// Returns `Ok(())` if the client owns it (or just claimed it),
+/// Try to claim an input `(FeedId, tug_session_id?)` key for the given
+/// client. Returns `Ok(())` if the client owns it (or just claimed it),
 /// or `Err(owner_id)` if another client owns it.
-fn try_claim_input(ownership: &InputOwnership, feed_id: FeedId, client_id: u64) -> Result<(), u64> {
+///
+/// The `tug_session_id` argument is `None` for all non-CODE_INPUT feeds
+/// (TERMINAL_INPUT, FILETREE_QUERY, TERMINAL_RESIZE) and
+/// `Some(tug_session_id)` for CODE_INPUT. This enables one distinct writer
+/// per session on CODE_INPUT per [D08].
+fn try_claim_input(
+    ownership: &InputOwnership,
+    feed_id: FeedId,
+    tug_session_id: Option<TugSessionId>,
+    client_id: u64,
+) -> Result<(), u64> {
     let mut map = ownership.lock().unwrap();
-    match map.get(&feed_id).copied() {
+    let key = (feed_id, tug_session_id);
+    match map.get(&key).copied() {
         None | Some(0) => {
-            map.insert(feed_id, client_id);
+            map.insert(key, client_id);
             Ok(())
         }
         Some(owner) if owner == client_id => Ok(()),
@@ -423,10 +448,84 @@ fn try_claim_input(ownership: &InputOwnership, feed_id: FeedId, client_id: u64) 
     }
 }
 
-/// Release all input FeedIds owned by the given client.
+/// Release all input keys owned by the given client.
 fn release_inputs(ownership: &InputOwnership, client_id: u64) {
     let mut map = ownership.lock().unwrap();
     map.retain(|_, owner| *owner != client_id);
+}
+
+/// Per-client session affinity map (a handle to
+/// [`AgentSupervisor::client_sessions`]). Passed as `Option` to
+/// [`authorize_and_claim_input`] so the helper can be unit-tested without
+/// constructing a full supervisor, and so the check is a no-op during
+/// Step 7's interim where `FeedRouter::supervisor` is still `None`.
+type ClientSessionAffinity = Arc<tokio::sync::Mutex<HashMap<u64, HashSet<TugSessionId>>>>;
+
+/// Decision produced by [`authorize_and_claim_input`], driving the
+/// socket-side response in `handle_client`. Carried through a separate
+/// type (rather than inlined in the handler) so the admission logic is
+/// unit-testable without a real WebSocket or a full `AgentSupervisor`.
+#[derive(Debug, PartialEq, Eq)]
+enum InputDecision {
+    /// Frame passes all checks — forward to the input sink.
+    Forward,
+    /// CODE_INPUT payload has no `tug_session_id` field — reject with
+    /// `send_control_json(missing_tug_session_id)`.
+    MissingSession,
+    /// Client has not registered this `tug_session_id` via `spawn_session`
+    /// — reject with `send_control_json(session_not_owned)`.
+    NotOwned,
+    /// Another client owns this `(feed_id, tug_session_id?)` key — reject
+    /// with `send_control_json(input_claimed)` carrying the owner id.
+    Claimed(u64),
+}
+
+/// Admit or reject an inbound input frame. Pure in its effect on external
+/// state (no I/O) except for the ownership mutation on a successful
+/// `Forward` decision; the caller is responsible for forwarding the frame
+/// and/or emitting the appropriate CONTROL error frame.
+///
+/// Behavior summary:
+///
+/// 1. Non-CODE_INPUT feeds: no session parsing, no authorization check, key
+///    is `(feed_id, None)`.
+/// 2. CODE_INPUT with no `tug_session_id` in payload: `MissingSession`. No
+///    ownership mutation. (Hard reject per Step 7's wedge acknowledgement —
+///    tugdeck `encodeCodeInput` must inject the field.)
+/// 3. CODE_INPUT with a `tug_session_id` the client never registered via
+///    `spawn_session`: `NotOwned`. No ownership mutation. Closes the
+///    authorization gap where a client that learned another client's UUID
+///    could race the legitimate owner to claim the key. Skipped when
+///    `client_sessions` is `None` (Step 7 interim before main.rs wiring).
+/// 4. Otherwise, attempt [`try_claim_input`] under the relaxed
+///    `(FeedId, Option<TugSessionId>)` key and translate the result.
+async fn authorize_and_claim_input(
+    ownership: &InputOwnership,
+    client_sessions: Option<&ClientSessionAffinity>,
+    feed_id: FeedId,
+    payload: &[u8],
+    client_id: u64,
+) -> InputDecision {
+    let tug_session_id: Option<TugSessionId> = if feed_id == FeedId::CODE_INPUT {
+        match parse_tug_session_id(payload) {
+            Some(s) => Some(TugSessionId::new(s)),
+            None => return InputDecision::MissingSession,
+        }
+    } else {
+        None
+    };
+
+    if let (Some(sessions), Some(session)) = (client_sessions, &tug_session_id) {
+        let cs = sessions.lock().await;
+        if !cs.get(&client_id).is_some_and(|set| set.contains(session)) {
+            return InputDecision::NotOwned;
+        }
+    }
+
+    match try_claim_input(ownership, feed_id, tug_session_id, client_id) {
+        Ok(()) => InputDecision::Forward,
+        Err(owner) => InputDecision::Claimed(owner),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -657,14 +756,45 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                 }
                                             }
                                         }
-                                        // Dynamic dispatch: look up input sink with ownership guard
+                                        // Dynamic dispatch: look up input sink, then
+                                        // run the session-aware admission check via
+                                        // `authorize_and_claim_input`. Socket I/O is
+                                        // driven off the returned `InputDecision`.
                                         else if router.input_sinks.contains_key(&fid) {
-                                            match try_claim_input(&router.input_ownership, fid, client_id) {
-                                                Ok(()) => {
+                                            let decision = authorize_and_claim_input(
+                                                &router.input_ownership,
+                                                router.supervisor.as_ref().map(|s| &s.client_sessions),
+                                                fid,
+                                                &frame.payload,
+                                                client_id,
+                                            ).await;
+                                            match decision {
+                                                InputDecision::Forward => {
                                                     let tx = router.input_sinks.get(&fid).unwrap();
                                                     let _ = tx.send(frame).await;
                                                 }
-                                                Err(owner) => {
+                                                InputDecision::MissingSession => {
+                                                    warn!(
+                                                        client_id,
+                                                        "CODE_INPUT missing tug_session_id, rejecting"
+                                                    );
+                                                    let _ = send_control_json(&mut socket, fid, &serde_json::json!({
+                                                        "type": "error",
+                                                        "detail": "missing_tug_session_id",
+                                                    })).await;
+                                                }
+                                                InputDecision::NotOwned => {
+                                                    warn!(
+                                                        client_id,
+                                                        %fid,
+                                                        "CODE_INPUT for session not owned by client"
+                                                    );
+                                                    let _ = send_control_json(&mut socket, fid, &serde_json::json!({
+                                                        "type": "error",
+                                                        "detail": "session_not_owned",
+                                                    })).await;
+                                                }
+                                                InputDecision::Claimed(owner) => {
                                                     warn!(client_id, %fid, owner, "Input claimed by another client");
                                                     let _ = send_control_json(&mut socket, fid, &serde_json::json!({
                                                         "type": "input_claimed",
@@ -779,46 +909,209 @@ mod tests {
     #[test]
     fn test_input_claim_unclaimed() {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
-        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).is_ok());
+        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).is_ok());
     }
 
     #[test]
     fn test_input_claim_same_client() {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
-        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).unwrap();
+        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).unwrap();
         // Same client can re-claim
-        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).is_ok());
+        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).is_ok());
     }
 
     #[test]
     fn test_input_claim_different_client_rejected() {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
-        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).unwrap();
+        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).unwrap();
         // Different client is rejected
-        let result = try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 2);
+        let result = try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 2);
         assert_eq!(result, Err(1));
     }
 
     #[test]
     fn test_input_release() {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
-        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).unwrap();
-        try_claim_input(&ownership, FeedId::CODE_INPUT, 1).unwrap();
+        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).unwrap();
+        try_claim_input(
+            &ownership,
+            FeedId::CODE_INPUT,
+            Some(TugSessionId::new("sess-a")),
+            1,
+        )
+        .unwrap();
         release_inputs(&ownership, 1);
         // After release, another client can claim
-        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 2).is_ok());
-        assert!(try_claim_input(&ownership, FeedId::CODE_INPUT, 2).is_ok());
+        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 2).is_ok());
+        assert!(
+            try_claim_input(
+                &ownership,
+                FeedId::CODE_INPUT,
+                Some(TugSessionId::new("sess-a")),
+                2
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_input_release_only_own_feeds() {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
-        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 1).unwrap();
-        try_claim_input(&ownership, FeedId::CODE_INPUT, 2).unwrap();
+        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).unwrap();
+        try_claim_input(
+            &ownership,
+            FeedId::CODE_INPUT,
+            Some(TugSessionId::new("sess-a")),
+            2,
+        )
+        .unwrap();
         // Release client 1 — should not affect client 2's ownership
         release_inputs(&ownership, 1);
-        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, 3).is_ok());
-        assert_eq!(try_claim_input(&ownership, FeedId::CODE_INPUT, 3), Err(2));
+        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 3).is_ok());
+        assert_eq!(
+            try_claim_input(
+                &ownership,
+                FeedId::CODE_INPUT,
+                Some(TugSessionId::new("sess-a")),
+                3
+            ),
+            Err(2)
+        );
+    }
+
+    // ---- Step 7: P5 relaxation ([D08], Spec S05) ----
+
+    #[test]
+    fn test_p5_relaxation_distinct_sessions() {
+        // Two clients each claim CODE_INPUT with distinct `tug_session_id`s.
+        // Both should succeed: the relaxed ownership key
+        // `(FeedId, Option<TugSessionId>)` scopes the single-writer
+        // guarantee per session, not per feed.
+        let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
+        let sess_a = Some(TugSessionId::new("sess-a"));
+        let sess_b = Some(TugSessionId::new("sess-b"));
+
+        assert!(try_claim_input(&ownership, FeedId::CODE_INPUT, sess_a.clone(), 1).is_ok());
+        assert!(try_claim_input(&ownership, FeedId::CODE_INPUT, sess_b.clone(), 2).is_ok());
+    }
+
+    #[test]
+    fn test_p5_relaxation_duplicate_rejected() {
+        // Two clients trying to claim CODE_INPUT for the SAME
+        // `tug_session_id`: the second is rejected with the first
+        // client's id (the standard input_claimed path).
+        let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
+        let sess_a = Some(TugSessionId::new("sess-a"));
+
+        assert!(try_claim_input(&ownership, FeedId::CODE_INPUT, sess_a.clone(), 1).is_ok());
+        assert_eq!(
+            try_claim_input(&ownership, FeedId::CODE_INPUT, sess_a, 2),
+            Err(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_p5_code_input_missing_session_id_rejected() {
+        // CODE_INPUT with no `tug_session_id` in the payload is rejected
+        // with `MissingSession`, and the ownership map is NOT mutated —
+        // Step 7 promotes missing-session to a hard reject so a future
+        // tugdeck regression that forgets to inject the field can't
+        // silently succeed.
+        let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
+        let payload = br#"{"type":"user_message","text":"hi"}"#;
+
+        let decision = authorize_and_claim_input(
+            &ownership,
+            None,
+            FeedId::CODE_INPUT,
+            payload,
+            42,
+        )
+        .await;
+
+        assert_eq!(decision, InputDecision::MissingSession);
+        assert!(
+            ownership.lock().unwrap().is_empty(),
+            "rejected frame must not mutate the ownership map"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_p5_code_input_rejects_unowned_session() {
+        // A client that has not registered a `tug_session_id` via
+        // `spawn_session` cannot claim `(CODE_INPUT, tug_session_id)`
+        // ownership. This pins the supervisor cross-check added in Step 7.
+        // After the client registers the session in `client_sessions`, a
+        // follow-up claim for the same session succeeds.
+        let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
+        let client_sessions: ClientSessionAffinity =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let payload = br#"{"tug_session_id":"sess-x","type":"user_message"}"#;
+
+        // Client 1 has no registered session — reject.
+        let decision = authorize_and_claim_input(
+            &ownership,
+            Some(&client_sessions),
+            FeedId::CODE_INPUT,
+            payload,
+            1,
+        )
+        .await;
+        assert_eq!(decision, InputDecision::NotOwned);
+        assert!(
+            ownership.lock().unwrap().is_empty(),
+            "unowned session must not mutate the ownership map"
+        );
+
+        // Register client 1 → sess-x, mirroring what
+        // `AgentSupervisor::handle_control("spawn_session", ...)` would
+        // write. Now the same CODE_INPUT is admitted.
+        {
+            let mut cs = client_sessions.lock().await;
+            cs.entry(1)
+                .or_default()
+                .insert(TugSessionId::new("sess-x"));
+        }
+
+        let decision = authorize_and_claim_input(
+            &ownership,
+            Some(&client_sessions),
+            FeedId::CODE_INPUT,
+            payload,
+            1,
+        )
+        .await;
+        assert_eq!(decision, InputDecision::Forward);
+        assert_eq!(
+            ownership.lock().unwrap().len(),
+            1,
+            "successful claim writes exactly one entry to the ownership map"
+        );
+    }
+
+    #[test]
+    fn test_p5_release_drops_all_entries_for_client() {
+        // A client that owns both `(CODE_INPUT, sess-a)` and
+        // `(TERMINAL_INPUT, None)` has both entries dropped on release.
+        // Another client's entry (`(CODE_INPUT, sess-b)`) is untouched.
+        let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
+        let sess_a = Some(TugSessionId::new("sess-a"));
+        let sess_b = Some(TugSessionId::new("sess-b"));
+
+        try_claim_input(&ownership, FeedId::CODE_INPUT, sess_a.clone(), 1).unwrap();
+        try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 1).unwrap();
+        try_claim_input(&ownership, FeedId::CODE_INPUT, sess_b.clone(), 2).unwrap();
+
+        release_inputs(&ownership, 1);
+
+        // Client 1's both entries are gone; client 3 can claim freely.
+        assert!(try_claim_input(&ownership, FeedId::CODE_INPUT, sess_a, 3).is_ok());
+        assert!(try_claim_input(&ownership, FeedId::TERMINAL_INPUT, None, 3).is_ok());
+        // Client 2's entry is still there.
+        assert_eq!(
+            try_claim_input(&ownership, FeedId::CODE_INPUT, sess_b, 3),
+            Err(2)
+        );
     }
 
     // ---- ClientState ----
