@@ -818,7 +818,7 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 ---
 
-#### Step 3: Capture binary + probe table + normalization + schema derivation {#step-3}
+#### Step 3: Capture binary + probe table + normalization + schema derivation {#step-3} — **DONE**
 
 **Depends on:** #step-2
 
@@ -832,30 +832,31 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
   - `normalize_event`, `derive_schema`, `execute_probe`, `capture_with_stability`, `write_fixtures`
   - Single `#[tokio::test] #[ignore]` entry point: version detection → per-probe execution → stability loop → fixture write
   - `TUG_STABILITY` env var reader (default 1)
-  - Inline `#[cfg(test)] mod tests` with pure-Rust unit tests for `normalize_event` (8+ cases) and `derive_schema` (6+ cases)
+  - Inline `#[cfg(test)] mod tests` with pure-Rust unit tests for `normalize_event` (9 cases) and `derive_schema` + `schema_to_json` + `build_manifest` (7 cases)
 
 **Tasks:**
-- [ ] Create `tests/common/probes.rs` with `ProbeRecord`, `ProbeMsg`, `ProbePrereq`, `ProbeStatus` types.
-- [ ] Write the 35-entry `PROBES` table (start with REQUIRED-only classification; reclassify during Step 4).
-- [ ] Update `tests/common/mod.rs` to export `pub mod probes;`.
-- [ ] Create `tests/capture_stream_json_catalog.rs` with `#[ignore]` + env gate on `TUG_REAL_CLAUDE`.
-- [ ] Implement `normalize_event(value: &mut serde_json::Value)` per [D04]/[D14]/[#deep-normalization].
-- [ ] Implement `derive_schema(events: &[(FeedId, serde_json::Value)]) -> Schema` per [#deep-shape-differ] and Spec S03.
-- [ ] Implement `execute_probe(probe, ws, tug_session_id) -> ProbeResult` — runs input_script, collects CODE_OUTPUT + SESSION_METADATA frames until terminal event or timeout.
-- [ ] Implement `capture_with_stability(probes, n) -> Vec<ProbeResult>` — runs each probe n times, asserts shape-identity, reports flapping as `ShapeUnstable`.
-- [ ] Implement `write_fixtures(results, version)` — writes normalized JSONL + manifest.json + schema.json under `tests/fixtures/stream-json-catalog/v<version>/`.
-- [ ] Read `TUG_STABILITY` env var (default 1).
-- [ ] Add inline `#[cfg(test)] mod tests` covering `normalize_event` leaf substitution, object-structure preservation, array-structure preservation, polymorphic tool_result, and `derive_schema` basic / optional fields / polymorphic tool_use_structured / probe sequences.
+- [x] Create `tests/common/probes.rs` with `ProbeRecord`, `ProbeMsg`, `ProbePrereq`, `ProbeStatus` types.
+- [x] Write the 35-entry `PROBES` table (start with REQUIRED-only classification; reclassify during Step 4).
+- [x] Update `tests/common/mod.rs` to export `pub mod probes;`.
+- [x] Create `tests/capture_stream_json_catalog.rs` with `#[ignore]` + env gate on `TUG_REAL_CLAUDE`.
+- [x] Implement `normalize_event(value: &mut serde_json::Value)` per [D04]/[D14]/[#deep-normalization].
+- [x] Implement `derive_schema(claude_version, captures) -> Schema` per Spec S03 (polymorphic `tool_use_structured` keyed by `tool_name`, per-probe ordered sequence).
+- [x] Implement `execute_probe(probe, bank_path, project_dir) -> CapturedProbe` — per-probe `TestTugcast` spawn, input-script driver with runtime `request_id` capture, `collect_code_output` until `turn_complete` or timeout, in-place normalization, required-event validation.
+- [x] Implement `capture_with_stability(n, bank_dir, project_dir) -> Vec<CapturedProbe>` — runs each probe n times, compares event-type sequences across runs, reports flapping as `ShapeUnstable`.
+- [x] Implement `write_fixtures(captures, schema, manifest)` — writes normalized JSONL + `manifest.json` + `schema.json` under `tests/fixtures/stream-json-catalog/v<version>/`.
+- [x] Read `TUG_STABILITY` env var (default 1) via `stability_runs()`.
+- [x] Add inline `#[cfg(test)] mod tests` covering `normalize_event` leaf substitution, non-UUID leaf ID keys, object-structure preservation, array-structure preservation, polymorphic tool_result, ISO timestamps, cost/duration numeric allowlist, cwd replacement, and `derive_schema` basic / optional-fields / polymorphic-tool_use_structured / ordered-probe-sequences / array+object type descriptions / version extraction / `schema_to_json` spec S03 shape / `build_manifest` spec S02 shape / `status_tag` coverage / `stability_runs` env-var default.
 
 **Tests:**
-- [ ] Pure-Rust unit tests for `normalize_event` (8+ cases) pass in default nextest.
-- [ ] Pure-Rust unit tests for `derive_schema` (6+ cases) pass in default nextest.
-- [ ] `cargo test --test capture_stream_json_catalog -- --ignored --list` prints the single real-claude test name.
+- [x] Pure-Rust unit tests for `normalize_event` (9 cases) pass in default nextest.
+- [x] Pure-Rust unit tests for `derive_schema` + `schema_to_json` + `build_manifest` (7 cases) pass in default nextest.
+- [x] `cargo test --test capture_stream_json_catalog -- --ignored --list` prints the single real-claude test name (`capture_all_probes`).
+- [x] Probe-table invariant tests (`probe_table_has_35_entries`, `probe_names_are_unique`, `probe_names_are_filesystem_safe`, `every_probe_has_an_input_script`, `every_probe_has_at_least_one_required_event`, `timeouts_are_sensible`) pass in default nextest.
 
 **Checkpoint:**
-- [ ] `cargo check --tests -p tugcast` passes with zero warnings.
-- [ ] `cargo nextest run -p tugcast` passes (includes new unit tests).
-- [ ] No fixtures committed yet (capture binary exists, but no `v*/` directory).
+- [x] `cargo check --tests -p tugcast` passes with zero warnings.
+- [x] `cargo nextest run -p tugcast` passes 349 tests (includes new unit tests).
+- [x] No fixtures committed yet — `tests/fixtures/stream-json-catalog/` does not exist on disk. `v<version>/` is written only by the `capture_all_probes` `#[ignore]` test under Step 4.
 
 ---
 

@@ -44,6 +44,8 @@
 
 #![allow(dead_code)]
 
+pub mod probes;
+
 use std::net::TcpListener as StdTcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
