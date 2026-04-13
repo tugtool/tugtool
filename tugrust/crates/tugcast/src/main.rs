@@ -335,10 +335,16 @@ async fn main() {
 
     // Build the SessionKeysStore from the tugbank client if available,
     // otherwise fall back to a no-op in-memory store so the supervisor
-    // still runs (sessions simply do not persist across restart).
+    // still runs. Sessions do not persist across restart under the
+    // fallback — log explicitly so the degradation is visible in logs
+    // rather than manifesting as "my cards forgot their sessions".
     let session_keys_store: Arc<dyn SessionKeysStore> = if let Some(ref client) = bank_client {
         Arc::clone(client) as Arc<dyn SessionKeysStore>
     } else {
+        warn!(
+            "tugbank unavailable — AgentSupervisor falling back to EphemeralSessionKeysStore; \
+             session intent records will not persist across restart"
+        );
         Arc::new(EphemeralSessionKeysStore) as Arc<dyn SessionKeysStore>
     };
 

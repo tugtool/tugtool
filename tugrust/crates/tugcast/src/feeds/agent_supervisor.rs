@@ -817,7 +817,8 @@ impl AgentSupervisor {
     /// `merger_register_rx` and fans in each per-session output mpsc into
     /// the shared CODE_OUTPUT broadcast, the SESSION_METADATA broadcast
     /// ([D14]), and `LedgerEntry::latest_metadata` (per-session). Runs until
-    /// `cancel` is fired.
+    /// `cancel` is fired OR the register channel closes AND every
+    /// per-session stream has drained.
     pub async fn merger_task(
         self: Arc<Self>,
         mut register_rx: mpsc::Receiver<MergerRegistration>,
@@ -825,19 +826,29 @@ impl AgentSupervisor {
     ) {
         use tokio_stream::StreamMap;
         let mut streams: StreamMap<TugSessionId, ReceiverStream<Frame>> = StreamMap::new();
+        // Once `register_rx` yields `None` (all senders dropped), we disable
+        // that select arm so it doesn't spin-return on every iteration. If
+        // all per-session streams have also drained by that point the task
+        // exits cleanly; otherwise it keeps servicing in-flight streams
+        // until they close.
+        let mut register_closed = false;
         loop {
+            if register_closed && streams.is_empty() {
+                return;
+            }
             tokio::select! {
                 _ = cancel.cancelled() => return,
-                maybe_register = register_rx.recv() => {
+                maybe_register = register_rx.recv(), if !register_closed => {
                     match maybe_register {
                         Some((id, rx)) => {
                             streams.insert(id, ReceiverStream::new(rx));
                         }
                         None => {
-                            // Register side dropped — no new sessions will
-                            // arrive but we keep draining existing streams.
-                            // When they all close and `streams` is empty,
-                            // the next iteration exits via the else arm.
+                            // Register side dropped — disable the arm and
+                            // fall through. Existing streams continue to
+                            // drain; the top-of-loop guard exits once they
+                            // are all gone.
+                            register_closed = true;
                         }
                     }
                 }
@@ -845,18 +856,33 @@ impl AgentSupervisor {
                     let Some((id, frame)) = maybe_frame else { continue };
                     // Forward to shared CODE_OUTPUT broadcast (feeds the
                     // shared router-level replay ring per [D06], unchanged).
+                    // The inbound frame is already tagged `CODE_OUTPUT` by
+                    // `relay_session_io` so this send passes through
+                    // unchanged.
                     let _ = self.code_output_tx.send(frame.clone());
-                    // Per-session system_metadata capture + broadcast per [D14].
+                    // Per-session system_metadata capture + broadcast per
+                    // [D14]. CRITICAL: rewrap as `FeedId::SESSION_METADATA`
+                    // before publishing / storing. `Frame::encode()`
+                    // serializes `Frame.feed_id` as the first wire byte, so
+                    // a subscriber registered via
+                    // `register_stream(FeedId::SESSION_METADATA, ...)`
+                    // would otherwise receive a frame tagged CODE_OUTPUT and
+                    // route it to the wrong client-side store. Both the
+                    // live publish AND the `latest_metadata` slot used by
+                    // event-driven replay in `do_spawn_session` must hold
+                    // the SESSION_METADATA-tagged Frame.
                     if is_system_metadata(&frame.payload) {
+                        let meta_frame =
+                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
                         let entry_arc = {
                             let ledger = self.ledger.lock().await;
                             ledger.get(&id).cloned()
                         };
                         if let Some(entry_arc) = entry_arc {
                             let mut entry = entry_arc.lock().await;
-                            entry.latest_metadata = Some(frame.clone());
+                            entry.latest_metadata = Some(meta_frame.clone());
                         }
-                        let _ = self.session_metadata_tx.send(frame);
+                        let _ = self.session_metadata_tx.send(meta_frame);
                     }
                 }
             }
@@ -2178,6 +2204,17 @@ mod tests {
             .expect("second metadata timeout")
             .expect("second metadata recv err");
 
+        // Feed-id correctness pin: the merger rewraps system_metadata
+        // payloads with `FeedId::SESSION_METADATA` before publishing onto
+        // `session_metadata_tx`. `Frame::encode` uses `frame.feed_id` as
+        // the first wire byte, so any client-side filter keyed on
+        // `FeedId::SESSION_METADATA` depends on this. A regression that
+        // left the feed_id as CODE_OUTPUT would silently break tugdeck's
+        // SESSION_METADATA store without any payload assertion catching
+        // it.
+        assert_eq!(first.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(second.feed_id, FeedId::SESSION_METADATA);
+
         let received: HashSet<Vec<u8>> = [first.payload, second.payload].into_iter().collect();
         assert!(
             received.contains(&meta_a.payload),
@@ -2190,7 +2227,9 @@ mod tests {
 
         // Each ledger entry's latest_metadata must hold its own distinct
         // payload. A single-slot watch would have one session's payload
-        // clobber the other.
+        // clobber the other. The stored frames are also rewrapped as
+        // SESSION_METADATA so event-driven replay in `do_spawn_session`
+        // re-emits with the correct feed_id.
         let entry_a = sup.ledger.lock().await.get(&id_a).unwrap().clone();
         let entry_b = sup.ledger.lock().await.get(&id_b).unwrap().clone();
         let stored_a = entry_a
@@ -2205,6 +2244,8 @@ mod tests {
             .latest_metadata
             .clone()
             .expect("session B stored metadata");
+        assert_eq!(stored_a.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(stored_b.feed_id, FeedId::SESSION_METADATA);
         assert_eq!(stored_a.payload, meta_a.payload);
         assert_eq!(stored_b.payload, meta_b.payload);
 

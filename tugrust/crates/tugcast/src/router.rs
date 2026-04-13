@@ -1363,6 +1363,13 @@ mod tests {
             .await
             .expect("broadcast subscriber received metadata")
             .expect("recv err");
+        // The merger MUST rewrap the payload as `FeedId::SESSION_METADATA`
+        // before publishing. `Frame::encode` serializes `Frame.feed_id` as
+        // the first wire byte, so a client subscribing to SESSION_METADATA
+        // (via `register_stream(FeedId::SESSION_METADATA, ...)`) would
+        // otherwise receive a frame tagged CODE_OUTPUT and route it to the
+        // wrong store. This test is the router-layer pin for that rewrap.
+        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
         assert_eq!(received.payload, meta_payload);
 
         cancel.cancel();
