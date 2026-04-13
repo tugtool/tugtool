@@ -131,6 +131,84 @@ async fn test_single_session_end_to_end() {
 }
 
 // ---------------------------------------------------------------------------
+// test_subscription_auth_source
+// ---------------------------------------------------------------------------
+
+/// Confirms that when tugcast spawns tugcode → claude, the claude CLI
+/// authenticates via the developer's `~/.claude.json` (Max/Pro
+/// subscription) rather than per-token API billing via
+/// `ANTHROPIC_API_KEY`. Asserts on the `apiKeySource` field of the first
+/// `system_metadata` event claude emits — that field is claude's own
+/// self-report of which auth source it actually used.
+///
+/// This is the confirmation test for the `fix(auth)` commit that added
+/// `env_remove("ANTHROPIC_API_KEY")` at all three spawn boundaries. If
+/// the developer has `ANTHROPIC_API_KEY` exported in their shell (e.g.
+/// for other API work), the scrubs should strip it before claude ever
+/// sees it, and claude should fall back to `~/.claude.json`.
+///
+/// Intentionally does NOT pre-flight-refuse when `ANTHROPIC_API_KEY` is
+/// set — the whole point of this test is to prove the scrubs work even
+/// when the parent env is contaminated.
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_subscription_auth_source() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-auth";
+    let tug_session_id = "sess-auth";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+
+    // `/status` is a cheap round-trip that still produces a full
+    // `system_metadata` event with the `apiKeySource` we care about.
+    ws.send_code_input(tug_session_id, "/status").await;
+    ws.await_session_state(tug_session_id, "spawning", WIRE_TIMEOUT)
+        .await
+        .expect("spawning");
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live (session_init received)");
+
+    let frames = ws
+        .collect_code_output(tug_session_id, WIRE_TIMEOUT)
+        .await
+        .expect("turn_complete");
+
+    let system_metadata = frames
+        .iter()
+        .find(|f| f["type"].as_str() == Some("system_metadata"))
+        .expect("expected at least one system_metadata event");
+
+    let api_key_source = system_metadata["apiKeySource"]
+        .as_str()
+        .expect("system_metadata.apiKeySource missing (field removed upstream?)");
+
+    eprintln!(
+        "test_subscription_auth_source: apiKeySource = {api_key_source:?}"
+    );
+
+    assert_ne!(
+        api_key_source, "ANTHROPIC_API_KEY",
+        "claude authenticated via ANTHROPIC_API_KEY — the spawn-site env \
+         scrub is broken. Expected a subscription-mode source (e.g. \
+         \"none\" or \"claude.ai\"), got per-token API billing instead. \
+         Check env_remove calls in TestTugcast::spawn, \
+         TugcodeSpawner::spawn_child, and spawnClaude in tugcode/src/session.ts."
+    );
+
+    ws.send_close_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "closed", WIRE_TIMEOUT)
+        .await
+        .expect("closed");
+}
+
+// ---------------------------------------------------------------------------
 // test_two_sessions_never_cross
 // ---------------------------------------------------------------------------
 
