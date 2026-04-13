@@ -493,8 +493,7 @@ enum ControlIntercept {
 /// Session-lifecycle action names intercepted by the supervisor ([D09]).
 /// Non-session actions (`relaunch`, `eval-response`, etc.) fall through
 /// to [`crate::actions::dispatch_action`].
-const SUPERVISOR_SESSION_ACTIONS: &[&str] =
-    &["spawn_session", "close_session", "reset_session"];
+const SUPERVISOR_SESSION_ACTIONS: &[&str] = &["spawn_session", "close_session", "reset_session"];
 
 /// Intercept session-lifecycle CONTROL actions and route them to the
 /// supervisor. Non-session actions return `PassThrough` so the caller
@@ -1117,14 +1116,8 @@ mod tests {
         let ownership: InputOwnership = Arc::new(Mutex::new(HashMap::new()));
         let payload = br#"{"type":"user_message","text":"hi"}"#;
 
-        let decision = authorize_and_claim_input(
-            &ownership,
-            None,
-            FeedId::CODE_INPUT,
-            payload,
-            42,
-        )
-        .await;
+        let decision =
+            authorize_and_claim_input(&ownership, None, FeedId::CODE_INPUT, payload, 42).await;
 
         assert_eq!(decision, InputDecision::MissingSession);
         assert!(
@@ -1165,9 +1158,7 @@ mod tests {
         // write. Now the same CODE_INPUT is admitted.
         {
             let mut cs = client_sessions.lock().await;
-            cs.entry(1)
-                .or_default()
-                .insert(TugSessionId::new("sess-x"));
+            cs.entry(1).or_default().insert(TugSessionId::new("sess-x"));
         }
 
         let decision = authorize_and_claim_input(
@@ -1256,13 +1247,8 @@ mod tests {
 
         let client_id = 42u64;
         let payload = spawn_session_control_payload("card-1", "sess-1");
-        let outcome = intercept_session_control(
-            Some(&sup),
-            "spawn_session",
-            &payload,
-            client_id,
-        )
-        .await;
+        let outcome =
+            intercept_session_control(Some(&sup), "spawn_session", &payload, client_id).await;
         assert!(matches!(outcome, ControlIntercept::Handled));
 
         let tug_id = TugSessionId::new("sess-1");
@@ -1292,8 +1278,7 @@ mod tests {
         }))
         .unwrap();
 
-        let outcome =
-            intercept_session_control(Some(&sup), "spawn_session", &payload, 7).await;
+        let outcome = intercept_session_control(Some(&sup), "spawn_session", &payload, 7).await;
         match outcome {
             ControlIntercept::HandledError { detail } => {
                 assert_eq!(detail, "missing_card_id");
@@ -1317,8 +1302,8 @@ mod tests {
         // registers a per-session stream, pushes a `system_metadata`
         // frame, and asserts the broadcast subscriber receives it.
         use crate::feeds::agent_supervisor::{
-            AgentSupervisor, AgentSupervisorConfig, NoopSessionKeysStore,
-            SessionKeysStore, SpawnerFactory,
+            AgentSupervisor, AgentSupervisorConfig, NoopSessionKeysStore, SessionKeysStore,
+            SpawnerFactory,
         };
         use tokio::sync::mpsc;
 
@@ -1339,20 +1324,14 @@ mod tests {
         );
         let sup = Arc::new(sup);
         let cancel = CancellationToken::new();
-        let merger_handle = tokio::spawn(
-            Arc::clone(&sup).merger_task(register_rx, cancel.clone()),
-        );
+        let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
 
         let id = TugSessionId::new("sess-1");
         let (tx, rx) = mpsc::channel::<Frame>(4);
-        sup.merger_register_tx
-            .send((id.clone(), rx))
-            .await
-            .unwrap();
+        sup.merger_register_tx.send((id.clone(), rx)).await.unwrap();
 
         let meta_payload =
-            br#"{"tug_session_id":"sess-1","type":"system_metadata","model":"opus"}"#
-                .to_vec();
+            br#"{"tug_session_id":"sess-1","type":"system_metadata","model":"opus"}"#.to_vec();
         // Sanity-check the needle-scan helper sees the payload as
         // system_metadata — the merger relies on it.
         assert!(is_system_metadata(&meta_payload));

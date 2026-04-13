@@ -483,8 +483,12 @@ async fn test_session_metadata_two_sessions_no_clobber_real_claude() {
         .expect("B live");
 
     // Drain enough frames to observe metadata from both sessions.
-    let meta_a = ws.count_session_metadata(sess_a, Duration::from_secs(5)).await;
-    let meta_b = ws.count_session_metadata(sess_b, Duration::from_secs(5)).await;
+    let meta_a = ws
+        .count_session_metadata(sess_a, Duration::from_secs(5))
+        .await;
+    let meta_b = ws
+        .count_session_metadata(sess_b, Duration::from_secs(5))
+        .await;
     assert!(
         meta_a >= 1,
         "session A must receive at least one system_metadata frame"

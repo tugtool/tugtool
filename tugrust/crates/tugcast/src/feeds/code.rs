@@ -150,10 +150,7 @@ mod tests {
     #[test]
     fn test_parse_tug_session_id_present() {
         let payload = br#"{"tug_session_id":"sess-abc","type":"user_message"}"#;
-        assert_eq!(
-            parse_tug_session_id(payload),
-            Some("sess-abc".to_string())
-        );
+        assert_eq!(parse_tug_session_id(payload), Some("sess-abc".to_string()));
     }
 
     #[test]

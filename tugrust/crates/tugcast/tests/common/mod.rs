@@ -137,7 +137,10 @@ impl TestTugcast {
 async fn wait_for_port(port: u16, timeout: Duration) {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if TcpStream::connect(format!("127.0.0.1:{port}")).await.is_ok() {
+        if TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .is_ok()
+        {
             return;
         }
         if tokio::time::Instant::now() >= deadline {
@@ -229,12 +232,7 @@ impl TestWs {
     }
 
     /// Send a CONTROL frame carrying `{ action, card_id, tug_session_id }`.
-    async fn send_control_action(
-        &mut self,
-        action: &str,
-        card_id: &str,
-        tug_session_id: &str,
-    ) {
+    async fn send_control_action(&mut self, action: &str, card_id: &str, tug_session_id: &str) {
         let payload = serde_json::json!({
             "action": action,
             "card_id": card_id,
@@ -249,15 +247,18 @@ impl TestWs {
     }
 
     pub async fn send_spawn_session(&mut self, card_id: &str, tug_session_id: &str) {
-        self.send_control_action("spawn_session", card_id, tug_session_id).await;
+        self.send_control_action("spawn_session", card_id, tug_session_id)
+            .await;
     }
 
     pub async fn send_close_session(&mut self, card_id: &str, tug_session_id: &str) {
-        self.send_control_action("close_session", card_id, tug_session_id).await;
+        self.send_control_action("close_session", card_id, tug_session_id)
+            .await;
     }
 
     pub async fn send_reset_session(&mut self, card_id: &str, tug_session_id: &str) {
-        self.send_control_action("reset_session", card_id, tug_session_id).await;
+        self.send_control_action("reset_session", card_id, tug_session_id)
+            .await;
     }
 
     /// Send a CODE_INPUT frame shaped per tugcode's `UserMessage` type.
@@ -558,9 +559,8 @@ impl TestWs {
                     let Ok((frame, _)) = Frame::decode(&bytes) else {
                         continue;
                     };
-                    let payload =
-                        serde_json::from_slice::<serde_json::Value>(&frame.payload)
-                            .unwrap_or(serde_json::Value::Null);
+                    let payload = serde_json::from_slice::<serde_json::Value>(&frame.payload)
+                        .unwrap_or(serde_json::Value::Null);
                     self.buffer.push(DecodedFrame {
                         feed_id: frame.feed_id,
                         payload,
@@ -590,7 +590,7 @@ impl TestWs {
         let idx = self
             .pump_until(deadline, |f| {
                 let detail = f.payload["detail"].as_str().unwrap_or("");
-                accepted.iter().any(|a| *a == detail)
+                accepted.contains(&detail)
             })
             .await?;
         self.buffer.remove(idx);
@@ -601,11 +601,7 @@ impl TestWs {
     /// buffered over a short polling window) whose `tug_session_id`
     /// matches `target`. Used by replay tests to assert "exactly one
     /// metadata frame was replayed" semantics.
-    pub async fn count_session_metadata(
-        &mut self,
-        target: &str,
-        timeout: Duration,
-    ) -> usize {
+    pub async fn count_session_metadata(&mut self, target: &str, timeout: Duration) -> usize {
         let deadline = Instant::now() + timeout;
         // Drain as many frames as possible within the timeout window.
         loop {
@@ -618,9 +614,8 @@ impl TestWs {
                     let Ok((frame, _)) = Frame::decode(&bytes) else {
                         continue;
                     };
-                    let payload =
-                        serde_json::from_slice::<serde_json::Value>(&frame.payload)
-                            .unwrap_or(serde_json::Value::Null);
+                    let payload = serde_json::from_slice::<serde_json::Value>(&frame.payload)
+                        .unwrap_or(serde_json::Value::Null);
                     self.buffer.push(DecodedFrame {
                         feed_id: frame.feed_id,
                         payload,
@@ -634,8 +629,7 @@ impl TestWs {
         self.buffer
             .iter()
             .filter(|f| {
-                f.feed_id == FeedId::SESSION_METADATA
-                    && f.payload["tug_session_id"] == target
+                f.feed_id == FeedId::SESSION_METADATA && f.payload["tug_session_id"] == target
             })
             .count()
     }

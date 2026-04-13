@@ -271,8 +271,10 @@ fn event_type_of(event: &Value) -> Option<&str> {
 /// event type goes to `required_fields`, present in some goes to
 /// `optional_fields`.
 pub fn derive_schema(claude_version: &str, captures: &[CapturedProbe]) -> Schema {
-    let mut schema = Schema::default();
-    schema.claude_version = claude_version.to_string();
+    let mut schema = Schema {
+        claude_version: claude_version.to_string(),
+        ..Default::default()
+    };
 
     // Per-event-type accumulators.
     // field_counts[event_type][field_name] = (count, type_description)
@@ -643,12 +645,8 @@ pub async fn execute_probe(
                         })
                     })
                     .collect();
-                ws.send_user_message_with_attachments(
-                    &tug_session_id,
-                    text,
-                    attachment_values,
-                )
-                .await;
+                ws.send_user_message_with_attachments(&tug_session_id, text, attachment_values)
+                    .await;
             }
             ProbeMsg::Interrupt => ws.send_interrupt(&tug_session_id).await,
             ProbeMsg::ToolApproval { decision, message } => {
@@ -712,13 +710,10 @@ pub async fn execute_probe(
                 {
                     Ok(payload) => {
                         if *event_type == "control_request_forward" {
-                            if let Some(rid) =
-                                payload.get("request_id").and_then(|v| v.as_str())
-                            {
+                            if let Some(rid) = payload.get("request_id").and_then(|v| v.as_str()) {
                                 most_recent_request_id = Some(rid.to_string());
-                                if let Some(tuid) = payload
-                                    .get("tool_use_id")
-                                    .and_then(|v| v.as_str())
+                                if let Some(tuid) =
+                                    payload.get("tool_use_id").and_then(|v| v.as_str())
                                 {
                                     request_id_by_tool_use_id
                                         .insert(tuid.to_string(), rid.to_string());
@@ -897,7 +892,9 @@ async fn capture_all_probes() {
         .join("..")
         .join("..")
         .join("..");
-    let project_dir = project_dir.canonicalize().expect("canonicalize project dir");
+    let project_dir = project_dir
+        .canonicalize()
+        .expect("canonicalize project dir");
 
     let tmp = tempdir_path();
     std::fs::create_dir_all(&tmp).expect("create tmp dir");
@@ -910,7 +907,10 @@ async fn capture_all_probes() {
     // before doing anything else. If the version-extraction panics
     // below (e.g. claude crashed and no probe produced a
     // system_metadata), this is the only window into what happened.
-    eprintln!("--- capture_all_probes status summary ({} probes) ---", captures.len());
+    eprintln!(
+        "--- capture_all_probes status summary ({} probes) ---",
+        captures.len()
+    );
     for probe in &captures {
         let (tag, reason) = match &probe.status {
             ProbeStatus::Passed => ("PASSED", String::new()),
@@ -932,8 +932,7 @@ async fn capture_all_probes() {
 
     let schema = derive_schema(&version, &captures);
     let manifest = build_manifest(&version, stability, &captures);
-    let path =
-        write_fixtures(&captures, &schema, &manifest).expect("write_fixtures succeeded");
+    let path = write_fixtures(&captures, &schema, &manifest).expect("write_fixtures succeeded");
     eprintln!("wrote fixtures to {}", path.display());
     // `_tmp_guard` drops here and removes the per-probe bank files.
 }
@@ -1220,12 +1219,18 @@ mod tests {
         )];
         let schema = derive_schema("2.1.104", &captures);
         let meta = schema.event_types.get("system_metadata").unwrap();
-        assert_eq!(meta.required_fields.get("tools"), Some(&"array<string>".to_string()));
+        assert_eq!(
+            meta.required_fields.get("tools"),
+            Some(&"array<string>".to_string())
+        );
         assert_eq!(
             meta.required_fields.get("plugins"),
             Some(&"array<object>".to_string())
         );
-        assert_eq!(meta.required_fields.get("ipc_version"), Some(&"integer".to_string()));
+        assert_eq!(
+            meta.required_fields.get("ipc_version"),
+            Some(&"integer".to_string())
+        );
     }
 
     #[test]
@@ -1258,10 +1263,12 @@ mod tests {
         let schema = derive_schema("2.1.104", &captures);
         let out = schema_to_json(&schema);
         assert_eq!(out["claude_version"], "2.1.104");
-        assert!(out["event_types"]["session_init"]["required_fields"]
-            .as_object()
-            .unwrap()
-            .contains_key("type"));
+        assert!(
+            out["event_types"]["session_init"]["required_fields"]
+                .as_object()
+                .unwrap()
+                .contains_key("type")
+        );
         assert!(out["probe_sequences"]["test-01"]["required_sequence"].is_array());
     }
 
@@ -1368,8 +1375,7 @@ mod tests {
             "probe-multi",
             vec![json!({"type": "a"}), json!({"type": "c"})],
         );
-        let diag =
-            stability_outcome(&first, &[second, third]).expect("third run must flag drift");
+        let diag = stability_outcome(&first, &[second, third]).expect("third run must flag drift");
         // The diagnostic's "run X/Y" should identify the divergent run.
         assert!(diag.contains("run 3/3"));
     }

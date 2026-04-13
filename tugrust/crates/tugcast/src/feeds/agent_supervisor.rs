@@ -34,7 +34,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use thiserror::Error;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -319,14 +319,14 @@ impl SessionKeysStore for TugbankClient {
         let mut out = Vec::with_capacity(snapshot.len());
         for (card_id, value) in snapshot {
             let Value::String(id) = value else {
-                warn!(
-                    card_id,
-                    "session-keys entry has non-string value; skipping"
-                );
+                warn!(card_id, "session-keys entry has non-string value; skipping");
                 continue;
             };
             if id.is_empty() {
-                warn!(card_id, "session-keys entry has empty tug_session_id; skipping");
+                warn!(
+                    card_id,
+                    "session-keys entry has empty tug_session_id; skipping"
+                );
                 continue;
             }
             out.push((card_id, TugSessionId::new(id)));
@@ -622,11 +622,9 @@ impl AgentSupervisor {
             entry.latest_metadata.clone()
         };
 
-        let _ = self.session_state_tx.send(build_session_state_frame(
-            &tug_session_id,
-            "pending",
-            None,
-        ));
+        let _ =
+            self.session_state_tx
+                .send(build_session_state_frame(&tug_session_id, "pending", None));
 
         if let Some(frame) = replay_frame {
             let _ = self.session_metadata_tx.send(frame);
@@ -698,11 +696,9 @@ impl AgentSupervisor {
 
         // Phase 4: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
         // is dropped at the end of this scope.)
-        let _ = self.session_state_tx.send(build_session_state_frame(
-            tug_session_id,
-            "closed",
-            None,
-        ));
+        let _ =
+            self.session_state_tx
+                .send(build_session_state_frame(tug_session_id, "closed", None));
     }
 
     /// CODE_INPUT dispatcher task. Consumes CODE_INPUT frames from a single
@@ -721,9 +717,7 @@ impl AgentSupervisor {
         let tug_session_id = match parse_tug_session_id(&frame.payload) {
             Some(id) => TugSessionId::new(id),
             None => {
-                warn!(
-                    "dispatcher: CODE_INPUT frame missing tug_session_id, dropping"
-                );
+                warn!("dispatcher: CODE_INPUT frame missing tug_session_id, dropping");
                 return;
             }
         };
@@ -753,10 +747,7 @@ impl AgentSupervisor {
                     // This thread owns the Idle → Spawning transition per
                     // [R02]. Transition, queue the frame for the worker,
                     // and tell the caller to spawn.
-                    entry
-                        .spawn_state
-                        .try_transition(SpawnState::Spawning)
-                        .ok();
+                    entry.spawn_state.try_transition(SpawnState::Spawning).ok();
                     // Idle-entry invariant: the queue is freshly minted
                     // empty, so push always succeeds. If this ever fails
                     // we've bungled the invariant and the frame would be
@@ -990,11 +981,9 @@ impl AgentSupervisor {
         // so only the dispatcher owns the send side after this point.
         drop(input_tx);
 
-        let _ = self.session_state_tx.send(build_session_state_frame(
-            tug_session_id,
-            "spawning",
-            None,
-        ));
+        let _ =
+            self.session_state_tx
+                .send(build_session_state_frame(tug_session_id, "spawning", None));
 
         // Launch the real bridge in a detached task.
         let spawner = (self.spawner_factory)();
@@ -1097,10 +1086,8 @@ impl SessionKeysStore for NoopSessionKeysStore {
 /// interception or client-disconnect hooks without constructing a full
 /// subprocess pipeline.
 #[cfg(test)]
-pub(crate) fn test_minimal_supervisor() -> (
-    Arc<AgentSupervisor>,
-    mpsc::Receiver<MergerRegistration>,
-) {
+pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver<MergerRegistration>)
+{
     let (state_tx, _) = broadcast::channel(16);
     let (meta_tx, _) = broadcast::channel(16);
     let (code_tx, _) = broadcast::channel(16);
@@ -1747,8 +1734,7 @@ mod tests {
         // control frame on every drop" refactor can't silently add noise
         // on the CONTROL feed.
         let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, mut state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store);
+        let (sup, mut state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
 
         // Payload with no `tug_session_id` field.
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -1780,7 +1766,9 @@ mod tests {
 
         sup.dispatch_one(code_input_frame("sess-unknown")).await;
 
-        let ctrl = control_rx.try_recv().expect("session_unknown control frame");
+        let ctrl = control_rx
+            .try_recv()
+            .expect("session_unknown control frame");
         assert_eq!(ctrl.feed_id, FeedId::CONTROL);
         let v: serde_json::Value = serde_json::from_slice(&ctrl.payload).unwrap();
         assert_eq!(v["type"], "error");
@@ -1935,8 +1923,7 @@ mod tests {
 
         for iter in 0..ITERATIONS {
             let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-            let (sup, _state_rx, _meta_rx, _control_rx) =
-                make_supervisor_with_store(store);
+            let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
             let sup = Arc::new(sup);
 
             // Pre-spawn from client 10 so both racers start from a populated
@@ -1949,20 +1936,12 @@ mod tests {
             let sup_spawn = sup.clone();
             let close_task = tokio::spawn(async move {
                 sup_close
-                    .handle_control(
-                        "close_session",
-                        &close_payload("card-1", "sess-1"),
-                        10,
-                    )
+                    .handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
                     .await
             });
             let spawn_task = tokio::spawn(async move {
                 sup_spawn
-                    .handle_control(
-                        "spawn_session",
-                        &spawn_payload("card-2", "sess-1"),
-                        20,
-                    )
+                    .handle_control("spawn_session", &spawn_payload("card-2", "sess-1"), 20)
                     .await
             });
 
@@ -2027,8 +2006,7 @@ mod tests {
             .unwrap();
         let set_calls_before = store.set_call_count();
 
-        let (sup, _state_rx, _meta_rx, _control_rx) =
-            make_supervisor_with_store(store.clone());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store.clone());
 
         let inserted = sup.rebind_from_tugbank().await.unwrap();
         assert_eq!(inserted, 2);
@@ -2102,8 +2080,7 @@ mod tests {
         let sup = Arc::new(sup);
         let mut code_rx = sup.code_output_tx.subscribe();
         let cancel = CancellationToken::new();
-        let merger_handle =
-            tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+        let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
 
         let id_a = TugSessionId::new("sess-a");
         let id_b = TugSessionId::new("sess-b");
@@ -2165,8 +2142,7 @@ mod tests {
             make_supervisor_with_spawner(store, stall_spawner_factory());
         let sup = Arc::new(sup);
         let cancel = CancellationToken::new();
-        let merger_handle =
-            tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+        let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
 
         let id_a = TugSessionId::new("sess-a");
         let id_b = TugSessionId::new("sess-b");
@@ -2284,8 +2260,7 @@ mod tests {
         // bridge's session_init promote path has something to drain and
         // something to transition from. This mirrors what the dispatcher
         // + spawn_session_worker would have done in production.
-        let (input_tx_for_ledger, mut input_rx_for_assert) =
-            mpsc::channel::<Frame>(16);
+        let (input_tx_for_ledger, mut input_rx_for_assert) = mpsc::channel::<Frame>(16);
         let pre_queued = code_input_frame("sess-1");
         {
             let mut entry = entry_arc.lock().await;
@@ -2311,9 +2286,7 @@ mod tests {
                 .await
                 .unwrap();
             child_stdout_write
-                .write_all(
-                    b"{\"type\":\"session_init\",\"session_id\":\"claude-xyz\"}\n",
-                )
+                .write_all(b"{\"type\":\"session_init\",\"session_id\":\"claude-xyz\"}\n")
                 .await
                 .unwrap();
             drop(child_stdout_write);
