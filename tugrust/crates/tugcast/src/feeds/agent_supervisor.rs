@@ -282,6 +282,14 @@ pub trait SessionKeysStore: Send + Sync {
     /// Delete the entry keyed by `card_id`. Returning `Ok(())` when the key is
     /// missing is acceptable — the supervisor treats delete as best-effort.
     fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError>;
+
+    /// Enumerate every persisted `(card_id, tug_session_id)` pair. Used by
+    /// [`AgentSupervisor::rebind_from_tugbank`] at startup to re-materialize
+    /// intent records from a previous run (per [F15]). Entries with payloads
+    /// that are not string-valued or whose `tug_session_id` is empty must
+    /// be skipped by the implementation; returning them would leak garbage
+    /// into the ledger.
+    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError>;
 }
 
 impl SessionKeysStore for TugbankClient {
@@ -302,6 +310,28 @@ impl SessionKeysStore for TugbankClient {
         self.delete(SESSION_KEYS_DOMAIN, card_id)
             .map(|_| ())
             .map_err(|e| SessionKeysStoreError(e.to_string()))
+    }
+
+    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+        let snapshot = self
+            .read_domain(SESSION_KEYS_DOMAIN)
+            .map_err(|e| SessionKeysStoreError(e.to_string()))?;
+        let mut out = Vec::with_capacity(snapshot.len());
+        for (card_id, value) in snapshot {
+            let Value::String(id) = value else {
+                warn!(
+                    card_id,
+                    "session-keys entry has non-string value; skipping"
+                );
+                continue;
+            };
+            if id.is_empty() {
+                warn!(card_id, "session-keys entry has empty tug_session_id; skipping");
+                continue;
+            }
+            out.push((card_id, TugSessionId::new(id)));
+        }
+        Ok(out)
     }
 }
 
@@ -967,6 +997,101 @@ impl AgentSupervisor {
         let mut cs = self.client_sessions.lock().await;
         cs.remove(&client_id);
     }
+
+    /// Re-materialize ledger entries from persisted tugbank state.
+    ///
+    /// Called once at startup from `main.rs`. Reads every
+    /// `(card_id, tug_session_id)` pair stored in the
+    /// [`SESSION_KEYS_DOMAIN`] and inserts a fresh `Idle` [`LedgerEntry`]
+    /// for each `tug_session_id` that is not already present in the ledger.
+    /// Returns the number of entries that were newly inserted.
+    ///
+    /// Per [F15] this path does **not**:
+    ///
+    /// - touch `client_sessions` — the rebind has no WebSocket client, so
+    ///   any sentinel `ClientId` inserted here would be a permanent ghost
+    ///   with no cleanup trigger. Real clients connecting after startup
+    ///   send their own `spawn_session` CONTROL frames via [D14]'s normal
+    ///   flow, which populate `client_sessions` for the real client_id.
+    /// - write to or delete from tugbank — the helper is strictly read-only.
+    /// - publish any `SESSION_STATE` frames — the rebound entries are
+    ///   unobservable until a real client subsequently calls `spawn_session`
+    ///   for one of them, at which point the existing entry is reused and
+    ///   the normal `pending` publish fires.
+    pub async fn rebind_from_tugbank(&self) -> Result<usize, SessionKeysStoreError> {
+        let entries = self.store.list_session_keys()?;
+        let mut ledger = self.ledger.lock().await;
+        let mut inserted = 0usize;
+        for (_card_id, tug_session_id) in entries {
+            if ledger.contains_key(&tug_session_id) {
+                continue;
+            }
+            let entry = LedgerEntry::new(
+                tug_session_id.clone(),
+                CrashBudget::new(3, Duration::from_secs(60)),
+            );
+            ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
+            inserted += 1;
+        }
+        Ok(inserted)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Crate-visible test helpers — available to other modules' #[cfg(test)] code.
+// ---------------------------------------------------------------------------
+
+/// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
+/// Gated on `#[cfg(test)]` so it is not compiled into production builds.
+#[cfg(test)]
+pub(crate) struct NoopSessionKeysStore;
+
+#[cfg(test)]
+impl SessionKeysStore for NoopSessionKeysStore {
+    fn set_session_key(
+        &self,
+        _card_id: &str,
+        _tug_session_id: &TugSessionId,
+    ) -> Result<(), SessionKeysStoreError> {
+        Ok(())
+    }
+    fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
+        Ok(())
+    }
+    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+        Ok(Vec::new())
+    }
+}
+
+/// Construct an [`AgentSupervisor`] with stub channels, a no-op session
+/// keys store, and a panic-on-call spawner factory. Returns the supervisor
+/// wrapped in `Arc` plus its merger register receiver (which the caller
+/// should either spawn `merger_task` against or drain to keep the register
+/// channel alive). Used by router tests that need to exercise CONTROL
+/// interception or client-disconnect hooks without constructing a full
+/// subprocess pipeline.
+#[cfg(test)]
+pub(crate) fn test_minimal_supervisor() -> (
+    Arc<AgentSupervisor>,
+    mpsc::Receiver<MergerRegistration>,
+) {
+    let (state_tx, _) = broadcast::channel(16);
+    let (meta_tx, _) = broadcast::channel(16);
+    let (code_tx, _) = broadcast::channel(16);
+    let (control_tx, _) = broadcast::channel(16);
+    let factory: SpawnerFactory =
+        Arc::new(|| unreachable!("test_minimal_supervisor has no spawner"));
+    let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
+    let (sup, register_rx) = AgentSupervisor::new(
+        state_tx,
+        meta_tx,
+        code_tx,
+        control_tx,
+        store,
+        factory,
+        AgentSupervisorConfig::default(),
+    );
+    (Arc::new(sup), register_rx)
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,6 +1165,15 @@ mod tests {
             self.entries.lock().unwrap().remove(card_id);
             Ok(())
         }
+        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+            Ok(self
+                .entries
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), TugSessionId::new(v.clone())))
+                .collect())
+        }
     }
 
     struct FailingWriteStore {
@@ -1065,6 +1199,9 @@ mod tests {
         fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
             self.delegate.delete_session_key(card_id)
         }
+        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+            self.delegate.list_session_keys()
+        }
     }
 
     struct FailingDeleteStore {
@@ -1089,6 +1226,9 @@ mod tests {
         }
         fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
             Err(SessionKeysStoreError("injected delete failure".into()))
+        }
+        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+            self.delegate.list_session_keys()
         }
     }
 
@@ -1840,6 +1980,57 @@ mod tests {
     }
 
     // ---- on_client_disconnect ----
+
+    // ---- Step 8: rebind_from_tugbank ----
+
+    #[tokio::test]
+    async fn test_main_rebinds_intent_records_on_startup() {
+        // Populate a fake tugbank with two (card_id, tug_session_id) pairs,
+        // construct an AgentSupervisor wired to that store, then call
+        // `rebind_from_tugbank`. Assert that both ids appear in the ledger
+        // as `Idle` (the wire name is `pending`), that `client_sessions`
+        // is empty (per [F15] the rebind path does NOT insert a sentinel
+        // client id), and that the store was not re-written (the helper
+        // only reads on startup).
+        let store = Arc::new(InMemoryStore::default());
+        store
+            .set_session_key("card-a", &TugSessionId::new("sess-a"))
+            .unwrap();
+        store
+            .set_session_key("card-b", &TugSessionId::new("sess-b"))
+            .unwrap();
+        let set_calls_before = store.set_call_count();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store(store.clone());
+
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 2);
+
+        let ledger = sup.ledger.lock().await;
+        let id_a = TugSessionId::new("sess-a");
+        let id_b = TugSessionId::new("sess-b");
+        assert!(ledger.contains_key(&id_a));
+        assert!(ledger.contains_key(&id_b));
+        for id in [&id_a, &id_b] {
+            let entry_arc = ledger.get(id).unwrap().clone();
+            let entry = entry_arc.lock().await;
+            assert_eq!(entry.spawn_state, SpawnState::Idle);
+        }
+        drop(ledger);
+
+        // `client_sessions` must be empty — the rebind path owns no
+        // WebSocket client_id.
+        assert!(sup.client_sessions.lock().await.is_empty());
+
+        // Store was not re-written.
+        assert_eq!(store.set_call_count(), set_calls_before);
+        assert_eq!(store.delete_call_count(), 0);
+
+        // Second rebind call is idempotent — no new inserts.
+        let inserted_second = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted_second, 0);
+    }
 
     #[tokio::test]
     async fn test_on_client_disconnect_drops_client_sessions_entry() {

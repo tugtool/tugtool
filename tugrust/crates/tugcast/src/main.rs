@@ -26,6 +26,34 @@ use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
+use crate::feeds::agent_supervisor::{
+    AgentSupervisor, AgentSupervisorConfig, SessionKeysStore, SessionKeysStoreError,
+    SpawnerFactory, default_spawner_factory,
+};
+use tugcast_core::TugSessionId;
+
+/// No-op session keys store used as a fallback when tugbank is
+/// unavailable. Sessions do not persist across restart under this store —
+/// `list_session_keys` always returns an empty vector — but the
+/// supervisor still functions for in-process use.
+#[derive(Debug, Default)]
+struct EphemeralSessionKeysStore;
+
+impl SessionKeysStore for EphemeralSessionKeysStore {
+    fn set_session_key(
+        &self,
+        _card_id: &str,
+        _tug_session_id: &TugSessionId,
+    ) -> Result<(), SessionKeysStoreError> {
+        Ok(())
+    }
+    fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
+        Ok(())
+    }
+    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+        Ok(Vec::new())
+    }
+}
 use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
 use crate::feeds::filetree::{FileTreeFeed, FileTreeQuery};
@@ -280,18 +308,14 @@ async fn main() {
         });
     }
 
-    // SESSION_METADATA wiring moved into the supervisor's merger_task per
-    // [D14] — a single router-owned watch::channel can clobber concurrent
-    // per-session metadata updates. The supervisor publishes on a dedicated
-    // broadcast sender; full plumbing lands in Step 8.
-
-    // Create replay buffer for CodeOutput lag recovery (P4)
+    // Create replay buffer for CodeOutput lag recovery (P4). Correctness
+    // on replay relies on the client-side session filter per [D06]/[D11]:
+    // the buffer is shared across sessions, and clients subscribed to
+    // SESSION_STATE/SESSION_METADATA filter frames by `tug_session_id`.
     use crate::router::{LagPolicy, ReplayBuffer};
     let code_replay = ReplayBuffer::new(1000);
 
-    // Resolve tugcode path — held here but only consumed by the supervisor
-    // once the multi-session router lands in Step 8. In the interim the
-    // tugcode subprocess is not spawned at tugcast startup.
+    // Resolve tugcode path for the supervisor's default spawner factory.
     let tugcode_path =
         feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref(), &watch_dir);
     if !tugcode_path.exists() {
@@ -300,12 +324,65 @@ async fn main() {
             tugcode_path.display()
         );
     }
-    let _tugcode_path_step8 = tugcode_path;
-    // Drain CODE_INPUT into a no-op consumer until the supervisor dispatcher
-    // is wired in Step 8. Keeping the receiver alive prevents the input sink
-    // channel from closing and turning every router-side send into an error.
-    let mut code_input_rx_drain = code_input_rx;
-    tokio::spawn(async move { while code_input_rx_drain.recv().await.is_some() {} });
+
+    // Construct the multi-session supervisor. Broadcast channels for the
+    // session-scoped feeds (SESSION_STATE, SESSION_METADATA) are created
+    // here and registered with the router below. The supervisor publishes
+    // CONTROL error frames onto the same broadcast that `register_stream`
+    // wires for FeedId::CONTROL so clients observe them in-band.
+    let (session_state_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (session_metadata_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    // Build the SessionKeysStore from the tugbank client if available,
+    // otherwise fall back to a no-op in-memory store so the supervisor
+    // still runs (sessions simply do not persist across restart).
+    let session_keys_store: Arc<dyn SessionKeysStore> = if let Some(ref client) = bank_client {
+        Arc::clone(client) as Arc<dyn SessionKeysStore>
+    } else {
+        Arc::new(EphemeralSessionKeysStore) as Arc<dyn SessionKeysStore>
+    };
+
+    let supervisor_config = AgentSupervisorConfig {
+        tugcode_path: tugcode_path.clone(),
+        project_dir: watch_dir.clone(),
+    };
+    let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
+
+    let (supervisor, merger_register_rx) = AgentSupervisor::new(
+        session_state_tx.clone(),
+        session_metadata_tx.clone(),
+        code_tx.clone(),
+        client_action_tx.clone(),
+        session_keys_store,
+        spawner_factory,
+        supervisor_config,
+    );
+    let supervisor = Arc::new(supervisor);
+
+    // Rebind persisted intent records from tugbank. Per [F15] this only
+    // populates the ledger — `client_sessions` is left untouched and real
+    // clients connecting after startup send their own `spawn_session`
+    // CONTROL frames.
+    match supervisor.rebind_from_tugbank().await {
+        Ok(count) if count > 0 => info!(count, "rebound intent records from tugbank"),
+        Ok(_) => {}
+        Err(e) => warn!(error = %e, "rebind_from_tugbank failed (non-fatal)"),
+    }
+
+    // Spawn the supervisor's dispatcher task (consumes CODE_INPUT, routes
+    // to per-session workers) and merger task (fans in per-session stdout
+    // streams and publishes system_metadata to SESSION_METADATA).
+    let dispatcher_supervisor = Arc::clone(&supervisor);
+    tokio::spawn(async move {
+        dispatcher_supervisor.dispatcher_task(code_input_rx).await;
+    });
+    let merger_cancel = cancel.clone();
+    let merger_supervisor = Arc::clone(&supervisor);
+    tokio::spawn(async move {
+        merger_supervisor
+            .merger_task(merger_register_rx, merger_cancel)
+            .await;
+    });
 
     // Build feed router with dynamic registration
     let mut feed_router = FeedRouter::new(
@@ -315,7 +392,9 @@ async fn main() {
         shared_dev_state.clone(),
     );
 
-    // Register stream outputs (broadcast feeds, server → client)
+    // Register stream outputs (broadcast feeds, server → client). The
+    // CODE_OUTPUT Replay buffer stays shared across sessions per [D06];
+    // correctness on replay relies on the tugdeck-side filter per [D11].
     feed_router.register_stream(
         FeedId::TERMINAL_OUTPUT,
         terminal_tx_for_router,
@@ -327,12 +406,31 @@ async fn main() {
         LagPolicy::Replay(code_replay),
     );
     feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    // SESSION_STATE / SESSION_METADATA are broadcast streams (not snapshot
+    // watches) per [D14]: a single watch slot would clobber concurrent
+    // per-session updates. Per-session replay on reconnect is handled
+    // event-driven inside `AgentSupervisor::handle_control("spawn_session")`
+    // — there is no snapshot-watch registration for either feed.
+    feed_router.register_stream(FeedId::SESSION_STATE, session_state_tx, LagPolicy::Warn);
+    feed_router.register_stream(
+        FeedId::SESSION_METADATA,
+        session_metadata_tx,
+        LagPolicy::Warn,
+    );
 
-    // Register input sinks (client → server backends)
+    // Register input sinks (client → server backends). CODE_INPUT points
+    // at the supervisor's dispatcher (spawned above); the dispatcher
+    // parses `tug_session_id`, consults the ledger, and routes to the
+    // per-session worker.
     feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
+
+    // Attach the supervisor to the router so `handle_client` can intercept
+    // session-lifecycle CONTROL frames and cross-check CODE_INPUT P5
+    // ownership claims against `client_sessions`.
+    feed_router.set_supervisor(Arc::clone(&supervisor));
 
     // Register snapshot watches
     let mut snapshot_watches = vec![

@@ -34,7 +34,7 @@ use tugcast_core::{
 };
 
 use crate::auth::{self, SharedAuthState};
-use crate::feeds::agent_supervisor::AgentSupervisor;
+use crate::feeds::agent_supervisor::{AgentSupervisor, ControlError};
 use crate::feeds::code::parse_tug_session_id;
 use crate::feeds::terminal;
 
@@ -229,6 +229,14 @@ impl FeedRouter {
     /// Register an input sink (client → server backend).
     pub(crate) fn register_input(&mut self, feed_id: FeedId, tx: mpsc::Sender<Frame>) {
         self.input_sinks.insert(feed_id, tx);
+    }
+
+    /// Attach the multi-session supervisor. Called from `main.rs` after the
+    /// supervisor is constructed. Once set, `handle_client` routes session
+    /// lifecycle CONTROL frames through `AgentSupervisor::handle_control`
+    /// and enforces the P5 authorization cross-check on CODE_INPUT.
+    pub(crate) fn set_supervisor(&mut self, supervisor: Arc<AgentSupervisor>) {
+        self.supervisor = Some(supervisor);
     }
 
     /// Add snapshot watches (delivered on connect + forwarded on change).
@@ -454,6 +462,74 @@ fn release_inputs(ownership: &InputOwnership, client_id: u64) {
     map.retain(|_, owner| *owner != client_id);
 }
 
+/// Combined client teardown: release input ownership AND notify the
+/// supervisor (if wired). Every path in `handle_client` that exits on
+/// disconnect or error must route through this helper so per-client
+/// supervisor state (`client_sessions`) cannot leak across reconnects.
+async fn teardown_client(router: &FeedRouter, client_id: u64) {
+    release_inputs(&router.input_ownership, client_id);
+    if let Some(sup) = router.supervisor.as_ref() {
+        sup.on_client_disconnect(client_id).await;
+    }
+}
+
+/// Outcome of the CONTROL-frame session-action intercept, driving
+/// `handle_client`'s response. Extracted so unit tests can exercise the
+/// routing logic without a live WebSocket.
+#[derive(Debug)]
+enum ControlIntercept {
+    /// Action was a session-lifecycle action and the supervisor handled
+    /// it successfully. Caller should not fall through to `dispatch_action`.
+    Handled,
+    /// Action was a session-lifecycle action but the supervisor rejected
+    /// the payload. Caller should emit a CONTROL error frame with the
+    /// paired `detail` string and not fall through.
+    HandledError { detail: &'static str },
+    /// Action is not a session-lifecycle action. Caller should fall
+    /// through to `dispatch_action` as before.
+    PassThrough,
+}
+
+/// Session-lifecycle action names intercepted by the supervisor ([D09]).
+/// Non-session actions (`relaunch`, `eval-response`, etc.) fall through
+/// to [`crate::actions::dispatch_action`].
+const SUPERVISOR_SESSION_ACTIONS: &[&str] =
+    &["spawn_session", "close_session", "reset_session"];
+
+/// Intercept session-lifecycle CONTROL actions and route them to the
+/// supervisor. Non-session actions return `PassThrough` so the caller
+/// can fall through to the legacy dispatcher. When the supervisor is not
+/// wired (Step 8 interim during router-unit tests), all actions
+/// `PassThrough`.
+async fn intercept_session_control(
+    supervisor: Option<&Arc<AgentSupervisor>>,
+    action: &str,
+    payload: &[u8],
+    client_id: u64,
+) -> ControlIntercept {
+    if !SUPERVISOR_SESSION_ACTIONS.contains(&action) {
+        return ControlIntercept::PassThrough;
+    }
+    let Some(sup) = supervisor else {
+        return ControlIntercept::PassThrough;
+    };
+    match sup.handle_control(action, payload, client_id).await {
+        Ok(()) => ControlIntercept::Handled,
+        Err(ControlError::MissingCardId) => ControlIntercept::HandledError {
+            detail: "missing_card_id",
+        },
+        Err(ControlError::MissingSessionId) => ControlIntercept::HandledError {
+            detail: "missing_tug_session_id",
+        },
+        Err(ControlError::Malformed) => ControlIntercept::HandledError {
+            detail: "malformed_payload",
+        },
+        Err(ControlError::PersistenceFailure(_)) => ControlIntercept::HandledError {
+            detail: "persistence_failure",
+        },
+    }
+}
+
 /// Per-client session affinity map (a handle to
 /// [`AgentSupervisor::client_sessions`]). Passed as `Option` to
 /// [`authorize_and_claim_input`] so the helper can be unit-tested without
@@ -576,7 +652,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                 .is_err()
                             {
                                 info!(client_id, "Client disconnected during snapshot send");
-                                release_inputs(&router.input_ownership, client_id);
+                                teardown_client(&router, client_id).await;
                                 return;
                             }
                             debug!(client_id, "Terminal snapshot sent");
@@ -616,7 +692,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                         .is_err()
                     {
                         info!(client_id, "Client disconnected during buffer flush");
-                        release_inputs(&router.input_ownership, client_id);
+                        teardown_client(&router, client_id).await;
                         return;
                     }
                 }
@@ -644,7 +720,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                             client_id,
                             "Client disconnected during initial snapshot send"
                         );
-                        release_inputs(&router.input_ownership, client_id);
+                        teardown_client(&router, client_id).await;
                         return;
                     }
                     let snap_tx_clone = snap_tx.clone();
@@ -669,7 +745,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                         Some(frame) = snap_rx.recv() => {
                             if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
                                 info!(client_id, "Client disconnected");
-                                release_inputs(&router.input_ownership, client_id);
+                                teardown_client(&router, client_id).await;
                                 return;
                             }
                         }
@@ -679,7 +755,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                 Ok(frame) => {
                                     if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
                                         info!(client_id, "Client disconnected");
-                                        release_inputs(&router.input_ownership, client_id);
+                                        teardown_client(&router, client_id).await;
                                         return;
                                     }
                                 }
@@ -701,14 +777,14 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                 "type": "lag_recovery",
                                                 "feed_id": feed_id.as_byte()
                                             })).await {
-                                                release_inputs(&router.input_ownership, client_id);
+                                                teardown_client(&router, client_id).await;
                                                 return;
                                             }
                                             // Replay buffered frames
                                             for frame in replay_buf.snapshot() {
                                                 if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
                                                     info!(client_id, "Client disconnected during replay");
-                                                    release_inputs(&router.input_ownership, client_id);
+                                                    teardown_client(&router, client_id).await;
                                                     return;
                                                 }
                                             }
@@ -717,7 +793,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                 "type": "lag_recovery_complete",
                                                 "feed_id": feed_id.as_byte()
                                             })).await {
-                                                release_inputs(&router.input_ownership, client_id);
+                                                teardown_client(&router, client_id).await;
                                                 return;
                                             }
                                             // Continue live streaming
@@ -741,18 +817,39 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                             last_heartbeat = Instant::now();
                                             debug!("Heartbeat received from client");
                                         }
-                                        // Router-internal: Control
+                                        // Router-internal: Control. Session-lifecycle
+                                        // actions (`spawn_session` / `close_session` /
+                                        // `reset_session`) are intercepted and routed
+                                        // to the supervisor per [D09]; all other
+                                        // actions fall through to `dispatch_action`.
                                         else if fid == FeedId::CONTROL {
                                             if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
                                                 if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
-                                                    crate::actions::dispatch_action(
+                                                    match intercept_session_control(
+                                                        router.supervisor.as_ref(),
                                                         action,
                                                         &frame.payload,
-                                                        &router.shutdown_tx,
-                                                        &router.stream_outputs,
-                                                        &router.dev_state,
-                                                        &router.pending_evals,
-                                                    ).await;
+                                                        client_id,
+                                                    ).await {
+                                                        ControlIntercept::Handled => {}
+                                                        ControlIntercept::HandledError { detail } => {
+                                                            warn!(client_id, action, detail, "session control rejected");
+                                                            let _ = send_control_json(&mut socket, FeedId::CONTROL, &serde_json::json!({
+                                                                "type": "error",
+                                                                "detail": detail,
+                                                            })).await;
+                                                        }
+                                                        ControlIntercept::PassThrough => {
+                                                            crate::actions::dispatch_action(
+                                                                action,
+                                                                &frame.payload,
+                                                                &router.shutdown_tx,
+                                                                &router.stream_outputs,
+                                                                &router.dev_state,
+                                                                &router.pending_evals,
+                                                            ).await;
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -808,13 +905,13 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                 }
                                 Some(Ok(Message::Close(_))) | None => {
                                     info!(client_id, "Client disconnected");
-                                    release_inputs(&router.input_ownership, client_id);
+                                    teardown_client(&router, client_id).await;
                                     return;
                                 }
                                 Some(Ok(_)) => {}
                                 Some(Err(e)) => {
                                     error!(client_id, "WebSocket error: {}", e);
-                                    release_inputs(&router.input_ownership, client_id);
+                                    teardown_client(&router, client_id).await;
                                     return;
                                 }
                             }
@@ -824,12 +921,12 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                             let hb = Frame::heartbeat();
                             if socket.send(Message::Binary(hb.encode().into())).await.is_err() {
                                 info!(client_id, "Client disconnected during heartbeat send");
-                                release_inputs(&router.input_ownership, client_id);
+                                teardown_client(&router, client_id).await;
                                 return;
                             }
                             if last_heartbeat.elapsed() > HEARTBEAT_TIMEOUT {
                                 warn!(client_id, "Heartbeat timeout, closing connection");
-                                release_inputs(&router.input_ownership, client_id);
+                                teardown_client(&router, client_id).await;
                                 return;
                             }
                         }
@@ -1128,6 +1225,180 @@ mod tests {
             }
             ClientState::Live => panic!("Expected Bootstrap state"),
         }
+    }
+
+    // ---- Step 8: CONTROL interception + disconnect hook + metadata broadcast ----
+
+    use crate::feeds::agent_supervisor::test_minimal_supervisor;
+    use crate::feeds::session_metadata::is_system_metadata;
+    use tokio_util::sync::CancellationToken;
+    use tugcast_core::TugSessionId;
+
+    fn spawn_session_control_payload(card_id: &str, tug_session_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "card_id": card_id,
+            "tug_session_id": tug_session_id,
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_control_frame_interception_routes_to_supervisor() {
+        // A CONTROL frame with `action: "spawn_session"` intercepted via
+        // `intercept_session_control` must be handled by the supervisor:
+        // the ledger gains a pending entry and the client's session set
+        // is updated in `client_sessions`. Non-session actions (e.g.
+        // `relaunch`) must `PassThrough`.
+        let (sup, mut register_rx) = test_minimal_supervisor();
+        // Drain the merger register so spawn paths don't block on it.
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let client_id = 42u64;
+        let payload = spawn_session_control_payload("card-1", "sess-1");
+        let outcome = intercept_session_control(
+            Some(&sup),
+            "spawn_session",
+            &payload,
+            client_id,
+        )
+        .await;
+        assert!(matches!(outcome, ControlIntercept::Handled));
+
+        let tug_id = TugSessionId::new("sess-1");
+        assert!(sup.ledger.lock().await.contains_key(&tug_id));
+        let cs = sup.client_sessions.lock().await;
+        assert!(cs.get(&client_id).unwrap().contains(&tug_id));
+        drop(cs);
+
+        // Non-session actions pass through — even with a supervisor wired,
+        // `relaunch` is `dispatch_action`'s business.
+        let other = intercept_session_control(Some(&sup), "relaunch", b"{}", client_id).await;
+        assert!(matches!(other, ControlIntercept::PassThrough));
+    }
+
+    #[tokio::test]
+    async fn test_control_frame_missing_card_id_sends_error_frame() {
+        // `spawn_session` with no `card_id` in the payload results in a
+        // `HandledError` with `detail = "missing_card_id"`. The supervisor
+        // must not have a new ledger entry and `client_sessions` must not
+        // have been touched.
+        let (sup, mut register_rx) = test_minimal_supervisor();
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "tug_session_id": "sess-1",
+        }))
+        .unwrap();
+
+        let outcome =
+            intercept_session_control(Some(&sup), "spawn_session", &payload, 7).await;
+        match outcome {
+            ControlIntercept::HandledError { detail } => {
+                assert_eq!(detail, "missing_card_id");
+            }
+            other => panic!("expected HandledError(missing_card_id), got {other:?}"),
+        }
+
+        assert!(sup.ledger.lock().await.is_empty());
+        assert!(sup.client_sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_session_metadata_fed_by_supervisor_broadcast() {
+        // Pins [D14]'s broadcast-not-watch migration at the router layer.
+        // A `system_metadata` frame injected into the supervisor's merger
+        // must reach a `broadcast::Receiver<Frame>` — the same
+        // shape that `register_stream(FeedId::SESSION_METADATA, ...)` in
+        // `main.rs` produces — and must NOT rely on any `watch::Receiver`.
+        // This test constructs a supervisor with its own SESSION_METADATA
+        // broadcast sender, subscribes a receiver, spawns `merger_task`,
+        // registers a per-session stream, pushes a `system_metadata`
+        // frame, and asserts the broadcast subscriber receives it.
+        use crate::feeds::agent_supervisor::{
+            AgentSupervisor, AgentSupervisorConfig, NoopSessionKeysStore,
+            SessionKeysStore, SpawnerFactory,
+        };
+        use tokio::sync::mpsc;
+
+        let (state_tx, _) = broadcast::channel(16);
+        let (session_metadata_tx, mut meta_rx) = broadcast::channel::<Frame>(16);
+        let (code_tx, _) = broadcast::channel(16);
+        let (control_tx, _) = broadcast::channel(16);
+        let factory: SpawnerFactory = Arc::new(|| unreachable!("no spawner"));
+        let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
+        let (sup, register_rx) = AgentSupervisor::new(
+            state_tx,
+            session_metadata_tx,
+            code_tx,
+            control_tx,
+            store,
+            factory,
+            AgentSupervisorConfig::default(),
+        );
+        let sup = Arc::new(sup);
+        let cancel = CancellationToken::new();
+        let merger_handle = tokio::spawn(
+            Arc::clone(&sup).merger_task(register_rx, cancel.clone()),
+        );
+
+        let id = TugSessionId::new("sess-1");
+        let (tx, rx) = mpsc::channel::<Frame>(4);
+        sup.merger_register_tx
+            .send((id.clone(), rx))
+            .await
+            .unwrap();
+
+        let meta_payload =
+            br#"{"tug_session_id":"sess-1","type":"system_metadata","model":"opus"}"#
+                .to_vec();
+        // Sanity-check the needle-scan helper sees the payload as
+        // system_metadata — the merger relies on it.
+        assert!(is_system_metadata(&meta_payload));
+        let meta_frame = Frame::new(FeedId::CODE_OUTPUT, meta_payload.clone());
+        tx.send(meta_frame).await.unwrap();
+
+        let received = tokio::time::timeout(Duration::from_millis(500), meta_rx.recv())
+            .await
+            .expect("broadcast subscriber received metadata")
+            .expect("recv err");
+        assert_eq!(received.payload, meta_payload);
+
+        cancel.cancel();
+        let _ = merger_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_client_disconnect_clears_client_sessions() {
+        // `teardown_client` must call `AgentSupervisor::on_client_disconnect`
+        // (in addition to `release_inputs`) so a disconnected client's
+        // `client_sessions` entry is removed and does not leak across
+        // reconnects. This is the `handle_client` teardown hook in
+        // compact form: build a supervisor, populate `client_sessions`,
+        // build a FeedRouter with the supervisor attached, call
+        // `teardown_client`, then assert.
+        let (sup, mut register_rx) = test_minimal_supervisor();
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        // Populate client_sessions with an entry for client 11.
+        {
+            let mut cs = sup.client_sessions.lock().await;
+            cs.entry(11)
+                .or_default()
+                .insert(TugSessionId::new("sess-x"));
+        }
+        assert!(sup.client_sessions.lock().await.contains_key(&11));
+
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let auth = crate::auth::new_shared_auth_state(0);
+        let dev_state = crate::dev::new_shared_dev_state();
+        let mut router = FeedRouter::new("test".into(), auth, shutdown_tx, dev_state);
+        router.set_supervisor(Arc::clone(&sup));
+
+        teardown_client(&router, 11).await;
+
+        assert!(!sup.client_sessions.lock().await.contains_key(&11));
     }
 
     // ---- FeedRouter registration ----
