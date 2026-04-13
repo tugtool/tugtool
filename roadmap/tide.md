@@ -578,25 +578,25 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
                                              payload, demux in the router, filter client-side. Enables
                                              Tide card ↔ CodeSessionStore 1:1 per D-T3-09.
   P2 follow-up: golden catalog             — machine-readable golden fixtures + drift test for the Claude
-                                             Code stream-json catalog (Layer A). 2-3 days. **Lands before
-                                             T3.4.a begins** as the safety net: if Anthropic ships a new
-                                             Claude version with different event shapes, the drift test
-                                             fails loudly instead of CodeSessionStore silently corrupting
-                                             its turn state.
+                                             Code stream-json catalog (Layer A). **Lands before T3.4.a
+                                             begins** as the safety net: if Anthropic ships a new Claude
+                                             version with different event shapes, the drift test fails
+                                             loudly instead of CodeSessionStore silently corrupting its
+                                             turn state.
   P13: Spawn cap + rate limit              — concurrent-session hard cap + leaky-bucket spawn rate in
-                                             AgentSupervisorConfig. ~1 day. Lands opportunistically after
-                                             T3.4.a as cheap insurance before real users touch Tide.
+                                             AgentSupervisorConfig. Lands opportunistically after T3.4.a
+                                             as cheap insurance before real users touch Tide.
   P14: Claude Code --resume                — persist claude_session_id alongside tug_session_id so cards
                                              survive reload with history intact. Explicitly overturns
                                              tugplan-multi-session-router §[D12]'s "reload = fresh" call.
-                                             ~1 week. Lands after T3.4.a so UI feedback shapes the reset vs
-                                             resume semantics per card.
+                                             Lands after T3.4.a so UI feedback shapes the reset vs resume
+                                             semantics per card.
   P15: Version gate + divergence telemetry — runtime version capture, structured stream_json_divergence
                                              events on a new SUPERVISOR_TELEMETRY (0x53) broadcast feed,
                                              and a version-adaptive reducer scaffold in CodeSessionStore.
-                                             Builds on P2 follow-up's golden catalog. ~1-2 weeks. Lands
-                                             after T3.4.a so the reducer's version-branching is informed
-                                             by what CodeSessionStore actually consumes.
+                                             Builds on P2 follow-up's golden catalog. Lands after T3.4.a
+                                             so the reducer's version-branching is informed by what
+                                             CodeSessionStore actually consumes.
 
 ─── TIDE: INPUT ───────────────────────────────────────────
 Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history, turn state, live surface
@@ -1145,7 +1145,7 @@ Requires a real `claude` binary on PATH (tested against `claude 2.1.104`) + `tmu
 
 #### P2 follow-up: golden stream-json catalog (Layer A, pre-T3.4.a) {#p2-followup-golden-catalog}
 
-**Status:** Pre-T3.4.a task. Small (2–3 days). Self-contained.
+**Status:** Pre-T3.4.a task. Self-contained.
 
 **Problem:** [`roadmap/transport-exploration.md`](transport-exploration.md) is a 35-test empirical catalog of Claude Code stream-json semantics, captured against `claude 2.1.87` and spot-verified at `2.1.104`. But the catalog is prose — there's no machine-readable fixture, no version label on individual tests, and no regression test that would flag drift when Anthropic ships a new Claude Code version (which they do frequently; stream-json is not a stable public API). T3.4.a's `CodeSessionStore` is about to build a turn-state machine directly on top of these event shapes. Any silent drift in the catalog corrupts the store's state — exactly the failure mode T3.4.a's "essential wire-level invariants" callout warns about.
 
@@ -1171,8 +1171,6 @@ This task is the **safety net** for T3.4.a: capture the catalog as versioned mac
 5. **Pre-T3.4.a verification run.** Before T3.4.a begins, run the capture binary against the current claude, commit the fixtures, run the drift test, confirm it passes. This establishes the initial baseline. If the current `claude 2.1.104` diverges from `transport-exploration.md`'s prose descriptions (some tests were written against `2.1.87` and have not been re-verified), note each delta in a new "**Known divergences from prose catalog**" section at the top of the doc so a future reader can see which parts of the prose lag behind the fixtures.
 
 **Scope:** `tugrust/crates/tugcast/tests/capture_stream_json_catalog.rs` + `stream_json_catalog_drift.rs` (both new), `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.104/` fixture dir (≥10 JSONL files for the curated subset, plus the other 25 probes if the capture run is cheap enough). ~300–500 lines of Rust plus fixtures. Reuses the `TestTugcast` + `TestWs` helpers from `tests/common/mod.rs`.
-
-**Effort:** 2–3 days. Self-contained, no new CONTROL frames, no UI, no tugcode or tugdeck changes.
 
 **Schedule:** Land as a single commit **before T3.4.a begins**. Once in place, T3.4.a can cite the golden fixtures as ground truth (`tests/fixtures/stream-json-catalog/v2.1.104/test-5-tool-use.jsonl`) instead of relying on prose descriptions, and any future Claude Code version bump runs the drift test as a first sanity check.
 
@@ -1270,8 +1268,6 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 
 **Scope:** `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` (~150 lines including tests); new `ControlError::CapExceeded` variant; `handle_control` maps it to a CONTROL error frame on the in-scope socket.
 
-**Effort:** ~1 day. Self-contained in the supervisor module; no router or wire-format changes.
-
 **Schedule:** Land opportunistically after T3.4.a as a single-commit drop. Cheap insurance before any real user gets hold of Tide.
 
 #### P14: Claude Code `--resume` for persistent session history (HIGH)
@@ -1299,8 +1295,6 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
    - Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end.
 
 **Scope:** `tugcast/src/feeds/agent_supervisor.rs` (trait extension, ledger persistence hook); `tugcast/src/feeds/agent_bridge.rs` (TugcodeSpawner resume field + relay_session_io persistence hook); `tugcode/src/session.ts` + `tugcode/src/tugbank-client.ts` (drop the singleton resume id path, accept resume id from env/CLI); update `rebind_from_tugbank` to read the new JSON blob shape.
-
-**Effort:** ~1 week. Medium risk — touches tugcode's session-persistence machinery and needs a careful design pass on the cross-session hygiene that Step 10 surfaced.
 
 **Schedule:** Land after T3.4.a so there's real UI feedback on what "resume" should feel like per card. Before any external users see Tide.
 
@@ -1389,8 +1383,6 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 - Fault injection: synthesize a stream-json payload with an unknown event type via a test-only spawner, assert tugcode emits a `stream_json_divergence` event and the supervisor retags it to `SUPERVISOR_TELEMETRY`.
 - Real-Claude integration: `test_version_capture_on_session_init` — drives a live session, asserts `LedgerEntry::claude_version` is populated after session_init, asserts the value matches `system_metadata.version` from the stream.
 - Real-Claude integration: `test_unknown_event_type_surfaces_as_divergence` — installs a stub claude that emits a crafted unknown event, asserts the supervisor telemetry broadcast delivers a `stream_json_divergence` frame to a subscribed client.
-
-**Effort:** 1–2 weeks. New FeedId, new ledger field, new tugcode event path, new tugdeck store and UI component, version-adaptive reducer scaffold. Moderate risk: touches the core event ingestion path.
 
 **Schedule:** Lands after T3.4.a's first working version. Layer C's version-adaptive reducer scaffold is informed by what fields `CodeSessionStore` actually depends on, which is only legible once the store exists. T3.4.b/c/d can proceed in parallel with P15 once T3.4.a is in.
 
