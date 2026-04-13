@@ -165,3 +165,12 @@ Errors surface through `SESSION_STATE`, not through control-frame replies. CONTR
 ### Plan authorship — next step
 
 Author `tug-multi-session-router.md` via `/plan`. The doc should be a direct expansion of the 12-item list in tide.md §T0.5 P2 into implementable steps, plus the integration-test strategy. Clarifying-question pass should be short — most of it is settled here.
+
+**Status — 2026-04-12:** ✅ **Done.** Plan authored and landed as
+`roadmap/tugplan-multi-session-router.md`. All 10 implementation steps
+are committed; Step 11 integration checkpoint verified with
+`cargo build` + `cargo nextest run` (1012 passed, 18 skipped) across
+the full workspace and `bun test` (1924 passed) in tugdeck. Manual
+real-Claude run via `TUG_REAL_CLAUDE=1` → 9/9 integration tests pass
+against a live `claude` binary. Phase T0.5 P2 unblocks T3.4 Tide card
+multi-session.

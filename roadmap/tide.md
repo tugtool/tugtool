@@ -572,7 +572,7 @@ Phase 3A.7: SmartScroll Hardening        — DONE
 ─── TIDE: FOUNDATION ──────────────────────────────────────
 Phase T0: Naming Cleanup                 — rename binaries, crates, directories for Tide
 Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
-  P2: Dynamic router                       — **NEXT WORK ITEM; HARD BLOCKER ON TIDE: INPUT MULTI-SESSION.**
+  P2: Dynamic router                       — **LANDED (2026-04-12). Unblocks T3.4 multi-session.**
                                              Approved approach: keep CODE_OUTPUT (0x40) / CODE_INPUT (0x41)
                                              as single FeedId slots, encode session_id in each frame's
                                              payload, demux in the router, filter client-side. Enables
@@ -920,9 +920,18 @@ Frame decoding accepts any byte. Routing decisions move to the router, not the p
 
 **Scope:** tugcast-core `protocol.rs`, all `match` statements on `FeedId` across tugcast (add `_ =>` arms or use if/else), tests.
 
-#### P2: Dynamic router — the multi-backend gate (HIGH) — **NEXT WORK ITEM; BLOCKER ON TIDE: INPUT**
+#### P2: Dynamic router — the multi-backend gate (HIGH) — **LANDED**
 
-**Status:** Approved for immediate implementation. This is the next work item after the current state and is a hard blocker on any further progress in TIDE: INPUT — specifically, the multi-session story that T3.4 (Tide Card) depends on per **D-T3-09**. No follow-on Tide-card work ships until P2 lands.
+**Status:** **LANDED** (2026-04-12). Implemented across 10 steps per
+`roadmap/tugplan-multi-session-router.md`. Full workspace checkpoint:
+`cargo build` clean under `-D warnings`; `cargo nextest run` across the
+full workspace → 1012 passed, 18 skipped (9 `#[ignore]`-gated real-Claude
+tests, 9 pre-existing); `bun test` in tugdeck → 1924 passed, 0 failed.
+Manual real-Claude run
+(`TUG_REAL_CLAUDE=1 cargo nextest run -p tugcast --run-ignored only --test multi_session_real_claude`)
+→ 9 passed, 0 failed against a live `claude 2.1.104` + `tmux 3.6a` +
+`tugcode` stack. T3.4 (Tide Card) multi-session exit criteria are now
+unblocked.
 
 **Approved approach — client-generated session keys stamped into the payload, not new FeedIds.** Keep `CODE_OUTPUT` (0x40) and `CODE_INPUT` (0x41) as single slots in the FeedId table. Each frame's JSON payload carries a top-level `tug_session_id` field that identifies which Claude Code subprocess it belongs to. The router multiplexes multiple Claude Code bridges onto the same FeedId pair; the client filters inbound frames by `tug_session_id` and tags outbound frames with it. This keeps the FeedId namespace clean (no `CODE_OUTPUT_1`, `CODE_OUTPUT_2`, …), avoids having to renumber anything when a third backend shows up, and makes per-session subscription a client-side concern rather than a wire-level one.
 
