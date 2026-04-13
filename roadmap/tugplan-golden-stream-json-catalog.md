@@ -443,9 +443,9 @@ Normalization walker rules (pseudocode):
 normalize_event(value):
   if value is object:
     for each (key, child) in value:
-      if key in LEAF_KEY_REPLACEMENTS:   # session_id, tool_use_id, msg_id, request_id
+      if key in LEAF_KEY_REPLACEMENTS:   # session_id, tool_use_id, msg_id, request_id, task_id, tug_session_id
         value[key] = LEAF_KEY_REPLACEMENTS[key]
-      elif key in TEXT_CONTENT_KEYS:     # "text", "output", "content"
+      elif key in TEXT_CONTENT_KEYS:     # "text", "output" — see note below
         value[key] = "{{text:len=" + value[key].len() + "}}"
       else:
         normalize_event(child)            # recurse, preserving structure
@@ -462,6 +462,8 @@ normalize_event(value):
 ```
 
 Key-based replacement happens before value-based. `NUMERIC_NORMALIZE_ALLOWLIST` is explicit (cost, duration, token counts) — most numeric fields (`is_partial`, `seq`) retain exact values because those values carry semantic meaning.
+
+**Why `content` is *not* in `TEXT_CONTENT_KEYS`.** An earlier draft of this Deep Dive listed `["text", "output", "content"]`. The implementation intentionally drops `"content"`. In Anthropic's raw stream-json, `content` is frequently an **array of typed content blocks** (e.g. `[{ "type": "text", "text": "..." }, { "type": "tool_use", ... }]`) rather than a leaf string. Collapsing `content` unconditionally to `{{text:len=N}}` would erase that structural polymorphism and hide real shape drift (e.g. a new block variant being introduced). The walker recurses into `content` instead, and the inner leaf `text` field is what gets collapsed. If a future claude version starts emitting a top-level `content: "string"` leaf, we add it to the allowlist at that point rather than pre-emptively.
 
 #### Version bump runbook — updating the golden standard when claude ships a new version {#deep-version-bump-runbook}
 
@@ -705,20 +707,27 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `TestWs::send_interrupt` | fn | `tests/common/mod.rs` | New helper |
-| `TestWs::send_tool_approval` | fn | `tests/common/mod.rs` | New helper |
-| `TestWs::send_question_answer` | fn | `tests/common/mod.rs` | New helper |
-| `TestWs::send_session_command` | fn | `tests/common/mod.rs` | New helper |
-| `TestWs::send_model_change` | fn | `tests/common/mod.rs` | New helper |
-| `TestWs::send_permission_mode` | fn | `tests/common/mod.rs` | New helper |
-| CODE_INPUT handling | code path | `src/router.rs` | **Conditional:** widen to opaque pass-through if currently user_message-only |
+| `TestWs::send_interrupt` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id: &str)` |
+| `TestWs::send_tool_approval` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id, request_id, decision, updated_input, message)` |
+| `TestWs::send_question_answer` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id, request_id, answers: serde_json::Value)` |
+| `TestWs::send_session_command` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id, command)` |
+| `TestWs::send_model_change` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id, model)` |
+| `TestWs::send_permission_mode` | fn | `tests/common/mod.rs` | Step 2 helper — `fn(&mut self, tug_session_id, mode)` |
+| `TestWs::send_user_message_with_attachments` | fn | `tests/common/mod.rs` | Step 3 helper — `fn(&mut self, tug_session_id, text, attachments: Vec<serde_json::Value>)` for image-attachment probes |
+| `TestWs::await_code_output_event` | fn | `tests/common/mod.rs` | Step 2 reader helper — await mid-stream CODE_OUTPUT event by type |
+| CODE_INPUT handling | code path | `src/router.rs` | **Conditional:** widen to opaque pass-through if currently user_message-only (resolved [Q01]: already opaque, no change needed) |
 | `ProbeRecord`, `ProbeMsg`, `ProbePrereq`, `ProbeStatus` | types | `tests/common/probes.rs` | Probe table types |
 | `PROBES` | static | `tests/common/probes.rs` | 35-entry flat probe table |
-| `normalize_event` | fn | `tests/capture_stream_json_catalog.rs` | Leaf-only placeholder substitution |
-| `derive_schema` | fn | `tests/capture_stream_json_catalog.rs` | JSONL → schema.json |
-| `execute_probe` | fn | `tests/capture_stream_json_catalog.rs` | Runs one probe against one TestTugcast |
-| `capture_with_stability` | fn | `tests/capture_stream_json_catalog.rs` | TUG_STABILITY=N loop |
-| `write_fixtures` | fn | `tests/capture_stream_json_catalog.rs` | Writes normalized JSONL + manifest + schema |
+| `normalize_event` | fn | `tests/capture_stream_json_catalog.rs` | `fn(value: &mut serde_json::Value)` — leaf-only placeholder substitution per [D14] |
+| `CapturedProbe`, `Schema`, `EventShape` | types | `tests/capture_stream_json_catalog.rs` | Per-probe outcome + derived shape schema |
+| `derive_schema` | fn | `tests/capture_stream_json_catalog.rs` | `fn(claude_version: &str, captures: &[CapturedProbe]) -> Schema` — aggregates event-type field summaries and per-probe sequences per Spec S03 |
+| `execute_probe` | fn | `tests/capture_stream_json_catalog.rs` | `async fn(probe: &ProbeRecord, bank_path: PathBuf, project_dir: &Path) -> CapturedProbe` — per-probe TestTugcast spawn, input-script drive, required-event validation |
+| `stability_outcome` | fn | `tests/capture_stream_json_catalog.rs` | `fn(first: &CapturedProbe, rest: &[CapturedProbe]) -> Option<String>` — pure shape-comparison helper extracted for unit testability |
+| `capture_with_stability` | fn | `tests/capture_stream_json_catalog.rs` | `async fn(n: usize, bank_dir: &Path, project_dir: &Path) -> Vec<CapturedProbe>` — TUG_STABILITY=N loop, delegates shape comparison to `stability_outcome` |
+| `build_manifest` | fn | `tests/capture_stream_json_catalog.rs` | `fn(version: &str, stability: usize, captures: &[CapturedProbe]) -> Value` — emits `manifest.json` per Spec S02 |
+| `schema_to_json` | fn | `tests/capture_stream_json_catalog.rs` | `fn(schema: &Schema) -> Value` — emits `schema.json` per Spec S03 |
+| `write_fixtures` | fn | `tests/capture_stream_json_catalog.rs` | `fn(captures: &[CapturedProbe], schema: &Schema, manifest: &Value) -> io::Result<PathBuf>` — writes normalized JSONL + manifest + schema under `v<version>/` |
+| `TmpDirGuard` | struct | `tests/capture_stream_json_catalog.rs` | RAII guard that `remove_dir_all`s the per-PID scratch dir on scope exit, panic-safe |
 | `Schema`, `EventShape`, `DiffReport`, `FailureKind` | types | `tests/stream_json_catalog_drift.rs` | Differ types |
 | `load_schema` | fn | `tests/stream_json_catalog_drift.rs` | Parses `v<version>/schema.json` |
 | `diff_schemas` | fn | `tests/stream_json_catalog_drift.rs` | Hand-rolled shape differ |

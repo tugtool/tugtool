@@ -279,6 +279,30 @@ impl TestWs {
             .expect("send code_input frame");
     }
 
+    /// Send a `user_message` with one or more attachments. Each
+    /// attachment is a pre-built JSON object with `filename`, `content`
+    /// (base64-encoded), and `media_type`. Used by image-attachment
+    /// probes in the golden stream-json catalog.
+    pub async fn send_user_message_with_attachments(
+        &mut self,
+        tug_session_id: &str,
+        text: &str,
+        attachments: Vec<serde_json::Value>,
+    ) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "user_message",
+            "text": text,
+            "attachments": attachments,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("user_message_with_attachments json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.inner
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send user_message_with_attachments frame");
+    }
+
     // -----------------------------------------------------------------
     // Control-flow CODE_INPUT helpers (tugplan Step 2)
     //

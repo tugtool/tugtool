@@ -582,6 +582,22 @@ pub async fn execute_probe(
     }
 
     // Drive the input script.
+    //
+    // `request_id_by_tool_use_id` is the correlation store for the
+    // permission / AskUserQuestion flow: every `control_request_forward`
+    // we observe during `WaitForEvent` carries its own `request_id`
+    // and — when the forward is gating a tool call — a `tool_use_id`
+    // pointing back at the preceding `tool_use` event. Stashing both
+    // lets a future probe answer a specific forward by tool_use_id
+    // rather than "whichever was most recent".
+    //
+    // `most_recent_request_id` is the fallback used by the current
+    // `ToolApproval` / `QuestionAnswer` variants, which don't yet
+    // specify which forward to answer. When a probe eventually needs
+    // targeted correlation, the variant can grow a `target_tool_use_id`
+    // field and `execute_probe` will look it up in the map.
+    let mut request_id_by_tool_use_id: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     let mut most_recent_request_id: Option<String> = None;
     for msg in probe.input_script {
         match msg {
@@ -589,7 +605,6 @@ pub async fn execute_probe(
                 ws.send_code_input(&tug_session_id, text).await;
             }
             ProbeMsg::UserMessageWithAttachments { text, attachments } => {
-                // Directly construct + send — no dedicated helper yet.
                 let attachment_values: Vec<Value> = attachments
                     .iter()
                     .map(|a| {
@@ -600,13 +615,12 @@ pub async fn execute_probe(
                         })
                     })
                     .collect();
-                let payload = json!({
-                    "tug_session_id": tug_session_id,
-                    "type": "user_message",
-                    "text": text,
-                    "attachments": attachment_values,
-                });
-                send_raw_code_input(&mut ws, &payload).await;
+                ws.send_user_message_with_attachments(
+                    &tug_session_id,
+                    text,
+                    attachment_values,
+                )
+                .await;
             }
             ProbeMsg::Interrupt => ws.send_interrupt(&tug_session_id).await,
             ProbeMsg::ToolApproval { decision, message } => {
@@ -668,6 +682,13 @@ pub async fn execute_probe(
                                 payload.get("request_id").and_then(|v| v.as_str())
                             {
                                 most_recent_request_id = Some(rid.to_string());
+                                if let Some(tuid) = payload
+                                    .get("tool_use_id")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    request_id_by_tool_use_id
+                                        .insert(tuid.to_string(), rid.to_string());
+                                }
                             }
                         }
                     }
@@ -737,29 +758,41 @@ pub async fn execute_probe(
     }
 }
 
-async fn send_raw_code_input(ws: &mut TestWs, _payload: &Value) {
-    // Placeholder — image attachment probes need a helper that bypasses
-    // the typed `send_code_input` wrapper. Wired up in Step 4 once we
-    // decide whether to expose a generic raw sender on TestWs. For
-    // Step 3 we route through send_code_input with the attachment text
-    // only (the image itself does not survive through the typed helper,
-    // but the stream shape for the user_message itself is still
-    // observable).
-    let text = _payload
-        .get("text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let tug = _payload
-        .get("tug_session_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    ws.send_code_input(tug, text).await;
+/// Compare the first stability run against the rest. Returns a
+/// diagnostic string if any subsequent run's normalized event-type
+/// sequence differs from the first, otherwise `None`.
+///
+/// Extracted as a pure helper so the shape-comparison logic is
+/// unit-testable without driving real claude — see the inline
+/// `#[cfg(test)]` module below.
+pub fn stability_outcome(first: &CapturedProbe, rest: &[CapturedProbe]) -> Option<String> {
+    if rest.is_empty() {
+        return None;
+    }
+    let first_seq: Vec<Option<&str>> = first.events.iter().map(event_type_of).collect();
+    for (idx, run) in rest.iter().enumerate() {
+        let seq: Vec<Option<&str>> = run.events.iter().map(event_type_of).collect();
+        if seq != first_seq {
+            return Some(format!(
+                "event-type sequence differs at stability run {}/{} for {}: \
+                 first={:?}, run={:?}",
+                idx + 2,
+                rest.len() + 1,
+                first.name,
+                first_seq,
+                seq,
+            ));
+        }
+    }
+    None
 }
 
 /// Stability-check wrapper: runs each probe `n` times and verifies
 /// that the normalized event-type sequence is identical across runs.
-/// If not, marks the probe as `ShapeUnstable`. The stored capture is
-/// the first run's events.
+/// If [`stability_outcome`] reports divergence, the probe's status is
+/// replaced with [`ProbeStatus::ShapeUnstable`] carrying the diagnostic
+/// and the first run's events remain as the stored capture. Otherwise
+/// the first run is pushed unchanged.
 pub async fn capture_with_stability(
     n: usize,
     bank_dir: &std::path::Path,
@@ -773,27 +806,16 @@ pub async fn capture_with_stability(
             runs.push(execute_probe(probe, bank, project_dir).await);
         }
         let first = runs.remove(0);
-        if n > 1 {
-            let first_seq: Vec<Option<&str>> =
-                first.events.iter().map(event_type_of).collect();
-            for run in &runs {
-                let seq: Vec<Option<&str>> =
-                    run.events.iter().map(event_type_of).collect();
-                if seq != first_seq {
-                    results.push(CapturedProbe {
-                        name: first.name.clone(),
-                        events: first.events.clone(),
-                        status: ProbeStatus::ShapeUnstable(format!(
-                            "event-type sequence differs across stability runs for {}",
-                            first.name
-                        )),
-                        runtime_ms: first.runtime_ms,
-                    });
-                    continue;
-                }
-            }
-        }
-        results.push(first);
+        let capture = match stability_outcome(&first, &runs) {
+            Some(diagnostic) => CapturedProbe {
+                name: first.name.clone(),
+                events: first.events,
+                status: ProbeStatus::ShapeUnstable(diagnostic),
+                runtime_ms: first.runtime_ms,
+            },
+            None => first,
+        };
+        results.push(capture);
     }
     results
 }
@@ -817,6 +839,7 @@ async fn capture_all_probes() {
 
     let tmp = tempdir_path();
     std::fs::create_dir_all(&tmp).expect("create tmp dir");
+    let _tmp_guard = TmpDirGuard(tmp.clone());
 
     let stability = stability_runs();
     let captures = capture_with_stability(stability, &tmp, &project_dir).await;
@@ -829,15 +852,28 @@ async fn capture_all_probes() {
     let path =
         write_fixtures(&captures, &schema, &manifest).expect("write_fixtures succeeded");
     eprintln!("wrote fixtures to {}", path.display());
+    // `_tmp_guard` drops here and removes the per-probe bank files.
 }
 
+/// Per-PID scratch directory for capture runs. Holds the per-probe
+/// tugbank paths and is wiped by [`TmpDirGuard`] on scope exit.
 fn tempdir_path() -> PathBuf {
     let mut p = std::env::temp_dir();
-    p.push(format!(
-        "tugcast-capture-{}",
-        std::process::id().to_string()
-    ));
+    p.push(format!("tugcast-capture-{}", std::process::id()));
     p
+}
+
+/// RAII guard that `remove_dir_all`s its path on drop. Robust to
+/// panics partway through `capture_all_probes` — the tokio runtime
+/// unwinds the test stack and the drop fires, cleaning up the
+/// per-probe bank files and any stale tugcast subprocess working
+/// state without leaving cruft under `$TMPDIR`.
+struct TmpDirGuard(PathBuf);
+
+impl Drop for TmpDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -1181,6 +1217,97 @@ mod tests {
             status_tag(&ProbeStatus::ShapeUnstable("x".into())),
             "shape_unstable"
         );
+    }
+
+    // ---- stability_outcome ----
+
+    #[test]
+    fn stability_outcome_no_rest_is_stable() {
+        let first = mk_capture("probe", vec![json!({"type": "turn_complete"})]);
+        assert_eq!(stability_outcome(&first, &[]), None);
+    }
+
+    #[test]
+    fn stability_outcome_matching_runs_are_stable() {
+        let first = mk_capture(
+            "probe",
+            vec![
+                json!({"type": "session_init"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        let second = mk_capture(
+            "probe",
+            vec![
+                json!({"type": "session_init"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        assert_eq!(stability_outcome(&first, &[second]), None);
+    }
+
+    #[test]
+    fn stability_outcome_diverging_sequence_is_flagged() {
+        let first = mk_capture(
+            "probe-flap",
+            vec![
+                json!({"type": "session_init"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        let second = mk_capture(
+            "probe-flap",
+            vec![
+                json!({"type": "session_init"}),
+                json!({"type": "thinking_text"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        let diag = stability_outcome(&first, &[second]).expect("drift should be flagged");
+        assert!(diag.contains("probe-flap"));
+        assert!(diag.contains("differs"));
+    }
+
+    #[test]
+    fn stability_outcome_multi_run_catches_later_divergence() {
+        // Three runs: first two match, third diverges. The helper
+        // should still flag it rather than reporting stable because
+        // the first two agreed.
+        let first = mk_capture(
+            "probe-multi",
+            vec![json!({"type": "a"}), json!({"type": "b"})],
+        );
+        let second = mk_capture(
+            "probe-multi",
+            vec![json!({"type": "a"}), json!({"type": "b"})],
+        );
+        let third = mk_capture(
+            "probe-multi",
+            vec![json!({"type": "a"}), json!({"type": "c"})],
+        );
+        let diag =
+            stability_outcome(&first, &[second, third]).expect("third run must flag drift");
+        // The diagnostic's "run X/Y" should identify the divergent run.
+        assert!(diag.contains("run 3/3"));
+    }
+
+    #[test]
+    fn stability_outcome_length_mismatch_is_flagged() {
+        // A run with extra trailing events is also a drift signal,
+        // not a prefix match.
+        let first = mk_capture(
+            "probe-len",
+            vec![json!({"type": "a"}), json!({"type": "b"})],
+        );
+        let second = mk_capture(
+            "probe-len",
+            vec![
+                json!({"type": "a"}),
+                json!({"type": "b"}),
+                json!({"type": "c"}),
+            ],
+        );
+        assert!(stability_outcome(&first, &[second]).is_some());
     }
 
     #[test]
