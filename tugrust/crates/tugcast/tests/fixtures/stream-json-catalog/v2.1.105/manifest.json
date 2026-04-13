@@ -1,0 +1,225 @@
+{
+  "captured_at": "{{iso}}",
+  "claude_version": "2.1.105",
+  "probes": [
+    {
+      "event_count": 7,
+      "name": "test-01-basic-round-trip",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 14,
+      "name": "test-02-longer-response-streaming",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 5,
+      "name": "test-03-slash-cost",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 4,
+      "name": "test-04-slash-status",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 12,
+      "name": "test-05-tool-use-read",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 8,
+      "name": "test-06-interrupt-mid-stream",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 15,
+      "name": "test-07-multiple-tool-calls",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "canonical event-type sequence differs at stability run 2/3 for test-07-multiple-tool-calls: first=[\"session_init\", \"system_metadata\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"assistant_text\", \"cost_update\", \"assistant_text\", \"turn_complete\"], run=[\"session_init\", \"system_metadata\", \"thinking_text\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"assistant_text\", \"cost_update\", \"assistant_text\", \"turn_complete\"]",
+      "status": "shape_unstable"
+    },
+    {
+      "event_count": 13,
+      "name": "test-08-tool-error-nonexistent",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 10,
+      "name": "test-09-bash-auto-approved",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-10-long-streaming-300-words",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
+      "status": "skipped"
+    },
+    {
+      "event_count": 13,
+      "name": "test-11-permission-deny-roundtrip",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 5,
+      "name": "test-12-slash-compact-model",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-13-session-command-new",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P16 — session_command routing bug",
+      "status": "skipped"
+    },
+    {
+      "event_count": 27,
+      "name": "test-14-message-during-turn",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 4,
+      "name": "test-15-slash-btw",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 7,
+      "name": "test-16-model-change-roundtrip",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-17-session-command-continue",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P16 — session_command routing bug",
+      "status": "skipped"
+    },
+    {
+      "event_count": 6,
+      "name": "test-18-message-during-turn-detailed",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 6,
+      "name": "test-19-slash-compact",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-20-session-command-fork",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P16 — session_command routing bug",
+      "status": "skipped"
+    },
+    {
+      "event_count": 15,
+      "name": "test-21-glob-tool",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 17,
+      "name": "test-22-subagent-spawn",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 8,
+      "name": "test-23-image-attachment",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 9,
+      "name": "test-24-at-file-references",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-25-tugplug-plan-invocation",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
+      "status": "skipped"
+    },
+    {
+      "event_count": 13,
+      "name": "test-26-slash-dash",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "canonical event-type sequence differs at stability run 2/3 for test-26-slash-dash: first=[\"session_init\", \"system_metadata\", \"assistant_text\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"assistant_text\", \"cost_update\", \"assistant_text\", \"turn_complete\"], run=[\"session_init\", \"system_metadata\", \"tool_use\", \"tool_result\", \"tool_use_structured\", \"assistant_text\", \"cost_update\", \"assistant_text\", \"turn_complete\"]",
+      "status": "shape_unstable"
+    },
+    {
+      "event_count": 10,
+      "name": "test-27-at-file-references-variant",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 6,
+      "name": "test-28-system-metadata-deep-dive",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 4,
+      "name": "test-29-tugplug-ping",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 13,
+      "name": "test-30-tugplug-dash-status",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 5,
+      "name": "test-31-slash-cost-classification",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 5,
+      "name": "test-32-slash-compact-classification",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 4,
+      "name": "test-33-slash-model-classification",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 6,
+      "name": "test-34-plugin-agent-enumeration",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 0,
+      "name": "test-35-askuserquestion-flow",
+      "runtime_ms": "{{i64}}",
+      "skip_reason": "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes; AskUserQuestion flow never delivers control_request_forward",
+      "status": "skipped"
+    }
+  ],
+  "stability_runs": 3
+}
