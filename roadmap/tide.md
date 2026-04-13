@@ -1287,7 +1287,7 @@ cd tugrust && TUG_REAL_CLAUDE=1 cargo test --test stream_json_catalog_drift -- -
 
 Neither command is in the default nextest suite. Neither runs on pre-commit, pre-push, or CI. They are manual verification tools that vet a protocol maintained outside our control.
 
-**Schedule:** Land as a single commit **before T3.4.a begins**. Once in place, T3.4.a can cite the golden fixtures as ground truth (`tests/fixtures/stream-json-catalog/v2.1.104/test-5-tool-use.jsonl`) instead of relying on prose descriptions, and any future Claude Code version bump runs the drift test as a first sanity check. Any supervisor bugs exposed by session-command or tugplug probes during the Step 2 baseline capture are recorded as new follow-up items in this §T0.5 and tackled in their own commits after Layer A lands.
+**Schedule:** Land as a coherent series of commits grouped under [`roadmap/tugplan-golden-stream-json-catalog.md`](tugplan-golden-stream-json-catalog.md), **before T3.4.a begins**. The tugplan splits this section's work into 8 execution steps (router pass-through audit, TestWs helpers, capture binary, baseline capture, prose rename, drift test + differ, recovery README, integration checkpoint), each with its own commit boundary. Once in place, T3.4.a can cite the golden fixtures as ground truth (`tests/fixtures/stream-json-catalog/v2.1.104/test-5-tool-use.jsonl`) instead of relying on prose descriptions, and any future Claude Code version bump runs the drift test as a first sanity check. Any supervisor bugs exposed by session-command or tugplug probes during the baseline capture step are recorded as new follow-up items in this §T0.5 and tackled in their own commits after Layer A lands.
 
 #### P3: FeedId slot collision (LOW)
 
