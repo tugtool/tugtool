@@ -577,6 +577,14 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
                                              as single FeedId slots, encode session_id in each frame's
                                              payload, demux in the router, filter client-side. Enables
                                              Tide card ↔ CodeSessionStore 1:1 per D-T3-09.
+  P13: Spawn cap + rate limit              — concurrent-session hard cap + leaky-bucket spawn rate in
+                                             AgentSupervisorConfig. ~1 day. Lands opportunistically after
+                                             T3.4.a as cheap insurance before real users touch Tide.
+  P14: Claude Code --resume                — persist claude_session_id alongside tug_session_id so cards
+                                             survive reload with history intact. Explicitly overturns
+                                             tugplan-multi-session-router §[D12]'s "reload = fresh" call.
+                                             ~1 week. Lands after T3.4.a so UI feedback shapes the reset vs
+                                             resume semantics per card.
 
 ─── TIDE: INPUT ───────────────────────────────────────────
 Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history, turn state, live surface
@@ -1057,6 +1065,52 @@ This means a lag recovery frame is `FeedId=0x40, flags=0x01, payload={"type":"la
 The cost is 1 extra byte per frame — negligible at any realistic throughput. The benefit is that this is the last opportunity to change the wire format cleanly before external clients exist.
 
 **Scope:** tugcast-core `protocol.rs` (Frame struct, encode/decode, HEADER_SIZE 5→6, tests), tugdeck `protocol.ts` (mirror changes), tugdeck `connection.ts` (decode path), all golden-byte tests.
+
+#### P13: Session spawn rate limit + concurrent-session cap (HIGH)
+
+**Problem:** The multi-session supervisor from P2 lets any number of Claude Code subprocesses spawn on demand. A user with 20 Tide cards open chews through 20 parallel `claude` processes (~hundreds of MB each, plus API token burn). A UI bug that loops `reset_session` becomes a resource bomb. `AgentSupervisorConfig` has no limits today.
+
+**Fix:** Two-layer cap on the supervisor.
+
+1. **Hard concurrent cap.** New field `AgentSupervisorConfig::max_concurrent_sessions` (default 8). Before `spawn_session_worker` installs `input_tx` on the ledger entry, count the current `Spawning`+`Live` entries in the ledger; if the count is at or above the cap, flip the entry to `Errored`, publish `SESSION_STATE = errored { detail: "concurrent_session_cap_exceeded" }`, and short-circuit the spawn. Tests assert that the N+1th spawn fails cleanly and the ledger entry is marked `Errored`.
+
+2. **Leaky-bucket rate limit.** New field `AgentSupervisorConfig::max_spawns_per_minute` (default 20). A supervisor-owned `Mutex<VecDeque<Instant>>` tracks spawn timestamps; `spawn_session_worker` trims timestamps older than 60s, checks the length, and — if over the limit — publishes `SESSION_STATE = errored { detail: "spawn_rate_limited" }`. Rate-limited spawns still count against the budget on retry (no immediate bypass).
+
+Both limits are configurable so power users and CI harnesses can raise them. `#[ignore]`-gated integration tests cover both error paths with the supervisor's existing mock-spawner infrastructure.
+
+**Scope:** `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` (~150 lines including tests); new `ControlError::CapExceeded` variant; `handle_control` maps it to a CONTROL error frame on the in-scope socket.
+
+**Effort:** ~1 day. Self-contained in the supervisor module; no router or wire-format changes.
+
+**Schedule:** Land opportunistically after T3.4.a as a single-commit drop. Cheap insurance before any real user gets hold of Tide.
+
+#### P14: Claude Code `--resume` for persistent session history (HIGH)
+
+**Problem:** `tugplan-multi-session-router.md §[D12]` decided "reload-with-same-key = fresh history" based on terminal-pane semantics. In practice, Tide cards are long-lived chat threads, not ephemeral terminal panes. A developer who closes their laptop at 6pm and reopens at 9am tomorrow expects their conversation to pick up where it left off. Losing accumulated context — edited files, tool_use history, slash-command state — on every reload is a severe regression for serious work. [D12]'s decision is **hereby overturned** for P14; the rationale in that section's "Implications" bullet about `--resume` not being used is superseded by this P-item.
+
+`claude_session_id` already flows into `LedgerEntry::claude_session_id` from the bridge's `session_init` handler (see `agent_bridge.rs::relay_session_io`'s atomic-promote block), but it is never persisted — on tugcast restart, `rebind_from_tugbank` rehydrates the `tug_session_id` ledger entry with `claude_session_id: None` and the next spawn mints a fresh Claude Code subprocess.
+
+**Fix:** Persist `claude_session_id` alongside `tug_session_id` and thread it through the spawn path so the reopened card resumes its conversation.
+
+1. **Persist on `session_init`.** Extend the `SessionKeysStore` trait (defined in `agent_supervisor.rs`) with a `set_claude_session_id(tug_session_id, claude_session_id)` method — or, cleaner, change the stored value from a string `tug_session_id` to a JSON `{tug_session_id, claude_session_id?}` blob in the existing `dev.tugtool.tide.session-keys` tugbank domain. The atomic-promote block in `relay_session_io` already locks the ledger entry when `session_init` arrives; add a tugbank write to the same critical section so the persisted state matches the in-memory state.
+
+2. **Thread through spawn.** Extend `AgentSupervisorConfig` (or the `TugcodeSpawner` constructor) to accept an optional `resume_claude_session_id`. `spawn_session_worker` reads `ledger_entry.claude_session_id` after the rebind path populates it; if `Some`, passes it into the spawner factory; if `None`, spawns fresh.
+
+3. **tugcode-side plumbing.** Currently `tugcode/src/session.ts` reads its resume id from the `dev.tugtool.app / session-id` singleton path (the legacy pre-multi-session scheme that caused Step 10's stale-`--resume` bug). Switch tugcode to read the resume id from an env var or a new CLI flag (`--resume-session <id>`) that tugcast passes on spawn. tugcode's own singleton tugbank write goes away — the supervisor owns the persistence. This also cleans up the cross-test contamination from Step 10.
+
+4. **Mimic terminal Claude Code semantics.** On fresh card mount: no persisted `claude_session_id` exists → spawn fresh. On reload of an existing card: persisted `claude_session_id` exists → `--resume` it. On explicit `reset_session`: invalidate the persisted `claude_session_id` (tugbank delete) **before** killing the subprocess, so the next spawn is fresh. `close_session` does NOT invalidate `claude_session_id` — a closed card can be reopened with history intact.
+
+5. **Tests.**
+   - `test_spawn_session_resumes_persisted_claude_session_id` — unit test with an `InMemorySessionKeysStore` pre-populated with `(card_id, tug_session_id, claude_session_id)`, asserts the spawner receives the resume id.
+   - `test_reset_session_clears_persisted_claude_session_id` — asserts `reset_session` deletes the claude_session_id binding before the subprocess restart.
+   - `test_session_init_persists_claude_session_id` — drives `relay_session_io` via duplex streams; asserts tugbank gets the write atomically with the ledger update.
+   - Real-claude integration test: `test_close_then_reopen_preserves_history` — open a session, exchange a turn that establishes known context ("remember the word gazebo"), close the WebSocket, reopen, send a probe ("what word did I tell you to remember?"), assert the response contains "gazebo". Pins the resume path end-to-end.
+
+**Scope:** `tugcast/src/feeds/agent_supervisor.rs` (trait extension, ledger persistence hook); `tugcast/src/feeds/agent_bridge.rs` (TugcodeSpawner resume field + relay_session_io persistence hook); `tugcode/src/session.ts` + `tugcode/src/tugbank-client.ts` (drop the singleton resume id path, accept resume id from env/CLI); update `rebind_from_tugbank` to read the new JSON blob shape.
+
+**Effort:** ~1 week. Medium risk — touches tugcode's session-persistence machinery and needs a careful design pass on the cross-session hygiene that Step 10 surfaced.
+
+**Schedule:** Land after T3.4.a so there's real UI feedback on what "resume" should feel like per card. Before any external users see Tide.
 
 #### P8: Auth for remote use (LOW)
 
