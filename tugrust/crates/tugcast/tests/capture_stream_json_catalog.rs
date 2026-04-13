@@ -539,18 +539,39 @@ pub async fn execute_probe(
     bank_path: PathBuf,
     project_dir: &std::path::Path,
 ) -> CapturedProbe {
+    // Known-bug skip gate — probes with a `skip_reason` pointer at
+    // a tide.md §T0.5 follow-up bypass execution entirely. This is
+    // how blocked-on-upstream-bug probes stay in the fixture catalog
+    // (with an explicit `skipped` status + reason in manifest.json)
+    // without corrupting the baseline with half-captured events.
+    if let Some(reason) = probe.skip_reason {
+        return CapturedProbe {
+            name: probe.name.to_string(),
+            events: Vec::new(),
+            status: ProbeStatus::Skipped(reason),
+            runtime_ms: 0,
+        };
+    }
+
     // Prerequisite gate — capture-time skip per [D10].
     for pre in probe.prerequisites {
         match pre {
             ProbePrereq::TugplugPluginLoaded => {
-                // Default TestTugcast spawn does not pass --plugin-dir,
-                // so tugplug skills and agents are not loaded.
-                return CapturedProbe {
-                    name: probe.name.to_string(),
-                    events: Vec::new(),
-                    status: ProbeStatus::Skipped("tugplug plugin not loaded"),
-                    runtime_ms: 0,
-                };
+                // tugcode derives `--plugin-dir` from `<project_dir>/tugplug/`.
+                // The prerequisite is met iff that directory actually
+                // exists — which is true when `project_dir` is the
+                // tugtool repo root (the capture binary case) and false
+                // when it's a crate-level cwd (the multi_session_real_claude
+                // case). Checking on disk keeps the probe table
+                // environment-agnostic.
+                if !project_dir.join("tugplug").is_dir() {
+                    return CapturedProbe {
+                        name: probe.name.to_string(),
+                        events: Vec::new(),
+                        status: ProbeStatus::Skipped("tugplug plugin not loaded"),
+                        runtime_ms: 0,
+                    };
+                }
             }
             ProbePrereq::DenialCapableTool => {
                 // Default spawn is acceptEdits mode; reads to paths
@@ -569,14 +590,21 @@ pub async fn execute_probe(
     let tug_session_id = format!("sess-{}", probe.name);
     ws.send_spawn_session(&card_id, &tug_session_id).await;
 
+    // Wait for the pending confirmation only. The router's state
+    // machine is Pending → Spawning → Live, and the transition out of
+    // Pending requires the first UserMessage to arrive — waiting for
+    // `live` here would deadlock forever since we haven't sent anything
+    // yet. The input_script below sends the first message which drives
+    // the spawn, and `collect_code_output` at the end naturally waits
+    // for the real events to arrive.
     if let Err(e) = ws
-        .await_session_state(&tug_session_id, "live", Duration::from_secs(15))
+        .await_session_state(&tug_session_id, "pending", Duration::from_secs(10))
         .await
     {
         return CapturedProbe {
             name: probe.name.to_string(),
             events: Vec::new(),
-            status: ProbeStatus::Failed(format!("session never reached live: {e}")),
+            status: ProbeStatus::Failed(format!("session never reached pending: {e}")),
             runtime_ms: start.elapsed().as_millis(),
         };
     }
@@ -668,8 +696,14 @@ pub async fn execute_probe(
                 event_type,
                 max_secs,
             } => {
+                // Non-consuming peek: the waited-for event is part
+                // of the fixture shape the collect pass records. An
+                // `await_code_output_event` here would remove the
+                // frame from the buffer, and `collect_code_output`
+                // would never emit it — the captured JSONL would be
+                // missing an event claude actually sent.
                 match ws
-                    .await_code_output_event(
+                    .peek_code_output_event(
                         &tug_session_id,
                         event_type,
                         Duration::from_secs(*max_secs),
@@ -758,9 +792,37 @@ pub async fn execute_probe(
     }
 }
 
+/// Canonicalize an event list for shape-stability comparison:
+/// collapse consecutive duplicates.
+///
+/// Claude's streaming protocol emits a **variable** number of
+/// `assistant_text` and `thinking_text` partials per turn — count
+/// depends on token batching, network flushing, and LLM-side chunk
+/// boundaries, all of which are non-deterministic run-to-run. The
+/// *shape* of the event sequence is defined by the ordering of
+/// distinct event types, not the count. Two runs where one emits 8
+/// `assistant_text` partials and the other 10 are the same shape.
+///
+/// Collapsing consecutive duplicates preserves genuine ordering
+/// drift (`[a, b, c]` vs `[a, x, b, c]` still compares unequal)
+/// while erasing the benign count variance. `[a, a, a]` collapses
+/// to `[a]`; `[a, b, a]` stays as `[a, b, a]`.
+fn canonical_sequence(events: &[Value]) -> Vec<&str> {
+    let mut out: Vec<&str> = Vec::new();
+    for event in events {
+        if let Some(et) = event_type_of(event) {
+            if out.last().copied() != Some(et) {
+                out.push(et);
+            }
+        }
+    }
+    out
+}
+
 /// Compare the first stability run against the rest. Returns a
-/// diagnostic string if any subsequent run's normalized event-type
-/// sequence differs from the first, otherwise `None`.
+/// diagnostic string if any subsequent run's **canonical** event-type
+/// sequence (see [`canonical_sequence`]) differs from the first,
+/// otherwise `None`.
 ///
 /// Extracted as a pure helper so the shape-comparison logic is
 /// unit-testable without driving real claude — see the inline
@@ -769,12 +831,12 @@ pub fn stability_outcome(first: &CapturedProbe, rest: &[CapturedProbe]) -> Optio
     if rest.is_empty() {
         return None;
     }
-    let first_seq: Vec<Option<&str>> = first.events.iter().map(event_type_of).collect();
+    let first_seq = canonical_sequence(&first.events);
     for (idx, run) in rest.iter().enumerate() {
-        let seq: Vec<Option<&str>> = run.events.iter().map(event_type_of).collect();
+        let seq = canonical_sequence(&run.events);
         if seq != first_seq {
             return Some(format!(
-                "event-type sequence differs at stability run {}/{} for {}: \
+                "canonical event-type sequence differs at stability run {}/{} for {}: \
                  first={:?}, run={:?}",
                 idx + 2,
                 rest.len() + 1,
@@ -843,6 +905,27 @@ async fn capture_all_probes() {
 
     let stability = stability_runs();
     let captures = capture_with_stability(stability, &tmp, &project_dir).await;
+
+    // Diagnostic dump — always print the per-probe status summary
+    // before doing anything else. If the version-extraction panics
+    // below (e.g. claude crashed and no probe produced a
+    // system_metadata), this is the only window into what happened.
+    eprintln!("--- capture_all_probes status summary ({} probes) ---", captures.len());
+    for probe in &captures {
+        let (tag, reason) = match &probe.status {
+            ProbeStatus::Passed => ("PASSED", String::new()),
+            ProbeStatus::Skipped(r) => ("SKIPPED", (*r).to_string()),
+            ProbeStatus::Failed(r) => ("FAILED ", r.clone()),
+            ProbeStatus::ShapeUnstable(r) => ("UNSTBL ", r.clone()),
+        };
+        eprintln!(
+            "  [{tag}] {name:<48} events={count} runtime={rt}ms {reason}",
+            name = probe.name,
+            count = probe.events.len(),
+            rt = probe.runtime_ms,
+        );
+    }
+    eprintln!("-----------------------------------------------------");
 
     let version =
         extract_version(&captures).expect("no system_metadata version found — aborting per [D11]");
@@ -1289,6 +1372,74 @@ mod tests {
             stability_outcome(&first, &[second, third]).expect("third run must flag drift");
         // The diagnostic's "run X/Y" should identify the divergent run.
         assert!(diag.contains("run 3/3"));
+    }
+
+    #[test]
+    fn stability_outcome_collapses_streaming_partials() {
+        // Claude emits a variable number of assistant_text partials
+        // depending on tokenizer batching. Runs with the same shape
+        // but different partial counts must NOT be flagged.
+        let first = mk_capture(
+            "probe-stream",
+            vec![
+                json!({"type": "system_metadata"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        let second = mk_capture(
+            "probe-stream",
+            vec![
+                json!({"type": "system_metadata"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "assistant_text"}),
+                json!({"type": "turn_complete"}),
+            ],
+        );
+        // Both canonicalize to [system_metadata, assistant_text, turn_complete].
+        assert_eq!(stability_outcome(&first, &[second]), None);
+    }
+
+    #[test]
+    fn stability_outcome_flags_new_event_type_between_runs() {
+        // A run where a new event type appears between previously
+        // adjacent ones must still be flagged — the canonicalization
+        // erases count variance, not ordering drift.
+        let first = mk_capture(
+            "probe-order",
+            vec![
+                json!({"type": "a"}),
+                json!({"type": "b"}),
+                json!({"type": "c"}),
+            ],
+        );
+        let second = mk_capture(
+            "probe-order",
+            vec![
+                json!({"type": "a"}),
+                json!({"type": "x"}), // new event type between a and b
+                json!({"type": "b"}),
+                json!({"type": "c"}),
+            ],
+        );
+        assert!(stability_outcome(&first, &[second]).is_some());
+    }
+
+    #[test]
+    fn canonical_sequence_dedupes_adjacent_only() {
+        let events = vec![
+            json!({"type": "a"}),
+            json!({"type": "a"}),
+            json!({"type": "b"}),
+            json!({"type": "a"}),
+            json!({"type": "a"}),
+        ];
+        // [a, a, b, a, a] → [a, b, a] — non-adjacent 'a' islands are
+        // preserved so we detect genuine re-entry into an event type.
+        assert_eq!(canonical_sequence(&events), vec!["a", "b", "a"]);
     }
 
     #[test]

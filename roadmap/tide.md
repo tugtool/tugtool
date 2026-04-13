@@ -1527,7 +1527,7 @@ Per transport-exploration.md Test 17 (captured via the legacy direct-tugtalk pro
 
 **Scope:** `tugcode/src/session.ts` (likely), `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` (possibly), `tugrust/crates/tugcast/tests/multi_session_real_claude.rs` (restoration).
 
-**Schedule:** Land before tugplan-golden-stream-json-catalog Step 4 (baseline capture) so probe 17 can ship unskipped in the `v2.1.104/` fixtures. If diagnosis takes longer than a quick round, allow probe 17 to be marked `skipped` in the initial baseline and land the fix as a follow-up.
+**Schedule:** **Deferred past Step 4.** The Step 4 canary confirmed this symptom extends to probes 13 (`session_command: new`), 17 (`continue`), and 20 (`fork`) — all three fail inside the multi-session router with `Connection reset without closing handshake` at ~45 000 ms, which is a sibling symptom of [P19](#p19-45s-ws-reset). They ship as `skipped` in the initial `v2.1.104/` baseline (manifest.json carries the pointer). Fix is still required before Step 6 ships the drift regression test — the drift test must either run probes 13/17/20 or explicitly skip them the same way the baseline does.
 
 #### P17: `model_change` synthetic confirmation shape drift (LOW) {#p17-model-change-confirmation-shape}
 
@@ -1545,6 +1545,42 @@ The `send_model_change` helper itself is sound: `test_send_model_change_behavior
 **Scope:** `roadmap/transport-exploration.md` (known-divergences section, updated in Step 5).
 
 **Schedule:** Self-resolves during tugplan-golden-stream-json-catalog Step 4 + Step 5. No separate landing required.
+
+#### P19: 45s WebSocket reset on long-running capture probes (HIGH) {#p19-45s-ws-reset}
+
+**Problem:** During tugplan-golden-stream-json-catalog Step 4's `TUG_STABILITY=1` canary run, six distinct probes — test-10 (long streaming 300 words), test-13/17/20 (session-command new/continue/fork), test-25 (`/tugplug:plan` invocation), test-35 (AskUserQuestion flow) — all failed with the **identical** error signature:
+
+```
+ws recv error: WebSocket protocol error: Connection reset without closing handshake
+```
+
+at runtimes clustered between 45055 ms and 45110 ms. That's a 55-ms spread across six unrelated probes, against their own timeouts of 45/60/90/120/180 s. Something kills the `TestWs` → tugcast WebSocket at exactly ~45 s of wall time regardless of what the probe is doing.
+
+This is not a claude problem — claude continues emitting events fine when probed directly. It's not a tugcode problem — tugcode's stdout pipe keeps flowing and its control responses are logged. It's a tugcast-side (or `tokio-tungstenite`-side) idle/activity/write ceiling. The canary does not disprove any of:
+
+- A tugcast session-idle timeout hardcoded around 45 s.
+- A `tokio-tungstenite` default write-timeout that fires without the client seeing a close frame.
+- A tmux feed-side failure (the `can't find session: tug-test-<port>` warning appears on every spawn) that cascades into a router-side session teardown after a grace period.
+- Per-socket `SO_KEEPALIVE` / TCP retransmit timeout (though 45 s is a bit short for kernel defaults).
+
+The canary's 29-probe happy path (everything that completes in < 45 s) proves the capture binary works end-to-end. The failing six all have in common that their first *meaningful* event sequence (outside the session startup) spans more than ~45 s from WebSocket open.
+
+**Why HIGH:** P19 blocks the capture of six probes from the golden catalog — including the entire session-command suite and the `/tugplug:plan` AskUserQuestion flow, both of which are load-bearing for the `CodeSessionStore` state machine that Step 4's catalog is protecting. Until it's fixed, the drift test in Step 6 will have permanent blind spots in those regions of the shape space.
+
+**Evidence:**
+- Step 4 canary b352vda4y: every failure has `runtime` in [45055 ms, 45110 ms] across 6 different probes.
+- Retry canary bwl5mn5az (with the 6 probes pre-marked `skipped`): completes in 124 s total; the remaining 29 probes all pass cleanly.
+- `test_single_session_end_to_end` from `multi_session_real_claude.rs` completes in 1.17 s — short-lived sessions are unaffected, confirming the ceiling is time-based, not message-count-based.
+
+**Fix (investigation first):**
+1. Instrument tugcast's WebSocket handler to log close-frame emission and socket-drop events with timestamps.
+2. Reproduce the symptom under a single long-running probe (test-10 is the simplest trigger) with `RUST_LOG=tokio_tungstenite=trace,tugcast=trace`.
+3. Grep tugcast, tokio-tungstenite, and tungstenite for any hardcoded 45-second constant.
+4. Once the source is identified: either remove the ceiling (if it's in tugcast), configure it up (if it's in `tokio-tungstenite` defaults), or add a keepalive ping on the capture client side (if it's a kernel TCP issue).
+
+**Scope:** Primarily `tugrust/crates/tugcast/src/router.rs` and `tugrust/crates/tugcast/src/server.rs`. Possibly `tugrust/crates/tugcast/tests/common/mod.rs` (add keepalive ping from TestWs side as a workaround). No tugcode changes expected.
+
+**Schedule:** **Deferred past Step 4.** The baseline capture commits with probes 10/13/17/20/25/35 marked `skipped` and this follow-up linked in `manifest.json`. Fix must land before Step 6 drift regression test so the drift path has either working probes or the same explicit skip list.
 
 #### P8: Auth for remote use (LOW)
 

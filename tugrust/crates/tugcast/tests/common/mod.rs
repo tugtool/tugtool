@@ -493,6 +493,33 @@ impl TestWs {
         Ok(frame.payload)
     }
 
+    /// Non-consuming variant of [`await_code_output_event`]. Pumps
+    /// until a matching CODE_OUTPUT event appears, returns a **clone**
+    /// of its payload, and leaves the frame in the buffer so a
+    /// subsequent [`collect_code_output`] still picks it up.
+    ///
+    /// Used by the golden stream-json catalog capture binary: when a
+    /// probe script does `WaitForEvent { control_request_forward }` to
+    /// extract a `request_id`, the forward itself is part of the shape
+    /// the fixture records — it must not be consumed or the
+    /// resulting JSONL is missing an event claude actually emitted.
+    pub async fn peek_code_output_event(
+        &mut self,
+        tug_session_id: &str,
+        event_type: &str,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + timeout;
+        let idx = self
+            .pump_until(deadline, |f| {
+                f.feed_id == FeedId::CODE_OUTPUT
+                    && f.payload["tug_session_id"] == tug_session_id
+                    && f.payload["type"] == event_type
+            })
+            .await?;
+        Ok(self.buffer[idx].payload.clone())
+    }
+
     /// Collect `CODE_OUTPUT` payloads for `tug_session_id` from the
     /// buffer (pulling more from the socket as needed) until one with
     /// `type == "turn_complete"` is consumed. Non-matching frames (for

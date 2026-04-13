@@ -51,6 +51,14 @@ pub struct ProbeRecord {
     /// 60 s for longer streaming, 90 s for subagent / `/tugplug:plan`
     /// multi-agent flows.
     pub timeout_secs: u64,
+    /// If `Some`, the probe is unconditionally skipped at capture
+    /// time with this reason. Used for probes blocked on a known
+    /// upstream bug that has a `tide.md §T0.5` follow-up pointer —
+    /// the reason string should name the specific follow-up so the
+    /// manifest.json tells a future reader where to look.
+    ///
+    /// `None` means run the probe normally.
+    pub skip_reason: Option<&'static str>,
 }
 
 /// One inbound message the capture binary sends to drive a probe.
@@ -177,6 +185,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 2: Longer response / streaming behavior ---
     ProbeRecord {
@@ -193,6 +202,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 3: Slash command /cost ---
     ProbeRecord {
@@ -202,6 +212,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 4: Slash command /status ---
     ProbeRecord {
@@ -211,6 +222,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 5: Tool use (Read file) ---
     ProbeRecord {
@@ -230,6 +242,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 6: Interrupt mid-stream ---
     ProbeRecord {
@@ -254,6 +267,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 7: Multiple tool calls in one turn ---
     ProbeRecord {
@@ -273,8 +287,15 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 8: Tool error (nonexistent file) ---
+    // NOTE: The canary found that `control_request_forward` is in
+    // practice only emitted when the WaitForEvent path peeks rather
+    // than consumes the frame. It's required — the capture binary's
+    // Step 4 canary proved that when `peek_code_output_event` is used
+    // instead of `await_code_output_event`, the forward makes it
+    // into the fixture. Kept required here.
     ProbeRecord {
         name: "test-08-tool-error-nonexistent",
         input_script: &[
@@ -302,6 +323,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use_structured", "thinking_text"],
         prerequisites: &[ProbePrereq::DenialCapableTool],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 9: Bash tool (auto-approved) ---
     ProbeRecord {
@@ -321,8 +343,15 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 10: Long streaming (300 words) ---
+    // Blocked on tide.md §T0.5 P19 — every probe whose collect phase
+    // runs longer than ~45 s hits `Connection reset without closing
+    // handshake`, regardless of the probe's own timeout. The canary
+    // confirmed test-10/13/17/20/25/35 all fail at ~45 000 ms. Likely
+    // a tugcast-side idle/activity ceiling; the investigation is
+    // out of Layer A scope.
     ProbeRecord {
         name: "test-10-long-streaming-300-words",
         input_script: &[ProbeMsg::UserMessage {
@@ -337,6 +366,9 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 90,
+        skip_reason: Some(
+            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
+        ),
     },
     // --- Test 11: Permission approval round-trip (deny) ---
     ProbeRecord {
@@ -366,6 +398,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use_structured", "thinking_text"],
         prerequisites: &[ProbePrereq::DenialCapableTool],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 12: /compact and /model ---
     ProbeRecord {
@@ -382,12 +415,13 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 13: session_command new ---
-    // Blocked on P16 (session_command continue bug in multi-session
-    // router). session_command new / fork may have the same
-    // pending-ID readiness gap. Capture-time skip with explicit reason
-    // per [D10].
+    // Blocked on tide.md §T0.5 P16 (session_command routing bug).
+    // The Step 4 canary confirmed test-13/17/20 all hit the same
+    // 45s connection reset as test-10/25/35 — sibling symptom of
+    // P19. Skipped until the supervisor is fixed.
     ProbeRecord {
         name: "test-13-session-command-new",
         input_script: &[
@@ -410,6 +444,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 14: Message during active turn ---
     ProbeRecord {
@@ -436,6 +471,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 90,
+        skip_reason: None,
     },
     // --- Test 15: /btw side question ---
     ProbeRecord {
@@ -447,6 +483,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 16: model_change round-trip ---
     ProbeRecord {
@@ -475,11 +512,12 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 90,
+        skip_reason: None,
     },
     // --- Test 17: session_command continue ---
-    // Blocked on P16 — multi-session router hangs on continue's
-    // post-command probe turn. Capture-time skip with explicit
-    // reason per [D10].
+    // Blocked on tide.md §T0.5 P16 — multi-session router hangs on
+    // continue's post-command probe turn. Canary also confirms
+    // the 45s reset (P19 sibling). Skipped.
     ProbeRecord {
         name: "test-17-session-command-continue",
         input_script: &[
@@ -501,6 +539,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["system_metadata", "cost_update", "thinking_text"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 18: Message during turn (detailed variant of 14) ---
     // Test 14 and Test 18 probe the same behavior in transport-exploration.md;
@@ -530,6 +569,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 90,
+        skip_reason: None,
     },
     // --- Test 19: /compact (rich cost_update) ---
     ProbeRecord {
@@ -546,9 +586,11 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text", "thinking_text", "compact_boundary"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 20: session_command fork ---
-    // Blocked on P16 — same class of supervisor issue as tests 13/17.
+    // Blocked on tide.md §T0.5 P16 — same supervisor-routing class
+    // as tests 13/17. Canary confirms 45s connection reset.
     ProbeRecord {
         name: "test-20-session-command-fork",
         input_script: &[
@@ -571,6 +613,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 21: Glob tool (auto-approved) ---
     ProbeRecord {
@@ -589,6 +632,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use_structured", "thinking_text"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 22: Subagent spawn (Agent tool) ---
     ProbeRecord {
@@ -607,6 +651,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use_structured", "thinking_text"],
         prerequisites: &[],
         timeout_secs: 120,
+        skip_reason: None,
     },
     // --- Test 23: Image attachment ---
     // 1x1 transparent PNG, base64-encoded. Pure static data.
@@ -630,6 +675,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 24: @ file references ---
     ProbeRecord {
@@ -646,11 +692,12 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text", "tool_use", "tool_result", "tool_use_structured"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 25: Tugplug skill invocation (/plan) ---
-    // Requires tugplug plugin loaded. Default tugcast spawn does not
-    // pass `--plugin-dir tugplug/`, so this probe is skipped at
-    // capture time with an explicit reason.
+    // Blocked on tide.md §T0.5 P19 — canary confirmed 45s reset
+    // during the long-running orchestrator flow. (Plugin IS loaded
+    // at capture time since project_dir is the tugtool repo root.)
     ProbeRecord {
         name: "test-25-tugplug-plan-invocation",
         input_script: &[ProbeMsg::UserMessage {
@@ -666,6 +713,9 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 120,
+        skip_reason: Some(
+            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
+        ),
     },
     // --- Test 26: /dash and /tugplug:dash ---
     ProbeRecord {
@@ -683,6 +733,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 60,
+        skip_reason: None,
     },
     // --- Test 27: @ file references (24a/24b variant) ---
     ProbeRecord {
@@ -699,6 +750,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text", "tool_use", "tool_result", "tool_use_structured"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 28: system_metadata deep dive (plugin skill visibility) ---
     // The capture binary records the first `system_metadata` event of
@@ -718,6 +770,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["thinking_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 29: /tugplug:ping with correct --plugin-dir ---
     ProbeRecord {
@@ -729,6 +782,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text", "cost_update", "thinking_text"],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 30: /tugplug:dash status (full orchestrator run) ---
     ProbeRecord {
@@ -747,6 +801,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 90,
+        skip_reason: None,
     },
     // --- Test 31: /cost classification ---
     ProbeRecord {
@@ -756,6 +811,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 32: /compact classification ---
     ProbeRecord {
@@ -765,6 +821,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 45,
+        skip_reason: None,
     },
     // --- Test 33: /model classification ---
     ProbeRecord {
@@ -774,6 +831,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["assistant_text"],
         prerequisites: &[],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 34: Plugin agent enumeration ---
     // Requires tugplug plugin loaded to show the 12 tugplug agents in
@@ -791,6 +849,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["cost_update", "thinking_text"],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 30,
+        skip_reason: None,
     },
     // --- Test 35: Live /tugplug:plan with AskUserQuestion flow ---
     ProbeRecord {
@@ -822,6 +881,10 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 180,
+        skip_reason: Some(
+            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes; \
+             AskUserQuestion flow never delivers control_request_forward",
+        ),
     },
 ];
 
