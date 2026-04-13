@@ -1024,7 +1024,15 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
 
 ---
 
-#### Step 7: Recovery README {#step-7}
+#### Step 7: Recovery README {#step-7} — DONE
+
+**Results:**
+- Created `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md` (~280 lines). Opens with a "what this is" summary + [D07] WebSocket-layer caveat + source-of-truth disclaimer pointing back at the tugplan + cross-link block. Includes the Fixture layout (showing both committed versions `v2.1.104/` and `v2.1.105/` plus the retention rationale), Placeholder vocabulary table (`{{uuid}}`, `{{iso}}`, `{{text:len=N}}`, `{{f64}}`/`{{i64}}`, `{{cwd}}/...`, plus the "Why `content` is not in the text-content key list" [#deep-normalization] note), the full Version-bump runbook rendered verbatim from [#deep-version-bump-runbook] with relative-path adjustments for the fixture-dir location, and trailing sections on "How to add a new probe to the table" and "How to classify REQUIRED vs OPTIONAL".
+- The runbook body was updated in two small places vs the tugplan deep dive to reflect lessons from Step 6:
+  - The capture command now uses `env -u ANTHROPIC_API_KEY cargo nextest run -p tugcast --run-ignored only capture_all_probes` instead of `cargo test --test capture_stream_json_catalog -- --ignored`, matching the actual shell the Step 6 verification run used. The `env -u ANTHROPIC_API_KEY` prefix is explicitly called out because both the capture binary and the drift test refuse to run with that variable set (subscription-auth policy from the `fix(auth)` commit).
+  - A new edge case was added: "the orphaned-tmux-session trap". Step 6 hit a `tmux: failed to create session / fork failed: Device not configured` crash caused by 506 leftover `tug-test-*` sessions from prior test runs. The README documents the cleanup one-liner (`tmux list-sessions -F '#S' | grep '^tug-test-' | xargs -I {} tmux kill-session -t {}`) and points at §T0.5 P1 for the underlying reaping bug.
+- Updated `roadmap/transport-exploration.md`'s version banner: the "landing in Step 7" placeholder in the README cross-link was replaced with a live description ("developer-facing recovery guide, placeholder vocabulary, and version-bump runbook").
+- **Runbook drift discipline**: the README opens with an explicit source-of-truth disclaimer — if it disagrees with [#deep-version-bump-runbook] in the tugplan, the tugplan wins. This is the rule the tugplan's "Tasks" section codified: change the deep dive first, then re-render the README.
 
 **Depends on:** #step-6
 
@@ -1043,18 +1051,19 @@ tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/
   - Cross-links to [`roadmap/tide.md#p2-followup-golden-catalog`](../../../../../../roadmap/tide.md#p2-followup-golden-catalog), [`roadmap/transport-exploration.md`](../../../../../../roadmap/transport-exploration.md), and [`roadmap/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/tugplan-golden-stream-json-catalog.md) (the spec-of-record for all this content)
 
 **Tasks:**
-- [ ] Render `#deep-version-bump-runbook` from the tugplan as the main body of the README, adjusting relative links and formatting for the fixture-dir location.
-- [ ] Add the "what this is" summary, placeholder vocabulary table, and fixture layout section at the top (before the runbook).
-- [ ] Add "How to add a new probe" and "How to classify REQUIRED vs OPTIONAL" sections at the end.
-- [ ] Cross-link from `roadmap/transport-exploration.md`'s version banner (update that file if needed).
-- [ ] If any step of the runbook needs to change after writing the README, update the tugplan's [#deep-version-bump-runbook](#deep-version-bump-runbook) first, then re-render the README. The tugplan is the source of truth.
+- [x] Rendered [#deep-version-bump-runbook] from the tugplan as the main body of the README, adjusting relative links (`../../../../../../roadmap/...`) for the fixture-dir location and two small content updates (Step 6 subscription-auth lessons) documented in the Results block above.
+- [x] Added "what this is" summary + [D07] layer caveat + placeholder vocabulary table + fixture layout section at the top, before the runbook. Placeholder table documents key-based vs value-based substitution explicitly so a reader understands *why* `session_id: "pending-cont-xyz"` becomes `{{uuid}}` despite not parsing as a UUID.
+- [x] Added "How to add a new probe to the table" section with a minimum-viable `ProbeRecord` example and per-field guidance drawn from `tests/common/probes.rs`.
+- [x] Added "How to classify REQUIRED vs OPTIONAL" section with the REQUIRED default, empirical flapping indicators, and the demotion workflow.
+- [x] Cross-linked from `roadmap/transport-exploration.md`'s version banner (replaced the "landing in Step 7" placeholder with a live description).
+- [x] Source-of-truth rule stated up-front: the tugplan's [#deep-version-bump-runbook] wins on any conflict. Any change to the workflow goes into the tugplan first, then propagates here.
 
 **Tests:**
-- [ ] (none — documentation only)
+- [x] (none — documentation only)
 
 **Checkpoint:**
-- [ ] `tests/fixtures/stream-json-catalog/README.md` exists.
-- [ ] `transport-exploration.md` version banner links to it.
+- [x] `tests/fixtures/stream-json-catalog/README.md` exists (280 lines, committed as part of this step).
+- [x] `transport-exploration.md` version banner links to it with a live description (no longer a "landing in Step 7" placeholder).
 
 ---
 

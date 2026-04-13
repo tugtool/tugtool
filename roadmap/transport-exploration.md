@@ -4,7 +4,7 @@
 
 > **Version banner.** This document was empirically verified against `claude 2.1.87` (initial capture, 2026-03-29) and `2.1.104` (multi-session router Step 10 integration run, 2026-04-12). The **authoritative machine-readable golden fixtures** live at [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/) and are ground truth — this prose catalog is a human-readable summary that may lag behind the fixtures. If the drift test fails, the fixtures are correct and this document is stale; update the prose to match.
 >
-> **Cross-links:** [`tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) (originating tide item) · [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md) (developer-facing recovery guide and runbook — landing in Step 7).
+> **Cross-links:** [`tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) (originating tide item) · [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md) (developer-facing recovery guide, placeholder vocabulary, and version-bump runbook).
 
 **Date:** 2026-03-29 (initial), 2026-04-12 (2.1.104 re-baseline)
 **Method:** Direct tugcode probing via `tugtalk/probe.ts` (legacy probe harness, preserved as historical path) — bypasses tugcast, connects to tugcode's stdin/stdout JSON-lines protocol. 35 tests completed.
