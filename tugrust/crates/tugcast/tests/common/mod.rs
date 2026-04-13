@@ -85,11 +85,64 @@ fn ephemeral_port() -> u16 {
 }
 
 /// A running tugcast subprocess for integration tests. Dropping the
-/// handle kills the child (`kill_on_drop(true)`).
+/// handle kills the child (`kill_on_drop(true)`) and also issues a
+/// `tmux kill-session` for the per-test session name before the child
+/// falls — see [`TestTugcast::drop_cleanup`] and the `Drop` impl below
+/// for why we need both.
 pub struct TestTugcast {
     pub child: Child,
     pub port: u16,
     pub bank_path: PathBuf,
+}
+
+/// Runs exactly once per test process, on the first [`TestTugcast::spawn`]
+/// call. Scans tmux for leftover `tug-test-<port>` sessions whose port
+/// is no longer bound — those are orphans from prior test runs that
+/// crashed before their `Drop` fired — and kills them. Defense-in-depth
+/// alongside the per-test `Drop` cleanup below.
+static STARTUP_REAPER: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Reap stale `tug-test-*` tmux sessions from prior crashed test runs.
+///
+/// We only touch sessions whose name starts with `tug-test-` AND whose
+/// embedded port number is not currently bound by a listening process.
+/// Sessions with a live port are assumed to belong to a concurrent test
+/// run and left alone. Everything else (the developer's own `cc0`
+/// session, any other tmux workflow) is ignored — the prefix check is
+/// the sole authority on what we consider ours to kill.
+fn reap_stale_tug_test_sessions() {
+    use std::net::TcpStream;
+
+    // `tmux list-sessions -F '#S'` prints one session name per line,
+    // or errors out with "no server running" if no tmux server is up.
+    // Both are fine — no sessions means nothing to reap.
+    let output = std::process::Command::new("tmux")
+        .args(["list-sessions", "-F", "#S"])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let Some(port_str) = line.strip_prefix("tug-test-") else {
+            continue;
+        };
+        let Ok(port) = port_str.parse::<u16>() else {
+            continue;
+        };
+        // A bound port means a live concurrent test owns this session;
+        // leave it alone. Unbound means the session is an orphan from
+        // a test that died before its `Drop` fired — kill it.
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            continue;
+        }
+        let _ = std::process::Command::new("tmux")
+            .args(["kill-session", "-t", line])
+            .output();
+    }
 }
 
 impl TestTugcast {
@@ -101,6 +154,14 @@ impl TestTugcast {
     /// cannot collide on `~/.tugbank.db`. The tmux session name is
     /// derived from the port so each test owns a distinct session.
     pub async fn spawn(project_dir: &Path, bank_path: PathBuf) -> Self {
+        // Defense-in-depth (C): on the first spawn in this test process,
+        // reap any leftover `tug-test-*` tmux sessions from prior crashed
+        // runs. Covers the gap where a test died before Drop could fire
+        // (SIGKILL on the test binary itself, kernel panic, user Ctrl-C
+        // before the signal handler) and avoids hitting the macOS pty
+        // exhaustion point that causes `fork failed: Device not configured`.
+        STARTUP_REAPER.get_or_init(reap_stale_tug_test_sessions);
+
         let port = ephemeral_port();
         let bin = env!("CARGO_BIN_EXE_tugcast");
         // `TUGBANK_PATH` is set explicitly so the spawned tugcast AND
@@ -141,6 +202,32 @@ impl TestTugcast {
             port,
             bank_path,
         }
+    }
+}
+
+/// Primary fix (A): when a `TestTugcast` handle is dropped — at the end
+/// of every test, on normal exit and on panic — issue a `tmux
+/// kill-session -t tug-test-<port>` before the child falls. Without
+/// this, `kill_on_drop(true)` sends SIGKILL to the tugcast process but
+/// the tmux session it created lives on in the tmux server daemon's
+/// process tree, where no child-reaping machinery can reach it. Over
+/// dozens of test runs, orphans accumulated into the hundreds until the
+/// macOS pty pool was exhausted and new sessions started failing with
+/// `fork failed: Device not configured`. Rust runs `impl Drop::drop`
+/// *before* dropping struct fields, so the kill-session runs while the
+/// child is still alive and the tmux session name is still valid.
+impl Drop for TestTugcast {
+    fn drop(&mut self) {
+        let session_name = format!("tug-test-{}", self.port);
+        // Best-effort: swallow errors. If tmux isn't installed, if the
+        // session was already killed, or if the tmux server died, we
+        // still want the rest of the drop sequence to run.
+        let _ = std::process::Command::new("tmux")
+            .args(["kill-session", "-t", &session_name])
+            .output();
+        // `self.child` is dropped after this method returns, which
+        // triggers `kill_on_drop(true)` and SIGKILLs tugcast. By that
+        // point the tmux session is already gone.
     }
 }
 
