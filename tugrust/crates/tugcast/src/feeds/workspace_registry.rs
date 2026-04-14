@@ -34,14 +34,15 @@ use crate::feeds::path_resolver::PathResolver;
 pub struct WorkspaceKey(Arc<str>);
 
 impl WorkspaceKey {
-    /// View the canonical path string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
     /// Obtain a cheap `Arc<str>` handle — used by feed constructors in #step-3.
     pub fn arc(&self) -> Arc<str> {
         Arc::clone(&self.0)
+    }
+}
+
+impl AsRef<str> for WorkspaceKey {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
@@ -52,9 +53,14 @@ impl WorkspaceKey {
 /// task handles. See Spec S01 for rationale.
 pub struct WorkspaceEntry {
     /// Canonical key — also the map key in `WorkspaceRegistry`.
+    /// Retained for test sanity-checks and for W2 `release()` back-reference
+    /// when the registry learns to drop entries on session end.
+    #[allow(dead_code)]
     pub workspace_key: WorkspaceKey,
-    /// Original path input to `get_or_create`, retained for logging and
-    /// (in W2) for passing as the spawned session's cwd.
+    /// Original path input to `get_or_create`. Retained for W2, when
+    /// `AgentSupervisor::spawn_session_worker` will read it to pass as the
+    /// spawned Claude Code process's cwd (replacing `AgentSupervisorConfig::project_dir`).
+    #[allow(dead_code)]
     pub project_dir: PathBuf,
     /// Router watch receivers.
     pub fs_watch_rx: watch::Receiver<Frame>,
@@ -233,7 +239,8 @@ mod tests {
         assert!(!entry.filesystem_task.is_finished());
         assert!(!entry.filetree_task.is_finished());
         assert!(!entry.git_task.is_finished());
-        assert!(!entry.workspace_key.as_str().is_empty());
+        let key: &str = entry.workspace_key.as_ref();
+        assert!(!key.is_empty());
 
         // Cleanup: cancel tasks, give the runtime a bounded window, then drop
         // the registry so the entry's FileWatcher OS handle is released.

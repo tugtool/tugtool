@@ -205,11 +205,6 @@ async fn main() {
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
     let registry = WorkspaceRegistry::new();
     let bootstrap = registry.get_or_create(&watch_dir, cancel.clone());
-    info!(
-        workspace_key = %bootstrap.workspace_key.as_str(),
-        project_dir = ?bootstrap.project_dir,
-        "bootstrap workspace registered",
-    );
 
     // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into
     // FileTreeQuery and forward to the workspace's FileTreeFeed.
