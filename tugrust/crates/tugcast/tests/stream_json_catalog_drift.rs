@@ -61,7 +61,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use common::catalog::{
-    EventShape, Schema, canonical_type_sequence, capture_with_stability, derive_schema,
+    self, EventShape, Schema, canonical_type_sequence, capture_with_stability, derive_schema,
     extract_version, stability_runs,
 };
 use common::real_claude_enabled;
@@ -128,9 +128,19 @@ pub enum FailureKind {
     MissingProbe { probe_name: String },
     /// A probe that exists in current is missing from golden.
     NewProbe { probe_name: String },
-    /// Depth limit exceeded ([D12]). Not reachable by the current
-    /// flat schema format but retained so future nested-shape
-    /// recursion has a place to land.
+    /// Depth limit exceeded ([D12]). **Scope cut from the tugplan deep
+    /// dive.** The deep dive described a recursive object-field walk
+    /// up to a depth of 8 that would emit this variant on overflow.
+    /// The actual differ uses `describe_value`'s flat "object" shape
+    /// descriptor — any nested object compares equal to any other
+    /// nested object of the same top-level type — which has been
+    /// sufficient for 2.1.104 → 2.1.105 drift detection. Implementing
+    /// the recursive walk pre-emptively is YAGNI; land it when
+    /// `CodeSessionStore`'s reducer actually reaches into a nested
+    /// field and needs the extra depth pinned. This variant is retained
+    /// so (a) future recursion has a pre-named failure kind and (b)
+    /// the report formatter in `format_kind` doesn't need to change
+    /// when the walk lands.
     DepthLimitExceeded { path: Vec<String> },
 }
 
@@ -548,15 +558,8 @@ fn diff_probe_sequence(
 // Fixture path resolution — [D13] no-fallback rule
 // -----------------------------------------------------------------------
 
-fn fixture_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join("stream-json-catalog")
-}
-
 fn schema_path_for_version(version: &str) -> PathBuf {
-    fixture_root()
+    catalog::fixture_root()
         .join(format!("v{version}"))
         .join("schema.json")
 }
@@ -575,19 +578,10 @@ async fn stream_json_catalog_drift_regression() {
         return;
     }
 
-    // Hard refusal: same policy as capture_all_probes. If either auth
-    // env var is set, refuse to run so the developer can `unset` and
-    // retry with subscription auth. The spawn-site scrubs defend
-    // silently but we prefer to fail loudly up front.
-    for var in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"] {
-        if std::env::var_os(var).is_some() {
-            panic!(
-                "{var} is set in the environment. This test spawns real \
-                 claude which would use per-token API billing instead of \
-                 your Max/Pro subscription. Run `unset {var}` and re-run."
-            );
-        }
-    }
+    // Pre-flight refusal — same policy as `capture_all_probes`. Refuse
+    // to run if any subscription-overriding auth env var is set. See
+    // `catalog::AUTH_ENV_VARS` for the list.
+    catalog::refuse_if_auth_env_set();
 
     let project_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")

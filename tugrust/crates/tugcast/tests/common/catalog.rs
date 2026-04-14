@@ -25,6 +25,75 @@ use crate::common::probes::{ProbeMsg, ProbePrereq, ProbeRecord, ProbeStatus};
 use crate::common::{TestTugcast, TestWs};
 
 // -----------------------------------------------------------------------
+// Subscription-auth scrub list + pre-flight refusal
+// -----------------------------------------------------------------------
+
+/// Environment variables that override claude CLI's subscription auth
+/// resolution. If any of these is set in the parent environment, claude
+/// authenticates against per-token API billing instead of the
+/// developer's `~/.claude.json` subscription login. The capture binary
+/// and the drift regression test both `env_remove` these from the
+/// spawned tugcast subprocess, and both pre-flight-refuse to run if any
+/// of them is set in the test-invoker's shell (so the developer sees a
+/// loud failure up front rather than discovering an `apiKeySource`
+/// contamination in a committed fixture later).
+///
+/// - `ANTHROPIC_API_KEY` — the classic API key, per-token billing.
+/// - `ANTHROPIC_AUTH_TOKEN` — alternate API auth header some Anthropic
+///   SDKs and wrappers use; also per-token.
+/// - `CLAUDE_CODE_OAUTH_TOKEN` — long-lived token from `claude
+///   setup-token`. Subscription-tied, so technically safe in isolation,
+///   but we scrub it defensively to keep all subscription auth flowing
+///   through `~/.claude.json` / the macOS Keychain instead of a shell
+///   variable whose provenance the test can't easily audit.
+pub const AUTH_ENV_VARS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+];
+
+/// Pre-flight refusal: panic with a loud, specific message if any of
+/// [`AUTH_ENV_VARS`] is set in the current environment. Called at the
+/// top of every real-claude test body so the developer sees the
+/// problem before we spawn a subprocess chain that would silently fall
+/// through to per-token billing.
+///
+/// The spawn-site `env_remove` calls also defend against leakage (belt
+/// and suspenders), but failing loudly up front lets the developer
+/// `unset` the variable and retry rather than discovering the leak by
+/// reading an `apiKeySource` field in committed output later.
+pub fn refuse_if_auth_env_set() {
+    for var in AUTH_ENV_VARS {
+        if std::env::var_os(var).is_some() {
+            panic!(
+                "{var} is set in the environment. This test spawns real \
+                 claude and this variable would cause claude to authenticate \
+                 via per-token API billing instead of your Max/Pro \
+                 subscription at ~/.claude.json. Run `unset {var}` in this \
+                 shell and re-run.\n\
+                 \n\
+                 (Spawn sites also scrub this variable defensively, so this \
+                 refusal is a warning — not a hard dependency — but we prefer \
+                 to fail loudly rather than silently change auth mode.)"
+            );
+        }
+    }
+}
+
+/// Fixture root: `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`.
+/// Both the capture binary (as the writer of `v<version>/`) and the drift
+/// regression test (as the reader of `v<version>/schema.json`) resolve
+/// fixtures through this function. Centralized so a future restructure
+/// (e.g., moving fixtures up or down in the tree) touches exactly one
+/// line.
+pub fn fixture_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("stream-json-catalog")
+}
+
+// -----------------------------------------------------------------------
 // Normalization — leaf-only placeholder substitution per [D04]/[D14]
 // -----------------------------------------------------------------------
 

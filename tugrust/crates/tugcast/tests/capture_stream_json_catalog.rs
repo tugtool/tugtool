@@ -54,7 +54,7 @@ use serde_json::{Value, json};
 // fixture-writing layer (status_tag / build_manifest / write_fixtures)
 // and the `capture_all_probes` test entry point itself.
 use common::catalog::{
-    CapturedProbe, Schema, canonical_sequence, capture_with_stability, derive_schema,
+    self, CapturedProbe, Schema, canonical_sequence, capture_with_stability, derive_schema,
     extract_version, normalize_event, schema_to_json, stability_outcome, stability_runs,
 };
 use common::probes::ProbeStatus;
@@ -113,14 +113,6 @@ fn build_manifest(version: &str, stability: usize, captures: &[CapturedProbe]) -
     })
 }
 
-/// Fixture root: `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`.
-fn fixture_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join("stream-json-catalog")
-}
-
 /// Write a full capture run to disk per Spec S01. Creates the
 /// `v<version>/` directory, writes JSONL for each probe, plus
 /// `manifest.json` and `schema.json`.
@@ -129,7 +121,7 @@ pub fn write_fixtures(
     schema: &Schema,
     manifest: &Value,
 ) -> std::io::Result<PathBuf> {
-    let dir = fixture_root().join(format!("v{}", schema.claude_version));
+    let dir = catalog::fixture_root().join(format!("v{}", schema.claude_version));
     std::fs::create_dir_all(&dir)?;
 
     for probe in captures {
@@ -165,29 +157,12 @@ async fn capture_all_probes() {
         eprintln!("skipping capture_all_probes: TUG_REAL_CLAUDE not set");
         return;
     }
-    // Hard refusal: if ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) is
-    // present in the shell that invoked this test, the value would
-    // normally flow through cargo → test binary → tugcast → tugcode →
-    // claude and cause claude to authenticate via per-token API billing
-    // instead of `~/.claude.json` (the Max/Pro subscription). The
-    // spawn-site scrubs defend against this but we also refuse to run at
-    // all so the developer has a chance to `unset` it rather than
-    // discovering the leak by reading an `apiKeySource` field in a
-    // committed fixture. Belt and suspenders.
-    for var in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"] {
-        if std::env::var_os(var).is_some() {
-            panic!(
-                "{var} is set in the environment. The capture binary spawns real \
-                 claude and this variable would cause claude to authenticate via \
-                 per-token API billing instead of your Max/Pro subscription at \
-                 ~/.claude.json. Run `unset {var}` in this shell and re-run.\n\
-                 \n\
-                 (Spawn sites also scrub this variable defensively, so this \
-                 refusal is a warning — not a hard dependency — but we prefer \
-                 to fail loudly rather than silently change auth mode.)"
-            );
-        }
-    }
+    // Pre-flight refusal — refuse to run if any subscription-overriding
+    // auth env var is set in the shell. The spawn-site scrubs defend
+    // silently, but we prefer to fail loudly up front so the developer
+    // can `unset` and retry rather than discovering a contaminated
+    // fixture later. See `catalog::AUTH_ENV_VARS` for the list.
+    catalog::refuse_if_auth_env_set();
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

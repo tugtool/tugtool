@@ -699,12 +699,21 @@ export class SessionManager {
 
     // Scrub Anthropic auth env vars so the claude CLI authenticates via
     // `~/.claude.json` (the user's Max/Pro subscription) rather than
-    // per-token API billing via `ANTHROPIC_API_KEY`. Bun.spawn inherits
-    // the parent process environment by default when `env` is omitted,
-    // so we must pass an explicit env with these keys removed.
-    const { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ...scrubbedEnv } =
-      process.env as Record<string, string | undefined>;
+    // per-token API billing. Bun.spawn inherits the parent process
+    // environment by default when `env` is omitted, so we must pass an
+    // explicit env with these keys removed.
+    //
+    // Keep this list in sync with `AUTH_ENV_VARS` in
+    // `tugrust/crates/tugcast/tests/common/catalog.rs` and the
+    // `env_remove` calls in `tugrust/crates/tugcast/src/feeds/agent_bridge.rs`.
+    const {
+      ANTHROPIC_API_KEY,
+      ANTHROPIC_AUTH_TOKEN,
+      CLAUDE_CODE_OAUTH_TOKEN,
+      ...scrubbedEnv
+    } = process.env as Record<string, string | undefined>;
     void ANTHROPIC_API_KEY;
+    void ANTHROPIC_AUTH_TOKEN;
     void CLAUDE_CODE_OAUTH_TOKEN;
 
     return Bun.spawn([claudePath, ...args], {

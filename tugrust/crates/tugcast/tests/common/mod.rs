@@ -176,9 +176,12 @@ impl TestTugcast {
         // instead of per-token API billing via `ANTHROPIC_API_KEY`. Without
         // this, whatever key is exported in the developer's shell flows
         // through tugcast → tugcode → claude and every test run bills the
-        // API account instead of the subscription. See
-        // `capture_all_probes`'s pre-flight check for the hard refusal.
-        let child = Command::new(bin)
+        // API account instead of the subscription. The scrub list lives
+        // in `catalog::AUTH_ENV_VARS` so adding a new variable touches
+        // exactly one site. See `capture_all_probes`'s and
+        // `stream_json_catalog_drift_regression`'s pre-flight refusal.
+        let mut command = Command::new(bin);
+        command
             .arg("--port")
             .arg(port.to_string())
             .arg("--dir")
@@ -189,13 +192,13 @@ impl TestTugcast {
             .arg("--bank-path")
             .arg(&bank_path)
             .env("TUGBANK_PATH", &bank_path)
-            .env_remove("ANTHROPIC_API_KEY")
-            .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
-            .kill_on_drop(true)
-            .spawn()
-            .expect("failed to spawn tugcast");
+            .kill_on_drop(true);
+        for var in catalog::AUTH_ENV_VARS {
+            command.env_remove(var);
+        }
+        let child = command.spawn().expect("failed to spawn tugcast");
         wait_for_port(port, Duration::from_secs(5)).await;
         Self {
             child,

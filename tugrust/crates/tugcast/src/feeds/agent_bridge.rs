@@ -181,15 +181,20 @@ impl ChildSpawner for TugcodeSpawner {
             info!(cmd, ?args, "Spawning tugcode");
             // Scrub Anthropic auth env vars so the downstream claude CLI
             // authenticates via `~/.claude.json` (the user's Max/Pro
-            // subscription) rather than per-token API billing via
-            // `ANTHROPIC_API_KEY`. If the developer has that variable
-            // exported for other work (e.g. direct API scripts), we do
-            // NOT want it to leak into tugcode → claude.
+            // subscription) rather than per-token API billing. If the
+            // developer has any of these variables exported for other
+            // work (e.g. direct API scripts), we do NOT want it to leak
+            // into tugcode → claude.
+            //
+            // Keep this list in sync with `AUTH_ENV_VARS` in
+            // `tugrust/crates/tugcast/tests/common/catalog.rs` and the
+            // destructure in `tugcode/src/session.ts::spawnClaude`.
             let mut child = Command::new(&cmd)
                 .args(&args)
                 .arg("--dir")
                 .arg(&project_dir)
                 .env_remove("ANTHROPIC_API_KEY")
+                .env_remove("ANTHROPIC_AUTH_TOKEN")
                 .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
