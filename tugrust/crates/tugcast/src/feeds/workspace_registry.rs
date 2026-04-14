@@ -12,9 +12,6 @@
 //!
 //! See `roadmap/tugplan-workspace-registry-w1.md` specs S01/S02.
 
-// Removed in #step-4 when main.rs starts calling the registry.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -65,10 +62,15 @@ pub struct WorkspaceEntry {
     pub git_watch_rx: watch::Receiver<Frame>,
     /// FILETREE_QUERY input for the adapter in main.rs.
     pub ft_query_tx: mpsc::Sender<FileTreeQuery>,
-    /// Spawned task handles, retained so tests can assert `!is_finished()`.
+    /// Spawned task handles. Retained so tests can assert `!is_finished()`
+    /// and so W2 teardown can abort/join them when `release()` lands.
+    #[allow(dead_code)]
     pub file_watcher_task: JoinHandle<()>,
+    #[allow(dead_code)]
     pub filesystem_task: JoinHandle<()>,
+    #[allow(dead_code)]
     pub filetree_task: JoinHandle<()>,
+    #[allow(dead_code)]
     pub git_task: JoinHandle<()>,
 }
 

@@ -23,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use tugbank_core::TugbankClient;
 use tugbank_core::notify as tugbank_notify;
-use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
+use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
@@ -54,10 +54,8 @@ impl SessionKeysStore for EphemeralSessionKeysStore {
         Ok(Vec::new())
     }
 }
-use crate::feeds::file_watcher::FileWatcher;
-use crate::feeds::filesystem::FilesystemFeed;
-use crate::feeds::filetree::{FileTreeFeed, FileTreeQuery};
-use crate::feeds::git::GitFeed;
+use crate::feeds::filetree::FileTreeQuery;
+use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::feeds::stats::{
     BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
 };
@@ -195,44 +193,28 @@ async fn main() {
         .as_ref()
         .map(|client| feeds::defaults::defaults_feed(Arc::clone(client)));
 
-    // Create FileWatcher broadcast channel and filesystem feed.
-    // FileWatcher is the shared event source; FilesystemFeed subscribes to its broadcast.
-    let file_watcher = FileWatcher::new(watch_dir.clone());
-    let fs_broadcast_tx = FileWatcher::create_sender();
+    // Shared cancellation token for the process. Declared before the
+    // WorkspaceRegistry call because `get_or_create` needs a clone to hand
+    // to the feed tasks it spawns internally.
+    let cancel = CancellationToken::new();
 
-    // Workspace key for the bootstrap feeds — #step-4 will replace this
-    // block with a WorkspaceRegistry call that owns the key internally.
-    let bootstrap_workspace_key: std::sync::Arc<str> = std::sync::Arc::from(
-        feeds::path_resolver::PathResolver::new(watch_dir.clone())
-            .watch_path()
-            .to_string_lossy()
-            .into_owned(),
+    // Create the bootstrap WorkspaceRegistry. In W1 this holds exactly one
+    // entry (the startup --dir); W2 will add per-session `get_or_create`
+    // calls from AgentSupervisor::spawn_session_worker. The registry owns
+    // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
+    // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
+    let registry = WorkspaceRegistry::new();
+    let bootstrap = registry.get_or_create(&watch_dir, cancel.clone());
+    info!(
+        workspace_key = %bootstrap.workspace_key.as_str(),
+        project_dir = ?bootstrap.project_dir,
+        "bootstrap workspace registered",
     );
 
-    // Create filesystem feed and watch channel
-    let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
-    let fs_feed = FilesystemFeed::new(
-        watch_dir.clone(),
-        fs_broadcast_tx.clone(),
-        bootstrap_workspace_key.clone(),
-    );
-
-    // Create FileTreeFeed: walk the directory, create query channel, watch channel.
-    let (initial_files, ft_truncated) = file_watcher.walk();
-    let (ft_query_tx, ft_query_rx) = mpsc::channel::<FileTreeQuery>(16);
-    let (ft_watch_tx, ft_watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));
-    let ft_feed = FileTreeFeed::new(
-        watch_dir.clone(),
-        initial_files,
-        ft_truncated,
-        fs_broadcast_tx.clone(),
-        ft_query_rx,
-        bootstrap_workspace_key.clone(),
-    );
-
-    // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into FileTreeQuery.
+    // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into
+    // FileTreeQuery and forward to the workspace's FileTreeFeed.
     let (ft_input_tx, mut ft_input_rx) = mpsc::channel::<Frame>(16);
-    let ft_adapter_tx = ft_query_tx;
+    let ft_adapter_tx = bootstrap.ft_query_tx.clone();
     tokio::spawn(async move {
         while let Some(frame) = ft_input_rx.recv().await {
             #[derive(serde::Deserialize)]
@@ -258,10 +240,6 @@ async fn main() {
             }
         }
     });
-
-    // Create git feed and watch channel
-    let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
-    let git_feed = GitFeed::new(watch_dir.clone(), bootstrap_workspace_key.clone());
 
     // Create stats collectors
     let process_info =
@@ -304,7 +282,6 @@ async fn main() {
     };
 
     // Start terminal feed in background task
-    let cancel = CancellationToken::new();
     let feed_cancel = cancel.clone();
     let terminal_tx_for_router = terminal_tx.clone();
     tokio::spawn(async move {
@@ -454,9 +431,9 @@ async fn main() {
 
     // Register snapshot watches
     let mut snapshot_watches = vec![
-        fs_watch_rx,
-        ft_watch_rx,
-        git_watch_rx,
+        bootstrap.fs_watch_rx.clone(),
+        bootstrap.ft_watch_rx.clone(),
+        bootstrap.git_watch_rx.clone(),
         stats_agg_rx,
         stats_proc_rx,
         stats_token_rx,
@@ -468,29 +445,9 @@ async fn main() {
     // SESSION_METADATA and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
 
-    // Start FileWatcher (event source) and FilesystemFeed (broadcast consumer)
-    let fw_cancel = cancel.clone();
-    let fw_broadcast_tx = fs_broadcast_tx.clone();
-    tokio::spawn(async move {
-        file_watcher.run(fw_broadcast_tx, fw_cancel).await;
-    });
-
-    let fs_cancel = cancel.clone();
-    tokio::spawn(async move {
-        fs_feed.run(fs_watch_tx, fs_cancel).await;
-    });
-
-    // Start FileTreeFeed (query/response scoring)
-    let ft_cancel = cancel.clone();
-    tokio::spawn(async move {
-        ft_feed.run(ft_watch_tx, ft_cancel).await;
-    });
-
-    // Start git feed in background task
-    let git_cancel = cancel.clone();
-    tokio::spawn(async move {
-        git_feed.run(git_watch_tx, git_cancel).await;
-    });
+    // Filesystem, filetree, and git feed tasks are owned by the
+    // WorkspaceRegistry's bootstrap entry — spawned inside
+    // `WorkspaceEntry::new` above.
 
     // Start stats feeds in background task
     let stats_cancel = cancel.clone();
