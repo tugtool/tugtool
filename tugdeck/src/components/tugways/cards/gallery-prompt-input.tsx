@@ -24,6 +24,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { AtomSegment, CompletionProvider, HistoryProvider, InputAction } from "@/lib/tug-text-engine";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
+import { presentWorkspaceKey } from "@/card-registry";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
@@ -154,7 +155,10 @@ function getFileCompletionProvider(): CompletionProvider {
   if (_fileCompletionProvider) return _fileCompletionProvider;
   const connection = getConnection();
   if (connection) {
-    const feedStore = new FeedStore(connection, [FeedId.FILETREE]);
+    // Inline FeedStore construction bypasses the <Tugcard filter> plumbing,
+    // so the presence-check filter must be passed directly. See roadmap
+    // T3.0.W1 Step 5 and the gallery-prompt-input note in the plan.
+    const feedStore = new FeedStore(connection, [FeedId.FILETREE], undefined, presentWorkspaceKey);
     _fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
     _fileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
     return _fileCompletionProvider;

@@ -41,7 +41,7 @@ import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
 import { TugButton } from "./internal/tug-button";
-import { FeedStore } from "../../lib/feed-store";
+import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
 import { getConnection } from "../../lib/connection-singleton";
 
 // ===========================================================================
@@ -360,6 +360,13 @@ export interface TugcardProps {
   /** Custom decode function per feed. Default: JSON parse. */
   decode?: (feedId: FeedIdValue, bytes: Uint8Array) => unknown;
   /**
+   * Optional per-frame filter forwarded to the underlying FeedStore as the
+   * 4th constructor argument. Used for workspace-scoped cards to enforce
+   * `workspace_key` presence end-to-end (see card-registry `presentWorkspaceKey`
+   * and tugcast WorkspaceRegistry, roadmap T3.0.W1).
+   */
+  filter?: FeedStoreFilter;
+  /**
    * Minimum content area size.
    * Total min-size = 28 (header) + accessory height + minContentSize.
    * Default: `{ width: 100, height: 60 }`.
@@ -436,6 +443,7 @@ export function Tugcard({
   meta,
   feedIds,
   decode,
+  filter,
   minContentSize = DEFAULT_MIN_CONTENT,
   accessory = null,
   onMinSizeChange,
@@ -1027,9 +1035,9 @@ export function Tugcard({
         // we pass a unified decoder that ignores the per-id routing and uses the
         // prop for the first feedId. This is sufficient for current use cases
         // (single-feed cards like GitCard).
-        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload));
+        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload), filter);
       } else {
-        feedStoreRef.current = new FeedStore(conn, feedIds);
+        feedStoreRef.current = new FeedStore(conn, feedIds, undefined, filter);
       }
     }
   }

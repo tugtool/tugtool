@@ -14,7 +14,7 @@
 
 import React from "react";
 import { GitBranch, CircleCheck, CircleDot, CircleDashed } from "lucide-react";
-import { registerCard } from "@/card-registry";
+import { registerCard, presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import { useTugcardData } from "@/components/tugways/hooks/use-tugcard-data";
 
@@ -313,6 +313,7 @@ export function registerGitCard(): void {
     contentFactory: () => <GitCardContent />,
     defaultMeta: { title: "Git", icon: "GitBranch", closable: true },
     defaultFeedIds: [FeedId.GIT],
+    workspaceKeyFilter: presentWorkspaceKey,
     sizePolicy: {
       min: { width: 280, height: 200 },
       preferred: { width: 650, height: 350 },

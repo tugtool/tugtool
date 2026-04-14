@@ -24,6 +24,19 @@
 import type React from "react";
 import type { FeedIdValue } from "./protocol";
 import type { TabItem } from "./layout-tree";
+import type { FeedStoreFilter } from "./lib/feed-store";
+
+/**
+ * Presence-check filter for the `workspace_key` field added to every
+ * workspace-scoped feed frame (FILETREE / FILESYSTEM / GIT) by the tugcast
+ * `WorkspaceRegistry` (roadmap T3.0.W1). In W1 the check is boolean-only —
+ * it enforces that the field is present end-to-end on the wire, but does
+ * not match the value against any specific workspace. W2 will extend this
+ * filter to accept a specific key once per-session workspace binding
+ * lands.
+ */
+export const presentWorkspaceKey: FeedStoreFilter = (_feedId, decoded) =>
+  typeof decoded === "object" && decoded !== null && "workspace_key" in decoded;
 
 /**
  * Size policy for a card type. Governs default sizing of new cards and
@@ -104,6 +117,16 @@ export interface CardRegistration {
    * hardcodes category IDs.
    */
   category?: { label: string; icon?: string };
+  /**
+   * Optional FeedStore filter applied to frames delivered to this card.
+   *
+   * For cards that subscribe to workspace-scoped feeds (FILETREE, FILESYSTEM,
+   * GIT), set this to `presentWorkspaceKey` to enforce end-to-end delivery
+   * of the `workspace_key` field produced by the tugcast `WorkspaceRegistry`
+   * (roadmap T3.0.W1). The filter is threaded through `<Tugcard filter>` to
+   * the underlying `FeedStore` so it runs on both live and replay paths.
+   */
+  workspaceKeyFilter?: FeedStoreFilter;
 }
 
 /** Module-level registry map. Keyed by componentId. */
