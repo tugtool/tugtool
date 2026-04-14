@@ -41,8 +41,8 @@ SOFTWARE.
 ## Excalidraw
 
 **Source:** https://github.com/excalidraw/excalidraw
-**What was adopted:** Architectural patterns that informed the Tuglaws: single-render-root discipline (L01), external-state-via-subscription pattern (L02), appearance-changes-via-DOM-not-state separation (L06), component authoring conventions (L19). Excalidraw's canvas-based rendering architecture, state management approach, and component organization were studied extensively during the initial design of the tugways system.
-**Used in:** `tuglaws/tuglaws.md` (design principles), tugdeck component architecture
+**What was adopted:** Architectural patterns that informed the Tuglaws and the tug framework architecture: single-render-root discipline (L01), external-state-via-subscription pattern (L02), appearance-changes-via-DOM-not-state separation (L06), bypass-React-during-gesture-and-sync-on-commit pattern (L08, `MutationTransaction` snapshot/commit model), narrow-per-domain React contexts, typed-action dispatch vocabulary, and component authoring conventions (L19). Excalidraw's canvas-based rendering architecture, state management approach, and component organization were studied extensively during the initial design of the tug framework. The three-zone architecture (appearance / local data / structure) is an adaptation of Excalidraw's separation of gesture-zone work from React-state commits into a form that fits the tug framework's design target.
+**Used in:** `tuglaws/framework-architecture.md` (zone architecture, subscribable stores, gesture bypass, narrow contexts, typed-action dispatch), `tuglaws/tuglaws.md` (design principles), tugdeck component architecture
 
 ```
 MIT License
