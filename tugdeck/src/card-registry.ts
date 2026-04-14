@@ -27,13 +27,16 @@ import type { TabItem } from "./layout-tree";
 import type { FeedStoreFilter } from "./lib/feed-store";
 
 /**
- * Presence-check filter for the `workspace_key` field added to every
- * workspace-scoped feed frame (FILETREE / FILESYSTEM / GIT) by the tugcast
- * `WorkspaceRegistry` (roadmap T3.0.W1). In W1 the check is boolean-only —
- * it enforces that the field is present end-to-end on the wire, but does
- * not match the value against any specific workspace. W2 will extend this
- * filter to accept a specific key once per-session workspace binding
- * lands.
+ * Fallback filter used by `Tugcard` while a card is still unbound — i.e.,
+ * before the `spawn_session_ok` CONTROL ack has populated
+ * `cardSessionBindingStore` with the card's canonical `workspace_key`.
+ * Requires only that the field is present; does not match against any
+ * specific value. Once `useCardWorkspaceKey(cardId)` returns a bound key,
+ * `Tugcard` switches to an exact value-check predicate.
+ *
+ * Consumers: `Tugcard` (via `useCardWorkspaceKey` in tug-card.tsx) and
+ * `GalleryPromptInput` (see gallery-prompt-input.tsx). See roadmap
+ * tugplan-workspace-registry-w2.md Risk R04 (unbound window).
  */
 export const presentWorkspaceKey: FeedStoreFilter = (_feedId, decoded) =>
   typeof decoded === "object" && decoded !== null && "workspace_key" in decoded;
@@ -117,16 +120,6 @@ export interface CardRegistration {
    * hardcodes category IDs.
    */
   category?: { label: string; icon?: string };
-  /**
-   * Optional FeedStore filter applied to frames delivered to this card.
-   *
-   * For cards that subscribe to workspace-scoped feeds (FILETREE, FILESYSTEM,
-   * GIT), set this to `presentWorkspaceKey` to enforce end-to-end delivery
-   * of the `workspace_key` field produced by the tugcast `WorkspaceRegistry`
-   * (roadmap T3.0.W1). The filter is threaded through `<Tugcard filter>` to
-   * the underlying `FeedStore` so it runs on both live and replay paths.
-   */
-  workspaceKeyFilter?: FeedStoreFilter;
 }
 
 /** Module-level registry map. Keyed by componentId. */

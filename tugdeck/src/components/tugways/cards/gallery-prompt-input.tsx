@@ -12,7 +12,7 @@
  *   [L07] Providers are stable refs created once per scope
  */
 
-import React, { useRef, useCallback, useId, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
+import React, { useRef, useCallback, useEffect, useId, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -23,13 +23,14 @@ import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { AtomSegment, CompletionProvider, HistoryProvider, InputAction } from "@/lib/tug-text-engine";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
-import { FeedStore } from "@/lib/feed-store";
+import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { presentWorkspaceKey } from "@/card-registry";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
+import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import "./gallery-prompt-input.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -144,35 +145,19 @@ function getCardServices(): CardPromptServices {
   return _cardServices;
 }
 
-/**
- * Create a FileTreeStore lazily — the connection is guaranteed to exist at
- * component mount time but NOT at module-scope import time.
- */
-let _fileTreeStore: FileTreeStore | null = null;
-let _fileCompletionProvider: CompletionProvider | null = null;
-
-function getFileCompletionProvider(): CompletionProvider {
-  if (_fileCompletionProvider) return _fileCompletionProvider;
-  const connection = getConnection();
-  if (connection) {
-    // Inline FeedStore construction bypasses the <Tugcard filter> plumbing,
-    // so the presence-check filter must be passed directly. See roadmap
-    // T3.0.W1 Step 5 and the gallery-prompt-input note in the plan.
-    const feedStore = new FeedStore(connection, [FeedId.FILETREE], undefined, presentWorkspaceKey);
-    _fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-    _fileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
-    return _fileCompletionProvider;
-  }
-  // Defensive fallback — connection should always exist at render time.
-  console.warn("FileTreeStore: connection not available at render time");
-  return ((_q: string) => []) as CompletionProvider;
-}
-
 // ===================================================================
 // Gallery component
 // ===================================================================
 
-export function GalleryPromptInput() {
+interface GalleryPromptInputProps {
+  /** Card instance id — used to subscribe to per-card workspace binding. */
+  cardId: string;
+}
+
+/** Stable empty completion provider for the unbound / no-connection window. */
+const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
+
+export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
   const routeRef = useRef<HTMLSpanElement>(null);
@@ -198,12 +183,48 @@ export function GalleryPromptInput() {
     return () => editorStore.unbind();
   }, [editorStore]);
 
-  // Stable reference — provider functions are cached, no deps change.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const completionProviders = useMemo(() => ({
-    "@": getFileCompletionProvider(),
-    "/": getCardServices().commandCompletionProvider,
-  }), []);
+  // Per-instance FILETREE stack. Rebuilt when the card's workspace binding
+  // changes so the FeedStore filter always matches the card's workspace.
+  // Before binding lands, the fallback `presentWorkspaceKey` filter accepts
+  // any workspace-stamped frame (Risk R04, unbound window); once bound, the
+  // filter tightens to an exact value match so stray workspaces can't leak
+  // into the @ completion.
+  const workspaceKey = useCardWorkspaceKey(cardId);
+  const fileTreeStack = useMemo(() => {
+    const connection = getConnection();
+    if (!connection) {
+      console.warn("GalleryPromptInput: connection not available at render time");
+      return null;
+    }
+    const filter: FeedStoreFilter = workspaceKey
+      ? (_feedId, decoded) =>
+          typeof decoded === "object" &&
+          decoded !== null &&
+          "workspace_key" in decoded &&
+          (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
+      : presentWorkspaceKey;
+    const feedStore = new FeedStore(connection, [FeedId.FILETREE], undefined, filter);
+    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+    const provider = fileTreeStore.getFileCompletionProvider();
+    return { feedStore, fileTreeStore, provider };
+  }, [workspaceKey]);
+
+  // Dispose the per-instance FILETREE stack on unmount and whenever the
+  // memoized stack is rebuilt (i.e., when `workspaceKey` changes).
+  useEffect(() => {
+    return () => {
+      fileTreeStack?.fileTreeStore.dispose();
+      fileTreeStack?.feedStore.dispose();
+    };
+  }, [fileTreeStack]);
+
+  const completionProviders = useMemo(
+    () => ({
+      "@": fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "/": getCardServices().commandCompletionProvider,
+    }),
+    [fileTreeStack],
+  );
 
   const handleSubmit = useCallback(() => {
     const delegate = inputRef.current;

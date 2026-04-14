@@ -468,7 +468,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                   cardId={cardState.id}
                   meta={registration.defaultMeta}
                   feedIds={registration.defaultFeedIds ?? []}
-                  filter={registration.workspaceKeyFilter}
                   tabs={hasMultipleTabs ? cardState.tabs : undefined}
                   activeTabId={cardState.activeTabId}
                   onClose={handleClose}

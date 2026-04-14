@@ -123,6 +123,16 @@ export class FeedStore {
     return this._data;
   };
 
+  /**
+   * Replace the current filter. Used by consumers whose filter predicate
+   * depends on reactive state (e.g., `Tugcard` when its `workspaceKey`
+   * binding arrives asynchronously). Only affects future frames; cached
+   * payloads already in the snapshot are left in place.
+   */
+  setFilter(filter?: FeedStoreFilter): void {
+    this._filter = filter;
+  }
+
   /** Dispose the store. Subsequent frames are ignored. */
   dispose(): void {
     this._disposed = true;

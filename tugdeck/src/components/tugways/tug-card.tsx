@@ -22,7 +22,7 @@
  */
 
 import "./tug-card.css";
-import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
 import type { TabItem, TabStateBag } from "../../layout-tree";
@@ -43,6 +43,8 @@ import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./u
 import { TugButton } from "./internal/tug-button";
 import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
 import { getConnection } from "../../lib/connection-singleton";
+import { useCardWorkspaceKey } from "./hooks/use-card-workspace-key";
+import { presentWorkspaceKey } from "../../card-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -360,13 +362,6 @@ export interface TugcardProps {
   /** Custom decode function per feed. Default: JSON parse. */
   decode?: (feedId: FeedIdValue, bytes: Uint8Array) => unknown;
   /**
-   * Optional per-frame filter forwarded to the underlying FeedStore as the
-   * 4th constructor argument. Used for workspace-scoped cards to enforce
-   * `workspace_key` presence end-to-end (see card-registry `presentWorkspaceKey`
-   * and tugcast WorkspaceRegistry, roadmap T3.0.W1).
-   */
-  filter?: FeedStoreFilter;
-  /**
    * Minimum content area size.
    * Total min-size = 28 (header) + accessory height + minContentSize.
    * Default: `{ width: 100, height: 60 }`.
@@ -443,7 +438,6 @@ export function Tugcard({
   meta,
   feedIds,
   decode,
-  filter,
   minContentSize = DEFAULT_MIN_CONTENT,
   accessory = null,
   onMinSizeChange,
@@ -1015,6 +1009,24 @@ export function Tugcard({
   // Feed state — L02: external WebSocket data via useSyncExternalStore only
   // ---------------------------------------------------------------------------
 
+  // Per-card workspace binding (Spec S10). `workspaceKey` is undefined until
+  // the `spawn_session_ok` CONTROL ack populates the binding store; during
+  // that unbound window we fall back to `presentWorkspaceKey` (boolean
+  // presence check) so feedframes aren't held until binding lands. Once the
+  // key is known, the filter tightens to an exact value match.
+  const workspaceKey = useCardWorkspaceKey(cardId);
+  const workspaceFilter: FeedStoreFilter = useMemo(
+    () =>
+      workspaceKey
+        ? (_feedId, decoded) =>
+            typeof decoded === "object" &&
+            decoded !== null &&
+            "workspace_key" in decoded &&
+            (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
+        : presentWorkspaceKey,
+    [workspaceKey],
+  );
+
   // Create FeedStore once on mount (via ref). The store subscribes to each
   // feedId via connection.onFrame() and decodes payloads. Disposed on unmount.
   const feedStoreRef = useRef<FeedStore | null>(null);
@@ -1035,12 +1047,20 @@ export function Tugcard({
         // we pass a unified decoder that ignores the per-id routing and uses the
         // prop for the first feedId. This is sufficient for current use cases
         // (single-feed cards like GitCard).
-        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload), filter);
+        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload), workspaceFilter);
       } else {
-        feedStoreRef.current = new FeedStore(conn, feedIds, undefined, filter);
+        feedStoreRef.current = new FeedStore(conn, feedIds, undefined, workspaceFilter);
       }
     }
   }
+
+  // Re-install the workspace filter on the existing FeedStore whenever the
+  // memoized predicate identity changes (i.e., when `workspaceKey` flips
+  // from undefined → bound, or between bound values). The FeedStore itself
+  // is constructed once per card; only the filter is reactive.
+  useEffect(() => {
+    feedStoreRef.current?.setFilter(workspaceFilter);
+  }, [workspaceFilter]);
 
   // Stable no-op subscribe and empty snapshot for feedless cards.
   // The empty map must be a stable reference so useSyncExternalStore does not
