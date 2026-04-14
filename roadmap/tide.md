@@ -648,11 +648,15 @@ Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completion
   T3.1: tug-atom                           — DONE — inline token component (atoms as <img>)
   T3.2: tug-prompt-input                   — DONE — rich input with atoms, route atoms, @/ completions, maximize, persistence
   T3.3: Stores                             — DONE (modulo IndexedDB→tugbank rewrite of PromptHistoryStore per D-T3-10)
+  T3.0.W: Workspace Registry Refactor      — multi-workspace tugcast; prerequisite for T3.4.a
+    T3.0.W1: WorkspaceRegistry                — new registry, one-shot bootstrap, workspace_key splicing on FILETREE/FILESYSTEM/GIT
+    T3.0.W2: Per-session workspace binding    — project_dir on spawn_session, ChildSpawner::spawn_child takes project_dir, LedgerEntry.workspace_key
+    T3.0.W3: Retire --dir                     — rename CLI to --source-tree, remove bootstrap workspace, remove AgentSupervisorConfig::project_dir
   T3.4: Tide Card                          — prompt-entry + CodeSessionStore (turn state) + live Tide card
-    T3.4.a: CodeSessionStore                 — per-card L02 store observing CODE_OUTPUT (session-id filtered); owns turn state machine + send/interrupt/approve
+    T3.4.a: CodeSessionStore                 — per-card L02 store observing CODE_OUTPUT (filtered by tug_session_id); owns turn state machine + send/interrupt/approve; sessionKey is purely a human display label
     T3.4.b: tug-prompt-entry                 — compose input + route indicator + submit/stop driven by CodeSessionStore
-    T3.4.c: Tide card                        — registered card, TugSplitPane (markdown-view top, prompt-entry bottom), one CodeSessionStore per instance
-    T3.4.d: Polish & exit                    — end-to-end CODE_INPUT round-trip, CJK, a11y, Cmd+K focus, persistence; multi-session gated on T0.5 P2
+    T3.4.c: Tide card                        — registered card, TugSplitPane (markdown-view top, prompt-entry bottom), one CodeSessionStore per instance, project_dir chosen at card mount
+    T3.4.d: Polish & exit                    — end-to-end CODE_INPUT round-trip, CJK, a11y, Cmd+K focus, persistence
   [T3.5 folded into T3.4 — the Tide card is the integration surface, not a separate polish phase]
 
 ─── TIDE: RENDERING ───────────────────────────────────────
@@ -2008,11 +2012,151 @@ PromptHistoryStore (current, with known wart):
 
 ---
 
+#### T3.0.W: Workspace Registry Refactor — multi-workspace tugcast {#t3-workspace-registry}
+
+**Goal:** Decouple tugcast from any single, launch-time project directory. Each Tide card (equivalently, each `tug_session_id`) carries its own project path on the wire, and tugcast creates a per-workspace bundle of file-watching + filesystem + filetree + git feeds keyed by canonical project path. Tugcast's own source-tree needs (finding `tugdeck/dist`, `tugcode/src/main.ts`, `target/` for build status) are cleanly separated from "the project a session is working on" so there is no lingering conflation.
+
+**Why this phase exists (and why it blocks T3.4.a):** The multi-session router (Phase T0.5 [P2](#p2-integration-reference)) already landed: N sessions, N tugcode subprocesses, N Claude processes, per-session ledger entries, client-side filter subscriptions. The remaining bottleneck is that every spawn points at the same `project_dir` because `AgentSupervisorConfig::project_dir` is a single `PathBuf` cloned into the spawner factory at startup, and tugcast's `FileWatcher` / `FilesystemFeed` / `FileTreeFeed` / `GitFeed` are constructed once at startup against that same path. If T3.4.a proceeds without fixing this, "per-card workspaces" becomes an aspiration the plan hedges on instead of a real property the system exhibits. T3.0.W is the fix, split into three landable steps.
+
+**Three identifiers, three jobs — the model after T3.0.W:** Today "session" is overloaded. The post-T3.0.W world has three distinct fields with non-overlapping roles:
+
+| Field | Lifetime | Origin | Role |
+|---|---|---|---|
+| `tug_session_id` | per session | minted client-side via `crypto.randomUUID()` at card mount ([§P2 integration reference](#p2-integration-reference), tide.md:1117) | **Wire routing key.** Spliced into every `CODE_OUTPUT` / `CODE_INPUT` / `SESSION_STATE` / `SESSION_METADATA` frame. Carried in every CONTROL session action. Used as the subscription filter by per-card `FeedStore`s. |
+| `claude_session_id` | per session | emitted by Claude Code in the `session_init` event | **Resume key.** Captured into `LedgerEntry::claude_session_id` and (post-[P14](#p14-claude-code-resume-for-persistent-session-history-high)) persisted so `--resume` can restore history across restart. Invisible to routing. |
+| `project_dir` | per session | client-chosen at card-open time, shipped on `spawn_session` CONTROL (new in W2) | **Workspace key and Claude cwd.** Canonicalized by the supervisor, used as the key into `WorkspaceRegistry`, handed to `TugcodeSpawner` as the `--dir` arg so Claude's cwd matches the workspace root. Echoed back as `system_metadata.cwd` in the stream — match-by-construction. |
+
+And `sessionKey` on the T3.4.a store becomes a **purely human-facing display label** — the user picks something readable (defaulting to the basename of `project_dir` at card-open time) and can rename it freely. It never hits the wire, never affects routing, and has zero machinery coupling. That's the whole point of splitting it out from the three fields above.
+
+**Scope boundaries:**
+- **In scope for T3.0.W:** workspace registry, per-session `project_dir` on the wire, per-workspace feed bundles, retirement of `AgentSupervisorConfig::project_dir`, retirement of the `--dir` CLI flag as a workspace hint (replaced by `--source-tree` for tugtool's own dev-mode needs).
+- **Out of scope, deferred:** making `BuildStatusCollector` per-workspace (it can stay tugtool-source-tree-scoped via `--source-tree`); retiring `--source-tree` in favor of compile-time defaults; any tugdeck UI for picking a project path at card-open time (the plumbing is ready in W2; the UI affordance lives in T3.4.c).
+
+---
+
+##### T3.0.W1 — WorkspaceRegistry, one-shot construction {#t3-workspace-registry-w1}
+
+**Goal:** Introduce `WorkspaceRegistry` as the owner of per-project feed bundles. Route `FileWatcher` / `FilesystemFeed` / `FileTreeFeed` / `GitFeed` construction through it. At startup, the registry pre-creates exactly one workspace from the existing `--dir` arg so behavior is bit-identical with today. No new wire frames, no per-session binding yet.
+
+**Why this shape:** W1 is a pure refactor — everything the registry builds at startup is what `main.rs` already builds eagerly today. What changes is *where* the construction lives and *how* frames identify themselves. Isolating the refactor from the per-session binding (W2) keeps the diff reviewable and lets the test suite run against a known-good post-refactor shape before new CONTROL payload fields are introduced.
+
+**Work:**
+
+File: `tugrust/crates/tugcast/src/feeds/workspace_registry.rs` (new).
+
+- New struct `WorkspaceRegistry` holding an internal `Mutex<HashMap<WorkspaceKey, Arc<WorkspaceEntry>>>`. `WorkspaceKey` is a newtype over `String` carrying a canonicalized absolute path.
+- `WorkspaceEntry` holds `{key, project_dir, ref_count: AtomicUsize, file_watcher: Arc<FileWatcher>, fs_broadcast_tx, filetree_task, filesystem_task, git_task, cancel: CancellationToken}`. Construction of an entry spawns the three feed tasks and installs the `notify` watcher via `FileWatcher`.
+- `get_or_create(&self, project_dir: &Path) -> Result<Arc<WorkspaceEntry>, WorkspaceError>` canonicalizes the path, looks up the existing entry, bumps the refcount, or creates a fresh entry if none exists.
+- `release(&self, key: &WorkspaceKey)` decrements the refcount. **In W1 only, the refcount floor is 1** — the initial bootstrap entry is never released, so W1 doesn't need to exercise the teardown path. Teardown ships in W2.
+- **Feed frame tagging.** The three workspace-scoped feeds splice a `workspace_key` field as the first JSON field in every frame they publish, mirroring the existing `splice_tug_session_id` pattern used for `CODE_OUTPUT` per [§P2 integration reference](#p2-integration-reference).
+- **`main.rs` change.** Replace the block at `main.rs:200-250` (`FileWatcher::new(watch_dir.clone())`, `FilesystemFeed::new`, `FileTreeFeed::new`, `GitFeed::new`) with `WorkspaceRegistry::new()` followed by `registry.get_or_create(&watch_dir)?` to produce the bootstrap workspace. The existing router wiring remains, now fed by the bootstrap `WorkspaceEntry`.
+- **Tugdeck-side filter.** Update the stores that subscribe to `FILETREE` / `FILESYSTEM` / `GIT` to filter on `decoded.workspace_key`. In W1, since there's only one workspace, the filter matches the bootstrap key and is effectively a no-op — but the code path is live.
+
+**Exit criteria:**
+- `cd tugrust && cargo nextest run` green.
+- Existing `tugcast --dir <path>` behavior is bit-identical pre/post W1: file tree queries return the same results, filesystem events flow, git status reports the same state.
+- `test_workspace_registry_bootstrap_construction` asserts `get_or_create` on a fresh path creates an entry with all three feed tasks running and refcount 1.
+- `test_workspace_registry_deduplicates_canonical_paths` asserts two `get_or_create` calls with paths that canonicalize to the same directory return the same `Arc<WorkspaceEntry>` and produce refcount 2.
+- All `FILETREE` / `FILESYSTEM` / `GIT` payloads observed on a running `tugcast` are JSON objects whose first field is `workspace_key` matching the bootstrap workspace.
+
+**Scope:** ~300-400 lines of Rust (new `workspace_registry.rs`, `workspace_key` splicing in the three feed modules, `main.rs` edits). No tugdeck business-logic changes beyond adding one-line filter closures to the three existing feed subscriptions.
+
+**Schedule:** Lands before W2. No wire-protocol CONTROL change (payload additions only).
+
+---
+
+##### T3.0.W2 — Per-session workspace binding on spawn_session {#t3-workspace-registry-w2}
+
+**Goal:** Workspaces become per-session. Client picks a `project_dir` at card mount and ships it alongside `card_id` / `tug_session_id` on the `spawn_session` CONTROL frame. The supervisor canonicalizes the path, drives `WorkspaceRegistry::get_or_create(project_dir)`, stores the resulting `workspace_key` on the `LedgerEntry`, and hands the canonical `project_dir` to `TugcodeSpawner::spawn_child` so Claude's cwd matches the workspace root. `close_session` releases the workspace refcount; when the last session for a given path closes, the workspace tears down.
+
+**Why this shape:** Once sessions carry their own project path on the wire, Job A (workspace feeds) and Job B (Claude cwd) coordinate at the CONTROL layer instead of the supervisor-config layer. A card pointed at `/frontend` and a card pointed at `/backend` get distinct `FileWatcher`s, distinct `GitFeed`s, distinct tugcode subprocesses, distinct Claude cwds — all derived from the one `project_dir` field the client sent. The `system_metadata.cwd` echoed back in the stream matches by construction.
+
+**Work:**
+
+Wire protocol:
+- `encodeSpawnSession(cardId, tugSessionId, projectDir): Frame` gains a third parameter. Corresponding update to the CONTROL wire payload table at [§P2 integration reference](#p2-integration-reference): `{action: "spawn_session", card_id, tug_session_id, project_dir}`.
+- `AgentSupervisor::handle_control`'s `spawn_session` branch reads `project_dir`, canonicalizes and validates it (exists, is a directory). New `ControlError::InvalidProjectDir { reason: &'static str }` variant maps to a CONTROL error frame on failure.
+- `LedgerEntry` gains `workspace_key: WorkspaceKey` and `project_dir: PathBuf` fields, populated in `handle_control` before `spawn_session_worker` is scheduled.
+
+Spawner plumbing:
+- `ChildSpawner::spawn_child` trait method changes to `spawn_child(&self, project_dir: &Path) -> SpawnFuture`. Test doubles (`StallSpawner`, `CrashingSpawner`, `ScriptedSpawner`) accept and ignore the argument.
+- `TugcodeSpawner` drops its `project_dir` field — it becomes a stateless wrapper around `tugcode_path`. `spawn_child` builds the `Command` with `.arg("--dir").arg(project_dir)` at call time.
+- `SpawnerFactory` stops closing over `project_dir`. `default_spawner_factory` returns a single cheap spawner cloned across sessions.
+- `spawn_session_worker` reads `ledger_entry.project_dir` and passes it through to `spawner.spawn_child(&project_dir)`.
+
+Workspace lifecycle tied to session lifecycle:
+- On `spawn_session`, after validation, the supervisor calls `registry.get_or_create(&project_dir)` and stores `workspace_key` on the ledger entry. Bumps refcount.
+- On `close_session`, the supervisor calls `registry.release(&workspace_key)`. If refcount hits zero, the entry's `CancellationToken` fires, the three feed tasks exit cleanly, and the entry is removed from the registry map.
+- On `reset_session`, the workspace binding is preserved — reset kills the tugcode subprocess and respawns, but does not cycle the workspace feeds.
+
+Persistence:
+- `SessionKeysStore` blob shape gains `project_dir: String` alongside `tug_session_id` / `claude_session_id`. Coordinate with [P14](#p14-claude-code-resume-for-persistent-session-history-high) so both field additions land as one coherent schema bump if they're concurrent; otherwise W2 adds its field and P14 extends.
+- `rebind_from_tugbank` reads the new field. On rehydrate, the supervisor re-populates workspace entries for each persisted session via `registry.get_or_create(project_dir)`. Intent records with invalid/missing `project_dir` are logged and dropped — a fresh `spawn_session` is needed to re-establish.
+
+Tugdeck side:
+- `tugdeck/src/protocol.ts` — `encodeSpawnSession` signature update.
+- T3.4.c (Tide card registration, downstream) is where the UI gains a project-path affordance; until then, an integration-test-only constant path drives `spawn_session` for W2's own tests.
+
+**Exit criteria:**
+- `AgentSupervisorConfig::project_dir` is **removed** from the struct. `default_spawner_factory` no longer references any supervisor-wide project path.
+- `cargo nextest run` green. New integration tests:
+  - `test_two_sessions_two_workspaces` — spawn two sessions with distinct `project_dir`s, assert two workspace entries exist, assert each session's Claude subprocess reports its own `project_dir` as `system_metadata.cwd`, assert `FILETREE` / `GIT` frames from each session carry distinct `workspace_key` values.
+  - `test_two_sessions_same_project_share_workspace` — spawn two sessions with the same canonical `project_dir`, assert refcount 2, assert both receive `FILETREE` frames from the same workspace, assert closing one keeps the workspace alive.
+  - `test_workspace_teardown_on_last_session_close` — spawn one session, close it, assert the workspace is removed from the registry and the feed tasks have exited.
+  - `test_spawn_session_rejects_invalid_project_dir` — spawn with a nonexistent path, assert CONTROL error frame with detail `"invalid_project_dir"`.
+- `encodeSpawnSession` callsites in tests and integration code compile against the new signature.
+
+**Scope:** ~400-500 lines of Rust (CONTROL payload parsing, `LedgerEntry` fields, `ChildSpawner` trait change, workspace lifecycle hooks, new integration tests) + `protocol.ts` signature update + tugbank blob shape change.
+
+**Schedule:** Lands after W1, before W3. Leaves `--dir` as a bootstrap path temporarily — W3 removes that last thread.
+
+---
+
+##### T3.0.W3 — Retire tugcast's workspace-dir CLI flag entirely {#t3-workspace-registry-w3}
+
+**Goal:** Remove the "tugcast has a workspace" concept from the codebase entirely, and — separately — remove the CLI's ability to point tugcast at its own source tree, because that path has no honest user-facing meaning. Tugcast launches with an empty `WorkspaceRegistry` and acquires workspaces only via client `spawn_session{project_dir}`. Tugcast's own internal resources (the `tugdeck/dist/` frontend bundle, the dev-mode `tugcode/src/main.ts` fallback, the dev-mode cargo `target/` for `BuildStatusCollector`) are discovered via build-mode dispatch with zero CLI surface.
+
+**Why this shape:** After W2, `--dir` is doing two unrelated things that share a variable: (a) workspace bootstrap — a relic of W1's need to preserve bit-identical behavior, now structurally unnecessary because workspaces are client-driven; and (b) **tugtool source-tree locator** — finding tugcast's own internal assets, the `tugdeck` frontend bundle, the dev-mode tugcode fallback, the cargo `target/` dir. Job (a) vanishes in W3. Job (b) is **not user-configurable in any honest sense**. In dev, a binary built from checkout A cannot serve resources from checkout B — the build baked the path in at compile time. In production, resources live at a fixed bundle-relative location next to the binary (`Tug.app/Contents/Resources/`). Neither case benefits from a CLI override. Exposing one is an invitation for misconfiguration and pretends a knob exists that doesn't. So W3 removes the CLI flag outright — there is no `--source-tree` replacement — and replaces Job C with a small private helper that dispatches on build mode.
+
+**Work:**
+
+New module — `tugrust/crates/tugcast/src/resources.rs` (new):
+- `pub(crate) fn source_tree() -> PathBuf`. In `#[cfg(debug_assertions)]` (dev/cargo) builds, returns the tugtool workspace root derived at compile time from `env!("CARGO_MANIFEST_DIR")` by walking three parents up (`tugcast` crate → `crates` → `tugrust` → workspace root). In `#[cfg(not(debug_assertions))]` (release/bundled) builds, returns the bundle-relative `Resources` directory derived at runtime from `std::env::current_exe()` by walking to the `.app/Contents/` ancestor and joining `Resources`. The exact bundle walk is pinned to whatever layout Tug.app decides; if that layout changes, this is the one place to update.
+
+CLI flag removal:
+- Delete `cli.dir` from `main.rs`'s clap definition. Tugcast takes no positional args and no `--dir` / `--source-tree` flag. Its remaining CLI surface is tugbank path, port, auth config.
+- Delete the `registry.get_or_create(&watch_dir)` bootstrap call that W1 introduced. `WorkspaceRegistry::new()` is called; no workspaces are pre-created; the map starts empty.
+
+Job C callsite updates (all dev-only):
+- **`resolve_tugcode_path`** at `agent_bridge.rs:88` stops taking any parameter for the source tree. Its `.ts` fallback path becomes `resources::source_tree().join("tugcode/src/main.ts")` and the whole fallback branch is wrapped in `#[cfg(debug_assertions)]` — in release builds, tugcode is only ever resolved as a compiled binary on `PATH` or in the bundle, and the `.ts` fallback does not exist in the compiled output at all.
+- **`BuildStatusCollector`** — option (a), dev-only. The entire `BuildStatusCollector::new(...)` construction in `main.rs:257-259` and the feed registration that follows are wrapped in `#[cfg(debug_assertions)]`. `STATS_BUILD_STATUS` simply does not publish in a production Tug.app. Tugdeck's chrome treats an absent/empty `STATS_BUILD_STATUS` feed as "widget not available" and hides the display. The `target/` path is `resources::source_tree().join("target")` inside the dev-only block. **Followup (not in W3 scope):** per-workspace `BuildStatusCollector` that detects `Cargo.toml` / `package.json` / `go.mod` in each workspace and publishes a per-workspace build status. Would replace the dev-only chrome widget with a workspace-scoped feature. Tracked separately.
+- **`server.rs`'s `source_tree: Option<PathBuf>` parameter** is deleted. `build_app` and `run_server` no longer take it. The `dist_path` computation becomes `resources::source_tree().join("tugdeck").join("dist")` — same path expression, now sourced from the helper rather than threaded through function parameters. Static serving works in both dev (Vite prebuild or `bun run build` output) and prod (bundled `dist/`) without any caller-side knowledge.
+- **`migrate_settings_to_tugbank(&watch_dir, client)`** — wrap the callsite in `#[cfg(debug_assertions)]`. The legacy flat-file settings only ever existed on developer machines during the pre-tugbank transition; production Tug.app has no legacy state to migrate. Inside the dev-only block, the path becomes `resources::source_tree()`. Long-term the function itself is a deletion candidate (tracked separately).
+
+Documentation updates:
+- README, `tugtool worktree setup` scaffolding, and any developer setup notes that mention `tugcast --dir` are updated: the command is just `tugcast` (plus whatever tugbank/port/auth flags it already takes), with no positional path. Instructions that used to say "run tugcast against the tugtool checkout" now say "run tugcast from a binary built in the tugtool checkout."
+
+**Exit criteria:**
+- `tugcast` launches with no path argument. The entire `--dir` / `--source-tree` CLI surface is gone.
+- `AgentSupervisorConfig` has no path field at all. `rg AgentSupervisorConfig::project_dir` returns zero matches.
+- `rg -- '--dir' tugrust/crates/tugcast/src` returns zero matches (no residual flag plumbing).
+- A fresh `tugcast` launched with no connected clients has an empty `WorkspaceRegistry`. New test `test_startup_has_no_bootstrap_workspace` asserts this.
+- A release build (`cargo build --release`) compiles with `BuildStatusCollector`, the `.ts` tugcode fallback, and the legacy settings migration all `#[cfg]`-gated out — confirmed by reading the expanded module tree or by a `cargo expand --release` spot check. Production tugcast binary contains no references to `env!("CARGO_MANIFEST_DIR")` through `resources::source_tree()` — the release path walks `current_exe()` only.
+- A client that connects, sends `spawn_session{card_id, tug_session_id, project_dir}` with a valid path, and then sends a `CODE_INPUT` turn, receives feed frames for `FILETREE` / `FILESYSTEM` / `GIT` whose `workspace_key` matches their chosen `project_dir`, and a `system_metadata.cwd` from Claude that also matches.
+- Dev-mode tugdeck is still served correctly: `resources::source_tree().join("tugdeck/dist")` resolves to `<repo>/tugdeck/dist/` and static serving works.
+- `cargo nextest run` green.
+
+**Scope:** ~200-300 lines of Rust touching `main.rs` (CLI parsing removal, bootstrap removal, `#[cfg]` gating of `BuildStatusCollector` and legacy migration), new `resources.rs` module (~40 lines including both cfg branches), `agent_bridge.rs` (`.ts` fallback gating + path update), `server.rs` (parameter removal), `agent_supervisor.rs` (delete `AgentSupervisorConfig::project_dir` field), plus developer-facing docs.
+
+**Schedule:** Lands after W2, before T3.4.a. T3.4.a then inherits a world where tugcast has no launch-time project configuration at all — the workspace comes from CONTROL frames, the source tree is discovered from the build — and `sessionKey` is honestly a display label with every other field having a single, unambiguous role.
+
+---
+
 #### T3.4: Tide Card — prompt-entry + turn state + live surface {#t3-prompt-entry}
 
 **Goal:** Deliver the complete **TIDE: INPUT** experience as a working, registered Tide card. This phase supplies the three missing pieces — the turn-state store, the composition component, and the card registration — and closes out T3 by driving a real `user_message` round-trip through `CODE_INPUT` / `CODE_OUTPUT`.
 
-**Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores), `tug-split-pane` (archived plan, shipped), `tug-markdown-view` streaming API, [session-metadata-feed.md](session-metadata-feed.md) (SESSION_METADATA feed wired to tugcast).
+**Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores), [T3.0.W](#t3-workspace-registry) (W1/W2/W3 — per-session `project_dir` on the wire, workspace registry, retirement of `--dir`), `tug-split-pane` (archived plan, shipped), `tug-markdown-view` streaming API, [session-metadata-feed.md](session-metadata-feed.md) (SESSION_METADATA feed wired to tugcast).
 
 **Governing documents:**
 - [Component Authoring Guide](../tuglaws/component-authoring.md) — compound composition pattern, token sovereignty [L20], `@tug-pairings`, checklist
@@ -2027,6 +2171,8 @@ PromptHistoryStore (current, with known wart):
 ---
 
 ##### T3.4.a — CodeSessionStore (turn state machine)
+
+> **⚠ Pending substantial rewrite after T3.0.W lands.** The body of this section below still reflects the pre-T3.0.W world: it conflates `sessionKey` with the wire filter key, has a "single-session fallback" paragraph, cites `transport-exploration.md` Test-N numbers where the current ground truth is the `v2.1.105/test-NN-*.jsonl` golden fixtures, and leaves the streaming-region lifetime, the `dispatch` callback signature, and the queue drain-vs-flush-on-interrupt semantics ambiguous. A coherent rewrite is planned as a follow-up pass once [T3.0.W](#t3-workspace-registry) has landed, so the rewrite can reference the three-identifier model (`tug_session_id` / `claude_session_id` / `project_dir`) and the per-workspace wire contract by name instead of re-explaining them. Until that rewrite lands, treat this section as **directionally correct but not implementation-ready** — the state-machine shape, phase transitions, action list, and essential wire-level invariants are the load-bearing parts; the constructor signature and exit criteria's fixture references will change.
 
 **Goal:** A new L02 store that owns everything the prompt entry needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in tug-prompt-input, or in tug-prompt-entry.
 
