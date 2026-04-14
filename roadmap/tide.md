@@ -612,16 +612,28 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
                                              test was reshaped to a behavioral assertion; the "Known
                                              divergences" section in roadmap/transport-exploration.md
                                              records the delta. No separate landing needed.
-  P19: 45s WebSocket reset (HIGH)          — six probes (test-10/13/17/20/25/35) fail with `Connection
-                                             reset without closing handshake` at ~45055 ms regardless
-                                             of individual timeout. tugcast-side or tokio-tungstenite-side
-                                             idle ceiling hit by any session whose first meaningful event
-                                             sequence spans > ~45 s. **Must land before T3.4.a ships to
-                                             real users** — any conversation with a tool-use chain or a
-                                             long response will tripwire this. Investigation-first fix:
-                                             instrument close-frame emission, grep for hardcoded 45-s
-                                             constants, decide between config-up / removal / keepalive
-                                             ping workaround. Can run in parallel with T3.4.a scaffolding.
+  P19: 45s WebSocket reset (RESOLVED)      — root cause: tugcast router enforces a 45 s application-
+                                             level heartbeat (`router.rs::HEARTBEAT_TIMEOUT`). It sends
+                                             a `FeedId::HEARTBEAT` frame every 15 s and expects the
+                                             client to send one back; if no client heartbeat arrives
+                                             within 45 s, the router calls `teardown_client` and drops
+                                             the socket without a close frame. tugdeck's `connection.ts`
+                                             implements the client side correctly. `TestWs` in
+                                             `tests/common/mod.rs` did not, so every capture probe whose
+                                             collect phase ran past 45 s hit `teardown_client` at the
+                                             next heartbeat tick. Fixed by splitting `WsStream` and
+                                             spawning a background heartbeat task in `TestWs::connect`
+                                             that sends a heartbeat every 15 s for the lifetime of the
+                                             socket. Regression guard:
+                                             `test_heartbeat_survives_long_turn` in
+                                             `multi_session_real_claude.rs` (asks for 300 words, turn
+                                             runs ~51 s, asserts clean turn_complete). test-10
+                                             un-skipped. test-25 and test-35 surfaced distinct non-P19
+                                             issues (probe-script incomplete; first-run flake at
+                                             stability>=2) and were re-skipped with new reasons as
+                                             follow-on work. test-13/17/20 still skipped on P16.
+                                             No tugcast or tokio-tungstenite change — the 45 s ceiling
+                                             itself is correct dead-client detection.
   P20: rate_limit_event routing (MEDIUM)   — claude 2.1.105 emits `rate_limit_event` as a top-level
                                              stream-json sidecar on most turns; tugcode's
                                              routeTopLevelEvent has no handler, so the event is dropped
@@ -1578,7 +1590,9 @@ The `send_model_change` helper itself is sound: `test_send_model_change_behavior
 
 **Schedule:** Self-resolves during tugplan-golden-stream-json-catalog Step 4 + Step 5. No separate landing required.
 
-#### P19: 45s WebSocket reset on long-running capture probes (HIGH) {#p19-45s-ws-reset}
+#### P19: 45s WebSocket reset on long-running capture probes (RESOLVED) {#p19-45s-ws-reset}
+
+**Status:** RESOLVED 2026-04-13. TestWs now implements the client side of the heartbeat protocol.
 
 **Problem:** During tugplan-golden-stream-json-catalog Step 4's `TUG_STABILITY=1` canary run, six distinct probes — test-10 (long streaming 300 words), test-13/17/20 (session-command new/continue/fork), test-25 (`/tugplug:plan` invocation), test-35 (AskUserQuestion flow) — all failed with the **identical** error signature:
 
@@ -1586,33 +1600,51 @@ The `send_model_change` helper itself is sound: `test_send_model_change_behavior
 ws recv error: WebSocket protocol error: Connection reset without closing handshake
 ```
 
-at runtimes clustered between 45055 ms and 45110 ms. That's a 55-ms spread across six unrelated probes, against their own timeouts of 45/60/90/120/180 s. Something kills the `TestWs` → tugcast WebSocket at exactly ~45 s of wall time regardless of what the probe is doing.
+at runtimes clustered between 45055 ms and 45110 ms. That's a 55-ms spread across six unrelated probes, against their own timeouts of 45/60/90/120/180 s.
 
-This is not a claude problem — claude continues emitting events fine when probed directly. It's not a tugcode problem — tugcode's stdout pipe keeps flowing and its control responses are logged. It's a tugcast-side (or `tokio-tungstenite`-side) idle/activity/write ceiling. The canary does not disprove any of:
+**Root cause:** tugcast's router enforces a bidirectional application-level heartbeat. From `tugrust/crates/tugcast/src/router.rs`:
 
-- A tugcast session-idle timeout hardcoded around 45 s.
-- A `tokio-tungstenite` default write-timeout that fires without the client seeing a close frame.
-- A tmux feed-side failure (the `can't find session: tug-test-<port>` warning appears on every spawn) that cascades into a router-side session teardown after a grace period.
-- Per-socket `SO_KEEPALIVE` / TCP retransmit timeout (though 45 s is a bit short for kernel defaults).
+```rust
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+const HEARTBEAT_TIMEOUT:  Duration = Duration::from_secs(45);
+```
 
-The canary's 29-probe happy path (everything that completes in < 45 s) proves the capture binary works end-to-end. The failing six all have in common that their first *meaningful* event sequence (outside the session startup) spans more than ~45 s from WebSocket open.
+The router sends a `FeedId::HEARTBEAT` frame every 15 s and expects the client to send one back. When a client heartbeat arrives, `last_heartbeat = Instant::now()` is reset (router.rs:815-818). On every 15 s server tick, if `last_heartbeat.elapsed() > HEARTBEAT_TIMEOUT`, the router calls `teardown_client()` and drops the socket without a close frame — observable to a passive client as `Connection reset without closing handshake` at ~45 055 ms (router.rs:919-931). This is the *correct* behavior — TCP ACKs are invisible at the app layer, so the server needs active client liveness proof in case the client is frozen (crashed tab, dead process) with the socket still open at kernel level.
 
-**Why HIGH:** P19 blocks the capture of six probes from the golden catalog — including the entire session-command suite and the `/tugplug:plan` AskUserQuestion flow, both of which are load-bearing for the `CodeSessionStore` state machine that Step 4's catalog is protecting. Until it's fixed, the drift test in Step 6 will have permanent blind spots in those regions of the shape space.
+**Why six probes, not thirty:** the browser client in `tugdeck/src/connection.ts:397-401` correctly implements the client side via `this.send(FeedId.HEARTBEAT, ...)` on a 15 s `setInterval`. The `TestWs` test harness in `tugrust/crates/tugcast/tests/common/mod.rs` did not — it opened a socket, sent one CODE_INPUT frame, then passively drained CODE_OUTPUT frames. After 45 s of client-side silence, the server killed every test session whose response tail ran past the ceiling. The six failing probes are the ones whose collect phase exceeded 45 s; the 29 passing probes all happen to complete under it.
 
-**Evidence:**
-- Step 4 canary b352vda4y: every failure has `runtime` in [45055 ms, 45110 ms] across 6 different probes.
-- Retry canary bwl5mn5az (with the 6 probes pre-marked `skipped`): completes in 124 s total; the remaining 29 probes all pass cleanly.
-- `test_single_session_end_to_end` from `multi_session_real_claude.rs` completes in 1.17 s — short-lived sessions are unaffected, confirming the ceiling is time-based, not message-count-based.
+**Fix:** Split `WsStream` via `StreamExt::split()` into a `SplitSink` + `SplitStream`, wrap the sink in `Arc<tokio::sync::Mutex<_>>` so both test-driven sends and a background task can share it, and spawn a heartbeat task in `TestWs::connect` that sends a `Frame::heartbeat()` every 15 s for the lifetime of the socket. The task is aborted in `impl Drop for TestWs` so a TestWs that outlives its TestTugcast does not leak a tokio task. All ten send helpers on `TestWs` now route through `self.sink.lock().await.send(...)`; the three recv sites use `self.stream.next()`.
 
-**Fix (investigation first):**
-1. Instrument tugcast's WebSocket handler to log close-frame emission and socket-drop events with timestamps.
-2. Reproduce the symptom under a single long-running probe (test-10 is the simplest trigger) with `RUST_LOG=tokio_tungstenite=trace,tugcast=trace`.
-3. Grep tugcast, tokio-tungstenite, and tungstenite for any hardcoded 45-second constant.
-4. Once the source is identified: either remove the ceiling (if it's in tugcast), configure it up (if it's in `tokio-tungstenite` defaults), or add a keepalive ping on the capture client side (if it's a kernel TCP issue).
+No tugcast or tokio-tungstenite change — the 45 s ceiling itself is correct. The bug was that `TestWs` was a dead client by design.
 
-**Scope:** Primarily `tugrust/crates/tugcast/src/router.rs` and `tugrust/crates/tugcast/src/server.rs`. Possibly `tugrust/crates/tugcast/tests/common/mod.rs` (add keepalive ping from TestWs side as a workaround). No tugcode changes expected.
+**Regression guard:** `test_heartbeat_survives_long_turn` in `tugrust/crates/tugcast/tests/multi_session_real_claude.rs`. Asks claude for "exactly 300 words about the history of the internet" (the same prompt as `test-10-long-streaming-300-words`) and asserts `turn_complete` arrives. Empirical runtime on the resolved branch: **51.37 s**, well past the 45 s ceiling, with 62 CODE_OUTPUT frames collected. Without the heartbeat task this test would fail identically to the Step 4 canary — `Connection reset without closing handshake` at ~45 055 ms.
 
-**Schedule:** **Deferred past Step 4.** The baseline capture commits with probes 10/13/17/20/25/35 marked `skipped` and this follow-up linked in `manifest.json`. Fix must land before Step 6 drift regression test so the drift path has either working probes or the same explicit skip list.
+**Test isolation — real-claude tests now feature-gated:** during the P19 landing it became clear that the real-claude test binaries were enumerated (and in `#[ignore]` "skipped" state) in every standard `cargo nextest run -p tugcast` invocation. That made the signal-to-noise ratio in the default test output poor and left a sharp-edge footgun for anyone running `--run-ignored only` without a `TUG_REAL_CLAUDE=1` environment. The P19 landing added a `real-claude-tests` Cargo feature in `tugrust/crates/tugcast/Cargo.toml` and gates the three real-claude test surfaces behind it:
+
+- `multi_session_real_claude.rs` has `required-features = ["real-claude-tests"]` on its `[[test]]` entry, so Cargo does not even compile the test binary in standard mode.
+- `capture_stream_json_catalog.rs` and `stream_json_catalog_drift.rs` keep their unit test modules unconditional, but the `capture_all_probes` / `stream_json_catalog_drift_regression` async test functions and their real-claude-only helpers are wrapped in `#[cfg(feature = "real-claude-tests")]`. Default `cargo nextest list -p tugcast` returns three binaries (`bin/tugcast`, `capture_stream_json_catalog`, `stream_json_catalog_drift`) and lists none of the real-claude test function names.
+- On-demand invocation: `cargo test -p tugcast --features real-claude-tests --test <name> -- --ignored` (with `TUG_REAL_CLAUDE=1` set) remains the canonical way to run one of these tests against a real Claude Code binary.
+
+The `#[ignore]` attribute and the `require_real_claude!()` env-var guard remain as belt-and-suspenders inside each test body.
+
+**Probe re-enablement:** the un-skip experiment was partially successful — the heartbeat fix cleared P19 on all three probes that had been blocked only on it, but un-skipping the two follow-on probes also surfaced two distinct non-P19 issues.
+
+- **Un-skipped (validated):** `test-10-long-streaming-300-words`. Captures cleanly in ~54 s after the heartbeat fix — exactly the probe that used to trip the 45 s ceiling.
+- **Re-skipped with new reasons (follow-on work):**
+  - `test-25-tugplug-plan-invocation`: the probe script sends `/tugplug:plan` but never answers the clarifying questions the orchestrator produces via AskUserQuestion, so the skill hangs until the 180 s timeout. Probe-design issue, not a heartbeat one. `skip_reason` updated to *"probe script incomplete — /tugplug:plan asks clarifying questions the script never answers; needs redesign (not P19)"*.
+  - `test-35-askuserquestion-flow`: at `TUG_STABILITY>=2` the first capture run returns 0 events in ~90 s (below both the 180 s timeout and the 90 s `WaitForEvent control_request_forward` budget) while subsequent runs capture the full 27-event sequence. The socket does not reset — the probe exits cleanly with no events. Likely a tugplug-side cold-start effect. `skip_reason` updated to *"first-run flake at stability>=2 — probe returns 0 events intermittently; needs root-cause investigation separate from P19"*.
+- **Still skipped on P16:** test-13 (session-command-new), test-17 (session-command-continue), test-20 (session-command-fork). These remain blocked on [P16](#p16-session-command-routing) — the multi-session router hangs on the post-command probe turn regardless of heartbeat.
+
+**Baseline re-capture required:** the v2.1.105 golden fixtures under `tests/fixtures/stream-json-catalog/v2.1.105/` were captured when test-10 was still marked as P19-blocked, so `test-10-long-streaming-300-words.jsonl` is empty and the `schema.json` has no canonical sequence for it. After un-skipping test-10, the baseline must be re-captured at `TUG_STABILITY=1` to populate that probe's fixture and refresh `manifest.json` + `schema.json`. The earlier session-internal re-capture (stability=1) completed in 148 s with 30 passed, 5 skipped, 0 failed, 0 unstable — a clean outcome that should be reproducible.
+
+**Drift-test follow-on:** when the drift regression test is re-run against the refreshed v2.1.105 baseline, expect it to surface ~1 fail + ~2 warn findings caused by claude 2.1.105's non-deterministic emission of `thinking_text` and leading `assistant_text` ("Let me check…" preamble). These are *not* P19 regressions — they're a separate over-strictness in `diff_probe_sequence` that the prior baseline's "2 Warn 0 Fail" landing happened to miss by luck (with ~30 probes at ~90 % per-probe stability, the odds of a fully-clean drift run are ~0.9^30 ≈ 4 %). Tracked as a follow-on to P19; fix is to teach the differ to tolerate optional-slot events (slot-set comparison or LCS gap analysis) without loosening strictness for structural events.
+
+**Scope of fix (landed):**
+- `tugrust/crates/tugcast/tests/common/mod.rs` (TestWs split + heartbeat task + Drop impl).
+- `tugrust/crates/tugcast/tests/multi_session_real_claude.rs` (new `test_heartbeat_survives_long_turn` regression test).
+- `tugrust/crates/tugcast/tests/common/probes.rs` (un-skip test-10, re-skip test-25/35 with new reasons).
+- `tugrust/crates/tugcast/Cargo.toml` + `tests/capture_stream_json_catalog.rs` + `tests/stream_json_catalog_drift.rs` (real-claude test feature gating so `cargo nextest run` no longer enumerates them).
+- `roadmap/tide.md` (this entry + Phases summary).
 
 #### P20: Claude 2.1.105 `rate_limit_event` dropped by tugcode router (MEDIUM) {#p20-rate-limit-event-dropped}
 

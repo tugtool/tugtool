@@ -346,12 +346,11 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 10: Long streaming (300 words) ---
-    // Blocked on tide.md §T0.5 P19 — every probe whose collect phase
-    // runs longer than ~45 s hits `Connection reset without closing
-    // handshake`, regardless of the probe's own timeout. The canary
-    // confirmed test-10/13/17/20/25/35 all fail at ~45 000 ms. Likely
-    // a tugcast-side idle/activity ceiling; the investigation is
-    // out of Layer A scope.
+    // P19 (45 s router heartbeat reset) was resolved by the TestWs
+    // client-side heartbeat task in `tests/common/mod.rs`. This probe
+    // — the canonical long-streaming trigger whose ~54 s collect phase
+    // used to hit `Connection reset without closing handshake` — now
+    // captures cleanly and is re-enabled as of the P19 landing.
     ProbeRecord {
         name: "test-10-long-streaming-300-words",
         input_script: &[ProbeMsg::UserMessage {
@@ -365,10 +364,8 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         optional_events: &["thinking_text"],
         prerequisites: &[],
-        timeout_secs: 90,
-        skip_reason: Some(
-            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
-        ),
+        timeout_secs: 180,
+        skip_reason: None,
     },
     // --- Test 11: Permission approval round-trip (deny) ---
     ProbeRecord {
@@ -700,8 +697,17 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 25: Tugplug skill invocation (/plan) ---
-    // Blocked on tide.md §T0.5 P19 — canary confirmed 45s reset
-    // during the long-running orchestrator flow. (Plugin IS loaded
+    // P19 (45 s heartbeat reset) is resolved. Un-skipping this probe
+    // during the P19 landing revealed a *different* problem: the
+    // `/tugplug:plan` skill is an interactive orchestrator that asks
+    // clarifying questions via AskUserQuestion before producing
+    // `turn_complete`. The probe script only sends the initial
+    // UserMessage and never answers the question forwards, so the
+    // skill hangs for the full 180 s timeout. Fixing this requires
+    // a probe-script redesign — either answer clarifying questions
+    // inline (like `test-35-askuserquestion-flow` does) or narrow
+    // `required_events` to "first few events" and exit without
+    // turn_complete. Tracked as a follow-on to P19. (Plugin IS loaded
     // at capture time since project_dir is the tugtool repo root.)
     ProbeRecord {
         name: "test-25-tugplug-plan-invocation",
@@ -717,9 +723,9 @@ pub static PROBES: &[ProbeRecord] = &[
             "thinking_text",
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
-        timeout_secs: 120,
+        timeout_secs: 180,
         skip_reason: Some(
-            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes",
+            "probe script incomplete — /tugplug:plan asks clarifying questions the script never answers; needs redesign (not P19)",
         ),
     },
     // --- Test 26: /dash and /tugplug:dash ---
@@ -891,9 +897,19 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 180,
+        // P19 is resolved. Un-skipping this probe during the P19
+        // landing revealed it is flaky at `TUG_STABILITY>=2`: the
+        // first capture run returns 0 events in ~90 s (below both
+        // the 180 s timeout and the 90 s
+        // `WaitForEvent control_request_forward` budget) while
+        // subsequent runs capture the full 27-event sequence
+        // including `control_request_forward`. The socket does
+        // not reset — the probe simply exits without seeing the
+        // forward. Likely a tugplug-side cold-start effect around
+        // the plan-skill agent. Needs root-cause investigation
+        // separate from the heartbeat fix.
         skip_reason: Some(
-            "blocked on tide.md §T0.5 P19 — 45s WebSocket reset on long-running probes; \
-             AskUserQuestion flow never delivers control_request_forward",
+            "first-run flake at stability>=2 — probe returns 0 events intermittently; needs root-cause investigation separate from P19",
         ),
     },
 ];

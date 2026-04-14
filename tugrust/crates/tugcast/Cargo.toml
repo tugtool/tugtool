@@ -49,3 +49,28 @@ http-body-util = { workspace = true }
 tempfile = { workspace = true }
 rusqlite = { workspace = true }
 
+# Feature flag for real-claude integration tests. These tests spawn a
+# real `claude` (tugcode) subprocess and must NEVER run in standard
+# `cargo test` / `cargo nextest run` invocations — they exist solely to
+# vet a new Claude Code version when one is released. The feature is
+# off by default: real-claude test functions are `#[cfg(feature =
+# "real-claude-tests")]`-gated so `cargo nextest list -p tugcast` does
+# not even enumerate them, and `multi_session_real_claude` (which is
+# 100 % real-claude content) has a `required-features` binding below
+# so Cargo skips building the test binary entirely when the feature is
+# off. To run on demand:
+#
+#   cargo test -p tugcast --features real-claude-tests \
+#     --test multi_session_real_claude -- --ignored
+#
+# The `#[ignore]` + `TUG_REAL_CLAUDE` env gate remain in place as a
+# second line of defense, so even `--features real-claude-tests
+# --run-ignored only` without `TUG_REAL_CLAUDE=1` is a silent no-op.
+[features]
+real-claude-tests = []
+
+[[test]]
+name = "multi_session_real_claude"
+path = "tests/multi_session_real_claude.rs"
+required-features = ["real-claude-tests"]
+

@@ -60,10 +60,20 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use common::catalog::{
-    self, EventShape, Schema, canonical_type_sequence, capture_with_stability, derive_schema,
-    extract_version, stability_runs,
-};
+// Shared imports — used by both the `#[cfg(test)] mod differ_tests`
+// unit tests and the real-claude-gated drift regression test. Keep
+// unconditional so the differ's 24 unit tests still run in standard
+// `cargo nextest run` invocations.
+use common::catalog::{EventShape, Schema, canonical_type_sequence};
+
+// Real-claude-only imports — only used by
+// `stream_json_catalog_drift_regression` and its helper
+// `schema_path_for_version`. Gated so standard runs don't trigger
+// unused-import warnings when the feature is off. See this file's
+// feature documentation in `Cargo.toml`.
+#[cfg(feature = "real-claude-tests")]
+use common::catalog::{self, capture_with_stability, derive_schema, extract_version, stability_runs};
+#[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
 
 // -----------------------------------------------------------------------
@@ -558,6 +568,7 @@ fn diff_probe_sequence(
 // Fixture path resolution — [D13] no-fallback rule
 // -----------------------------------------------------------------------
 
+#[cfg(feature = "real-claude-tests")]
 fn schema_path_for_version(version: &str) -> PathBuf {
     catalog::fixture_root()
         .join(format!("v{version}"))
@@ -566,8 +577,13 @@ fn schema_path_for_version(version: &str) -> PathBuf {
 
 // -----------------------------------------------------------------------
 // The one real-claude test — drift regression entry point
+//
+// Gated on `--features real-claude-tests` so `cargo nextest run
+// -p tugcast` does not enumerate it in standard runs. See this file's
+// feature documentation in `Cargo.toml`.
 // -----------------------------------------------------------------------
 
+#[cfg(feature = "real-claude-tests")]
 #[tokio::test]
 #[ignore]
 async fn stream_json_catalog_drift_regression() {
@@ -647,7 +663,9 @@ async fn stream_json_catalog_drift_regression() {
 }
 
 /// RAII guard that `remove_dir_all`s its path on drop.
+#[cfg(feature = "real-claude-tests")]
 struct TmpDirGuard(PathBuf);
+#[cfg(feature = "real-claude-tests")]
 impl Drop for TmpDirGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);

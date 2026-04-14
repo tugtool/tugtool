@@ -43,21 +43,29 @@
 
 mod common;
 
-use std::path::PathBuf;
-
 use serde_json::{Value, json};
 
-// Normalization, schema derivation, execute_probe, canonical_sequence,
-// stability_outcome, and capture_with_stability all live in
-// `common::catalog` so the Step 6 drift regression test can reuse them
-// without duplicating ~500 lines of machinery. This file owns only the
-// fixture-writing layer (status_tag / build_manifest / write_fixtures)
-// and the `capture_all_probes` test entry point itself.
+// Shared imports — used by both the `#[cfg(test)] mod tests` unit
+// tests at the bottom of the file AND by the real-claude-gated
+// `capture_all_probes` entry point. Keep these unconditional so the
+// unit tests (normalize_event / derive_schema / stability_outcome /
+// schema_to_json / canonical_sequence / stability_runs / extract_version /
+// status_tag / build_manifest) keep compiling and running in standard
+// `cargo nextest run` invocations.
 use common::catalog::{
-    self, CapturedProbe, Schema, canonical_sequence, capture_with_stability, derive_schema,
-    extract_version, normalize_event, schema_to_json, stability_outcome, stability_runs,
+    CapturedProbe, canonical_sequence, derive_schema, extract_version, normalize_event,
+    schema_to_json, stability_outcome, stability_runs,
 };
 use common::probes::ProbeStatus;
+
+// Real-claude-only imports — only used by `capture_all_probes` and
+// `write_fixtures`. Gated so standard runs don't trigger
+// unused-import warnings when the feature is off.
+#[cfg(feature = "real-claude-tests")]
+use std::path::PathBuf;
+#[cfg(feature = "real-claude-tests")]
+use common::catalog::{self, Schema, capture_with_stability};
+#[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
 
 // -----------------------------------------------------------------------
@@ -116,6 +124,7 @@ fn build_manifest(version: &str, stability: usize, captures: &[CapturedProbe]) -
 /// Write a full capture run to disk per Spec S01. Creates the
 /// `v<version>/` directory, writes JSONL for each probe, plus
 /// `manifest.json` and `schema.json`.
+#[cfg(feature = "real-claude-tests")]
 pub fn write_fixtures(
     captures: &[CapturedProbe],
     schema: &Schema,
@@ -148,8 +157,13 @@ pub fn write_fixtures(
 
 // -----------------------------------------------------------------------
 // The one real-claude test — the entry point
+//
+// Gated on `--features real-claude-tests` so `cargo nextest run
+// -p tugcast` does not enumerate it in standard runs. See this file's
+// feature documentation in `Cargo.toml`.
 // -----------------------------------------------------------------------
 
+#[cfg(feature = "real-claude-tests")]
 #[tokio::test]
 #[ignore]
 async fn capture_all_probes() {
@@ -214,6 +228,7 @@ async fn capture_all_probes() {
 
 /// Per-PID scratch directory for capture runs. Holds the per-probe
 /// tugbank paths and is wiped by [`TmpDirGuard`] on scope exit.
+#[cfg(feature = "real-claude-tests")]
 fn tempdir_path() -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push(format!("tugcast-capture-{}", std::process::id()));
@@ -225,8 +240,10 @@ fn tempdir_path() -> PathBuf {
 /// unwinds the test stack and the drop fires, cleaning up the
 /// per-probe bank files and any stale tugcast subprocess working
 /// state without leaving cruft under `$TMPDIR`.
+#[cfg(feature = "real-claude-tests")]
 struct TmpDirGuard(PathBuf);
 
+#[cfg(feature = "real-claude-tests")]
 impl Drop for TmpDirGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);

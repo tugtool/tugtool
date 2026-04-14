@@ -209,6 +209,84 @@ async fn test_subscription_auth_source() {
 }
 
 // ---------------------------------------------------------------------------
+// test_heartbeat_survives_long_turn (P19 regression)
+// ---------------------------------------------------------------------------
+
+/// P19 regression guard. Asks claude for a response whose streaming
+/// phase runs past the router's 45 s heartbeat timeout
+/// (`HEARTBEAT_TIMEOUT` in `src/router.rs`). Before the fix, the
+/// router would call `teardown_client` the first time
+/// `heartbeat_interval.tick()` fired after the 45 s mark and the
+/// socket would surface as `Connection reset without closing
+/// handshake` around ~45 055 ms regardless of how much claude was
+/// still streaming.
+///
+/// The fix teaches `TestWs` to answer the server's heartbeats via a
+/// background task spawned in `TestWs::connect`. If that task is ever
+/// deleted, broken, or its send cadence drifts past 45 s, this test
+/// will fail exactly the same way the original P19 canary did.
+///
+/// "300 words about the history of the internet" is the same prompt
+/// the golden-catalog `test-10-long-streaming-300-words` probe uses.
+/// Empirically claude takes 60–80 s to complete this turn on the
+/// default Opus model, which puts the tail well past the heartbeat
+/// ceiling. The 180 s collect budget is generous — we're verifying
+/// "the 45 s ceiling is gone", not policing real claude's speed.
+#[tokio::test]
+#[ignore = "requires TUG_REAL_CLAUDE=1 and a live claude binary"]
+async fn test_heartbeat_survives_long_turn() {
+    require_real_claude!();
+    let tc = spawn_tugcast().await;
+    let mut ws = TestWs::connect(tc.port).await;
+
+    let card_id = "card-hb";
+    let tug_session_id = "sess-hb";
+
+    ws.send_spawn_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
+        .await
+        .expect("pending");
+
+    ws.send_code_input(
+        tug_session_id,
+        "Write exactly 300 words about the history of the internet. Count carefully.",
+    )
+    .await;
+    ws.await_session_state(tug_session_id, "spawning", WIRE_TIMEOUT)
+        .await
+        .expect("spawning");
+    ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)
+        .await
+        .expect("live");
+
+    let start = std::time::Instant::now();
+    let frames = ws
+        .collect_code_output(tug_session_id, Duration::from_secs(180))
+        .await
+        .expect(
+            "long-streaming turn must complete; if this errors with \
+             `Connection reset without closing handshake` at ~45 s the \
+             TestWs heartbeat task has regressed (see tide.md §T0.5 P19)",
+        );
+    let elapsed = start.elapsed();
+
+    assert_eq!(
+        frames.last().unwrap()["type"].as_str(),
+        Some("turn_complete")
+    );
+    eprintln!(
+        "test_heartbeat_survives_long_turn: collected {} frames in {:?}",
+        frames.len(),
+        elapsed
+    );
+
+    ws.send_close_session(card_id, tug_session_id).await;
+    ws.await_session_state(tug_session_id, "closed", WIRE_TIMEOUT)
+        .await
+        .expect("closed");
+}
+
+// ---------------------------------------------------------------------------
 // test_two_sessions_never_cross
 // ---------------------------------------------------------------------------
 

@@ -50,11 +50,15 @@ pub mod probes;
 use std::net::TcpListener as StdTcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
+use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
@@ -62,6 +66,24 @@ use tugcast_core::{FeedId, Frame};
 
 /// Alias for the fully-typed client-side WebSocket stream.
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+/// Shared handle to the client-side sink half of a split [`WsStream`].
+///
+/// Held by both [`TestWs`] (for test-driven sends: `send_code_input`,
+/// `send_control_action`, ...) and the background heartbeat task spawned
+/// in [`TestWs::connect`]. The async mutex serializes the two writers so
+/// a test send never interleaves bytes with a heartbeat send. `tokio`'s
+/// async `Mutex` is cheap under low contention — a heartbeat fires every
+/// 15 s and test sends are sparse.
+type SharedSink = Arc<AsyncMutex<SplitSink<WsStream, Message>>>;
+
+/// Interval between client-side heartbeat sends. Matches tugdeck's
+/// `HEARTBEAT_INTERVAL_MS` in `tugdeck/src/connection.ts` so `TestWs`
+/// observes the same liveness contract as the browser client. The
+/// server-side timeout in `tugcast/src/router.rs::HEARTBEAT_TIMEOUT`
+/// is 45 s; sending every 15 s gives a 2-tick grace before the router
+/// tears the connection down.
+const TEST_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Returns `true` if `TUG_REAL_CLAUDE` is set to a truthy value. Tests
 /// gate every real-claude scenario on this so `cargo nextest run` in
@@ -265,25 +287,77 @@ pub struct DecodedFrame {
 ///
 /// See the module JSDoc-equivalent comment at the top of this file for
 /// the rationale.
+///
+/// # Heartbeat contract (P19 fix)
+///
+/// The tugcast router in `src/router.rs` enforces a 45 s application-
+/// level heartbeat: it sends a `FeedId::HEARTBEAT` frame every 15 s and
+/// expects the client to send one back. If no client heartbeat arrives
+/// within `HEARTBEAT_TIMEOUT` (45 s), the router calls
+/// `teardown_client` and drops the socket without a close frame —
+/// observable to a passive client as `Connection reset without closing
+/// handshake` at ~45 055 ms. See
+/// `roadmap/tide.md` §T0.5 P19 for the original bug report.
+///
+/// `TestWs::connect` spawns a background task that sends a heartbeat
+/// frame every [`TEST_HEARTBEAT_INTERVAL`] for the lifetime of the
+/// socket. The task shares the split sink with the test-driven
+/// send helpers via [`SharedSink`]. The handle is aborted in `Drop`
+/// so a TestWs that outlives its TestTugcast doesn't leak tasks.
 pub struct TestWs {
-    inner: WsStream,
+    sink: SharedSink,
+    stream: SplitStream<WsStream>,
     buffer: Vec<DecodedFrame>,
+    heartbeat_task: JoinHandle<()>,
 }
 
 impl TestWs {
     /// Open a WebSocket client to `127.0.0.1:port/ws` and perform the
-    /// v1 protocol handshake.
+    /// v1 protocol handshake. Also starts the heartbeat background task
+    /// so the server's 45 s liveness timer cannot trip during long
+    /// capture probes.
     pub async fn connect(port: u16) -> Self {
         let url = format!("ws://127.0.0.1:{port}/ws");
-        let (mut ws, _) = connect_async(url).await.expect("ws connect");
+        let (ws, _) = connect_async(url).await.expect("ws connect");
+        let (mut sink, stream) = ws.split();
         let hello = r#"{"protocol":"tugcast","version":1}"#;
-        ws.send(Message::Text(hello.into()))
+        sink.send(Message::Text(hello.into()))
             .await
             .expect("send protocol hello");
+        let sink: SharedSink = Arc::new(AsyncMutex::new(sink));
+        let heartbeat_task = Self::spawn_heartbeat_task(Arc::clone(&sink));
         Self {
-            inner: ws,
+            sink,
+            stream,
             buffer: Vec::new(),
+            heartbeat_task,
         }
+    }
+
+    /// Spawn a detached tokio task that sends a `HEARTBEAT` frame every
+    /// [`TEST_HEARTBEAT_INTERVAL`] for the lifetime of the returned
+    /// handle. The task exits on the first send error (socket closed),
+    /// and the handle is aborted in `TestWs::drop` on the normal path.
+    fn spawn_heartbeat_task(sink: SharedSink) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(TEST_HEARTBEAT_INTERVAL);
+            // `interval.tick()` fires immediately on first poll — eat
+            // the zero-delay tick so the first heartbeat goes out one
+            // full interval after connect, matching tugdeck's timer.
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let hb = Frame::heartbeat();
+                let mut guard = sink.lock().await;
+                if guard
+                    .send(Message::Binary(hb.encode().into()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
     }
 
     /// Pull frames from the socket into the buffer until either the
@@ -303,7 +377,7 @@ impl TestWs {
             if remaining.is_zero() {
                 return Err("pump_until: timed out".into());
             }
-            match tokio::time::timeout(remaining, self.inner.next()).await {
+            match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(Message::Binary(bytes)))) => {
                     let Ok((frame, _)) = Frame::decode(&bytes) else {
                         continue;
@@ -340,7 +414,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("control json");
         let frame = Frame::new(FeedId::CONTROL, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send control frame");
@@ -374,7 +450,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("code_input json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send code_input frame");
@@ -398,7 +476,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("user_message_with_attachments json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send user_message_with_attachments frame");
@@ -426,7 +506,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("interrupt json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send interrupt frame");
@@ -464,7 +546,9 @@ impl TestWs {
         }
         let bytes = serde_json::to_vec(&payload).expect("tool_approval json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send tool_approval frame");
@@ -487,7 +571,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("question_answer json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send question_answer frame");
@@ -505,7 +591,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("session_command json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send session_command frame");
@@ -523,7 +611,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("model_change json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send model_change frame");
@@ -540,7 +630,9 @@ impl TestWs {
         });
         let bytes = serde_json::to_vec(&payload).expect("permission_mode json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
-        self.inner
+        self.sink
+            .lock()
+            .await
             .send(Message::Binary(frame.encode().into()))
             .await
             .expect("send permission_mode frame");
@@ -654,7 +746,7 @@ impl TestWs {
             if remaining.is_zero() {
                 return Err("collect_code_output: timed out".into());
             }
-            match tokio::time::timeout(remaining, self.inner.next()).await {
+            match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(Message::Binary(bytes)))) => {
                     let Ok((frame, _)) = Frame::decode(&bytes) else {
                         continue;
@@ -709,7 +801,7 @@ impl TestWs {
             if remaining.is_zero() {
                 break;
             }
-            match tokio::time::timeout(remaining, self.inner.next()).await {
+            match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(Message::Binary(bytes)))) => {
                     let Ok((frame, _)) = Frame::decode(&bytes) else {
                         continue;
@@ -732,5 +824,15 @@ impl TestWs {
                 f.feed_id == FeedId::SESSION_METADATA && f.payload["tug_session_id"] == target
             })
             .count()
+    }
+}
+
+/// Abort the heartbeat background task on drop so a `TestWs` that
+/// outlives its `TestTugcast` (or is dropped before the socket is
+/// gracefully closed) does not leak a tokio task that will keep
+/// re-trying heartbeat sends on a dead socket.
+impl Drop for TestWs {
+    fn drop(&mut self) {
+        self.heartbeat_task.abort();
     }
 }
