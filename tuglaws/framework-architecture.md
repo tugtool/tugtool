@@ -1,12 +1,10 @@
 # The Tug Framework Architecture
 
-The tug framework is built for applications with *continuous interactive state*: software development tools, creative apps, spatial interfaces, layout surfaces, drag-and-resize canvases, gesture-driven inspectors, and anything where the user is working with the interface in real time, rather than filling out a form. In apps like these, the interface is alive during a gesture — thumbs slide, cards resize, values scrub, previews update — and the interaction rate is set by the component, not by the commit.
+The tug framework is built for applications with *continuous interactive state*: developer IDEs, code editors, diff viewers, layout inspectors, debuggers, drag-and-resize canvases, property inspectors, and anything where the user drives the interface at input-event rate rather than waiting for it to respond between clicks. In apps like these the interface is alive *between* the user's discrete actions — cursors blink, selections extend, panels resize, minimaps track the viewport, autocomplete updates as the user types, inline diagnostics appear under code still being written, previews redraw in real time. The unit of interaction is the gesture, not the form submission; the interaction rate is set by input events, not by React's commit cycle.
 
-This design target shapes every decision below. A framework tuned for forms and dashboards and a framework tuned for complex apps are not the same framework, and the choices documented here make the best sense when though about against this complex-app target.
+This design target shapes every decision below. A framework tuned for forms and dashboards and a framework tuned for complex apps are not the same framework, and the choices documented here make the best sense when thought about against this complex-app target.
 
-The framework is built on React. It uses React deliberately, for the parts React is excellent at, and routes other kinds of work through other mechanisms that are better suited to them. The goal is not to minimize React's involvement; it is to place each kind of work in the system designed for it.
-
-> **tl;dr** — State is partitioned into three zones, each with one mechanism. Appearance changes go through CSS and DOM, invisible to React. External state enters React through `useSyncExternalStore`. Events route through a responder chain of typed actions. React handles tree reconciliation, composition, and concurrent rendering; everything that happens at pointer rate is routed around React's render cycle entirely.
+The framework doesn't rest on a single foundation. React handles tree reconciliation and composition; CSS and the DOM handle appearance; a responder chain routes typed actions through the components that own state. The goal is not to minimize React's involvement but to place each kind of work in the system designed for it.
 
 ---
 
