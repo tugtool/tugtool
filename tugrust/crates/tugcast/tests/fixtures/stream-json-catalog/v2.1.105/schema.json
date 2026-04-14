@@ -75,6 +75,19 @@
         "version": "string"
       }
     },
+    "thinking_text": {
+      "optional_fields": {},
+      "required_fields": {
+        "ipc_version": "integer",
+        "is_partial": "boolean",
+        "msg_id": "string",
+        "seq": "integer",
+        "status": "string",
+        "text": "string",
+        "tug_session_id": "string",
+        "type": "string"
+      }
+    },
     "tool_result": {
       "optional_fields": {
         "parent_tool_use_id": "string"
@@ -199,7 +212,6 @@
         "system_metadata",
         "assistant_text",
         "assistant_text",
-        "assistant_text",
         "cost_update",
         "assistant_text",
         "turn_complete"
@@ -256,7 +268,65 @@
       ]
     },
     "test-10-long-streaming-300-words": {
-      "required_sequence": []
+      "required_sequence": [
+        "session_init",
+        "system_metadata",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "assistant_text",
+        "cost_update",
+        "assistant_text",
+        "turn_complete"
+      ]
     },
     "test-11-permission-deny-roundtrip": {
       "required_sequence": [
@@ -332,6 +402,7 @@
         "system_metadata",
         "assistant_text",
         "assistant_text",
+        "assistant_text",
         "cost_update",
         "assistant_text",
         "turn_complete"
@@ -376,7 +447,6 @@
         "assistant_text",
         "assistant_text",
         "assistant_text",
-        "assistant_text",
         "cost_update",
         "assistant_text",
         "turn_complete"
@@ -386,12 +456,17 @@
       "required_sequence": [
         "session_init",
         "system_metadata",
+        "thinking_text",
+        "thinking_text",
+        "thinking_text",
         "tool_use",
         "tool_use",
         "tool_use",
         "tool_result",
         "tool_result",
         "tool_use_structured",
+        "assistant_text",
+        "assistant_text",
         "assistant_text",
         "assistant_text",
         "assistant_text",
@@ -456,7 +531,6 @@
         "assistant_text",
         "assistant_text",
         "assistant_text",
-        "assistant_text",
         "cost_update",
         "assistant_text",
         "turn_complete"
@@ -484,8 +558,8 @@
       "required_sequence": [
         "session_init",
         "system_metadata",
-        "assistant_text",
-        "assistant_text",
+        "thinking_text",
+        "thinking_text",
         "tool_use",
         "tool_use",
         "tool_result",
