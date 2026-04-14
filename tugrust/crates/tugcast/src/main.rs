@@ -27,33 +27,9 @@ use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
-    AgentSupervisor, AgentSupervisorConfig, SessionKeysStore, SessionKeysStoreError,
-    SpawnerFactory, default_spawner_factory,
+    AgentSupervisor, AgentSupervisorConfig, SessionKeysStore, SpawnerFactory,
+    default_spawner_factory,
 };
-use tugcast_core::TugSessionId;
-
-/// No-op session keys store used as a fallback when tugbank is
-/// unavailable. Sessions do not persist across restart under this store —
-/// `list_session_keys` always returns an empty vector — but the
-/// supervisor still functions for in-process use.
-#[derive(Debug, Default)]
-struct EphemeralSessionKeysStore;
-
-impl SessionKeysStore for EphemeralSessionKeysStore {
-    fn set_session_key(
-        &self,
-        _card_id: &str,
-        _tug_session_id: &TugSessionId,
-    ) -> Result<(), SessionKeysStoreError> {
-        Ok(())
-    }
-    fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
-        Ok(())
-    }
-    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
-        Ok(Vec::new())
-    }
-}
 use crate::feeds::filetree::FileTreeQuery;
 use crate::feeds::stats::{
     BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
@@ -319,20 +295,19 @@ async fn main() {
     let (session_state_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (session_metadata_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
-    // Build the SessionKeysStore from the tugbank client if available,
-    // otherwise fall back to a no-op in-memory store so the supervisor
-    // still runs. Sessions do not persist across restart under the
-    // fallback — log explicitly so the degradation is visible in logs
-    // rather than manifesting as "my cards forgot their sessions".
-    let session_keys_store: Arc<dyn SessionKeysStore> = if let Some(ref client) = bank_client {
-        Arc::clone(client) as Arc<dyn SessionKeysStore>
-    } else {
-        warn!(
-            "tugbank unavailable — AgentSupervisor falling back to EphemeralSessionKeysStore; \
-             session intent records will not persist across restart"
+    // Build the SessionKeysStore from the tugbank client. Per [D15], tugbank
+    // unavailability is a fatal startup error: without persistent session
+    // intent records, cards cannot reliably resume their sessions across
+    // restart, and the supervisor has no business running in that state.
+    let Some(ref bank_client_ref) = bank_client else {
+        eprintln!(
+            "tugcast: error: tugbank unavailable at {}, cannot start without persistent session store",
+            bank_path.display()
         );
-        Arc::new(EphemeralSessionKeysStore) as Arc<dyn SessionKeysStore>
+        std::process::exit(1);
     };
+    let session_keys_store: Arc<dyn SessionKeysStore> =
+        Arc::clone(bank_client_ref) as Arc<dyn SessionKeysStore>;
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),

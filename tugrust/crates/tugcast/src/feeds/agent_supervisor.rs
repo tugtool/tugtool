@@ -33,6 +33,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_stream::StreamExt;
@@ -265,45 +266,75 @@ pub type Ledger = Arc<Mutex<HashMap<TugSessionId, Arc<Mutex<LedgerEntry>>>>>;
 #[error("session keys store failure: {0}")]
 pub struct SessionKeysStoreError(pub String);
 
-/// Persistence surface for the `(card_id → tug_session_id)` mapping.
+/// Structured per-card session binding persisted in the session-keys domain.
+///
+/// Replaces the bare `Value::String(tug_session_id)` schema used in W1 with a
+/// forward-compatible record. The `#[serde(default)]` on the optional fields
+/// lets older readers and writers round-trip without explicit version tagging:
+/// a reader built against an older shape sees missing fields as `None`, and a
+/// writer built against a newer shape can populate them.
+///
+/// - `tug_session_id`: the routing key; always populated.
+/// - `project_dir`: `Some` for post-W2 records; `None` for pre-W2 legacy blobs
+///   (dropped on rebind once Step 6 teaches rebind to bind workspaces).
+/// - `claude_session_id`: `None` until P14 starts populating it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionKeyRecord {
+    pub tug_session_id: String,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+    #[serde(default)]
+    pub claude_session_id: Option<String>,
+}
+
+/// Persistence surface for the `(card_id → SessionKeyRecord)` mapping.
 ///
 /// The supervisor depends on a narrow trait (rather than on `TugbankClient`
 /// directly) so unit tests can inject an in-memory fake — and, per [D12]'s
 /// strict-vs-best-effort asymmetry, can inject an error-producing fake to
 /// exercise the `spawn_session` persistence-failure path.
 pub trait SessionKeysStore: Send + Sync {
-    /// Write `(card_id, tug_session_id)` into the session-keys domain.
-    fn set_session_key(
+    /// Write `(card_id, record)` into the session-keys domain. The record is
+    /// serialized to `Value::Json` so forward-compatible fields round-trip
+    /// through the tugbank blob store.
+    fn set_session_record(
         &self,
         card_id: &str,
-        tug_session_id: &TugSessionId,
+        record: &SessionKeyRecord,
     ) -> Result<(), SessionKeysStoreError>;
 
     /// Delete the entry keyed by `card_id`. Returning `Ok(())` when the key is
     /// missing is acceptable — the supervisor treats delete as best-effort.
     fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError>;
 
-    /// Enumerate every persisted `(card_id, tug_session_id)` pair. Used by
+    /// Enumerate every persisted `(card_id, SessionKeyRecord)` pair. Used by
     /// [`AgentSupervisor::rebind_from_tugbank`] at startup to re-materialize
-    /// intent records from a previous run (per [F15]). Entries with payloads
-    /// that are not string-valued or whose `tug_session_id` is empty must
-    /// be skipped by the implementation; returning them would leak garbage
-    /// into the ledger.
-    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError>;
+    /// intent records from a previous run (per [F15]).
+    ///
+    /// The `TugbankClient` implementation performs a dual-read migration:
+    /// - `Value::Json` entries are deserialized as `SessionKeyRecord`.
+    /// - `Value::String` entries (pre-W2 legacy blobs) are promoted to a
+    ///   record with `project_dir = None, claude_session_id = None`.
+    ///
+    /// Entries whose `tug_session_id` is empty, whose payload is neither
+    /// string nor parseable JSON, or whose JSON is malformed must be
+    /// skipped under a warn log; returning them would leak garbage into
+    /// the ledger.
+    fn list_session_records(
+        &self,
+    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError>;
 }
 
 impl SessionKeysStore for TugbankClient {
-    fn set_session_key(
+    fn set_session_record(
         &self,
         card_id: &str,
-        tug_session_id: &TugSessionId,
+        record: &SessionKeyRecord,
     ) -> Result<(), SessionKeysStoreError> {
-        self.set(
-            SESSION_KEYS_DOMAIN,
-            card_id,
-            Value::String(tug_session_id.as_str().to_string()),
-        )
-        .map_err(|e| SessionKeysStoreError(e.to_string()))
+        let json = serde_json::to_value(record)
+            .map_err(|e| SessionKeysStoreError(e.to_string()))?;
+        self.set(SESSION_KEYS_DOMAIN, card_id, Value::Json(json))
+            .map_err(|e| SessionKeysStoreError(e.to_string()))
     }
 
     fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
@@ -312,24 +343,47 @@ impl SessionKeysStore for TugbankClient {
             .map_err(|e| SessionKeysStoreError(e.to_string()))
     }
 
-    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+    fn list_session_records(
+        &self,
+    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
         let snapshot = self
             .read_domain(SESSION_KEYS_DOMAIN)
             .map_err(|e| SessionKeysStoreError(e.to_string()))?;
         let mut out = Vec::with_capacity(snapshot.len());
         for (card_id, value) in snapshot {
-            let Value::String(id) = value else {
-                warn!(card_id, "session-keys entry has non-string value; skipping");
-                continue;
+            let record = match value {
+                Value::Json(j) => match serde_json::from_value::<SessionKeyRecord>(j) {
+                    Ok(r) if !r.tug_session_id.is_empty() => r,
+                    Ok(_) => {
+                        warn!(
+                            card_id,
+                            "session-keys entry has empty tug_session_id; skipping"
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        warn!(
+                            card_id,
+                            error = %e,
+                            "failed to parse SessionKeyRecord; skipping"
+                        );
+                        continue;
+                    }
+                },
+                Value::String(s) if !s.is_empty() => SessionKeyRecord {
+                    tug_session_id: s,
+                    project_dir: None,
+                    claude_session_id: None,
+                },
+                _ => {
+                    warn!(
+                        card_id,
+                        "non-json non-string session-keys entry; skipping"
+                    );
+                    continue;
+                }
             };
-            if id.is_empty() {
-                warn!(
-                    card_id,
-                    "session-keys entry has empty tug_session_id; skipping"
-                );
-                continue;
-            }
-            out.push((card_id, TugSessionId::new(id)));
+            out.push((card_id, record));
         }
         Ok(out)
     }
@@ -603,7 +657,16 @@ impl AgentSupervisor {
         // Phase 2: strict tugbank write per [D12]. Partial ledger/
         // client_sessions state on failure is tolerable (rewritten on retry);
         // silent failure is not.
-        if let Err(e) = self.store.set_session_key(card_id, &tug_session_id) {
+        //
+        // W2 Step 1: build the record shape with `project_dir = None` and
+        // `claude_session_id = None`. Step 6 will thread the canonicalized
+        // `project_dir` from the CONTROL payload into this callsite.
+        let record = SessionKeyRecord {
+            tug_session_id: tug_session_id.as_str().to_string(),
+            project_dir: None,
+            claude_session_id: None,
+        };
+        if let Err(e) = self.store.set_session_record(card_id, &record) {
             warn!(
                 card_id,
                 session = %tug_session_id,
@@ -1034,10 +1097,14 @@ impl AgentSupervisor {
     ///   for one of them, at which point the existing entry is reused and
     ///   the normal `pending` publish fires.
     pub async fn rebind_from_tugbank(&self) -> Result<usize, SessionKeysStoreError> {
-        let entries = self.store.list_session_keys()?;
+        let entries = self.store.list_session_records()?;
         let mut ledger = self.ledger.lock().await;
         let mut inserted = 0usize;
-        for (_card_id, tug_session_id) in entries {
+        // W2 Step 1: we destructure the new record shape but still build
+        // ledger entries from `tug_session_id` alone. Step 6 will teach this
+        // path to bind workspaces and drop records with `project_dir = None`.
+        for (_card_id, record) in entries {
+            let tug_session_id = TugSessionId::new(record.tug_session_id);
             if ledger.contains_key(&tug_session_id) {
                 continue;
             }
@@ -1063,17 +1130,19 @@ pub(crate) struct NoopSessionKeysStore;
 
 #[cfg(test)]
 impl SessionKeysStore for NoopSessionKeysStore {
-    fn set_session_key(
+    fn set_session_record(
         &self,
         _card_id: &str,
-        _tug_session_id: &TugSessionId,
+        _record: &SessionKeyRecord,
     ) -> Result<(), SessionKeysStoreError> {
         Ok(())
     }
     fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
         Ok(())
     }
-    fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+    fn list_session_records(
+        &self,
+    ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
         Ok(Vec::new())
     }
 }
@@ -1143,13 +1212,13 @@ mod tests {
 
     #[derive(Default)]
     struct InMemoryStore {
-        entries: StdMutex<HashMap<String, String>>,
+        entries: StdMutex<HashMap<String, SessionKeyRecord>>,
         set_calls: StdMutex<u32>,
         delete_calls: StdMutex<u32>,
     }
 
     impl InMemoryStore {
-        fn entries_snapshot(&self) -> HashMap<String, String> {
+        fn entries_snapshot(&self) -> HashMap<String, SessionKeyRecord> {
             self.entries.lock().unwrap().clone()
         }
         fn set_call_count(&self) -> u32 {
@@ -1161,16 +1230,16 @@ mod tests {
     }
 
     impl SessionKeysStore for InMemoryStore {
-        fn set_session_key(
+        fn set_session_record(
             &self,
             card_id: &str,
-            tug_session_id: &TugSessionId,
+            record: &SessionKeyRecord,
         ) -> Result<(), SessionKeysStoreError> {
             *self.set_calls.lock().unwrap() += 1;
             self.entries
                 .lock()
                 .unwrap()
-                .insert(card_id.to_string(), tug_session_id.as_str().to_string());
+                .insert(card_id.to_string(), record.clone());
             Ok(())
         }
         fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
@@ -1178,13 +1247,15 @@ mod tests {
             self.entries.lock().unwrap().remove(card_id);
             Ok(())
         }
-        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
+        fn list_session_records(
+            &self,
+        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
             Ok(self
                 .entries
                 .lock()
                 .unwrap()
                 .iter()
-                .map(|(k, v)| (k.clone(), TugSessionId::new(v.clone())))
+                .map(|(k, v)| (k.clone(), v.clone()))
                 .collect())
         }
     }
@@ -1202,18 +1273,20 @@ mod tests {
     }
 
     impl SessionKeysStore for FailingWriteStore {
-        fn set_session_key(
+        fn set_session_record(
             &self,
             _card_id: &str,
-            _tug_session_id: &TugSessionId,
+            _record: &SessionKeyRecord,
         ) -> Result<(), SessionKeysStoreError> {
             Err(SessionKeysStoreError("injected write failure".into()))
         }
         fn delete_session_key(&self, card_id: &str) -> Result<(), SessionKeysStoreError> {
             self.delegate.delete_session_key(card_id)
         }
-        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
-            self.delegate.list_session_keys()
+        fn list_session_records(
+            &self,
+        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
+            self.delegate.list_session_records()
         }
     }
 
@@ -1230,18 +1303,20 @@ mod tests {
     }
 
     impl SessionKeysStore for FailingDeleteStore {
-        fn set_session_key(
+        fn set_session_record(
             &self,
             card_id: &str,
-            tug_session_id: &TugSessionId,
+            record: &SessionKeyRecord,
         ) -> Result<(), SessionKeysStoreError> {
-            self.delegate.set_session_key(card_id, tug_session_id)
+            self.delegate.set_session_record(card_id, record)
         }
         fn delete_session_key(&self, _card_id: &str) -> Result<(), SessionKeysStoreError> {
             Err(SessionKeysStoreError("injected delete failure".into()))
         }
-        fn list_session_keys(&self) -> Result<Vec<(String, TugSessionId)>, SessionKeysStoreError> {
-            self.delegate.list_session_keys()
+        fn list_session_records(
+            &self,
+        ) -> Result<Vec<(String, SessionKeyRecord)>, SessionKeysStoreError> {
+            self.delegate.list_session_records()
         }
     }
 
@@ -1433,7 +1508,10 @@ mod tests {
             .unwrap();
 
         let entries = store.entries_snapshot();
-        assert_eq!(entries.get("card-1"), Some(&"sess-1".to_string()));
+        let rec = entries.get("card-1").expect("card-1 persisted");
+        assert_eq!(rec.tug_session_id, "sess-1");
+        assert_eq!(rec.project_dir, None);
+        assert_eq!(rec.claude_session_id, None);
         assert_eq!(store.set_call_count(), 1);
     }
 
@@ -1999,10 +2077,24 @@ mod tests {
         // only reads on startup).
         let store = Arc::new(InMemoryStore::default());
         store
-            .set_session_key("card-a", &TugSessionId::new("sess-a"))
+            .set_session_record(
+                "card-a",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-a".to_string(),
+                    project_dir: None,
+                    claude_session_id: None,
+                },
+            )
             .unwrap();
         store
-            .set_session_key("card-b", &TugSessionId::new("sess-b"))
+            .set_session_record(
+                "card-b",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-b".to_string(),
+                    project_dir: None,
+                    claude_session_id: None,
+                },
+            )
             .unwrap();
         let set_calls_before = store.set_call_count();
 
@@ -2450,5 +2542,94 @@ mod tests {
         // regression where cancel doesn't reach a stalled spawner still
         // terminates the test quickly.
         b_handle.abort();
+    }
+
+    // ---- W2 Step 1: SessionKeyRecord schema + dual-read migration ----
+
+    #[test]
+    fn test_session_key_record_serde_roundtrip() {
+        let record = SessionKeyRecord {
+            tug_session_id: "sess-xyz".to_string(),
+            project_dir: Some("/work/alpha".to_string()),
+            claude_session_id: Some("claude-uuid-7".to_string()),
+        };
+        let json = serde_json::to_value(&record).expect("serialize");
+        let parsed: SessionKeyRecord = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(parsed, record);
+    }
+
+    #[test]
+    fn test_session_key_record_defaults_on_missing_optional_fields() {
+        let json = serde_json::json!({ "tug_session_id": "abc" });
+        let parsed: SessionKeyRecord = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(parsed.tug_session_id, "abc");
+        assert_eq!(parsed.project_dir, None);
+        assert_eq!(parsed.claude_session_id, None);
+    }
+
+    #[test]
+    fn test_tugbank_list_session_records_reads_legacy_string() {
+        let tmp = tempfile::NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
+
+        // Simulate a pre-W2 blob written as a bare `Value::String`.
+        client
+            .set(
+                SESSION_KEYS_DOMAIN,
+                "card-legacy",
+                Value::String("legacy-uuid".to_string()),
+            )
+            .expect("legacy set");
+
+        let records = client.list_session_records().expect("list");
+        assert_eq!(records.len(), 1);
+        let (card_id, record) = &records[0];
+        assert_eq!(card_id, "card-legacy");
+        assert_eq!(record.tug_session_id, "legacy-uuid");
+        assert_eq!(record.project_dir, None);
+        assert_eq!(record.claude_session_id, None);
+    }
+
+    #[test]
+    fn test_tugbank_list_session_records_reads_json() {
+        let tmp = tempfile::NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
+
+        let written = SessionKeyRecord {
+            tug_session_id: "sess-w2".to_string(),
+            project_dir: Some("/work/beta".to_string()),
+            claude_session_id: Some("claude-42".to_string()),
+        };
+        client
+            .set_session_record("card-w2", &written)
+            .expect("set_session_record");
+
+        let records = client.list_session_records().expect("list");
+        assert_eq!(records.len(), 1);
+        let (card_id, record) = &records[0];
+        assert_eq!(card_id, "card-w2");
+        assert_eq!(record, &written);
+    }
+
+    #[test]
+    fn test_tugbank_list_session_records_skips_malformed_json() {
+        let tmp = tempfile::NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open tugbank");
+
+        // JSON value that does not deserialize to `SessionKeyRecord`
+        // (missing the required `tug_session_id` field).
+        client
+            .set(
+                SESSION_KEYS_DOMAIN,
+                "card-bogus",
+                Value::Json(serde_json::json!({ "bogus": 1 })),
+            )
+            .expect("bogus set");
+
+        let records = client.list_session_records().expect("list");
+        assert!(
+            records.is_empty(),
+            "malformed JSON must be skipped, got: {records:?}"
+        );
     }
 }
