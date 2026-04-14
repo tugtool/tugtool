@@ -72,7 +72,9 @@ use common::catalog::{EventShape, Schema, canonical_type_sequence};
 // unused-import warnings when the feature is off. See this file's
 // feature documentation in `Cargo.toml`.
 #[cfg(feature = "real-claude-tests")]
-use common::catalog::{self, capture_with_stability, derive_schema, extract_version, stability_runs};
+use common::catalog::{
+    self, capture_with_stability, derive_schema, extract_version, stability_runs,
+};
 #[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
 
@@ -188,9 +190,7 @@ impl DiffReport {
     }
 
     pub fn has_failures(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| f.severity == Severity::Fail)
+        self.findings.iter().any(|f| f.severity == Severity::Fail)
     }
 
     pub fn failure_count(&self) -> usize {
@@ -268,9 +268,7 @@ fn format_kind(kind: &FailureKind) -> String {
             golden,
             current,
         } => {
-            format!(
-                "ReorderedSequence: {probe_name} golden={golden:?} current={current:?}"
-            )
+            format!("ReorderedSequence: {probe_name} golden={golden:?} current={current:?}")
         }
         FailureKind::MissingProbe { probe_name } => {
             format!("MissingProbe: {probe_name}")
@@ -294,10 +292,10 @@ fn format_kind(kind: &FailureKind) -> String {
 /// with stringified errors so the caller can `.expect(...)` with a
 /// meaningful message.
 pub fn load_schema(path: &Path) -> Result<Schema, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
-    let value: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?;
 
     let claude_version = value
         .get("claude_version")
@@ -315,10 +313,7 @@ pub fn load_schema(path: &Path) -> Result<Schema, String> {
             // Polymorphic tool_use_structured: route through by_tool_name
             // per [D09]. Each tool_name gets its own EventShape.
             if et_name == "tool_use_structured" {
-                if let Some(by_tool) = et_value
-                    .get("by_tool_name")
-                    .and_then(|v| v.as_object())
-                {
+                if let Some(by_tool) = et_value.get("by_tool_name").and_then(|v| v.as_object()) {
                     for (tool_name, shape_value) in by_tool {
                         let shape = parse_event_shape(shape_value);
                         schema
@@ -333,10 +328,7 @@ pub fn load_schema(path: &Path) -> Result<Schema, String> {
         }
     }
 
-    if let Some(probe_sequences) = value
-        .get("probe_sequences")
-        .and_then(|v| v.as_object())
-    {
+    if let Some(probe_sequences) = value.get("probe_sequences").and_then(|v| v.as_object()) {
         for (probe_name, entry) in probe_sequences {
             let seq: Vec<String> = entry
                 .get("required_sequence")
@@ -392,7 +384,7 @@ pub fn diff_schemas(golden: &Schema, current: &Schema) -> DiffReport {
                 event_type: et.clone(),
             }),
             Some(shape_c) => {
-                diff_event_shape(shape_g, shape_c, &[et.clone()], &mut report);
+                diff_event_shape(shape_g, shape_c, std::slice::from_ref(et), &mut report);
             }
         }
     }
@@ -588,9 +580,7 @@ fn schema_path_for_version(version: &str) -> PathBuf {
 #[ignore]
 async fn stream_json_catalog_drift_regression() {
     if !real_claude_enabled() {
-        eprintln!(
-            "skipping stream_json_catalog_drift_regression: TUG_REAL_CLAUDE not set"
-        );
+        eprintln!("skipping stream_json_catalog_drift_regression: TUG_REAL_CLAUDE not set");
         return;
     }
 
@@ -607,10 +597,7 @@ async fn stream_json_catalog_drift_regression() {
         .canonicalize()
         .expect("canonicalize project dir");
 
-    let tmp = std::env::temp_dir().join(format!(
-        "tugcast-drift-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("tugcast-drift-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).expect("create tmp dir");
     let _tmp_guard = TmpDirGuard(tmp.clone());
 
@@ -623,8 +610,8 @@ async fn stream_json_catalog_drift_regression() {
     let stability = stability_runs();
     let captures = capture_with_stability(stability, &tmp, &project_dir).await;
 
-    let version = extract_version(&captures)
-        .expect("no system_metadata version found — aborting per [D11]");
+    let version =
+        extract_version(&captures).expect("no system_metadata version found — aborting per [D11]");
 
     let golden_path = schema_path_for_version(&version);
     if !golden_path.exists() {
@@ -682,20 +669,13 @@ mod differ_tests {
 
     // Helpers
 
-    fn event_shape(
-        required: &[(&str, &str)],
-        optional: &[(&str, &str)],
-    ) -> EventShape {
+    fn event_shape(required: &[(&str, &str)], optional: &[(&str, &str)]) -> EventShape {
         let mut shape = EventShape::default();
         for (k, v) in required {
-            shape
-                .required_fields
-                .insert(k.to_string(), v.to_string());
+            shape.required_fields.insert(k.to_string(), v.to_string());
         }
         for (k, v) in optional {
-            shape
-                .optional_fields
-                .insert(k.to_string(), v.to_string());
+            shape.optional_fields.insert(k.to_string(), v.to_string());
         }
         shape
     }
@@ -714,9 +694,10 @@ mod differ_tests {
             claude_version: "2.1.104".into(),
             ..Default::default()
         };
-        schema
-            .probe_sequences
-            .insert(probe_name.to_string(), seq.iter().map(|s| s.to_string()).collect());
+        schema.probe_sequences.insert(
+            probe_name.to_string(),
+            seq.iter().map(|s| s.to_string()).collect(),
+        );
         schema
     }
 
@@ -771,9 +752,10 @@ mod differ_tests {
         );
         let report = diff_schemas(&golden, &current);
         assert!(!report.has_failures());
-        assert_warn_kind(&report, |k| {
-            matches!(k, FailureKind::NewField { path, .. } if path.last() == Some(&"inference_geo".to_string()))
-        });
+        assert_warn_kind(
+            &report,
+            |k| matches!(k, FailureKind::NewField { path, .. } if path.last() == Some(&"inference_geo".to_string())),
+        );
     }
 
     // ---- 3. Removed required field → fail
@@ -797,23 +779,20 @@ mod differ_tests {
         );
         let report = diff_schemas(&golden, &current);
         assert!(report.has_failures());
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::MissingRequiredField { path } if path.last() == Some(&"ipc_version".to_string()))
-        });
+        assert_fail_kind(
+            &report,
+            |k| matches!(k, FailureKind::MissingRequiredField { path } if path.last() == Some(&"ipc_version".to_string())),
+        );
     }
 
     // ---- 4. Type change → fail
 
     #[test]
     fn type_change_string_to_integer_fails() {
-        let golden = schema_with_event(
-            "cost_update",
-            event_shape(&[("num_turns", "integer")], &[]),
-        );
-        let current = schema_with_event(
-            "cost_update",
-            event_shape(&[("num_turns", "string")], &[]),
-        );
+        let golden =
+            schema_with_event("cost_update", event_shape(&[("num_turns", "integer")], &[]));
+        let current =
+            schema_with_event("cost_update", event_shape(&[("num_turns", "string")], &[]));
         let report = diff_schemas(&golden, &current);
         assert_fail_kind(&report, |k| {
             matches!(k, FailureKind::TypeMismatch { path, golden, current }
@@ -831,25 +810,29 @@ mod differ_tests {
             claude_version: "2.1.104".into(),
             ..Default::default()
         };
-        golden
-            .event_types
-            .insert("assistant_text".into(), event_shape(&[("type", "string")], &[]));
-        golden
-            .event_types
-            .insert("turn_complete".into(), event_shape(&[("type", "string")], &[]));
+        golden.event_types.insert(
+            "assistant_text".into(),
+            event_shape(&[("type", "string")], &[]),
+        );
+        golden.event_types.insert(
+            "turn_complete".into(),
+            event_shape(&[("type", "string")], &[]),
+        );
 
         let mut current = Schema {
             claude_version: "2.1.105".into(),
             ..Default::default()
         };
-        current
-            .event_types
-            .insert("turn_complete".into(), event_shape(&[("type", "string")], &[]));
+        current.event_types.insert(
+            "turn_complete".into(),
+            event_shape(&[("type", "string")], &[]),
+        );
 
         let report = diff_schemas(&golden, &current);
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::MissingEventType { event_type } if event_type == "assistant_text")
-        });
+        assert_fail_kind(
+            &report,
+            |k| matches!(k, FailureKind::MissingEventType { event_type } if event_type == "assistant_text"),
+        );
     }
 
     // ---- 6. Event type new in current → warn
@@ -857,16 +840,19 @@ mod differ_tests {
     #[test]
     fn new_event_type_in_current_warns() {
         let golden = schema_with_event("session_init", event_shape(&[("type", "string")], &[]));
-        let mut current = schema_with_event("session_init", event_shape(&[("type", "string")], &[]));
-        current
-            .event_types
-            .insert("new_boundary".into(), event_shape(&[("type", "string")], &[]));
+        let mut current =
+            schema_with_event("session_init", event_shape(&[("type", "string")], &[]));
+        current.event_types.insert(
+            "new_boundary".into(),
+            event_shape(&[("type", "string")], &[]),
+        );
 
         let report = diff_schemas(&golden, &current);
         assert!(!report.has_failures());
-        assert_warn_kind(&report, |k| {
-            matches!(k, FailureKind::NewEventType { event_type } if event_type == "new_boundary")
-        });
+        assert_warn_kind(
+            &report,
+            |k| matches!(k, FailureKind::NewEventType { event_type } if event_type == "new_boundary"),
+        );
     }
 
     // ---- 7. Required field demoted to optional with same type → ok
@@ -892,14 +878,8 @@ mod differ_tests {
 
     #[test]
     fn required_to_optional_type_change_fails() {
-        let golden = schema_with_event(
-            "tool_result",
-            event_shape(&[("output", "string")], &[]),
-        );
-        let current = schema_with_event(
-            "tool_result",
-            event_shape(&[], &[("output", "integer")]),
-        );
+        let golden = schema_with_event("tool_result", event_shape(&[("output", "string")], &[]));
+        let current = schema_with_event("tool_result", event_shape(&[], &[("output", "integer")]));
         let report = diff_schemas(&golden, &current);
         assert_fail_kind(&report, |k| matches!(k, FailureKind::TypeMismatch { .. }));
     }
@@ -932,9 +912,10 @@ mod differ_tests {
 
         let report = diff_schemas(&golden, &current);
         assert!(!report.has_failures());
-        assert_warn_kind(&report, |k| {
-            matches!(k, FailureKind::NewToolUseUnion { tool_name } if tool_name == "Glob")
-        });
+        assert_warn_kind(
+            &report,
+            |k| matches!(k, FailureKind::NewToolUseUnion { tool_name } if tool_name == "Glob"),
+        );
     }
 
     // ---- 10. Polymorphic tool_use_structured: removed tool_name → fail
@@ -964,9 +945,10 @@ mod differ_tests {
         );
 
         let report = diff_schemas(&golden, &current);
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::RemovedToolUseUnion { tool_name } if tool_name == "Bash")
-        });
+        assert_fail_kind(
+            &report,
+            |k| matches!(k, FailureKind::RemovedToolUseUnion { tool_name } if tool_name == "Bash"),
+        );
     }
 
     // ---- 11. Tool_use_structured union arm shape diff → fail at tool_name path
@@ -980,10 +962,7 @@ mod differ_tests {
         golden.tool_use_structured_by_tool.insert(
             "Read".into(),
             event_shape(
-                &[
-                    ("tool_use_id", "string"),
-                    ("structured_result", "object"),
-                ],
+                &[("tool_use_id", "string"), ("structured_result", "object")],
                 &[],
             ),
         );
@@ -1041,7 +1020,12 @@ mod differ_tests {
     fn probe_sequence_removed_slot_fails() {
         let golden = schema_with_probe_seq(
             "test-01",
-            &["system_metadata", "thinking_text", "assistant_text", "turn_complete"],
+            &[
+                "system_metadata",
+                "thinking_text",
+                "assistant_text",
+                "turn_complete",
+            ],
         );
         let current = schema_with_probe_seq(
             "test-01",
@@ -1112,9 +1096,10 @@ mod differ_tests {
 
         let current = schema_with_probe_seq("test-01", &["a", "b"]);
         let report = diff_schemas(&golden, &current);
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::MissingProbe { probe_name } if probe_name == "test-02")
-        });
+        assert_fail_kind(
+            &report,
+            |k| matches!(k, FailureKind::MissingProbe { probe_name } if probe_name == "test-02"),
+        );
     }
 
     // ---- 17. New probe in current → warn
@@ -1128,9 +1113,10 @@ mod differ_tests {
             .insert("test-new".into(), vec!["x".into(), "y".into()]);
         let report = diff_schemas(&golden, &current);
         assert!(!report.has_failures());
-        assert_warn_kind(&report, |k| {
-            matches!(k, FailureKind::NewProbe { probe_name } if probe_name == "test-new")
-        });
+        assert_warn_kind(
+            &report,
+            |k| matches!(k, FailureKind::NewProbe { probe_name } if probe_name == "test-new"),
+        );
     }
 
     // ---- 18. Empty golden, non-empty current: everything new → all warns
@@ -1158,9 +1144,10 @@ mod differ_tests {
         };
         let report = diff_schemas(&golden, &current);
         assert!(report.has_failures());
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::MissingEventType { event_type } if event_type == "session_init")
-        });
+        assert_fail_kind(
+            &report,
+            |k| matches!(k, FailureKind::MissingEventType { event_type } if event_type == "session_init"),
+        );
     }
 
     // ---- 20. Format report is non-empty for non-empty findings
@@ -1244,24 +1231,21 @@ mod differ_tests {
                 }
             }
         });
-        let tmp = std::env::temp_dir().join(format!(
-            "drift-differ-test-{}.json",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("drift-differ-test-{}.json", std::process::id()));
         std::fs::write(&tmp, serde_json::to_string_pretty(&schema_json).unwrap())
             .expect("write tmp schema");
 
         let loaded = load_schema(&tmp).expect("load_schema ok");
         assert_eq!(loaded.claude_version, "2.1.104");
         assert!(loaded.event_types.contains_key("session_init"));
-        assert!(
-            loaded
-                .tool_use_structured_by_tool
-                .contains_key("Read")
-        );
+        assert!(loaded.tool_use_structured_by_tool.contains_key("Read"));
         assert_eq!(
             loaded.probe_sequences.get("test-01"),
-            Some(&vec!["session_init".to_string(), "turn_complete".to_string()])
+            Some(&vec![
+                "session_init".to_string(),
+                "turn_complete".to_string()
+            ])
         );
 
         let _ = std::fs::remove_file(&tmp);

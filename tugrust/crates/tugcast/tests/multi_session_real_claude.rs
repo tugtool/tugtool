@@ -189,9 +189,7 @@ async fn test_subscription_auth_source() {
         .as_str()
         .expect("system_metadata.apiKeySource missing (field removed upstream?)");
 
-    eprintln!(
-        "test_subscription_auth_source: apiKeySource = {api_key_source:?}"
-    );
+    eprintln!("test_subscription_auth_source: apiKeySource = {api_key_source:?}");
 
     assert_ne!(
         api_key_source, "ANTHROPIC_API_KEY",

@@ -62,11 +62,11 @@ use common::probes::ProbeStatus;
 // `write_fixtures`. Gated so standard runs don't trigger
 // unused-import warnings when the feature is off.
 #[cfg(feature = "real-claude-tests")]
-use std::path::PathBuf;
-#[cfg(feature = "real-claude-tests")]
 use common::catalog::{self, Schema, capture_with_stability};
 #[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
+#[cfg(feature = "real-claude-tests")]
+use std::path::PathBuf;
 
 // -----------------------------------------------------------------------
 // Fixture writing helpers (capture-binary only)
@@ -153,7 +153,6 @@ pub fn write_fixtures(
 
     Ok(dir)
 }
-
 
 // -----------------------------------------------------------------------
 // The one real-claude test — the entry point
