@@ -21,24 +21,8 @@
  */
 import "./setup-rtl";
 
-import { mock } from "bun:test";
-
-// Override the connection-singleton for this file. The global singleton
-// can be mocked-over by other test files (see filetree-store.test.ts) which
-// leaves it in an inconsistent state for tests that actually need a working
-// `onFrame` surface. By providing a file-local mock backed by a mutable
-// closure variable, the W2 filter tests below can install and replace their
-// mock connection at will.
-let _testConnection: unknown = null;
-mock.module("@/lib/connection-singleton", () => ({
-  getConnection: () => _testConnection,
-  setConnection: (c: unknown) => {
-    _testConnection = c;
-  },
-}));
-
 import React, { useState } from "react";
-import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { Tugcard } from "@/components/tugways/tug-card";
@@ -51,8 +35,6 @@ import type { FeedIdValue } from "@/protocol";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager, makeMockStore } from "./mock-deck-manager-store";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
-import type { TugConnection } from "@/connection";
-import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1606,145 +1588,6 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
     const unregCalls = unregisterSpy.mock.calls;
     expect(unregCalls.length).toBeGreaterThan(0);
     expect(unregCalls[unregCalls.length - 1][0]).toBe("card-t07");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// W2 Step 3: workspace-key filter via useCardWorkspaceKey
-// ---------------------------------------------------------------------------
-//
-// These tests mount a Tugcard subscribed to a dummy feed and verify that the
-// internal `FeedStore` filter routes frames according to the card's
-// `cardSessionBindingStore` binding:
-//
-// - Unbound → `presentWorkspaceKey` fallback: any frame with `workspace_key`
-//   present is accepted, regardless of value (Risk R04 unbound window).
-// - Bound → exact value-check: only frames whose `workspace_key` matches the
-//   card's binding are accepted; others are dropped silently.
-//
-// The observable signal is Tugcard's `feedsReady` gate: when `feedData.size > 0`
-// Tugcard renders its children, otherwise it renders a `tugcard-loading`
-// placeholder. A frame accepted by the filter populates `feedData`; a rejected
-// frame leaves it empty and the loading placeholder persists.
-describe("Tugcard – workspace-key filter (W2)", () => {
-  const TEST_FEED_ID = 0x10 as FeedIdValue;
-
-  interface MockConn {
-    onFrame: (feedId: number, cb: (payload: Uint8Array) => void) => void;
-    emit: (feedId: number, payload: Uint8Array) => void;
-  }
-
-  function makeMockFeedConnection() {
-    const callbacks = new Map<number, Array<(p: Uint8Array) => void>>();
-    const mock: MockConn = {
-      onFrame: (feedId, cb) => {
-        if (!callbacks.has(feedId)) callbacks.set(feedId, []);
-        callbacks.get(feedId)!.push(cb);
-      },
-      emit: (feedId, payload) => {
-        const cbs = callbacks.get(feedId);
-        if (cbs) for (const cb of cbs) cb(payload);
-      },
-    };
-    return mock;
-  }
-
-  function encodeJson(obj: unknown): Uint8Array {
-    return new TextEncoder().encode(JSON.stringify(obj));
-  }
-
-  function renderFilterCard(cardId: string) {
-    return renderInChain(
-      <Tugcard
-        cardId={cardId}
-        meta={{ title: "Filter Test" }}
-        feedIds={[TEST_FEED_ID] as readonly FeedIdValue[]}
-      >
-        <div data-testid="filter-card-content">Content</div>
-      </Tugcard>,
-    );
-  }
-
-  function isContentVisible(container: HTMLElement): boolean {
-    return container.querySelector("[data-testid='filter-card-content']") !== null;
-  }
-
-  beforeEach(() => {
-    const mockConn = makeMockFeedConnection();
-    _testConnection = mockConn as unknown as TugConnection;
-    (globalThis as unknown as { __filterMock: MockConn }).__filterMock = mockConn;
-  });
-
-  afterEach(() => {
-    _testConnection = null;
-    cardSessionBindingStore.clearBinding("card-filter-a");
-    cardSessionBindingStore.clearBinding("card-filter-b");
-    cardSessionBindingStore.clearBinding("card-filter-c");
-    cleanup();
-  });
-
-  it("falls back to presence-check when the card is unbound", () => {
-    const { container } = renderFilterCard("card-filter-a");
-
-    // Before any frame arrives, content is gated behind Loading...
-    expect(isContentVisible(container)).toBe(false);
-
-    const mock = (globalThis as unknown as { __filterMock: MockConn }).__filterMock;
-    // Emit a frame with an arbitrary workspace_key — presence fallback should
-    // accept it even though no card binding exists.
-    act(() => {
-      mock.emit(TEST_FEED_ID, encodeJson({ workspace_key: "/any/path", data: "hello" }));
-    });
-
-    expect(isContentVisible(container)).toBe(true);
-  });
-
-  it("value-checks when the card is bound to a specific workspace_key", () => {
-    const { cardSessionBindingStore } =
-      require("@/lib/card-session-binding-store") as typeof import("@/lib/card-session-binding-store");
-
-    // Bind BEFORE mount so the initial filter installed on FeedStore is the
-    // exact value-check, not the fallback.
-    cardSessionBindingStore.setBinding("card-filter-b", {
-      tugSessionId: "sess-b",
-      workspaceKey: "/work/alpha",
-      projectDir: "/work/alpha",
-    });
-
-    const { container } = renderFilterCard("card-filter-b");
-    const mock = (globalThis as unknown as { __filterMock: MockConn }).__filterMock;
-
-    // Matching workspace_key → accepted, content visible.
-    act(() => {
-      mock.emit(TEST_FEED_ID, encodeJson({ workspace_key: "/work/alpha", data: "ok" }));
-    });
-    expect(isContentVisible(container)).toBe(true);
-  });
-
-  it("rejects frames from other workspaces when the card is bound", () => {
-    const { cardSessionBindingStore } =
-      require("@/lib/card-session-binding-store") as typeof import("@/lib/card-session-binding-store");
-
-    cardSessionBindingStore.setBinding("card-filter-c", {
-      tugSessionId: "sess-c",
-      workspaceKey: "/work/alpha",
-      projectDir: "/work/alpha",
-    });
-
-    const { container } = renderFilterCard("card-filter-c");
-    const mock = (globalThis as unknown as { __filterMock: MockConn }).__filterMock;
-
-    // Non-matching workspace_key → rejected, content still gated by Loading...
-    act(() => {
-      mock.emit(TEST_FEED_ID, encodeJson({ workspace_key: "/work/beta", data: "nope" }));
-    });
-    expect(isContentVisible(container)).toBe(false);
-
-    // Matching frame arrives after → accepted.
-    act(() => {
-      mock.emit(TEST_FEED_ID, encodeJson({ workspace_key: "/work/alpha", data: "ok" }));
-    });
-    expect(isContentVisible(container)).toBe(true);
   });
 });
 

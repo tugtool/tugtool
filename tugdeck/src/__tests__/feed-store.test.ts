@@ -193,4 +193,58 @@ describe("FeedStore filter", () => {
     expect(store.getSnapshot().size).toBe(1);
     expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
   });
+
+  test("setFilter swaps the predicate for subsequent frames", () => {
+    // W2 Step 3: Tugcard installs a reactive filter on the existing
+    // FeedStore via setFilter when its `workspaceKey` binding arrives.
+    // This test verifies the mechanism directly: install a fallback filter,
+    // emit a passing frame, swap to a stricter filter, verify the next
+    // non-matching frame is rejected while a matching one is accepted.
+    const { conn, mock } = makeMockConn();
+
+    const presenceFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" && decoded !== null && "workspace_key" in decoded;
+
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      undefined,
+      presenceFilter,
+    );
+
+    // Fallback accepts any frame with `workspace_key`.
+    mock.emit(
+      FeedId.SESSION_METADATA,
+      encodeJson({ workspace_key: "/any", payload: "a" }),
+    );
+    expect(store.getSnapshot().size).toBe(1);
+
+    // Tighten to an exact value-check for "/work/alpha".
+    const exactFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      "workspace_key" in decoded &&
+      (decoded as { workspace_key: unknown }).workspace_key === "/work/alpha";
+    store.setFilter(exactFilter);
+
+    // Non-matching frame is rejected — snapshot for this feedId should stay
+    // on the previous payload (setFilter does not purge cached data, per
+    // its JSDoc).
+    mock.emit(
+      FeedId.SESSION_METADATA,
+      encodeJson({ workspace_key: "/work/beta", payload: "b" }),
+    );
+    expect(
+      (store.getSnapshot().get(FeedId.SESSION_METADATA) as { payload: string }).payload,
+    ).toBe("a");
+
+    // Matching frame is accepted.
+    mock.emit(
+      FeedId.SESSION_METADATA,
+      encodeJson({ workspace_key: "/work/alpha", payload: "c" }),
+    );
+    expect(
+      (store.getSnapshot().get(FeedId.SESSION_METADATA) as { payload: string }).payload,
+    ).toBe("c");
+  });
 });

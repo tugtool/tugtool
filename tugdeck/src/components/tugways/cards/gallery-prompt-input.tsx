@@ -183,47 +183,83 @@ export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
     return () => editorStore.unbind();
   }, [editorStore]);
 
-  // Per-instance FILETREE stack. Rebuilt when the card's workspace binding
-  // changes so the FeedStore filter always matches the card's workspace.
-  // Before binding lands, the fallback `presentWorkspaceKey` filter accepts
-  // any workspace-stamped frame (Risk R04, unbound window); once bound, the
-  // filter tightens to an exact value match so stray workspaces can't leak
-  // into the @ completion.
+  // Per-instance FILETREE stack. Same pattern as Tugcard's `feedStoreRef`:
+  // stateful stores live in a ref (not React state) to comply with [L02]
+  // "External state enters React through useSyncExternalStore only — no
+  // useState + manual sync, no useEffect copying external values into
+  // React state." The stack is constructed once at mount and disposed on
+  // unmount.
+  //
+  // The FeedStore filter is the only reactive piece: `useMemo` produces a
+  // pure filter function identity from `workspaceKey`, and a `useEffect`
+  // reinstalls it on the existing FeedStore via `setFilter` when the
+  // identity changes — mirroring Tugcard's workspace-filter wiring
+  // exactly. Before binding lands, the fallback `presentWorkspaceKey`
+  // accepts any workspace-stamped frame (Risk R04, unbound window); once
+  // bound, the filter tightens to an exact value match.
   const workspaceKey = useCardWorkspaceKey(cardId);
-  const fileTreeStack = useMemo(() => {
-    const connection = getConnection();
-    if (!connection) {
-      console.warn("GalleryPromptInput: connection not available at render time");
-      return null;
-    }
-    const filter: FeedStoreFilter = workspaceKey
-      ? (_feedId, decoded) =>
-          typeof decoded === "object" &&
-          decoded !== null &&
-          "workspace_key" in decoded &&
-          (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
-      : presentWorkspaceKey;
-    const feedStore = new FeedStore(connection, [FeedId.FILETREE], undefined, filter);
-    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-    const provider = fileTreeStore.getFileCompletionProvider();
-    return { feedStore, fileTreeStore, provider };
-  }, [workspaceKey]);
 
-  // Dispose the per-instance FILETREE stack on unmount and whenever the
-  // memoized stack is rebuilt (i.e., when `workspaceKey` changes).
+  const workspaceFilter: FeedStoreFilter = useMemo(
+    () =>
+      workspaceKey
+        ? (_feedId, decoded) =>
+            typeof decoded === "object" &&
+            decoded !== null &&
+            "workspace_key" in decoded &&
+            (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
+        : presentWorkspaceKey,
+    [workspaceKey],
+  );
+
+  const fileTreeStackRef = useRef<{
+    feedStore: FeedStore;
+    fileTreeStore: FileTreeStore;
+    provider: CompletionProvider;
+  } | null>(null);
+
+  if (fileTreeStackRef.current === null) {
+    const connection = getConnection();
+    if (connection) {
+      // Initial filter is the memoized value captured at first render —
+      // subsequent changes are applied via setFilter in the useEffect below.
+      const feedStore = new FeedStore(
+        connection,
+        [FeedId.FILETREE],
+        undefined,
+        workspaceFilter,
+      );
+      const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+      const provider = fileTreeStore.getFileCompletionProvider();
+      fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
+    } else {
+      console.warn("GalleryPromptInput: connection not available at render");
+    }
+  }
+
+  useEffect(() => {
+    fileTreeStackRef.current?.feedStore.setFilter(workspaceFilter);
+  }, [workspaceFilter]);
+
   useEffect(() => {
     return () => {
-      fileTreeStack?.fileTreeStore.dispose();
-      fileTreeStack?.feedStore.dispose();
+      const stack = fileTreeStackRef.current;
+      if (stack) {
+        stack.fileTreeStore.dispose();
+        stack.feedStore.dispose();
+        fileTreeStackRef.current = null;
+      }
     };
-  }, [fileTreeStack]);
+  }, []);
 
+  // Stable — the provider identity is owned by the ref and never changes
+  // for the card's lifetime, so the memo's [] deps are correct.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(
     () => ({
-      "@": fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
       "/": getCardServices().commandCompletionProvider,
     }),
-    [fileTreeStack],
+    [],
   );
 
   const handleSubmit = useCallback(() => {

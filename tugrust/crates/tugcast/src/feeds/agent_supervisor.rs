@@ -1100,10 +1100,26 @@ impl AgentSupervisor {
         let entries = self.store.list_session_records()?;
         let mut ledger = self.ledger.lock().await;
         let mut inserted = 0usize;
-        // W2 Step 1: we destructure the new record shape but still build
-        // ledger entries from `tug_session_id` alone. Step 6 will teach this
-        // path to bind workspaces and drop records with `project_dir = None`.
         for (_card_id, record) in entries {
+            // ================================================================
+            // W2 STEP 1 DEFERRAL — MUST BE REPLACED IN W2 STEP 6
+            // ================================================================
+            // `record.project_dir` and `record.claude_session_id` are
+            // intentionally dropped here. Step 1 bumped the schema and taught
+            // the reader to destructure the new record, but the per-session
+            // workspace binding + Claude resume logic lands in Step 6 / P14.
+            // Until then, this path rebinds ledger entries using only
+            // `tug_session_id`, matching pre-W2 behavior byte-for-byte.
+            //
+            // The `let _ = ...` bindings below are a deliberate forcing
+            // function: Step 6's loop restructure will move these fields
+            // into real callsites, and anyone editing this block before
+            // Step 6 will see the unused fields and know the deferral is
+            // still in effect.
+            // See roadmap/tugplan-workspace-registry-w2.md [D03] + Step 6.
+            let _ = &record.project_dir;
+            let _ = &record.claude_session_id;
+
             let tug_session_id = TugSessionId::new(record.tug_session_id);
             if ledger.contains_key(&tug_session_id) {
                 continue;
