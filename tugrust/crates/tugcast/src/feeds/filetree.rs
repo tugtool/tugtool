@@ -9,6 +9,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
@@ -17,6 +18,7 @@ use tracing::{debug, info, warn};
 use tugcast_core::types::{FsEvent, ScoredResult};
 use tugcast_core::{FeedId, FileTreeSnapshot, Frame};
 
+use super::code::splice_workspace_key;
 use super::fuzzy_scorer::score_file_path;
 
 /// Maximum number of results returned per query.
@@ -45,6 +47,9 @@ pub struct FileTreeFeed {
     event_tx: broadcast::Sender<Vec<FsEvent>>,
     /// Receives queries from the router.
     query_rx: mpsc::Receiver<FileTreeQuery>,
+    /// Canonical workspace identifier, spliced as the first field of every
+    /// emitted FILETREE frame.
+    workspace_key: Arc<str>,
 }
 
 impl FileTreeFeed {
@@ -54,6 +59,7 @@ impl FileTreeFeed {
         truncated: bool,
         event_tx: broadcast::Sender<Vec<FsEvent>>,
         query_rx: mpsc::Receiver<FileTreeQuery>,
+        workspace_key: Arc<str>,
     ) -> Self {
         Self {
             original_root: root.clone(),
@@ -63,6 +69,7 @@ impl FileTreeFeed {
             watcher_aligned: true,
             event_tx,
             query_rx,
+            workspace_key,
         }
     }
 
@@ -76,7 +83,7 @@ impl FileTreeFeed {
             results: vec![],
             truncated: self.truncated,
         };
-        let _ = Self::send_response(&watch_tx, &initial);
+        let _ = self.send_response(&watch_tx, &initial);
 
         loop {
             tokio::select! {
@@ -115,7 +122,7 @@ impl FileTreeFeed {
                 // Query input.
                 Some(query) = self.query_rx.recv() => {
                     let response = self.handle_query(&query);
-                    let _ = Self::send_response(&watch_tx, &response);
+                    let _ = self.send_response(&watch_tx, &response);
                 }
             }
         }
@@ -308,11 +315,17 @@ impl FileTreeFeed {
     }
 
     /// Serialize and send a response frame.
+    ///
+    /// Splices `workspace_key` as the first field of the serialized
+    /// `FileTreeSnapshot` payload, per [D03]. Must be a `&self` method (not
+    /// an associated function) so it can read `self.workspace_key`.
     fn send_response(
+        &self,
         watch_tx: &watch::Sender<Frame>,
         snapshot: &FileTreeSnapshot,
     ) -> Result<(), ()> {
         let json = serde_json::to_vec(snapshot).map_err(|_| ())?;
+        let json = splice_workspace_key(&json, &self.workspace_key);
         watch_tx.send_modify(|frame| {
             *frame = Frame::new(FeedId::FILETREE, json.clone());
         });
@@ -411,6 +424,59 @@ mod tests {
     fn test_feed(files: BTreeSet<String>) -> FileTreeFeed {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
-        FileTreeFeed::new(PathBuf::from("/test"), files, false, tx, qrx)
+        FileTreeFeed::new(
+            PathBuf::from("/unused-in-this-test"),
+            files,
+            false,
+            tx,
+            qrx,
+            Arc::from("test-workspace"),
+        )
+    }
+
+    /// W1: FileTreeFeed splices `workspace_key` as the first field of every
+    /// emitted frame, including the initial empty snapshot published at the
+    /// start of `run()`.
+    #[tokio::test]
+    async fn test_workspace_key_spliced_into_filetree_frame() {
+        // Synthetic label — this test drives the feed without touching the
+        // real filesystem, so workspace_key is a pure string label.
+        let fixture_key: Arc<str> = Arc::from("test-workspace");
+
+        let (event_tx, _) = broadcast::channel(16);
+        let (_qtx, qrx) = mpsc::channel(16);
+        let feed = FileTreeFeed::new(
+            PathBuf::from("/unused-in-this-test"),
+            BTreeSet::new(),
+            false,
+            event_tx,
+            qrx,
+            fixture_key.clone(),
+        );
+
+        let (watch_tx, mut watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));
+        let cancel = CancellationToken::new();
+        let feed_cancel = cancel.clone();
+        let feed_task = tokio::spawn(async move {
+            feed.run(watch_tx, feed_cancel).await;
+        });
+
+        // The initial snapshot is published as the first action of run().
+        watch_rx.changed().await.unwrap();
+        let frame = watch_rx.borrow_and_update().clone();
+
+        // Field ordering check is done on the raw bytes because
+        // `serde_json::Value` normalizes object key order (BTreeMap).
+        let expected_prefix = format!(r#"{{"workspace_key":"{}","#, fixture_key);
+        assert!(
+            frame.payload.starts_with(expected_prefix.as_bytes()),
+            "workspace_key must be the first field of FILETREE frames; got: {}",
+            String::from_utf8_lossy(&frame.payload)
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(parsed["workspace_key"], fixture_key.as_ref());
+
+        cancel.cancel();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), feed_task).await;
     }
 }

@@ -4,8 +4,10 @@
 //! and forwards Vec<FsEvent> batches as Frame::new(FeedId::FILESYSTEM, json).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -13,10 +15,22 @@ use tracing::{info, warn};
 use tugcast_core::types::FsEvent;
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
+/// Wrapper struct that places `workspace_key` as the first JSON field
+/// ahead of the event batch. FilesystemFeed uses this instead of the
+/// `splice_workspace_key` helper because its payload is a bare JSON array
+/// (`Vec<FsEvent>`), which is incompatible with an object-level splice.
+/// See [D08] in the W1 plan.
+#[derive(Serialize)]
+struct FilesystemBatch<'a> {
+    workspace_key: &'a str,
+    events: &'a [FsEvent],
+}
+
 /// Filesystem feed — thin consumer of the FileWatcher broadcast channel.
 pub struct FilesystemFeed {
     watch_dir: PathBuf,
     event_tx: broadcast::Sender<Vec<FsEvent>>,
+    workspace_key: Arc<str>,
 }
 
 impl FilesystemFeed {
@@ -24,11 +38,17 @@ impl FilesystemFeed {
     ///
     /// `watch_dir` is used only for logging. `event_tx` is the broadcast sender
     /// created by the FileWatcher; `run()` calls `subscribe()` on it to get its
-    /// own receiver.
-    pub fn new(watch_dir: PathBuf, event_tx: broadcast::Sender<Vec<FsEvent>>) -> Self {
+    /// own receiver. `workspace_key` is the canonical workspace identifier
+    /// written as the first field of every emitted FILESYSTEM frame.
+    pub fn new(
+        watch_dir: PathBuf,
+        event_tx: broadcast::Sender<Vec<FsEvent>>,
+        workspace_key: Arc<str>,
+    ) -> Self {
         Self {
             watch_dir,
             event_tx,
+            workspace_key,
         }
     }
 }
@@ -56,7 +76,11 @@ impl SnapshotFeed for FilesystemFeed {
                 result = rx.recv() => {
                     match result {
                         Ok(batch) => {
-                            let json = serde_json::to_vec(&batch).unwrap_or_default();
+                            let json = serde_json::to_vec(&FilesystemBatch {
+                                workspace_key: &self.workspace_key,
+                                events: &batch,
+                            })
+                            .unwrap_or_default();
                             let frame = Frame::new(FeedId::FILESYSTEM, json);
                             let _ = tx.send(frame);
                         }
@@ -88,7 +112,11 @@ mod tests {
     #[test]
     fn test_feed_id_and_name() {
         let (tx, _) = broadcast::channel(256);
-        let feed = FilesystemFeed::new(PathBuf::from("/tmp/test"), tx);
+        let feed = FilesystemFeed::new(
+            PathBuf::from("/unused-in-this-test"),
+            tx,
+            Arc::from("test-workspace"),
+        );
         assert_eq!(feed.feed_id(), FeedId::FILESYSTEM);
         assert_eq!(feed.name(), "filesystem");
     }
@@ -104,8 +132,13 @@ mod tests {
         let (broadcast_tx, _) = broadcast::channel::<Vec<FsEvent>>(256);
         let file_watcher = FileWatcher::new(watch_path.clone());
 
+        // Derive the fixture workspace_key from the real TempDir path —
+        // mirrors how WorkspaceRegistry builds the key in production.
+        let fixture_key: Arc<str> = Arc::from(watch_path.to_string_lossy().as_ref());
+
         // Create the FilesystemFeed (subscribes to broadcast_tx)
-        let feed = FilesystemFeed::new(watch_path.clone(), broadcast_tx.clone());
+        let feed =
+            FilesystemFeed::new(watch_path.clone(), broadcast_tx.clone(), fixture_key.clone());
 
         // Create watch channel
         let (fs_watch_tx, mut fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
@@ -148,12 +181,75 @@ mod tests {
 
         assert_eq!(frame.feed_id, FeedId::FILESYSTEM);
 
-        let events: Vec<FsEvent> = serde_json::from_slice(&frame.payload).unwrap();
+        #[derive(serde::Deserialize)]
+        struct FilesystemBatchOwned {
+            workspace_key: String,
+            events: Vec<FsEvent>,
+        }
+        let parsed: FilesystemBatchOwned = serde_json::from_slice(&frame.payload).unwrap();
 
-        // Verify we got events for the test file
-        assert!(!events.is_empty(), "should have received filesystem events");
+        assert_eq!(parsed.workspace_key, fixture_key.as_ref());
+        assert!(
+            !parsed.events.is_empty(),
+            "should have received filesystem events"
+        );
 
         // Cancel and wait for cleanup
+        cancel.cancel();
+        let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
+    }
+
+    /// W1: FilesystemFeed's wire payload is a `FilesystemBatch` wrapper with
+    /// `workspace_key` as the first field, produced directly via serde rather
+    /// than via the `splice_workspace_key` helper (see [D08]).
+    #[tokio::test]
+    async fn test_workspace_key_spliced_into_filesystem_frame() {
+        use tugcast_core::types::FsEvent;
+
+        // Synthetic label — this test does not touch the real filesystem, so
+        // the workspace_key is a pure string label (not a canonicalized path).
+        let fixture_key: Arc<str> = Arc::from("test-workspace");
+
+        let (broadcast_tx, _) = broadcast::channel::<Vec<FsEvent>>(16);
+        let feed = FilesystemFeed::new(
+            PathBuf::from("/unused-in-this-test"),
+            broadcast_tx.clone(),
+            fixture_key.clone(),
+        );
+
+        let (fs_watch_tx, mut fs_watch_rx) =
+            watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
+        let cancel = CancellationToken::new();
+        let feed_cancel = cancel.clone();
+        let feed_task = tokio::spawn(async move {
+            feed.run(fs_watch_tx, feed_cancel).await;
+        });
+
+        // Give the feed a moment to subscribe before we publish.
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        broadcast_tx
+            .send(vec![FsEvent::Created {
+                path: "hello.rs".to_string(),
+            }])
+            .unwrap();
+
+        fs_watch_rx.changed().await.unwrap();
+        let frame = fs_watch_rx.borrow_and_update().clone();
+
+        // Field ordering check is done on the raw bytes because
+        // `serde_json::Value` normalizes object key order (BTreeMap).
+        let expected_prefix = format!(r#"{{"workspace_key":"{}","#, fixture_key);
+        assert!(
+            frame.payload.starts_with(expected_prefix.as_bytes()),
+            "workspace_key must be the first field; got: {}",
+            String::from_utf8_lossy(&frame.payload)
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(parsed["workspace_key"], fixture_key.as_ref());
+        assert!(parsed["events"].is_array());
+
         cancel.cancel();
         let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
     }

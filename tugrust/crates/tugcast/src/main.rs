@@ -200,9 +200,22 @@ async fn main() {
     let file_watcher = FileWatcher::new(watch_dir.clone());
     let fs_broadcast_tx = FileWatcher::create_sender();
 
+    // Workspace key for the bootstrap feeds — #step-4 will replace this
+    // block with a WorkspaceRegistry call that owns the key internally.
+    let bootstrap_workspace_key: std::sync::Arc<str> = std::sync::Arc::from(
+        feeds::path_resolver::PathResolver::new(watch_dir.clone())
+            .watch_path()
+            .to_string_lossy()
+            .into_owned(),
+    );
+
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
-    let fs_feed = FilesystemFeed::new(watch_dir.clone(), fs_broadcast_tx.clone());
+    let fs_feed = FilesystemFeed::new(
+        watch_dir.clone(),
+        fs_broadcast_tx.clone(),
+        bootstrap_workspace_key.clone(),
+    );
 
     // Create FileTreeFeed: walk the directory, create query channel, watch channel.
     let (initial_files, ft_truncated) = file_watcher.walk();
@@ -214,6 +227,7 @@ async fn main() {
         ft_truncated,
         fs_broadcast_tx.clone(),
         ft_query_rx,
+        bootstrap_workspace_key.clone(),
     );
 
     // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into FileTreeQuery.
@@ -247,7 +261,7 @@ async fn main() {
 
     // Create git feed and watch channel
     let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
-    let git_feed = GitFeed::new(watch_dir.clone());
+    let git_feed = GitFeed::new(watch_dir.clone(), bootstrap_workspace_key.clone());
 
     // Create stats collectors
     let process_info =

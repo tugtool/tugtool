@@ -66,7 +66,6 @@ pub fn splice_tug_session_id(line: &[u8], tug_session_id: &str) -> Vec<u8> {
 /// the empty-object case, and pass through unchanged with a `tracing::warn!`
 /// if no `{` is found. See `splice_tug_session_id` for the rationale behind
 /// the scanning approach.
-#[allow(dead_code)] // wired into the three feed publish sites in W1 Step 3
 pub fn splice_workspace_key(line: &[u8], workspace_key: &str) -> Vec<u8> {
     let Some(brace_idx) = line.iter().position(|b| *b == b'{') else {
         tracing::warn!(

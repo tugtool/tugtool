@@ -102,17 +102,22 @@ impl WorkspaceEntry {
         let (ft_watch_tx, ft_watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));
         let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
 
-        // Construct feeds — #step-3 appends `workspace_key.arc()` to each of
-        // these constructor calls once the feed signatures are updated.
-        let fs_feed = FilesystemFeed::new(project_dir.clone(), fs_broadcast_tx.clone());
+        // Construct feeds — pass `workspace_key.arc()` as a cheap Arc<str>
+        // clone per [D02].
+        let fs_feed = FilesystemFeed::new(
+            project_dir.clone(),
+            fs_broadcast_tx.clone(),
+            workspace_key.arc(),
+        );
         let ft_feed = FileTreeFeed::new(
             project_dir.clone(),
             initial_files,
             ft_truncated,
             fs_broadcast_tx.clone(),
             ft_query_rx,
+            workspace_key.arc(),
         );
-        let git_feed = GitFeed::new(project_dir.clone());
+        let git_feed = GitFeed::new(project_dir.clone(), workspace_key.arc());
 
         // Spawn the four tasks with cancel-clone, mirroring main.rs.
         let fw_cancel = cancel.clone();

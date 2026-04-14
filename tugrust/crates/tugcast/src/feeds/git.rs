@@ -3,6 +3,7 @@
 //! Polls git repository status and broadcasts GitStatus snapshots when changes are detected.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,18 +16,26 @@ use tracing::{debug, info, warn};
 use tugcast_core::types::{FileStatus, GitStatus};
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
+use super::code::splice_workspace_key;
+
 /// Polling interval for git status
 const POLL_INTERVAL_SECS: u64 = 2;
 
 /// Git feed that polls repository status at fixed intervals
 pub struct GitFeed {
     repo_dir: PathBuf,
+    workspace_key: Arc<str>,
 }
 
 impl GitFeed {
-    /// Create a new git feed watching the given repository directory
-    pub fn new(repo_dir: PathBuf) -> Self {
-        Self { repo_dir }
+    /// Create a new git feed watching the given repository directory.
+    ///
+    /// `workspace_key` is spliced as the first field of every emitted GIT frame.
+    pub fn new(repo_dir: PathBuf, workspace_key: Arc<str>) -> Self {
+        Self {
+            repo_dir,
+            workspace_key,
+        }
     }
 }
 
@@ -219,6 +228,7 @@ impl SnapshotFeed for GitFeed {
                     // Compare with previous -- only send if changed
                     if previous.as_ref() != Some(&status) {
                         let json = serde_json::to_vec(&status).unwrap_or_default();
+                        let json = splice_workspace_key(&json, &self.workspace_key);
                         let frame = Frame::new(FeedId::GIT, json);
                         let _ = tx.send(frame);
                         debug!(branch = %status.branch, "git status updated");
@@ -386,7 +396,10 @@ mod tests {
 
     #[test]
     fn test_feed_id_and_name() {
-        let feed = GitFeed::new(PathBuf::from("/tmp/repo"));
+        let feed = GitFeed::new(
+            PathBuf::from("/unused-in-this-test"),
+            Arc::from("test-workspace"),
+        );
         assert_eq!(feed.feed_id(), FeedId::GIT);
         assert_eq!(feed.name(), "git");
     }
@@ -442,8 +455,12 @@ mod tests {
             .await
             .unwrap();
 
+        // Derive the fixture workspace_key from the real TempDir repo path —
+        // mirrors how WorkspaceRegistry builds the key in production.
+        let fixture_key: Arc<str> = Arc::from(repo_path.to_string_lossy().as_ref());
+
         // Create git feed
-        let feed = GitFeed::new(repo_path.clone());
+        let feed = GitFeed::new(repo_path.clone(), fixture_key.clone());
 
         // Create watch channel
         let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
@@ -492,6 +509,83 @@ mod tests {
         assert_eq!(status.staged[0].path, "test.txt");
 
         // Cancel and cleanup
+        cancel.cancel();
+        let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
+    }
+
+    /// W1: GitFeed splices `workspace_key` as the first field of every
+    /// emitted frame.
+    #[tokio::test]
+    async fn test_workspace_key_spliced_into_git_frame() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Initialize git repo with a commit so `git status` returns a valid snapshot.
+        Command::new("git")
+            .args(["-C", &repo_path.to_string_lossy(), "init"])
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &repo_path.to_string_lossy(),
+                "config",
+                "user.name",
+                "test",
+            ])
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &repo_path.to_string_lossy(),
+                "config",
+                "user.email",
+                "test@test.com",
+            ])
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &repo_path.to_string_lossy(),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
+            .output()
+            .await
+            .unwrap();
+
+        // Derive fixture key from the real repo_path.
+        let fixture_key: Arc<str> = Arc::from(repo_path.to_string_lossy().as_ref());
+
+        let feed = GitFeed::new(repo_path.clone(), fixture_key.clone());
+        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let feed_task = tokio::spawn(async move {
+            feed.run(tx, cancel_clone).await;
+        });
+
+        rx.changed().await.unwrap();
+        let frame = rx.borrow_and_update().clone();
+
+        // Field ordering check is done on the raw bytes because
+        // `serde_json::Value` normalizes object key order (BTreeMap).
+        let expected_prefix = format!(r#"{{"workspace_key":"{}","#, fixture_key);
+        assert!(
+            frame.payload.starts_with(expected_prefix.as_bytes()),
+            "workspace_key must be the first field of GIT frames; got: {}",
+            String::from_utf8_lossy(&frame.payload)
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(parsed["workspace_key"], fixture_key.as_ref());
+
         cancel.cancel();
         let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
     }
