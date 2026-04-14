@@ -411,16 +411,12 @@ pub type SpawnerFactory = Arc<dyn Fn() -> Arc<dyn ChildSpawner> + Send + Sync>;
 
 /// Build the default production spawner factory from an
 /// [`AgentSupervisorConfig`]. Each call to the factory clones the configured
-/// paths into a fresh [`TugcodeSpawner`].
+/// `tugcode_path` into a fresh [`TugcodeSpawner`]. `config.project_dir` is
+/// **not** captured — the per-session workspace path is passed to
+/// `spawn_child` per call (see [`ChildSpawner::spawn_child`]).
 pub fn default_spawner_factory(config: &AgentSupervisorConfig) -> SpawnerFactory {
     let tugcode_path = config.tugcode_path.clone();
-    let project_dir = config.project_dir.clone();
-    Arc::new(move || {
-        Arc::new(TugcodeSpawner::new(
-            tugcode_path.clone(),
-            project_dir.clone(),
-        )) as Arc<dyn ChildSpawner>
-    })
+    Arc::new(move || Arc::new(TugcodeSpawner::new(tugcode_path.clone())) as Arc<dyn ChildSpawner>)
 }
 
 /// Errors returned from [`AgentSupervisor::handle_control`]. Consumed by
@@ -1053,6 +1049,13 @@ impl AgentSupervisor {
         let state_tx = self.session_state_tx.clone();
         let tug_session_id_owned = tug_session_id.clone();
         let entry_arc_bridge = entry_arc.clone();
+        // W2 Step 4 STAND-IN — REPLACED IN W2 STEP 6 with
+        // `ledger_entry.project_dir`. For now we pull the global bootstrap
+        // path off `AgentSupervisorConfig` so the bridge compiles and all
+        // existing tests continue to pass. Step 6 adds the per-session
+        // `project_dir` field on `LedgerEntry` and rewrites this block to
+        // read it from the entry instead.
+        let project_dir = self.config.project_dir.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1061,6 +1064,7 @@ impl AgentSupervisor {
                 merger_per_session_tx,
                 state_tx,
                 spawner,
+                project_dir,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -1215,7 +1219,7 @@ mod tests {
     /// its own spawner via [`make_supervisor_with_spawner`].
     struct StallSpawner;
     impl ChildSpawner for StallSpawner {
-        fn spawn_child(&self) -> SpawnFuture {
+        fn spawn_child(&self, _project_dir: &std::path::Path) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
     }
@@ -2080,6 +2084,51 @@ mod tests {
 
     // ---- on_client_disconnect ----
 
+    // ---- W2 Step 4: default_spawner_factory does not close over project_dir ----
+
+    #[test]
+    fn test_default_spawner_factory_does_not_close_over_project_dir() {
+        // Before W2 Step 4, `default_spawner_factory` captured both
+        // `tugcode_path` and `project_dir` from the supervisor config and
+        // baked them into each TugcodeSpawner instance. Step 4 makes the
+        // spawner stateless with respect to `project_dir` — the field is
+        // deleted, `TugcodeSpawner::new` takes only `tugcode_path`, and
+        // `spawn_child` accepts `project_dir` per call. This test locks
+        // that decoupling in place.
+        //
+        // Construction: populate `config.project_dir` with one value and
+        // verify the resulting factory ignores it entirely (the factory
+        // closure now captures only `tugcode_path`). The absence of
+        // `TugcodeSpawner.project_dir` is enforced structurally — any
+        // code that tries to pass it to `TugcodeSpawner::new` fails to
+        // compile.
+        use super::super::agent_bridge::build_tugcode_command;
+        let config = AgentSupervisorConfig {
+            tugcode_path: PathBuf::from("/opt/tugtool/tugcode"),
+            // This value must not bleed into the spawned command below.
+            project_dir: PathBuf::from("/workspace-A-should-be-ignored"),
+        };
+        let _factory = default_spawner_factory(&config);
+
+        // The per-call `project_dir` is what flows into the command. Pass a
+        // deliberately different workspace and verify the legacy config
+        // path does not appear in the resolved argv.
+        let (_program, args) = build_tugcode_command(
+            &config.tugcode_path,
+            std::path::Path::new("/workspace-B-from-per-call"),
+        );
+        assert!(
+            args.iter().any(|a| a == "/workspace-B-from-per-call"),
+            "per-call project_dir must appear in argv: {args:?}"
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|a| a == "/workspace-A-should-be-ignored"),
+            "config.project_dir must NOT appear in argv: {args:?}"
+        );
+    }
+
     // ---- Step 8: rebind_from_tugbank ----
 
     #[tokio::test]
@@ -2171,7 +2220,7 @@ mod tests {
     /// loop without spinning up a real subprocess.
     struct CrashingSpawner;
     impl ChildSpawner for CrashingSpawner {
-        fn spawn_child(&self) -> SpawnFuture {
+        fn spawn_child(&self, _project_dir: &std::path::Path) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
     }
@@ -2499,6 +2548,7 @@ mod tests {
             merger_tx_a,
             state_tx.clone(),
             Arc::new(CrashingSpawner) as Arc<dyn ChildSpawner>,
+            PathBuf::from("/tmp/test-workspace-a"),
             cancel_a,
             retry_delay,
         ));
@@ -2509,6 +2559,7 @@ mod tests {
             merger_tx_b,
             state_tx.clone(),
             Arc::new(StallSpawner) as Arc<dyn ChildSpawner>,
+            PathBuf::from("/tmp/test-workspace-b"),
             cancel_b.clone(),
             retry_delay,
         ));

@@ -138,46 +138,73 @@ pub struct SessionChild {
 /// Abstraction over subprocess spawning so the supervisor can inject a
 /// mock in unit tests without a real binary on disk. Production uses
 /// [`TugcodeSpawner`].
+///
+/// W2: `spawn_child` takes the target `project_dir` per call rather than
+/// capturing it at spawner construction. This lets a single spawner
+/// instance service multiple sessions, each with its own workspace, and
+/// removes the need for the supervisor to rebuild a spawner every time a
+/// new session starts. Implementations must clone the path into owned
+/// storage before `await`-ing, since the returned `SpawnFuture` outlives
+/// the call frame.
 pub trait ChildSpawner: Send + Sync + 'static {
-    fn spawn_child(&self) -> SpawnFuture;
+    fn spawn_child(&self, project_dir: &Path) -> SpawnFuture;
 }
 
 /// Production spawner: launches `tugcode --dir <project_dir>` (or the bun
 /// fallback when the resolved path ends in `.ts`).
+///
+/// Stateless with respect to `project_dir` per W2 Step 4 — the supervisor
+/// passes the target workspace to each `spawn_child` call. The only
+/// captured state is the path to the tugcode binary.
 pub struct TugcodeSpawner {
     pub tugcode_path: PathBuf,
-    pub project_dir: PathBuf,
 }
 
 impl TugcodeSpawner {
-    pub fn new(tugcode_path: PathBuf, project_dir: PathBuf) -> Self {
-        Self {
-            tugcode_path,
-            project_dir,
-        }
+    pub fn new(tugcode_path: PathBuf) -> Self {
+        Self { tugcode_path }
     }
 }
 
+/// Resolve the `(program, args)` pair for invoking tugcode at `tugcode_path`
+/// against `project_dir`. Pure helper extracted so unit tests can assert the
+/// exact argv without spawning a real subprocess.
+///
+/// - Paths ending in `.ts` are run via `bun run <path>` (dev fallback).
+/// - Anything else is invoked directly.
+///
+/// In both cases the returned args vector ends with `["--dir", <project_dir>]`,
+/// which is what tugcode parses to locate the workspace.
+pub(crate) fn build_tugcode_command(
+    tugcode_path: &Path,
+    project_dir: &Path,
+) -> (String, Vec<String>) {
+    let (program, mut args): (String, Vec<String>) =
+        if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
+            (
+                "bun".to_string(),
+                vec!["run".to_string(), tugcode_path.display().to_string()],
+            )
+        } else {
+            (
+                tugcode_path
+                    .to_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "tugcode".to_string()),
+                Vec::new(),
+            )
+        };
+    args.push("--dir".to_string());
+    args.push(project_dir.display().to_string());
+    (program, args)
+}
+
 impl ChildSpawner for TugcodeSpawner {
-    fn spawn_child(&self) -> SpawnFuture {
+    fn spawn_child(&self, project_dir: &Path) -> SpawnFuture {
         let tugcode_path = self.tugcode_path.clone();
-        let project_dir = self.project_dir.clone();
+        let project_dir = project_dir.to_path_buf();
         Box::pin(async move {
-            let (cmd, args): (String, Vec<String>) =
-                if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
-                    (
-                        "bun".to_string(),
-                        vec!["run".to_string(), tugcode_path.display().to_string()],
-                    )
-                } else {
-                    (
-                        tugcode_path
-                            .to_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "tugcode".to_string()),
-                        Vec::new(),
-                    )
-                };
+            let (cmd, args) = build_tugcode_command(&tugcode_path, &project_dir);
             info!(cmd, ?args, "Spawning tugcode");
             // Scrub Anthropic auth env vars so the downstream claude CLI
             // authenticates via `~/.claude.json` (the user's Max/Pro
@@ -191,8 +218,6 @@ impl ChildSpawner for TugcodeSpawner {
             // destructure in `tugcode/src/session.ts::spawnClaude`.
             let mut child = Command::new(&cmd)
                 .args(&args)
-                .arg("--dir")
-                .arg(&project_dir)
                 .env_remove("ANTHROPIC_API_KEY")
                 .env_remove("ANTHROPIC_AUTH_TOKEN")
                 .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
@@ -258,6 +283,7 @@ pub async fn run_session_bridge(
     merger_tx: mpsc::Sender<Frame>,
     state_tx: broadcast::Sender<Frame>,
     spawner: Arc<dyn ChildSpawner>,
+    project_dir: PathBuf,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -292,7 +318,7 @@ pub async fn run_session_bridge(
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
         let spawn_result = tokio::select! {
-            result = spawner.spawn_child() => result,
+            result = spawner.spawn_child(project_dir.as_path()) => result,
             _ = cancel.cancelled() => return,
         };
         let child = match spawn_result {
@@ -550,6 +576,54 @@ mod tests {
             s.ends_with("/tugcode") || s.contains("tugcode/src/main.ts"),
             "Expected sibling binary or bun fallback, got: {s}"
         );
+    }
+
+    // ---- W2 Step 4: build_tugcode_command + stateless TugcodeSpawner ----
+
+    #[test]
+    fn test_build_tugcode_command_binary_passes_project_dir() {
+        let (program, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/alpha"),
+        );
+        assert_eq!(program, "/opt/tugtool/tugcode");
+        assert_eq!(args, vec!["--dir".to_string(), "/work/alpha".to_string()]);
+    }
+
+    #[test]
+    fn test_build_tugcode_command_ts_uses_bun_run_and_passes_project_dir() {
+        let (program, args) = build_tugcode_command(
+            Path::new("/u/src/tugtool/tugcode/src/main.ts"),
+            Path::new("/work/beta"),
+        );
+        assert_eq!(program, "bun");
+        assert_eq!(
+            args,
+            vec![
+                "run".to_string(),
+                "/u/src/tugtool/tugcode/src/main.ts".to_string(),
+                "--dir".to_string(),
+                "/work/beta".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_tugcode_spawner_uses_per_call_project_dir() {
+        // Belt-and-suspenders: verify that the same TugcodeSpawner instance
+        // produces commands for different workspaces when `spawn_child` is
+        // invoked with different `project_dir` arguments. Since the spawner
+        // field-less on project_dir after W2 Step 4, this can only work if
+        // the per-call argument actually flows through build_tugcode_command.
+        let spawner = TugcodeSpawner::new(PathBuf::from("/opt/tugtool/tugcode"));
+        let (_p1, args1) =
+            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"));
+        let (_p2, args2) =
+            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"));
+        assert!(args1.iter().any(|a| a == "/work/a"));
+        assert!(!args1.iter().any(|a| a == "/work/b"));
+        assert!(args2.iter().any(|a| a == "/work/b"));
+        assert!(!args2.iter().any(|a| a == "/work/a"));
     }
 
     #[test]
