@@ -16,3 +16,4 @@ pub mod path_resolver;
 pub mod session_metadata;
 pub mod stats;
 pub mod terminal;
+pub mod workspace_registry;
