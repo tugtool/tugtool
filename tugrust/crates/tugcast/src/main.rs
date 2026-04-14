@@ -180,7 +180,9 @@ async fn main() {
     // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
     let registry = WorkspaceRegistry::new();
-    let bootstrap = registry.get_or_create(&watch_dir, cancel.clone());
+    let bootstrap = registry
+        .get_or_create(&watch_dir, cancel.clone())
+        .expect("bootstrap workspace must be a valid directory");
 
     // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into
     // FileTreeQuery and forward to the workspace's FileTreeFeed.
