@@ -577,12 +577,13 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
                                              as single FeedId slots, encode session_id in each frame's
                                              payload, demux in the router, filter client-side. Enables
                                              Tide card ↔ CodeSessionStore 1:1 per D-T3-09.
-  P2 follow-up: golden catalog             — machine-readable golden fixtures + drift test for the Claude
-                                             Code stream-json catalog (Layer A). **Lands before T3.4.a
-                                             begins** as the safety net: if Anthropic ships a new Claude
-                                             version with different event shapes, the drift test fails
-                                             loudly instead of CodeSessionStore silently corrupting its
-                                             turn state.
+  P2 follow-up: golden catalog             — **LANDED (2026-04-13). Baseline v2.1.105, drift test passing.**
+                                             Machine-readable golden fixtures + hand-rolled shape differ
+                                             + drift regression test for the Claude Code stream-json
+                                             catalog (Layer A). Safety net for T3.4.a: if Anthropic ships
+                                             a new Claude version with different event shapes, the drift
+                                             test fails loudly instead of CodeSessionStore silently
+                                             corrupting its turn state. See #p2-followup-golden-catalog.
   P13: Spawn cap + rate limit              — concurrent-session hard cap + leaky-bucket spawn rate in
                                              AgentSupervisorConfig. Lands opportunistically after T3.4.a
                                              as cheap insurance before real users touch Tide.
@@ -597,6 +598,37 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
                                              Builds on P2 follow-up's golden catalog. Lands after T3.4.a
                                              so the reducer's version-branching is informed by what
                                              CodeSessionStore actually consumes.
+  P16: session_command routing bug (HIGH)  — session_command new/continue/fork probes (test-13/17/20)
+                                             stall or misroute on the multi-session router. Surfaced
+                                             during golden-catalog Step 4 canary; the three probes are
+                                             currently skipped in v2.1.104/ + v2.1.105/ manifests with
+                                             §T0.5 P16 pointers. **Blocks T3.4.d multi-session.** Can
+                                             run in parallel with T3.4.a/b/c (which are single-session).
+                                             Needs root-cause investigation in tugcode/supervisor before
+                                             re-enabling the three probes in the probe table.
+  P17: model_change prose reshape (INFO)   — **RESOLVED during golden-catalog Step 4/5.** Prose catalog
+                                             described a synthetic assistant_text confirmation that did
+                                             not survive against live claude 2.1.104. The Step-2 round-trip
+                                             test was reshaped to a behavioral assertion; the "Known
+                                             divergences" section in roadmap/transport-exploration.md
+                                             records the delta. No separate landing needed.
+  P19: 45s WebSocket reset (HIGH)          — six probes (test-10/13/17/20/25/35) fail with `Connection
+                                             reset without closing handshake` at ~45055 ms regardless
+                                             of individual timeout. tugcast-side or tokio-tungstenite-side
+                                             idle ceiling hit by any session whose first meaningful event
+                                             sequence spans > ~45 s. **Must land before T3.4.a ships to
+                                             real users** — any conversation with a tool-use chain or a
+                                             long response will tripwire this. Investigation-first fix:
+                                             instrument close-frame emission, grep for hardcoded 45-s
+                                             constants, decide between config-up / removal / keepalive
+                                             ping workaround. Can run in parallel with T3.4.a scaffolding.
+  P20: rate_limit_event routing (MEDIUM)   — claude 2.1.105 emits `rate_limit_event` as a top-level
+                                             stream-json sidecar on most turns; tugcode's
+                                             routeTopLevelEvent has no handler, so the event is dropped
+                                             before reaching CODE_OUTPUT and CodeSessionStore never sees
+                                             it. Same class as the api_retry drop from transport-
+                                             exploration.md. Pair with rate-limit UI work whenever that
+                                             lands — no hard dependency on T3.4 phases.
 
 ─── TIDE: INPUT ───────────────────────────────────────────
 Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history, turn state, live surface
