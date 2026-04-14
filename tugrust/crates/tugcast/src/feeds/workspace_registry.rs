@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tugcast_core::protocol::{FeedId, Frame};
 use tugcast_core::SnapshotFeed;
+use tugcast_core::protocol::{FeedId, Frame};
 
 use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
@@ -200,10 +200,7 @@ impl WorkspaceRegistry {
             .into_owned();
         let workspace_key = WorkspaceKey(Arc::from(canonical));
 
-        let mut map = self
-            .inner
-            .lock()
-            .expect("WorkspaceRegistry mutex poisoned");
+        let mut map = self.inner.lock().expect("WorkspaceRegistry mutex poisoned");
 
         if let Some(existing) = map.get(&workspace_key) {
             return Arc::clone(existing);

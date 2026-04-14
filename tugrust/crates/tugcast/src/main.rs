@@ -55,11 +55,11 @@ impl SessionKeysStore for EphemeralSessionKeysStore {
     }
 }
 use crate::feeds::filetree::FileTreeQuery;
-use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::feeds::stats::{
     BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
 };
 use crate::feeds::terminal::{self, TerminalFeed};
+use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 
 #[tokio::main]

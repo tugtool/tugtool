@@ -137,8 +137,11 @@ mod tests {
         let fixture_key: Arc<str> = Arc::from(watch_path.to_string_lossy().as_ref());
 
         // Create the FilesystemFeed (subscribes to broadcast_tx)
-        let feed =
-            FilesystemFeed::new(watch_path.clone(), broadcast_tx.clone(), fixture_key.clone());
+        let feed = FilesystemFeed::new(
+            watch_path.clone(),
+            broadcast_tx.clone(),
+            fixture_key.clone(),
+        );
 
         // Create watch channel
         let (fs_watch_tx, mut fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
@@ -217,8 +220,7 @@ mod tests {
             fixture_key.clone(),
         );
 
-        let (fs_watch_tx, mut fs_watch_rx) =
-            watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
+        let (fs_watch_tx, mut fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
         let cancel = CancellationToken::new();
         let feed_cancel = cancel.clone();
         let feed_task = tokio::spawn(async move {
