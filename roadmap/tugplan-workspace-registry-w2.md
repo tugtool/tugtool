@@ -11,9 +11,9 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete (automated); manual A/B smoke deferred to [T3.4.c](../roadmap/tide.md#t3-4-c-tide-card) |
 | Target branch | main |
-| Last updated | 2026-04-14 |
+| Last updated | 2026-04-15 |
 
 ---
 
@@ -1330,28 +1330,20 @@ No new Rust files — `SessionKeyRecord` and `WorkspaceError` fit alongside exis
 - No code changes. Verification only.
 
 **Tasks:**
-- [ ] `cd tugrust && cargo nextest run` — full workspace green.
-- [ ] `cd tugrust && cargo build --workspace` — clean under `-D warnings`.
-- [ ] `cd tugdeck && bun run check && bun test` — full tugdeck green.
-- [ ] Grep verification: `rg 'AgentSupervisorConfig::project_dir' tugrust/crates/tugcast/src` — zero results.
-- [ ] Grep verification: `rg 'presentWorkspaceKey' tugdeck/src/components/tugways/cards` — only gallery-prompt-input and tug-card should reference it (as a fallback import), not as a registration field.
-- [ ] Manual A/B smoke in Tug.app:
-  - [ ] Launch Tug.app. Open a card pointed at project A (e.g., the tugtool checkout). Confirm git card shows tugtool's branch.
-  - [ ] Open a second card pointed at project B (any other git repo on the machine). Confirm the second card's git card shows B's branch.
-  - [ ] Inspect DevTools for the first card's `FeedStore` — confirm its `_filter` is the value-check form and rejects frames whose `workspace_key` doesn't match A's canonical path.
-  - [ ] Edit a file in A. Confirm A's card sees the event; confirm B's card does not.
-  - [ ] Edit a file in B. Confirm B's card sees the event; confirm A's card does not.
-  - [ ] Close card A. Confirm via tugcast logs that the workspace was released and (since no other card binds A) the entry was torn down.
-  - [ ] Open a third card also pointed at B. Confirm B's `WorkspaceEntry` refcount is 2 (via a debug log or test hook); closing the third card leaves B's entry alive for the second card.
-  - [ ] Close everything. Confirm all workspace entries are gone except the bootstrap (which will be removed in W3).
+- [x] `cd tugrust && cargo nextest run` — full workspace green (1115 tests, 0 failures, verified via `just ci`).
+- [x] `cd tugrust && cargo build --workspace` — clean under `-D warnings`.
+- [x] `cd tugdeck && bun run check && bun test` — full tugdeck green (1942 tests, 0 failures).
+- [x] Grep verification: `rg 'AgentSupervisorConfig::project_dir' tugrust/crates/tugcast/src` — zero real matches (only a historical comment reference in `agent_supervisor.rs`).
+- [x] Grep verification: `rg 'presentWorkspaceKey' tugdeck/src/components/tugways/cards` — only `tug-card.tsx` and `gallery-prompt-input.tsx` reference it as a fallback import (not as a registration field).
+- [ ] ~~Manual A/B smoke in Tug.app~~ — **Deferred to [T3.4.c](../roadmap/tide.md#t3-4-c-tide-card)**. As of 2026-04-14 there is no UI affordance to pick a `project_dir` at card-open time (W2 hard-codes the test fixture). Manual two-workspace smoke cannot be exercised until T3.4.c lands the Tide card with a real picker. Per tide.md's [Execution Order](../roadmap/tide.md#execution-order-w2-to-tide), this is accepted as known gap for W2 closeout.
 
 **Tests:**
-- [ ] Full Rust workspace nextest run green.
-- [ ] Full tugdeck bun test run green.
+- [x] Full Rust workspace nextest run green.
+- [x] Full tugdeck bun test run green.
 
 **Checkpoint:**
-- [ ] Manual smoke checklist captured in the PR description.
-- [ ] All exit criteria in [#exit-criteria] are checked.
+- [ ] ~~Manual smoke checklist captured in the PR description~~ — deferred to T3.4.c.
+- [x] All *automated* exit criteria in [#exit-criteria] are checked; the one manual criterion (#11) is deferred.
 
 ---
 
@@ -1361,18 +1353,18 @@ No new Rust files — `SessionKeyRecord` and `WorkspaceError` fit alongside exis
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] **Criterion 1** — `cd tugrust && cargo nextest run` full-workspace green. (verification: Step 8 checkpoint)
-- [ ] **Criterion 2** — `cd tugdeck && bun test` full-suite green. (verification: Step 8 checkpoint)
-- [ ] **Criterion 3** — `rg 'AgentSupervisorConfig::project_dir' tugrust/crates/tugcast/src` returns zero matches. (verification: Step 8 grep)
-- [ ] **Criterion 4** — `test_two_sessions_two_workspaces` passes.
-- [ ] **Criterion 5** — `test_two_sessions_same_project_share_workspace` passes.
-- [ ] **Criterion 6** — `test_workspace_teardown_on_last_session_close` passes.
-- [ ] **Criterion 7** — `test_spawn_session_rejects_invalid_project_dir` passes.
-- [ ] **Criterion 8** — `test_rebind_drops_records_without_project_dir` passes.
-- [ ] **Criterion 9** — `test_rebind_restores_workspace_entries_from_records` passes.
-- [ ] **Criterion 10** — `test_spawn_session_release_on_tugcode_failure` passes.
-- [ ] **Criterion 11** — Manual two-workspace A/B smoke in Tug.app confirms distinct feeds, distinct file events, distinct git status, and correct teardown. (verification: Step 8 manual checklist)
-- [ ] **Criterion 12** — Workspace builds clean under `-D warnings` on every intermediate commit. (verification: per-step `cargo build` checkpoints)
+- [x] **Criterion 1** — `cd tugrust && cargo nextest run` full-workspace green. (verified: `just ci` 1115 tests pass)
+- [x] **Criterion 2** — `cd tugdeck && bun test` full-suite green. (verified: `just ci` 1942 tests pass)
+- [x] **Criterion 3** — `rg 'AgentSupervisorConfig::project_dir' tugrust/crates/tugcast/src` returns zero real matches (only a historical comment reference remains).
+- [x] **Criterion 4** — `test_two_sessions_two_workspaces` passes. *(landed as `test_two_sessions_two_workspaces_do_not_share`.)*
+- [x] **Criterion 5** — `test_two_sessions_same_project_share_workspace` passes. *(landed as `test_two_sessions_same_workspace_share_entry`.)*
+- [x] **Criterion 6** — `test_workspace_teardown_on_last_session_close` passes. *(coverage: `test_close_session_releases_workspace` + `test_release_triggers_teardown_at_zero`.)*
+- [x] **Criterion 7** — `test_spawn_session_rejects_invalid_project_dir` passes. *(coverage split into `test_spawn_session_rejects_missing_project_dir`, `test_spawn_session_rejects_nonexistent_project_dir`, and `test_spawn_session_rejects_file_as_project_dir`.)*
+- [x] **Criterion 8** — `test_rebind_drops_records_without_project_dir` passes.
+- [x] **Criterion 9** — `test_rebind_restores_workspace_entries_from_records` passes.
+- [x] **Criterion 10** — `test_spawn_session_release_on_tugcode_failure` passes. *(coverage: `test_spawn_session_releases_on_persistence_failure` + `test_spawn_session_reconnect_releases_refcount`.)*
+- [ ] ~~**Criterion 11**~~ — **Deferred to [T3.4.c](../roadmap/tide.md#t3-4-c-tide-card).** Manual two-workspace A/B smoke in Tug.app cannot be run until the Tide card lands a real `project_dir` picker; see Step 8 note above and tide.md's [Execution Order](../roadmap/tide.md#execution-order-w2-to-tide).
+- [x] **Criterion 12** — Workspace builds clean under `-D warnings` on every intermediate commit. (verified: per-step `cargo build` + final `just ci`)
 
 **Acceptance tests:**
 - [ ] `test_session_key_record_serde_roundtrip`
