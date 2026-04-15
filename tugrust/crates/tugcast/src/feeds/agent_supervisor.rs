@@ -347,8 +347,8 @@ impl SessionKeysStore for TugbankClient {
         card_id: &str,
         record: &SessionKeyRecord,
     ) -> Result<(), SessionKeysStoreError> {
-        let json = serde_json::to_value(record)
-            .map_err(|e| SessionKeysStoreError(e.to_string()))?;
+        let json =
+            serde_json::to_value(record).map_err(|e| SessionKeysStoreError(e.to_string()))?;
         self.set(SESSION_KEYS_DOMAIN, card_id, Value::Json(json))
             .map_err(|e| SessionKeysStoreError(e.to_string()))
     }
@@ -392,10 +392,7 @@ impl SessionKeysStore for TugbankClient {
                     claude_session_id: None,
                 },
                 _ => {
-                    warn!(
-                        card_id,
-                        "non-json non-string session-keys entry; skipping"
-                    );
+                    warn!(card_id, "non-json non-string session-keys entry; skipping");
                     continue;
                 }
             };
@@ -643,11 +640,9 @@ impl AgentSupervisor {
                 })?;
                 // W2 Step 6: project_dir is required on spawn per Spec S03.
                 let project_dir_str =
-                    parsed
-                        .project_dir
-                        .ok_or(ControlError::InvalidProjectDir {
-                            reason: "missing_project_dir",
-                        })?;
+                    parsed.project_dir.ok_or(ControlError::InvalidProjectDir {
+                        reason: "missing_project_dir",
+                    })?;
                 self.do_spawn_session(
                     &parsed.card_id,
                     parsed.tug_session_id,
@@ -974,12 +969,12 @@ impl AgentSupervisor {
             return;
         }
 
-        let _ = self
-            .session_state_tx
-            .send(build_session_state_frame(tug_session_id, "closed", None));
-        let _ = self
-            .session_state_tx
-            .send(build_session_state_frame(tug_session_id, "pending", None));
+        let _ =
+            self.session_state_tx
+                .send(build_session_state_frame(tug_session_id, "closed", None));
+        let _ =
+            self.session_state_tx
+                .send(build_session_state_frame(tug_session_id, "pending", None));
     }
 
     /// CODE_INPUT dispatcher task. Consumes CODE_INPUT frames from a single
@@ -2402,9 +2397,7 @@ mod tests {
             "per-call project_dir must appear in argv: {args:?}"
         );
         assert!(
-            !args
-                .iter()
-                .any(|a| a == "/workspace-A-should-be-ignored"),
+            !args.iter().any(|a| a == "/workspace-A-should-be-ignored"),
             "config.project_dir must NOT appear in argv: {args:?}"
         );
     }
@@ -3061,8 +3054,7 @@ mod tests {
         let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
-        let payload =
-            spawn_payload_in("card-1", "sess-1", file_path.to_str().unwrap());
+        let payload = spawn_payload_in("card-1", "sess-1", file_path.to_str().unwrap());
         let err = sup
             .handle_control("spawn_session", &payload, 10)
             .await
@@ -3080,8 +3072,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_session_success_ack_includes_workspace_key() {
         let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
-        let (sup, _state_rx, _meta_rx, mut control_rx) =
-            make_supervisor_with_store(store);
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store(store);
 
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
@@ -3149,14 +3140,8 @@ mod tests {
 
         // Both ledger entries bind to the same workspace_key.
         let ledger = sup.ledger.lock().await;
-        let entry_a = ledger
-            .get(&TugSessionId::new("sess-a"))
-            .unwrap()
-            .clone();
-        let entry_b = ledger
-            .get(&TugSessionId::new("sess-b"))
-            .unwrap()
-            .clone();
+        let entry_a = ledger.get(&TugSessionId::new("sess-a")).unwrap().clone();
+        let entry_b = ledger.get(&TugSessionId::new("sess-b")).unwrap().clone();
         drop(ledger);
         let key_a = entry_a.lock().await.workspace_key.as_ref().to_string();
         let key_b = entry_b.lock().await.workspace_key.as_ref().to_string();
@@ -3373,9 +3358,7 @@ mod tests {
                 "card-gone",
                 &SessionKeyRecord {
                     tug_session_id: "sess-gone".to_string(),
-                    project_dir: Some(
-                        "/nonexistent/rebind-missing-path-test".to_string(),
-                    ),
+                    project_dir: Some("/nonexistent/rebind-missing-path-test".to_string()),
                     claude_session_id: None,
                 },
             )
@@ -3411,10 +3394,7 @@ mod tests {
         let entry_arc = ledger.get(&tug_id).expect("entry").clone();
         drop(ledger);
         let entry = entry_arc.lock().await;
-        assert_eq!(
-            entry.project_dir.to_str().unwrap(),
-            test_project_dir()
-        );
+        assert_eq!(entry.project_dir.to_str().unwrap(), test_project_dir());
         assert!(!entry.workspace_key.as_ref().is_empty());
         // Registry holds exactly one entry for the rebound workspace.
         assert_eq!(registry_map_len(&sup), 1);

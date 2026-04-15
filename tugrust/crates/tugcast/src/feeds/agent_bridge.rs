@@ -582,10 +582,8 @@ mod tests {
 
     #[test]
     fn test_build_tugcode_command_binary_passes_project_dir() {
-        let (program, args) = build_tugcode_command(
-            Path::new("/opt/tugtool/tugcode"),
-            Path::new("/work/alpha"),
-        );
+        let (program, args) =
+            build_tugcode_command(Path::new("/opt/tugtool/tugcode"), Path::new("/work/alpha"));
         assert_eq!(program, "/opt/tugtool/tugcode");
         assert_eq!(args, vec!["--dir".to_string(), "/work/alpha".to_string()]);
     }
@@ -616,10 +614,8 @@ mod tests {
         // field-less on project_dir after W2 Step 4, this can only work if
         // the per-call argument actually flows through build_tugcode_command.
         let spawner = TugcodeSpawner::new(PathBuf::from("/opt/tugtool/tugcode"));
-        let (_p1, args1) =
-            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"));
-        let (_p2, args2) =
-            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"));
+        let (_p1, args1) = build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"));
+        let (_p2, args2) = build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"));
         assert!(args1.iter().any(|a| a == "/work/a"));
         assert!(!args1.iter().any(|a| a == "/work/b"));
         assert!(args2.iter().any(|a| a == "/work/b"));

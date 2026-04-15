@@ -1314,15 +1314,12 @@ mod tests {
             "tug_session_id": "sess-1",
         }))
         .unwrap();
-        let outcome =
-            intercept_session_control(Some(&sup), "spawn_session", &missing, 7).await;
+        let outcome = intercept_session_control(Some(&sup), "spawn_session", &missing, 7).await;
         match outcome {
             ControlIntercept::HandledError { detail } => {
                 assert_eq!(detail, "missing_project_dir");
             }
-            other => panic!(
-                "expected HandledError(missing_project_dir), got {other:?}"
-            ),
+            other => panic!("expected HandledError(missing_project_dir), got {other:?}"),
         }
 
         // Case B: path that does not exist on disk.
@@ -1333,8 +1330,7 @@ mod tests {
             "project_dir": "/nonexistent/router-invalid-path-test-xyz",
         }))
         .unwrap();
-        let outcome =
-            intercept_session_control(Some(&sup), "spawn_session", &nonexistent, 7).await;
+        let outcome = intercept_session_control(Some(&sup), "spawn_session", &nonexistent, 7).await;
         match outcome {
             ControlIntercept::HandledError { detail } => {
                 assert_eq!(detail, "does_not_exist");

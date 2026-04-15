@@ -44,10 +44,7 @@ use crate::feeds::path_resolver::PathResolver;
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
     #[error("invalid project directory {path:?}: {reason}")]
-    InvalidProjectDir {
-        path: PathBuf,
-        reason: &'static str,
-    },
+    InvalidProjectDir { path: PathBuf, reason: &'static str },
 
     /// Returned from `WorkspaceRegistry::release` when the key is not
     /// present in the map. Unused in production until Step 6 wires the
