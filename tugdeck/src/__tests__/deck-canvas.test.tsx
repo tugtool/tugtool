@@ -33,6 +33,7 @@ import { describe, it, expect, afterEach, beforeEach, spyOn } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
@@ -115,11 +116,13 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
 function renderDeckCanvasWithStore(store?: IDeckManagerStore) {
   const resolvedStore = store ?? makeMockStore();
   return render(
-    <ResponderChainProvider>
+    <TugTooltipProvider><ResponderChainProvider>
       <DeckManagerContext.Provider value={resolvedStore}>
-        <DeckCanvas />
+        <TugTooltipProvider>
+          <DeckCanvas />
+        </TugTooltipProvider>
       </DeckManagerContext.Provider>
-    </ResponderChainProvider>
+    </ResponderChainProvider></TugTooltipProvider>
   );
 }
 
@@ -187,12 +190,12 @@ describe("DeckCanvas – responder registration", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -212,12 +215,12 @@ describe("DeckCanvas – responder registration", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -242,12 +245,12 @@ describe("DeckCanvas – cycleCard action", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -269,12 +272,12 @@ describe("DeckCanvas – cycleCard action", () => {
     const store = makeMockStore(); // empty deckState by default
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -303,12 +306,12 @@ describe("DeckCanvas – showComponentGallery action", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -338,12 +341,12 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -372,12 +375,12 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -424,12 +427,12 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={reactiveStore}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -465,12 +468,12 @@ describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -725,11 +728,11 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       ));
     });
 
@@ -789,11 +792,11 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       ));
     });
 
@@ -848,11 +851,11 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       ));
     });
 
@@ -934,12 +937,12 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -972,12 +975,12 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
 
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -1008,12 +1011,12 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
 
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 
@@ -1304,12 +1307,12 @@ describe("DeckCanvas – last-resort canHandle", () => {
     const store = makeMockStore();
     act(() => {
       render(
-        <ResponderChainProvider>
+        <TugTooltipProvider><ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
-        </ResponderChainProvider>
+        </ResponderChainProvider></TugTooltipProvider>
       );
     });
 

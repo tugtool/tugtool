@@ -27,6 +27,7 @@ import { getAllRegistrations } from "@/card-registry";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuEntry, TugPopupMenuItem } from "./internal/tug-popup-menu";
+import { TugTooltip } from "./tug-tooltip";
 import { useControlDispatch } from "./use-control-dispatch";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -323,6 +324,143 @@ function useTabOverflow(
   return { overflowTabs };
 }
 
+// ---- TabView ----
+
+/**
+ * Props for TabView — a single tab rendered inside TugTabBar.
+ *
+ * Extracted into its own component only so each tab's TugTooltip has a
+ * stable cloned-child path; TabView holds no React state of its own.
+ */
+interface TabViewProps {
+  tab: TabItem;
+  isActive: boolean;
+  iconNode: React.ReactNode;
+  cardId: string;
+  totalTabs: number;
+  onSelect: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+}
+
+/**
+ * Suppress predicate for the tab's TugTooltip.
+ *
+ * Returns true (suppress open) unless the tab is currently iconified
+ * (data-overflow="collapsed"). Reads the live DOM attribute set
+ * imperatively by useTabOverflow, so the tooltip decision follows the
+ * appearance-zone state without any React state. [L06]
+ */
+function suppressTabTooltip(trigger: Element): boolean {
+  return trigger.getAttribute("data-overflow") !== "collapsed";
+}
+
+/**
+ * TabView -- single tab button. Renders inside a TugTooltip whose
+ * `suppressOpen` predicate gates opening on the live `data-overflow`
+ * attribute: the tooltip only surfaces when the tab has been collapsed
+ * to icon-only. No React state is introduced — the gate reads the DOM
+ * attribute set by useTabOverflow at open-transition time. [L06]
+ */
+function TabView({
+  tab,
+  isActive,
+  iconNode,
+  cardId,
+  totalTabs,
+  onSelect,
+  onClose,
+}: TabViewProps) {
+  const handleTabClick = () => {
+    onSelect(tab.id);
+  };
+
+  const handleCloseClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    // Stop propagation so the close click does not trigger tab select.
+    event.stopPropagation();
+    onClose(tab.id);
+  };
+
+  /**
+   * Drag initiation with 5px threshold. [D01]
+   *
+   * On pointerdown: register document-level pointermove/pointerup to
+   * track movement without acquiring pointer capture. This preserves the
+   * normal click sequence for sub-threshold interactions.
+   *
+   * On first pointermove exceeding 5px: remove document-level listeners
+   * and hand off to tabDragCoordinator.startDrag(), which acquires
+   * pointer capture on the tab element.
+   *
+   * On pointerup before threshold: remove document-level listeners so
+   * the normal onClick fires unimpeded.
+   */
+  const handleTabPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    const nativeEvent = event.nativeEvent;
+    const tabElement = event.currentTarget;
+    const startX = nativeEvent.clientX;
+    const startY = nativeEvent.clientY;
+
+    function onDocumentMove(e: PointerEvent) {
+      if (exceedsDragThreshold(startX, startY, e.clientX, e.clientY)) {
+        cleanup();
+        tabDragCoordinator.startDrag(e, tabElement, cardId, tab.id, totalTabs);
+      }
+    }
+
+    function onDocumentUp() {
+      cleanup();
+    }
+
+    function cleanup() {
+      document.removeEventListener("pointermove", onDocumentMove);
+      document.removeEventListener("pointerup", onDocumentUp);
+    }
+
+    document.addEventListener("pointermove", onDocumentMove);
+    document.addEventListener("pointerup", onDocumentUp);
+  };
+
+  return (
+    <TugTooltip content={tab.title} suppressOpen={suppressTabTooltip}>
+      <div
+        role="tab"
+        className="tug-tab"
+        data-active={isActive ? "true" : undefined}
+        data-testid={`tug-tab-${tab.id}`}
+        aria-selected={isActive}
+        tabIndex={0}
+        onClick={handleTabClick}
+        onPointerDown={handleTabPointerDown}
+        data-tug-focus="refuse"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") handleTabClick();
+        }}
+      >
+        {iconNode !== null && (
+          <span className="tug-tab-icon" aria-hidden="true">
+            {iconNode}
+          </span>
+        )}
+        <span className="tug-tab-title">{tab.title}</span>
+        {tab.closable && (
+          <button
+            type="button"
+            className="tug-tab-close"
+            onClick={handleCloseClick}
+            data-tug-focus="refuse"
+            aria-label={`Close ${tab.title} tab`}
+            data-testid={`tug-tab-close-${tab.id}`}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </TugTooltip>
+  );
+}
+
 // ---- TugTabBar ----
 
 /**
@@ -526,100 +664,19 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       {...rest}
     >
       {tabs.map((tab) => {
-        const isActive = tab.id === activeTabId;
-
-        const handleTabClick = () => {
-          dispatchSelectTab(tab.id);
-        };
-
-        const handleCloseClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-          // Stop propagation so the close click does not trigger tab select.
-          event.stopPropagation();
-          dispatchCloseTab(tab.id);
-        };
-
         const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
         const iconNode = renderIcon(iconName);
-
-        /**
-         * Drag initiation with 5px threshold. [D01]
-         *
-         * On pointerdown: register document-level pointermove/pointerup to
-         * track movement without acquiring pointer capture. This preserves the
-         * normal click sequence for sub-threshold interactions.
-         *
-         * On first pointermove exceeding 5px: remove document-level listeners
-         * and hand off to tabDragCoordinator.startDrag(), which acquires
-         * pointer capture on the tab element.
-         *
-         * On pointerup before threshold: remove document-level listeners so
-         * the normal onClick fires unimpeded.
-         */
-        const handleTabPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-          // Only primary pointer button (left click / touch).
-          if (event.button !== 0) return;
-
-          const nativeEvent = event.nativeEvent;
-          const tabElement = event.currentTarget;
-          const startX = nativeEvent.clientX;
-          const startY = nativeEvent.clientY;
-
-          function onDocumentMove(e: PointerEvent) {
-            if (exceedsDragThreshold(startX, startY, e.clientX, e.clientY)) {
-              cleanup();
-              tabDragCoordinator.startDrag(e, tabElement, cardId, tab.id, tabs.length);
-            }
-          }
-
-          function onDocumentUp() {
-            cleanup();
-            // Allow normal onClick to fire -- no intervention needed.
-          }
-
-          function cleanup() {
-            document.removeEventListener("pointermove", onDocumentMove);
-            document.removeEventListener("pointerup", onDocumentUp);
-          }
-
-          document.addEventListener("pointermove", onDocumentMove);
-          document.addEventListener("pointerup", onDocumentUp);
-        };
-
         return (
-          <div
+          <TabView
             key={tab.id}
-            role="tab"
-            className="tug-tab"
-            data-active={isActive ? "true" : undefined}
-            data-testid={`tug-tab-${tab.id}`}
-            aria-selected={isActive}
-            tabIndex={0}
-            onClick={handleTabClick}
-            onPointerDown={handleTabPointerDown}
-            data-tug-focus="refuse"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") handleTabClick();
-            }}
-          >
-            {iconNode !== null && (
-              <span className="tug-tab-icon" aria-hidden="true">
-                {iconNode}
-              </span>
-            )}
-            <span className="tug-tab-title">{tab.title}</span>
-            {tab.closable && (
-              <button
-                type="button"
-                className="tug-tab-close"
-                onClick={handleCloseClick}
-                data-tug-focus="refuse"
-                aria-label={`Close ${tab.title} tab`}
-                data-testid={`tug-tab-close-${tab.id}`}
-              >
-                ×
-              </button>
-            )}
-          </div>
+            tab={tab}
+            isActive={tab.id === activeTabId}
+            iconNode={iconNode}
+            cardId={cardId}
+            totalTabs={tabs.length}
+            onSelect={dispatchSelectTab}
+            onClose={dispatchCloseTab}
+          />
         );
       })}
 

@@ -28,6 +28,7 @@ import { render, fireEvent, act, cleanup } from "@testing-library/react";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
@@ -46,7 +47,11 @@ import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persiste
  */
 function renderInChain(ui: React.ReactElement) {
   return render(
-    withDeckManager(<ResponderChainProvider>{ui}</ResponderChainProvider>)
+    withDeckManager(
+      <ResponderChainProvider>
+        <TugTooltipProvider>{ui}</TugTooltipProvider>
+      </ResponderChainProvider>
+    )
   );
 }
 
@@ -59,7 +64,7 @@ function renderWithManager(ui: React.ReactElement) {
   const result = render(
     withDeckManager(
       <ResponderChainContext.Provider value={manager}>
-        {ui}
+        <TugTooltipProvider>{ui}</TugTooltipProvider>
       </ResponderChainContext.Provider>
     )
   );
@@ -83,7 +88,7 @@ function renderWithManagerAndStore(
   const result = render(
     <DeckManagerContext.Provider value={store}>
       <ResponderChainContext.Provider value={manager}>
-        {ui}
+        <TugTooltipProvider>{ui}</TugTooltipProvider>
       </ResponderChainContext.Provider>
     </DeckManagerContext.Provider>
   );
@@ -949,6 +954,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
       ({ container } = render(
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-sf4"
@@ -957,6 +963,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
                   >
               <div>content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       ));
@@ -1008,6 +1015,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
       ({ container } = render(
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-sg"
@@ -1016,6 +1024,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
                   >
               <div>content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       ));
@@ -1074,6 +1083,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-rs"
@@ -1082,6 +1092,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
                   >
               <div>content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1132,6 +1143,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-rsel"
@@ -1140,6 +1152,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
                   >
               <div>content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1193,6 +1206,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-rcb"
@@ -1201,6 +1215,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
                   >
               <PersistentChild />
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1282,6 +1297,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-t01"
@@ -1290,6 +1306,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
                   >
               <PersistentChild />
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1369,6 +1386,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-t02"
@@ -1376,6 +1394,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             >
               <PersistentChild />
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1427,6 +1446,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-t03"
@@ -1435,6 +1455,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               {/* No useTugcardPersistence registration — direct-apply fallback path. */}
               <div data-testid="t03-static">static content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1493,6 +1514,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return (
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-t04"
@@ -1500,6 +1522,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             >
               <PersistentChild />
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );
@@ -1554,12 +1577,14 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
       const result = render(
         <DeckManagerContext.Provider value={store}>
           <ResponderChainProvider>
+            <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
               cardId="card-t07"
             >
               <div>content</div>
             </Tugcard>
+            </TugTooltipProvider>
           </ResponderChainProvider>
         </DeckManagerContext.Provider>
       );

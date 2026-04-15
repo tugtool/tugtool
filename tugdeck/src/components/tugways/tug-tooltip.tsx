@@ -128,6 +128,16 @@ export interface TugTooltipProps {
    * @default false
    */
   truncated?: boolean;
+  /**
+   * Optional predicate invoked at each open-transition with the current
+   * trigger element. Returning `true` suppresses the open; returning `false`
+   * allows it. Evaluated only on the open edge — never blocks close.
+   *
+   * Intended for callers that need to gate the tooltip on an appearance-zone
+   * attribute (e.g. `data-overflow="collapsed"`) without escaping into React
+   * state. Read directly from the live DOM — no ref, no re-render. [L06]
+   */
+  suppressOpen?: (trigger: Element) => boolean;
   /** Controlled open state. */
   open?: boolean;
   /**
@@ -164,6 +174,7 @@ export function TugTooltip({
   arrow = true,
   delayDuration,
   truncated = false,
+  suppressOpen,
   open: controlledOpen,
   defaultOpen,
   onOpenChange: controlledOnOpenChange,
@@ -198,9 +209,14 @@ export function TugTooltip({
   const effectiveOpen = isControlled ? controlledOpen : openMirror;
 
   function handleOpenChange(nextOpen: boolean) {
-    // Never block close — only suppress open when truncated and not clipped. [L06]
-    if (truncated && nextOpen === true && suppressOpenRef.current) {
-      return;
+    // Never block close — only suppress open when a gate says so. [L06]
+    if (nextOpen === true) {
+      if (truncated && suppressOpenRef.current) {
+        return;
+      }
+      if (suppressOpen && triggerElRef.current && suppressOpen(triggerElRef.current)) {
+        return;
+      }
     }
     if (!isControlled) {
       setOpenMirror(nextOpen);
@@ -262,17 +278,24 @@ export function TugTooltip({
 
   // Clone the child to attach the callback ref + pointerEnter handler for
   // truncation measurement. The Radix asChild trigger merges these.
-  const trigger = truncated
+  // The ref is also attached when `suppressOpen` is provided, so the
+  // gate in handleOpenChange can read the live trigger element. [L06]
+  const needsTriggerRef = truncated || suppressOpen !== undefined;
+  const trigger = needsTriggerRef
     ? React.cloneElement(children, {
         ref: triggerCallbackRef,
-        onPointerEnter: (e: React.PointerEvent) => {
-          handlePointerEnter();
-          // Preserve any existing onPointerEnter on the child.
-          const existing = (children.props as Record<string, unknown>).onPointerEnter;
-          if (typeof existing === "function") {
-            (existing as (e: React.PointerEvent) => void)(e);
-          }
-        },
+        ...(truncated
+          ? {
+              onPointerEnter: (e: React.PointerEvent) => {
+                handlePointerEnter();
+                // Preserve any existing onPointerEnter on the child.
+                const existing = (children.props as Record<string, unknown>).onPointerEnter;
+                if (typeof existing === "function") {
+                  (existing as (e: React.PointerEvent) => void)(e);
+                }
+              },
+            }
+          : {}),
       } as Record<string, unknown>)
     : children;
 
