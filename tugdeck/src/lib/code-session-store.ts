@@ -1,14 +1,15 @@
 /**
  * CodeSessionStore — per-Tide-card L02 store that owns Claude Code turn
  * state for a single `tug_session_id`. It observes filtered
- * CODE_OUTPUT / SESSION_STATE frames, dispatches CODE_INPUT messages via
- * `encodeCodeInputPayload`, and exposes an append-only transcript plus an
- * in-flight streaming document that `TugMarkdownView` can render.
+ * CODE_OUTPUT / SESSION_STATE frames through a real `FeedStore`,
+ * dispatches CODE_INPUT messages via `encodeCodeInputPayload`, and
+ * exposes an append-only transcript plus an in-flight streaming
+ * document that `TugMarkdownView` can render.
  *
- * Step 1 ships the scaffold: construction, the streaming PropertyStore,
- * `subscribe` / `getSnapshot` (memoized per [D11]), `dispose`, and
- * not-implemented stubs for the action methods. Steps 3–8 fill in the
- * reducer transitions and wire up the real FeedStore subscription.
+ * Step 3 wires the basic `idle → submitting → awaiting_first_token →
+ * streaming → idle` round-trip; Steps 4–8 extend the reducer to cover
+ * streaming deltas, tool calls, control forwards, interrupt + queue,
+ * and errored transitions.
  *
  * [D01] store owns filtered FeedStore
  * [D02] card owns CONTROL lifecycle
@@ -18,17 +19,25 @@
  * [D11] effect-list reducer
  */
 
+import {
+  FeedId,
+  encodeCodeInputPayload,
+  type FeedIdValue,
+} from "@/protocol";
 import type { TugConnection } from "@/connection";
 import {
   PropertyStore,
   type PropertyDescriptor,
 } from "@/components/tugways/property-store";
+import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
 import {
   createInitialState,
   reduce,
   type CodeSessionState,
 } from "./code-session-store/reducer";
+import type { CodeSessionEvent } from "./code-session-store/events";
+import type { Effect } from "./code-session-store/effects";
 import type {
   CodeSessionSnapshot,
   TurnEntry,
@@ -44,6 +53,14 @@ export type {
 } from "./code-session-store/types";
 
 const STREAM_SOURCE_TAG = "code-session-store";
+
+/** CODE_OUTPUT frame `type` values the reducer currently handles. */
+const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
+  "session_init",
+  "assistant_text",
+  "turn_complete",
+  "system_metadata",
+]);
 
 export interface CodeSessionStoreOptions {
   conn: TugConnection;
@@ -61,12 +78,15 @@ export class CodeSessionStore {
   private readonly conn: TugConnection;
   private readonly tugSessionId: string;
   private readonly displayLabel: string;
+  private readonly feedStore: FeedStore;
 
   private state: CodeSessionState;
-  private _transcript: TurnEntry[] = [];
+  private _transcript: ReadonlyArray<TurnEntry> = [];
   private _listeners: Array<() => void> = [];
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
+  private _feedStoreUnsub: (() => void) | null = null;
+  private _lastFrameByFeed: Map<number, unknown> = new Map();
 
   constructor(options: CodeSessionStoreOptions) {
     this.conn = options.conn;
@@ -101,6 +121,18 @@ export class CodeSessionStore {
     });
 
     this.state = createInitialState(this.tugSessionId, this.displayLabel);
+
+    this.feedStore = new FeedStore(
+      this.conn,
+      [FeedId.CODE_OUTPUT, FeedId.SESSION_STATE] as ReadonlyArray<FeedIdValue>,
+      undefined,
+      (_feedId, decoded) =>
+        (decoded as { tug_session_id?: string }).tug_session_id ===
+        this.tugSessionId,
+    );
+    this._feedStoreUnsub = this.feedStore.subscribe(() =>
+      this.onFeedStoreChange(),
+    );
   }
 
   /** L02 subscribe contract. Returns an unsubscribe function. */
@@ -137,7 +169,7 @@ export class CodeSessionStore {
       pendingApproval: this.state.pendingApproval,
       pendingQuestion: this.state.pendingQuestion,
       queuedSends: this.state.queuedSends.length,
-      transcript: this._transcript as ReadonlyArray<TurnEntry>,
+      transcript: this._transcript,
       streamingPaths: STREAMING_PATHS,
       lastCostUsd: this.state.lastCostUsd,
       lastError: this.state.lastError,
@@ -150,23 +182,18 @@ export class CodeSessionStore {
    * Submit a user message. The route (>, $, :) — when present — is the
    * leading atom in `atoms`; `tug-prompt-entry` (T3.4.b) owns route
    * extraction and the store is route-oblivious.
-   *
-   * Step 1 is a scaffold — real dispatch lands in Step 3.
    */
-  send(_text: string, _atoms: AtomSegment[]): void {
-    // Reference the reducer so the import is not dead weight during Step 1.
-    const { state, effects } = reduce(this.state, { type: "__noop__" });
-    this.state = state;
-    void effects;
-    throw new Error("CodeSessionStore.send: not implemented");
+  send(text: string, atoms: AtomSegment[]): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "send", text, atoms });
   }
 
-  /** Step 1 scaffold — real dispatch lands in Step 7. */
+  /** Step 7 scaffold — real dispatch lands there. */
   interrupt(): void {
     throw new Error("CodeSessionStore.interrupt: not implemented");
   }
 
-  /** Step 1 scaffold — real dispatch lands in Step 6. */
+  /** Step 6 scaffold — real dispatch lands there. */
   respondApproval(
     _requestId: string,
     _payload: {
@@ -178,7 +205,7 @@ export class CodeSessionStore {
     throw new Error("CodeSessionStore.respondApproval: not implemented");
   }
 
-  /** Step 1 scaffold — real dispatch lands in Step 6. */
+  /** Step 6 scaffold — real dispatch lands there. */
   respondQuestion(
     _requestId: string,
     _payload: { answers: Record<string, unknown> },
@@ -187,14 +214,19 @@ export class CodeSessionStore {
   }
 
   /**
-   * Local teardown: clear listeners, clear queuedSends, clear in-flight
-   * streaming paths. Per [L23] the transcript is user-visible state and
-   * is NOT cleared. Per [D02] the card owns `close_session` — this method
-   * never writes a CONTROL frame.
+   * Local teardown: unsubscribe from FeedStore, clear listeners, clear
+   * queuedSends, clear in-flight streaming paths. Per [L23] the
+   * transcript is user-visible state and is NOT cleared. Per [D02] the
+   * card owns `close_session` — this method never writes a CONTROL frame.
    */
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
+    if (this._feedStoreUnsub) {
+      this._feedStoreUnsub();
+      this._feedStoreUnsub = null;
+    }
+    this.feedStore.dispose();
     this._listeners = [];
     this.state.queuedSends = [];
     this.streamingDocument.set(
@@ -202,12 +234,99 @@ export class CodeSessionStore {
       "",
       STREAM_SOURCE_TAG,
     );
-    this.streamingDocument.set(
-      "inflight.thinking",
-      "",
-      STREAM_SOURCE_TAG,
-    );
+    this.streamingDocument.set("inflight.thinking", "", STREAM_SOURCE_TAG);
     this.streamingDocument.set("inflight.tools", "[]", STREAM_SOURCE_TAG);
     this._cachedSnapshot = null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Internal dispatch pipeline
+  // ---------------------------------------------------------------------
+
+  private onFeedStoreChange(): void {
+    if (this._disposed) return;
+    const snap = this.feedStore.getSnapshot();
+    for (const [feedId, value] of snap.entries()) {
+      if (this._lastFrameByFeed.get(feedId) !== value) {
+        this._lastFrameByFeed.set(feedId, value);
+        const event = this.frameToEvent(feedId, value);
+        if (event !== null) {
+          this.dispatch(event);
+        }
+      }
+    }
+  }
+
+  private frameToEvent(
+    feedId: number,
+    decoded: unknown,
+  ): CodeSessionEvent | null {
+    if (feedId === FeedId.CODE_OUTPUT) {
+      const ev = decoded as { type?: string } & Record<string, unknown>;
+      if (typeof ev.type !== "string") return null;
+      if (!KNOWN_CODE_OUTPUT_TYPES.has(ev.type)) return null;
+      return ev as unknown as CodeSessionEvent;
+    }
+    // Step 8 wires SESSION_STATE handling.
+    return null;
+  }
+
+  private dispatch(event: CodeSessionEvent): void {
+    const prev = this.state;
+    const { state, effects } = reduce(this.state, event);
+    this.state = state;
+    this.processEffects(effects);
+    if (prev !== state || effects.length > 0) {
+      this._cachedSnapshot = null;
+      this.notifyListeners();
+    }
+  }
+
+  private processEffects(effects: Effect[]): void {
+    for (const effect of effects) {
+      switch (effect.kind) {
+        case "write-inflight":
+          this.streamingDocument.set(
+            effect.path,
+            effect.value,
+            STREAM_SOURCE_TAG,
+          );
+          break;
+        case "clear-inflight":
+          this.streamingDocument.set(
+            "inflight.assistant",
+            "",
+            STREAM_SOURCE_TAG,
+          );
+          this.streamingDocument.set(
+            "inflight.thinking",
+            "",
+            STREAM_SOURCE_TAG,
+          );
+          this.streamingDocument.set(
+            "inflight.tools",
+            "[]",
+            STREAM_SOURCE_TAG,
+          );
+          break;
+        case "send-frame":
+          this.conn.send(
+            FeedId.CODE_INPUT,
+            encodeCodeInputPayload(effect.msg, this.tugSessionId),
+          );
+          break;
+        case "append-transcript":
+          // Copy-on-write so old snapshot refs remain valid for
+          // useSyncExternalStore consumers.
+          this._transcript = [...this._transcript, effect.entry];
+          break;
+      }
+    }
+  }
+
+  private notifyListeners(): void {
+    for (const listener of this._listeners.slice()) {
+      listener();
+    }
   }
 }

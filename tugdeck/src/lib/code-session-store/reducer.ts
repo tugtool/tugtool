@@ -1,21 +1,29 @@
 /**
  * Pure reducer for `CodeSessionStore`.
  *
- * Step 1 ships the identity reducer and the `CodeSessionState` shape;
- * Steps 3–8 populate the real transitions. Every reducer call returns
- * `{ state, effects }`; side effects are processed by the class wrapper.
+ * Step 3 implements the basic `idle → submitting → awaiting_first_token
+ * → streaming → idle` round-trip. Later steps extend this with streaming
+ * delta accumulation (4), tool lifecycle (5), control forwards (6),
+ * interrupt + queue (7), and errored triggers (8).
  *
- * `transcript` intentionally does NOT live here — the class wrapper owns
- * it and appends via `AppendTranscript` effects ([D04] / [D11]).
+ * `transcript` intentionally does NOT live here — the class wrapper
+ * owns it and appends via `AppendTranscript` effects ([D04] / [D11]).
  */
 
 import type { AtomSegment } from "../tug-atom-img";
 import type { Effect } from "./effects";
-import type { CodeSessionEvent } from "./events";
+import type {
+  AssistantTextEvent,
+  CodeSessionEvent,
+  SendActionEvent,
+  SessionInitEvent,
+  TurnCompleteEvent,
+} from "./events";
 import type {
   CodeSessionPhase,
   ControlRequestForward,
   ToolCallState,
+  TurnEntry,
 } from "./types";
 
 /** Reducer-internal state. Not exposed to consumers. */
@@ -31,6 +39,7 @@ export interface CodeSessionState {
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
   prevPhase: CodeSessionPhase | null;
+  pendingUserMessage: { text: string; atoms: ReadonlyArray<AtomSegment> } | null;
   queuedSends: Array<{ text: string; atoms: AtomSegment[] }>;
   lastError: {
     cause: "session_state_errored" | "transport_closed";
@@ -56,6 +65,7 @@ export function createInitialState(
     pendingApproval: null,
     pendingQuestion: null,
     prevPhase: null,
+    pendingUserMessage: null,
     queuedSends: [],
     lastError: null,
     lastCostUsd: null,
@@ -63,14 +73,184 @@ export function createInitialState(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Transition handlers
+// ---------------------------------------------------------------------------
+
+function handleSend(
+  state: CodeSessionState,
+  event: SendActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase === "idle" || state.phase === "errored") {
+    const next: CodeSessionState = {
+      ...state,
+      phase: "submitting",
+      pendingUserMessage: { text: event.text, atoms: event.atoms },
+    };
+    return {
+      state: next,
+      effects: [
+        {
+          kind: "send-frame",
+          msg: {
+            type: "user_message",
+            text: event.text,
+            attachments: [],
+          },
+        },
+      ],
+    };
+  }
+
+  // Non-idle, non-errored: Step 7 adds queue semantics. For Step 3 we
+  // drop mid-turn sends silently — the Step 3 test never triggers this
+  // branch.
+  return { state, effects: [] };
+}
+
+function handleSessionInit(
+  state: CodeSessionState,
+  event: SessionInitEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const sessionId = event.session_id;
+  if (typeof sessionId !== "string") return { state, effects: [] };
+  if (state.claudeSessionId === sessionId) return { state, effects: [] };
+  return {
+    state: { ...state, claudeSessionId: sessionId },
+    effects: [],
+  };
+}
+
+function handleAssistantText(
+  state: CodeSessionState,
+  event: AssistantTextEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Incoming assistant text outside of an active turn — drop. Live
+  // Claude should not emit this, but defensive handling keeps the
+  // reducer total.
+  if (
+    state.phase !== "submitting" &&
+    state.phase !== "awaiting_first_token" &&
+    state.phase !== "streaming" &&
+    state.phase !== "tool_work"
+  ) {
+    return { state, effects: [] };
+  }
+
+  const msgId = event.msg_id;
+  const scratch = new Map(state.scratch);
+  const existing = scratch.get(msgId) ?? { assistant: "", thinking: "" };
+  const buffer = event.is_partial
+    ? existing.assistant + event.text
+    : event.text;
+  scratch.set(msgId, { ...existing, assistant: buffer });
+
+  let nextPhase: CodeSessionPhase;
+  if (state.phase === "submitting") {
+    nextPhase = "awaiting_first_token";
+  } else if (state.phase === "awaiting_first_token") {
+    nextPhase = "streaming";
+  } else {
+    nextPhase = state.phase;
+  }
+
+  return {
+    state: {
+      ...state,
+      phase: nextPhase,
+      activeMsgId: msgId,
+      scratch,
+    },
+    effects: [
+      {
+        kind: "write-inflight",
+        path: "inflight.assistant",
+        value: buffer,
+      },
+    ],
+  };
+}
+
+function handleTurnComplete(
+  state: CodeSessionState,
+  event: TurnCompleteEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // turn_complete before any turn started — drop.
+  if (state.activeMsgId === null && state.phase === "idle") {
+    return { state, effects: [] };
+  }
+
+  const msgId = event.msg_id ?? state.activeMsgId ?? "";
+  const scratchEntry = state.scratch.get(msgId) ?? {
+    assistant: "",
+    thinking: "",
+  };
+
+  const isSuccess = event.result === "success";
+  const entry: TurnEntry = {
+    msgId,
+    userMessage: {
+      text: state.pendingUserMessage?.text ?? "",
+      attachments: state.pendingUserMessage?.atoms ?? [],
+    },
+    thinking: scratchEntry.thinking,
+    assistant: scratchEntry.assistant,
+    toolCalls: [],
+    result: isSuccess ? "success" : "interrupted",
+    endedAt: Date.now(),
+  };
+
+  const scratch = new Map(state.scratch);
+  scratch.delete(msgId);
+
+  return {
+    state: {
+      ...state,
+      phase: "idle",
+      activeMsgId: null,
+      scratch,
+      toolCallMap: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      pendingUserMessage: null,
+    },
+    effects: [
+      { kind: "append-transcript", entry },
+      { kind: "clear-inflight" },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
 /**
- * Pure reducer. Step 1 is the identity function: returns the same state
- * reference with an empty effect list. Steps 3–8 replace the body with the
- * real transition table.
+ * Pure reducer. Returns the next state and an ordered effect list; the
+ * class wrapper in `code-session-store.ts` processes the effects.
  */
 export function reduce(
   state: CodeSessionState,
-  _event: CodeSessionEvent,
+  event: CodeSessionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  return { state, effects: [] };
+  switch (event.type) {
+    case "send":
+      return handleSend(state, event);
+    case "session_init":
+      return handleSessionInit(state, event);
+    case "assistant_text":
+      return handleAssistantText(state, event);
+    case "turn_complete":
+      return handleTurnComplete(state, event);
+    case "system_metadata":
+      // [D09] SessionMetadataStore owns this feed — drop explicitly.
+      return { state, effects: [] };
+    case "session_state_errored":
+    case "transport_close":
+      // Step 8 placeholders.
+      return { state, effects: [] };
+    default:
+      return { state, effects: [] };
+  }
 }

@@ -9,20 +9,13 @@ import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
+import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
+import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 
-// Step 1 runs before the Step 2 golden-catalog loader lands, so this test
-// file embeds a local pinned id literal. Step 2 tests replace this with
-// `FIXTURE_IDS.TUG_SESSION_ID` from the testing helper.
-const TUG_SESSION_ID = "tug00000-0000-4000-8000-000000000001";
+const TUG_SESSION_ID = FIXTURE_IDS.TUG_SESSION_ID;
 
-/**
- * Minimal `TugConnection`-shaped double. Step 1's store never reaches
- * through to `onFrame` / `send` (the real FeedStore wiring lands in
- * Step 3), so an empty-surface object cast is sufficient here. Step 2's
- * `MockTugConnection` replaces this with a recording-capable variant.
- */
 function makeInertConnection(): TugConnection {
-  return {} as unknown as TugConnection;
+  return new MockTugConnection() as unknown as TugConnection;
 }
 
 describe("CodeSessionStore — Step 1 scaffold", () => {
