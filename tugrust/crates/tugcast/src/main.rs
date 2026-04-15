@@ -69,7 +69,7 @@ async fn main() {
     info!(
         session = %cli.session,
         port = cli.port,
-        dir = ?cli.dir,
+        source_tree = ?cli.source_tree,
         "tugcast starting"
     );
 
@@ -134,10 +134,18 @@ async fn main() {
     // Make the watch directory absolute. PathResolver inside FileWatcher
     // handles all further resolution (symlinks, synthetic firmlinks, APFS
     // firmlinks, Linux bind mounts).
-    let watch_dir = if cli.dir.is_absolute() {
-        cli.dir.clone()
+    //
+    // Note: `cli.source_tree` is the transitional CLI flag name (formerly
+    // `--dir`). Internally we still call the bootstrap-watched directory
+    // `watch_dir` because that's what it is semantically — the Cargo walk
+    // at T3.0.W3.b deletes the bootstrap entirely when the Tide card lands
+    // a per-card project picker.
+    let watch_dir = if cli.source_tree.is_absolute() {
+        cli.source_tree.clone()
     } else {
-        std::env::current_dir().unwrap_or_default().join(&cli.dir)
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join(&cli.source_tree)
     };
 
     // Open the TugbankClient. On success, wrap in Arc for shared ownership between
@@ -181,7 +189,7 @@ async fn main() {
     let cancel = CancellationToken::new();
 
     // Create the bootstrap WorkspaceRegistry. In W1 this holds exactly one
-    // entry (the startup --dir); W2 will add per-session `get_or_create`
+    // entry (the startup `--source-tree`); W2 adds per-session `get_or_create`
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
     // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.

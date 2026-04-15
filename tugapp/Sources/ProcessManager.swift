@@ -554,11 +554,11 @@ class ProcessManager {
         proc.environment = env
 
         // Build args: only pass flags we have explicit values for.
-        // Tugcast has its own CLI defaults (session=cc0, port=55255, dir=.)
+        // Tugcast has its own CLI defaults (session=cc0, port=55255, source-tree=.)
         // so we don't duplicate them here.
         var args: [String] = []
         if let dir = sourceTree {
-            args += ["--dir", dir]
+            args += ["--source-tree", dir]
         }
         args += ["--control-socket", controlSocketPath]
         // Check tugbank for no-auth development flag

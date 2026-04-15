@@ -7,8 +7,9 @@
 //! share a single feed bundle.
 //!
 //! W1 scope: bootstrap-only. `main.rs` calls `get_or_create` exactly once for
-//! the startup `--dir`. W2 adds per-session `get_or_create` calls from
-//! `AgentSupervisor::spawn_session_worker` and introduces `release()`.
+//! the startup `--source-tree` (formerly `--dir`). W2 adds per-session
+//! `get_or_create` calls from `AgentSupervisor::spawn_session_worker` and
+//! introduces `release()`.
 //!
 //! See `roadmap/tugplan-workspace-registry-w1.md` specs S01/S02.
 

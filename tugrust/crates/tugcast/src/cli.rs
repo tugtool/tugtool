@@ -9,7 +9,7 @@ const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"
 #[command(version = VERSION)]
 #[command(
     about = "WebSocket multiplexer serving terminal, code, filesystem, git, and stats feeds to tugdeck",
-    long_about = "tugcast multiplexes multiple data feeds over a single WebSocket connection to\nthe tugdeck browser frontend. Feeds include: terminal I/O (via tmux), Claude Code\nevents (via tugcode bridge), filesystem watching, git status, system stats, and\ntugbank defaults. Each feed is identified by a FeedId byte in binary-framed messages.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 55255)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory"
+    long_about = "tugcast multiplexes multiple data feeds over a single WebSocket connection to\nthe tugdeck browser frontend. Feeds include: terminal I/O (via tmux), Claude Code\nevents (via tugcode bridge), filesystem watching, git status, system stats, and\ntugbank defaults. Each feed is identified by a FeedId byte in binary-framed messages.\n\nUsage:\n  tugcast                               Start with defaults (session: cc0, port: 55255)\n  tugcast --session dev --port 8080         Custom session and port\n  tugcast --source-tree /path/to/project    Watch a specific directory"
 )]
 pub struct Cli {
     /// Tmux session name to attach to (created if it doesn't exist)
@@ -20,9 +20,11 @@ pub struct Cli {
     #[arg(long, default_value_t = 55255)]
     pub port: u16,
 
-    /// Working directory for the tmux session
+    /// Workspace directory for the bootstrap file-tree/git feeds.
+    /// Transitional: this flag will be removed in T3.4.c when the Tide
+    /// card lands a real project picker at card-open time.
     #[arg(long, default_value = ".")]
-    pub dir: PathBuf,
+    pub source_tree: PathBuf,
 
     /// Path to tugcode binary (overrides auto-detection)
     #[arg(long)]
@@ -64,7 +66,7 @@ mod tests {
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
-        assert_eq!(cli.dir, PathBuf::from("."));
+        assert_eq!(cli.source_tree, PathBuf::from("."));
     }
 
     #[test]
@@ -82,9 +84,20 @@ mod tests {
     }
 
     #[test]
-    fn test_override_dir() {
-        let cli = Cli::try_parse_from(["tugcast", "--dir", "/tmp/test"]).unwrap();
-        assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
+    fn test_override_source_tree() {
+        let cli = Cli::try_parse_from(["tugcast", "--source-tree", "/tmp/test"]).unwrap();
+        assert_eq!(cli.source_tree, PathBuf::from("/tmp/test"));
+    }
+
+    #[test]
+    fn test_old_dir_flag_rejected() {
+        // `--dir` was renamed to `--source-tree` in T3.0.W3.a. The old
+        // flag name is not kept as an alias — clap rejects it outright.
+        let result = Cli::try_parse_from(["tugcast", "--dir", "/tmp/test"]);
+        assert!(
+            result.is_err(),
+            "--dir should no longer be a valid flag after the W3.a rename"
+        );
     }
 
     #[test]
@@ -95,13 +108,13 @@ mod tests {
             "test",
             "--port",
             "9000",
-            "--dir",
+            "--source-tree",
             "/workspace",
         ])
         .unwrap();
         assert_eq!(cli.session, "test");
         assert_eq!(cli.port, 9000);
-        assert_eq!(cli.dir, PathBuf::from("/workspace"));
+        assert_eq!(cli.source_tree, PathBuf::from("/workspace"));
     }
 
     #[test]
@@ -134,7 +147,10 @@ mod tests {
             "help should contain --session"
         );
         assert!(help_text.contains("--port"), "help should contain --port");
-        assert!(help_text.contains("--dir"), "help should contain --dir");
+        assert!(
+            help_text.contains("--source-tree"),
+            "help should contain --source-tree"
+        );
         assert!(
             help_text.contains("--version"),
             "help should contain --version"

@@ -206,7 +206,7 @@ impl TestTugcast {
         command
             .arg("--port")
             .arg(port.to_string())
-            .arg("--dir")
+            .arg("--source-tree")
             .arg(project_dir)
             .arg("--no-auth")
             .arg("--session")
