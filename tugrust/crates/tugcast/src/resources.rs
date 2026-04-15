@@ -7,10 +7,13 @@
 //! This is the single resolution path — debug `just app` and release
 //! launches exercise identical code.
 //!
-//! Fallback (debug builds only): when the env var is unset, walk up three
-//! parents from `CARGO_MANIFEST_DIR` to reach the tugtool workspace root.
-//! This lets standalone `cargo run -p tugcast` and `cargo nextest run`
-//! keep working without any bundle wiring.
+//! Fallback (debug builds only): when the env var is unset *or empty*,
+//! walk up three parents from `CARGO_MANIFEST_DIR` to reach the tugtool
+//! workspace root. This lets standalone `cargo run -p tugcast` and
+//! `cargo nextest run` keep working without any bundle wiring. Empty is
+//! treated as unset as defense-in-depth: if a misconfigured Swift caller
+//! ever set `TUGCAST_RESOURCE_ROOT=""`, `var_os` would return `Some("")`
+//! and we'd silently produce a relative path that 404s in ServeDir.
 //!
 //! Fallback (release builds): panic. A release tugcast that isn't spawned
 //! from a Tug.app bundle is a configuration bug; failing loud at startup
@@ -22,8 +25,14 @@ use std::path::PathBuf;
 const RESOURCE_ROOT_ENV: &str = "TUGCAST_RESOURCE_ROOT";
 
 pub(crate) fn source_tree() -> PathBuf {
+    // Treat both "unset" and "set to empty" as unset. `var_os` returns
+    // `Some(OsString::from(""))` for an env var set to the empty string,
+    // which would otherwise bypass the fallback and return a relative
+    // path. See the module-level doc for context.
     if let Some(from_env) = std::env::var_os(RESOURCE_ROOT_ENV) {
-        return PathBuf::from(from_env);
+        if !from_env.is_empty() {
+            return PathBuf::from(from_env);
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -99,6 +108,29 @@ mod tests {
         assert!(
             result.is_absolute(),
             "fallback path {} should be absolute",
+            result.display(),
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_source_tree_treats_empty_env_var_as_unset() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        // Set to empty string — simulates a Swift caller that fumbled a nil
+        // Bundle.main.resourcePath. Without the defense-in-depth check,
+        // var_os would return Some("") and source_tree() would return
+        // PathBuf::from(""). The fix: treat empty as unset and take the
+        // debug fallback, yielding the tugtool workspace root.
+        unsafe {
+            std::env::set_var(RESOURCE_ROOT_ENV, "");
+        }
+        let result = source_tree();
+        unsafe {
+            std::env::remove_var(RESOURCE_ROOT_ENV);
+        }
+        assert!(
+            result.join("tugrust").join("Cargo.toml").exists(),
+            "empty env var should fall back to tugtool root; got {}",
             result.display(),
         );
     }

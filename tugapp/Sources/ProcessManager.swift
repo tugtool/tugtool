@@ -549,8 +549,15 @@ class ProcessManager {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = ProcessManager.shellPATH
         // tugcast::resources::source_tree() reads this to locate tugdeck/dist
-        // and other bundle-relative resources. Debug and release share this path.
-        env["TUGCAST_RESOURCE_ROOT"] = Bundle.main.resourcePath ?? ""
+        // and other bundle-relative resources. Debug and release share this
+        // path. Only set when Bundle.main.resourcePath is non-nil — an empty
+        // string would not be treated as "unset" by std::env::var_os on the
+        // Rust side, producing a silent PathBuf::from("") → relative-path
+        // failure in ServeDir rather than falling back to the dev-only
+        // CARGO_MANIFEST_DIR walk.
+        if let resourcePath = Bundle.main.resourcePath {
+            env["TUGCAST_RESOURCE_ROOT"] = resourcePath
+        }
         proc.environment = env
 
         // Build args: only pass flags we have explicit values for.
