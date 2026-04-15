@@ -132,8 +132,29 @@ function handleInterrupt(
   if (state.phase === "idle" || state.phase === "errored") {
     return { state, effects: [] };
   }
+
+  // Interrupting from `awaiting_approval` must also abandon the
+  // approval prompt: the `interrupt` frame dooms the turn, but the
+  // following `turn_complete(error)` is a round-trip away. Between
+  // those two moments the UI would otherwise see `pendingApproval`
+  // still set and `phase === "awaiting_approval"`, which reads as a
+  // live prompt on a dead turn. Clear pending + restore to the pre-
+  // approval phase so subscribers observe a coherent
+  // "interrupted-tool-work" state until `turn_complete(error)` lands.
+  const restoredPhase =
+    state.phase === "awaiting_approval"
+      ? state.prevPhase ?? "streaming"
+      : state.phase;
+
   return {
-    state: { ...state, queuedSends: [] },
+    state: {
+      ...state,
+      phase: restoredPhase,
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      queuedSends: [],
+    },
     effects: [{ kind: "send-frame", msg: { type: "interrupt" } }],
   };
 }

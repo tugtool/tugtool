@@ -173,3 +173,72 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     expect(store.getSnapshot().phase).toBe("idle");
   });
 });
+
+describe("CodeSessionStore — interrupt during awaiting_approval (Step 9b)", () => {
+  it("clears pendingApproval and restores prevPhase before turn_complete arrives", () => {
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    store.send("read some file", []);
+
+    // Drive into tool_work by opening a Read tool call.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "tool_use",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID,
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      tool_name: "Read",
+      input: {},
+      seq: 0,
+    });
+    expect(store.getSnapshot().phase).toBe("tool_work");
+
+    // A permission prompt lands and the store waits.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "control_request_forward",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      request_id: FIXTURE_IDS.REQUEST_ID,
+      is_question: false,
+      tool_name: "Read",
+      tool_use_id: FIXTURE_IDS.TOOL_USE_ID,
+      input: { file_path: "/tmp/x" },
+    });
+    expect(store.getSnapshot().phase).toBe("awaiting_approval");
+    expect(store.getSnapshot().pendingApproval).not.toBeNull();
+
+    // User interrupts instead of responding. The store writes the
+    // interrupt frame AND simultaneously restores a coherent
+    // non-approval state — subscribers never see the "live prompt on
+    // a dead turn" window while waiting for turn_complete(error).
+    const framesBefore = conn.recordedFrames.length;
+    store.interrupt();
+
+    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
+    const interruptFrame = conn.recordedFrames[framesBefore];
+    expect(interruptFrame.feedId).toBe(FeedId.CODE_INPUT);
+    expect(interruptFrame.decoded).toEqual({
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      type: "interrupt",
+    });
+
+    const mid = store.getSnapshot();
+    expect(mid.pendingApproval).toBeNull();
+    expect(mid.pendingQuestion).toBeNull();
+    // prevPhase was tool_work before the prompt, so that's where we
+    // land until turn_complete(error) commits the interrupted entry.
+    expect(mid.phase).toBe("tool_work");
+
+    // Claude's turn_complete(error) follows the interrupt round-trip.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID,
+      result: "error",
+    });
+
+    const end = store.getSnapshot();
+    expect(end.phase).toBe("idle");
+    expect(end.transcript.length).toBe(1);
+    expect(end.transcript[0].result).toBe("interrupted");
+  });
+});

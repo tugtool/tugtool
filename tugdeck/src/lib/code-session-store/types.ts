@@ -7,7 +7,13 @@
  * [D11] effect-list reducer
  */
 
-/** Discrete phases of the Claude Code turn state machine. */
+/**
+ * Discrete phases of the Claude Code turn state machine. Terminal
+ * outcomes (`success` / `interrupted`) live on `TurnEntry.result`
+ * rather than the phase — a completed turn always returns to `idle`
+ * once its entry is committed, so there is no `complete` or
+ * `interrupted` phase.
+ */
 export type CodeSessionPhase =
   | "idle"
   | "submitting"
@@ -15,8 +21,6 @@ export type CodeSessionPhase =
   | "streaming"
   | "tool_work"
   | "awaiting_approval"
-  | "complete"
-  | "interrupted"
   | "errored";
 
 /**
