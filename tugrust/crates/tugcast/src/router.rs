@@ -526,6 +526,9 @@ async fn intercept_session_control(
         Err(ControlError::PersistenceFailure(_)) => ControlIntercept::HandledError {
             detail: "persistence_failure",
         },
+        Err(ControlError::InvalidProjectDir { reason }) => {
+            ControlIntercept::HandledError { detail: reason }
+        }
     }
 }
 
@@ -1230,6 +1233,9 @@ mod tests {
             "action": "spawn_session",
             "card_id": card_id,
             "tug_session_id": tug_session_id,
+            // W2 Step 6: project_dir is required on the wire. Use the
+            // crate manifest dir as a valid fixture path for router tests.
+            "project_dir": env!("CARGO_MANIFEST_DIR"),
         }))
         .unwrap()
     }
@@ -1305,6 +1311,7 @@ mod tests {
             AgentSupervisor, AgentSupervisorConfig, NoopSessionKeysStore, SessionKeysStore,
             SpawnerFactory,
         };
+        use crate::feeds::workspace_registry::WorkspaceRegistry;
         use tokio::sync::mpsc;
 
         let (state_tx, _) = broadcast::channel(16);
@@ -1313,6 +1320,8 @@ mod tests {
         let (control_tx, _) = broadcast::channel(16);
         let factory: SpawnerFactory = Arc::new(|| unreachable!("no spawner"));
         let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let router_cancel = CancellationToken::new();
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             session_metadata_tx,
@@ -1321,6 +1330,8 @@ mod tests {
             store,
             factory,
             AgentSupervisorConfig::default(),
+            registry,
+            router_cancel,
         );
         let sup = Arc::new(sup);
         let cancel = CancellationToken::new();

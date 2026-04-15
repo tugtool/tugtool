@@ -68,6 +68,15 @@ impl WorkspaceKey {
     pub fn arc(&self) -> Arc<str> {
         Arc::clone(&self.0)
     }
+
+    /// Construct a `WorkspaceKey` directly from a string. Crate-visible so
+    /// `agent_supervisor::tests` can build synthetic ledger entries without
+    /// going through `WorkspaceRegistry::get_or_create` (which requires a
+    /// real directory + runs the canonicalizer).
+    #[cfg(test)]
+    pub(crate) fn from_test_str(s: &str) -> Self {
+        Self(Arc::from(s))
+    }
 }
 
 impl AsRef<str> for WorkspaceKey {
@@ -82,14 +91,19 @@ impl AsRef<str> for WorkspaceKey {
 /// the three watch receivers, the FILETREE query sender, and the four spawned
 /// task handles. See Spec S01 for rationale.
 pub struct WorkspaceEntry {
-    /// Canonical key — also the map key in `WorkspaceRegistry`.
-    /// Retained for test sanity-checks and for W2 `release()` back-reference
-    /// when the registry learns to drop entries on session end.
-    #[allow(dead_code)]
+    /// Canonical key — also the map key in `WorkspaceRegistry`. Read by
+    /// `AgentSupervisor::do_spawn_session` to build the `LedgerEntry`
+    /// binding and by `do_close_session` / `rebind_from_tugbank` to call
+    /// `release`. W2 Step 6 started reading this field from production,
+    /// so the W1 `#[allow(dead_code)]` annotation has been removed.
     pub workspace_key: WorkspaceKey,
-    /// Original path input to `get_or_create`. Retained for W2, when
-    /// `AgentSupervisor::spawn_session_worker` will read it to pass as the
-    /// spawned Claude Code process's cwd (replacing `AgentSupervisorConfig::project_dir`).
+    /// Original (pre-canonicalized) path input to `get_or_create`. The
+    /// supervisor stores and reads the per-session path via
+    /// `LedgerEntry.project_dir` rather than via this field, so the
+    /// per-workspace copy is retained for tests and for future callers
+    /// but remains unread in production. When something in production
+    /// starts reading it (e.g. W3's workspace-level diagnostics), drop
+    /// the allow.
     #[allow(dead_code)]
     pub project_dir: PathBuf,
     /// Router watch receivers.
@@ -142,8 +156,16 @@ impl WorkspaceEntry {
     fn new(
         project_dir: PathBuf,
         workspace_key: WorkspaceKey,
-        cancel: CancellationToken,
+        parent_cancel: CancellationToken,
     ) -> Arc<Self> {
+        // Derive a per-entry child cancel token. Firing this child tears
+        // down just this workspace's tasks; the parent (process-wide)
+        // cancel still propagates into the child for orderly shutdown.
+        // Without the child, `release` would fire the shared parent
+        // token and cancel *every* workspace's tasks at once — which
+        // matters starting in W2 Step 6 when multiple workspaces coexist.
+        let cancel = parent_cancel.child_token();
+
         let file_watcher = FileWatcher::new(project_dir.clone());
         let fs_broadcast_tx = FileWatcher::create_sender();
 
@@ -311,6 +333,18 @@ impl WorkspaceRegistry {
     /// Unused by production code until Step 6 wires the supervisor's
     /// close/reset handlers into `release`; exercised by the Step 5
     /// tests in the meantime.
+    #[allow(dead_code)]
+    /// Crate-visible inspection handle for test assertions. The guard
+    /// returned is a std::sync::MutexGuard, so `.len()` and other
+    /// `HashMap` methods are available on deref. Not for production
+    /// callers — they should use `get_or_create` / `release` instead.
+    #[cfg(test)]
+    pub(crate) fn inner_for_test(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<WorkspaceKey, Arc<WorkspaceEntry>>> {
+        self.inner.lock().expect("WorkspaceRegistry mutex poisoned")
+    }
+
     #[allow(dead_code)]
     pub fn release(&self, key: &WorkspaceKey) -> Result<(), WorkspaceError> {
         let mut map = self.inner.lock().expect("WorkspaceRegistry mutex poisoned");

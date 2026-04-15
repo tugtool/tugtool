@@ -179,7 +179,7 @@ async fn main() {
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
     // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
-    let registry = WorkspaceRegistry::new();
+    let registry = Arc::new(WorkspaceRegistry::new());
     let bootstrap = registry
         .get_or_create(&watch_dir, cancel.clone())
         .expect("bootstrap workspace must be a valid directory");
@@ -313,7 +313,6 @@ async fn main() {
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
-        project_dir: watch_dir.clone(),
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
@@ -325,6 +324,8 @@ async fn main() {
         session_keys_store,
         spawner_factory,
         supervisor_config,
+        Arc::clone(&registry),
+        cancel.clone(),
     );
     let supervisor = Arc::new(supervisor);
 

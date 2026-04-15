@@ -48,6 +48,7 @@ use super::agent_bridge::{
 };
 use super::code::parse_tug_session_id;
 use super::session_metadata::is_system_metadata;
+use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
 
 /// Tugbank domain used to persist the `(card_id → tug_session_id)` mapping
 /// so the router can rebind sessions on restart.
@@ -215,6 +216,14 @@ pub struct LedgerEntry {
     pub tug_session_id: TugSessionId,
     /// Populated once `session_init` arrives from the subprocess.
     pub claude_session_id: Option<String>,
+    /// Canonical `WorkspaceKey` returned by `WorkspaceRegistry::get_or_create`.
+    /// Used by `do_close_session` to call `registry.release`. (W2 Step 6.)
+    pub workspace_key: WorkspaceKey,
+    /// Caller-supplied path (pre-canonicalization). Passed to
+    /// `ChildSpawner::spawn_child` in `run_session_bridge` as the spawned
+    /// Claude Code process's cwd, and retained for reset-session to
+    /// respawn without losing the binding. (W2 Step 6.)
+    pub project_dir: PathBuf,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
     /// Per-session crash budget (3 crashes / 60s by convention).
@@ -234,10 +243,17 @@ pub struct LedgerEntry {
 
 impl LedgerEntry {
     /// Create a fresh `Idle` entry for a newly registered session.
-    pub fn new(tug_session_id: TugSessionId, crash_budget: CrashBudget) -> Self {
+    pub fn new(
+        tug_session_id: TugSessionId,
+        workspace_key: WorkspaceKey,
+        project_dir: PathBuf,
+        crash_budget: CrashBudget,
+    ) -> Self {
         Self {
             tug_session_id,
             claude_session_id: None,
+            workspace_key,
+            project_dir,
             spawn_state: SpawnState::Idle,
             crash_budget,
             queue: BoundedQueue::new(),
@@ -393,15 +409,16 @@ impl SessionKeysStore for TugbankClient {
 // AgentSupervisor
 // ---------------------------------------------------------------------------
 
-/// Runtime configuration for [`AgentSupervisor`]. Concrete fields are added as
-/// subsequent steps in the plan require them.
+/// Runtime configuration for [`AgentSupervisor`].
+///
+/// W2 Step 6 deleted `project_dir` — the supervisor no longer has a global
+/// workspace path ([D12]). Per-session paths come from the CONTROL
+/// `spawn_session` payload and live on `LedgerEntry.project_dir`.
 #[derive(Debug, Clone, Default)]
 pub struct AgentSupervisorConfig {
     /// Absolute path to the tugcode binary (or `.ts` entry for bun fallback).
     /// Only consumed by the default [`TugcodeSpawner`] factory.
     pub tugcode_path: PathBuf,
-    /// Working directory passed to tugcode as `--dir`.
-    pub project_dir: PathBuf,
 }
 
 /// Factory that yields a fresh [`ChildSpawner`] for each session spawn. The
@@ -432,6 +449,12 @@ pub enum ControlError {
     Malformed,
     #[error("tugbank persistence failed: {0}")]
     PersistenceFailure(String),
+    /// The payload's `project_dir` field is missing or fails validation.
+    /// `reason` is a compile-time string from the set defined in Spec S03:
+    /// `"missing_project_dir"`, `"does_not_exist"`, `"permission_denied"`,
+    /// `"not_a_directory"`, `"metadata_error"`.
+    #[error("invalid project_dir: {reason}")]
+    InvalidProjectDir { reason: &'static str },
 }
 
 /// Central owner of all Claude Code sessions for a single tugcast process.
@@ -464,6 +487,15 @@ pub struct AgentSupervisor {
     pub merger_register_tx: mpsc::Sender<MergerRegistration>,
     /// Runtime configuration.
     pub config: AgentSupervisorConfig,
+    /// Per-workspace feed registry (W2 Step 6). `do_spawn_session` calls
+    /// `registry.get_or_create`; `do_close_session` calls
+    /// `registry.release`. Shared across the whole tugcast process.
+    pub registry: Arc<WorkspaceRegistry>,
+    /// Process-wide cancel token, cloned into `registry.get_or_create`
+    /// calls so each new workspace entry derives a child cancel from
+    /// the shared root. Firing this (e.g. on process shutdown) tears
+    /// down every workspace's tasks.
+    pub cancel: CancellationToken,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -474,6 +506,11 @@ pub type MergerRegistration = (TugSessionId, mpsc::Receiver<Frame>);
 struct OwnedControlPayload {
     card_id: String,
     tug_session_id: TugSessionId,
+    /// W2 Step 6: per-session workspace path. `None` for close/reset
+    /// payloads (which don't need it); `Some` for spawn payloads and
+    /// rejected with `InvalidProjectDir { reason: "missing_project_dir" }`
+    /// if absent on the spawn path.
+    project_dir: Option<String>,
 }
 
 fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, ControlError> {
@@ -491,9 +528,15 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
         .filter(|s| !s.is_empty())
         .ok_or(ControlError::MissingSessionId)?
         .to_string();
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     Ok(OwnedControlPayload {
         card_id,
         tug_session_id: TugSessionId::new(tug_session_id),
+        project_dir,
     })
 }
 
@@ -554,6 +597,7 @@ impl AgentSupervisor {
     /// keys store, and a spawner factory. Returns `(supervisor,
     /// merger_register_rx)` — the caller is expected to `tokio::spawn`
     /// [`AgentSupervisor::merger_task`] with the returned receiver.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_state_tx: broadcast::Sender<Frame>,
         session_metadata_tx: broadcast::Sender<Frame>,
@@ -562,6 +606,8 @@ impl AgentSupervisor {
         store: Arc<dyn SessionKeysStore>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
+        registry: Arc<WorkspaceRegistry>,
+        cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
         let sup = Self {
@@ -575,6 +621,8 @@ impl AgentSupervisor {
             spawner_factory,
             merger_register_tx,
             config,
+            registry,
+            cancel,
         };
         (sup, merger_register_rx)
     }
@@ -593,8 +641,20 @@ impl AgentSupervisor {
                 let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
                     warn!(action, error = %e, "handle_control: rejected spawn_session");
                 })?;
-                self.do_spawn_session(&parsed.card_id, parsed.tug_session_id, client_id)
-                    .await
+                // W2 Step 6: project_dir is required on spawn per Spec S03.
+                let project_dir_str =
+                    parsed
+                        .project_dir
+                        .ok_or(ControlError::InvalidProjectDir {
+                            reason: "missing_project_dir",
+                        })?;
+                self.do_spawn_session(
+                    &parsed.card_id,
+                    parsed.tug_session_id,
+                    project_dir_str,
+                    client_id,
+                )
+                .await
             }
             "close_session" => {
                 let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
@@ -608,10 +668,12 @@ impl AgentSupervisor {
                 let parsed = parse_control_payload_owned(payload).inspect_err(|e| {
                     warn!(action, error = %e, "handle_control: rejected reset_session");
                 })?;
-                self.do_close_session(&parsed.card_id, &parsed.tug_session_id, client_id)
+                // W2 [D11]: reset preserves the workspace binding. We do NOT
+                // close-then-spawn here because that would release the
+                // workspace and (potentially) tear down its feeds.
+                self.do_reset_session(&parsed.card_id, &parsed.tug_session_id, client_id)
                     .await;
-                self.do_spawn_session(&parsed.card_id, parsed.tug_session_id, client_id)
-                    .await
+                Ok(())
             }
             other => {
                 warn!(action = other, "handle_control: unknown action, ignoring");
@@ -624,21 +686,60 @@ impl AgentSupervisor {
         &self,
         card_id: &str,
         tug_session_id: TugSessionId,
+        project_dir_str: String,
         client_id: ClientId,
     ) -> Result<(), ControlError> {
+        let project_dir = PathBuf::from(&project_dir_str);
+
+        // Phase 0 (W2 Step 6): validate + canonicalize + acquire workspace.
+        // This must happen before we touch the ledger so validation errors
+        // short-circuit with no ledger or client_sessions mutation. On
+        // success the workspace refcount is bumped by 1; every error path
+        // below that returns after this point must release the extra
+        // refcount before returning ([D05]).
+        let workspace_entry = self
+            .registry
+            .get_or_create(&project_dir, self.cancel.clone())
+            .map_err(|e| match e {
+                WorkspaceError::InvalidProjectDir { reason, .. } => {
+                    warn!(
+                        card_id,
+                        session = %tug_session_id,
+                        path = ?project_dir,
+                        reason,
+                        "spawn_session: invalid project_dir"
+                    );
+                    ControlError::InvalidProjectDir { reason }
+                }
+                WorkspaceError::UnknownKey(_) => {
+                    unreachable!("get_or_create never returns UnknownKey")
+                }
+            })?;
+        let workspace_key = workspace_entry.workspace_key.clone();
+        drop(workspace_entry);
+
         // Phase 1: ledger get-or-insert + per-client affinity insert, atomic
         // under the outer ledger lock AND the client_sessions lock. Holding
         // both together closes the TOCTOU window per [R06] — a concurrent
         // close cannot interleave between the ledger insert and the
         // client_sessions insert. Lock order invariant: ledger first, then
         // client_sessions; applied everywhere in this module.
-        let entry_arc: Arc<Mutex<LedgerEntry>> = {
+        //
+        // If the ledger already has an entry for this tug_session_id (a
+        // reconnect), the or_insert_with closure does not run and we
+        // reuse the existing entry. In that case the workspace refcount
+        // bumped in Phase 0 is excess and must be released (the existing
+        // ledger entry already holds its own refcount).
+        let (entry_arc, inserted) = {
             let mut ledger = self.ledger.lock().await;
+            let was_inserted = !ledger.contains_key(&tug_session_id);
             let arc = ledger
                 .entry(tug_session_id.clone())
                 .or_insert_with(|| {
                     Arc::new(Mutex::new(LedgerEntry::new(
                         tug_session_id.clone(),
+                        workspace_key.clone(),
+                        project_dir.clone(),
                         CrashBudget::new(3, Duration::from_secs(60)),
                     )))
                 })
@@ -647,19 +748,29 @@ impl AgentSupervisor {
             cs.entry(client_id)
                 .or_default()
                 .insert(tug_session_id.clone());
-            arc
+            (arc, was_inserted)
         };
+
+        if !inserted {
+            // Reconnect: the existing ledger entry already holds a refcount
+            // on whatever workspace it was bound to; drop the one we just
+            // acquired.
+            if let Err(e) = self.registry.release(&workspace_key) {
+                warn!(
+                    card_id,
+                    session = %tug_session_id,
+                    error = %e,
+                    "spawn_session: reconnect release returned error (ignored)"
+                );
+            }
+        }
 
         // Phase 2: strict tugbank write per [D12]. Partial ledger/
         // client_sessions state on failure is tolerable (rewritten on retry);
         // silent failure is not.
-        //
-        // W2 Step 1: build the record shape with `project_dir = None` and
-        // `claude_session_id = None`. Step 6 will thread the canonicalized
-        // `project_dir` from the CONTROL payload into this callsite.
         let record = SessionKeyRecord {
             tug_session_id: tug_session_id.as_str().to_string(),
-            project_dir: None,
+            project_dir: Some(project_dir_str.clone()),
             claude_session_id: None,
         };
         if let Err(e) = self.store.set_session_record(card_id, &record) {
@@ -669,6 +780,12 @@ impl AgentSupervisor {
                 error = %e.0,
                 "spawn_session: tugbank write failed"
             );
+            // Release the workspace refcount we acquired in Phase 0, but
+            // only if we inserted a new ledger entry (for a reconnect we
+            // already released above).
+            if inserted {
+                let _ = self.registry.release(&workspace_key);
+            }
             return Err(ControlError::PersistenceFailure(e.0));
         }
 
@@ -688,6 +805,26 @@ impl AgentSupervisor {
         if let Some(frame) = replay_frame {
             let _ = self.session_metadata_tx.send(frame);
         }
+
+        // Spec S03: the CONTROL success ack echoes the canonical
+        // `workspace_key` so tugdeck can stamp it into the per-card binding
+        // store without attempting client-side canonicalization (which
+        // would miss macOS firmlinks). W1 had no explicit ack frame on this
+        // code path — a successful `spawn_session` simply returned Ok(())
+        // and the wire observation was the subsequent `pending`/`spawning`
+        // SESSION_STATE transitions. Emitting the ack as an explicit CONTROL
+        // frame here lets tugdeck's spawn-session handler populate the
+        // binding store in the same round-trip.
+        let ack = serde_json::json!({
+            "action": "spawn_session_ok",
+            "card_id": card_id,
+            "tug_session_id": tug_session_id.as_str(),
+            "workspace_key": workspace_key.as_ref(),
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&ack).expect("spawn_session_ok serializes"),
+        ));
 
         Ok(())
     }
@@ -733,16 +870,33 @@ impl AgentSupervisor {
         // `Closed` here lets the worker's early-bail check (`if state !=
         // Spawning { return }`) catch the close and skip its publish,
         // preserving frame order on the wire.
-        {
+        //
+        // Also snapshot the `workspace_key` under this same lock so Phase 3
+        // can call `registry.release` without re-acquiring it.
+        let workspace_key = {
             let mut entry = entry_arc.lock().await;
             entry.cancel.cancel();
             // Bare assignment (not `try_transition`) because the entry is
             // about to be dropped; we only care that any Arc-clone holder
             // observes `Closed` on its next lock acquire.
             entry.spawn_state = SpawnState::Closed;
+            entry.workspace_key.clone()
+        };
+
+        // Phase 3: release the workspace refcount. Errors on this path
+        // (e.g. `UnknownKey` from a double-close race) are logged and
+        // swallowed — they indicate a caller-side logic error, not a
+        // condition worth propagating to the wire.
+        if let Err(e) = self.registry.release(&workspace_key) {
+            warn!(
+                card_id,
+                session = %tug_session_id,
+                error = %e,
+                "close_session: workspace release failed, continuing"
+            );
         }
 
-        // Phase 3: best-effort tugbank delete per [D12]. Lingering entries
+        // Phase 4: best-effort tugbank delete per [D12]. Lingering entries
         // are benign; a warn! is the loudest signal we want on this path.
         if let Err(e) = self.store.delete_session_key(card_id) {
             warn!(
@@ -753,11 +907,60 @@ impl AgentSupervisor {
             );
         }
 
-        // Phase 4: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
+        // Phase 5: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
         // is dropped at the end of this scope.)
         let _ =
             self.session_state_tx
                 .send(build_session_state_frame(tug_session_id, "closed", None));
+    }
+
+    /// Handle a `reset_session` CONTROL action.
+    ///
+    /// [D11]: reset preserves the workspace binding. We kill the current
+    /// tugcode bridge (so a hung or misbehaving subprocess is torn down)
+    /// but do NOT call `registry.release` or `registry.get_or_create`.
+    /// The ledger entry stays in place — same `workspace_key`, same
+    /// `project_dir`, same crash budget, same latest_metadata replay — so
+    /// that the user's workspace feeds (file watcher, git poller) are
+    /// never observably interrupted.
+    ///
+    /// On the wire we publish `closed` then `pending`, matching the
+    /// historical close-then-spawn shape. The subsequent `spawning` /
+    /// `live` frames are published by `spawn_session_worker` when the
+    /// next CODE_INPUT frame arrives and the dispatcher transitions
+    /// `Idle → Spawning`.
+    async fn do_reset_session(
+        &self,
+        _card_id: &str,
+        tug_session_id: &TugSessionId,
+        _client_id: ClientId,
+    ) {
+        let entry_arc = {
+            let ledger = self.ledger.lock().await;
+            match ledger.get(tug_session_id) {
+                Some(e) => e.clone(),
+                None => return,
+            }
+        };
+
+        // Cancel the current bridge worker and reset the per-session
+        // state so the next CODE_INPUT can re-drive Idle → Spawning. The
+        // workspace_key, project_dir, crash_budget, and latest_metadata
+        // fields are intentionally preserved.
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.cancel.cancel();
+            entry.cancel = CancellationToken::new();
+            entry.spawn_state = SpawnState::Idle;
+            entry.input_tx = None;
+        }
+
+        let _ = self
+            .session_state_tx
+            .send(build_session_state_frame(tug_session_id, "closed", None));
+        let _ = self
+            .session_state_tx
+            .send(build_session_state_frame(tug_session_id, "pending", None));
     }
 
     /// CODE_INPUT dispatcher task. Consumes CODE_INPUT frames from a single
@@ -1049,13 +1252,9 @@ impl AgentSupervisor {
         let state_tx = self.session_state_tx.clone();
         let tug_session_id_owned = tug_session_id.clone();
         let entry_arc_bridge = entry_arc.clone();
-        // W2 Step 4 STAND-IN — REPLACED IN W2 STEP 6 with
-        // `ledger_entry.project_dir`. For now we pull the global bootstrap
-        // path off `AgentSupervisorConfig` so the bridge compiles and all
-        // existing tests continue to pass. Step 6 adds the per-session
-        // `project_dir` field on `LedgerEntry` and rewrites this block to
-        // read it from the entry instead.
-        let project_dir = self.config.project_dir.clone();
+        // W2 Step 6: per-session workspace path. Read from the ledger
+        // entry so each session's tugcode subprocess gets its own cwd.
+        let project_dir = entry_arc.lock().await.project_dir.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1102,34 +1301,68 @@ impl AgentSupervisor {
     ///   the normal `pending` publish fires.
     pub async fn rebind_from_tugbank(&self) -> Result<usize, SessionKeysStoreError> {
         let entries = self.store.list_session_records()?;
-        let mut ledger = self.ledger.lock().await;
         let mut inserted = 0usize;
-        for (_card_id, record) in entries {
-            // ================================================================
-            // W2 STEP 1 DEFERRAL — MUST BE REPLACED IN W2 STEP 6
-            // ================================================================
-            // `record.project_dir` and `record.claude_session_id` are
-            // intentionally dropped here. Step 1 bumped the schema and taught
-            // the reader to destructure the new record, but the per-session
-            // workspace binding + Claude resume logic lands in Step 6 / P14.
-            // Until then, this path rebinds ledger entries using only
-            // `tug_session_id`, matching pre-W2 behavior byte-for-byte.
-            //
-            // The `let _ = ...` bindings below are a deliberate forcing
-            // function: Step 6's loop restructure will move these fields
-            // into real callsites, and anyone editing this block before
-            // Step 6 will see the unused fields and know the deferral is
-            // still in effect.
-            // See roadmap/tugplan-workspace-registry-w2.md [D03] + Step 6.
-            let _ = &record.project_dir;
-            let _ = &record.claude_session_id;
+        // We acquire workspaces via `registry.get_or_create` outside the
+        // ledger mutex (it takes its own std::sync::Mutex internally), so
+        // we can't hold the ledger across the loop. Iterate per-record:
+        // validate → get_or_create → lock ledger briefly → insert.
+        for (card_id, record) in entries {
+            // [D03]: drop records without a workspace binding. Pre-W2
+            // records have `project_dir == None`; they can't be rebound
+            // without losing the end-to-end workspace isolation guarantee.
+            // Log the drop but do not propagate an error — this is a
+            // one-time migration event, not a fault condition.
+            let Some(project_dir_str) = record.project_dir.clone() else {
+                warn!(
+                    card_id,
+                    tug_session_id = %record.tug_session_id,
+                    "rebind: dropping pre-W2 record with no project_dir"
+                );
+                continue;
+            };
+            let project_dir = PathBuf::from(&project_dir_str);
+
+            // Validate + acquire the workspace for this record. Invalid
+            // paths (nonexistent / not-a-directory / permission-denied)
+            // are logged and skipped — the user may have removed or
+            // renamed the project directory between runs.
+            let workspace_entry = match self
+                .registry
+                .get_or_create(&project_dir, self.cancel.clone())
+            {
+                Ok(e) => e,
+                Err(WorkspaceError::InvalidProjectDir { reason, .. }) => {
+                    warn!(
+                        card_id,
+                        tug_session_id = %record.tug_session_id,
+                        path = ?project_dir,
+                        reason,
+                        "rebind: dropping record with invalid project_dir"
+                    );
+                    continue;
+                }
+                Err(WorkspaceError::UnknownKey(_)) => {
+                    unreachable!("get_or_create never returns UnknownKey")
+                }
+            };
+            let workspace_key = workspace_entry.workspace_key.clone();
+            drop(workspace_entry);
 
             let tug_session_id = TugSessionId::new(record.tug_session_id);
+
+            // Insert the ledger entry — or, if one already exists (this
+            // function is idempotent per [F15]), release the workspace
+            // refcount we just acquired and skip.
+            let mut ledger = self.ledger.lock().await;
             if ledger.contains_key(&tug_session_id) {
+                drop(ledger);
+                let _ = self.registry.release(&workspace_key);
                 continue;
             }
             let entry = LedgerEntry::new(
                 tug_session_id.clone(),
+                workspace_key,
+                project_dir,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
             ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
@@ -1184,6 +1417,8 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     let factory: SpawnerFactory =
         Arc::new(|| unreachable!("test_minimal_supervisor has no spawner"));
     let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
+    let registry = Arc::new(WorkspaceRegistry::new());
+    let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
         state_tx,
         meta_tx,
@@ -1192,6 +1427,8 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         store,
         factory,
         AgentSupervisorConfig::default(),
+        registry,
+        cancel,
     );
     (Arc::new(sup), register_rx)
 }
@@ -1342,6 +1579,14 @@ mod tests {
 
     // ---- Test helpers ----
 
+    /// Shared valid directory for tests that need *some* `project_dir`
+    /// but don't care which. `env!("CARGO_MANIFEST_DIR")` resolves at
+    /// compile time to the crate root (`tugrust/crates/tugcast`), which
+    /// always exists on every dev machine and in CI.
+    fn test_project_dir() -> &'static str {
+        env!("CARGO_MANIFEST_DIR")
+    }
+
     fn make_supervisor_with_store(
         store: Arc<dyn SessionKeysStore>,
     ) -> (
@@ -1382,6 +1627,8 @@ mod tests {
         let (meta_tx, meta_rx) = broadcast::channel(32);
         let (code_tx, _code_rx) = broadcast::channel(32);
         let (control_tx, control_rx) = broadcast::channel(512);
+        let registry = Arc::new(WorkspaceRegistry::new());
+        let cancel = CancellationToken::new();
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
@@ -1390,15 +1637,22 @@ mod tests {
             store,
             spawner_factory,
             AgentSupervisorConfig::default(),
+            registry,
+            cancel,
         );
         ((sup, state_rx, meta_rx, control_rx), register_rx)
     }
 
     fn spawn_payload(card_id: &str, tug_session_id: &str) -> Vec<u8> {
+        spawn_payload_in(card_id, tug_session_id, test_project_dir())
+    }
+
+    fn spawn_payload_in(card_id: &str, tug_session_id: &str, project_dir: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
             "action": "spawn_session",
             "card_id": card_id,
             "tug_session_id": tug_session_id,
+            "project_dir": project_dir,
         }))
         .unwrap()
     }
@@ -1434,8 +1688,15 @@ mod tests {
         sup: &AgentSupervisor,
         tug_session_id: &TugSessionId,
     ) -> Arc<Mutex<LedgerEntry>> {
+        // W2 Step 6: LedgerEntry gained workspace_key + project_dir.
+        // Tests that build a bare ledger entry use a synthetic key and
+        // the shared fixture path — they don't exercise workspace
+        // lifecycle, just per-session bookkeeping.
+        let workspace_key = WorkspaceKey::from_test_str(test_project_dir());
         let entry = Arc::new(Mutex::new(LedgerEntry::new(
             tug_session_id.clone(),
+            workspace_key,
+            PathBuf::from(test_project_dir()),
             CrashBudget::new(3, Duration::from_secs(60)),
         )));
         sup.ledger
@@ -1530,7 +1791,9 @@ mod tests {
         let entries = store.entries_snapshot();
         let rec = entries.get("card-1").expect("card-1 persisted");
         assert_eq!(rec.tug_session_id, "sess-1");
-        assert_eq!(rec.project_dir, None);
+        // W2 Step 6: project_dir is now populated on the record (Step 1
+        // left it as `None` — that was the deferred state).
+        assert_eq!(rec.project_dir.as_deref(), Some(test_project_dir()));
         assert_eq!(rec.claude_session_id, None);
         assert_eq!(store.set_call_count(), 1);
     }
@@ -1963,6 +2226,9 @@ mod tests {
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
+        // Drain the W2 Step 6 `spawn_session_ok` ack (Spec S03) before
+        // asserting there are no backpressure frames on the control feed.
+        let _ = control_rx.try_recv();
 
         // Pin the entry to Spawning so the dispatcher buffers into the queue
         // without triggering a worker drain.
@@ -2090,23 +2356,18 @@ mod tests {
     fn test_default_spawner_factory_does_not_close_over_project_dir() {
         // Before W2 Step 4, `default_spawner_factory` captured both
         // `tugcode_path` and `project_dir` from the supervisor config and
-        // baked them into each TugcodeSpawner instance. Step 4 makes the
-        // spawner stateless with respect to `project_dir` — the field is
-        // deleted, `TugcodeSpawner::new` takes only `tugcode_path`, and
-        // `spawn_child` accepts `project_dir` per call. This test locks
-        // that decoupling in place.
+        // baked them into each TugcodeSpawner instance. Step 4 made the
+        // spawner stateless with respect to `project_dir` — the field
+        // was deleted, `TugcodeSpawner::new` takes only `tugcode_path`,
+        // and `spawn_child` accepts `project_dir` per call.
         //
-        // Construction: populate `config.project_dir` with one value and
-        // verify the resulting factory ignores it entirely (the factory
-        // closure now captures only `tugcode_path`). The absence of
-        // `TugcodeSpawner.project_dir` is enforced structurally — any
-        // code that tries to pass it to `TugcodeSpawner::new` fails to
-        // compile.
+        // Step 6 went further: the `AgentSupervisorConfig::project_dir`
+        // field was deleted entirely ([D12]). This test now relies on
+        // the structural absence — if someone re-introduced a global
+        // workspace path on the config, this test would need updating.
         use super::super::agent_bridge::build_tugcode_command;
         let config = AgentSupervisorConfig {
             tugcode_path: PathBuf::from("/opt/tugtool/tugcode"),
-            // This value must not bleed into the spawned command below.
-            project_dir: PathBuf::from("/workspace-A-should-be-ignored"),
         };
         let _factory = default_spawner_factory(&config);
 
@@ -2141,12 +2402,15 @@ mod tests {
         // client id), and that the store was not re-written (the helper
         // only reads on startup).
         let store = Arc::new(InMemoryStore::default());
+        // W2 Step 6: rebind drops records with no `project_dir` ([D03]),
+        // so tests that want a successful rebind must populate the
+        // records with a valid path. Use the shared test fixture dir.
         store
             .set_session_record(
                 "card-a",
                 &SessionKeyRecord {
                     tug_session_id: "sess-a".to_string(),
-                    project_dir: None,
+                    project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
                 },
             )
@@ -2156,7 +2420,7 @@ mod tests {
                 "card-b",
                 &SessionKeyRecord {
                     tug_session_id: "sess-b".to_string(),
-                    project_dir: None,
+                    project_dir: Some(test_project_dir().to_string()),
                     claude_session_id: None,
                 },
             )
@@ -2698,5 +2962,321 @@ mod tests {
             records.is_empty(),
             "malformed JSON must be skipped, got: {records:?}"
         );
+    }
+
+    // ================================================================
+    // W2 Step 6: supervisor lifecycle hooks against the registry
+    // ================================================================
+
+    /// Count the live entries in the supervisor's registry map. Private
+    /// inspection helper — real callers never need this.
+    fn registry_map_len(sup: &AgentSupervisor) -> usize {
+        // Access the crate-visible `inner` field via the test module's
+        // privilege (both live under the same crate).
+        use super::super::workspace_registry::WorkspaceRegistry;
+        fn inspect(r: &WorkspaceRegistry) -> usize {
+            // `inner` is pub(crate) — this file is in the same crate.
+            r.inner_for_test().len()
+        }
+        inspect(&sup.registry)
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_rejects_missing_project_dir() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        // Payload without `project_dir` — handle_control must reject with
+        // `InvalidProjectDir { reason: "missing_project_dir" }` before any
+        // ledger mutation.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "card_id": "card-1",
+            "tug_session_id": "sess-1",
+        }))
+        .unwrap();
+        let err = sup
+            .handle_control("spawn_session", &payload, 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::InvalidProjectDir {
+                reason: "missing_project_dir"
+            }
+        );
+        assert!(sup.ledger.lock().await.is_empty());
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_rejects_nonexistent_project_dir() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let payload = spawn_payload_in(
+            "card-1",
+            "sess-1",
+            "/nonexistent/xyz-workspace-registry-test",
+        );
+        let err = sup
+            .handle_control("spawn_session", &payload, 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::InvalidProjectDir {
+                reason: "does_not_exist"
+            }
+        );
+        assert!(sup.ledger.lock().await.is_empty());
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_rejects_file_as_project_dir() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let file_path = tmp.path().join("not-a-dir.txt");
+        std::fs::write(&file_path, b"nope").expect("write file");
+
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        let payload =
+            spawn_payload_in("card-1", "sess-1", file_path.to_str().unwrap());
+        let err = sup
+            .handle_control("spawn_session", &payload, 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::InvalidProjectDir {
+                reason: "not_a_directory"
+            }
+        );
+        assert!(sup.ledger.lock().await.is_empty());
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_success_ack_includes_workspace_key() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // The first frame on the control feed should be the success ack
+        // with an echoed `workspace_key`.
+        let ack = control_rx.try_recv().expect("spawn_session_ok ack");
+        assert_eq!(ack.feed_id, FeedId::CONTROL);
+        let v: serde_json::Value = serde_json::from_slice(&ack.payload).unwrap();
+        assert_eq!(v["action"], "spawn_session_ok");
+        assert_eq!(v["card_id"], "card-1");
+        assert_eq!(v["tug_session_id"], "sess-1");
+        let wk = v["workspace_key"].as_str().expect("workspace_key string");
+        assert!(!wk.is_empty());
+        // The ack's workspace_key must equal the canonical form produced
+        // by WorkspaceRegistry::get_or_create, which is what tugcast
+        // splices into FILETREE/FILESYSTEM/GIT frames. Load the live
+        // entry from the ledger and cross-check.
+        let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = sup.ledger.lock().await.get(&tug_id).unwrap().clone();
+        let entry = entry_arc.lock().await;
+        assert_eq!(wk, entry.workspace_key.as_ref());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_releases_on_persistence_failure() {
+        // Inject a FailingWriteStore: persistence fails after workspace
+        // acquisition. The supervisor must release the workspace refcount
+        // so the registry map is empty on the failure path ([D05]).
+        let store = Arc::new(FailingWriteStore::new());
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        let err = sup
+            .handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ControlError::PersistenceFailure(_)));
+
+        // The workspace refcount bumped in Phase 0 must have been
+        // released — the map should be empty.
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_two_sessions_same_workspace_share_entry() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-a", "sess-a"), 10)
+            .await
+            .unwrap();
+        sup.handle_control("spawn_session", &spawn_payload("card-b", "sess-b"), 20)
+            .await
+            .unwrap();
+        // Drain the two ack frames.
+        let _ = control_rx.try_recv();
+        let _ = control_rx.try_recv();
+
+        // Same project_dir → same workspace entry; the registry map has
+        // exactly one entry.
+        assert_eq!(registry_map_len(&sup), 1);
+
+        // Both ledger entries bind to the same workspace_key.
+        let ledger = sup.ledger.lock().await;
+        let entry_a = ledger
+            .get(&TugSessionId::new("sess-a"))
+            .unwrap()
+            .clone();
+        let entry_b = ledger
+            .get(&TugSessionId::new("sess-b"))
+            .unwrap()
+            .clone();
+        drop(ledger);
+        let key_a = entry_a.lock().await.workspace_key.as_ref().to_string();
+        let key_b = entry_b.lock().await.workspace_key.as_ref().to_string();
+        assert_eq!(key_a, key_b);
+    }
+
+    #[tokio::test]
+    async fn test_close_session_releases_workspace() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let _ = control_rx.try_recv(); // drain ack
+        assert_eq!(registry_map_len(&sup), 1);
+
+        sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // Refcount should have hit zero; the workspace is removed.
+        assert_eq!(registry_map_len(&sup), 0);
+        assert!(sup.ledger.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reset_session_preserves_workspace() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let _ = control_rx.try_recv(); // drain ack
+
+        let tug_id = TugSessionId::new("sess-1");
+        let workspace_key_before = {
+            let ledger = sup.ledger.lock().await;
+            let entry_arc = ledger.get(&tug_id).unwrap().clone();
+            drop(ledger);
+            entry_arc.lock().await.workspace_key.clone()
+        };
+
+        sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+
+        // [D11]: the workspace entry survives reset. Map still holds 1.
+        assert_eq!(registry_map_len(&sup), 1);
+        // Ledger entry still present with the same workspace_key.
+        let workspace_key_after = {
+            let ledger = sup.ledger.lock().await;
+            let entry_arc = ledger.get(&tug_id).unwrap().clone();
+            drop(ledger);
+            entry_arc.lock().await.workspace_key.clone()
+        };
+        assert_eq!(
+            workspace_key_before.as_ref(),
+            workspace_key_after.as_ref()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rebind_drops_records_without_project_dir() {
+        let store = Arc::new(InMemoryStore::default());
+        // Legacy (pre-W2) record shape: project_dir = None.
+        store
+            .set_session_record(
+                "card-legacy",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-legacy".to_string(),
+                    project_dir: None,
+                    claude_session_id: None,
+                },
+            )
+            .unwrap();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 0);
+        assert!(sup.ledger.lock().await.is_empty());
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_rebind_drops_records_with_missing_path() {
+        let store = Arc::new(InMemoryStore::default());
+        store
+            .set_session_record(
+                "card-gone",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-gone".to_string(),
+                    project_dir: Some(
+                        "/nonexistent/rebind-missing-path-test".to_string(),
+                    ),
+                    claude_session_id: None,
+                },
+            )
+            .unwrap();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 0);
+        assert!(sup.ledger.lock().await.is_empty());
+        assert_eq!(registry_map_len(&sup), 0);
+    }
+
+    #[tokio::test]
+    async fn test_rebind_restores_workspace_entries_from_records() {
+        let store = Arc::new(InMemoryStore::default());
+        store
+            .set_session_record(
+                "card-valid",
+                &SessionKeyRecord {
+                    tug_session_id: "sess-valid".to_string(),
+                    project_dir: Some(test_project_dir().to_string()),
+                    claude_session_id: None,
+                },
+            )
+            .unwrap();
+
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+        let inserted = sup.rebind_from_tugbank().await.unwrap();
+        assert_eq!(inserted, 1);
+
+        let tug_id = TugSessionId::new("sess-valid");
+        let ledger = sup.ledger.lock().await;
+        let entry_arc = ledger.get(&tug_id).expect("entry").clone();
+        drop(ledger);
+        let entry = entry_arc.lock().await;
+        assert_eq!(
+            entry.project_dir.to_str().unwrap(),
+            test_project_dir()
+        );
+        assert!(!entry.workspace_key.as_ref().is_empty());
+        // Registry holds exactly one entry for the rebound workspace.
+        assert_eq!(registry_map_len(&sup), 1);
     }
 }
