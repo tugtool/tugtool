@@ -172,16 +172,22 @@ export interface CostUpdateEvent {
 }
 
 /**
- * Placeholder for Step 8's `SESSION_STATE { state: "errored", ... }`
- * frame. Declared now so the reducer's default case stays exhaustive
- * when Step 8 lands.
+ * Internal event mapped from a `SESSION_STATE { state: "errored" }`
+ * frame. The store's `frameToEvent` extracts the `detail` field from
+ * the wire payload; the reducer rolls it into `state.lastError.message`.
+ * Only the `"errored"` state maps to an event — all other states
+ * (`pending`, `spawning`, `closed`, …) are dropped in `frameToEvent`.
  */
 export interface SessionStateErroredEvent {
   type: "session_state_errored";
   detail?: string;
 }
 
-/** Placeholder for Step 8's transport-close synthetic event. */
+/**
+ * Internal event injected when `TugConnection.onClose` fires. Not a
+ * wire event — the store subscribes to the connection's close callback
+ * at construction and dispatches this action per [Spec S04].
+ */
 export interface TransportCloseEvent {
   type: "transport_close";
 }

@@ -92,6 +92,7 @@ export class CodeSessionStore {
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
   private _feedStoreUnsub: (() => void) | null = null;
+  private _closeUnsub: (() => void) | null = null;
   private _lastFrameByFeed: Map<number, unknown> = new Map();
 
   constructor(options: CodeSessionStoreOptions) {
@@ -139,6 +140,14 @@ export class CodeSessionStore {
     this._feedStoreUnsub = this.feedStore.subscribe(() =>
       this.onFeedStoreChange(),
     );
+
+    // Subscribe unconditionally. The reducer itself decides whether
+    // a close matters — idle closes are dropped, non-idle routes to
+    // `errored`. Cheap to leave registered for the store's lifetime.
+    this._closeUnsub = this.conn.onClose(() => {
+      if (this._disposed) return;
+      this.dispatch({ type: "transport_close" });
+    });
   }
 
   /** L02 subscribe contract. Returns an unsubscribe function. */
@@ -258,6 +267,10 @@ export class CodeSessionStore {
       this._feedStoreUnsub();
       this._feedStoreUnsub = null;
     }
+    if (this._closeUnsub) {
+      this._closeUnsub();
+      this._closeUnsub = null;
+    }
     this.feedStore.dispose();
     this._listeners = [];
     this.state.queuedSends = [];
@@ -299,7 +312,17 @@ export class CodeSessionStore {
       if (!KNOWN_CODE_OUTPUT_TYPES.has(ev.type)) return null;
       return ev as unknown as CodeSessionEvent;
     }
-    // Step 8 wires SESSION_STATE handling.
+    if (feedId === FeedId.SESSION_STATE) {
+      // SESSION_STATE payload shape is `{ tug_session_id, state, detail }`.
+      // Only `state: "errored"` maps to a reducer event; all other
+      // states (`pending`, `spawning`, `closed`, …) are dropped.
+      const ss = decoded as { state?: string; detail?: string };
+      if (ss.state !== "errored") return null;
+      return {
+        type: "session_state_errored",
+        detail: typeof ss.detail === "string" ? ss.detail : undefined,
+      };
+    }
     return null;
   }
 

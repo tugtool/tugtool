@@ -596,18 +596,33 @@ describe("reduce — explicit drops", () => {
     expect(effects.length).toBe(0);
   });
 
-  it("drops Step 8 placeholders (session_state_errored, transport_close) as no-ops", () => {
+  it("drops transport_close while idle as a no-op (Step 8)", () => {
     const s0 = fresh();
-    const r1 = reduce(s0, {
-      type: "session_state_errored",
-      detail: "crash",
-    });
-    expect(r1.state).toBe(s0);
-    expect(r1.effects.length).toBe(0);
+    const { state, effects } = reduce(s0, { type: "transport_close" });
+    expect(state).toBe(s0);
+    expect(effects.length).toBe(0);
+  });
+});
 
-    const r2 = reduce(s0, { type: "transport_close" });
-    expect(r2.state).toBe(s0);
-    expect(r2.effects.length).toBe(0);
+describe("reduce — errored triggers (Step 8)", () => {
+  it("routes session_state_errored into phase=errored with cause tag", () => {
+    const s0: CodeSessionState = { ...fresh(), phase: "streaming" };
+    const { state, effects } = reduce(s0, {
+      type: "session_state_errored",
+      detail: "crash_budget_exhausted",
+    });
+    expect(state.phase).toBe("errored");
+    expect(state.lastError?.cause).toBe("session_state_errored");
+    expect(state.lastError?.message).toBe("crash_budget_exhausted");
+    expect(effects.length).toBe(0);
+  });
+
+  it("routes transport_close into phase=errored during active turn", () => {
+    const s0: CodeSessionState = { ...fresh(), phase: "submitting" };
+    const { state, effects } = reduce(s0, { type: "transport_close" });
+    expect(state.phase).toBe("errored");
+    expect(state.lastError?.cause).toBe("transport_closed");
+    expect(effects.length).toBe(0);
   });
 });
 

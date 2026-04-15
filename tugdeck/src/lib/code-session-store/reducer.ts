@@ -21,6 +21,7 @@ import type {
   RespondQuestionActionEvent,
   SendActionEvent,
   SessionInitEvent,
+  SessionStateErroredEvent,
   ThinkingTextEvent,
   ToolResultEvent,
   ToolUseEvent,
@@ -432,6 +433,7 @@ function handleTurnComplete(
         prevPhase: null,
         pendingUserMessage: { text: next.text, atoms: next.atoms },
         queuedSends: rest,
+        lastError: null,
       },
       effects: [
         { kind: "append-transcript", entry },
@@ -463,6 +465,9 @@ function handleTurnComplete(
       // preceding `interrupt()`, any enqueued follow-ups are dropped.
       // Interrupt-driven paths already cleared the queue.
       queuedSends: isSuccess ? state.queuedSends : [],
+      // A successful turn clears any lingering `lastError` from an
+      // earlier errored-phase recovery ([Spec S04]).
+      lastError: isSuccess ? null : state.lastError,
     },
     effects: [
       { kind: "append-transcript", entry },
@@ -604,6 +609,56 @@ function handleCostUpdate(
 }
 
 // ---------------------------------------------------------------------------
+// Errored triggers — Spec S04
+// ---------------------------------------------------------------------------
+
+function handleSessionStateErrored(
+  state: CodeSessionState,
+  event: SessionStateErroredEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Distinct from `interrupted` per [D08]: an errored session is not
+  // recoverable via a simple retry — the underlying session is dead.
+  // The next `send()` from `errored` re-submits and clears `lastError`
+  // on the following `turn_complete(success)`.
+  const message = event.detail ?? "session errored";
+  return {
+    state: {
+      ...state,
+      phase: "errored",
+      lastError: {
+        cause: "session_state_errored",
+        message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
+function handleTransportClose(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Transport close while idle is noise — nothing's in flight, so
+  // there's nothing for the user to recover. Re-open handling lives at
+  // the connection layer.
+  if (state.phase === "idle") {
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      phase: "errored",
+      lastError: {
+        cause: "transport_closed",
+        message: "transport closed",
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -646,9 +701,9 @@ export function reduce(
       // [D09] SessionMetadataStore owns this feed — drop explicitly.
       return { state, effects: [] };
     case "session_state_errored":
+      return handleSessionStateErrored(state, event);
     case "transport_close":
-      // Step 8 placeholders.
-      return { state, effects: [] };
+      return handleTransportClose(state);
     default:
       return { state, effects: [] };
   }
