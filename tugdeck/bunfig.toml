@@ -1,3 +1,7 @@
+# `root` is `src` (not `src/__tests__`) so colocated test files under
+# `src/lib/**/__tests__/` — e.g. `src/lib/code-session-store/__tests__/` —
+# are picked up by `bun test`. Pre-existing tests under `src/__tests__/`
+# are still discovered via recursive walk.
 [test]
 root = "src"
 preload = ["happy-dom", "./src/__tests__/setup-silence.ts"]
