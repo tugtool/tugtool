@@ -2427,7 +2427,8 @@ Transition table:
 | From | Event | To | Notes |
 |------|-------|----|----|
 | `idle` | `send()` action | `submitting` | Write `user_message` frame to `CODE_INPUT`. May span a subprocess spawn (lazy spawn per §P2 integration reference). |
-| `submitting` | First `thinking_text` / `assistant_text` partial with a new `msg_id` | `awaiting_first_token` → `streaming` | Fast collapse; `awaiting_first_token` exists so the UI can show "connecting…" distinct from "streaming". |
+| `submitting` | First `thinking_text` / `assistant_text` partial with a new `msg_id` | `awaiting_first_token` → `streaming` | Fast collapse; `awaiting_first_token` exists so the UI can show "connecting…" distinct from "streaming". **Text-first turns only** — see tool-first note below. |
+| `submitting` | First `tool_use` (tool-first turn) | `tool_work` | Tool-first turns (e.g. `v2.1.105/test-05`, `test-07`) skip `awaiting_first_token` entirely — there is no text token to react to, and collapsing through `awaiting_first_token` would require a second synthetic dispatch the reducer has no reason to emit. The prompt-entry UI should treat `phase ∈ { submitting, awaiting_first_token }` as the "connecting…" window so tool-first and text-first flows render the same affordance. |
 | `streaming` | `assistant_text` partial (delta) | `streaming` | Append delta to `streamingDocument` at `inflight.assistant`. |
 | `streaming` | `thinking_text` partial (delta) | `streaming` | Append delta to `inflight.thinking`. |
 | `streaming` | `tool_use` partial/complete | `tool_work` | Sub-state; `canInterrupt` remains true. Upsert a `ToolCallState` in the in-flight tool map keyed by `tool_use_id`. |
