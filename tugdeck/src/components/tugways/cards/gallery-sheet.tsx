@@ -9,20 +9,20 @@
  * @module components/tugways/cards/gallery-sheet
  */
 
-import React, { useCallback, useId, useMemo, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import {
   TugSheet,
   TugSheetTrigger,
   TugSheetContent,
   useTugSheet,
+  useTugSheetClose,
 } from "@/components/tugways/tug-sheet";
 import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
+import type { TugPushButtonProps } from "@/components/tugways/tug-push-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -65,6 +65,26 @@ const fieldRowStyle: React.CSSProperties = {
  * 4. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
  * 5. Rich scrollable content (checklist).
  */
+/**
+ * SheetCloseButton -- TugPushButton that closes the enclosing TugSheet
+ * via the chain-native path. Reads the sheet responder id from
+ * TugSheetContext internally (via useTugSheetClose), so each button is
+ * self-sufficient and does not need per-sheet senderId plumbing.
+ */
+function SheetCloseButton(props: TugPushButtonProps) {
+  const close = useTugSheetClose();
+  const { onClick, ...rest } = props;
+  return (
+    <TugPushButton
+      {...rest}
+      onClick={(event) => {
+        onClick?.(event);
+        close();
+      }}
+    />
+  );
+}
+
 export function GallerySheet() {
   // Section 4: imperative ref
   const sheetRef = useRef<TugSheetHandle>(null);
@@ -72,26 +92,6 @@ export function GallerySheet() {
   // Section 1: useTugSheet() hook
   const { showSheet, renderSheet } = useTugSheet();
   const [hookResult, setHookResult] = React.useState<string | undefined>(undefined);
-
-  // Chain manager — the compound-API sections close their sheets by
-  // dispatching cancelDialog, matching the L11 pattern established by
-  // TugConfirmPopover and TugAlert. Per-sheet sender ids disambiguate
-  // so each sheet's own handler closes its own instance.
-  const manager = useResponderChain();
-  const basicSenderId = useId();
-  const descSenderId = useId();
-  const richSenderId = useId();
-
-  const dispatchCancel = useCallback(
-    (sender: string) => {
-      manager?.sendToFirstResponder({
-        action: TUG_ACTIONS.CANCEL_DIALOG,
-        sender,
-        phase: "discrete",
-      });
-    },
-    [manager],
-  );
 
   return (
     <div className="cg-content" data-testid="gallery-sheet">
@@ -156,7 +156,7 @@ export function GallerySheet() {
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Open Settings</TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Card Settings" senderId={basicSenderId}>
+            <TugSheetContent title="Card Settings">
               <div style={fieldGroupStyle}>
                 <div style={fieldRowStyle}>
                   <label style={fieldLabelStyle} htmlFor="sheet-basic-name">Card name</label>
@@ -177,8 +177,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" onClick={() => dispatchCancel(basicSenderId)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" onClick={() => dispatchCancel(basicSenderId)}>Save</TugPushButton>
+                <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
+                <SheetCloseButton emphasis="filled">Save</SheetCloseButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -201,7 +201,6 @@ export function GallerySheet() {
             <TugSheetContent
               title="Share Card"
               description="Choose who can view or edit this card. Changes take effect immediately."
-              senderId={descSenderId}
             >
               <div style={fieldGroupStyle}>
                 <div style={fieldRowStyle}>
@@ -215,8 +214,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" onClick={() => dispatchCancel(descSenderId)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" onClick={() => dispatchCancel(descSenderId)}>Invite</TugPushButton>
+                <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
+                <SheetCloseButton emphasis="filled">Invite</SheetCloseButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -286,8 +285,8 @@ export function GallerySheet() {
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Review Checklist</TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Pre-launch Checklist" senderId={richSenderId}>
-              <RichChecklistContent onClose={() => dispatchCancel(richSenderId)} />
+            <TugSheetContent title="Pre-launch Checklist">
+              <RichChecklistContent />
             </TugSheetContent>
           </TugSheet>
         </div>
@@ -314,7 +313,7 @@ const CHECKLIST_ITEMS = [
   { id: "cl-10", label: "Schedule launch announcement", defaultChecked: false },
 ];
 
-function RichChecklistContent({ onClose }: { onClose: () => void }) {
+function RichChecklistContent() {
   const [checked, setChecked] = React.useState<Record<string, boolean>>(
     () => Object.fromEntries(CHECKLIST_ITEMS.map((item) => [item.id, item.defaultChecked])),
   );
@@ -363,8 +362,8 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="tug-sheet-actions">
-        <TugPushButton emphasis="outlined" onClick={onClose}>Cancel</TugPushButton>
-        <TugPushButton emphasis="filled" onClick={onClose}>Save</TugPushButton>
+        <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
+        <SheetCloseButton emphasis="filled">Save</SheetCloseButton>
       </div>
     </div>
     </ResponderScope>

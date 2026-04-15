@@ -33,6 +33,7 @@ import {
   TugSheetTrigger,
   TugSheetContent,
   useTugSheet,
+  useTugSheetClose,
   type TugSheetHandle,
 } from "@/components/tugways/tug-sheet";
 import { TugcardPortalContext } from "@/components/tugways/tug-card";
@@ -40,6 +41,7 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
   ResponderChainManager,
+  ResponderParentContext,
 } from "@/components/tugways/responder-chain";
 
 // ---------------------------------------------------------------------------
@@ -235,6 +237,102 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
         (e) => e.action === "cancel-dialog" && e.sender === "cmd-sender",
       ),
     ).toBe(true);
+    cleanupCard();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. Close from a consumer button when first responder is elsewhere
+// ---------------------------------------------------------------------------
+
+/**
+ * Regression test for the "sheet becomes undismissable after returning
+ * to its card" bug.
+ *
+ * Reproduces the production scenario:
+ *   1. Sheet opens inside a parent responder (simulating a Tugcard).
+ *   2. User focuses another card — first responder becomes a node
+ *      OUTSIDE the sheet subtree.
+ *   3. User returns to the sheet's card and clicks Cancel.
+ *   4. The Cancel button's close dispatch must reach the sheet even
+ *      though first responder is not inside it.
+ *
+ * Pre-fix: consumer Cancel buttons dispatched `cancelDialog` via
+ * `sendToFirstResponder`, which walked up from the non-sheet first
+ * responder and missed the sheet entirely.
+ *
+ * Post-fix: `useTugSheetClose` dispatches via `sendToTarget` at the
+ * sheet's own responder id, so the walk starts inside the sheet
+ * regardless of first-responder state.
+ */
+describe("TugSheet – close from consumer when first responder is elsewhere", () => {
+  it("useTugSheetClose closes the sheet even if first responder is outside the sheet subtree", () => {
+    // Cancel button rendered inside the sheet; uses the hook.
+    function CancelButton() {
+      const close = useTugSheetClose();
+      return (
+        <button type="button" data-testid="sheet-cancel" onClick={() => close()}>
+          Cancel
+        </button>
+      );
+    }
+
+    // Parent responder id simulating a Tugcard wrapping the sheet.
+    const parentResponderId = "parent-card";
+
+    const { manager, cleanupCard } = renderWithChainAndCard(
+      <ResponderParentContext.Provider value={parentResponderId}>
+        <TugSheet defaultOpen>
+          <TugSheetContent title="Settings">
+            <CancelButton />
+          </TugSheetContent>
+        </TugSheet>
+      </ResponderParentContext.Provider>,
+    );
+
+    // Register the parent node (simulating the Tugcard's responder)
+    // and make it first responder — the sheet is NOT first responder.
+    manager.register({
+      id: parentResponderId,
+      parentId: null,
+      actions: {},
+    });
+    act(() => {
+      manager.makeFirstResponder(parentResponderId);
+    });
+    expect(manager.getFirstResponder()).toBe(parentResponderId);
+
+    // Sheet is open.
+    expect(getSheetContent()).not.toBeNull();
+
+    // Install an observer so we can check that the dispatch was
+    // actually handled by the sheet (not just fired into the void).
+    const seen: Array<{ action: string; handled: boolean }> = [];
+    manager.observeDispatch((event, handled) => {
+      seen.push({ action: event.action, handled });
+    });
+
+    // Click Cancel. Pre-fix, the consumer button dispatched
+    // `cancelDialog` via `sendToFirstResponder`, which walked up from
+    // the parent-card first responder, missed the sheet entirely, and
+    // reported `handled=false`. Post-fix, `useTugSheetClose` dispatches
+    // via `sendToTarget` at the sheet's own responder id — the sheet's
+    // handler fires and reports `handled=true`.
+    const cancelBtn = document.querySelector<HTMLButtonElement>(
+      "[data-testid='sheet-cancel']",
+    );
+    expect(cancelBtn).not.toBeNull();
+    act(() => {
+      fireEvent.click(cancelBtn!);
+    });
+
+    // The cancelDialog dispatch must be handled — that's the assertion
+    // that distinguishes pre-fix from post-fix behavior.
+    expect(
+      seen.some((e) => e.action === "cancel-dialog" && e.handled === true),
+    ).toBe(true);
+
+    manager.unregister(parentResponderId);
     cleanupCard();
   });
 });

@@ -84,6 +84,14 @@ interface TugSheetContextValue {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contentId: string;
+  /**
+   * Responder id the <TugSheetContent> registers under. Carried on the
+   * context so consumer children can target dispatches directly at the
+   * sheet via `manager.sendToTarget(responderId, ...)` — critical for
+   * the close path, which must not depend on the sheet being first
+   * responder (see `useTugSheetClose` for the canonical usage).
+   */
+  responderId: string;
 }
 
 const TugSheetContext = createContext<TugSheetContextValue | null>(null);
@@ -122,6 +130,16 @@ export interface TugSheetProps {
    * `TugSheetTrigger` or the imperative ref handle.
    */
   defaultOpen?: boolean;
+  /**
+   * Override the auto-generated responder id. Primarily an internal
+   * affordance for `useTugSheet()`, which needs to know the responder
+   * id up-front so its close callback can dispatch `cancelDialog` via
+   * `sendToTarget` without a context round-trip.
+   *
+   * Regular consumers never set this; TugSheet auto-generates a stable
+   * id via `useId()`.
+   */
+  responderId?: string;
   /** Trigger + Content children. */
   children: React.ReactNode;
 }
@@ -138,9 +156,11 @@ export interface TugSheetProps {
  * ```
  */
 export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
-  function TugSheet({ defaultOpen = false, children }, ref) {
+  function TugSheet({ defaultOpen = false, responderId: responderIdProp, children }, ref) {
     const [open, setOpen] = useState(defaultOpen);
     const contentId = useId();
+    const fallbackResponderId = useId();
+    const responderId = responderIdProp ?? fallbackResponderId;
 
     const handleOpenChange = useCallback((next: boolean) => {
       setOpen(next);
@@ -156,7 +176,7 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
     }));
 
     return (
-      <TugSheetContext value={{ open, onOpenChange: handleOpenChange, contentId }}>
+      <TugSheetContext value={{ open, onOpenChange: handleOpenChange, contentId, responderId }}>
         {children}
       </TugSheetContext>
     );
@@ -262,7 +282,7 @@ export function TugSheetContent({
   senderId: senderIdProp,
   children,
 }: TugSheetContentProps) {
-  const { open, onOpenChange, contentId } = useTugSheetContext();
+  const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
   const cardEl = useContext(TugcardPortalContext);
 
   const titleId = `${contentId}-title`;
@@ -270,13 +290,12 @@ export function TugSheetContent({
 
   // Chain manager — null when rendered outside a ResponderChainProvider.
   // Escape / Cmd+. fall back to calling onOpenChange directly in that
-  // case; otherwise they dispatch cancelDialog through the chain and
-  // the walk lands back on our own registered handler.
+  // case; otherwise they dispatch cancelDialog via sendToTarget at the
+  // sheet's own responder id so the walk starts inside the sheet
+  // regardless of current first-responder state.
   const manager = useResponderChain();
 
-  const fallbackResponderId = useId();
   const fallbackSenderId = useId();
-  const responderId = fallbackResponderId;
   const senderId = senderIdProp ?? fallbackSenderId;
 
   // Stable primary close action. Kept here and referenced by both the
@@ -398,15 +417,14 @@ export function TugSheetContent({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape" || (e.metaKey && e.key === ".")) {
       e.preventDefault();
-      // Route through the chain so the sheet's own cancelDialog
-      // handler closes it. The walk starts from the focused element
-      // (whatever has focus inside the sheet — an input, a button)
-      // and walks up via parentId to this sheet's responder node
-      // (the sheet wraps its children in ResponderScope so the
-      // parent chain is correctly set). Fallback: no provider → call
+      // Route via sendToTarget at the sheet's own responder id so the
+      // dispatch reaches this sheet regardless of who is currently
+      // first responder. First-responder walks are the wrong tool for
+      // a modal close — the sheet owns its cancelDialog handler by
+      // identity, not by focus position. Fallback: no provider → call
       // closeSheet directly.
       if (manager) {
-        manager.sendToFirstResponder({
+        manager.sendToTarget(responderId, {
           action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",
@@ -488,6 +506,53 @@ export function TugSheetContent({
     </>,
     cardEl,
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * useTugSheetClose — consumer-facing close hook
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * Returns a stable `close()` function that dismisses the nearest
+ * ancestor `<TugSheet>`. Intended for Cancel / Save / Apply buttons
+ * inside a sheet's content — they call `close()` on click and the sheet
+ * closes via the chain-native path (`sendToTarget` at the sheet's
+ * responder id, which routes to the sheet's own `cancelDialog` handler).
+ *
+ * Must be called from a component rendered inside a `<TugSheet>` — the
+ * hook reads the enclosing sheet's responder id from `TugSheetContext`.
+ * Outside a TugSheet the returned function is a no-op (with a dev
+ * warning) so standalone previews / tests can render the same button
+ * components without crashing.
+ *
+ * Outside a `ResponderChainProvider` the function falls back to
+ * `onOpenChange(false)` on the sheet context, matching the
+ * no-provider fallbacks elsewhere in the sheet.
+ */
+export function useTugSheetClose(): () => void {
+  const ctx = useContext(TugSheetContext);
+  const manager = useResponderChain();
+  const fallbackSenderId = useId();
+
+  return useCallback(() => {
+    if (!ctx) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          "[useTugSheetClose] called outside <TugSheet>. No-op.",
+        );
+      }
+      return;
+    }
+    if (manager) {
+      manager.sendToTarget(ctx.responderId, {
+        action: TUG_ACTIONS.CANCEL_DIALOG,
+        sender: fallbackSenderId,
+        phase: "discrete",
+      });
+    } else {
+      ctx.onOpenChange(false);
+    }
+  }, [ctx, manager, fallbackSenderId]);
 }
 
 /* ---------------------------------------------------------------------------
@@ -667,6 +732,13 @@ export function useTugSheet(): {
   // reacts to its own sheet's chain-driven dismissals.
   const senderId = useId();
 
+  // Stable responder id the hook's <TugSheet> registers under. Held
+  // here so the close callback can dispatch `cancelDialog` via
+  // `sendToTarget(responderId, ...)` — a first-responder walk is
+  // unsafe because the sheet may not be first responder at close time
+  // (e.g., after the user focused another card and returned).
+  const responderId = useId();
+
   // Resolve the pending promise without touching the hook's local
   // state. Used by both the explicit `close(result)` callback and the
   // observeDispatch subscription for Escape / Cmd+. dismissal. We
@@ -731,7 +803,7 @@ export function useTugSheet(): {
     const close = (result?: string) => {
       resolveHook(result);
       if (manager) {
-        manager.sendToFirstResponder({
+        manager.sendToTarget(responderId, {
           action: TUG_ACTIONS.CANCEL_DIALOG,
           sender: senderId,
           phase: "discrete",
@@ -742,7 +814,7 @@ export function useTugSheet(): {
     };
 
     return (
-      <TugSheet key={callId} defaultOpen>
+      <TugSheet key={callId} defaultOpen responderId={responderId}>
         <TugSheetContent
           title={options.title}
           description={options.description}
@@ -753,7 +825,7 @@ export function useTugSheet(): {
         </TugSheetContent>
       </TugSheet>
     );
-  }, [state, senderId, resolveHook, manager]);
+  }, [state, senderId, responderId, resolveHook, manager]);
 
   return { showSheet, renderSheet };
 }
