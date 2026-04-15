@@ -110,10 +110,29 @@ function handleSend(
     };
   }
 
-  // Non-idle, non-errored: Step 7 adds queue semantics. For Step 3 we
-  // drop mid-turn sends silently — the Step 3 test never triggers this
-  // branch.
-  return { state, effects: [] };
+  // Mid-turn send — enqueue. The queue is speculative: a single entry
+  // flushes at `turn_complete(success)` via the single-tick collapse in
+  // `handleTurnComplete`; `interrupt()` clears it per [D05].
+  const queuedSends = [
+    ...state.queuedSends,
+    { text: event.text, atoms: [...event.atoms] },
+  ];
+  return { state: { ...state, queuedSends }, effects: [] };
+}
+
+function handleInterrupt(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idle / errored: no in-flight turn to interrupt. Drop silently so
+  // accidental calls from stale UI state don't spam the server with
+  // noop interrupt frames.
+  if (state.phase === "idle" || state.phase === "errored") {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, queuedSends: [] },
+    effects: [{ kind: "send-frame", msg: { type: "interrupt" } }],
+  };
 }
 
 function handleSessionInit(
@@ -396,6 +415,39 @@ function handleTurnComplete(
   const scratch = new Map(state.scratch);
   scratch.delete(msgId);
 
+  // Single-tick collapse per Spec S03: a queued send on a successful
+  // turn flushes in the same dispatch as the commit, so observers see
+  // the final phase as `submitting`, not a transient `idle`.
+  if (isSuccess && state.queuedSends.length > 0) {
+    const [next, ...rest] = state.queuedSends;
+    return {
+      state: {
+        ...state,
+        phase: "submitting",
+        activeMsgId: null,
+        scratch,
+        toolCallMap: new Map(),
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        pendingUserMessage: { text: next.text, atoms: next.atoms },
+        queuedSends: rest,
+      },
+      effects: [
+        { kind: "append-transcript", entry },
+        { kind: "clear-inflight" },
+        {
+          kind: "send-frame",
+          msg: {
+            type: "user_message",
+            text: next.text,
+            attachments: [],
+          },
+        },
+      ],
+    };
+  }
+
   return {
     state: {
       ...state,
@@ -407,6 +459,10 @@ function handleTurnComplete(
       pendingQuestion: null,
       prevPhase: null,
       pendingUserMessage: null,
+      // Error-path queue clear: if a turn errored out without a
+      // preceding `interrupt()`, any enqueued follow-ups are dropped.
+      // Interrupt-driven paths already cleared the queue.
+      queuedSends: isSuccess ? state.queuedSends : [],
     },
     effects: [
       { kind: "append-transcript", entry },
@@ -582,6 +638,8 @@ export function reduce(
       return handleRespondApproval(state, event);
     case "respond_question":
       return handleRespondQuestion(state, event);
+    case "interrupt_action":
+      return handleInterrupt(state);
     case "cost_update":
       return handleCostUpdate(state, event);
     case "system_metadata":

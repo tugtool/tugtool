@@ -151,6 +151,15 @@ export interface RespondQuestionActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.interrupt`. Not a wire
+ * event — never decoded from a frame. The reducer emits an `interrupt`
+ * SendFrame effect and clears `queuedSends` per [D05].
+ */
+export interface InterruptActionEvent {
+  type: "interrupt_action";
+}
+
+/**
  * `cost_update` — telemetry frame carrying cumulative dollar cost.
  * Surfaced through the snapshot's `lastCostUsd` field with no phase
  * transition; `cost_update` can land in any phase.
@@ -191,6 +200,7 @@ export type CodeSessionEvent =
   | ControlRequestForwardEvent
   | RespondApprovalActionEvent
   | RespondQuestionActionEvent
+  | InterruptActionEvent
   | CostUpdateEvent
   | SessionStateErroredEvent
   | TransportCloseEvent;

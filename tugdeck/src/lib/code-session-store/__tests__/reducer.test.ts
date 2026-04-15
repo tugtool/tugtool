@@ -111,7 +111,7 @@ describe("reduce — send", () => {
     expect(effectsOfKind(effects, "send-frame").length).toBe(1);
   });
 
-  it("drops send while in a non-idle/non-errored phase (Step 7 adds queue)", () => {
+  it("enqueues send while in a non-idle/non-errored phase (Step 7)", () => {
     const prior: CodeSessionState = { ...fresh(), phase: "streaming" };
     const { state, effects } = reduce(prior, {
       type: "send",
@@ -119,7 +119,9 @@ describe("reduce — send", () => {
       atoms: [],
     });
 
-    expect(state).toBe(prior);
+    expect(state.phase).toBe("streaming");
+    expect(state.queuedSends.length).toBe(1);
+    expect(state.queuedSends[0].text).toBe("mid");
     expect(effects.length).toBe(0);
   });
 });

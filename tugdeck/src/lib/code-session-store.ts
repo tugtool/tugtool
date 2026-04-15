@@ -194,9 +194,15 @@ export class CodeSessionStore {
     this.dispatch({ type: "send", text, atoms });
   }
 
-  /** Step 7 scaffold — real dispatch lands there. */
+  /**
+   * Cancel the in-flight turn. Emits an `interrupt` CODE_INPUT frame
+   * and clears any queued sends per [D05]. A no-op when the store is
+   * `idle` / `errored` — accidental double-clicks don't spam the
+   * server.
+   */
   interrupt(): void {
-    throw new Error("CodeSessionStore.interrupt: not implemented");
+    if (this._disposed) return;
+    this.dispatch({ type: "interrupt_action" });
   }
 
   /**
