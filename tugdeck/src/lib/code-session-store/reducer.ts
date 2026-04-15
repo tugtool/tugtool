@@ -230,7 +230,7 @@ function handleToolUse(
   }
 
   const toolUseId = event.tool_use_id;
-  const toolName = event.tool_name ?? "";
+  const toolName = event.tool_name;
   const incomingInput = (event.input ?? {}) as Record<string, unknown>;
 
   const toolCallMap = new Map(state.toolCallMap);
@@ -239,13 +239,13 @@ function handleToolUse(
   if (existing) {
     // Continuation — Claude streams `tool_use` twice for a logical
     // call (first with `input: {}`, then with the filled-in input).
-    // Preserve status and accumulated fields; only overwrite `input`
-    // when the incoming payload has keys.
+    // The second event carries the same `tool_name`, so we overwrite
+    // freely; only `input` is gated so an empty-object continuation
+    // doesn't clobber a previously-filled payload.
     const nextInput =
       Object.keys(incomingInput).length > 0 ? incomingInput : existing.input;
     toolCallMap.set(toolUseId, {
       ...existing,
-      toolName: toolName !== "" ? toolName : existing.toolName,
       input: nextInput,
     });
   } else {
@@ -280,7 +280,10 @@ function handleToolResult(
   state: CodeSessionState,
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  if (state.phase !== "tool_work" && state.phase !== "streaming") {
+  // Plan's Spec S03 transition table only lists tool_result under the
+  // `tool_work → streaming` row — there is no legitimate tool_result in
+  // any other phase, so we drop anything else silently.
+  if (state.phase !== "tool_work") {
     return { state, effects: [] };
   }
 
