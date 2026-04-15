@@ -207,19 +207,38 @@ export function controlFrame(action: string, params?: Record<string, unknown>): 
  *
  * Payload shape per Spec S03:
  * ```json
- * { "action": "spawn_session", "card_id": "...", "tug_session_id": "..." }
+ * {
+ *   "action": "spawn_session",
+ *   "card_id": "...",
+ *   "tug_session_id": "...",
+ *   "project_dir": "..."
+ * }
  * ```
  *
- * Both arguments are required: the server-side supervisor hard-rejects
- * CONTROL frames missing `card_id` or `tug_session_id` via
- * `send_control_json` (Step 4's `missing_card_id` / `missing_tug_session_id`
- * error details), so optional arguments on the client side would only
- * create silent failure modes.
+ * All three arguments are required: the server-side supervisor hard-rejects
+ * CONTROL frames missing `card_id`, `tug_session_id`, or `project_dir` via
+ * `send_control_json` (`missing_card_id` / `missing_tug_session_id` /
+ * `missing_project_dir` error details), so optional arguments on the client
+ * side would only create silent failure modes.
+ *
+ * `projectDir` is the workspace path the tugcode subprocess will be given
+ * as its cwd. The server canonicalizes it via `PathResolver::watch_path()`
+ * and echoes the canonical form back in the `spawn_session_ok` CONTROL ack
+ * as `workspace_key`. Per Spec S03, tugdeck reads that ack field directly
+ * into `cardSessionBindingStore` rather than attempting to canonicalize
+ * client-side — JS path libraries don't match tugcast's firmlink handling,
+ * so any client-side derivation would risk producing a string that does
+ * not match the one spliced into FILETREE/FILESYSTEM/GIT frames.
  */
-export function encodeSpawnSession(cardId: string, tugSessionId: string): Frame {
+export function encodeSpawnSession(
+  cardId: string,
+  tugSessionId: string,
+  projectDir: string,
+): Frame {
   return controlFrame(CONTROL_ACTION_SPAWN_SESSION, {
     card_id: cardId,
     tug_session_id: tugSessionId,
+    project_dir: projectDir,
   });
 }
 

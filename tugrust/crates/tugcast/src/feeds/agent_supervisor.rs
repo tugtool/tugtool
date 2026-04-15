@@ -820,6 +820,11 @@ impl AgentSupervisor {
             "card_id": card_id,
             "tug_session_id": tug_session_id.as_str(),
             "workspace_key": workspace_key.as_ref(),
+            // Echo the pre-canonical path the client sent so tugdeck's
+            // binding store carries the form the user actually chose.
+            // The filter identity comes from `workspace_key`, not this
+            // field — `project_dir` is informational for UI display.
+            "project_dir": project_dir_str,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,

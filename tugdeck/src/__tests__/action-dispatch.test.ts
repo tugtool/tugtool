@@ -628,3 +628,82 @@ describe("initActionDispatch: close (Both)", () => {
     expect(() => dispatchAction({ action: TUG_ACTIONS.CLOSE })).not.toThrow();
   });
 });
+
+// ---- initActionDispatch: spawn_session_ok (W2 Step 7) ----
+
+describe("initActionDispatch: spawn_session_ok", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("populates cardSessionBindingStore when ack payload is complete", async () => {
+    const { cardSessionBindingStore } =
+      await import("../lib/card-session-binding-store");
+
+    // Clean any leftover binding from other tests sharing the singleton.
+    cardSessionBindingStore.clearBinding("card-ack-ok");
+
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({
+      action: "spawn_session_ok",
+      card_id: "card-ack-ok",
+      tug_session_id: "sess-ack-ok",
+      workspace_key: "/work/canonical",
+      project_dir: "/work/original",
+    });
+
+    const binding = cardSessionBindingStore.getBinding("card-ack-ok");
+    expect(binding).toEqual({
+      tugSessionId: "sess-ack-ok",
+      workspaceKey: "/work/canonical",
+      projectDir: "/work/original",
+    });
+
+    cardSessionBindingStore.clearBinding("card-ack-ok");
+  });
+
+  it("falls back to workspace_key as projectDir when the ack omits project_dir", async () => {
+    const { cardSessionBindingStore } =
+      await import("../lib/card-session-binding-store");
+    cardSessionBindingStore.clearBinding("card-ack-fallback");
+
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({
+      action: "spawn_session_ok",
+      card_id: "card-ack-fallback",
+      tug_session_id: "sess-fallback",
+      workspace_key: "/work/canonical-only",
+    });
+
+    const binding = cardSessionBindingStore.getBinding("card-ack-fallback");
+    expect(binding?.projectDir).toBe("/work/canonical-only");
+    expect(binding?.workspaceKey).toBe("/work/canonical-only");
+
+    cardSessionBindingStore.clearBinding("card-ack-fallback");
+  });
+
+  it("ignores malformed ack payloads (missing workspace_key) without setting a binding", async () => {
+    const { cardSessionBindingStore } =
+      await import("../lib/card-session-binding-store");
+    cardSessionBindingStore.clearBinding("card-ack-bad");
+
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({
+      action: "spawn_session_ok",
+      card_id: "card-ack-bad",
+      tug_session_id: "sess-bad",
+      // workspace_key is missing — handler should warn + skip.
+    });
+
+    expect(cardSessionBindingStore.getBinding("card-ack-bad")).toBeUndefined();
+  });
+});

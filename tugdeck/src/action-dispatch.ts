@@ -42,6 +42,7 @@ import type { ResponderChainManager } from "./components/tugways/responder-chain
 import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 
 /**
  * Ordered list of all shipped themes.
@@ -341,5 +342,46 @@ export function initActionDispatch(
     } else {
       console.warn(`${TUG_ACTIONS.CLOSE}: responder chain manager not registered yet`);
     }
+  });
+
+  // spawn_session_ok (W2 Step 7): the tugcast supervisor echoes the
+  // canonical workspace_key back via this CONTROL ack after a successful
+  // spawn_session (Spec S03). The handler populates
+  // `cardSessionBindingStore` so `useCardWorkspaceKey(cardId)` returns
+  // the exact string tugcast splices into FILETREE/FILESYSTEM/GIT
+  // frames, enabling the per-card value-check filter in `Tugcard`.
+  //
+  // Tugdeck does NOT canonicalize the path client-side — the canonical
+  // form includes macOS firmlink resolution that JS path libraries
+  // don't match. The server-provided `workspace_key` is the single
+  // source of truth for filter identity.
+  registerAction("spawn_session_ok", (payload) => {
+    const cardId = payload.card_id;
+    const tugSessionId = payload.tug_session_id;
+    const workspaceKey = payload.workspace_key;
+    const projectDir = payload.project_dir;
+    if (
+      typeof cardId !== "string" ||
+      typeof tugSessionId !== "string" ||
+      typeof workspaceKey !== "string"
+    ) {
+      console.warn(
+        "spawn_session_ok: missing or invalid field in ack payload",
+        payload,
+      );
+      return;
+    }
+    // `project_dir` is the pre-canonical path the client sent in
+    // `spawn_session`. Tugcast doesn't currently echo it in the ack
+    // (only `workspace_key`), so fall back to the canonical form when
+    // the ack omits it. The binding's `projectDir` is informational —
+    // the filter uses `workspaceKey`.
+    const projectDirResolved =
+      typeof projectDir === "string" ? projectDir : workspaceKey;
+    cardSessionBindingStore.setBinding(cardId, {
+      tugSessionId,
+      workspaceKey,
+      projectDir: projectDirResolved,
+    });
   });
 }

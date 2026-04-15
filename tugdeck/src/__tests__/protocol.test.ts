@@ -161,8 +161,8 @@ describe("session CONTROL frame builders", () => {
     return JSON.parse(new TextDecoder().decode(frame.payload));
   }
 
-  test("encodeSpawnSession produces a CONTROL frame with card_id and tug_session_id", () => {
-    const frame = encodeSpawnSession("card-1", "sess-1");
+  test("encodeSpawnSession produces a CONTROL frame with card_id, tug_session_id, and project_dir", () => {
+    const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha");
     expect(frame.feedId).toBe(FeedId.CONTROL);
     expect(frame.flags).toBe(FrameFlags.DATA);
     const payload = parsePayload(frame);
@@ -170,6 +170,7 @@ describe("session CONTROL frame builders", () => {
       action: "spawn_session",
       card_id: "card-1",
       tug_session_id: "sess-1",
+      project_dir: "/work/alpha",
     });
   });
 
