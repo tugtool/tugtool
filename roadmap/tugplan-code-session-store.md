@@ -31,9 +31,9 @@ What's still missing is the store itself. Today there is no place for turn state
 - **Post-W2 wire contract, no fallbacks.** There is no single-session mode, no "first card gets the default session," no conflation of `sessionKey` with `tug_session_id`. Routing is by `tug_session_id` (UUID minted per card); `claude_session_id` is observed from `session_init` and exposed on the snapshot for downstream display; `project_dir` is the card's business. A human-readable `displayLabel` is optional and has zero wire footprint.
 - **Append-only transcript + in-flight streaming document.** Tide cards are long-lived chat threads, so the class wrapper maintains an append-only `_transcript: TurnEntry[]` (one entry per completed turn, surfaced on the snapshot as `ReadonlyArray<TurnEntry>`) plus a single `streamingDocument: PropertyStore` with stable path keys (`inflight.assistant`, `inflight.thinking`, `inflight.tools`). This collapses the former `streamingStore / streamingPath / streamRegionKey` triplet into one store-owned instance plus path strings on the snapshot. **Transcript lives on the class wrapper, not inside the reducer's state** — this keeps the reducer a pure `(state, event) => { state, effects }` function ([D11]).
 - **Pure reducer, explicit effect list ([D11]).** The internal reducer is a pure function `reduce(state, event) => { state, effects: Effect[] }`. Effects are a discriminated union (`WriteInflight`, `ClearInflight`, `SendFrame`, `AppendTranscript`) that the class wrapper processes after every dispatch. This makes side effects first-class and grep-able, keeps the reducer testable without a live connection, and matches L22: streaming document writes fire directly through the wrapper's effect handler, never round-tripped through React.
-- **Fixtures are ground truth; Vitest reads them in-place with field-aware substitution.** Unit tests load `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-NN-*.jsonl` via a `loadGoldenProbe(version, probeName)` helper that substitutes placeholders **based on the JSON field name**, not the placeholder token. The v2.1.105 catalog uses only five placeholder tokens (`{{uuid}}`, `{{cwd}}`, `{{f64}}`, `{{i64}}`, `{{text:len=N}}`), and crucially uses `{{uuid}}` for `session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, and `request_id` — a naive global substitution collapses these into one value. The loader inspects the parent field name to pick a deterministic value per identity class. No copy/export step between the Rust-owned golden directory and the tugdeck-side tests — the [drift test](./tide.md#p2-followup-golden-catalog) already guards divergence on the Rust side.
+- **Fixtures are ground truth; `bun test` reads them in-place with occurrence-aware substitution.** Unit tests load `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-NN-*.jsonl` via a `loadGoldenProbe(version, probeName)` helper that substitutes `{{uuid}}` placeholders **based on the JSON field name AND the logical occurrence** within the event stream. The v2.1.105 catalog uses only five placeholder tokens (`{{uuid}}`, `{{cwd}}`, `{{f64}}`, `{{i64}}`, `{{text:len=N}}`), and crucially uses `{{uuid}}` for `session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, and `request_id` — a naive global substitution collapses these into one value, and a field-aware substitution that assigns one constant per field collapses multiple distinct occurrences of the same field (e.g., two concurrent `tool_use_id`s in `test-07-multiple-tool-calls`). Occurrence-aware substitution walks the event stream once, groups tool_use/tool_result pairs using streaming-protocol heuristics, and assigns distinct values only where the source capture had distinct values. No copy/export step between the Rust-owned golden directory and the tugdeck-side tests — the [drift test](./tide.md#p2-followup-golden-catalog) already guards divergence on the Rust side.
 - **Sequenced reducer build-up, one state per commit.** Each execution step lands one coherent slice of the state machine behind a compile-clean commit with fixture-driven tests: scaffolding, then the basic round-trip reducer, then streaming deltas, then tools, then permission/question flows, then interrupt, then `errored` triggers, then queue semantics, then dispose/filter. Integration checkpoint at the end verifies all slices cooperate.
-- **Warnings are errors across the build.** Every intermediate commit must survive `-D warnings` on Rust (unchanged by this plan) and whatever strictness tugdeck's Vitest + tsconfig imposes. No `any` escapes, no `@ts-expect-error` in committed code, no new `react` imports inside `code-session-store.ts`.
+- **Warnings are errors across the build.** Every intermediate commit must survive `-D warnings` on Rust (unchanged by this plan) and whatever strictness `bun run check` + `tsconfig` imposes on tugdeck. No `any` escapes, no `@ts-expect-error` in committed code, no new `react` imports inside `code-session-store.ts`.
 - **No React, no DOM, no IndexedDB.** `code-session-store.ts` is pure TypeScript + L02. Any persistence (not in this phase) goes through tugbank per D-T3-10. React coupling belongs in T3.4.b / T3.4.c.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -95,7 +95,7 @@ What's still missing is the store itself. Today there is no place for turn state
 - **Warnings are errors.** Tugdeck's `tsc --noEmit` runs under strict mode; no `any` escapes, no `@ts-expect-error`, no `@ts-ignore` in committed code. Rust-side touched crates (none in this plan) would follow `-D warnings` but this plan is tugdeck-only.
 - **bun, not npm.** All commands run under `bun`. `bun test`, `bun run audit:tokens` (not touched here), `bun install`. Never `npm` / `npx`. (Memory: `feedback_use_bun`.)
 - **No React, no DOM, no IndexedDB.** `code-session-store.ts` must not import from `react`, `react-dom`, `window.indexedDB`, or any DOM global. All persistence goes through tugbank when it lands later (D-T3-10). T3.4.a writes no persistence code.
-- **No mock-only scaffolding leaking into production bundle.** `testing/golden-catalog.ts` and `testing/mock-feed-store.ts` are test-only and must not be importable from production paths. Validate via tsconfig `exclude` or a dedicated `vitest.config` include.
+- **No mock-only scaffolding leaking into production bundle.** `testing/golden-catalog.ts` and `testing/mock-feed-store.ts` are test-only and must not be importable from production paths. Validate via `tsconfig.json`'s `exclude` list or a path convention (e.g., the `testing/` subdirectory is excluded from the production build).
 - **Golden fixture path is a relative path, not a symlink or a copy.** The test helper reads `../../../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/<version>/<probe>.jsonl` from `tugdeck/src/lib/code-session-store/testing/`. The repo root layout is stable; any future reshuffling of tugrust or tugdeck will break the path loudly and can be repaired in a follow-up.
 - **No `--no-verify`, no amend, no squash on committed steps.** Each execution step lands as a fresh commit. (CLAUDE.md commit discipline.)
 - **Store must be pure-function reducer under the hood.** The outer `CodeSessionStore` class is mutable (holds the `FeedStore`, the `PropertyStore`, the subscriber list), but the inner reducer is a pure `(state, event) => state` function exported from an internal module so tests can exercise reducer logic without constructing a live store.
@@ -165,7 +165,7 @@ What's still missing is the store itself. Today there is no place for turn state
 
 **Risk R02: Golden fixture path coupling** {#r02-fixture-path-coupling}
 
-- **Risk:** The Vitest helper reads `.jsonl` files via `../../../tugrust/.../fixtures/stream-json-catalog/<version>/<probe>.jsonl`. A future repo restructure (monorepo split, directory rename) silently breaks every test.
+- **Risk:** The `loadGoldenProbe` helper reads `.jsonl` files via `../../../tugrust/.../fixtures/stream-json-catalog/<version>/<probe>.jsonl` resolved through `import.meta.dir`. A future repo restructure (monorepo split, directory rename) silently breaks every test.
 - **Mitigation:**
   - The helper throws a readable `Error` containing the absolute resolved path when a file is missing — not a cryptic ENOENT.
   - The relative path is documented inline in `golden-catalog.ts` with a one-line comment pointing at the upstream directory.
@@ -271,9 +271,9 @@ What's still missing is the store itself. Today there is no place for turn state
 - Component code in T3.4.b dispatches to the matching action based on which of `pendingApproval` / `pendingQuestion` is non-null in the snapshot.
 - Both actions write to CODE_INPUT with `encodeCodeInput`.
 
-#### [D07] Vitest reads golden fixtures in-place, no export step (DECIDED) {#d07-vitest-reads-in-place}
+#### [D07] Golden fixtures read in-place, no export step (DECIDED) {#d07-vitest-reads-in-place}
 
-**Decision:** The tugdeck test helper `loadGoldenProbe(version, probeName)` reads `.jsonl` files directly from `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/<version>/<probeName>.jsonl` via a `__dirname`-relative path. No copy, no symlink, no Rust-side export step.
+**Decision:** The tugdeck test helper `loadGoldenProbe(version, probeName)` reads `.jsonl` files directly from `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/<version>/<probeName>.jsonl` via an `import.meta.dir`-relative path (bun's ESM equivalent of Node's `__dirname`). No copy, no symlink, no Rust-side export step.
 
 **Rationale:**
 - Both `tugrust/` and `tugdeck/` live in the same repo root; the relative path is stable.
@@ -348,6 +348,7 @@ What's still missing is the store itself. Today there is no place for turn state
   - `AppendTranscript { entry }` → pushes to `_transcript`; schedules a snapshot revision and `notifyListeners()`
 - Reducer unit tests call `reduce(state, event)` directly and assert `{ state, effects }` — no class, no connection, no PropertyStore, no timers.
 - Class integration tests drive events through `MockTugConnection` + `MockFeedStore` and assert against `getSnapshot()` and the recorded effect side effects.
+- **`getSnapshot()` must return a stable reference between dispatches that produce no state change or transcript append.** `useSyncExternalStore` (T3.4.b) requires this — if the snapshot is rebuilt on every call, React will tear or infinite-loop. The class wrapper caches the last-built snapshot in a `_cachedSnapshot: CodeSessionSnapshot | null` field. The cache is invalidated (set to `null`) after any `processEffects` call that changed reducer state, appended to `_transcript`, or advanced `claudeSessionId`. `getSnapshot()` returns the cached object if present, otherwise rebuilds and caches. T3.4.a is React-free but the public surface it defines traps T3.4.b without this memoization.
 
 ---
 
@@ -549,21 +550,30 @@ Not in scope for `errored`:
 
 #### Spec S05: Streaming document paths and schema {#s05-streaming-paths}
 
-`streamingDocument` is a `PropertyStore` (`tugdeck/src/components/tugways/property-store.ts`) with a declared schema. PropertyStore's `set(path, value, source)` requires three arguments and throws on any path not in the schema; tests that omit the source or write an unknown path will fail. Every write from this store passes `source: "code-session-store"`.
+`streamingDocument` is a `PropertyStore` (`tugdeck/src/components/tugways/property-store.ts`). Verified against source: `PropertyStoreOptions` has `schema: PropertyDescriptor[]` as a **flat array** (not nested under `paths`) and `initialValues: Record<string, unknown>` as a **required** field that seeds every path in one shot. `set(path, value, source)` is 3-arg and throws on paths not in the schema. Every write from this store passes `source: "code-session-store"`.
 
-**Schema (passed to `new PropertyStore({ schema: { paths: [...] } })`):**
+**Constructor shape:**
 
 ```ts
-const streamingSchema: PropertySchema = {
-  paths: [
-    { path: "inflight.assistant", type: "string", label: "In-flight assistant text" },
-    { path: "inflight.thinking",  type: "string", label: "In-flight thinking text"  },
-    { path: "inflight.tools",     type: "string", label: "In-flight tool calls (JSON string)" },
-  ],
-};
+const descriptors: PropertyDescriptor[] = [
+  { path: "inflight.assistant", type: "string", label: "In-flight assistant text" },
+  { path: "inflight.thinking",  type: "string", label: "In-flight thinking text"  },
+  { path: "inflight.tools",     type: "string", label: "In-flight tool calls (JSON string)" },
+];
+
+const streamingDocument = new PropertyStore({
+  schema: descriptors,
+  initialValues: {
+    "inflight.assistant": "",
+    "inflight.thinking":  "",
+    "inflight.tools":     "[]",
+  },
+});
 ```
 
-**Initial values (set in the constructor after PropertyStore is built):**
+The PropertyStore constructor walks `options.schema` and pulls each descriptor's initial value from `options.initialValues[descriptor.path]` (source: `property-store.ts:163-167`). There is **no need** to follow the construction with three `set()` calls to seed values — `initialValues` handles it in one shot. Listeners are not yet registered at construction time, so no `PropertyChange` record is emitted for the initial seeding.
+
+**Path lifecycle:**
 
 | Path | Initial value | Rationale |
 |------|---------------|-----------|
@@ -588,7 +598,9 @@ The three path strings are exposed on the snapshot as `streamingPaths` literal t
 ```ts
 // tugdeck/src/lib/code-session-store/testing/golden-catalog.ts
 
-// import.meta.dir resolves under bun's ESM runtime; equivalent to __dirname.
+// import.meta.dir resolves to the current module's directory under bun's
+// ESM runtime — this is bun's equivalent of Node's CommonJS __dirname and
+// the correct primitive for fixture-path resolution in bun test.
 const FIXTURE_ROOT_RELATIVE =
   "../../../../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog";
 
@@ -601,6 +613,7 @@ export const FIXTURE_IDS = {
   MSG_ID:            "msg00000-0000-4000-8000-000000000001",
   TOOL_USE_ID:       "tool0000-0000-4000-8000-000000000001",
   REQUEST_ID:        "req00000-0000-4000-8000-000000000001",
+  TASK_ID:           "task0000-0000-4000-8000-000000000001",
   CWD:               "/tmp/fixture-cwd",
   // Occurrence-indexed variants for fields that appear multiple distinct times.
   // The loader assigns these in walk order — see "Occurrence-aware substitution".
@@ -639,16 +652,37 @@ The loader addresses this by:
 
 1. **Walk the entire event list once** before substituting anything. Build a per-field occurrence map: for each `(fieldName, eventIndex)` pair where the value is `"{{uuid}}"`, assign an **occurrence counter** scoped to that field name. Distinct logical occurrences bump the counter; repeated mentions of the same logical occurrence (e.g. a `tool_result.tool_use_id` referencing a prior `tool_use.tool_use_id`) reuse the counter via event-grouping heuristics.
 
-2. **Grouping heuristics for ID reuse within a probe:**
-   - `tug_session_id`: always one value across the whole probe → `FIXTURE_IDS.TUG_SESSION_ID`.
-   - `session_id` (Claude's id, appears in `session_init` and `system_metadata`): always one value → `FIXTURE_IDS.CLAUDE_SESSION_ID`.
-   - `msg_id`: one value per turn. Group by: a new `assistant_text` event with `is_partial: true, seq: 0, rev: 0` starts a new msg_id; subsequent partials + the final `is_partial: false` for the same logical message reuse it. Most v2.1.105 probes have exactly one turn per probe → `FIXTURE_IDS.MSG_ID`. Probes with multiple turns (rare) get `FIXTURE_IDS.MSG_ID_N(1)`, `MSG_ID_N(2)`, ...
-   - `tool_use_id`: **each distinct `tool_use` event starts a new id.** Subsequent `tool_result` / `tool_use_structured` events that come after a `tool_use` without an intervening new `tool_use` reference the most recent one. Probes with multiple `tool_use` events (like `test-07-multiple-tool-calls.jsonl`) get `TOOL_USE_ID_N(1)`, `TOOL_USE_ID_N(2)`, ... assigned in first-occurrence order; downstream `tool_result`/`tool_use_structured` events match back to the most recent unresolved id of the same `tool_name` (or, if unambiguous, by positional order).
-   - `request_id`: one value per `control_request_forward` event. Multiple control_request_forwards in one probe → `REQUEST_ID_N`.
+2. **Grouping heuristics for ID reuse within a probe.** These are derived from inspection of `v2.1.105/test-01`, `test-05-tool-use-read`, and `test-07-multiple-tool-calls` — the heuristics below are verified to produce the correct idMap against those fixtures.
+
+   - **`tug_session_id`:** always one value across the whole probe → `FIXTURE_IDS.TUG_SESSION_ID`.
+   - **`session_id`** (Claude's id, in `session_init` and `system_metadata`): always one value → `FIXTURE_IDS.CLAUDE_SESSION_ID`.
+   - **`msg_id`:** one value per logical turn. A new `assistant_text` partial with `rev: 0, seq: 0` (and no prior open turn) starts a new msg_id; subsequent partials with the same msg_id in the fixture (now all `{{uuid}}`) and the final `is_partial: false` reuse it. Most v2.1.105 probes have one turn → `FIXTURE_IDS.MSG_ID`. Multi-turn probes get `FIXTURE_IDS.MSG_ID_N(1)`, `MSG_ID_N(2)`, ... in stream order. **Caveat:** `tool_use` events also carry `msg_id` — treat them as belonging to the current open turn (no new msg_id bump).
+   - **`tool_use_id` — the load-bearing case.** Claude streams `tool_use` incrementally per the essential wire-level invariants: an initial event with `input: {}` opens a logical call, and a subsequent `tool_use` event with the **same `tool_name`** and non-empty `input` completes it. Multiple calls to the same tool can be in flight concurrently. The loader groups logical calls as follows:
+
+     a. Walk events in order, maintaining two stacks: `pendingInput[]` (calls whose `input` field is still `{}`) and `completeInput[]` (calls whose `input` has been filled in and which are waiting for a result).
+
+     b. On `tool_use` with **empty `input`** (`Object.keys(input).length === 0`): push a **new logical call** onto `pendingInput` with a fresh counter value (`TOOL_USE_ID_N(k)` where `k` is the next counter index). This is a **new** logical id.
+
+     c. On `tool_use` with **non-empty `input`**: pop the **most recent** entry from `pendingInput` whose `tool_name` matches (LIFO within a tool_name), mark it complete-input, push onto `completeInput`. This is a **continuation** (same logical id as the pending entry). If no matching pending entry exists, fall back to treating it as a new id with a warning (should not happen for v2.1.105 probes).
+
+     d. On `tool_result`: pop the **oldest** entry from `completeInput` (FIFO across tool_names) — this matches Claude's observed order where results come back in submission order. Bind this id to the `tool_result` event.
+
+     e. On `tool_use_structured`: bind to the most recently resolved `tool_result` (they arrive in tight pairs per the essential wire-level invariants; `tool_use_structured.tool_name` is sometimes empty in the fixture normalizer output so matching on tool_name is not reliable).
+
+     **Concrete expectations** (implementer must verify these on first loader run):
+
+     | Fixture | Distinct logical tool_use_ids | Events per logical id |
+     |---------|-------------------------------|----------------------|
+     | `test-05-tool-use-read.jsonl` | **1** | `tool_use(input={})` → `tool_use(input=full)` → `tool_result` → `tool_use_structured` (all four events share `id_1`) |
+     | `test-07-multiple-tool-calls.jsonl` | **2** | Group A: `tool_use(input={})` line 3 + `tool_use(input=full)` line 4 + `tool_result` line 6 + `tool_use_structured` line 7 = `id_1`. Group B: `tool_use(input={})` line 5 + `tool_use(input=full)` line 8 + `tool_result` line 9 + `tool_use_structured` line 10 = `id_2`. (Group B opens on line 5 while Group A is complete-input-not-resolved; line 6's result matches A, not B, because A is older in `completeInput`.) |
+
+     The Step 2 loader test asserts `probe.idMap.toolUseIds.length === 1` for test-05 and `=== 2` for test-07, plus the per-event id assignments match the table above.
+
+   - **`request_id`:** one value per `control_request_forward` event. Multiple forwards in one probe (none in v2.1.105) → `REQUEST_ID_N`.
 
 3. **Expose the grouping via a per-probe `idMap`** on the returned `GoldenProbe`: `{ msgIds: string[], toolUseIds: string[], requestIds: string[] }`. Tests can assert on exact values without re-deriving the walk. For single-occurrence probes, `toolUseIds` has length 1 and `toolUseIds[0] === FIXTURE_IDS.TOOL_USE_ID`.
 
-4. **Falsification check.** The loader throws if a `{{uuid}}` value is found in a field not in the known list (`session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, `request_id`, plus `claude_session_id` for the P14-reserved field). This catches new ID fields appearing in a future golden catalog capture without silently mis-substituting them.
+4. **Falsification check.** The loader throws if a `{{uuid}}` value is found in a field not in the known list (`session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, `request_id`, `task_id`, plus `claude_session_id` for the P14-reserved field). The `task_id` entry is included because the Rust catalog normalizer's `LEAF_ID_KEYS` set at `tugrust/crates/tugcast/tests/common/catalog.rs:100-112` includes it — no current v2.1.105 fixture uses it, but a future capture covering `system:task_started` events would trip the falsification throw without this entry. For `task_id`, substitute with `FIXTURE_IDS.TASK_ID` (a pinned value added to the `FIXTURE_IDS` constants alongside the others).
 
 **Why field-aware alone is not enough:** a field-aware strategy that assigned one constant per field name would work for `tug_session_id` (always one value per probe) but fail for `tool_use_id` in `test-07` (four distinct captured values, all normalized to the same token). Occurrence-aware substitution walks the event stream once, groups by logical occurrence, and assigns distinct values only where the source fixture had distinct values. This preserves the reducer-testability property: a store processing a golden probe sees the same correlation structure it would see from a live capture.
 
@@ -848,13 +882,14 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 - [ ] Define `CodeSessionState` shape in `reducer.ts`: `phase`, `activeMsgId`, `scratch: Map<string, { assistant: string; thinking: string }>`, `toolCallMap: Map<string, ToolCallState>`, `pendingApproval`, `pendingQuestion`, `prevPhase: CodeSessionPhase | null`, `queuedSends: Array<{ text: string; atoms: AtomSegment[] }>`, `lastError`, `lastCostUsd`, `claudeSessionId`. **Do NOT include `transcript` — that lives on the class wrapper per [D04].**
 - [ ] Implement `createInitialState(tugSessionId, displayLabel)` and a trivial `reduce(state, event) => { state, effects: [] }` that returns state unchanged.
 - [ ] Define `Effect` union in `effects.ts` per Spec S07; export type guards; import `InboundMessage` from `@/protocol`.
-- [ ] Implement `CodeSessionStore.subscribe` and `getSnapshot` against the initial state — `getSnapshot` merges reducer state + `_transcript` (as `ReadonlyArray<TurnEntry>`) + `claudeSessionId` + the `streamingPaths` literal constants.
-- [ ] Constructor: build `streamingDocument = new PropertyStore({ schema: streamingSchema })` per Spec S05. After construction, call `streamingDocument.set("inflight.assistant", "", "code-session-store")`, `streamingDocument.set("inflight.thinking", "", "code-session-store")`, and `streamingDocument.set("inflight.tools", "[]", "code-session-store")` to seed the initial values. Expose the instance as `readonly streamingDocument: PropertyStore`.
+- [ ] Implement `CodeSessionStore.subscribe` and `getSnapshot` against the initial state — `getSnapshot` merges reducer state + `_transcript` (as `ReadonlyArray<TurnEntry>`) + `claudeSessionId` + the `streamingPaths` literal constants. **Memoize the result in `_cachedSnapshot`** per [D11] so repeated calls return a stable reference; invalidate on any dispatch that produces a state change, a transcript append, or a `claudeSessionId` update. T3.4.b's `useSyncExternalStore` requires this — without memoization, React tears.
+- [ ] Constructor: build `streamingDocument = new PropertyStore({ schema: descriptors, initialValues: { "inflight.assistant": "", "inflight.thinking": "", "inflight.tools": "[]" } })` per Spec S05. `initialValues` seeds every path in one shot — no follow-up `set()` calls needed. Expose the instance as `readonly streamingDocument: PropertyStore`.
 - [ ] `dispose()` clears subscriber listeners, clears `queuedSends`, clears `inflight.*` paths back to their empty values. **Does NOT clear `_transcript`** — transcript is user-visible state and clearing it on dispose would violate [L23]. Does NOT send `close_session` (card's responsibility per [D02]).
 
 **Tests:**
 - [ ] `code-session-store.scaffold.test.ts`: construct a store with a `MockTugConnection`; assert `getSnapshot()` returns the initial snapshot shape with `phase === "idle"`, `transcript.length === 0`, `streamingPaths.assistant === "inflight.assistant"`, `tugSessionId === FIXTURE_IDS.TUG_SESSION_ID`, `lastError === null`, `claudeSessionId === null`.
-- [ ] `code-session-store.scaffold.test.ts`: construct a store, assert `streamingDocument.get("inflight.assistant") === ""`, `streamingDocument.get("inflight.thinking") === ""`, `streamingDocument.get("inflight.tools") === "[]"` — seeds applied.
+- [ ] `code-session-store.scaffold.test.ts`: construct a store, assert `streamingDocument.get("inflight.assistant") === ""`, `streamingDocument.get("inflight.thinking") === ""`, `streamingDocument.get("inflight.tools") === "[]"` — seeds applied via `initialValues`.
+- [ ] `code-session-store.scaffold.test.ts`: call `store.getSnapshot()` twice without any intervening dispatch; assert `snap1 === snap2` (reference equality). This pins the memoization contract per [D11]/[F5] — without it, T3.4.b's `useSyncExternalStore` will tear.
 - [ ] `protocol.test.ts` (or a new `protocol-code-input-payload.test.ts`): round-trip `encodeCodeInputPayload` / `decodeCodeInputPayload` for each of the four emitted `InboundMessage` shapes.
 
 **Checkpoint:**
@@ -869,7 +904,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): add golden-catalog loader and mock FeedStore for code-session-store tests`
 
-**References:** [D07] Vitest reads in-place, Spec S06, (#r02-fixture-path-coupling)
+**References:** [D07] Golden fixtures read in-place, Spec S06, (#r02-fixture-path-coupling)
 
 **Artifacts:**
 - `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` — `loadGoldenProbe(version, probeName)`, `FIXTURE_IDS`, field-aware placeholder substitution, typed parse
@@ -1117,7 +1152,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 #### Step 10: (folded into Step 11) {#step-10}
 
-> **Dropped as a standalone step.** The negative-imports check (no `react`, no `indexedDB`) is enforced as a shell-level `rg` verification in Step 11's integration checkpoint. The earlier draft had a separate Vitest file-reading test, a Step 10 shell rg, and a Step 11 shell rg — three overlapping ways to enforce the same constraint. Keeping only the Step 11 rg simplifies the test surface without weakening enforcement (source-text reads are brittle to comments and string literals; shell rg is the right tool for the grep-style check).
+> **Dropped as a standalone step.** The negative-imports check (no `react`, no `indexedDB`) is enforced as a shell-level `rg` verification in Step 11's integration checkpoint. The earlier draft had a source-reading test plus two shell rg checks — three overlapping ways to enforce the same constraint. Keeping only the Step 11 rg simplifies the test surface without weakening enforcement (source-text reads are brittle to comments and string literals; shell rg is the right tool for the grep-style check).
 >
 > **Renumbering note:** there is no Step 10 implementation step; Step 11 below remains numbered as "Step 11" to preserve the anchors `#step-11` and the `Depends on:` references in Step 11 that name each prior step explicitly.
 
@@ -1186,7 +1221,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Store scaffolding + types | Step 1 checkpoint (`bun run typecheck` + scaffold test) |
+| Store scaffolding + types | Step 1 checkpoint (`bun run check` + scaffold test) |
 | Golden fixture loader | Step 2 checkpoint (`golden-catalog.test.ts` + `mock-feed-store.test.ts`) |
 | Basic round-trip reducer | Step 3 checkpoint (`code-session-store.round-trip.test.ts`) |
 | Streaming delta accumulation | Step 4 checkpoint (`code-session-store.deltas.test.ts`) |
@@ -1195,5 +1230,5 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 | Interrupt + queue semantics | Step 7 checkpoint (`code-session-store.interrupt.test.ts`, `code-session-store.queue.test.ts`) |
 | Errored triggers + recovery | Step 8 checkpoint (`code-session-store.errored.test.ts`) |
 | Filter correctness + dispose | Step 9 checkpoint (`code-session-store.filter.test.ts`, `code-session-store.dispose.test.ts`) |
-| Negative import checks | Step 10 checkpoint (grep + Vitest) |
+| Negative import checks | Step 11 integration checkpoint (shell `rg` in the full-suite grep) |
 | Phase integration | Step 11 (`bun test` full suite, all exit criteria boxed) |
