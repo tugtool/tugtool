@@ -39,8 +39,8 @@ What's still missing is the store itself. Today there is no place for turn state
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `tugdeck/src/lib/code-session-store.ts` exists and exports `CodeSessionStore` + `CodeSessionSnapshot`. (verification: file exists; `tsc --noEmit` clean)
-- `rg 'from "react"' tugdeck/src/lib/code-session-store.ts` returns zero matches. (verification: grep in Step 11)
-- `rg 'IDBDatabase\|indexedDB' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/` returns zero matches. (verification: grep in Step 11)
+- `rg 'from "react"' tugdeck/src/lib/code-session-store.ts` returns zero matches. (verification: grep in Step 10)
+- `rg 'IDBDatabase\|indexedDB' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/` returns zero matches. (verification: grep in Step 10)
 - Replaying `v2.1.105/test-01-basic-round-trip.jsonl` drives the store `idle → submitting → awaiting_first_token → streaming → complete → idle` with exactly one `TurnEntry` appended to `transcript`. (verification: `code-session-store.round-trip.test.ts`)
 - Replaying `v2.1.105/test-02-longer-response-streaming.jsonl` accumulates deltas at `inflight.assistant` in arrival order; on the `complete` event, the buffer equals the event's `text` field byte-for-byte. (verification: `code-session-store.deltas.test.ts`)
 - Replaying `v2.1.105/test-06-interrupt-mid-stream.jsonl` after a `store.interrupt()` call drives `streaming → interrupted → idle`, commits a `TurnEntry` with `result: "interrupted"` and the accumulated text preserved. (verification: `code-session-store.interrupt.test.ts`)
@@ -56,7 +56,7 @@ What's still missing is the store itself. Today there is no place for turn state
 - From `phase === "errored"`, `send("retry", [])` transitions to `submitting`; after a subsequent `turn_complete(success)`, `lastError === null`. (verification: same file)
 - Two `CodeSessionStore` instances with distinct `tugSessionId`s against a shared mock connection receive only their own frames; replaying a stream tagged with store A's id leaves store B's snapshot unchanged. (verification: `code-session-store.filter.test.ts`)
 - After `dispose()`, new frames on the connection do not update the snapshot; `inflight.*` paths are cleared; **`transcript` is preserved unchanged** (per [L23]); no `close_session` frame was written. (verification: `code-session-store.dispose.test.ts`)
-- `cd tugdeck && bun test` is green on every step commit and on the integration checkpoint. (verification: Step 11)
+- `cd tugdeck && bun test` is green on every step commit and on the integration checkpoint. (verification: Step 10)
 
 #### Scope {#scope}
 
@@ -1150,15 +1150,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 ---
 
-#### Step 10: (folded into Step 11) {#step-10}
-
-> **Dropped as a standalone step.** The negative-imports check (no `react`, no `indexedDB`) is enforced as a shell-level `rg` verification in Step 11's integration checkpoint. The earlier draft had a source-reading test plus two shell rg checks — three overlapping ways to enforce the same constraint. Keeping only the Step 11 rg simplifies the test surface without weakening enforcement (source-text reads are brittle to comments and string literals; shell rg is the right tool for the grep-style check).
->
-> **Renumbering note:** there is no Step 10 implementation step; Step 11 below remains numbered as "Step 11" to preserve the anchors `#step-11` and the `Depends on:` references in Step 11 that name each prior step explicitly.
-
----
-
-#### Step 11: Integration checkpoint {#step-11}
+#### Step 10: Integration checkpoint {#step-10}
 
 **Depends on:** #step-3, #step-4, #step-5, #step-6, #step-7, #step-8, #step-9
 
@@ -1230,5 +1222,5 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 | Interrupt + queue semantics | Step 7 checkpoint (`code-session-store.interrupt.test.ts`, `code-session-store.queue.test.ts`) |
 | Errored triggers + recovery | Step 8 checkpoint (`code-session-store.errored.test.ts`) |
 | Filter correctness + dispose | Step 9 checkpoint (`code-session-store.filter.test.ts`, `code-session-store.dispose.test.ts`) |
-| Negative import checks | Step 11 integration checkpoint (shell `rg` in the full-suite grep) |
-| Phase integration | Step 11 (`bun test` full suite, all exit criteria boxed) |
+| Negative import checks | Step 10 integration checkpoint (shell `rg` in the full-suite grep) |
+| Phase integration | Step 10 (`bun test` full suite, all exit criteria boxed) |
