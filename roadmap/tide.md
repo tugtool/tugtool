@@ -742,14 +742,17 @@ These items do not block the critical path. Schedule opportunistically or interl
 |---|------|-----------|--------|
 | 1 | [W2 closeout](#t3-workspace-registry-w2) | — | W3.a |
 | 2 | [T3.0.W3.a](#t3-workspace-registry-w3a) (rename + cleanup, keep bootstrap) | W2 closeout | T3.4.a |
-| 3 | [T3.4.a](#t3-4-a-code-session-store) CodeSessionStore | W3.a | P13, T3.4.b |
+| 3 | [T3.4.a](#t3-4-a-code-session-store) CodeSessionStore | W3.a | T3.4.a.1, P13, T3.4.b |
+| 3a | T3.4.a.1 CONTROL error routing (`session_unknown`, `session_not_owned`) | T3.4.a | T3.4.d |
 | 4 | [P13](#p13-spawn-cap) spawn cap | T3.4.a | T3.4.b (advisable) |
-| 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry | T3.4.a (P13 optional) | T3.4.c |
+| 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry | T3.4.a (P13, T3.4.a.1 optional) | T3.4.c |
 | 6 | [T3.4.c](#t3-4-c-tide-card) Tide card + [T3.0.W3.b](#t3-workspace-registry-w3b) bootstrap removal | T3.4.b | P14, P15, T3.4.d |
 | 7 | [P14](#p14-claude-resume) `--resume` | T3.4.c | first external users |
 | 8 | [P15](#p15-stream-json-version-gate) version gate | T3.4.c (reducer exists) | first external users |
 | — | [P16](#p16-session-command-continue) (parallel) | — | T3.4.d multi-session |
 | — | [P20](#p20-rate-limit-event-dropped) (parallel) | — | rate-limit UI |
+
+**T3.4.a.1 scope.** Finish the `lastError.cause` surface that [§T3.4.a Spec S04](#t3-4-a-code-session-store) promised but T3.4.a shipped without: CONTROL-feed error frames for `session_unknown` (router's orphan-dispatcher path) and `session_not_owned` (router's P5 authz check) currently reach the tugdeck client but are not mapped into `CodeSessionStore.lastError`. A stale `tug_session_id` after a server reconnect sends → is rejected → the store sits in `submitting` forever with no recovery affordance (neither SESSION_STATE errored nor transport close fire on these paths). The fix is a narrow refinement to T3.4.a: add `FeedId.CONTROL` to `CodeSessionStore`'s existing filtered `FeedStore` (the per-card `tug_session_id` filter already drops app-level CONTROL frames cleanly, so `action-dispatch.ts` stays untouched); extend `frameToEvent` to map `{type: "error", detail: "session_unknown" | "session_not_owned"}` to new internal events; widen the `lastError.cause` union from three members to five; add two synthetic reducer tests mirroring the existing SESSION_STATE errored + wire_error shapes. Runs parallel with P13 and T3.4.b; gates T3.4.d (first dogfood session against a server will hit a stuck card immediately without it).
 
 ---
 
