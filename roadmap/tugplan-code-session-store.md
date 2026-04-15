@@ -29,8 +29,9 @@ What's still missing is the store itself. Today there is no place for turn state
 
 - **Store owns the filter, card owns the lifecycle.** The store constructs its own filtered `FeedStore` from a raw `TugConnection` and a `tug_session_id` — consumers never build a mis-keyed feed by accident. The Tide card (T3.4.c) owns `spawn_session` / `close_session` CONTROL frames and the `CardSessionBindingStore` binding; the store handles what happens on an already-claimed session.
 - **Post-W2 wire contract, no fallbacks.** There is no single-session mode, no "first card gets the default session," no conflation of `sessionKey` with `tug_session_id`. Routing is by `tug_session_id` (UUID minted per card); `claude_session_id` is observed from `session_init` and exposed on the snapshot for downstream display; `project_dir` is the card's business. A human-readable `displayLabel` is optional and has zero wire footprint.
-- **Append-only transcript + in-flight streaming document.** Tide cards are long-lived chat threads, so the store maintains `transcript: ReadonlyArray<TurnEntry>` (immutable, one entry per completed turn) plus a single `streamingDocument: PropertyStore` with stable path keys (`inflight.assistant`, `inflight.thinking`, `inflight.tools`). This collapses the former `streamingStore / streamingPath / streamRegionKey` triplet into one store-owned instance plus path strings on the snapshot.
-- **Fixtures are ground truth; Vitest reads them in-place.** Unit tests load `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-NN-*.jsonl` via a `loadGoldenProbe(version, probeName)` helper with placeholder substitution. No copy/export step between the Rust-owned golden directory and the tugdeck-side tests — the [drift test](./tide.md#p2-followup-golden-catalog) already guards divergence on the Rust side.
+- **Append-only transcript + in-flight streaming document.** Tide cards are long-lived chat threads, so the class wrapper maintains an append-only `_transcript: TurnEntry[]` (one entry per completed turn, surfaced on the snapshot as `ReadonlyArray<TurnEntry>`) plus a single `streamingDocument: PropertyStore` with stable path keys (`inflight.assistant`, `inflight.thinking`, `inflight.tools`). This collapses the former `streamingStore / streamingPath / streamRegionKey` triplet into one store-owned instance plus path strings on the snapshot. **Transcript lives on the class wrapper, not inside the reducer's state** — this keeps the reducer a pure `(state, event) => { state, effects }` function ([D11]).
+- **Pure reducer, explicit effect list ([D11]).** The internal reducer is a pure function `reduce(state, event) => { state, effects: Effect[] }`. Effects are a discriminated union (`WriteInflight`, `ClearInflight`, `SendFrame`, `AppendTranscript`) that the class wrapper processes after every dispatch. This makes side effects first-class and grep-able, keeps the reducer testable without a live connection, and matches L22: streaming document writes fire directly through the wrapper's effect handler, never round-tripped through React.
+- **Fixtures are ground truth; Vitest reads them in-place with field-aware substitution.** Unit tests load `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-NN-*.jsonl` via a `loadGoldenProbe(version, probeName)` helper that substitutes placeholders **based on the JSON field name**, not the placeholder token. The v2.1.105 catalog uses only five placeholder tokens (`{{uuid}}`, `{{cwd}}`, `{{f64}}`, `{{i64}}`, `{{text:len=N}}`), and crucially uses `{{uuid}}` for `session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, and `request_id` — a naive global substitution collapses these into one value. The loader inspects the parent field name to pick a deterministic value per identity class. No copy/export step between the Rust-owned golden directory and the tugdeck-side tests — the [drift test](./tide.md#p2-followup-golden-catalog) already guards divergence on the Rust side.
 - **Sequenced reducer build-up, one state per commit.** Each execution step lands one coherent slice of the state machine behind a compile-clean commit with fixture-driven tests: scaffolding, then the basic round-trip reducer, then streaming deltas, then tools, then permission/question flows, then interrupt, then `errored` triggers, then queue semantics, then dispose/filter. Integration checkpoint at the end verifies all slices cooperate.
 - **Warnings are errors across the build.** Every intermediate commit must survive `-D warnings` on Rust (unchanged by this plan) and whatever strictness tugdeck's Vitest + tsconfig imposes. No `any` escapes, no `@ts-expect-error` in committed code, no new `react` imports inside `code-session-store.ts`.
 - **No React, no DOM, no IndexedDB.** `code-session-store.ts` is pure TypeScript + L02. Any persistence (not in this phase) goes through tugbank per D-T3-10. React coupling belongs in T3.4.b / T3.4.c.
@@ -40,20 +41,19 @@ What's still missing is the store itself. Today there is no place for turn state
 - `tugdeck/src/lib/code-session-store.ts` exists and exports `CodeSessionStore` + `CodeSessionSnapshot`. (verification: file exists; `tsc --noEmit` clean)
 - `rg 'from "react"' tugdeck/src/lib/code-session-store.ts` returns zero matches. (verification: grep in Step 11)
 - `rg 'IDBDatabase\|indexedDB' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/` returns zero matches. (verification: grep in Step 11)
-- Replaying `v2.1.105/test-01-round-trip.jsonl` drives the store `idle → submitting → awaiting_first_token → streaming → complete → idle` with exactly one `TurnEntry` appended to `transcript`. (verification: `code-session-store.round-trip.test.ts`)
-- Replaying `v2.1.105/test-02-streaming-deltas.jsonl` accumulates deltas at `inflight.assistant` in arrival order; on the `complete` event, the buffer equals the event's `text` field byte-for-byte. (verification: `code-session-store.deltas.test.ts`)
-- Replaying `v2.1.105/test-06-interrupt.jsonl` after a `store.interrupt()` call drives `streaming → interrupted → idle`, commits a `TurnEntry` with `result: "interrupted"` and the accumulated text preserved. (verification: `code-session-store.interrupt.test.ts`)
+- Replaying `v2.1.105/test-01-basic-round-trip.jsonl` drives the store `idle → submitting → awaiting_first_token → streaming → complete → idle` with exactly one `TurnEntry` appended to `transcript`. (verification: `code-session-store.round-trip.test.ts`)
+- Replaying `v2.1.105/test-02-longer-response-streaming.jsonl` accumulates deltas at `inflight.assistant` in arrival order; on the `complete` event, the buffer equals the event's `text` field byte-for-byte. (verification: `code-session-store.deltas.test.ts`)
+- Replaying `v2.1.105/test-06-interrupt-mid-stream.jsonl` after a `store.interrupt()` call drives `streaming → interrupted → idle`, commits a `TurnEntry` with `result: "interrupted"` and the accumulated text preserved. (verification: `code-session-store.interrupt.test.ts`)
 - Three `send()` calls during `streaming` leave `queuedSends === 3`; after `interrupt()` + `turn_complete(error)`, `queuedSends === 0` and no `user_message` frames were written for the queued sends. (verification: `code-session-store.interrupt.test.ts`)
-- Three `send()` calls during `streaming` leave `queuedSends === 3`; after `turn_complete(success)`, exactly one queued `user_message` frame is written and the store transitions `complete → idle → submitting`. (verification: `code-session-store.queue.test.ts`)
-- Replaying `v2.1.105/test-05-tool-use.jsonl` flips `phase` to `tool_work` on first `tool_use` partial and back to `streaming` on matching `tool_use_structured` / `tool_result`; `inflight.tools` carries a `ToolCallState` with the fixture's tool name. (verification: `code-session-store.tools.test.ts`)
-- Replaying `v2.1.105/test-21-concurrent-tools.jsonl` keeps two overlapping `tool_use_id`s simultaneously resident in `inflight.tools` and keeps `phase === "tool_work"` until both resolve. (verification: `code-session-store.tools.test.ts`)
-- Replaying `v2.1.105/test-08-permission.jsonl` populates `pendingApproval`; `respondApproval(requestId, { decision: "allow" })` writes a `tool_approval` CODE_INPUT frame with the correct `request_id` and `decision`. (verification: `code-session-store.control-forward.test.ts`)
-- Replaying `v2.1.105/test-11-tool-deny.jsonl` produces a `tool_approval` frame with `decision: "deny"`. (verification: same file)
-- Replaying `v2.1.105/test-35-ask-user-question.jsonl` populates `pendingQuestion`; `respondQuestion(requestId, { answers })` writes a `question_answer` CODE_INPUT frame with the correct shape. (verification: same file)
+- Three `send()` calls during `streaming` leave `queuedSends === 3`; after `turn_complete(success)`, exactly one queued `user_message` frame is written and the store transitions `complete → idle → submitting` in a single dispatch tick. (verification: `code-session-store.queue.test.ts`)
+- Replaying `v2.1.105/test-05-tool-use-read.jsonl` flips `phase` to `tool_work` on first `tool_use` partial and back to `streaming` on matching `tool_use_structured` / `tool_result`; `inflight.tools` carries a `ToolCallState` with the fixture's tool name. (verification: `code-session-store.tools.test.ts`)
+- Replaying `v2.1.105/test-07-multiple-tool-calls.jsonl` keeps multiple overlapping `tool_use_id`s simultaneously resident in `inflight.tools` and keeps `phase === "tool_work"` until all resolve. (verification: `code-session-store.tools.test.ts`)
+- Synthetic `control_request_forward { is_question: false }` replay populates `pendingApproval`; `respondApproval(requestId, { decision: "allow" })` writes a `tool_approval` CODE_INPUT frame with the correct `request_id` and `decision`. **v2.1.105 has no permission-allow golden fixture; the approval path is exercised with a synthetic event** (v2.1.105 only ships `test-11-permission-deny-roundtrip.jsonl` and `test-09-bash-auto-approved.jsonl`; neither is a user-gated allow). (verification: `code-session-store.control-forward.test.ts`)
+- Replaying `v2.1.105/test-11-permission-deny-roundtrip.jsonl` produces a `tool_approval` frame with `decision: "deny"`. (verification: same file)
+- Replaying `v2.1.105/test-35-askuserquestion-flow.jsonl` populates `pendingQuestion`; `respondQuestion(requestId, { answers })` writes a `question_answer` CODE_INPUT frame with the correct shape. (verification: same file)
 - Synthetic `SESSION_STATE { state: "errored", detail: "crash_budget_exhausted" }` frame during `streaming` transitions `phase → errored`, `lastError.cause === "session_state_errored"`, `lastError.message` contains `"crash_budget_exhausted"`, transcript preserved. (verification: `code-session-store.errored.test.ts`)
-- Synthetic `conn.onClose` while `phase === "submitting"` transitions `phase → errored` with `lastError.cause === "transport_closed"`. (verification: same file)
-- Synthetic CONTROL error with `detail: "session_not_owned"` for this `tugSessionId` transitions `phase → errored` with `lastError.cause === "session_not_owned"`. (verification: same file)
-- From `phase === "errored"`, `send("retry")` transitions to `submitting`; after a subsequent `turn_complete(success)`, `lastError === null`. (verification: same file)
+- Synthetic `conn.onClose()` fired while `phase === "submitting"` transitions `phase → errored` with `lastError.cause === "transport_closed"`. (verification: same file)
+- From `phase === "errored"`, `send("retry", [])` transitions to `submitting`; after a subsequent `turn_complete(success)`, `lastError === null`. (verification: same file)
 - Two `CodeSessionStore` instances with distinct `tugSessionId`s against a shared mock connection receive only their own frames; replaying a stream tagged with store A's id leaves store B's snapshot unchanged. (verification: `code-session-store.filter.test.ts`)
 - After `dispose()`, new frames on the connection do not update the snapshot; `streamingDocument` is cleared; no `close_session` frame was written. (verification: `code-session-store.dispose.test.ts`)
 - `cd tugdeck && bun test` is green on every step commit and on the integration checkpoint. (verification: Step 11)
@@ -86,7 +86,7 @@ What's still missing is the store itself. Today there is no place for turn state
 - [§P2 follow-up golden catalog](./tide.md#p2-followup-golden-catalog) — shipped. Provides `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/` as machine-readable ground truth with placeholder normalization; provides `stream_json_catalog_drift.rs` as the Rust-side regression test.
 - Existing `tugdeck/src/lib/feed-store.ts` with the 4-argument constructor `new FeedStore(conn, feedIds, decode?, filter?)`. Exists per [Phase T0.5 P2](./tide.md#protocol-hardening).
 - Existing `tugdeck/src/protocol.ts` with `FeedId`, `encodeCodeInput(msg, tugSessionId)`. Exists per P2.
-- Existing `tugdeck/src/lib/connection.ts` `TugConnection` with `.send(feedId, payload)` and a close observer (exists; this plan assumes a subscribe-to-close hook — if one doesn't exist yet, Step 8 adds one as part of errored-path wiring).
+- Existing `tugdeck/src/connection.ts` `TugConnection` with `.send(feedId, payload)` and `onClose(callback: () => void): () => void` at line 297 (returns an unsubscribe function — exactly the shape this plan needs; no connection-module changes in scope).
 - Existing `PropertyStore` primitive used by `TugMarkdownView`'s streaming API. Exists per [Phase 3A.5 Region Model + API](./tide.md#foundation) (DONE).
 - `bun` ≥ `1.x` + `vitest` as configured in `tugdeck/package.json`. Exists.
 
@@ -108,7 +108,7 @@ What's still missing is the store itself. Today there is no place for turn state
 - `PropertyStore.set(path, value)` triggers observer notifications synchronously (or at least before the next task tick), compatible with `TugMarkdownView`'s observe path. (Inherited assumption from Phase 3A.5.)
 - Golden fixture filenames under `v2.1.105/` are stable for the lifetime of this plan. If Anthropic ships `claude 2.1.106` during implementation and the drift test flags it, follow the recovery workflow in [§P2 follow-up](./tide.md#p2-followup-golden-catalog) before continuing — do not hand-patch events to keep tests green.
 - Vitest under bun can read files via Node's `fs.readFileSync` with `__dirname`-relative paths. (Standard.)
-- The `TugConnection` exposes a close observer (`onClose` / `.subscribe(close)` / similar). If it doesn't, Step 8 adds the narrowest possible surface required for `errored` transport-close detection. The plan assumes this is a trivial addition and not a separate phase.
+- `TugConnection.onClose(callback: () => void): () => void` already exists at `tugdeck/src/connection.ts:297` with the exact unsubscribe-returning shape the store needs. Step 8 subscribes to it directly; no connection-module changes.
 
 ---
 
@@ -129,20 +129,18 @@ What's still missing is the store itself. Today there is no place for turn state
 
 **Resolution:** DEFERRED to P14. T3.4.a's snapshot shape carries `transcript: ReadonlyArray<TurnEntry>` as a field, not a method, so P14 can repopulate it at construction without a shape change.
 
-#### [Q02] TurnEntry shape for tool calls (OPEN) {#q02-turn-entry-tool-shape}
+#### [Q02] TurnEntry shape for tool calls (DECIDED) {#q02-turn-entry-tool-shape}
 
 **Question:** When committing a completed turn to `transcript`, should `TurnEntry.toolCalls` be a `Map<tool_use_id, ToolCallState>` (matching the in-flight shape) or a `ReadonlyArray<ToolCallState>` in arrival order?
 
 **Why it matters:** The in-flight shape is a Map for O(1) `tool_use_id` lookup on interleaved events. But downstream rendering in `TugMarkdownView` will want to display tool calls in arrival order, which an array gives naturally but a Map does not guarantee (though JS Maps preserve insertion order). The snapshot shape is part of the public API and changing it later is painful.
 
-**Options (if known):**
-- Commit as `ReadonlyArray<ToolCallState>` in arrival order. Downstream rendering is simpler; the in-flight Map is converted on commit.
-- Commit as `ReadonlyMap<string, ToolCallState>`. Preserves in-flight shape; downstream must `Array.from(map.values())` to render.
-- Commit as both — a `toolCallOrder: string[]` + `toolCalls: ReadonlyMap<string, ToolCallState>`.
+**Options considered:**
+- `ReadonlyArray<ToolCallState>` in arrival order. Downstream rendering is simpler; the in-flight Map is converted on commit.
+- `ReadonlyMap<string, ToolCallState>`. Preserves in-flight shape; downstream must `Array.from(map.values())` to render.
+- Both — a `toolCallOrder: string[]` + `toolCalls: ReadonlyMap<string, ToolCallState>`.
 
-**Plan to resolve:** Pick one in Step 5 (tool call tracking) before landing. Default: **`ReadonlyArray<ToolCallState>`** unless fixture replay surfaces a reason it matters. Rationale: the consumer is a markdown renderer, not an event-correlation engine.
-
-**Resolution:** OPEN until Step 5.
+**Resolution:** DECIDED — `ReadonlyArray<ToolCallState>` in insertion order. Rationale: the consumer is a markdown renderer, not an event-correlation engine; the in-flight Map is converted on commit via `Array.from(map.values())`. Pinned in Spec S02 and enforced in Step 5.
 
 ---
 
@@ -152,9 +150,8 @@ What's still missing is the store itself. Today there is no place for turn state
 |------|--------|------------|------------|--------------------|
 | Stream-json shape drift between `v2.1.105` and live Claude during implementation | high | low | Rely on the golden catalog + drift test; if a new Claude ships, follow the §P2 follow-up recovery workflow before continuing | Drift test fails on a `claude` version bump during T3.4.a work |
 | Fixture relative-path brittleness across repo moves | medium | low | The path is hardcoded as `../../../tugrust/.../fixtures/`; any repo root restructure breaks the helper loudly with a readable error | Future repo move or monorepo split |
-| Concurrent tool-call state machine miscorrelation | high | medium | Key every tool event on `tool_use_id` in a `Map`; add `test-21-concurrent-tools.jsonl` as a required exit criterion with assertion on both ids | Fixture replay fails or tool state leaks across turns |
+| Concurrent tool-call state machine miscorrelation | high | medium | Key every tool event on `tool_use_id` in a `Map`; add `test-07-multiple-tool-calls.jsonl` as a required exit criterion with assertion on multiple overlapping ids | Fixture replay fails or tool state leaks across turns |
 | Interrupt vs `turn_complete(error)` race | medium | low | The state machine does not require `interrupt()` and `turn_complete(error)` to arrive in any particular order — `interrupt()` writes the frame and stays in the current phase; the `error` turn_complete is the only driver of `interrupted → idle` | Synthetic test reorders events |
-| `TugConnection.onClose` observer doesn't exist yet | medium | low | Step 8 adds the narrowest possible surface required for `errored` transport-close detection; if the shape is wrong, adjust in the same step before commit | `onClose` surface debate blocks Step 8 |
 | PropertyStore synchronous-notification assumption wrong | medium | low | Every `inflight.*` write is immediately followed by an assertion-compatible read in tests; if async, tests will flake and we'll add `flushSync` or equivalent | Tests flake on delta assertions |
 
 **Risk R01: Interleaved tool call miscorrelation** {#r01-tool-call-interleave}
@@ -163,7 +160,7 @@ What's still missing is the store itself. Today there is no place for turn state
 - **Mitigation:**
   - Key every tool event on `tool_use_id` in a `Map<string, ToolCallState>`.
   - The `tool_work ↔ streaming` transition fires only when **all** pending `tool_use_id`s have resolved (all Map entries have `status: "done"`).
-  - Exit criterion requires `test-21-concurrent-tools.jsonl` to pass with both ids observable in `inflight.tools` simultaneously.
+  - Exit criterion requires `test-07-multiple-tool-calls.jsonl` (the real multi-tool fixture in `v2.1.105/`) to pass with multiple ids observable in `inflight.tools` simultaneously.
 - **Residual risk:** If Claude emits a `tool_result` for a `tool_use_id` the store never saw (driver bug, router dedup gap), the reducer logs and drops the event without transitioning. Acceptable for T3.4.a.
 
 **Risk R02: Golden fixture path coupling** {#r02-fixture-path-coupling}
@@ -231,18 +228,20 @@ What's still missing is the store itself. Today there is no place for turn state
 
 #### [D04] Append-only transcript + in-flight PropertyStore (DECIDED) {#d04-transcript-plus-streaming}
 
-**Decision:** The store owns `transcript: ReadonlyArray<TurnEntry>` (immutable, appended on every `turn_complete`) plus a single `streamingDocument: PropertyStore` with three stable path keys (`inflight.assistant`, `inflight.thinking`, `inflight.tools`). On `turn_complete`, in-flight content is committed to `transcript` and `inflight.*` is cleared.
+**Decision:** The class wrapper owns `_transcript: TurnEntry[]` (immutable from the outside, appended on every `turn_complete`) — surfaced on the snapshot as `ReadonlyArray<TurnEntry>` — plus a single `streamingDocument: PropertyStore` with three stable path keys (`inflight.assistant`, `inflight.thinking`, `inflight.tools`). On `turn_complete`, in-flight content is committed to `_transcript` and `inflight.*` is cleared. **Transcript does not live in the reducer's state** — it's maintained by the class wrapper in response to `AppendTranscript` effects ([D11]).
 
 **Rationale:**
 - Tide cards are long-lived chat threads, not ephemeral panes — the transcript must grow monotonically.
-- Separating transcript (snapshot-level, immutable) from streaming document (reference on the store, mutable) gives the renderer two distinct subscription surfaces without blurring them.
+- Keeping transcript outside reducer state lets the reducer stay a pure `(state, event) => { state, effects }` function ([D11]) — the transcript would otherwise bloat `state` on every dispatch and complicate diffing.
+- Separating transcript (snapshot-level, exposed as ReadonlyArray) from streaming document (reference on the store, mutable) gives the renderer two distinct subscription surfaces without blurring them.
 - Collapsing the pre-rewrite `streamingStore / streamingPath / streamRegionKey` triplet into one store-owned instance eliminates three different names for the same concept.
 - The PropertyStore instance lives as a public property on the store (`store.streamingDocument`), not in the React snapshot, because PropertyStores aren't plain data.
 
 **Implications:**
-- `TugMarkdownView` in T3.4.c subscribes to `store.streamingDocument` directly (via its existing observe API), not through `useSyncExternalStore`.
+- `TugMarkdownView` in T3.4.c subscribes to `store.streamingDocument` directly (via its existing observe API), not through `useSyncExternalStore` — L22 (external state driving direct DOM updates goes through a store observer, not a React round-trip).
 - Consumers that need path strings thread `snapshot.streamingPaths.assistant` etc. through props; the strings are constants.
 - The snapshot shape carries path strings as literal string types for TS clarity.
+- `getSnapshot()` builds a fresh object that merges reducer state with `_transcript`, `claudeSessionId`, and the constant `streamingPaths` literals.
 
 #### [D05] Interrupt clears the queue (DECIDED) {#d05-interrupt-clears-queue}
 
@@ -289,7 +288,7 @@ What's still missing is the store itself. Today there is no place for turn state
 
 #### [D08] `errored` and `interrupted` are distinct transitions (DECIDED) {#d08-errored-vs-interrupted}
 
-**Decision:** `turn_complete(result: "error")` routes to `interrupted → idle` (preserves text, commits to transcript). Infrastructure errors (`SESSION_STATE errored`, transport close, CONTROL `session_not_owned` / `session_unknown`) route to `errored → idle` (populates `lastError`, transcript preserved but no new `TurnEntry` appended).
+**Decision:** `turn_complete(result: "error")` routes to `interrupted → idle` (preserves text, commits to transcript). Infrastructure errors — **`SESSION_STATE errored` and transport close for T3.4.a** — route to `errored → idle` (populates `lastError`, transcript preserved but no new `TurnEntry` appended). CONTROL-error triggers (`session_not_owned`, `session_unknown`) are deferred out of T3.4.a scope; see Roadmap.
 
 **Rationale:**
 - `turn_complete(error)` is user-initiated (Stop button, typically) and carries valid in-flight content that should be saved.
@@ -297,8 +296,8 @@ What's still missing is the store itself. Today there is no place for turn state
 - Conflating them would muddle the `lastError` snapshot field (what goes in `message`?) and mislead the UI.
 
 **Implications:**
-- The transition table has two distinct rows; the reducer dispatches on the event source, not on a generic "went wrong" predicate.
-- `lastError.cause` enumerates only the `errored` causes: `"session_state_errored" | "transport_closed" | "session_not_owned" | "session_unknown"`.
+- The transition table has distinct rows for these events; the reducer dispatches on the event source, not on a generic "went wrong" predicate.
+- `lastError.cause` enumerates only the `errored` causes T3.4.a actually produces: `"session_state_errored" | "transport_closed"`. CONTROL-error causes would extend this union when a future phase wires the CONTROL subscription.
 - Exit criteria cover both paths separately.
 
 #### [D09] `SessionMetadataStore` is independent (DECIDED) {#d09-metadata-store-independent}
@@ -328,50 +327,79 @@ What's still missing is the store itself. Today there is no place for turn state
 - Multi-session-within-a-card is a follow-up — either by opening multiple Tide cards (T3.4.c) or by P16 + a later `CodeSessionStore` revision.
 - The reducer does not handle the `pending-fork` / `pending-new` `session_init` variants; fixtures `test-13/17/20` remain skipped.
 
+#### [D11] Effect-list reducer return type (DECIDED) {#d11-effect-list-reducer}
+
+**Decision:** The internal reducer is a pure function with signature `reduce(state: CodeSessionState, event: CodeSessionEvent) => { state: CodeSessionState; effects: Effect[] }`. `Effect` is a discriminated union: `WriteInflight`, `ClearInflight`, `SendFrame`, `AppendTranscript`. The class wrapper processes the returned `effects[]` after each dispatch; the reducer itself touches no store, no connection, no PropertyStore, no clock.
+
+**Rationale:**
+- A pure `(state, event) => state` signature cannot carry side-effect intent, and the pre-revision plan left this unspecified across Steps 3–8 (every step said "the reducer emits a side-effect signal" with no defined channel).
+- State-diff observation (the alternative — wrapper diffs old→new state to infer effects) is harder to reason about, brittle to extend, and loses the benefit of explicit intent per dispatch.
+- An effect list makes every side effect first-class and grep-able. Tests can assert both state and effects on a single reducer call without any live-store setup.
+- Matches L22 (external state drives DOM updates via store observers, not React round-trips): `WriteInflight` effects are processed synchronously by the class wrapper and land on the PropertyStore before the next tick.
+- Matches L02 (external state enters React through `useSyncExternalStore` only): the class wrapper is the L02 store; its `subscribe` / `getSnapshot` surface the *result* of processing effects, not the effects themselves.
+
+**Implications:**
+- `CodeSessionState` holds only reducer-internal state: `phase`, `activeMsgId`, `scratch: Map<msgId, {assistant, thinking}>`, `toolCallMap: Map<tool_use_id, ToolCallState>`, `pendingApproval`, `pendingQuestion`, `prevPhase`, `queuedSends`, `lastCostUsd`, `claudeSessionId`, `lastError`. **Not** `transcript`, **not** `streamingDocument`.
+- The class wrapper holds `_transcript: TurnEntry[]`, the `streamingDocument: PropertyStore` instance, the live `FeedStore` subscription, the `conn.onClose` unsubscribe, and the subscriber list.
+- After every `reduce()` call, the wrapper walks `effects[]` in order and executes each:
+  - `WriteInflight { path, value }` → `streamingDocument.set(path, value)`
+  - `ClearInflight` → sets all three `inflight.*` paths to `""` (or `"[]"` for tools)
+  - `SendFrame { msg }` → encodes via `encodeCodeInput(msg, tugSessionId)` and calls `conn.send(FeedId.CODE_INPUT, payloadBytes)`
+  - `AppendTranscript { entry }` → pushes to `_transcript`; schedules a snapshot revision and `notifyListeners()`
+- Reducer unit tests call `reduce(state, event)` directly and assert `{ state, effects }` — no class, no connection, no PropertyStore, no timers.
+- Class integration tests drive events through `MockTugConnection` + `MockFeedStore` and assert against `getSnapshot()` and the recorded effect side effects.
+
 ---
 
 ### Deep Dives {#deep-dives}
 
 #### Turn-state machine walkthrough {#turn-state-walkthrough}
 
-The reducer is a pure function `reduce(state: CodeSessionState, event: Event) => CodeSessionState`, where `Event` is a discriminated union over:
-- Decoded stream-json events from CODE_OUTPUT (`assistant_text`, `thinking_text`, `tool_use`, `tool_result`, `tool_use_structured`, `control_request_forward`, `turn_complete`, `cost_update`, plus a passthrough for `session_init` and a drop for `system_metadata`).
+The reducer is a pure function with signature `reduce(state: CodeSessionState, event: CodeSessionEvent) => { state: CodeSessionState; effects: Effect[] }` ([D11]), where `CodeSessionEvent` is a discriminated union over:
+- Decoded stream-json events from CODE_OUTPUT (`assistant_text`, `thinking_text`, `tool_use`, `tool_result`, `tool_use_structured`, `control_request_forward`, `turn_complete`, `cost_update`, plus a passthrough for `session_init` and an explicit drop for `system_metadata`).
 - Decoded SESSION_STATE frames (`pending`, `spawning`, `live`, `errored`, `closed`).
-- Internal action events (`send`, `interrupt`, `respondApproval`, `respondQuestion`) — enqueued to the reducer input stream synchronously from the public methods.
+- Internal action events (`send`, `interrupt`, `respondApproval`, `respondQuestion`) — fed into the reducer synchronously from the public class methods.
 - Transport events (`transportClose`).
 
-The state type carries the phase enum, the in-flight scratch buffers, the tool-call map, the pending approval/question refs, the queued sends array, `lastError`, `lastCostUsd`, and `claudeSessionId`. The transcript is outside the reducer — it's mutated by a post-reduce side-effect handler that watches for phase transitions to `complete` / `interrupted` and appends a new `TurnEntry` built from the just-finalized in-flight state.
+`CodeSessionState` carries the reducer's working state: `phase`, `activeMsgId`, scratch buffers (`Map<msgId, {assistant, thinking}>`), `toolCallMap: Map<tool_use_id, ToolCallState>`, `pendingApproval`, `pendingQuestion`, `prevPhase`, `queuedSends: SendArgs[]`, `lastError`, `lastCostUsd`, `claudeSessionId`. **`transcript` is NOT in this state** — the class wrapper owns `_transcript: TurnEntry[]` and appends to it in response to `AppendTranscript` effects.
 
-**`idle → submitting` on `send()`:** The reducer receives an internal `send` event carrying `{ text, atoms, route }`. If `phase === "idle"`, it transitions to `submitting` and emits a side-effect "write CODE_INPUT frame" signal. If `phase !== "idle"`, it appends to `queuedSends` and stays put. From `errored`, the send is treated as a manual retry — `lastError` stays non-null until the next `turn_complete(success)` lands.
+`Effect` is a discriminated union ([D11], Spec S07):
+- `WriteInflight { path: InflightPath; value: string }` — write to `streamingDocument` at a stable path.
+- `ClearInflight` — clear all three `inflight.*` paths to their empty state.
+- `SendFrame { msg: InboundMessage }` — encode via `encodeCodeInput(msg, tugSessionId)` and write to CODE_INPUT.
+- `AppendTranscript { entry: TurnEntry }` — append to the wrapper's `_transcript`.
 
-**`submitting → awaiting_first_token → streaming`:** The first `thinking_text` or `assistant_text` partial with a fresh `msg_id` drives `submitting → awaiting_first_token`. The `awaiting_first_token` phase is a single-tick affordance so UI can distinguish "we sent, waiting for the subprocess to wake up" from "text is flowing"; the next event immediately collapses to `streaming`. In practice the reducer can collapse this in one step by checking whether the event is the first partial of a new turn.
+**`idle → submitting` on `send()`:** The reducer receives an internal `send` event carrying `{ text, atoms }` (no `route` — [D03]; route is a leading atom in `atoms` if present). If `phase === "idle"`, the reducer returns the new state (`submitting`) and `effects: [SendFrame { msg: { type: "user_message", text, attachments } }]`. If `phase !== "idle"`, it appends to `queuedSends` and returns the unchanged phase with `effects: []`. From `errored`, the send is treated as a manual retry — `lastError` stays non-null until the next `turn_complete(success)` lands.
 
-**`streaming` delta accumulation:** Each `assistant_text` partial (`is_partial: true`) appends `text` to an in-memory scratch buffer keyed by `msg_id`. The reducer emits a side-effect "write `inflight.assistant`" signal carrying the full accumulated buffer, which the side-effect handler writes via `streamingDocument.set`. On `is_partial: false` (the `complete` event), the buffer is replaced with the authoritative full text. **`turn_complete` is a separate event** — the reducer does not commit to transcript on `is_partial: false`; it waits for `turn_complete`.
+**`submitting → awaiting_first_token → streaming`:** The first `thinking_text` or `assistant_text` partial with a fresh `msg_id` drives `submitting → awaiting_first_token`. The `awaiting_first_token` phase is a single-tick affordance so UI can distinguish "we sent, waiting for the subprocess to wake up" from "text is flowing"; the next event collapses to `streaming` in the same reducer call if more than one event is dispatched in sequence. In practice the reducer checks whether the event is the first partial of a new turn and sets `phase: "streaming"` directly, emitting a transient `awaiting_first_token` only if the UI needs to observe it via subscriber notification.
 
-**`streaming ↔ tool_work`:** A `tool_use` partial upserts a `ToolCallState` in the tool map and transitions to `tool_work`. A `tool_result` or `tool_use_structured` matching an existing `tool_use_id` marks that entry `done`. The phase returns to `streaming` only when all entries in the map are `done` (covers interleaved concurrent calls). Additional `tool_use` partials arriving while already in `tool_work` just add more map entries without a phase change.
+**`streaming` delta accumulation:** Each `assistant_text` partial (`is_partial: true`) appends `text` to the scratch buffer keyed by `msg_id` inside the reducer's state. The reducer returns `effects: [WriteInflight { path: "inflight.assistant", value: newBuffer }]`. On `is_partial: false` (the `complete` event), the scratch buffer is replaced with the authoritative full text, and the same effect is emitted. **`turn_complete` is a separate event** — the reducer does not commit to transcript on `is_partial: false`; it waits for `turn_complete`.
 
-**`streaming / tool_work → awaiting_approval`:** A `control_request_forward` event populates `pendingApproval` (if `is_question === false`) or `pendingQuestion` (if `is_question === true`) and transitions to `awaiting_approval`. `canInterrupt` remains true throughout — the user can still Stop during an approval wait. `respondApproval` / `respondQuestion` dispatch the matching outbound frame and transition back to the prior phase (tracked via a `prevPhase` field on the state).
+**`streaming ↔ tool_work`:** A `tool_use` partial upserts a `ToolCallState` in `toolCallMap` and transitions to `tool_work`. A `tool_result` or `tool_use_structured` matching an existing `tool_use_id` marks that entry `done` (or `error`). The phase returns to `streaming` only when all entries are `done` (covers interleaved concurrent calls). Additional `tool_use` partials arriving while already in `tool_work` add more map entries without a phase change. Every tool event emits `WriteInflight { path: "inflight.tools", value: JSON.stringify(Array.from(toolCallMap.values())) }`.
 
-**`turn_complete(success) → complete → idle`:** The reducer commits the in-flight state to `transcript` via a post-reduce handler, clears `inflight.*`, transitions to `complete` (a zero-duration phase), then immediately to `idle`. If `queuedSends` is non-empty, one send is shifted off the front and re-injected as a new `send` event, driving `idle → submitting`.
+**`streaming / tool_work → awaiting_approval`:** A `control_request_forward` event populates `pendingApproval` (if `is_question === false`) or `pendingQuestion` (if `is_question === true`) and transitions to `awaiting_approval`, stashing the current phase in `prevPhase`. `canInterrupt` remains true — the user can still Stop during an approval wait. `respondApproval` / `respondQuestion` return `effects: [SendFrame { msg: { type: "tool_approval", ... } }]` (or `question_answer`) and transition back to `prevPhase`.
 
-**`turn_complete(error) → interrupted → idle`:** Same structure, except the committed `TurnEntry` has `result: "interrupted"` and `queuedSends` is **cleared** on the transition to `idle` (per [D05]).
+**`turn_complete(success) → complete → idle`:** The reducer builds a `TurnEntry` from the scratch state for `activeMsgId`, returns effects `[AppendTranscript { entry }, ClearInflight]`, transitions through `complete` to `idle`, and — if `queuedSends` is non-empty — **immediately dispatches** an internal `send` event for the next queued entry in the same reducer tick, which drives `idle → submitting` with an additional `SendFrame` effect appended to the effect list. The class wrapper notifies subscribers once after all effects are processed; observers see a direct `... → idle → submitting` transition when the queue is non-empty (the intermediate `complete`/`idle` phases are real but collapsed into a single notify tick).
 
-**`errored` transitions:** Any of the four triggers (SESSION_STATE errored, transport close, `session_not_owned`, `session_unknown`) route to `errored` with `lastError` populated. Transcript is preserved as-is — no new entry is appended. The next `send()` from `errored` re-enters `submitting`; `lastError` clears after the next `turn_complete(success)`.
+**`turn_complete(error) → interrupted → idle`:** Same structure, except the committed `TurnEntry` has `result: "interrupted"` (with the preserved accumulated text), and `queuedSends` is **cleared** on the transition to `idle` (per [D05]) — no queued `send` re-dispatch.
+
+**`errored` transitions:** Either of the two triggers for T3.4.a (SESSION_STATE errored, transport close — CONTROL-error triggers are deferred per [OF11] and live in Roadmap) route to `errored` with `lastError` populated. Transcript is preserved as-is — no new entry is appended. The next `send()` from `errored` re-enters `submitting`; `lastError` clears after the next `turn_complete(success)`.
 
 #### Reducer split for testability {#reducer-split}
 
 `CodeSessionStore` is the public class, but the reducer logic lives in a separate internal module:
 
 ```
-tugdeck/src/lib/code-session-store.ts          — public class, owns FeedStore + PropertyStore
-tugdeck/src/lib/code-session-store/reducer.ts  — pure (state, event) => state function
+tugdeck/src/lib/code-session-store.ts          — public class, owns FeedStore + PropertyStore + _transcript
+tugdeck/src/lib/code-session-store/reducer.ts  — pure (state, event) => { state, effects } function
 tugdeck/src/lib/code-session-store/events.ts   — decoded event type definitions
+tugdeck/src/lib/code-session-store/effects.ts  — Effect discriminated union + effect type guards
 tugdeck/src/lib/code-session-store/types.ts    — snapshot + TurnEntry + ToolCallState types
 tugdeck/src/lib/code-session-store/testing/golden-catalog.ts     — fixture loader
-tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts    — in-memory FeedStore double
+tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts    — in-memory FeedStore double + outbound frame decoder
 ```
 
-The reducer tests exercise `reducer.ts` directly against hand-built or fixture-loaded event sequences, bypassing the class wrapper. The class tests (via `mock-feed-store.ts`) exercise the full subscribe-decode-dispatch path. Both levels run under `bun test`.
+Reducer tests exercise `reducer.ts` directly: call `reduce(state, event)`, assert on the returned `{ state, effects }` tuple. No class, no connection, no PropertyStore. Class integration tests (via `mock-feed-store.ts`) drive the full subscribe-decode-dispatch loop against a `MockTugConnection` that records every outbound frame with a decoded JSON view for assertions. Both levels run under `bun test`.
 
 ---
 
@@ -398,7 +426,9 @@ export class CodeSessionStore {
   getSnapshot(): CodeSessionSnapshot;
 
   // Actions.
-  send(text: string, atoms: AtomSegment[], route: Route): void;
+  // The route (>, $, :) — when present — is the leading atom in `atoms`.
+  // T3.4.b's tug-prompt-entry owns route extraction; the store is route-oblivious.
+  send(text: string, atoms: AtomSegment[]): void;
   interrupt(): void;
   respondApproval(
     requestId: string,
@@ -455,11 +485,7 @@ export interface CodeSessionSnapshot {
 
   lastCostUsd: number | null;
   lastError: {
-    cause:
-      | "session_state_errored"
-      | "transport_closed"
-      | "session_not_owned"
-      | "session_unknown";
+    cause: "session_state_errored" | "transport_closed";
     message: string;
     at: number;
   } | null;
@@ -500,26 +526,26 @@ export interface ToolCallState {
 | `streaming` / `tool_work` | `control_request_forward` (`is_question: true`) | `awaiting_approval` | Populate `pendingQuestion`; stash `prevPhase` |
 | `awaiting_approval` | `respondApproval(...)` | `prevPhase` | Write `tool_approval` to CODE_INPUT; clear `pendingApproval` |
 | `awaiting_approval` | `respondQuestion(...)` | `prevPhase` | Write `question_answer` to CODE_INPUT; clear `pendingQuestion` |
-| any non-idle | `turn_complete(result: "success")` | `complete` → `idle` | Commit `TurnEntry(result: "success")`; clear `inflight.*`; flush one queued send if any |
-| any non-idle | `turn_complete(result: "error")` | `interrupted` → `idle` | Commit `TurnEntry(result: "interrupted")` with preserved text; clear `inflight.*`; **clear queue** |
+| any non-idle | `turn_complete(result: "success")` AND `queuedSends` empty | `complete` → `idle` | Commit `TurnEntry(result: "success")`; clear `inflight.*`. Subscribers notified once; observers see `… → idle`. |
+| any non-idle | `turn_complete(result: "success")` AND `queuedSends` non-empty | `complete` → `idle` → `submitting` | Commit `TurnEntry`; clear `inflight.*`; shift one entry off `queuedSends`; dispatch an internal `send` event in the same reducer tick. Subscribers notified **once** at the end of the tick; observers see a direct `… → submitting` transition without an intermediate `idle` notification. |
+| any non-idle | `turn_complete(result: "error")` | `interrupted` → `idle` | Commit `TurnEntry(result: "interrupted")` with preserved text; clear `inflight.*`; **clear queue** (per [D05]). No queued re-dispatch. |
 | any non-idle | `SESSION_STATE = errored` | `errored` → `idle` | Populate `lastError.cause = "session_state_errored"` |
 | any non-idle | `transportClose` | `errored` → `idle` | Populate `lastError.cause = "transport_closed"` |
-| any non-idle | CONTROL error `session_not_owned` (matching `tugSessionId`) | `errored` → `idle` | Populate `lastError.cause = "session_not_owned"` |
-| any non-idle | CONTROL error `session_unknown` (matching `tugSessionId`) | `errored` → `idle` | Populate `lastError.cause = "session_unknown"` |
 | `errored` | internal `send` | `submitting` | Same as `idle → submitting`; `lastError` stays set until next `turn_complete(success)` |
 
 #### Spec S04: `errored` trigger table {#s04-errored-triggers}
 
+T3.4.a ships with two `errored` triggers. CONTROL-error triggers (`session_not_owned`, `session_unknown`) are deferred to a follow-on — see Roadmap.
+
 | Trigger | Source | `lastError.cause` | Detection |
 |---------|--------|-------------------|-----------|
 | `SESSION_STATE = errored` frame | Supervisor (crash budget, future P13 caps) | `"session_state_errored"` | Filter-matched SESSION_STATE with `state === "errored"`; `detail` copied into `message` |
-| WebSocket close during non-idle phase | Transport | `"transport_closed"` | `TugConnection` close observer; subscribed only while `phase !== "idle"` |
-| CONTROL error `session_not_owned` | Router P5 authz | `"session_not_owned"` | CONTROL feed frame for this `tugSessionId` |
-| CONTROL error `session_unknown` | Supervisor dispatcher | `"session_unknown"` | CONTROL feed frame for this `tugSessionId` |
+| WebSocket close during non-idle phase | Transport | `"transport_closed"` | `TugConnection.onClose(callback)` at `tugdeck/src/connection.ts:297`; the store subscribes at construction and unsubscribes in `dispose()`, and the reducer only transitions to `errored` when the close event arrives while `phase !== "idle"` |
 
 Not in scope for `errored`:
 - `turn_complete(result: "error")` — interrupt path, routes to `interrupted`.
 - Malformed stream-json events — logged via `console.warn` and dropped; phase unchanged. Version drift is P15 territory.
+- CONTROL error frames (`session_not_owned`, `session_unknown`) — deferred. The shape is understood per [§P2 integration reference](./tide.md#p2-integration-reference) but the tugdeck-side CONTROL subscription + dispatch path is beyond T3.4.a scope. An unauthorized or orphaned session will surface as a `SESSION_STATE = errored` or a transport close in practice; if neither fires, the store stays non-idle until the user intervenes or a later phase adds explicit CONTROL error handling.
 
 #### Spec S05: Streaming document paths {#s05-streaming-paths}
 
@@ -539,6 +565,17 @@ The three path strings are exposed on the snapshot as `streamingPaths` literal t
 const FIXTURE_ROOT_RELATIVE =
   "../../../../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog";
 
+// Canonical placeholder values per identity class. Fixed strings so tests can
+// assert on exact IDs without threading a counter through every call.
+export const FIXTURE_IDS = {
+  TUG_SESSION_ID:    "tug00000-0000-4000-8000-000000000001",
+  CLAUDE_SESSION_ID: "cla00000-0000-4000-8000-000000000001",
+  MSG_ID:            "msg00000-0000-4000-8000-000000000001",
+  TOOL_USE_ID:       "tool0000-0000-4000-8000-000000000001",
+  REQUEST_ID:        "req00000-0000-4000-8000-000000000001",
+  CWD:               "/tmp/fixture-cwd",
+} as const;
+
 export interface GoldenProbe {
   version: string;
   probeName: string;
@@ -549,12 +586,56 @@ export function loadGoldenProbe(
   version: string,
   probeName: string,
 ): GoldenProbe;
-
-// Substitutes {{uuid}}, {{iso}}, {{msg_id}}, {{tool_use_id}}, {{f64}},
-// {{i64}}, {{text:len=N}} with deterministic per-test values, then parses
-// one JSON event per line. Throws a readable Error with the resolved
-// absolute path if the file is missing.
 ```
+
+The helper reads `<FIXTURE_ROOT_RELATIVE>/<version>/<probeName>.jsonl` via a `__dirname`-relative path, substitutes placeholders **field-aware** (not token-aware), and returns parsed events. Throws a readable `Error` naming the resolved absolute path when the file is missing.
+
+**Placeholder vocabulary actually used in `v2.1.105/` fixtures** (verified by `grep -o '{{[^}]*}}' v2.1.105/*.jsonl | sort -u`):
+
+| Token | Where it appears | Substitution strategy |
+|-------|------------------|----------------------|
+| `{{uuid}}` | `session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, `request_id` fields | **Field-aware** — inspect the JSON key name before substituting: `session_id → CLAUDE_SESSION_ID`, `tug_session_id → TUG_SESSION_ID`, `msg_id → MSG_ID`, `tool_use_id → TOOL_USE_ID`, `request_id → REQUEST_ID`. |
+| `{{cwd}}` | `system_metadata.cwd`, plugin/path strings | Replace with `FIXTURE_IDS.CWD`. Preserve the suffix path after the token (e.g. `{{cwd}}/Mounts/u/src/tugtool` → `/tmp/fixture-cwd/Mounts/u/src/tugtool`). |
+| `{{f64}}` | `total_cost_usd` etc. | Replace with `0.0` (emit raw numeric literal, not a string). |
+| `{{i64}}` | Token counts, duration_ms, etc. | Replace with `0` (raw numeric). |
+| `{{text:len=N}}` | `assistant_text.text`, `thinking_text.text`, `tool_result.output` | Replace with a `"x"` character repeated N times (pinned length lets tests assert on `.length` without pinning content). |
+
+**Why field-aware substitution is mandatory:** `test-01-basic-round-trip.jsonl` line 1 uses `{{uuid}}` for **both** `session_id` and `tug_session_id` on the same event; line 3 uses `{{uuid}}` for `msg_id` AND `tug_session_id`. A naive global `replace("{{uuid}}", SINGLE_VALUE)` collapses all three into one id, which breaks Step 4's new-`msg_id` detection and Step 9's filter-correctness test (which needs `tugSessionId` distinct from `msg_id`). Field-aware substitution walks the parsed JSON tree, looks at each key name, and only substitutes leaf string values that match the `{{…}}` placeholder pattern.
+
+**Tokens the plan does NOT need** (removed from an earlier draft that referenced them incorrectly): `{{iso}}`, `{{msg_id}}`, `{{tool_use_id}}`. The fixtures do not use these tokens at all — they use `{{uuid}}` for ID fields and raw placeholder-free values where timestamps appear (or inline numeric placeholders via `{{i64}}`).
+
+#### Spec S07: Effect discriminated union {#s07-effect-union}
+
+```ts
+// tugdeck/src/lib/code-session-store/effects.ts
+
+export type InflightPath =
+  | "inflight.assistant"
+  | "inflight.thinking"
+  | "inflight.tools";
+
+export type Effect =
+  | { kind: "write-inflight"; path: InflightPath; value: string }
+  | { kind: "clear-inflight" }
+  | { kind: "send-frame"; msg: InboundMessage }
+  | { kind: "append-transcript"; entry: TurnEntry };
+
+// Effect type guards (used by the class wrapper's processEffects switch).
+export function isWriteInflight(e: Effect): e is Extract<Effect, { kind: "write-inflight" }>;
+export function isClearInflight(e: Effect): e is Extract<Effect, { kind: "clear-inflight" }>;
+export function isSendFrame(e: Effect): e is Extract<Effect, { kind: "send-frame" }>;
+export function isAppendTranscript(e: Effect): e is Extract<Effect, { kind: "append-transcript" }>;
+```
+
+`InboundMessage` is the client-to-server wire type from `tugdeck/src/protocol.ts` (union of `user_message`, `interrupt`, `tool_approval`, `question_answer`, `permission_mode`, `model_change`, `session_command`, `stop_task`). T3.4.a only emits `user_message`, `interrupt`, `tool_approval`, and `question_answer`.
+
+The class wrapper's `processEffects(effects: Effect[])` method walks the array in order and dispatches each:
+- `write-inflight` → `this.streamingDocument.set(e.path, e.value)`
+- `clear-inflight` → sets all three `inflight.*` paths to their empty state (`""` for strings, `"[]"` for tools)
+- `send-frame` → encodes `e.msg` via `encodeCodeInput(e.msg, this.tugSessionId)` and writes to CODE_INPUT through `this.conn.send` (or whatever low-level send surface the protocol module exposes — Step 3 decides whether to extract a `encodeCodeInputPayload` inner helper or slice the header off the existing `encodeCodeInput` return value)
+- `append-transcript` → pushes `e.entry` onto `this._transcript`; at the end of `processEffects()` (after all effects in the batch are applied), the wrapper calls `notifyListeners()` once.
+
+**Ordering:** effects within one `reduce()` call are processed in array order, and `notifyListeners()` fires once at the end — not per effect. This makes the queue-collapse behavior from [S03] observable as a single notification with a final `submitting` phase, rather than as a flicker through intermediate phases.
 
 ---
 
@@ -564,19 +645,21 @@ export function loadGoldenProbe(
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/lib/code-session-store.ts` | Public `CodeSessionStore` class, options, re-exports of snapshot + TurnEntry types |
-| `tugdeck/src/lib/code-session-store/reducer.ts` | Pure reducer function `reduce(state, event) => state` + state shape |
+| `tugdeck/src/lib/code-session-store.ts` | Public `CodeSessionStore` class, owns `FeedStore` + `streamingDocument` + `_transcript` + `onClose` unsubscribe; re-exports of snapshot + TurnEntry types |
+| `tugdeck/src/lib/code-session-store/reducer.ts` | Pure reducer function `reduce(state, event) => { state, effects }` + `CodeSessionState` shape + initial-state factory |
 | `tugdeck/src/lib/code-session-store/events.ts` | Discriminated union of decoded events the reducer accepts |
+| `tugdeck/src/lib/code-session-store/effects.ts` | `Effect` discriminated union (Spec S07) + type guards + `processEffects` helper (invoked by the class wrapper) |
 | `tugdeck/src/lib/code-session-store/types.ts` | `CodeSessionSnapshot`, `CodeSessionPhase`, `TurnEntry`, `ToolCallState`, `ControlRequestForward` (re-export) |
-| `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` | `loadGoldenProbe` + placeholder substitution helpers (test-only) |
-| `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` | In-memory `FeedStore` double for reducer integration tests (test-only) |
-| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.round-trip.test.ts` | Basic round-trip + delta accumulation exit-criteria tests |
+| `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` | `loadGoldenProbe`, `FIXTURE_IDS` constants, field-aware placeholder substitution (test-only) |
+| `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` | `MockTugConnection` (records outbound frames with decoded JSON view) + `MockFeedStore` double (test-only) |
+| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.scaffold.test.ts` | Step 1 scaffold sanity: construct a store, call `getSnapshot`, assert initial shape |
+| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.round-trip.test.ts` | Basic round-trip exit-criteria test |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.deltas.test.ts` | Streaming delta accumulation details |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.tools.test.ts` | Tool lifecycle + concurrent tool tests |
-| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-forward.test.ts` | Permission approval / deny + AskUserQuestion tests |
+| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-forward.test.ts` | Permission approval (synthetic) / deny (`test-11`) + AskUserQuestion (`test-35`) tests |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.interrupt.test.ts` | Interrupt + queue-clearing tests |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` | Queue flush on success |
-| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.errored.test.ts` | Errored triggers + recovery tests |
+| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.errored.test.ts` | Errored triggers (SESSION_STATE, transport close) + recovery tests |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.filter.test.ts` | Filter correctness across multi-instance |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.dispose.test.ts` | Dispose teardown + no-react-imports negative check |
 
@@ -590,13 +673,16 @@ export function loadGoldenProbe(
 | `CodeSessionPhase` | type | `types.ts` | Phase enum |
 | `TurnEntry` | interface | `types.ts` | Immutable transcript entry |
 | `ToolCallState` | interface | `types.ts` | Per-call state |
-| `CodeSessionState` | interface | `reducer.ts` | Internal mutable state carried through reducer |
+| `CodeSessionState` | interface | `reducer.ts` | Reducer-internal state — does NOT include transcript or PropertyStore |
 | `CodeSessionEvent` | type (union) | `events.ts` | Discriminated union of decoded events |
-| `reduce` | function | `reducer.ts` | Pure `(state, event) => state` |
-| `loadGoldenProbe` | function | `testing/golden-catalog.ts` | Test-only |
-| `MockFeedStore` | class | `testing/mock-feed-store.ts` | Test-only double |
+| `Effect` | type (union) | `effects.ts` | Per Spec S07 — `write-inflight` / `clear-inflight` / `send-frame` / `append-transcript` |
+| `reduce` | function | `reducer.ts` | Pure `(state, event) => { state, effects }` |
+| `processEffects` | function | `effects.ts` or inlined on class | Walks `effects[]` in order; dispatches writes to `streamingDocument` / `conn` / `_transcript` |
+| `loadGoldenProbe` | function | `testing/golden-catalog.ts` | Test-only; field-aware substitution |
+| `FIXTURE_IDS` | const | `testing/golden-catalog.ts` | Test-only identity constants |
+| `MockFeedStore` / `MockTugConnection` | class | `testing/mock-feed-store.ts` | Test-only doubles; `MockTugConnection` decodes outbound frames for assertions |
 | `codeSessionStore` re-export | barrel | `tugdeck/src/lib/index.ts` | Add `CodeSessionStore`, `CodeSessionSnapshot`, `TurnEntry` |
-| `TugConnection.onClose` | method (may already exist) | `tugdeck/src/lib/connection.ts` | Add narrow surface if missing; Step 8 |
+| `TugConnection.onClose` | existing method | `tugdeck/src/connection.ts:297` | **Already exists** — `onClose(callback: () => void): () => void`. Store subscribes at construction, unsubscribes in `dispose()`. No connection-module changes. |
 
 ---
 
@@ -632,25 +718,28 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): scaffold code-session-store module + public types`
 
-**References:** [D03] three-identifier model, [D04] transcript + streaming, [D09] metadata store independent, Spec S01, Spec S02, (#symbol-inventory, #turn-state-walkthrough)
+**References:** [D03] three-identifier model, [D04] transcript + streaming, [D09] metadata store independent, [D11] effect-list reducer, Spec S01, Spec S02, Spec S07, (#symbol-inventory, #turn-state-walkthrough, #reducer-split)
 
 **Artifacts:**
-- `tugdeck/src/lib/code-session-store.ts` (skeleton class, throws on every method)
-- `tugdeck/src/lib/code-session-store/types.ts` (`CodeSessionSnapshot`, `CodeSessionPhase`, `TurnEntry`, `ToolCallState`, `ControlRequestForward`)
-- `tugdeck/src/lib/code-session-store/events.ts` (empty union placeholder)
-- `tugdeck/src/lib/code-session-store/reducer.ts` (initial `CodeSessionState`, `createInitialState(tugSessionId, displayLabel)`, identity `reduce` stub)
+- `tugdeck/src/lib/code-session-store.ts` — skeleton class; constructor allocates `streamingDocument: PropertyStore`, initializes `_transcript: TurnEntry[] = []`, throws `"not implemented"` on every action method
+- `tugdeck/src/lib/code-session-store/types.ts` — `CodeSessionSnapshot`, `CodeSessionPhase`, `TurnEntry`, `ToolCallState`, `ControlRequestForward` re-export
+- `tugdeck/src/lib/code-session-store/events.ts` — empty `CodeSessionEvent` union placeholder
+- `tugdeck/src/lib/code-session-store/effects.ts` — `Effect` union per Spec S07 + four type guards; `processEffects(effects, ctx)` stub
+- `tugdeck/src/lib/code-session-store/reducer.ts` — `CodeSessionState` interface (**without** transcript), `createInitialState(tugSessionId, displayLabel)`, identity `reduce` stub returning `{ state, effects: [] }`
 - `tugdeck/src/lib/index.ts` — add barrel re-exports for `CodeSessionStore`, `CodeSessionSnapshot`, `TurnEntry`
 
 **Tasks:**
-- [ ] Declare the class, constructor, and all public methods (throwing `"not implemented"`).
+- [ ] Declare the class, constructor, and all public methods (throwing `"not implemented"` except for `subscribe`/`getSnapshot`/`dispose`).
 - [ ] Define all types in `types.ts` exactly per Spec S02.
-- [ ] Define `CodeSessionState` shape in `reducer.ts` including `phase`, `scratch buffers`, `toolCallMap: Map<string, ToolCallState>`, `queuedSends: Array<SendArgs>`, `prevPhase: CodeSessionPhase | null`, `lastError`, `lastCostUsd`, `claudeSessionId`, `transcript: TurnEntry[]`, `activeMsgId`, `pendingApproval`, `pendingQuestion`.
-- [ ] Implement `createInitialState(tugSessionId, displayLabel)`.
-- [ ] Implement `CodeSessionStore.subscribe` and `getSnapshot` against the initial state (no reducer yet).
-- [ ] Wire up the constructor to create an internal `PropertyStore` exposed as `readonly streamingDocument` and initialize three empty paths.
+- [ ] Define `CodeSessionState` shape in `reducer.ts`: `phase`, `activeMsgId`, `scratch: Map<string, { assistant: string; thinking: string }>`, `toolCallMap: Map<string, ToolCallState>`, `pendingApproval`, `pendingQuestion`, `prevPhase: CodeSessionPhase | null`, `queuedSends: Array<{ text: string; atoms: AtomSegment[] }>`, `lastError`, `lastCostUsd`, `claudeSessionId`. **Do NOT include `transcript` — that lives on the class wrapper per [D04].**
+- [ ] Implement `createInitialState(tugSessionId, displayLabel)` and a trivial `reduce(state, event) => { state, effects: [] }` that returns state unchanged.
+- [ ] Define `Effect` union in `effects.ts` per Spec S07; export type guards.
+- [ ] Implement `CodeSessionStore.subscribe` and `getSnapshot` against the initial state — `getSnapshot` merges reducer state + `_transcript` + `streamingPaths` constants.
+- [ ] Wire up the constructor to create an internal `PropertyStore` exposed as `readonly streamingDocument` with three empty paths.
+- [ ] `dispose()` clears listeners and `_transcript` (no frame writes, no close_session).
 
 **Tests:**
-- [ ] `code-session-store.scaffold.test.ts`: construct a store with a `MockTugConnection` (simplest possible double); assert `getSnapshot()` returns the initial snapshot shape with `phase === "idle"`, `transcript === []`, `streamingPaths` populated.
+- [ ] `code-session-store.scaffold.test.ts`: construct a store with a `MockTugConnection`; assert `getSnapshot()` returns the initial snapshot shape with `phase === "idle"`, `transcript.length === 0`, `streamingPaths.assistant === "inflight.assistant"`, `tugSessionId === FIXTURE_IDS.TUG_SESSION_ID`, `lastError === null`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck` (or `tsc --noEmit`)
@@ -658,7 +747,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 ---
 
-#### Step 2: Golden fixture loader + mock FeedStore {#step-2}
+#### Step 2: Golden fixture loader + mock FeedStore + outbound decoder {#step-2}
 
 **Depends on:** #step-1
 
@@ -667,21 +756,26 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 **References:** [D07] Vitest reads in-place, Spec S06, (#r02-fixture-path-coupling)
 
 **Artifacts:**
-- `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` — `loadGoldenProbe(version, probeName)`, placeholder substitution, typed parse
-- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` — in-memory `MockFeedStore` + `MockTugConnection` that together can replay parsed events to a subscriber
+- `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts` — `loadGoldenProbe(version, probeName)`, `FIXTURE_IDS`, field-aware placeholder substitution, typed parse
+- `tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts` — `MockFeedStore` (4-arg constructor mirroring the real `FeedStore`), `MockTugConnection` with an outbound frame recorder that **decodes** CODE_INPUT payloads back to structured JSON for assertions, and an `onClose()`-triggering helper for Step 8's transport-close test
 - `tugdeck/src/lib/code-session-store/__tests__/golden-catalog.test.ts`
+- `tugdeck/src/lib/code-session-store/__tests__/mock-feed-store.test.ts`
 
 **Tasks:**
 - [ ] Implement `FIXTURE_ROOT_RELATIVE` as a top-of-file constant and resolve paths via `__dirname` + `path.resolve`.
-- [ ] Implement placeholder substitution with deterministic per-test values (not randomized): `{{uuid}}` → `"11111111-2222-3333-4444-555555555555"` (or a counter), `{{iso}}` → `"2026-01-01T00:00:00Z"`, numeric placeholders → `0` / `0.0`, `{{text:len=N}}` → a repeated-character string of length N. Keep the substitution exported so tests can override if they care.
+- [ ] Implement **field-aware placeholder substitution** per Spec S06: walk each parsed JSON event, look at key names, substitute `{{uuid}}` based on the parent field name (`session_id`, `tug_session_id`, `msg_id`, `tool_use_id`, `request_id`), substitute `{{cwd}}` with `FIXTURE_IDS.CWD` and preserve path suffixes, substitute `{{f64}}`/`{{i64}}` with numeric literals, substitute `{{text:len=N}}` with `"x"` repeated N times.
+- [ ] Export `FIXTURE_IDS` constants so tests can assert against exact IDs.
 - [ ] Throw a readable `Error` on missing fixtures including the resolved absolute path.
-- [ ] `MockFeedStore` implements the same subscribe/filter interface as the real `FeedStore` — accepts the 4-argument constructor signature and exposes a `replay(frames)` method used by tests.
-- [ ] `MockTugConnection` exposes a spy on `send()` so tests can assert what frames were written to which feed ids.
+- [ ] `MockFeedStore` implements the same subscribe/filter interface as the real `FeedStore` — accepts the 4-argument constructor signature (`conn`, `feedIds`, `decode?`, `filter?`) and exposes a `replay(frames: DecodedEvent[])` method used by tests.
+- [ ] `MockTugConnection` exposes `recordedFrames: Array<{ feedId: number; decoded: unknown }>` — every `conn.send(feedId, payload)` call decodes the payload back to structured JSON (using a symmetric inverse of `encodeCodeInput`; if the protocol module doesn't expose one, add `decodeCodeInputPayload(bytes): InboundMessage` to `protocol.ts` as part of this step) and appends. Tests read from `recordedFrames` to assert outbound message shapes.
+- [ ] `MockTugConnection.onClose(cb)` and `MockTugConnection.triggerClose()` match the real `TugConnection` surface so Step 8's transport-close test can fire it.
 
 **Tests:**
-- [ ] `golden-catalog.test.ts`: load `v2.1.105/test-01-round-trip.jsonl`, assert the parsed events include at least one `assistant_text` event with the expected structure.
-- [ ] `golden-catalog.test.ts`: load a non-existent fixture, assert the error message includes the resolved path and the word "fixture".
+- [ ] `golden-catalog.test.ts`: load `v2.1.105/test-01-basic-round-trip.jsonl`, assert the parsed events include a `session_init` with `session_id === FIXTURE_IDS.CLAUDE_SESSION_ID` AND `tug_session_id === FIXTURE_IDS.TUG_SESSION_ID` (field-aware substitution distinguishes them).
+- [ ] `golden-catalog.test.ts`: load the same fixture, assert an `assistant_text` event has `msg_id === FIXTURE_IDS.MSG_ID` (distinct from `tug_session_id`).
+- [ ] `golden-catalog.test.ts`: load `v2.1.105/does-not-exist.jsonl`, assert the error message includes the resolved absolute path and the word "fixture".
 - [ ] `mock-feed-store.test.ts`: subscribe a listener, replay three synthetic events, assert the listener saw them in order and the filter was applied.
+- [ ] `mock-feed-store.test.ts`: call `conn.send(FeedId.CODE_INPUT, encodeCodeInput({ type: "user_message", text: "hi", attachments: [] }, FIXTURE_IDS.TUG_SESSION_ID))`; assert `recordedFrames[0].decoded` equals `{ type: "user_message", text: "hi", attachments: [], tug_session_id: FIXTURE_IDS.TUG_SESSION_ID }` (or equivalent shape per `decodeCodeInputPayload`).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
@@ -695,23 +789,22 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): code-session-store reducer — basic round-trip`
 
-**References:** [D01] store owns FeedStore, [D02] card owns lifecycle, Spec S01, Spec S03, Spec S05, (#turn-state-walkthrough)
+**References:** [D01] store owns FeedStore, [D02] card owns lifecycle, [D11] effect-list reducer, Spec S01, Spec S03, Spec S05, Spec S07, (#turn-state-walkthrough)
 
 **Artifacts:**
-- `code-session-store/events.ts` — populate event union for `session_init`, `turn_complete`, `send` (internal), `errored_state` (placeholder for Step 8), `transport_close` (placeholder for Step 8)
-- `code-session-store/reducer.ts` — implement `idle → submitting → awaiting_first_token → streaming → complete → idle` path
-- `code-session-store.ts` — wire up the real `FeedStore` construction with the `tug_session_id` filter; wire up `send()` to dispatch via `encodeCodeInput` through `conn.send`; wire up subscription loop that decodes CODE_OUTPUT events and feeds them to `reduce`
-- `TurnEntry` commit: post-reduce side-effect handler appends to `transcript` on phase transitions
+- `code-session-store/events.ts` — populate event union for `session_init`, `assistant_text`, `turn_complete`, `send` (internal action), `errored_state` (placeholder for Step 8), `transport_close` (placeholder for Step 8), `system_metadata` (explicit-drop variant)
+- `code-session-store/reducer.ts` — implement `idle → submitting → awaiting_first_token → streaming → complete → idle` path with effect-list return
+- `code-session-store.ts` — wire up the real `FeedStore` construction with the `tug_session_id` filter (subscribing to `[CODE_OUTPUT, SESSION_STATE]`); wire up `send()` to inject an internal `send` event through the reducer; wire up `processEffects(effects)` that handles `send-frame` by calling `conn.send(FeedId.CODE_INPUT, encodeCodeInputPayload(msg, tugSessionId))`; wire up `AppendTranscript` handling that pushes to `_transcript` and notifies subscribers once per dispatch
 
 **Tasks:**
-- [ ] Implement `idle → submitting` on `send()`: write `user_message` frame, set `activeMsgId = null` (until we see the first partial).
-- [ ] Implement `submitting → awaiting_first_token → streaming` on first `assistant_text` partial (new `msg_id` detection).
-- [ ] Implement minimal `streaming → complete → idle` on `turn_complete(success)` with an empty `TurnEntry` commit.
-- [ ] Wire up the `FeedStore` subscription: on every frame, decode the JSON payload, dispatch to the reducer, and write any side-effect signals to `streamingDocument` or `conn.send`.
-- [ ] Implement `getSnapshot` to return a new frozen object that reflects current state.
+- [ ] Implement `idle → submitting` in the reducer on `send` action: return `{ state: { ...state, phase: "submitting" }, effects: [{ kind: "send-frame", msg: { type: "user_message", text, attachments } }] }`.
+- [ ] Implement `submitting → awaiting_first_token → streaming` on first `assistant_text` partial (new `msg_id` detection — the incoming `msg_id` is NOT the store's `tugSessionId`; field-aware substitution makes them distinct).
+- [ ] Implement minimal `streaming → complete → idle` on `turn_complete(success)` — return an `AppendTranscript` effect building a `TurnEntry` from current scratch state and a `ClearInflight` effect.
+- [ ] `CodeSessionStore` constructor: call `FeedStore` with filter `(_, decoded) => (decoded as any).tug_session_id === this.tugSessionId`; register an `onFrame`-style handler that decodes bytes to JSON, dispatches to `reduce`, and calls `processEffects` on the returned effect list; notify subscribers once after effects are processed.
+- [ ] Implement `getSnapshot()` to return a new frozen object merging reducer state with `_transcript` and the `streamingPaths` constants.
 
 **Tests:**
-- [ ] `code-session-store.round-trip.test.ts`: load `v2.1.105/test-01-round-trip.jsonl`, construct store with `MockTugConnection` + `tugSessionId: "11111111-..."`, call `store.send("hello", [], ">")`, assert a `user_message` frame was written to `MockTugConnection` on CODE_INPUT with the correct `tug_session_id`. Replay the fixture through `MockFeedStore`. Assert the phase sequence via snapshot polling between events. Assert `transcript.length === 1` at the end.
+- [ ] `code-session-store.round-trip.test.ts`: load `v2.1.105/test-01-basic-round-trip.jsonl`, construct a store with `MockTugConnection` + `tugSessionId: FIXTURE_IDS.TUG_SESSION_ID`. Call `store.send("hello", [])`. Assert `MockTugConnection.recordedFrames` contains a `{ feedId: FeedId.CODE_INPUT, decoded: { type: "user_message", text: "hello", attachments: [], tug_session_id: FIXTURE_IDS.TUG_SESSION_ID } }` entry — the decoded view is provided by Step 2's mock, so no manual ArrayBuffer decoding in the test. Replay the fixture through `MockFeedStore`. Assert the phase sequence via snapshot notifications. Assert `transcript.length === 1` at the end and `phase === "idle"`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
@@ -728,20 +821,20 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 **References:** [D04] transcript + streaming, Spec S05, (#turn-state-walkthrough)
 
 **Artifacts:**
-- `reducer.ts` — implement scratch-buffer accumulation keyed by `msg_id` for `assistant_text` and `thinking_text` partials; handle `is_partial: false` (authoritative text replacement)
-- `code-session-store.ts` — post-reduce handler writes `inflight.assistant` and `inflight.thinking` via `streamingDocument.set`; on `turn_complete`, commits the buffers into the new `TurnEntry` and clears `inflight.*`
+- `reducer.ts` — implement scratch-buffer accumulation keyed by `msg_id` for `assistant_text` and `thinking_text` partials; handle `is_partial: false` (authoritative text replacement); emit `WriteInflight` effects carrying the new buffer
+- `events.ts` — add `thinking_text` event variant
+- `code-session-store.ts` — `processEffects` handles `write-inflight` by calling `streamingDocument.set(path, value)`; `clear-inflight` by setting all three `inflight.*` paths to their empty state
 
 **Tasks:**
 - [ ] Track `scratch: Map<msg_id, { assistant: string; thinking: string }>` in reducer state.
-- [ ] On `assistant_text` partial with `is_partial: true`, append `text` to the matching scratch entry.
-- [ ] On `assistant_text` partial with `is_partial: false`, replace with the authoritative `text` field.
-- [ ] Same for `thinking_text`.
-- [ ] On `turn_complete(success)`, build the `TurnEntry` from the scratch entry for `activeMsgId` and append.
-- [ ] Clear `inflight.*` paths via `streamingDocument.set("inflight.assistant", "")` etc. after commit.
+- [ ] On `assistant_text` partial with `is_partial: true`, append `text` to the matching scratch entry and return `effects: [{ kind: "write-inflight", path: "inflight.assistant", value: newBuffer }]`.
+- [ ] On `assistant_text` partial with `is_partial: false`, replace the scratch buffer with the authoritative `text` field and emit the same effect with the authoritative value.
+- [ ] Same pattern for `thinking_text`.
+- [ ] On `turn_complete(success)`, build the `TurnEntry` from the scratch entry for `activeMsgId`, return `effects: [{ kind: "append-transcript", entry }, { kind: "clear-inflight" }]`.
 
 **Tests:**
-- [ ] `code-session-store.deltas.test.ts`: replay `v2.1.105/test-02-streaming-deltas.jsonl`, assert `streamingDocument.get("inflight.assistant")` grows monotonically in arrival order, then equals the `complete` event's `text` byte-for-byte. Assert `TurnEntry.assistant` in the final transcript matches.
-- [ ] `code-session-store.deltas.test.ts`: same fixture, assert `inflight.assistant === ""` after `turn_complete`.
+- [ ] `code-session-store.deltas.test.ts`: replay `v2.1.105/test-02-longer-response-streaming.jsonl`, assert `streamingDocument.get("inflight.assistant")` grows monotonically in arrival order, then equals the `complete` event's `text` byte-for-byte (which is a `"x"`-repeated string of the length declared in the fixture's `{{text:len=N}}` placeholder). Assert `TurnEntry.assistant` in the final transcript matches.
+- [ ] `code-session-store.deltas.test.ts`: same fixture, assert `inflight.assistant === ""` after `turn_complete` (ClearInflight effect).
 - [ ] `code-session-store.deltas.test.ts` (synthetic): build events for two `thinking_text` deltas and one final, assert `inflight.thinking` accumulates correctly.
 
 **Checkpoint:**
@@ -756,25 +849,24 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): code-session-store tool call tracking`
 
-**References:** [D04] transcript + streaming, Spec S02 (ToolCallState), Spec S03, [Q02] resolve tool-map-vs-array, Risk R01, (#r01-tool-call-interleave)
+**References:** [D04] transcript + streaming, [D11] effect-list reducer, Spec S02 (ToolCallState), Spec S03, [Q02] decided, Risk R01, (#r01-tool-call-interleave)
 
 **Artifacts:**
-- `reducer.ts` — implement `Map<tool_use_id, ToolCallState>` tracking; transitions `streaming → tool_work` and `tool_work → streaming` based on map-all-done predicate
-- Resolve [Q02] inline: commit as `ReadonlyArray<ToolCallState>` on `TurnEntry` in insertion order; the in-flight Map is converted on commit.
-- `code-session-store.ts` — post-reduce handler serializes the in-flight tool Map to `inflight.tools` on every update
+- `reducer.ts` — implement `Map<tool_use_id, ToolCallState>` tracking; transitions `streaming → tool_work` and `tool_work → streaming` based on map-all-done predicate; emit `WriteInflight { path: "inflight.tools", value: JSON.stringify(Array.from(map.values())) }` effects on every tool event
+- `events.ts` — add `tool_use`, `tool_result`, `tool_use_structured` event variants
+- `code-session-store.ts` — no wrapper-side code changes (the existing `write-inflight` effect handler covers `inflight.tools`)
 
 **Tasks:**
 - [ ] Add `toolCallMap: Map<string, ToolCallState>` to `CodeSessionState`.
 - [ ] On `tool_use` partial/complete, upsert the map entry with `status: "pending"`; transition to `tool_work`.
 - [ ] On `tool_result` / `tool_use_structured` matching `tool_use_id`, update the map entry to `status: "done"` with `result` / `structuredResult` populated.
 - [ ] After each tool event, if every map entry is `done`, transition back to `streaming`.
-- [ ] On `turn_complete`, commit `Array.from(toolCallMap.values())` into `TurnEntry.toolCalls` (preserving insertion order).
-- [ ] Write serialized map to `inflight.tools` via `JSON.stringify(Array.from(...))` on every change.
-- [ ] Resolve [Q02]: array, not Map. Document the decision inline in the reducer.
+- [ ] On `turn_complete`, commit `Array.from(toolCallMap.values())` into `TurnEntry.toolCalls` (preserving insertion order per [Q02] resolution in Spec S02).
+- [ ] Every tool event emits `WriteInflight { path: "inflight.tools", value: JSON.stringify(Array.from(map.values())) }`.
 
 **Tests:**
-- [ ] `code-session-store.tools.test.ts`: replay `v2.1.105/test-05-tool-use.jsonl`, assert `phase === "tool_work"` after first `tool_use` partial, `phase === "streaming"` after matching `tool_result`, `inflight.tools` contains the tool name.
-- [ ] `code-session-store.tools.test.ts`: replay `v2.1.105/test-21-concurrent-tools.jsonl`, assert two distinct `tool_use_id`s appear in `inflight.tools` simultaneously, assert `phase === "tool_work"` until both resolve.
+- [ ] `code-session-store.tools.test.ts`: replay `v2.1.105/test-05-tool-use-read.jsonl`, assert `phase === "tool_work"` after first `tool_use` partial, `phase === "streaming"` after matching `tool_result`, `inflight.tools` contains a serialized entry with the fixture's tool name (Read).
+- [ ] `code-session-store.tools.test.ts`: replay `v2.1.105/test-07-multiple-tool-calls.jsonl` — the real multi-tool fixture. Assert multiple distinct `tool_use_id`s appear in `inflight.tools` simultaneously while any are still pending, and assert `phase === "tool_work"` until all resolve. (Count expected tool-use ids by inspecting the fixture at Step 5 start.)
 - [ ] `code-session-store.tools.test.ts`: assert `TurnEntry.toolCalls` on the committed turn is an array in insertion order.
 
 **Checkpoint:**
@@ -789,24 +881,24 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): code-session-store permission + question control forward`
 
-**References:** [D06] split respond actions, Spec S01, Spec S03, (#turn-state-walkthrough)
+**References:** [D06] split respond actions, [D11] effect-list reducer, Spec S01, Spec S03, (#turn-state-walkthrough)
 
 **Artifacts:**
-- `reducer.ts` — `streaming / tool_work → awaiting_approval` on `control_request_forward`, dispatching on `is_question`; `awaiting_approval → prevPhase` on `respondApproval` / `respondQuestion` actions
-- `code-session-store.ts` — implement `respondApproval` and `respondQuestion` public methods with outbound frame dispatch via `encodeCodeInput`
+- `reducer.ts` — `streaming / tool_work → awaiting_approval` on `control_request_forward`, dispatching on `is_question`; `awaiting_approval → prevPhase` on `respondApproval` / `respondQuestion` actions; emit `SendFrame` effects for the outbound response
+- `events.ts` — add `control_request_forward` event variant and `respondApproval` / `respondQuestion` internal action variants
+- `code-session-store.ts` — implement `respondApproval` and `respondQuestion` public methods that synthesize the internal action events and dispatch through `reduce`
 
 **Tasks:**
 - [ ] Add `prevPhase: CodeSessionPhase | null` to state; stash when entering `awaiting_approval`; restore on respond.
 - [ ] On `control_request_forward` with `is_question: false`, populate `pendingApproval` with the decoded event.
 - [ ] On `control_request_forward` with `is_question: true`, populate `pendingQuestion`.
-- [ ] `respondApproval(requestId, { decision, updatedInput?, message? })` writes `{ type: "tool_approval", request_id: requestId, decision, updatedInput, message }` via `encodeCodeInput` and clears `pendingApproval`.
-- [ ] `respondQuestion(requestId, { answers })` writes `{ type: "question_answer", request_id: requestId, answers }` and clears `pendingQuestion`.
-- [ ] Both transition back to `prevPhase`.
+- [ ] `respondApproval(requestId, { decision, updatedInput?, message? })` injects an internal action; reducer returns `effects: [{ kind: "send-frame", msg: { type: "tool_approval", request_id: requestId, decision, updatedInput, message } }]` and clears `pendingApproval`, restoring `prevPhase`.
+- [ ] `respondQuestion(requestId, { answers })` injects an internal action; reducer returns `effects: [{ kind: "send-frame", msg: { type: "question_answer", request_id: requestId, answers } }]` and clears `pendingQuestion`, restoring `prevPhase`.
 
 **Tests:**
-- [ ] `code-session-store.control-forward.test.ts`: replay `v2.1.105/test-08-permission.jsonl`, assert `phase === "awaiting_approval"` after the control event, assert `pendingApproval` is populated. Call `respondApproval(requestId, { decision: "allow" })`, assert a `tool_approval` frame was written to CODE_INPUT with correct `request_id` and `decision`.
-- [ ] Same with `v2.1.105/test-11-tool-deny.jsonl` and `decision: "deny"`.
-- [ ] Replay `v2.1.105/test-35-ask-user-question.jsonl`, assert `pendingQuestion` populated; `respondQuestion(requestId, { answers })` writes a `question_answer` frame.
+- [ ] `code-session-store.control-forward.test.ts` (**synthetic** approval — v2.1.105 has no permission-allow golden fixture; `test-08` is a tool-error probe, `test-09` is bash-auto-approved, neither is a user-gated allow flow): replay a hand-built `control_request_forward { is_question: false, request_id: FIXTURE_IDS.REQUEST_ID, tool_name: "Bash", input: { command: "ls" } }` event while `phase === "streaming"`. Assert `phase === "awaiting_approval"`, assert `pendingApproval` is populated. Call `respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "allow" })`. Assert `MockTugConnection.recordedFrames` contains a `{ feedId: FeedId.CODE_INPUT, decoded: { type: "tool_approval", request_id: FIXTURE_IDS.REQUEST_ID, decision: "allow", ... } }` entry. Assert `pendingApproval === null` and `phase === "streaming"`.
+- [ ] `code-session-store.control-forward.test.ts`: replay `v2.1.105/test-11-permission-deny-roundtrip.jsonl` through the normal subscription path; when the `control_request_forward` event lands, call `respondApproval(requestId, { decision: "deny" })` and assert the resulting `tool_approval` frame carries `decision: "deny"`. Then replay the remainder of the fixture (which includes the denied tool's downstream events) and assert the phase returns to the end of the turn correctly.
+- [ ] `code-session-store.control-forward.test.ts`: replay `v2.1.105/test-35-askuserquestion-flow.jsonl`, assert `pendingQuestion` populated when `control_request_forward { is_question: true }` lands; `respondQuestion(requestId, { answers })` writes a `question_answer` frame with the correct shape.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
@@ -820,23 +912,24 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 
 **Commit:** `feat(tugdeck): code-session-store interrupt + queue behavior`
 
-**References:** [D05] interrupt clears queue, Spec S01, Spec S03, (#d05-interrupt-clears-queue)
+**References:** [D05] interrupt clears queue, [D11] effect-list reducer, Spec S01, Spec S03, (#d05-interrupt-clears-queue)
 
 **Artifacts:**
-- `reducer.ts` — queued sends array, enqueue on non-idle `send`, flush one on `turn_complete(success) → idle`, clear on `turn_complete(error) → idle`
-- `code-session-store.ts` — implement `interrupt()` public method; write `{ type: "interrupt" }` frame; rely on `turn_complete(error)` to drive the transition
+- `reducer.ts` — queued sends array, enqueue on non-idle `send`, flush one on `turn_complete(success) → idle` (single-tick collapse per S03), clear on `turn_complete(error) → idle`
+- `events.ts` — add internal `interrupt` action variant
+- `code-session-store.ts` — implement `interrupt()` public method that injects the internal action
 
 **Tasks:**
-- [ ] On `send()` with `phase !== "idle"`, enqueue `{ text, atoms, route }` to `queuedSends`.
-- [ ] On `turn_complete(success)`, shift one entry off `queuedSends` and re-emit as an internal `send` event.
-- [ ] `interrupt()` writes `{ type: "interrupt" }` frame via `encodeCodeInput` and (synchronously in the reducer) clears `queuedSends`.
-- [ ] On `turn_complete(error)`, commit `TurnEntry(result: "interrupted")` with preserved text, clear `inflight.*`. `queuedSends` is already empty from `interrupt()`.
-- [ ] Update the transcript commit handler to build `TurnEntry.result` based on the `turn_complete` variant.
+- [ ] On `send` action with `phase !== "idle"`, enqueue `{ text, atoms }` onto `queuedSends` and return `effects: []` (no frame write yet).
+- [ ] On `turn_complete(success)`: if `queuedSends` is non-empty, shift one entry off, transition straight through `idle` into `submitting`, and emit both `AppendTranscript { entry }`, `ClearInflight`, AND `SendFrame { msg: user_message(shifted) }` in a single effect list. The wrapper notifies subscribers **once** — observers see a final phase of `submitting`, not `idle`. (Per S03.)
+- [ ] `interrupt()` injects an internal action; reducer returns `effects: [{ kind: "send-frame", msg: { type: "interrupt" } }]` and clears `queuedSends` in the returned state.
+- [ ] On `turn_complete(error)`, commit `TurnEntry(result: "interrupted")` with preserved text, emit `AppendTranscript` + `ClearInflight`. `queuedSends` is already empty from `interrupt()`.
+- [ ] Update the transcript commit logic to build `TurnEntry.result` based on the `turn_complete` variant.
 
 **Tests:**
-- [ ] `code-session-store.interrupt.test.ts`: replay `v2.1.105/test-06-interrupt.jsonl`, call `store.interrupt()` while `phase === "streaming"`, assert the `interrupt` frame was written, replay `turn_complete(error)`, assert `phase === "idle"`, assert `transcript[0].result === "interrupted"` and `transcript[0].assistant` contains the preserved text.
-- [ ] `code-session-store.interrupt.test.ts` (synthetic): three `store.send` calls during `streaming`, assert `queuedSends === 3`. Call `store.interrupt()`. Replay `turn_complete(error)`. Assert `queuedSends === 0` and that exactly two `user_message` frames were written to the mock connection (one original + zero from the queue — the interrupt frame is not a `user_message`).
-- [ ] `code-session-store.queue.test.ts`: three `store.send` calls during `streaming`, assert `queuedSends === 3`. Replay `turn_complete(success)`. Assert the store wrote one queued `user_message` frame and transitioned through `complete → idle → submitting`. Replay another `turn_complete(success)`, assert a second queued send fires, and so on until `queuedSends === 0`.
+- [ ] `code-session-store.interrupt.test.ts`: replay `v2.1.105/test-06-interrupt-mid-stream.jsonl`, call `store.interrupt()` while `phase === "streaming"`, assert `MockTugConnection.recordedFrames` contains a `{ decoded: { type: "interrupt", tug_session_id: FIXTURE_IDS.TUG_SESSION_ID } }` entry. Continue replaying the fixture (which includes the `turn_complete(error)` frame). Assert `phase === "idle"`, `transcript[0].result === "interrupted"`, `transcript[0].assistant` equals the final preserved text.
+- [ ] `code-session-store.interrupt.test.ts` (**synthetic queue-clear**): three `store.send` calls during `streaming`, assert `queuedSends === 3`. Call `store.interrupt()`. Replay a synthetic `turn_complete(error)`. Assert `queuedSends === 0` and that **exactly one** `user_message` frame was written to the mock connection (the original submit; the three queued sends were discarded and the `interrupt` frame is not a `user_message`). Total `recordedFrames` should be **two**: one `user_message` and one `interrupt`.
+- [ ] `code-session-store.queue.test.ts`: three `store.send` calls during `streaming`, assert `queuedSends === 3`. Replay `turn_complete(success)`. Assert the store wrote one queued `user_message` frame (total `user_message` frames so far: 2 — original + one flushed). Assert the snapshot's final phase is `submitting`, not `idle`, and that subscribers were notified exactly once during the collapse. Replay another `turn_complete(success)`, assert a second queued send fires, and so on until `queuedSends === 0`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
@@ -853,24 +946,22 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 **References:** [D08] errored vs interrupted distinct, Spec S03, Spec S04, (#s04-errored-triggers)
 
 **Artifacts:**
-- `reducer.ts` — handle `SESSION_STATE = errored`, `transportClose`, CONTROL errors; populate `lastError` with cause tag
-- `code-session-store.ts` — add SESSION_STATE subscription to the filtered FeedStore; add CONTROL subscription with `tug_session_id` match; subscribe to `TugConnection` close while non-idle; recovery: `lastError` clears on next `turn_complete(success)`
-- `tugdeck/src/lib/connection.ts` — add `onClose(listener)` method if not present (returns unsubscribe)
+- `reducer.ts` — handle `SESSION_STATE = errored` (already in the subscription from Step 3) and `transportClose` (new internal event); populate `lastError` with cause tag
+- `events.ts` — add `session_state` variant and `transport_close` internal event variant
+- `code-session-store.ts` — subscribe to `TugConnection.onClose` (already exists at `tugdeck/src/connection.ts:297` — no connection-module changes); on close, inject a `transport_close` event; handle `send()` from `errored` as a manual retry; clear `lastError` on next `turn_complete(success)`
 
 **Tasks:**
-- [ ] Extend the filtered FeedStore subscription to `[CODE_OUTPUT, SESSION_STATE]` (per [D09]; no SESSION_METADATA).
-- [ ] Add a separate CONTROL feed subscription (filter the same way — `tug_session_id` match on decoded payload) to catch `session_not_owned` / `session_unknown`.
-- [ ] Add a `TugConnection.onClose` subscription tracked with the store's non-idle-window lifetime (subscribe on `phase !== "idle"`, unsubscribe on return to idle).
-- [ ] Implement reducer transitions for all four triggers per Spec S04.
-- [ ] Implement `send()` from `errored`: transitions to `submitting` and writes the frame; `lastError` stays set.
-- [ ] On `turn_complete(success)` from `errored`'s recovery flow, clear `lastError`.
+- [ ] Confirm the filtered `FeedStore` from Step 3 already subscribes to `[CODE_OUTPUT, SESSION_STATE]` and delivers SESSION_STATE frames to the dispatcher.
+- [ ] Subscribe to `conn.onClose` unconditionally at construction (not just during non-idle windows — it's cheap), store the returned unsubscribe function, and call it in `dispose()`. The reducer itself decides whether the close matters: close events arriving while `phase === "idle"` are dropped; while non-idle, they route to `errored`.
+- [ ] Implement reducer transitions for the two triggers per Spec S04 (SESSION_STATE errored, transport_close). **CONTROL-error triggers (`session_not_owned`, `session_unknown`) are explicitly out of scope for T3.4.a** — they belong to a follow-on that wires a CONTROL subscription with per-card filtering.
+- [ ] Implement `send()` from `errored`: transitions to `submitting` and emits a `SendFrame` effect; `lastError` stays set until the next `turn_complete(success)`.
+- [ ] On `turn_complete(success)` while the incoming state had `lastError !== null`, clear `lastError` in the returned state alongside the normal transcript commit.
 
 **Tests:**
 - [ ] `code-session-store.errored.test.ts` (synthetic): inject a `SESSION_STATE { state: "errored", detail: "crash_budget_exhausted" }` during `streaming`, assert `phase === "errored"`, `lastError.cause === "session_state_errored"`, `lastError.message` contains `"crash_budget_exhausted"`, `transcript` unchanged.
-- [ ] `code-session-store.errored.test.ts` (synthetic): simulate `conn.triggerClose()` while `phase === "submitting"`, assert `phase === "errored"`, `lastError.cause === "transport_closed"`.
-- [ ] `code-session-store.errored.test.ts` (synthetic): inject CONTROL error with `detail: "session_not_owned"`, assert `phase === "errored"`, cause `"session_not_owned"`.
-- [ ] `code-session-store.errored.test.ts` (synthetic): inject CONTROL error `session_unknown`, assert `"session_unknown"` cause.
-- [ ] `code-session-store.errored.test.ts`: from `errored`, call `store.send("retry")`, assert `phase === "submitting"`, `lastError` still set. Replay `turn_complete(success)`, assert `lastError === null`.
+- [ ] `code-session-store.errored.test.ts`: call `conn.triggerClose()` while `phase === "submitting"`, assert `phase === "errored"`, `lastError.cause === "transport_closed"`.
+- [ ] `code-session-store.errored.test.ts`: call `conn.triggerClose()` while `phase === "idle"`, assert `phase === "idle"` (unchanged); transport close only routes to errored during active turns.
+- [ ] `code-session-store.errored.test.ts`: from `errored`, call `store.send("retry", [])`, assert `phase === "submitting"`, `lastError` still set. Replay a synthetic `turn_complete(success)`, assert `lastError === null` and `phase === "idle"`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
@@ -890,7 +981,7 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 - Verification tests that validate multi-instance isolation and dispose cleanup (no code changes beyond ensuring `dispose` is wired correctly)
 
 **Tasks:**
-- [ ] Audit `dispose()`: unsubscribe `FeedStore`, unsubscribe CONTROL subscription, unsubscribe `onClose` listener, clear listener list, clear `queuedSends`, clear `inflight.*` paths. Does **not** send `close_session`.
+- [ ] Audit `dispose()`: unsubscribe `FeedStore`, call the `onClose` unsubscribe from Step 8, clear subscriber list, clear `queuedSends`, clear `inflight.*` paths. Does **not** send `close_session` (card's responsibility).
 - [ ] Verify `MockFeedStore` + `MockTugConnection` support constructing two stores against one connection.
 
 **Tests:**
@@ -915,14 +1006,14 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 - One small test file asserting the store has no forbidden imports
 
 **Tasks:**
-- [ ] Write a test that uses Node's `fs` to read `code-session-store.ts` and its `reducer.ts` + `events.ts` + `types.ts` siblings and assert the file contents do not contain `from "react"`, `from 'react'`, `indexedDB`, `IDBDatabase`. (A test on the source text, not a runtime check.)
+- [ ] Write a test that uses Node's `fs` to read `code-session-store.ts` and its `reducer.ts`, `events.ts`, `effects.ts`, `types.ts` siblings and assert the file contents do not contain `from "react"`, `from 'react'`, `indexedDB`, `IDBDatabase`. (A test on the source text, not a runtime check. Excludes `testing/` helpers.)
 
 **Tests:**
 - [ ] `code-session-store.dispose.test.ts` (or a new `negative-imports.test.ts` — pick one): grep-style assertion.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/code-session-store/__tests__`
-- [ ] `cd tugdeck && rg 'from "react"' src/lib/code-session-store.ts src/lib/code-session-store/reducer.ts src/lib/code-session-store/events.ts src/lib/code-session-store/types.ts` exits with no matches
+- [ ] `cd tugdeck && rg 'from "react"' src/lib/code-session-store.ts src/lib/code-session-store/reducer.ts src/lib/code-session-store/events.ts src/lib/code-session-store/effects.ts src/lib/code-session-store/types.ts` exits with no matches
 
 ---
 
@@ -946,8 +1037,8 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck`
 - [ ] `cd tugdeck && bun test`
-- [ ] `rg 'from "react"' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/` — zero matches
-- [ ] `rg 'IDBDatabase|indexedDB' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/` — zero matches (excluding `testing/`)
+- [ ] `rg 'from "react"' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/reducer.ts tugdeck/src/lib/code-session-store/events.ts tugdeck/src/lib/code-session-store/effects.ts tugdeck/src/lib/code-session-store/types.ts` — zero matches
+- [ ] `rg 'IDBDatabase|indexedDB' tugdeck/src/lib/code-session-store.ts tugdeck/src/lib/code-session-store/reducer.ts tugdeck/src/lib/code-session-store/events.ts tugdeck/src/lib/code-session-store/effects.ts tugdeck/src/lib/code-session-store/types.ts` — zero matches (excluding `testing/`)
 - [ ] Manual spot: import `CodeSessionStore` from `tugdeck/src/lib` (the barrel) and call `new CodeSessionStore(...)` in a REPL/scratch file; verify types resolve cleanly.
 
 ---
@@ -968,17 +1059,19 @@ Every exit-criterion maps to a fixture replay test where the fixture exists, or 
 - [ ] `tide.md §T3.4.a` updated with a pointer to this plan and a ✓ status.
 
 **Acceptance tests:**
-- [ ] `code-session-store.round-trip.test.ts` passes against `test-01-round-trip.jsonl` and `test-02-streaming-deltas.jsonl`.
-- [ ] `code-session-store.tools.test.ts` passes against `test-05-tool-use.jsonl` and `test-21-concurrent-tools.jsonl`.
-- [ ] `code-session-store.control-forward.test.ts` passes against `test-08-permission.jsonl`, `test-11-tool-deny.jsonl`, `test-35-ask-user-question.jsonl`.
-- [ ] `code-session-store.interrupt.test.ts` passes against `test-06-interrupt.jsonl` and the synthetic queue-clear scenario.
-- [ ] `code-session-store.queue.test.ts` passes the multi-flush scenario.
-- [ ] `code-session-store.errored.test.ts` passes all four trigger scenarios + recovery.
+- [ ] `code-session-store.round-trip.test.ts` passes against `v2.1.105/test-01-basic-round-trip.jsonl`.
+- [ ] `code-session-store.deltas.test.ts` passes against `v2.1.105/test-02-longer-response-streaming.jsonl` + the synthetic thinking_text scenario.
+- [ ] `code-session-store.tools.test.ts` passes against `v2.1.105/test-05-tool-use-read.jsonl` and `v2.1.105/test-07-multiple-tool-calls.jsonl`.
+- [ ] `code-session-store.control-forward.test.ts` passes: synthetic permission-allow, `v2.1.105/test-11-permission-deny-roundtrip.jsonl`, `v2.1.105/test-35-askuserquestion-flow.jsonl`.
+- [ ] `code-session-store.interrupt.test.ts` passes against `v2.1.105/test-06-interrupt-mid-stream.jsonl` and the synthetic queue-clear scenario.
+- [ ] `code-session-store.queue.test.ts` passes the multi-flush scenario with single-tick collapse.
+- [ ] `code-session-store.errored.test.ts` passes both trigger scenarios (SESSION_STATE errored, transport close) + recovery.
 - [ ] `code-session-store.filter.test.ts` passes the multi-instance isolation scenario.
 - [ ] `code-session-store.dispose.test.ts` passes the teardown scenario and the negative-imports check.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] **CONTROL-error-driven `errored` transitions** — extend Spec S04 with `session_not_owned` / `session_unknown` CONTROL errors. Requires a per-card CONTROL subscription with `tug_session_id` filtering (`connection.onFrame(FeedId.CONTROL, handler)` or a matching `FeedStore` instance). Deferred from T3.4.a because a clean subscription/teardown pattern for the already-existing global CONTROL handler in `action-dispatch.ts` needs design work, and the two T3.4.a triggers (SESSION_STATE errored + transport close) cover the practical cases — an unauthorized session typically fails via one of those two paths first.
 - [ ] [P14](./tide.md#p14-claude-resume) — Claude `--resume` + tugbank persistence of `claude_session_id`. Unlocks transcript rehydration on reload per [Q01]. Schedules after T3.4.c.
 - [ ] [P15](./tide.md#p15-stream-json-version-gate) — version gate + divergence telemetry + version-adaptive reducer scaffold. Informed by the store's actual field dependencies, so must land after T3.4.a.
 - [ ] [P16](./tide.md#p16-session-command-continue) — `session_command: new/continue/fork` through the multi-session router. Unblocks multi-session-within-a-card and re-enables `test-13/17/20` fixtures. Parallelizable.
