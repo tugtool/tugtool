@@ -79,62 +79,19 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a twenty-tab card. Template `id` values
- * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
+ * `addCard("gallery-buttons")` creates a starter card with one tab from
+ * each of the first four `+` menu groups (Buttons, Text Input & Display,
+ * Selection, Overlays). The remaining component demos are still discoverable
+ * via the `+` type picker. Template `id` values are placeholders:
+ * `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
 export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
-  // ---- Buttons ----
-  { id: "template", componentId: "gallery-buttons",           title: "TugPushButton",        closable: true },
-  { id: "template", componentId: "gallery-default-button",    title: "TugDefaultButton",     closable: true },
-  { id: "template", componentId: "gallery-popup-button",      title: "TugPopupButton",       closable: true },
-  // ---- Text Input & Display ----
-  { id: "template", componentId: "gallery-input",             title: "TugInput",             closable: true },
-  { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
-  { id: "template", componentId: "gallery-textarea",          title: "TugTextarea",          closable: true },
-  { id: "template", componentId: "gallery-prompt-input",      title: "TugPromptInput",       closable: true },
-  { id: "template", componentId: "gallery-label",             title: "TugLabel",             closable: true },
-  { id: "template", componentId: "gallery-markdown-view",     title: "TugMarkdownView",      closable: true },
-  // ---- Selection ----
-  { id: "template", componentId: "gallery-checkbox",          title: "TugCheckbox",          closable: true },
-  { id: "template", componentId: "gallery-switch",            title: "TugSwitch",            closable: true },
-  { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
-  { id: "template", componentId: "gallery-choice-group",      title: "TugChoiceGroup",       closable: true },
-  { id: "template", componentId: "gallery-option-group",      title: "TugOptionGroup",       closable: true },
-  { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
-  // ---- Overlays ----
-  { id: "template", componentId: "gallery-popover",           title: "TugPopover",           closable: true },
-  { id: "template", componentId: "gallery-confirm-popover",   title: "TugConfirmPopover",    closable: true },
-  { id: "template", componentId: "gallery-context-menu",      title: "TugContextMenu",       closable: true },
-  { id: "template", componentId: "gallery-tooltip",           title: "TugTooltip",           closable: true },
-  { id: "template", componentId: "gallery-sheet",             title: "TugSheet",             closable: true },
-  { id: "template", componentId: "gallery-alert",             title: "TugAlert",             closable: true },
-  // ---- Feedback & Status ----
-  { id: "template", componentId: "gallery-progress",          title: "TugProgress",          closable: true },
-  { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
-  { id: "template", componentId: "gallery-banner",            title: "TugBanner",            closable: true },
-  { id: "template", componentId: "gallery-bulletin",          title: "TugBulletin",          closable: true },
-  { id: "template", componentId: "gallery-skeleton",          title: "TugSkeleton",          closable: true },
-  { id: "template", componentId: "gallery-marquee",           title: "TugMarquee",           closable: true },
-  // ---- Layout & Structure ----
-  { id: "template", componentId: "gallery-box",               title: "TugBox",               closable: true },
-  { id: "template", componentId: "gallery-atom",              title: "TugAtom",              closable: true },
-  { id: "template", componentId: "gallery-accordion",         title: "TugAccordion",         closable: true },
-  { id: "template", componentId: "gallery-split-pane",        title: "TugSplitPane",         closable: true },
-  { id: "template", componentId: "gallery-separator",         title: "TugSeparator",         closable: true },
-  { id: "template", componentId: "gallery-tabbar",            title: "TugTabBar",            closable: true },
-  { id: "template", componentId: "gallery-title-bar",         title: "TugTitleBar",          closable: true },
-  // ---- Animation & Theming ----
-  { id: "template", componentId: "gallery-animator",          title: "TugAnimator",          closable: true },
-  { id: "template", componentId: "gallery-scale-timing",      title: "Scale & Timing",       closable: true },
-  { id: "template", componentId: "gallery-palette",           title: "Palette Engine",       closable: true },
-  { id: "template", componentId: "gallery-theme-generator",   title: "Theme Accessibility",  closable: true },
-  // ---- Architecture ----
-  { id: "template", componentId: "gallery-mutation",          title: "Mutation Model",       closable: true },
-  { id: "template", componentId: "gallery-mutation-tx",       title: "Mutation Transactions", closable: true },
-  { id: "template", componentId: "gallery-observable-props",  title: "Observable Props",     closable: true },
-  { id: "template", componentId: "gallery-chain-actions",     title: "Chain Actions",        closable: true },
+  { id: "template", componentId: "gallery-buttons",  title: "TugPushButton", closable: true },
+  { id: "template", componentId: "gallery-input",    title: "TugInput",      closable: true },
+  { id: "template", componentId: "gallery-checkbox", title: "TugCheckbox",   closable: true },
+  { id: "template", componentId: "gallery-popover",  title: "TugPopover",    closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -284,7 +241,8 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-two-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- seeds the gallery card with one
+ *    tab from each of the first four `+` menu groups
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
