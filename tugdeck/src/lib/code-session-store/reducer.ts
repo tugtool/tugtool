@@ -11,12 +11,13 @@
  */
 
 import type { AtomSegment } from "../tug-atom-img";
-import type { Effect } from "./effects";
+import type { Effect, InflightPath } from "./effects";
 import type {
   AssistantTextEvent,
   CodeSessionEvent,
   SendActionEvent,
   SessionInitEvent,
+  ThinkingTextEvent,
   TurnCompleteEvent,
 } from "./events";
 import type {
@@ -121,13 +122,23 @@ function handleSessionInit(
   };
 }
 
-function handleAssistantText(
+/**
+ * Shared delta-accumulation logic for `assistant_text` and
+ * `thinking_text`. Both events share structure: a partial accumulates
+ * into the matching scratch field and a terminal frame
+ * (`is_partial: false`) replaces the scratch buffer with the
+ * authoritative full text. The first partial of either kind drives the
+ * `submitting → awaiting_first_token` transition; the next drives
+ * `awaiting_first_token → streaming`.
+ */
+function handleTextDelta(
   state: CodeSessionState,
-  event: AssistantTextEvent,
+  event: AssistantTextEvent | ThinkingTextEvent,
+  field: "assistant" | "thinking",
+  inflightPath: InflightPath,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Incoming assistant text outside of an active turn — drop. Live
-  // Claude should not emit this, but defensive handling keeps the
-  // reducer total.
+  // Incoming text outside of an active turn — drop. Live Claude should
+  // not emit this, but defensive handling keeps the reducer total.
   if (
     state.phase !== "submitting" &&
     state.phase !== "awaiting_first_token" &&
@@ -138,12 +149,11 @@ function handleAssistantText(
   }
 
   const msgId = event.msg_id;
+  const text = event.text ?? "";
   const scratch = new Map(state.scratch);
   const existing = scratch.get(msgId) ?? { assistant: "", thinking: "" };
-  const buffer = event.is_partial
-    ? existing.assistant + event.text
-    : event.text;
-  scratch.set(msgId, { ...existing, assistant: buffer });
+  const buffer = event.is_partial ? existing[field] + text : text;
+  scratch.set(msgId, { ...existing, [field]: buffer });
 
   let nextPhase: CodeSessionPhase;
   if (state.phase === "submitting") {
@@ -164,7 +174,7 @@ function handleAssistantText(
     effects: [
       {
         kind: "write-inflight",
-        path: "inflight.assistant",
+        path: inflightPath,
         value: buffer,
       },
     ],
@@ -240,7 +250,9 @@ export function reduce(
     case "session_init":
       return handleSessionInit(state, event);
     case "assistant_text":
-      return handleAssistantText(state, event);
+      return handleTextDelta(state, event, "assistant", "inflight.assistant");
+    case "thinking_text":
+      return handleTextDelta(state, event, "thinking", "inflight.thinking");
     case "turn_complete":
       return handleTurnComplete(state, event);
     case "system_metadata":

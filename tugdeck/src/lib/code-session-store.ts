@@ -58,6 +58,7 @@ const STREAM_SOURCE_TAG = "code-session-store";
 const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "session_init",
   "assistant_text",
+  "thinking_text",
   "turn_complete",
   "system_metadata",
 ]);

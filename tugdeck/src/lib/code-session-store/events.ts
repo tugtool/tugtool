@@ -38,6 +38,18 @@ export interface AssistantTextEvent {
   [key: string]: unknown;
 }
 
+/** Decoded thinking_text partial or terminal frame. */
+export interface ThinkingTextEvent {
+  type: "thinking_text";
+  msg_id: string;
+  text: string;
+  is_partial: boolean;
+  rev?: number;
+  seq?: number;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
 /** `turn_complete` — closes the active turn with success or error. */
 export interface TurnCompleteEvent {
   type: "turn_complete";
@@ -77,6 +89,7 @@ export type CodeSessionEvent =
   | SendActionEvent
   | SessionInitEvent
   | AssistantTextEvent
+  | ThinkingTextEvent
   | TurnCompleteEvent
   | SystemMetadataEvent
   | SessionStateErroredEvent
