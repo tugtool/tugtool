@@ -529,6 +529,9 @@ async fn intercept_session_control(
         Err(ControlError::InvalidProjectDir { reason }) => {
             ControlIntercept::HandledError { detail: reason }
         }
+        Err(ControlError::CapExceeded { reason }) => {
+            ControlIntercept::HandledError { detail: reason }
+        }
     }
 }
 

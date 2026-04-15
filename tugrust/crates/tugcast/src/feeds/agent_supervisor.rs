@@ -30,8 +30,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -411,11 +411,40 @@ impl SessionKeysStore for TugbankClient {
 /// W2 Step 6 deleted `project_dir` — the supervisor no longer has a global
 /// workspace path ([D12]). Per-session paths come from the CONTROL
 /// `spawn_session` payload and live on `LedgerEntry.project_dir`.
-#[derive(Debug, Clone, Default)]
+///
+/// P13 added `max_concurrent_sessions` and `max_spawns_per_minute` as safety
+/// caps so a buggy client or a user with many open cards cannot run the host
+/// out of subprocess slots. See [`AgentSupervisor::do_spawn_session`] for the
+/// enforcement path.
+#[derive(Debug, Clone)]
 pub struct AgentSupervisorConfig {
     /// Absolute path to the tugcode binary (or `.ts` entry for bun fallback).
     /// Only consumed by the default [`TugcodeSpawner`] factory.
     pub tugcode_path: PathBuf,
+    /// Hard cap on concurrent `Spawning` + `Live` ledger entries. A
+    /// `spawn_session` CONTROL frame that would push the count at or above
+    /// this bound is rejected with
+    /// `ControlError::CapExceeded { reason: "concurrent_session_cap_exceeded" }`
+    /// and a `SESSION_STATE = errored` broadcast. Idle and Errored entries
+    /// do NOT consume slots — only sessions with a running or starting
+    /// subprocess count.
+    pub max_concurrent_sessions: usize,
+    /// Leaky-bucket rate limit on fresh spawn-session intents. Trailing 60s
+    /// window; the N+1th spawn within the window is rejected with
+    /// `ControlError::CapExceeded { reason: "spawn_rate_limited" }`.
+    /// Reconnects (spawns for an existing ledger entry) do not consume
+    /// budget.
+    pub max_spawns_per_minute: usize,
+}
+
+impl Default for AgentSupervisorConfig {
+    fn default() -> Self {
+        Self {
+            tugcode_path: PathBuf::new(),
+            max_concurrent_sessions: 8,
+            max_spawns_per_minute: 20,
+        }
+    }
 }
 
 /// Factory that yields a fresh [`ChildSpawner`] for each session spawn. The
@@ -452,6 +481,15 @@ pub enum ControlError {
     /// `"not_a_directory"`, `"metadata_error"`.
     #[error("invalid project_dir: {reason}")]
     InvalidProjectDir { reason: &'static str },
+    /// P13 spawn-budget rejection. `reason` is one of:
+    /// `"concurrent_session_cap_exceeded"` (hit
+    /// `AgentSupervisorConfig::max_concurrent_sessions`) or
+    /// `"spawn_rate_limited"` (hit `max_spawns_per_minute`). Router maps
+    /// both to a CONTROL error frame on the in-scope socket; the
+    /// supervisor also broadcasts `SESSION_STATE = errored` with the same
+    /// `detail` so any other observer of the session sees the failure.
+    #[error("spawn budget exceeded: {reason}")]
+    CapExceeded { reason: &'static str },
 }
 
 /// Central owner of all Claude Code sessions for a single tugcast process.
@@ -493,6 +531,14 @@ pub struct AgentSupervisor {
     /// the shared root. Firing this (e.g. on process shutdown) tears
     /// down every workspace's tasks.
     pub cancel: CancellationToken,
+    /// P13 leaky-bucket state. Holds the timestamps of every successful
+    /// fresh spawn intent within the trailing 60s window, in insertion
+    /// order. Trimmed + checked + pushed inside `do_spawn_session`'s
+    /// Phase 1 critical section so the rate-limit decision is atomic with
+    /// the ledger insert. `std::sync::Mutex` (not tokio's async mutex)
+    /// because the critical section is bounded, non-awaiting, and never
+    /// crosses an `.await` point.
+    pub spawn_timestamps: Arc<StdMutex<VecDeque<Instant>>>,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -568,6 +614,55 @@ fn build_session_unknown_frame(tug_session_id: &TugSessionId) -> Frame {
     )
 }
 
+/// P13 spawn-budget check. Run inside `do_spawn_session`'s Phase 1 critical
+/// section under the ledger lock. Returns the `detail` string that should be
+/// stamped into both the `SESSION_STATE = errored` broadcast and the
+/// returned `ControlError::CapExceeded`, or `None` if the spawn is
+/// admissible. On admission the current `Instant` is appended to
+/// `spawn_timestamps` so the rate-limit window advances atomically with
+/// the cap decision.
+///
+/// Concurrent cap counts `Spawning` + `Live` entries only — `Idle` (intent
+/// without subprocess) and `Errored` (crashed, awaiting reset) do not
+/// consume slots. The per-entry `try_lock` is non-blocking; a contended
+/// entry is counted conservatively as active so the cap cannot be
+/// bypassed by a racing dispatcher.
+fn cap_check_reason(
+    ledger: &HashMap<TugSessionId, Arc<Mutex<LedgerEntry>>>,
+    max_concurrent_sessions: usize,
+    spawn_timestamps: &StdMutex<VecDeque<Instant>>,
+    max_spawns_per_minute: usize,
+) -> Option<&'static str> {
+    let mut active = 0usize;
+    for entry_arc in ledger.values() {
+        let counted = match entry_arc.try_lock() {
+            Ok(entry) => {
+                matches!(entry.spawn_state, SpawnState::Spawning | SpawnState::Live)
+            }
+            Err(_) => true,
+        };
+        if counted {
+            active += 1;
+            if active >= max_concurrent_sessions {
+                return Some("concurrent_session_cap_exceeded");
+            }
+        }
+    }
+    let mut ts = spawn_timestamps
+        .lock()
+        .expect("spawn_timestamps mutex poisoned");
+    let now = Instant::now();
+    let cutoff = now.checked_sub(Duration::from_secs(60)).unwrap_or(now);
+    while ts.front().is_some_and(|&t| t < cutoff) {
+        ts.pop_front();
+    }
+    if ts.len() >= max_spawns_per_minute {
+        return Some("spawn_rate_limited");
+    }
+    ts.push_back(now);
+    None
+}
+
 fn build_backpressure_frame(tug_session_id: &TugSessionId) -> Frame {
     let body = serde_json::json!({
         "type": "session_backpressure",
@@ -620,6 +715,7 @@ impl AgentSupervisor {
             config,
             registry,
             cancel,
+            spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
         };
         (sup, merger_register_rx)
     }
@@ -725,9 +821,52 @@ impl AgentSupervisor {
         // reuse the existing entry. In that case the workspace refcount
         // bumped in Phase 0 is excess and must be released (the existing
         // ledger entry already holds its own refcount).
-        let (entry_arc, inserted) = {
+        //
+        // P13: for fresh inserts only, enforce `max_concurrent_sessions`
+        // (counting Spawning+Live entries via try_lock) and the
+        // `max_spawns_per_minute` leaky bucket. Both checks run inside
+        // the ledger critical section so the decision is atomic with the
+        // insert. Reconnects bypass — the existing entry is already
+        // counted and re-inserting it would not produce a new subprocess.
+        let phase1 = {
             let mut ledger = self.ledger.lock().await;
             let was_inserted = !ledger.contains_key(&tug_session_id);
+            if was_inserted {
+                if let Some(reason) = cap_check_reason(
+                    &ledger,
+                    self.config.max_concurrent_sessions,
+                    &self.spawn_timestamps,
+                    self.config.max_spawns_per_minute,
+                ) {
+                    drop(ledger);
+                    // Release the workspace refcount acquired in Phase 0;
+                    // the ledger never saw this entry so no later Phase
+                    // will release it for us.
+                    if let Err(e) = self.registry.release(&workspace_key) {
+                        warn!(
+                            card_id,
+                            session = %tug_session_id,
+                            error = %e,
+                            "spawn_session: cap-reject workspace release failed (ignored)"
+                        );
+                    }
+                    // Broadcast SESSION_STATE errored so any observer of
+                    // this session sees the failure, not just the client
+                    // whose CONTROL frame we're about to reject.
+                    let _ = self.session_state_tx.send(build_session_state_frame(
+                        &tug_session_id,
+                        "errored",
+                        Some(reason),
+                    ));
+                    warn!(
+                        card_id,
+                        session = %tug_session_id,
+                        reason,
+                        "spawn_session: rejected by spawn budget"
+                    );
+                    return Err(ControlError::CapExceeded { reason });
+                }
+            }
             let arc = ledger
                 .entry(tug_session_id.clone())
                 .or_insert_with(|| {
@@ -745,6 +884,7 @@ impl AgentSupervisor {
                 .insert(tug_session_id.clone());
             (arc, was_inserted)
         };
+        let (entry_arc, inserted) = phase1;
 
         if !inserted {
             // Reconnect: the existing ledger entry already holds a refcount
@@ -1609,8 +1749,24 @@ mod tests {
         broadcast::Receiver<Frame>,
         broadcast::Receiver<Frame>,
     ) {
+        make_supervisor_with_store_config(store, AgentSupervisorConfig::default())
+    }
+
+    /// Variant that accepts a custom [`AgentSupervisorConfig`] — P13 tests
+    /// use this to set tight `max_concurrent_sessions` /
+    /// `max_spawns_per_minute` so the cap can be tripped with only a
+    /// handful of spawn calls.
+    fn make_supervisor_with_store_config(
+        store: Arc<dyn SessionKeysStore>,
+        config: AgentSupervisorConfig,
+    ) -> (
+        AgentSupervisor,
+        broadcast::Receiver<Frame>,
+        broadcast::Receiver<Frame>,
+        broadcast::Receiver<Frame>,
+    ) {
         let ((sup, state_rx, meta_rx, control_rx), mut register_rx) =
-            make_supervisor_with_spawner(store, stall_spawner_factory());
+            make_supervisor_with_spawner_config(store, stall_spawner_factory(), config);
         // Drain the merger register channel so `spawn_session_worker`'s
         // `merger_register_tx.send(...).await` succeeds without an actual
         // merger task attached. Dropping the receiver would short-circuit
@@ -1637,6 +1793,23 @@ mod tests {
         ),
         mpsc::Receiver<MergerRegistration>,
     ) {
+        make_supervisor_with_spawner_config(store, spawner_factory, AgentSupervisorConfig::default())
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn make_supervisor_with_spawner_config(
+        store: Arc<dyn SessionKeysStore>,
+        spawner_factory: SpawnerFactory,
+        config: AgentSupervisorConfig,
+    ) -> (
+        (
+            AgentSupervisor,
+            broadcast::Receiver<Frame>,
+            broadcast::Receiver<Frame>,
+            broadcast::Receiver<Frame>,
+        ),
+        mpsc::Receiver<MergerRegistration>,
+    ) {
         let (state_tx, state_rx) = broadcast::channel(512);
         let (meta_tx, meta_rx) = broadcast::channel(32);
         let (code_tx, _code_rx) = broadcast::channel(32);
@@ -1650,7 +1823,7 @@ mod tests {
             control_tx,
             store,
             spawner_factory,
-            AgentSupervisorConfig::default(),
+            config,
             registry,
             cancel,
         );
@@ -2089,6 +2262,265 @@ mod tests {
         assert_eq!(second, ("sess-1".into(), "pending".into()));
     }
 
+    // ---- P13: spawn budget (concurrent cap + rate limit) ----
+
+    /// Shared helper: insert a synthetic ledger entry and set its
+    /// `spawn_state` to the given value under the per-entry mutex. Used
+    /// by the P13 tests to preload the ledger without driving the
+    /// dispatcher + bridge stack end-to-end.
+    async fn preload_entry_in_state(
+        sup: &AgentSupervisor,
+        tug_session_id: &TugSessionId,
+        state: SpawnState,
+    ) {
+        let entry_arc = insert_ledger_entry(sup, tug_session_id).await;
+        let mut entry = entry_arc.lock().await;
+        entry.spawn_state = state;
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_cap_rejects_over_concurrent_limit() {
+        // Cap = 2. Preload two `Spawning` entries so the next fresh
+        // `spawn_session` trips the cap at the Phase 1 check.
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 2,
+            max_spawns_per_minute: 100,
+            ..Default::default()
+        };
+        let (sup, mut state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store.clone(), config);
+
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-a"), SpawnState::Spawning).await;
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-b"), SpawnState::Live).await;
+
+        let err = sup
+            .handle_control("spawn_session", &spawn_payload("card-3", "sess-c"), 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "concurrent_session_cap_exceeded"
+            }
+        );
+
+        // SESSION_STATE errored frame is published to any observer.
+        let frame = state_rx.try_recv().expect("errored frame published");
+        assert_eq!(frame.feed_id, FeedId::SESSION_STATE);
+        let v: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(v["tug_session_id"].as_str(), Some("sess-c"));
+        assert_eq!(v["state"].as_str(), Some("errored"));
+        assert_eq!(
+            v["detail"].as_str(),
+            Some("concurrent_session_cap_exceeded")
+        );
+
+        // No ledger entry was created for the rejected spawn. The two
+        // preloaded entries remain; `sess-c` is absent.
+        let ledger = sup.ledger.lock().await;
+        assert_eq!(ledger.len(), 2);
+        assert!(!ledger.contains_key(&TugSessionId::new("sess-c")));
+
+        // Tugbank was not touched.
+        assert_eq!(store.set_call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_cap_excludes_idle_and_errored_entries() {
+        // Cap = 2. Preload one `Idle` + one `Errored` entry. Neither
+        // counts against the budget, so a third fresh spawn succeeds.
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 2,
+            max_spawns_per_minute: 100,
+            ..Default::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store, config);
+
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-idle"), SpawnState::Idle).await;
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-err"), SpawnState::Errored).await;
+
+        // Fresh spawn of a third tug_session_id succeeds because active
+        // (Spawning+Live) count is 0.
+        sup.handle_control("spawn_session", &spawn_payload("card-new", "sess-new"), 10)
+            .await
+            .expect("Idle+Errored do not consume cap slots");
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_reconnect_bypasses_cap() {
+        // Cap = 1. Preload a single `Live` entry at the cap. A
+        // *reconnect* `spawn_session` for the SAME tug_session_id must
+        // succeed — the existing entry is reused and no new subprocess
+        // is implied.
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 1,
+            max_spawns_per_minute: 100,
+            ..Default::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store, config);
+
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-1"), SpawnState::Live).await;
+
+        // Reconnect: same tug_session_id as the preloaded entry.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect("reconnect must bypass the concurrent cap");
+
+        // A *fresh* spawn for a different tsid with cap=1 still trips.
+        let err = sup
+            .handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "concurrent_session_cap_exceeded"
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_rate_limit_rejects_after_budget_exhausted() {
+        // Cap very high, rate = 2. The third fresh spawn within 60s
+        // trips the leaky bucket even though the concurrent cap has
+        // plenty of room.
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 100,
+            max_spawns_per_minute: 2,
+            ..Default::default()
+        };
+        let (sup, mut state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store, config);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect("first spawn admitted");
+        sup.handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
+            .await
+            .expect("second spawn admitted");
+
+        let err = sup
+            .handle_control("spawn_session", &spawn_payload("card-3", "sess-3"), 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "spawn_rate_limited"
+            }
+        );
+
+        // Drain the two successful `pending` frames, then find the
+        // rate-limited errored frame. The broadcast order is: pending-1,
+        // pending-2, errored-3.
+        let f1 = session_state_of(&state_rx.try_recv().unwrap());
+        assert_eq!(f1, ("sess-1".into(), "pending".into()));
+        let f2 = session_state_of(&state_rx.try_recv().unwrap());
+        assert_eq!(f2, ("sess-2".into(), "pending".into()));
+        let f3 = state_rx.try_recv().unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&f3.payload).unwrap();
+        assert_eq!(v["tug_session_id"].as_str(), Some("sess-3"));
+        assert_eq!(v["state"].as_str(), Some("errored"));
+        assert_eq!(v["detail"].as_str(), Some("spawn_rate_limited"));
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_rate_limit_window_ejects_old_timestamps() {
+        // cap_check_reason trims timestamps older than 60s from the
+        // front of the deque on every call. Seed the deque with two
+        // ancient timestamps (simulating spawns from 2 minutes ago),
+        // then verify fresh spawns succeed because the trim empties the
+        // window before the length check.
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 100,
+            max_spawns_per_minute: 2,
+            ..Default::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store, config);
+
+        {
+            let ancient = Instant::now()
+                .checked_sub(Duration::from_secs(120))
+                .expect("test runs with monotonic clock well past 120s");
+            let mut ts = sup.spawn_timestamps.lock().unwrap();
+            ts.push_back(ancient);
+            ts.push_back(ancient);
+        }
+
+        // Two fresh spawns succeed. The trim at the top of cap_check_reason
+        // pops the ancient timestamps before the length check, so the
+        // rate budget is effectively empty.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect("first spawn admitted after trim");
+        sup.handle_control("spawn_session", &spawn_payload("card-2", "sess-2"), 10)
+            .await
+            .expect("second spawn admitted after trim");
+
+        // After the two admits, the deque holds exactly two fresh
+        // timestamps (the ancient ones were trimmed).
+        let ts = sup.spawn_timestamps.lock().unwrap();
+        assert_eq!(ts.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_reconnect_does_not_consume_rate_budget() {
+        // Reconnects (existing ledger entry) must not push a timestamp
+        // onto the leaky-bucket deque. Set rate=1, preload one entry,
+        // reconnect to it → must succeed; then a single fresh spawn of
+        // a different tsid must also succeed (budget still has 1 slot).
+        let store = Arc::new(InMemoryStore::default());
+        let config = AgentSupervisorConfig {
+            max_concurrent_sessions: 100,
+            max_spawns_per_minute: 1,
+            ..Default::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) =
+            make_supervisor_with_store_config(store, config);
+
+        preload_entry_in_state(&sup, &TugSessionId::new("sess-pre"), SpawnState::Idle).await;
+
+        // Reconnect — must NOT push a timestamp.
+        sup.handle_control("spawn_session", &spawn_payload("card-pre", "sess-pre"), 10)
+            .await
+            .expect("reconnect admitted");
+        assert_eq!(
+            sup.spawn_timestamps.lock().unwrap().len(),
+            0,
+            "reconnect must not consume rate budget"
+        );
+
+        // Fresh spawn — consumes the one and only budget slot.
+        sup.handle_control("spawn_session", &spawn_payload("card-new", "sess-new"), 10)
+            .await
+            .expect("fresh spawn admitted (first of the window)");
+        assert_eq!(
+            sup.spawn_timestamps.lock().unwrap().len(),
+            1,
+            "fresh spawn consumes exactly one budget slot"
+        );
+
+        // A second fresh spawn now trips the rate limit.
+        let err = sup
+            .handle_control("spawn_session", &spawn_payload("card-3", "sess-3"), 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "spawn_rate_limited"
+            }
+        );
+    }
+
     // ---- dispatch_one / dispatcher_task ----
 
     fn code_input_frame(tug_session_id: &str) -> Frame {
@@ -2382,6 +2814,7 @@ mod tests {
         use super::super::agent_bridge::build_tugcode_command;
         let config = AgentSupervisorConfig {
             tugcode_path: PathBuf::from("/opt/tugtool/tugcode"),
+            ..Default::default()
         };
         let _factory = default_spawner_factory(&config);
 

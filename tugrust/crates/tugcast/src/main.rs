@@ -331,6 +331,7 @@ async fn main() {
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
+        ..Default::default()
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 

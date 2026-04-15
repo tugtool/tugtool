@@ -744,7 +744,7 @@ These items do not block the critical path. Schedule opportunistically or interl
 | 2 | [T3.0.W3.a](#t3-workspace-registry-w3a) (rename + cleanup, keep bootstrap) | W2 closeout | T3.4.a |
 | 3 | [T3.4.a](#t3-4-a-code-session-store) CodeSessionStore | W3.a | T3.4.a.1, P13, T3.4.b |
 | 3a | T3.4.a.1 CONTROL error routing (`session_unknown`, `session_not_owned`) | T3.4.a | T3.4.d |
-| 4 | [P13](#p13-spawn-cap) spawn cap | T3.4.a | T3.4.b (advisable) |
+| 4 | [P13](#p13-spawn-cap) spawn cap ✓ LANDED | T3.4.a | T3.4.b (advisable) |
 | 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry | T3.4.a (P13, T3.4.a.1 optional) | T3.4.c |
 | 6 | [T3.4.c](#t3-4-c-tide-card) Tide card + [T3.0.W3.b](#t3-workspace-registry-w3b) bootstrap removal | T3.4.b | P14, P15, T3.4.d |
 | 7 | [P14](#p14-claude-resume) `--resume` | T3.4.c | first external users |
@@ -1499,6 +1499,8 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 **Scope:** `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` (~150 lines including tests); new `ControlError::CapExceeded` variant; `handle_control` maps it to a CONTROL error frame on the in-scope socket.
 
 **Schedule:** Land opportunistically after T3.4.a as a single-commit drop. Cheap insurance before any real user gets hold of Tide.
+
+**Status: ✓ LANDED.** `AgentSupervisorConfig` gained `max_concurrent_sessions` (default 8) and `max_spawns_per_minute` (default 20). Enforcement lives inside `do_spawn_session`'s Phase 1 critical section via `cap_check_reason`: `Spawning`+`Live` entries are counted via non-blocking `try_lock` (`Idle` and `Errored` do not consume slots); a `Mutex<VecDeque<Instant>>` on the supervisor trims timestamps older than 60s before the length check. Rejected spawns publish `SESSION_STATE = errored { detail: "concurrent_session_cap_exceeded" | "spawn_rate_limited" }` and return `ControlError::CapExceeded { reason }`, which `intercept_session_control` in `router.rs` maps to a CONTROL error frame on the in-scope socket. Reconnects (existing ledger entry for the same `tug_session_id`) bypass both checks. Six unit tests cover the happy path, cap, rate limit, Idle/Errored exclusion, reconnect bypass, and 60s window trim — full suite 1126/1126 green.
 
 #### P14: Claude Code `--resume` for persistent session history (HIGH) {#p14-claude-resume}
 
