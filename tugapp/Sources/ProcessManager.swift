@@ -548,6 +548,9 @@ class ProcessManager {
         // Mac apps inherit a minimal PATH that doesn't include Homebrew, nix, etc.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = ProcessManager.shellPATH
+        // tugcast::resources::source_tree() reads this to locate tugdeck/dist
+        // and other bundle-relative resources. Debug and release share this path.
+        env["TUGCAST_RESOURCE_ROOT"] = Bundle.main.resourcePath ?? ""
         proc.environment = env
 
         // Build args: only pass flags we have explicit values for.

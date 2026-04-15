@@ -75,12 +75,8 @@ app: build wasm
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
-    MACOS_DIR="$APP_DIR/Contents/MacOS"
-    cp tugrust/target/debug/tugcast "$MACOS_DIR/"
-    cp tugrust/target/debug/tugutil "$MACOS_DIR/"
-    cp tugrust/target/debug/tugexec "$MACOS_DIR/"
-    cp tugrust/target/debug/tugrelaunch "$MACOS_DIR/"
-    cp tugrust/target/debug/tugcode "$MACOS_DIR/"
+    # tugcast/tugcode/tugutil/tugexec/tugrelaunch and tugdeck/dist are copied into
+    # the bundle by the Tug target's shell script build phase (see project.pbxproj).
     echo "==> Launching Tug.app"
     # Tell the app where the source tree is so tugcast can find tugcode, tugdeck, etc.
     tugbank write dev.tugexec.app source-tree-path "$(pwd)"

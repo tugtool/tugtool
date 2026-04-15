@@ -85,6 +85,7 @@
 				AA00000A0000000000000001 /* Sources */,
 				AA0000040000000000000001 /* Frameworks */,
 				AA00000B0000000000000001 /* Resources */,
+				AA0000100000000000000001 /* Copy Rust binaries and tugdeck dist */,
 			);
 			buildRules = (
 			);
@@ -150,6 +151,35 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA0000100000000000000001 /* Copy Rust binaries and tugdeck dist */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugcast",
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugcode",
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugutil",
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugexec",
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugrelaunch",
+				"$(SRCROOT)/../tugdeck/dist",
+			);
+			name = "Copy Rust binaries and tugdeck dist";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugcast",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugcode",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugutil",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugexec",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugrelaunch",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/tugdeck/dist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n\nSRC_BINS=\"$SRCROOT/../tugrust/target/$CONFIGURATION\"\nSRC_DIST=\"$SRCROOT/../tugdeck/dist\"\nDST_MACOS=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS\"\nDST_RES=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources\"\n\nmkdir -p \"$DST_MACOS\"\nmkdir -p \"$DST_RES\"\n\nfor bin in tugcast tugcode tugutil tugexec tugrelaunch; do\n  if [ -f \"$SRC_BINS/$bin\" ]; then\n    cp \"$SRC_BINS/$bin\" \"$DST_MACOS/$bin\"\n  else\n    echo \"error: $SRC_BINS/$bin not found -- run 'cargo build' first\" >&2\n    exit 1\n  fi\ndone\n\nif [ -d \"$SRC_DIST\" ]; then\n  rm -rf \"$DST_RES/tugdeck/dist\"\n  mkdir -p \"$DST_RES/tugdeck\"\n  cp -R \"$SRC_DIST\" \"$DST_RES/tugdeck/dist\"\nelse\n  echo \"error: $SRC_DIST not found -- run 'bun run build' in tugdeck first\" >&2\n  exit 1\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		AA00000E0000000000000001 /* Debug */ = {
