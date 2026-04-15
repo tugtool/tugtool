@@ -947,12 +947,26 @@ impl AgentSupervisor {
         // state so the next CODE_INPUT can re-drive Idle → Spawning. The
         // workspace_key, project_dir, crash_budget, and latest_metadata
         // fields are intentionally preserved.
-        {
+        //
+        // Terminal-state guard: if a concurrent `close_session` won the
+        // race and flipped the entry to `Closed`, reset must not
+        // resurrect it. Bail out silently — the caller's reset is
+        // meaningless for a dead session, and flipping back to `Idle`
+        // would confuse any worker that later observed the stale Arc.
+        let resurrected = {
             let mut entry = entry_arc.lock().await;
-            entry.cancel.cancel();
-            entry.cancel = CancellationToken::new();
-            entry.spawn_state = SpawnState::Idle;
-            entry.input_tx = None;
+            if entry.spawn_state == SpawnState::Closed {
+                false
+            } else {
+                entry.cancel.cancel();
+                entry.cancel = CancellationToken::new();
+                entry.spawn_state = SpawnState::Idle;
+                entry.input_tx = None;
+                true
+            }
+        };
+        if !resurrected {
+            return;
         }
 
         let _ = self
@@ -3176,13 +3190,23 @@ mod tests {
             .unwrap();
         let _ = control_rx.try_recv(); // drain ack
 
+        // Capture the `Arc<WorkspaceEntry>` from the registry map BEFORE
+        // reset so the post-reset comparison can use `Arc::ptr_eq` — a
+        // stricter invariant than comparing workspace_key strings alone
+        // (which can't distinguish release-and-reacquire from preserve).
         let tug_id = TugSessionId::new("sess-1");
-        let workspace_key_before = {
+        let workspace_key = {
             let ledger = sup.ledger.lock().await;
             let entry_arc = ledger.get(&tug_id).unwrap().clone();
             drop(ledger);
             entry_arc.lock().await.workspace_key.clone()
         };
+        let workspace_entry_before = sup
+            .registry
+            .inner_for_test()
+            .get(&workspace_key)
+            .expect("workspace entry present before reset")
+            .clone();
 
         sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
             .await
@@ -3190,16 +3214,127 @@ mod tests {
 
         // [D11]: the workspace entry survives reset. Map still holds 1.
         assert_eq!(registry_map_len(&sup), 1);
-        // Ledger entry still present with the same workspace_key.
+
+        // Strict: the post-reset `Arc<WorkspaceEntry>` must be the SAME
+        // Arc, not a replacement with the same key.
+        let workspace_entry_after = sup
+            .registry
+            .inner_for_test()
+            .get(&workspace_key)
+            .expect("workspace entry present after reset")
+            .clone();
+        assert!(
+            Arc::ptr_eq(&workspace_entry_before, &workspace_entry_after),
+            "reset must preserve the exact Arc<WorkspaceEntry>, not just the key"
+        );
+
+        // And the ledger entry's workspace_key is unchanged.
         let workspace_key_after = {
             let ledger = sup.ledger.lock().await;
             let entry_arc = ledger.get(&tug_id).unwrap().clone();
             drop(ledger);
             entry_arc.lock().await.workspace_key.clone()
         };
+        assert_eq!(workspace_key.as_ref(), workspace_key_after.as_ref());
+    }
+
+    #[tokio::test]
+    async fn test_two_sessions_two_workspaces_do_not_share() {
+        // Two TempDirs → two distinct canonical paths → two distinct
+        // `WorkspaceEntry` Arcs. Belt-and-suspenders for the invariant
+        // that `get_or_create` really does dedupe by path, and that
+        // `test_two_sessions_same_workspace_share_entry` isn't passing
+        // because the dedup logic is stuck in a one-workspace rut.
+        let tmp_a = tempfile::TempDir::new().expect("tempdir a");
+        let tmp_b = tempfile::TempDir::new().expect("tempdir b");
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        sup.handle_control(
+            "spawn_session",
+            &spawn_payload_in("card-a", "sess-a", tmp_a.path().to_str().unwrap()),
+            10,
+        )
+        .await
+        .unwrap();
+        sup.handle_control(
+            "spawn_session",
+            &spawn_payload_in("card-b", "sess-b", tmp_b.path().to_str().unwrap()),
+            20,
+        )
+        .await
+        .unwrap();
+        let _ = control_rx.try_recv(); // drain both acks
+        let _ = control_rx.try_recv();
+
+        // Two distinct workspaces in the registry.
+        assert_eq!(registry_map_len(&sup), 2);
+
+        // Distinct workspace_key strings on the ledger entries.
+        let ledger = sup.ledger.lock().await;
+        let entry_a = ledger.get(&TugSessionId::new("sess-a")).unwrap().clone();
+        let entry_b = ledger.get(&TugSessionId::new("sess-b")).unwrap().clone();
+        drop(ledger);
+        let key_a = entry_a.lock().await.workspace_key.clone();
+        let key_b = entry_b.lock().await.workspace_key.clone();
+        assert_ne!(
+            key_a.as_ref(),
+            key_b.as_ref(),
+            "distinct TempDirs must produce distinct workspace_keys"
+        );
+
+        // Strict: the two `Arc<WorkspaceEntry>` instances are distinct.
+        let map = sup.registry.inner_for_test();
+        let ws_a = map.get(&key_a).unwrap().clone();
+        let ws_b = map.get(&key_b).unwrap().clone();
+        drop(map);
+        assert!(
+            !Arc::ptr_eq(&ws_a, &ws_b),
+            "distinct workspaces must be distinct Arcs"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_reconnect_releases_refcount() {
+        // Duplicate spawn on the same `tug_session_id` is a reconnect.
+        // The second spawn's `get_or_create` bumps the workspace refcount
+        // to 2, but the reconnect path in `do_spawn_session` releases the
+        // extra refcount because the existing ledger entry already holds
+        // one. Without that release, the refcount would leak one per
+        // reconnect and the workspace would never tear down on close.
+        //
+        // This test nails that release-on-reconnect contract: the
+        // registry map must still hold exactly one entry with
+        // `ref_count == 1` after the second spawn.
+        use std::sync::atomic::Ordering;
+
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, _state_rx, _meta_rx, mut control_rx) =
+            make_supervisor_with_store(store as Arc<dyn SessionKeysStore>);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .unwrap();
+        let _ = control_rx.try_recv(); // drain ack
+
+        // Reconnect: same tug_session_id (and same project_dir), new card.
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 11)
+            .await
+            .unwrap();
+        let _ = control_rx.try_recv(); // drain second ack
+
+        assert_eq!(registry_map_len(&sup), 1);
+
+        // Read the single WorkspaceEntry and assert its refcount is 1,
+        // not 2. A leak would show up as 2 here.
+        let map = sup.registry.inner_for_test();
+        assert_eq!(map.len(), 1);
+        let (_key, ws) = map.iter().next().expect("one entry");
         assert_eq!(
-            workspace_key_before.as_ref(),
-            workspace_key_after.as_ref()
+            ws.ref_count.load(Ordering::Relaxed),
+            1,
+            "reconnect must release the just-acquired refcount"
         );
     }
 

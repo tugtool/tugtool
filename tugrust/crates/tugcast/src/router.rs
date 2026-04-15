@@ -1297,6 +1297,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_control_frame_invalid_project_dir_sends_reason_detail() {
+        // W2 Step 6: the supervisor returns
+        // `ControlError::InvalidProjectDir { reason }` for spawn_session
+        // payloads whose `project_dir` is missing, nonexistent, not a
+        // directory, etc. `intercept_session_control` must map each
+        // variant to a `HandledError` whose `detail` is the exact reason
+        // string so tugdeck can surface a precise error per Spec S03.
+        let (sup, mut register_rx) = test_minimal_supervisor();
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        // Case A: missing project_dir entirely.
+        let missing = serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "card_id": "card-1",
+            "tug_session_id": "sess-1",
+        }))
+        .unwrap();
+        let outcome =
+            intercept_session_control(Some(&sup), "spawn_session", &missing, 7).await;
+        match outcome {
+            ControlIntercept::HandledError { detail } => {
+                assert_eq!(detail, "missing_project_dir");
+            }
+            other => panic!(
+                "expected HandledError(missing_project_dir), got {other:?}"
+            ),
+        }
+
+        // Case B: path that does not exist on disk.
+        let nonexistent = serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "card_id": "card-1",
+            "tug_session_id": "sess-1",
+            "project_dir": "/nonexistent/router-invalid-path-test-xyz",
+        }))
+        .unwrap();
+        let outcome =
+            intercept_session_control(Some(&sup), "spawn_session", &nonexistent, 7).await;
+        match outcome {
+            ControlIntercept::HandledError { detail } => {
+                assert_eq!(detail, "does_not_exist");
+            }
+            other => panic!("expected HandledError(does_not_exist), got {other:?}"),
+        }
+
+        // Invalid paths never touch the ledger or client affinity map.
+        assert!(sup.ledger.lock().await.is_empty());
+        assert!(sup.client_sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_session_metadata_fed_by_supervisor_broadcast() {
         // Pins [D14]'s broadcast-not-watch migration at the router layer.
         // A `system_metadata` frame injected into the supervisor's merger
