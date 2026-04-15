@@ -1,0 +1,178 @@
+/**
+ * Step 9 — per-card filter isolation.
+ *
+ * The `CodeSessionStore` constructs a filtered `FeedStore` subscribing
+ * to `[CODE_OUTPUT, SESSION_STATE]` with a predicate matching only
+ * frames whose payload `tug_session_id` matches the store's own. Two
+ * stores against the same `MockTugConnection` must therefore observe
+ * disjoint frame streams even though the connection replays every
+ * frame to every registered `onFrame` callback.
+ *
+ * This is the [D11] filter-scope contract: tugdeck-side per-card
+ * filters enforce multi-session isolation on the shared CODE_OUTPUT
+ * replay buffer; without the predicate, opening two Tide cards against
+ * one backend would cross-wire their turn state machines.
+ */
+
+import { describe, it, expect } from "bun:test";
+
+import { CodeSessionStore } from "@/lib/code-session-store";
+import type { TugConnection } from "@/connection";
+import {
+  MockTugConnection,
+} from "@/lib/code-session-store/testing/mock-feed-store";
+import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
+import { FeedId } from "@/protocol";
+
+const TUG_A = FIXTURE_IDS.TUG_SESSION_ID;
+const TUG_B = "tug00000-0000-4000-8000-0000000000bb";
+
+function constructStore(
+  conn: MockTugConnection,
+  tugSessionId: string,
+): CodeSessionStore {
+  return new CodeSessionStore({
+    conn: conn as unknown as TugConnection,
+    tugSessionId,
+  });
+}
+
+describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => {
+  it("routes a session_init to the matching store only", () => {
+    const conn = new MockTugConnection();
+    const storeA = constructStore(conn, TUG_A);
+    const storeB = constructStore(conn, TUG_B);
+
+    expect(storeA.getSnapshot().claudeSessionId).toBeNull();
+    expect(storeB.getSnapshot().claudeSessionId).toBeNull();
+
+    // A session_init for storeA's session should be visible only to A.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "session_init",
+      session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
+      tug_session_id: TUG_A,
+    });
+
+    expect(storeA.getSnapshot().claudeSessionId).toBe(
+      FIXTURE_IDS.CLAUDE_SESSION_ID,
+    );
+    expect(storeB.getSnapshot().claudeSessionId).toBeNull();
+
+    // And vice versa: a session_init for B leaves A untouched.
+    const CLAUDE_B = "cla00000-0000-4000-8000-0000000000bb";
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "session_init",
+      session_id: CLAUDE_B,
+      tug_session_id: TUG_B,
+    });
+
+    expect(storeA.getSnapshot().claudeSessionId).toBe(
+      FIXTURE_IDS.CLAUDE_SESSION_ID,
+    );
+    expect(storeB.getSnapshot().claudeSessionId).toBe(CLAUDE_B);
+  });
+
+  it("drives independent turn state machines for each store", () => {
+    const conn = new MockTugConnection();
+    const storeA = constructStore(conn, TUG_A);
+    const storeB = constructStore(conn, TUG_B);
+
+    storeA.send("from A", []);
+    expect(storeA.getSnapshot().phase).toBe("submitting");
+    expect(storeB.getSnapshot().phase).toBe("idle");
+
+    // Two outbound frames so far: one from each... wait, only A sent.
+    // MockTugConnection records every outbound frame; we assert both
+    // the count and the session attribution.
+    expect(conn.recordedFrames.length).toBe(1);
+    expect(conn.recordedFrames[0].decoded).toMatchObject({
+      tug_session_id: TUG_A,
+      type: "user_message",
+      text: "from A",
+    });
+
+    storeB.send("from B", []);
+    expect(storeA.getSnapshot().phase).toBe("submitting");
+    expect(storeB.getSnapshot().phase).toBe("submitting");
+    expect(conn.recordedFrames.length).toBe(2);
+    expect(conn.recordedFrames[1].decoded).toMatchObject({
+      tug_session_id: TUG_B,
+      type: "user_message",
+      text: "from B",
+    });
+
+    // Drive A through a short turn. B sees none of it.
+    for (const rev of [0, 1]) {
+      conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+        type: "assistant_text",
+        tug_session_id: TUG_A,
+        msg_id: FIXTURE_IDS.MSG_ID,
+        text: "a",
+        is_partial: true,
+        rev,
+        seq: 0,
+      });
+    }
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: TUG_A,
+      msg_id: FIXTURE_IDS.MSG_ID,
+      result: "success",
+    });
+
+    expect(storeA.getSnapshot().phase).toBe("idle");
+    expect(storeA.getSnapshot().transcript.length).toBe(1);
+
+    // B is still mid-turn in submitting — no frames ever touched its
+    // session, so its state machine is exactly where we left it.
+    expect(storeB.getSnapshot().phase).toBe("submitting");
+    expect(storeB.getSnapshot().transcript.length).toBe(0);
+  });
+
+  it("filters out frames with a mismatched tug_session_id before the reducer", () => {
+    const conn = new MockTugConnection();
+    const storeA = constructStore(conn, TUG_A);
+
+    storeA.send("hi", []);
+
+    // A stray frame tagged with some third session should reach no
+    // store at all. storeA stays in submitting.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "assistant_text",
+      tug_session_id: "tug00000-0000-4000-8000-0000000000cc",
+      msg_id: FIXTURE_IDS.MSG_ID,
+      text: "stray",
+      is_partial: true,
+      rev: 0,
+      seq: 0,
+    });
+
+    expect(storeA.getSnapshot().phase).toBe("submitting");
+    expect(storeA.streamingDocument.get("inflight.assistant")).toBe("");
+  });
+
+  it("routes SESSION_STATE errored only to the matching store", () => {
+    const conn = new MockTugConnection();
+    const storeA = constructStore(conn, TUG_A);
+    const storeB = constructStore(conn, TUG_B);
+
+    storeA.send("hi", []);
+    storeB.send("hi", []);
+    expect(storeA.getSnapshot().phase).toBe("submitting");
+    expect(storeB.getSnapshot().phase).toBe("submitting");
+
+    conn.dispatchDecoded(FeedId.SESSION_STATE, {
+      tug_session_id: TUG_A,
+      state: "errored",
+      detail: "crash",
+    });
+
+    expect(storeA.getSnapshot().phase).toBe("errored");
+    expect(storeA.getSnapshot().lastError?.cause).toBe(
+      "session_state_errored",
+    );
+    // B was in submitting on the same connection — unaffected.
+    expect(storeB.getSnapshot().phase).toBe("submitting");
+    expect(storeB.getSnapshot().lastError).toBeNull();
+  });
+});
