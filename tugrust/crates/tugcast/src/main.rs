@@ -6,6 +6,7 @@ mod defaults;
 mod dev;
 mod feeds;
 mod migration;
+mod resources;
 mod router;
 mod server;
 
