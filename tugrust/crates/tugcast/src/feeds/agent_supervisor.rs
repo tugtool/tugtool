@@ -1793,7 +1793,11 @@ mod tests {
         ),
         mpsc::Receiver<MergerRegistration>,
     ) {
-        make_supervisor_with_spawner_config(store, spawner_factory, AgentSupervisorConfig::default())
+        make_supervisor_with_spawner_config(
+            store,
+            spawner_factory,
+            AgentSupervisorConfig::default(),
+        )
     }
 
     #[allow(clippy::type_complexity)]
