@@ -9,10 +9,12 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tugcast_core::{FeedId, Frame, StatSnapshot};
 
+#[cfg(debug_assertions)]
 pub mod build_status;
 pub mod process_info;
 pub mod token_usage;
 
+#[cfg(debug_assertions)]
 pub use build_status::BuildStatusCollector;
 pub use process_info::ProcessInfoCollector;
 pub use token_usage::TokenUsageCollector;

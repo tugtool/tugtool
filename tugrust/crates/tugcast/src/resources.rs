@@ -19,10 +19,8 @@
 
 use std::path::PathBuf;
 
-#[allow(dead_code)] // Callsites land in Step 2; this module ships alone in Step 1.
 const RESOURCE_ROOT_ENV: &str = "TUGCAST_RESOURCE_ROOT";
 
-#[allow(dead_code)] // Callsites land in Step 2; this module ships alone in Step 1.
 pub(crate) fn source_tree() -> PathBuf {
     if let Some(from_env) = std::env::var_os(RESOURCE_ROOT_ENV) {
         return PathBuf::from(from_env);

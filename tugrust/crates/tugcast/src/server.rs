@@ -15,7 +15,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -221,14 +220,13 @@ async fn eval_handler(
 /// Constructs the Router with auth, WebSocket, and API routes.
 /// Separated from `run_server` to enable testing without TCP binding.
 ///
-/// When `source_tree` is `Some(path)`, tugcast checks for a built frontend
-/// at `{source_tree}/tugdeck/dist/`. If found, a `ServeDir` fallback is added
-/// so that tugcast serves the production frontend directly on port 55255.
-/// If the dist directory does not exist, a warning is logged and unmatched
-/// routes return axum's default 404 (API routes remain fully functional).
-///
-/// Pass `None` for `source_tree` (e.g., in tests) to disable static file
-/// serving entirely.
+/// Static-file serving: tugcast always checks for a built frontend at
+/// `resources::source_tree().join("tugdeck/dist")`. In a bundled Tug.app
+/// this resolves to `Contents/Resources/tugdeck/dist/` (via `TUGCAST_RESOURCE_ROOT`
+/// set by `ProcessManager.swift`). In a dev `cargo run` without the env var,
+/// it falls back to `<repo>/tugdeck/dist/`. If the dist directory does not
+/// exist, a warning is logged and unmatched routes return axum's default
+/// 404 (API routes remain fully functional).
 ///
 /// When `bank_store` is `Some(client)`, registers the four `/api/defaults`
 /// routes with the client as an `Extension`. When `None`, the defaults routes
@@ -239,7 +237,6 @@ async fn eval_handler(
 pub(crate) fn build_app(
     router: FeedRouter,
     _dev_state: SharedDevState,
-    source_tree: Option<PathBuf>,
     bank_store: Option<Arc<TugbankClient>>,
 ) -> Router {
     // Allow any origin on localhost — tugcast only binds to loopback.
@@ -272,19 +269,17 @@ pub(crate) fn build_app(
             .layer(Extension(store));
     }
 
-    if let Some(tree) = source_tree {
-        let dist_path = tree.join("tugdeck").join("dist");
-        if dist_path.is_dir() {
-            let index_html = dist_path.join("index.html");
-            return base.fallback_service(
-                ServeDir::new(&dist_path).not_found_service(ServeFile::new(index_html)),
-            );
-        } else {
-            warn!(
-                "dist directory not found at {}, static file serving disabled",
-                dist_path.display()
-            );
-        }
+    let dist_path = crate::resources::source_tree().join("tugdeck").join("dist");
+    if dist_path.is_dir() {
+        let index_html = dist_path.join("index.html");
+        return base.fallback_service(
+            ServeDir::new(&dist_path).not_found_service(ServeFile::new(index_html)),
+        );
+    } else {
+        warn!(
+            "dist directory not found at {}, static file serving disabled",
+            dist_path.display()
+        );
     }
 
     base
@@ -293,8 +288,6 @@ pub(crate) fn build_app(
 /// Run the HTTP server
 ///
 /// Serves the axum application on the provided `TcpListener`.
-/// The `source_tree` path is forwarded to `build_app` to enable
-/// `ServeDir` static file serving in production mode.
 /// The `bank_store` is forwarded to `build_app` to enable the defaults
 /// endpoints backed by the tugbank SQLite database. The client is created
 /// in `main.rs` before startup so migration can share the same connection.
@@ -302,10 +295,9 @@ pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: SharedDevState,
-    source_tree: Option<PathBuf>,
     bank_store: Option<Arc<TugbankClient>>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state, source_tree, bank_store);
+    let app = build_app(router, dev_state, bank_store);
 
     axum::serve(
         listener,

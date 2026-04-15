@@ -84,8 +84,8 @@ impl CrashBudget {
 /// 1. CLI override if provided
 /// 2. Sibling binary (next to current executable)
 /// 3. PATH lookup
-/// 4. Bun fallback (bun run tugcode/src/main.ts)
-pub fn resolve_tugcode_path(cli_override: Option<&Path>, project_dir: &Path) -> PathBuf {
+/// 4. `.ts` fallback via `bun run` (debug-only)
+pub fn resolve_tugcode_path(cli_override: Option<&Path>) -> PathBuf {
     // CLI override has highest priority
     if let Some(path) = cli_override {
         return path.to_path_buf();
@@ -113,9 +113,20 @@ pub fn resolve_tugcode_path(cli_override: Option<&Path>, project_dir: &Path) -> 
         }
     }
 
-    // Fallback to bun run (for development without cargo build)
-    info!("tugcode binary not found, falling back to bun run");
-    project_dir.join("tugcode/src/main.ts")
+    // Fallback: bun-run the `.ts` source directly. Dev-only — a shipped
+    // Tug.app bundles a compiled tugcode at Contents/MacOS/tugcode and
+    // the sibling lookup above resolves it. Release tugcast that reaches
+    // this point without finding a sibling or PATH binary is a bug.
+    #[cfg(debug_assertions)]
+    {
+        info!("tugcode binary not found, falling back to bun run");
+        crate::resources::source_tree().join("tugcode/src/main.ts")
+    }
+    #[cfg(not(debug_assertions))]
+    panic!(
+        "tugcode binary not found via sibling (Contents/MacOS/tugcode) or PATH; \
+         required in release builds"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -561,13 +572,13 @@ mod tests {
     #[test]
     fn test_resolve_cli_override_returns_exact_path() {
         let override_path = Path::new("/custom/path/tugcode");
-        let result = resolve_tugcode_path(Some(override_path), Path::new("/project"));
+        let result = resolve_tugcode_path(Some(override_path));
         assert_eq!(result, override_path);
     }
 
     #[test]
     fn test_resolve_without_override_finds_sibling_or_falls_back() {
-        let result = resolve_tugcode_path(None, Path::new("/project"));
+        let result = resolve_tugcode_path(None);
         let s = result.to_str().unwrap();
         // In test builds, the tugcode binary sits next to the test binary in target/debug/,
         // so the sibling check succeeds. In environments without a sibling, it falls back

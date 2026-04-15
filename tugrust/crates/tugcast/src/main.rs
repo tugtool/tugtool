@@ -5,6 +5,7 @@ mod control;
 mod defaults;
 mod dev;
 mod feeds;
+#[cfg(any(debug_assertions, test))]
 mod migration;
 mod resources;
 mod router;
@@ -32,9 +33,9 @@ use crate::feeds::agent_supervisor::{
     default_spawner_factory,
 };
 use crate::feeds::filetree::FileTreeQuery;
-use crate::feeds::stats::{
-    BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
-};
+#[cfg(debug_assertions)]
+use crate::feeds::stats::BuildStatusCollector;
+use crate::feeds::stats::{ProcessInfoCollector, StatsRunner, TokenUsageCollector};
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
@@ -157,8 +158,12 @@ async fn main() {
 
     // Run the one-time flat-file-to-tugbank migration synchronously, before the
     // TCP listener binds, so no frontend fetch can race the migration writes [D05].
+    // Dev-only: production Tug.app has no legacy `.tugtool/deck-settings.json`
+    // to migrate (the file only ever existed on developer machines during the
+    // pre-tugbank transition).
+    #[cfg(debug_assertions)]
     if let Some(ref client) = bank_client {
-        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, client) {
+        if let Err(e) = migration::migrate_settings_to_tugbank(&resources::source_tree(), client) {
             warn!(error = %e, "settings migration encountered an error (non-fatal)");
         }
     }
@@ -220,9 +225,13 @@ async fn main() {
         Arc::new(ProcessInfoCollector::new()) as Arc<dyn crate::feeds::stats::StatCollector>;
     let token_usage = Arc::new(TokenUsageCollector::new(cli.session.clone()))
         as Arc<dyn crate::feeds::stats::StatCollector>;
-    let target_dir = watch_dir.join("target");
-    let build_status = Arc::new(BuildStatusCollector::new(target_dir))
-        as Arc<dyn crate::feeds::stats::StatCollector>;
+    // BuildStatusCollector is dev-only: it reads tugrust/target/, which
+    // does not exist in a bundled Tug.app. Release tugcast skips both
+    // construction and feed registration.
+    #[cfg(debug_assertions)]
+    let build_status = Arc::new(BuildStatusCollector::new(
+        resources::source_tree().join("target"),
+    )) as Arc<dyn crate::feeds::stats::StatCollector>;
 
     // Create watch channels for stats feeds
     let (stats_agg_tx, stats_agg_rx) = watch::channel(Frame::new(FeedId::STATS, vec![]));
@@ -230,6 +239,7 @@ async fn main() {
         watch::channel(Frame::new(FeedId::STATS_PROCESS_INFO, vec![]));
     let (stats_token_tx, stats_token_rx) =
         watch::channel(Frame::new(FeedId::STATS_TOKEN_USAGE, vec![]));
+    #[cfg(debug_assertions)]
     let (stats_build_tx, stats_build_rx) =
         watch::channel(Frame::new(FeedId::STATS_BUILD_STATUS, vec![]));
 
@@ -281,8 +291,7 @@ async fn main() {
     let code_replay = ReplayBuffer::new(1000);
 
     // Resolve tugcode path for the supervisor's default spawner factory.
-    let tugcode_path =
-        feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref(), &watch_dir);
+    let tugcode_path = feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref());
     if !tugcode_path.exists() {
         panic!(
             "tugcode not found at {} — tugcode is required for tugcast to run",
@@ -403,7 +412,9 @@ async fn main() {
     // ownership claims against `client_sessions`.
     feed_router.set_supervisor(Arc::clone(&supervisor));
 
-    // Register snapshot watches
+    // Register snapshot watches. `stats_build_rx` is pushed only in debug
+    // builds since BuildStatusCollector is gated out of release.
+    #[allow(unused_mut)]
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
         bootstrap.ft_watch_rx.clone(),
@@ -411,8 +422,9 @@ async fn main() {
         stats_agg_rx,
         stats_proc_rx,
         stats_token_rx,
-        stats_build_rx,
     ];
+    #[cfg(debug_assertions)]
+    snapshot_watches.push(stats_build_rx);
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
@@ -423,16 +435,24 @@ async fn main() {
     // WorkspaceRegistry's bootstrap entry — spawned inside
     // `WorkspaceEntry::new` above.
 
-    // Start stats feeds in background task
+    // Start stats feeds in background task. BuildStatusCollector and its
+    // watch sender are dev-only; release skips the push so collectors.len()
+    // still matches senders.len() inside StatsRunner::run. `mut` is only
+    // needed in debug; release is allowed to leave it unused.
     let stats_cancel = cancel.clone();
-    let stats_runner = StatsRunner::new(vec![process_info, token_usage, build_status]);
+    #[allow(unused_mut)]
+    let mut collectors: Vec<Arc<dyn crate::feeds::stats::StatCollector>> =
+        vec![process_info, token_usage];
+    #[cfg(debug_assertions)]
+    collectors.push(build_status);
+    #[allow(unused_mut)]
+    let mut stats_senders = vec![stats_proc_tx, stats_token_tx];
+    #[cfg(debug_assertions)]
+    stats_senders.push(stats_build_tx);
+    let stats_runner = StatsRunner::new(collectors);
     tokio::spawn(async move {
         stats_runner
-            .run(
-                stats_agg_tx,
-                vec![stats_proc_tx, stats_token_tx, stats_build_tx],
-                stats_cancel,
-            )
+            .run(stats_agg_tx, stats_senders, stats_cancel)
             .await;
     });
 
@@ -499,13 +519,7 @@ async fn main() {
     }
 
     // Start server and select! on shutdown channel + SIGTERM
-    let server_future = server::run_server(
-        listener,
-        feed_router,
-        shared_dev_state,
-        Some(watch_dir),
-        bank_client,
-    );
+    let server_future = server::run_server(listener, feed_router, shared_dev_state, bank_client);
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to register SIGTERM handler");

@@ -51,7 +51,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, None);
+    let app = build_app(feed_router, dev_state, None);
     (app, token)
 }
 
@@ -512,7 +512,7 @@ async fn test_tell_reload() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, None);
+    let app = build_app(feed_router, dev_state, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -564,7 +564,7 @@ async fn test_tell_client_action_round_trip() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, None);
+    let app = build_app(feed_router, dev_state, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -672,7 +672,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, Some(client));
+    let app = build_app(feed_router, dev_state, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     (app.layer(MockConnectInfo(addr)), tmp)
 }
@@ -967,7 +967,7 @@ async fn test_defaults_non_loopback_returns_403() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, Some(bank_client));
+    let app = build_app(feed_router, dev_state, Some(bank_client));
     // Apply a non-loopback address
     let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
     let app = app.layer(MockConnectInfo(non_loopback));
@@ -1020,7 +1020,7 @@ fn build_migration_test_app(client: Arc<TugbankClient>) -> axum::Router {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None, Some(client));
+    let app = build_app(feed_router, dev_state, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     app.layer(MockConnectInfo(addr))
 }
