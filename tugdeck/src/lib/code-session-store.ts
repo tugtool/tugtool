@@ -64,6 +64,8 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "tool_use_structured",
   "turn_complete",
   "system_metadata",
+  "control_request_forward",
+  "cost_update",
 ]);
 
 export interface CodeSessionStoreOptions {
@@ -197,24 +199,44 @@ export class CodeSessionStore {
     throw new Error("CodeSessionStore.interrupt: not implemented");
   }
 
-  /** Step 6 scaffold — real dispatch lands there. */
+  /**
+   * Respond to a pending permission prompt. Emits a `tool_approval`
+   * frame and restores the phase that was active before the
+   * `control_request_forward` arrived (typically `tool_work`).
+   */
   respondApproval(
-    _requestId: string,
-    _payload: {
+    requestId: string,
+    payload: {
       decision: "allow" | "deny";
       updatedInput?: unknown;
       message?: string;
     },
   ): void {
-    throw new Error("CodeSessionStore.respondApproval: not implemented");
+    if (this._disposed) return;
+    this.dispatch({
+      type: "respond_approval",
+      request_id: requestId,
+      decision: payload.decision,
+      updatedInput: payload.updatedInput,
+      message: payload.message,
+    });
   }
 
-  /** Step 6 scaffold — real dispatch lands there. */
+  /**
+   * Respond to a pending `AskUserQuestion` prompt. Emits a
+   * `question_answer` frame and restores the phase that was active
+   * before the `control_request_forward` arrived.
+   */
   respondQuestion(
-    _requestId: string,
-    _payload: { answers: Record<string, unknown> },
+    requestId: string,
+    payload: { answers: Record<string, unknown> },
   ): void {
-    throw new Error("CodeSessionStore.respondQuestion: not implemented");
+    if (this._disposed) return;
+    this.dispatch({
+      type: "respond_question",
+      request_id: requestId,
+      answers: payload.answers,
+    });
   }
 
   /**

@@ -15,6 +15,10 @@ import type { Effect, InflightPath } from "./effects";
 import type {
   AssistantTextEvent,
   CodeSessionEvent,
+  ControlRequestForwardEvent,
+  CostUpdateEvent,
+  RespondApprovalActionEvent,
+  RespondQuestionActionEvent,
   SendActionEvent,
   SessionInitEvent,
   ThinkingTextEvent,
@@ -412,6 +416,138 @@ function handleTurnComplete(
 }
 
 // ---------------------------------------------------------------------------
+// Control request forward + respond actions
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the `ControlRequestForward` fields from the event envelope.
+ * Strips `type` so the stored record matches the public type. All other
+ * fields (including unknown ones from forward-compat wire versions)
+ * pass through so UI code can read `tool_name`, `input`, `options`,
+ * `question`, etc.
+ */
+function extractForward(
+  event: ControlRequestForwardEvent,
+): ControlRequestForward {
+  const { type: _type, ...rest } = event;
+  return rest as ControlRequestForward;
+}
+
+function handleControlRequestForward(
+  state: CodeSessionState,
+  event: ControlRequestForwardEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Only meaningful during an active turn. Outside an active phase,
+  // silently drop — the reducer stays total and the mid-turn gate
+  // tolerates stray forwards from a stale feed replay.
+  if (
+    state.phase !== "streaming" &&
+    state.phase !== "tool_work" &&
+    state.phase !== "awaiting_first_token" &&
+    state.phase !== "submitting"
+  ) {
+    return { state, effects: [] };
+  }
+
+  const forward = extractForward(event);
+  const next: CodeSessionState = {
+    ...state,
+    phase: "awaiting_approval",
+    prevPhase: state.phase,
+    pendingApproval: event.is_question ? state.pendingApproval : forward,
+    pendingQuestion: event.is_question ? forward : state.pendingQuestion,
+  };
+  return { state: next, effects: [] };
+}
+
+function handleRespondApproval(
+  state: CodeSessionState,
+  event: RespondApprovalActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // No pending approval — drop the action. Prevents accidental writes
+  // if the UI double-clicks or replays an action after dispose.
+  if (state.pendingApproval === null) {
+    return { state, effects: [] };
+  }
+
+  const restored: CodeSessionPhase = state.prevPhase ?? "streaming";
+  const next: CodeSessionState = {
+    ...state,
+    phase: restored,
+    prevPhase: null,
+    pendingApproval: null,
+  };
+  return {
+    state: next,
+    effects: [
+      {
+        kind: "send-frame",
+        msg: {
+          type: "tool_approval",
+          request_id: event.request_id,
+          decision: event.decision,
+          updatedInput: event.updatedInput,
+          message: event.message,
+        },
+      },
+    ],
+  };
+}
+
+function handleRespondQuestion(
+  state: CodeSessionState,
+  event: RespondQuestionActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.pendingQuestion === null) {
+    return { state, effects: [] };
+  }
+
+  const restored: CodeSessionPhase = state.prevPhase ?? "streaming";
+  const next: CodeSessionState = {
+    ...state,
+    phase: restored,
+    prevPhase: null,
+    pendingQuestion: null,
+  };
+  return {
+    state: next,
+    effects: [
+      {
+        kind: "send-frame",
+        msg: {
+          type: "question_answer",
+          request_id: event.request_id,
+          answers: event.answers,
+        },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cost update — telemetry surface, phase-tolerant
+// ---------------------------------------------------------------------------
+
+function handleCostUpdate(
+  state: CodeSessionState,
+  event: CostUpdateEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Guard against non-numeric payloads. Live Claude sends a number; the
+  // golden loader's `"{{f64}}"` → `0` preprocessing also lands as a
+  // number. A string or undefined would mean a wire-contract break.
+  if (typeof event.total_cost_usd !== "number") {
+    return { state, effects: [] };
+  }
+  if (state.lastCostUsd === event.total_cost_usd) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, lastCostUsd: event.total_cost_usd },
+    effects: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -440,6 +576,14 @@ export function reduce(
       return handleToolUseStructured(state, event);
     case "turn_complete":
       return handleTurnComplete(state, event);
+    case "control_request_forward":
+      return handleControlRequestForward(state, event);
+    case "respond_approval":
+      return handleRespondApproval(state, event);
+    case "respond_question":
+      return handleRespondQuestion(state, event);
+    case "cost_update":
+      return handleCostUpdate(state, event);
     case "system_metadata":
       // [D09] SessionMetadataStore owns this feed — drop explicitly.
       return { state, effects: [] };

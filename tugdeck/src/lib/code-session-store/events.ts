@@ -4,12 +4,14 @@
  * Step 3 populates the core stream-json types driving the basic turn
  * round-trip plus the internal `send` action; later steps add
  * `thinking_text` (Step 4), tool events (Step 5),
- * `control_request_forward` (Step 6), `interrupt` (Step 7), and
- * `session_state_errored` / `transport_close` (Step 8). The Step 1
- * `__noop__` placeholder is gone — every event now carries a real type.
+ * `control_request_forward` / `cost_update` / respond actions (Step 6),
+ * `interrupt` (Step 7), and `session_state_errored` / `transport_close`
+ * (Step 8). The Step 1 `__noop__` placeholder is gone — every event now
+ * carries a real type.
  */
 
 import type { AtomSegment } from "../tug-atom-img";
+import type { ControlRequestForward } from "./types";
 
 /** Internal `send` action injected by `CodeSessionStore.send`. */
 export interface SendActionEvent {
@@ -115,6 +117,52 @@ export interface SystemMetadataEvent {
 }
 
 /**
+ * `control_request_forward` — Claude forwards a permission prompt
+ * (`is_question: false`) or an `AskUserQuestion` prompt (`is_question:
+ * true`). The reducer stashes the previous phase and transitions to
+ * `awaiting_approval`; `respondApproval` / `respondQuestion` restore it.
+ * The extra fields beyond `type` are preserved on `pendingApproval` /
+ * `pendingQuestion` so UI code can read `tool_name`, `options`, etc.
+ */
+export type ControlRequestForwardEvent = {
+  type: "control_request_forward";
+} & ControlRequestForward;
+
+/**
+ * Internal action injected by `CodeSessionStore.respondApproval`. Not
+ * a wire event — never decoded from a frame.
+ */
+export interface RespondApprovalActionEvent {
+  type: "respond_approval";
+  request_id: string;
+  decision: "allow" | "deny";
+  updatedInput?: unknown;
+  message?: string;
+}
+
+/**
+ * Internal action injected by `CodeSessionStore.respondQuestion`. Not
+ * a wire event — never decoded from a frame.
+ */
+export interface RespondQuestionActionEvent {
+  type: "respond_question";
+  request_id: string;
+  answers: Record<string, unknown>;
+}
+
+/**
+ * `cost_update` — telemetry frame carrying cumulative dollar cost.
+ * Surfaced through the snapshot's `lastCostUsd` field with no phase
+ * transition; `cost_update` can land in any phase.
+ */
+export interface CostUpdateEvent {
+  type: "cost_update";
+  total_cost_usd: number;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Placeholder for Step 8's `SESSION_STATE { state: "errored", ... }`
  * frame. Declared now so the reducer's default case stays exhaustive
  * when Step 8 lands.
@@ -140,5 +188,9 @@ export type CodeSessionEvent =
   | ToolUseStructuredEvent
   | TurnCompleteEvent
   | SystemMetadataEvent
+  | ControlRequestForwardEvent
+  | RespondApprovalActionEvent
+  | RespondQuestionActionEvent
+  | CostUpdateEvent
   | SessionStateErroredEvent
   | TransportCloseEvent;
