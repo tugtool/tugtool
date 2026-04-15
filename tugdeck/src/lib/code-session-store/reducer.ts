@@ -21,7 +21,9 @@ import type {
   RespondQuestionActionEvent,
   SendActionEvent,
   SessionInitEvent,
+  SessionNotOwnedEvent,
   SessionStateErroredEvent,
+  SessionUnknownEvent,
   ThinkingTextEvent,
   ToolResultEvent,
   ToolUseEvent,
@@ -53,7 +55,12 @@ export interface CodeSessionState {
   pendingUserMessage: { text: string; atoms: ReadonlyArray<AtomSegment> } | null;
   queuedSends: Array<{ text: string; atoms: AtomSegment[] }>;
   lastError: {
-    cause: "session_state_errored" | "transport_closed" | "wire_error";
+    cause:
+      | "session_state_errored"
+      | "transport_closed"
+      | "wire_error"
+      | "session_unknown"
+      | "session_not_owned";
     message: string;
     at: number;
   } | null;
@@ -716,6 +723,80 @@ function handleTransportClose(
   };
 }
 
+/**
+ * Predicate used by the CONTROL-error handlers: a store "owns" an
+ * incoming CONTROL error if it is currently waiting on a response to
+ * a CODE_INPUT write. This covers `submitting` (just wrote the frame,
+ * waiting for Claude's first token) and `awaiting_first_token` (same
+ * waiting window, distinct only because a partial might already have
+ * arrived in a previous turn context). Other active phases
+ * (`streaming`, `tool_work`, `awaiting_approval`) have already
+ * received some response from Claude, so a CONTROL error arriving
+ * unrouted isn't about the current card's latest write.
+ *
+ * This gate is the multi-card self-routing mechanism: when the wire
+ * frame lacks `tug_session_id` (see `router.rs`'s `session_not_owned`
+ * path), every per-card FeedStore's filter lets it through, and each
+ * reducer decides on its own whether to accept the routing.
+ */
+function isAwaitingInputResponse(state: CodeSessionState): boolean {
+  return (
+    state.phase === "submitting" || state.phase === "awaiting_first_token"
+  );
+}
+
+function handleSessionUnknown(
+  state: CodeSessionState,
+  event: SessionUnknownEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // The wire frame carries `tug_session_id`, so the per-card filter
+  // already routed it to the correct store. Drop if we're not in a
+  // turn that could have triggered it — defensive, because the wire
+  // contract says this only fires after a CODE_INPUT write.
+  if (!isAwaitingInputResponse(state)) {
+    return { state, effects: [] };
+  }
+  const message = event.detail ?? "session unknown to supervisor";
+  return {
+    state: {
+      ...state,
+      phase: "errored",
+      lastError: {
+        cause: "session_unknown",
+        message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
+function handleSessionNotOwned(
+  state: CodeSessionState,
+  event: SessionNotOwnedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // The wire frame may arrive without `tug_session_id`, so every
+  // store's filter saw it. The phase gate picks the one store (or,
+  // rarely, small set) that actually issued a CODE_INPUT write in
+  // the immediate past.
+  if (!isAwaitingInputResponse(state)) {
+    return { state, effects: [] };
+  }
+  const message = event.detail ?? "session not owned by this client";
+  return {
+    state: {
+      ...state,
+      phase: "errored",
+      lastError: {
+        cause: "session_not_owned",
+        message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -760,6 +841,10 @@ export function reduce(
       return { state, effects: [] };
     case "session_state_errored":
       return handleSessionStateErrored(state, event);
+    case "session_unknown":
+      return handleSessionUnknown(state, event);
+    case "session_not_owned":
+      return handleSessionNotOwned(state, event);
     case "transport_close":
       return handleTransportClose(state);
     case "error":

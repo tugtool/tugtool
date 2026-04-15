@@ -120,7 +120,12 @@ export interface CodeSessionSnapshot {
 
   lastCost: CostSnapshot | null;
   lastError: {
-    cause: "session_state_errored" | "transport_closed" | "wire_error";
+    cause:
+      | "session_state_errored"
+      | "transport_closed"
+      | "wire_error"
+      | "session_unknown"
+      | "session_not_owned";
     message: string;
     at: number;
   } | null;

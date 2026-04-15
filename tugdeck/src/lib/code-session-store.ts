@@ -133,11 +133,13 @@ export class CodeSessionStore {
 
     this.feedStore = new FeedStore(
       this.conn,
-      [FeedId.CODE_OUTPUT, FeedId.SESSION_STATE] as ReadonlyArray<FeedIdValue>,
+      [
+        FeedId.CODE_OUTPUT,
+        FeedId.SESSION_STATE,
+        FeedId.CONTROL,
+      ] as ReadonlyArray<FeedIdValue>,
       undefined,
-      (_feedId, decoded) =>
-        (decoded as { tug_session_id?: string }).tug_session_id ===
-        this.tugSessionId,
+      (feedId, decoded) => this.acceptFrame(feedId, decoded),
     );
     this._feedStoreUnsub = this.feedStore.subscribe(() =>
       this.onFeedStoreChange(),
@@ -290,6 +292,32 @@ export class CodeSessionStore {
   // Internal dispatch pipeline
   // ---------------------------------------------------------------------
 
+  /**
+   * Per-card frame filter. For CODE_OUTPUT and SESSION_STATE the rule
+   * is simple: match on the payload's `tug_session_id`. For CONTROL it
+   * is relaxed: session-scoped non-error frames (e.g. `spawn_session_ok`)
+   * still require a tsid match, but CONTROL *error* frames are
+   * accepted either way — some (`session_unknown`) carry
+   * `tug_session_id`, while others (`session_not_owned`, per
+   * `router.rs`'s rejection handler) do not. The reducer's phase gate
+   * decides which store owns an unrouted error, so the filter stays
+   * permissive on the CONTROL-error path without flooding non-active
+   * stores with spurious transitions.
+   */
+  private acceptFrame(feedId: number, decoded: unknown): boolean {
+    const d = decoded as { tug_session_id?: string; type?: string };
+    if (feedId === FeedId.CONTROL) {
+      if (d.type === "error") {
+        return (
+          d.tug_session_id === undefined ||
+          d.tug_session_id === this.tugSessionId
+        );
+      }
+      return d.tug_session_id === this.tugSessionId;
+    }
+    return d.tug_session_id === this.tugSessionId;
+  }
+
   private onFeedStoreChange(): void {
     if (this._disposed) return;
     const snap = this.feedStore.getSnapshot();
@@ -324,6 +352,24 @@ export class CodeSessionStore {
         type: "session_state_errored",
         detail: typeof ss.detail === "string" ? ss.detail : undefined,
       };
+    }
+    if (feedId === FeedId.CONTROL) {
+      // Only CONTROL *error* frames map to reducer events. Everything
+      // else (`spawn_session_ok`, `session_backpressure`, app-level
+      // actions like `reload` / `set-theme`) either belongs to
+      // `action-dispatch.ts` or is dropped by `acceptFrame` upstream
+      // of this point. The two error details we recognize are
+      // `session_unknown` (supervisor orphan dispatcher) and
+      // `session_not_owned` (router P5 authz reject).
+      const ce = decoded as { type?: string; detail?: string };
+      if (ce.type !== "error") return null;
+      if (ce.detail === "session_unknown") {
+        return { type: "session_unknown", detail: ce.detail };
+      }
+      if (ce.detail === "session_not_owned") {
+        return { type: "session_not_owned", detail: ce.detail };
+      }
+      return null;
     }
     return null;
   }

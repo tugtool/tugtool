@@ -215,6 +215,37 @@ export interface TransportCloseEvent {
   type: "transport_close";
 }
 
+/**
+ * Internal event mapped from a CONTROL frame of shape
+ * `{ type: "error", detail: "session_unknown", tug_session_id }`.
+ * Supervisor emits this when a CODE_INPUT arrives for a session it
+ * doesn't know about (orphan dispatcher) — the classic "stale
+ * session_id after server reconnect" failure mode. The frame carries
+ * `tug_session_id`, so the per-card filter routes it cleanly via the
+ * normal session-match path.
+ */
+export interface SessionUnknownEvent {
+  type: "session_unknown";
+  detail?: string;
+}
+
+/**
+ * Internal event mapped from a CONTROL frame of shape
+ * `{ type: "error", detail: "session_not_owned" }`. Router's P5 authz
+ * check emits this when a client sends CODE_INPUT for a session that
+ * another client owns — or, more commonly, a session this client
+ * never registered via `spawn_session`. The wire frame currently
+ * carries NO `tug_session_id` field (see `router.rs`: the rejection
+ * handler sends just `{type, detail}`), so the per-card filter
+ * relaxes for CONTROL error frames and the reducer uses a phase gate
+ * — only stores in a waiting-for-response phase accept the routing —
+ * to self-route in the multi-card single-client case.
+ */
+export interface SessionNotOwnedEvent {
+  type: "session_not_owned";
+  detail?: string;
+}
+
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
@@ -233,4 +264,6 @@ export type CodeSessionEvent =
   | CostUpdateEvent
   | WireErrorEvent
   | SessionStateErroredEvent
+  | SessionUnknownEvent
+  | SessionNotOwnedEvent
   | TransportCloseEvent;
