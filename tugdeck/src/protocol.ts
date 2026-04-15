@@ -191,6 +191,58 @@ export function encodeCodeInput(msg: object, tugSessionId: string): ArrayBuffer 
 }
 
 /**
+ * Client-to-server message shapes for the CODE_INPUT feed. The union mirrors
+ * the stream-json inbound messages tugcode accepts. T3.4.a only emits the
+ * first four variants; the remaining entries are forward-compat placeholders
+ * so later phases can extend without re-opening the union.
+ */
+export type InboundMessage =
+  | { type: "user_message"; text: string; attachments: unknown[] }
+  | { type: "interrupt" }
+  | {
+      type: "tool_approval";
+      request_id: string;
+      decision: "allow" | "deny";
+      updatedInput?: unknown;
+      message?: string;
+    }
+  | {
+      type: "question_answer";
+      request_id: string;
+      answers: Record<string, unknown>;
+    }
+  | { type: "permission_mode"; mode: string }
+  | { type: "model_change"; model: string }
+  | { type: "session_command"; command: "new" | "continue" | "fork" }
+  | { type: "stop_task"; task_id: string };
+
+/**
+ * Encode an InboundMessage as the raw JSON payload bytes (no frame header).
+ * Paired with `TugConnection.send(FeedId.CODE_INPUT, payload)`, which wraps
+ * the payload in a frame at the connection layer. Distinct from
+ * `encodeCodeInput`, which returns a fully framed ArrayBuffer.
+ */
+export function encodeCodeInputPayload(
+  msg: InboundMessage,
+  tugSessionId: string,
+): Uint8Array {
+  const json = JSON.stringify({ tug_session_id: tugSessionId, ...msg });
+  return new TextEncoder().encode(json);
+}
+
+/**
+ * Inverse of `encodeCodeInputPayload` — used by test doubles to decode
+ * outbound frame payloads into structured InboundMessage objects for
+ * assertion. Not called from production code paths.
+ */
+export function decodeCodeInputPayload(
+  payload: Uint8Array,
+): InboundMessage & { tug_session_id: string } {
+  const json = new TextDecoder().decode(payload);
+  return JSON.parse(json) as InboundMessage & { tug_session_id: string };
+}
+
+/**
  * Create a control frame with a JSON action payload
  */
 export function controlFrame(action: string, params?: Record<string, unknown>): Frame {
