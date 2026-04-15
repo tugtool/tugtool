@@ -2282,7 +2282,9 @@ Test updates:
 
 ---
 
-##### T3.4.a — CodeSessionStore (turn state machine) {#t3-4-a-code-session-store}
+##### T3.4.a — CodeSessionStore (turn state machine) ✓ LANDED {#t3-4-a-code-session-store}
+
+> **Status:** ✓ LANDED. Implemented per [`tugplan-code-session-store.md`](tugplan-code-session-store.md) (Steps 1–10). `tugdeck/src/lib/code-session-store.ts` exports `CodeSessionStore`, `CodeSessionSnapshot`, `TurnEntry`, `ToolCallState`, `ControlRequestForward`, `CostSnapshot`, and `CodeSessionPhase`. 91 store tests green (2039 full-suite).
 
 **Goal:** A new L02 store that owns everything the Tide card needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in `tug-prompt-input`, or in `tug-prompt-entry`. One instance per Tide card, one backing Claude session per instance, no shared state between cards.
 

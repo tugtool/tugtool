@@ -50,6 +50,7 @@ export type {
   TurnEntry,
   ToolCallState,
   ControlRequestForward,
+  CostSnapshot,
 } from "./code-session-store/types";
 
 const STREAM_SOURCE_TAG = "code-session-store";
