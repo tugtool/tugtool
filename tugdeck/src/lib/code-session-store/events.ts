@@ -50,6 +50,51 @@ export interface ThinkingTextEvent {
   [key: string]: unknown;
 }
 
+/**
+ * `tool_use` — Claude opens or updates a tool call. The first event
+ * for a logical call arrives with `input: {}`; a second `tool_use` with
+ * the same `tool_use_id` carries the filled-in input.
+ */
+export interface ToolUseEvent {
+  type: "tool_use";
+  msg_id?: string;
+  tool_use_id: string;
+  tool_name: string;
+  input: unknown;
+  seq?: number;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `tool_result` — terminates a logical call. `is_error: true` routes
+ * the entry to `status: "error"`; otherwise `status: "done"`. The
+ * transition `tool_work → streaming` fires only when every entry in
+ * `toolCallMap` is terminal.
+ */
+export interface ToolResultEvent {
+  type: "tool_result";
+  tool_use_id: string;
+  output?: unknown;
+  is_error?: boolean;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `tool_use_structured` — structured result for a prior `tool_result`.
+ * Populates `structuredResult` on the matching map entry without
+ * changing its terminal status.
+ */
+export interface ToolUseStructuredEvent {
+  type: "tool_use_structured";
+  tool_use_id: string;
+  tool_name?: string;
+  structured_result?: unknown;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
 /** `turn_complete` — closes the active turn with success or error. */
 export interface TurnCompleteEvent {
   type: "turn_complete";
@@ -90,6 +135,9 @@ export type CodeSessionEvent =
   | SessionInitEvent
   | AssistantTextEvent
   | ThinkingTextEvent
+  | ToolUseEvent
+  | ToolResultEvent
+  | ToolUseStructuredEvent
   | TurnCompleteEvent
   | SystemMetadataEvent
   | SessionStateErroredEvent

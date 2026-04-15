@@ -18,6 +18,9 @@ import type {
   SendActionEvent,
   SessionInitEvent,
   ThinkingTextEvent,
+  ToolResultEvent,
+  ToolUseEvent,
+  ToolUseStructuredEvent,
   TurnCompleteEvent,
 } from "./events";
 import type {
@@ -181,6 +184,177 @@ function handleTextDelta(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Tool call lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Serialize the current toolCallMap values into the JSON string the
+ * `inflight.tools` PropertyStore path holds. Insertion order is
+ * preserved by `Map.values()`.
+ */
+function serializeToolCalls(
+  toolCallMap: ReadonlyMap<string, ToolCallState>,
+): string {
+  return JSON.stringify(Array.from(toolCallMap.values()));
+}
+
+/**
+ * Predicate driving the `tool_work → streaming` transition: every
+ * entry must be terminal (`done` or `error`). An empty map counts as
+ * "all done" but the reducer only calls this after a state-changing
+ * tool event, so the empty case never triggers a spurious return.
+ */
+function allToolsTerminal(
+  toolCallMap: ReadonlyMap<string, ToolCallState>,
+): boolean {
+  for (const entry of toolCallMap.values()) {
+    if (entry.status !== "done" && entry.status !== "error") {
+      return false;
+    }
+  }
+  return true;
+}
+
+function handleToolUse(
+  state: CodeSessionState,
+  event: ToolUseEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (
+    state.phase !== "submitting" &&
+    state.phase !== "awaiting_first_token" &&
+    state.phase !== "streaming" &&
+    state.phase !== "tool_work"
+  ) {
+    return { state, effects: [] };
+  }
+
+  const toolUseId = event.tool_use_id;
+  const toolName = event.tool_name ?? "";
+  const incomingInput = (event.input ?? {}) as Record<string, unknown>;
+
+  const toolCallMap = new Map(state.toolCallMap);
+  const existing = toolCallMap.get(toolUseId);
+
+  if (existing) {
+    // Continuation — Claude streams `tool_use` twice for a logical
+    // call (first with `input: {}`, then with the filled-in input).
+    // Preserve status and accumulated fields; only overwrite `input`
+    // when the incoming payload has keys.
+    const nextInput =
+      Object.keys(incomingInput).length > 0 ? incomingInput : existing.input;
+    toolCallMap.set(toolUseId, {
+      ...existing,
+      toolName: toolName !== "" ? toolName : existing.toolName,
+      input: nextInput,
+    });
+  } else {
+    toolCallMap.set(toolUseId, {
+      toolUseId,
+      toolName,
+      input: incomingInput,
+      status: "pending",
+      result: null,
+      structuredResult: null,
+    });
+  }
+
+  return {
+    state: {
+      ...state,
+      phase: "tool_work",
+      activeMsgId: event.msg_id ?? state.activeMsgId,
+      toolCallMap,
+    },
+    effects: [
+      {
+        kind: "write-inflight",
+        path: "inflight.tools",
+        value: serializeToolCalls(toolCallMap),
+      },
+    ],
+  };
+}
+
+function handleToolResult(
+  state: CodeSessionState,
+  event: ToolResultEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "tool_work" && state.phase !== "streaming") {
+    return { state, effects: [] };
+  }
+
+  const toolUseId = event.tool_use_id;
+  const existing = state.toolCallMap.get(toolUseId);
+  if (!existing) {
+    console.warn(
+      `[code-session-store] tool_result for unknown tool_use_id: ${toolUseId}`,
+    );
+    return { state, effects: [] };
+  }
+
+  const toolCallMap = new Map(state.toolCallMap);
+  toolCallMap.set(toolUseId, {
+    ...existing,
+    status: event.is_error === true ? "error" : "done",
+    result: event.output ?? null,
+  });
+
+  const nextPhase: CodeSessionPhase = allToolsTerminal(toolCallMap)
+    ? "streaming"
+    : "tool_work";
+
+  return {
+    state: {
+      ...state,
+      phase: nextPhase,
+      toolCallMap,
+    },
+    effects: [
+      {
+        kind: "write-inflight",
+        path: "inflight.tools",
+        value: serializeToolCalls(toolCallMap),
+      },
+    ],
+  };
+}
+
+function handleToolUseStructured(
+  state: CodeSessionState,
+  event: ToolUseStructuredEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "tool_work" && state.phase !== "streaming") {
+    return { state, effects: [] };
+  }
+
+  const toolUseId = event.tool_use_id;
+  const existing = state.toolCallMap.get(toolUseId);
+  if (!existing) {
+    console.warn(
+      `[code-session-store] tool_use_structured for unknown tool_use_id: ${toolUseId}`,
+    );
+    return { state, effects: [] };
+  }
+
+  const toolCallMap = new Map(state.toolCallMap);
+  toolCallMap.set(toolUseId, {
+    ...existing,
+    structuredResult: event.structured_result ?? null,
+  });
+
+  return {
+    state: { ...state, toolCallMap },
+    effects: [
+      {
+        kind: "write-inflight",
+        path: "inflight.tools",
+        value: serializeToolCalls(toolCallMap),
+      },
+    ],
+  };
+}
+
 function handleTurnComplete(
   state: CodeSessionState,
   event: TurnCompleteEvent,
@@ -205,7 +379,9 @@ function handleTurnComplete(
     },
     thinking: scratchEntry.thinking,
     assistant: scratchEntry.assistant,
-    toolCalls: [],
+    // Preserve insertion order ([Q02]): Map.values() iterates in the
+    // order entries were inserted via handleToolUse.
+    toolCalls: Array.from(state.toolCallMap.values()),
     result: isSuccess ? "success" : "interrupted",
     endedAt: Date.now(),
   };
@@ -253,6 +429,12 @@ export function reduce(
       return handleTextDelta(state, event, "assistant", "inflight.assistant");
     case "thinking_text":
       return handleTextDelta(state, event, "thinking", "inflight.thinking");
+    case "tool_use":
+      return handleToolUse(state, event);
+    case "tool_result":
+      return handleToolResult(state, event);
+    case "tool_use_structured":
+      return handleToolUseStructured(state, event);
     case "turn_complete":
       return handleTurnComplete(state, event);
     case "system_metadata":

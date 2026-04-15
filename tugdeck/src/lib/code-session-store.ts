@@ -59,6 +59,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "session_init",
   "assistant_text",
   "thinking_text",
+  "tool_use",
+  "tool_result",
+  "tool_use_structured",
   "turn_complete",
   "system_metadata",
 ]);
