@@ -160,13 +160,36 @@ export interface InterruptActionEvent {
 }
 
 /**
- * `cost_update` — telemetry frame carrying cumulative dollar cost.
- * Surfaced through the snapshot's `lastCostUsd` field with no phase
- * transition; `cost_update` can land in any phase.
+ * `cost_update` — telemetry frame carrying cumulative dollar cost and
+ * per-turn/session accounting. Surfaced through the snapshot's
+ * `lastCost` field with no phase transition; `cost_update` can land in
+ * any phase. Live fixtures also emit `usage` and `modelUsage` trees
+ * with token breakdowns — the reducer passes those through as
+ * `unknown` for renderers that want them.
  */
 export interface CostUpdateEvent {
   type: "cost_update";
   total_cost_usd: number;
+  num_turns?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  usage?: unknown;
+  modelUsage?: unknown;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `error` — a wire-level error frame distinct from SESSION_STATE
+ * errored and from transport close. Listed in the outbound event table
+ * (roadmap/tide.md) but never captured in v2.1.105 fixtures, so tests
+ * exercise it via synthetic dispatch. Routes to the `errored` phase
+ * with cause `wire_error`.
+ */
+export interface WireErrorEvent {
+  type: "error";
+  message?: string;
+  recoverable?: boolean;
   tug_session_id?: string;
   [key: string]: unknown;
 }
@@ -208,5 +231,6 @@ export type CodeSessionEvent =
   | RespondQuestionActionEvent
   | InterruptActionEvent
   | CostUpdateEvent
+  | WireErrorEvent
   | SessionStateErroredEvent
   | TransportCloseEvent;

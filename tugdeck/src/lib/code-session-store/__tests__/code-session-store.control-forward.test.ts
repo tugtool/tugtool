@@ -154,9 +154,16 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
     }
 
     expect(store.getSnapshot().phase).toBe("awaiting_approval");
-    expect(store.getSnapshot().pendingApproval?.request_id).toBe(
-      FIXTURE_IDS.REQUEST_ID,
+    const approval = store.getSnapshot().pendingApproval;
+    expect(approval?.request_id).toBe(FIXTURE_IDS.REQUEST_ID);
+    // decision_reason and permission_suggestions are named optional
+    // fields on ControlRequestForward so T3.4.b can read them directly
+    // instead of chasing `[key: string]: unknown` casts.
+    expect(approval?.decision_reason).toBe(
+      "Path is outside allowed working directories",
     );
+    expect(Array.isArray(approval?.permission_suggestions)).toBe(true);
+    expect(approval?.permission_suggestions?.length).toBeGreaterThan(0);
 
     const framesBefore = conn.recordedFrames.length;
     store.respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "deny" });
@@ -189,7 +196,7 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
     expect(turn.toolCalls[0].status).toBe("error");
     expect(turn.result).toBe("success");
     // cost_update rode the fixture; the f64 placeholder resolves to 0.
-    expect(snap.lastCostUsd).toBe(0);
+    expect(snap.lastCost?.totalCostUsd).toBe(0);
   });
 });
 

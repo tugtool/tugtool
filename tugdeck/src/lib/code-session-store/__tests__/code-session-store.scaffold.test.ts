@@ -41,7 +41,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
     expect(snap.streamingPaths.assistant).toBe("inflight.assistant");
     expect(snap.streamingPaths.thinking).toBe("inflight.thinking");
     expect(snap.streamingPaths.tools).toBe("inflight.tools");
-    expect(snap.lastCostUsd).toBeNull();
+    expect(snap.lastCost).toBeNull();
     expect(snap.lastError).toBeNull();
   });
 

@@ -137,6 +137,28 @@ describe("CodeSessionStore — transport close trigger (Step 8)", () => {
   });
 });
 
+describe("CodeSessionStore — wire error event (Step 9a audit)", () => {
+  it("routes a CODE_OUTPUT error frame into the errored phase with cause=wire_error", () => {
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    store.send("hi", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "error",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      message: "quota exceeded",
+      recoverable: false,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("errored");
+    expect(snap.lastError?.cause).toBe("wire_error");
+    expect(snap.lastError?.message).toBe("quota exceeded");
+  });
+});
+
 describe("CodeSessionStore — retry recovery from errored (Step 8)", () => {
   it("re-submits from errored, keeps lastError until turn_complete(success)", () => {
     const conn = new MockTugConnection();

@@ -52,6 +52,11 @@ export interface TurnEntry {
  * snapshot via `pendingApproval` or `pendingQuestion` while the store is in
  * `awaiting_approval`. The shape is intentionally loose — downstream UI
  * code interprets the fields per the stream-json contract.
+ *
+ * `decision_reason` and `permission_suggestions` are explicit optional
+ * fields because T3.4.b's permission prompt will read them directly;
+ * everything else still passes through via the indexed signature for
+ * forward-compat.
  */
 export interface ControlRequestForward {
   request_id: string;
@@ -60,7 +65,26 @@ export interface ControlRequestForward {
   input?: unknown;
   question?: string;
   options?: ReadonlyArray<unknown>;
+  decision_reason?: string;
+  permission_suggestions?: ReadonlyArray<unknown>;
   [key: string]: unknown;
+}
+
+/**
+ * Telemetry snapshot captured from `cost_update` frames. Everything past
+ * `totalCostUsd` is nullable because the reducer only accepts numeric
+ * payloads and real fixtures may omit individual fields. `usage` and
+ * `modelUsage` stay `unknown` on purpose so renderers can reach into
+ * the live wire shape without the store gatekeeping forward-compat
+ * fields.
+ */
+export interface CostSnapshot {
+  totalCostUsd: number;
+  numTurns: number | null;
+  durationMs: number | null;
+  durationApiMs: number | null;
+  usage: unknown | null;
+  modelUsage: unknown | null;
 }
 
 /**
@@ -90,9 +114,9 @@ export interface CodeSessionSnapshot {
     readonly tools: "inflight.tools";
   };
 
-  lastCostUsd: number | null;
+  lastCost: CostSnapshot | null;
   lastError: {
-    cause: "session_state_errored" | "transport_closed";
+    cause: "session_state_errored" | "transport_closed" | "wire_error";
     message: string;
     at: number;
   } | null;

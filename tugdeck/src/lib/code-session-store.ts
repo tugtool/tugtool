@@ -66,6 +66,7 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "system_metadata",
   "control_request_forward",
   "cost_update",
+  "error",
 ]);
 
 export interface CodeSessionStoreOptions {
@@ -186,7 +187,7 @@ export class CodeSessionStore {
       queuedSends: this.state.queuedSends.length,
       transcript: this._transcript,
       streamingPaths: STREAMING_PATHS,
-      lastCostUsd: this.state.lastCostUsd,
+      lastCost: this.state.lastCost,
       lastError: this.state.lastError,
     };
     this._cachedSnapshot = snap;

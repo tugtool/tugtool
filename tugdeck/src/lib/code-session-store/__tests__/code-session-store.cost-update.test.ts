@@ -1,9 +1,11 @@
 /**
- * Step 6 — `cost_update` telemetry surface. The reducer captures
- * `total_cost_usd` into `state.lastCostUsd` with no phase transition
- * and no effect emission. Because the golden loader preprocesses
- * `"{{f64}}"` → `0`, fixture replays can only drive a `lastCostUsd
- * === 0` assertion; non-zero values use synthetic dispatches.
+ * Step 6 — `cost_update` telemetry surface. The reducer builds a
+ * `CostSnapshot` from `total_cost_usd`, `num_turns`, `duration_ms`,
+ * `duration_api_ms`, `usage`, and `modelUsage`, surfaces it on
+ * `snapshot.lastCost`, and makes no phase transition. Because the
+ * golden loader preprocesses `"{{f64}}"` → `0` and `"{{i64}}"` → `0`,
+ * fixture replays land zero-valued cost snapshots; non-zero and
+ * structured coverage use synthetic dispatches.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -26,55 +28,113 @@ function constructStore(conn: MockTugConnection): CodeSessionStore {
   });
 }
 
+function driveToStreaming(
+  conn: MockTugConnection,
+  store: CodeSessionStore,
+): void {
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "assistant_text",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    msg_id: FIXTURE_IDS.MSG_ID,
+    text: "h",
+    is_partial: true,
+    rev: 0,
+    seq: 0,
+  });
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "assistant_text",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    msg_id: FIXTURE_IDS.MSG_ID,
+    text: "i",
+    is_partial: true,
+    rev: 1,
+    seq: 0,
+  });
+  expect(store.getSnapshot().phase).toBe("streaming");
+}
+
 describe("CodeSessionStore — cost_update (Step 6)", () => {
-  it("captures synthetic total_cost_usd values without changing phase", () => {
+  it("captures a full CostSnapshot including num_turns/duration/usage", () => {
     const conn = new MockTugConnection();
     const store = constructStore(conn);
 
     store.send("hi", []);
+    driveToStreaming(conn, store);
 
-    // Drive submitting → awaiting_first_token → streaming.
+    expect(store.getSnapshot().lastCost).toBeNull();
+
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "assistant_text",
+      type: "cost_update",
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
-      msg_id: FIXTURE_IDS.MSG_ID,
-      text: "h",
-      is_partial: true,
-      rev: 0,
-      seq: 0,
+      total_cost_usd: 0.01337,
+      num_turns: 2,
+      duration_ms: 4200,
+      duration_api_ms: 3900,
+      usage: { input_tokens: 1234, output_tokens: 567 },
+      modelUsage: { "claude-opus-4-6": { costUSD: 0.01337 } },
     });
-    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "assistant_text",
-      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
-      msg_id: FIXTURE_IDS.MSG_ID,
-      text: "i",
-      is_partial: true,
-      rev: 1,
-      seq: 0,
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("streaming");
+    expect(snap.lastCost).not.toBeNull();
+    expect(snap.lastCost?.totalCostUsd).toBe(0.01337);
+    expect(snap.lastCost?.numTurns).toBe(2);
+    expect(snap.lastCost?.durationMs).toBe(4200);
+    expect(snap.lastCost?.durationApiMs).toBe(3900);
+    expect(snap.lastCost?.usage).toEqual({
+      input_tokens: 1234,
+      output_tokens: 567,
     });
-    expect(store.getSnapshot().phase).toBe("streaming");
-    expect(store.getSnapshot().lastCostUsd).toBeNull();
+    expect(snap.lastCost?.modelUsage).toEqual({
+      "claude-opus-4-6": { costUSD: 0.01337 },
+    });
+  });
+
+  it("overwrites lastCost on a second cost_update", () => {
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    store.send("hi", []);
+    driveToStreaming(conn, store);
 
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "cost_update",
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       total_cost_usd: 0.01337,
     });
-
-    let snap = store.getSnapshot();
-    expect(snap.lastCostUsd).toBe(0.01337);
-    expect(snap.phase).toBe("streaming");
-
-    // A second cost_update overwrites.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "cost_update",
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       total_cost_usd: 0.042,
+      num_turns: 5,
     });
 
-    snap = store.getSnapshot();
-    expect(snap.lastCostUsd).toBe(0.042);
-    expect(snap.phase).toBe("streaming");
+    const snap = store.getSnapshot();
+    expect(snap.lastCost?.totalCostUsd).toBe(0.042);
+    expect(snap.lastCost?.numTurns).toBe(5);
+    // Fields not present on the second event default to null — we
+    // fully replace, never merge. Renderers see a clean snapshot.
+    expect(snap.lastCost?.durationMs).toBeNull();
+  });
+
+  it("leaves optional fields null when the wire event omits them", () => {
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    store.send("hi", []);
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "cost_update",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      total_cost_usd: 0.0001,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.lastCost?.totalCostUsd).toBe(0.0001);
+    expect(snap.lastCost?.numTurns).toBeNull();
+    expect(snap.lastCost?.durationMs).toBeNull();
+    expect(snap.lastCost?.durationApiMs).toBeNull();
+    expect(snap.lastCost?.usage).toBeNull();
+    expect(snap.lastCost?.modelUsage).toBeNull();
   });
 
   it("ignores cost_update with non-numeric total_cost_usd", () => {
@@ -88,10 +148,10 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
       // Simulate a wire-contract break.
       total_cost_usd: "not-a-number",
     });
-    expect(store.getSnapshot().lastCostUsd).toBeNull();
+    expect(store.getSnapshot().lastCost).toBeNull();
   });
 
-  it("captures a zero cost_update from the test-01 fixture round-trip", () => {
+  it("captures a zero CostSnapshot from the test-01 fixture round-trip", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
     const conn = new MockTugConnection();
     const store = constructStore(conn);
@@ -101,9 +161,18 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
       conn.dispatchDecoded(FeedId.CODE_OUTPUT, event);
     }
 
-    // The golden loader rewrites `"{{f64}}"` → `0`, so every fixture
-    // cost_update resolves to total_cost_usd: 0. The reducer still
-    // captures it.
-    expect(store.getSnapshot().lastCostUsd).toBe(0);
+    // The golden loader rewrites `"{{f64}}"` → `0` and `"{{i64}}"` →
+    // `0`, so every fixture cost_update resolves to a zero-valued
+    // snapshot. The reducer still captures it.
+    const snap = store.getSnapshot();
+    expect(snap.lastCost).not.toBeNull();
+    expect(snap.lastCost?.totalCostUsd).toBe(0);
+    expect(snap.lastCost?.numTurns).toBe(1); // literal int in the fixture
+    // duration_ms / duration_api_ms are `{{i64}}` placeholders that
+    // preprocess to 0; usage/modelUsage pass through as unknown trees.
+    expect(snap.lastCost?.durationMs).toBe(0);
+    expect(snap.lastCost?.durationApiMs).toBe(0);
+    expect(snap.lastCost?.usage).not.toBeNull();
+    expect(snap.lastCost?.modelUsage).not.toBeNull();
   });
 });

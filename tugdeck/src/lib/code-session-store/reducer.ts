@@ -27,10 +27,12 @@ import type {
   ToolUseEvent,
   ToolUseStructuredEvent,
   TurnCompleteEvent,
+  WireErrorEvent,
 } from "./events";
 import type {
   CodeSessionPhase,
   ControlRequestForward,
+  CostSnapshot,
   ToolCallState,
   TurnEntry,
 } from "./types";
@@ -51,11 +53,11 @@ export interface CodeSessionState {
   pendingUserMessage: { text: string; atoms: ReadonlyArray<AtomSegment> } | null;
   queuedSends: Array<{ text: string; atoms: AtomSegment[] }>;
   lastError: {
-    cause: "session_state_errored" | "transport_closed";
+    cause: "session_state_errored" | "transport_closed" | "wire_error";
     message: string;
     at: number;
   } | null;
-  lastCostUsd: number | null;
+  lastCost: CostSnapshot | null;
   claudeSessionId: string | null;
 }
 
@@ -77,7 +79,7 @@ export function createInitialState(
     pendingUserMessage: null,
     queuedSends: [],
     lastError: null,
-    lastCostUsd: null,
+    lastCost: null,
     claudeSessionId: null,
   };
 }
@@ -589,21 +591,33 @@ function handleRespondQuestion(
 // Cost update — telemetry surface, phase-tolerant
 // ---------------------------------------------------------------------------
 
+function numericOrNull(value: unknown): number | null {
+  return typeof value === "number" ? value : null;
+}
+
 function handleCostUpdate(
   state: CodeSessionState,
   event: CostUpdateEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Guard against non-numeric payloads. Live Claude sends a number; the
-  // golden loader's `"{{f64}}"` → `0` preprocessing also lands as a
-  // number. A string or undefined would mean a wire-contract break.
+  // Guard against non-numeric total_cost_usd. Live Claude sends a
+  // number; the golden loader's `"{{f64}}"` → `0` preprocessing also
+  // lands as a number. A string or undefined would mean a wire
+  // contract break and the frame is dropped.
   if (typeof event.total_cost_usd !== "number") {
     return { state, effects: [] };
   }
-  if (state.lastCostUsd === event.total_cost_usd) {
-    return { state, effects: [] };
-  }
+
+  const lastCost: CostSnapshot = {
+    totalCostUsd: event.total_cost_usd,
+    numTurns: numericOrNull(event.num_turns),
+    durationMs: numericOrNull(event.duration_ms),
+    durationApiMs: numericOrNull(event.duration_api_ms),
+    usage: event.usage ?? null,
+    modelUsage: event.modelUsage ?? null,
+  };
+
   return {
-    state: { ...state, lastCostUsd: event.total_cost_usd },
+    state: { ...state, lastCost },
     effects: [],
   };
 }
@@ -627,6 +641,29 @@ function handleSessionStateErrored(
       phase: "errored",
       lastError: {
         cause: "session_state_errored",
+        message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
+function handleWireError(
+  state: CodeSessionState,
+  event: WireErrorEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Distinct from SESSION_STATE errored and transport close. The
+  // renderer can dispatch on `lastError.cause === "wire_error"` to
+  // surface a different affordance (e.g. a retry button for a
+  // `recoverable: true` wire error).
+  const message = event.message ?? "wire error";
+  return {
+    state: {
+      ...state,
+      phase: "errored",
+      lastError: {
+        cause: "wire_error",
         message,
         at: Date.now(),
       },
@@ -704,6 +741,8 @@ export function reduce(
       return handleSessionStateErrored(state, event);
     case "transport_close":
       return handleTransportClose(state);
+    case "error":
+      return handleWireError(state, event);
     default:
       return { state, effects: [] };
   }
