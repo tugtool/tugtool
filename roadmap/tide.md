@@ -2284,130 +2284,296 @@ Test updates:
 
 ##### T3.4.a — CodeSessionStore (turn state machine) {#t3-4-a-code-session-store}
 
-> **⚠ Pending substantial rewrite after T3.0.W lands.** The body of this section below still reflects the pre-T3.0.W world: it conflates `sessionKey` with the wire filter key, has a "single-session fallback" paragraph, cites `transport-exploration.md` Test-N numbers where the current ground truth is the `v2.1.105/test-NN-*.jsonl` golden fixtures, and leaves several load-bearing questions undecided. A coherent rewrite is planned as a follow-up pass once [T3.0.W](#t3-workspace-registry) has landed, so the rewrite can reference the three-identifier model (`tug_session_id` / `claude_session_id` / `project_dir`) and the per-workspace wire contract by name instead of re-explaining them. Until that rewrite lands, treat this section as **directionally correct but not implementation-ready** — the state-machine shape, phase transitions, action list, and essential wire-level invariants are the load-bearing parts; the constructor signature and exit criteria's fixture references will change.
->
-> **Punch list — questions the rewrite must answer (captured 2026-04-14, pre-T3.0.W preflight):**
->
-> 1. **Single-session fallback language.** Strip every reference to "Until P2 lands the first Tide card opened gets the default session", "single-session mode indicator", and the conflation of `sessionKey` with the inbound filter key. After T3.0.W, routing is by `tug_session_id` (UUID minted client-side per card), `claude_session_id` is the resume key, `project_dir` is both the workspace key and Claude's cwd, and `sessionKey` is a pure human display label with zero wire footprint.
-> 2. **Fixture consumption by Vitest.** The current exit criteria say "mock `FeedStore` frames replayed from transport-exploration.md fixtures" but ground truth has moved to `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-NN-*.jsonl`. Decide the mechanism: Vitest reads the `.jsonl` files via relative path from `tugdeck/`? A helper copies or symlinks them into `tugdeck/tests/fixtures/`? A tiny Rust-side export step that emits a tugdeck-consumable bundle? Pick one and document it. Without this the implementer will guess.
-> 3. **Streaming region lifetime: single in-flight message vs. full transcript.** The current text describes a scratch buffer per `msg_id` that gets replaced on `complete`. But Tide cards are long-lived chat threads per the Vision. Does `TugMarkdownView` render only the latest in-flight assistant message, or the full conversation history? If the latter, the accumulator must append to a transcript, not replace per-msg. This is a big semantic gap the current text is silent on.
-> 4. **`dispatch` callback signature and filter ownership.** The current constructor lists `dispatch` with no type. Does the store call `encodeCodeInput(msg, tugSessionId)` itself and hand the bytes to `dispatch(bytes)`, or does `dispatch` take a high-level message and handle encoding? Relatedly: who owns constructing the filtered `FeedStore` — the Tide card (passing a pre-built store to the constructor) or the store (taking a raw connection)? Pick one direction and document the full signature.
-> 5. **Queue drain on interrupt — clear or flush.** The text says `interrupt()` "Drains the local queue" and the `interrupted → idle` transition "Flush any queued user_messages". These are semantically ambiguous read together. Exit criteria only cover the `success` flush path; nothing asserts the interrupt queue behavior. Decide whether `interrupt()` discards queued messages or sends them on the next idle, and add an exit-criteria test that pins the chosen behavior.
-> 6. **Exit-criteria test numbers vs. fixture filenames.** Exit criteria cite "Test 1, 2, 5, 6, 8, 11" which are `transport-exploration.md` numbers. Fixtures are `test-01-*.jsonl` through `test-NN-*.jsonl`. State explicitly that these map to `v2.1.105/test-01-*.jsonl` through `v2.1.105/test-11-*.jsonl` (or whichever subset the rewrite chooses), using filenames as primary references.
-> 7. **`errored` phase event taxonomy + test coverage.** The transition table lists `transport error / close → errored → idle` but doesn't name the triggering events (socket close? feed unsubscribe? Claude subprocess crash — which fixture or synthetic frame?). Exit criteria don't exercise the `errored` path at all. Either drop the phase as speculative or fully specify: what events trigger it, what `lastError` contains, what UI affordance the phase drives, and a test that replays each trigger and asserts the transition.
-> 8. **`streamingStore` / `streamingPath` / `streamRegionKey` redundant surface area.** The constructor takes `streamingStore: PropertyStore` and `streamingPath: string`, while the snapshot exposes `streamRegionKey: string`. That's three names for what is likely one concept. Pick one direction: either the card passes a pre-allocated `PropertyStore` and path into the store (and the snapshot surfaces only the path for consumers), or the store allocates its own streaming target and the card reaches into the snapshot for the key. Collapse the redundancy.
-> 9. **`respondApproval` / `respondQuestion` naming (cosmetic).** Two separate actions mapping to one conceptual "approve" in the user's original brief. Decide whether to keep them split (explicit, matches wire protocol) or unify under a single `respond(req_id, payload)` that dispatches on `control_request_forward.is_question`. No wrong answer; just pick one.
->
-> Items 1–8 are load-bearing; item 9 is cosmetic and can be decided inline with the rewrite. None of these are affected by T3.0.W implementation details, so the rewrite can proceed on any T3.0.W-clean foundation.
+**Goal:** A new L02 store that owns everything the Tide card needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in `tug-prompt-input`, or in `tug-prompt-entry`. One instance per Tide card, one backing Claude session per instance, no shared state between cards.
 
-**Goal:** A new L02 store that owns everything the prompt entry needs to know about a Claude Code session in flight. Nothing about turn state lives in React components, in tug-prompt-input, or in tug-prompt-entry.
+**Prerequisite reading.** Four documents form the complete context for this work. Read them in this order before writing any code:
 
-**Prerequisite reading.** Four docs together form the complete context for this work. Read them in this order before writing any code:
+1. **[§P2 integration reference](#p2-integration-reference)** (above) — the **stabilized wire contract** this store is built against. Covers CODE_OUTPUT / CODE_INPUT / SESSION_STATE / SESSION_METADATA / CONTROL payload shapes, the lifecycle order for a typical card, the tugdeck client-side builders (`encodeSpawnSession` / `encodeCloseSession` / `encodeResetSession` / `encodeCodeInput`), the `FeedStore` per-card filter API, and the server-side entry-point table. The plan that produced this surface is [`roadmap/tugplan-multi-session-router.md`](tugplan-multi-session-router.md) if you need the full rationale.
 
-1. **[§P2 integration reference](#p2-integration-reference)** (above) — the **stabilized wire contract** this store is built against. Covers the wire frames (CODE_OUTPUT, CODE_INPUT, SESSION_STATE, SESSION_METADATA, CONTROL with their exact payload shapes), the lifecycle order for a typical card, the tugdeck client-side builders (`encodeSpawnSession` / `encodeCloseSession` / `encodeResetSession` / `encodeCodeInput`), the `FeedStore` per-card filter API, and the server-side entry point table. The plan that produced this surface is [`roadmap/tugplan-multi-session-router.md`](tugplan-multi-session-router.md) if you need the full rationale.
+2. **[T3.0.W1](tugplan-workspace-registry-w1.md) / [W2](tugplan-workspace-registry-w2.md) / [W3.a](tugplan-workspace-registry-w3a.md)** — the **per-session workspace binding** this store assumes is in place. After W2, `spawn_session` carries `project_dir` as a required field, `WorkspaceRegistry` reference-counts feed bundles per canonical project path, `LedgerEntry.workspace_key` binds each session to its workspace, `SessionKeyRecord { tug_session_id, project_dir, claude_session_id }` is the persisted shape, and tugdeck's `CardSessionBindingStore` + `useCardWorkspaceKey` hook provide the card-level identity-resolution layer. T3.4.a builds on top of that layer; it does not re-invent it.
 
-2. **[`roadmap/transport-exploration.md`](transport-exploration.md)** — the **empirical catalog of Claude Code stream-json semantics**. 35 tests probed against a real tugcode/claude backend, covering every event shape, delta rule, ordering guarantee, interrupt pattern, slash-command quirk, session-command behavior, and attachment path that CodeSessionStore will have to model. This is where the turn-state machine in this section was derived from.
+3. **[`roadmap/transport-exploration.md`](transport-exploration.md)** — the **empirical catalog of Claude Code stream-json semantics**. 35 probes against a real tugcode/claude backend covering every event shape, delta rule, ordering guarantee, interrupt pattern, slash-command quirk, session-command behavior, and attachment path.
 
-   **Important:** as of [§P2 follow-up](#p2-followup-golden-catalog), `transport-exploration.md` is the human-readable *summary*, not the ground truth. The authoritative machine-readable reference is the **golden fixture directory** at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v<version>/` — one JSONL file per probe, recorded against a specific `claude` version. Start at the fixture directory for the exact event shapes CodeSessionStore must handle; use the prose catalog for rationale and ordering narrative. When the two disagree, the fixtures win, and the prose should be updated to match.
+   **Ground truth is the golden fixture directory**, not the prose catalog. As of [§P2 follow-up](#p2-followup-golden-catalog), the authoritative machine-readable reference is `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v<version>/` — one JSONL file per probe, recorded against a specific `claude` version. Start there for exact shapes; use the prose for rationale and ordering narrative. When the two disagree, the fixtures win.
 
-   The curated subset covered by the [drift test](#p2-followup-golden-catalog) (`stream_json_catalog_drift.rs`) is the minimum set of probes CodeSessionStore must pass. If a future Claude Code version breaks the drift test, the fixtures get updated, the reducer gets a version-banded branch, and `CodeSessionStore` continues to work across versions — see [P15](#p15-stream-json-version-gate) for the full version-gate + divergence story.
+   The current baseline is `v2.1.105/` and its manifest-pinned probe list is the minimum set of stream-json behaviors CodeSessionStore must handle. The [drift test](#p2-followup-golden-catalog) (`stream_json_catalog_drift.rs`) guards against silent regressions; [P15](#p15-stream-json-version-gate) adds the runtime version-gate and divergence telemetry that land *after* T3.4.a so this store's reducer can inform what fields are version-sensitive.
 
-   Essential test sections for T3.4.a:
-   - **Tests 1, 2, 10** — basic round-trip, streaming deltas (`assistant_text` partials are deltas, complete is full text — **must accumulate**), `~2 events/sec` pacing, `thinking_text` ordering before `assistant_text`.
-   - **Test 5, 7, 9, 21, 22** — tool call flow (`tool_use` → `tool_result` → `tool_use_structured`), concurrent tool interleaving (don't assume sequential ordering across tool_use_ids), rich structured data for Read/Bash/Edit, subagent tool calls visible in the parent stream.
-   - **Tests 6, 14** — interrupt semantics. `interrupt` fires `turn_complete(result: "error")`, **not** `turn_cancelled`. Sending a `user_message` mid-turn does NOT interrupt — it queues behind the current turn.
-   - **Tests 8, 11** — permission flow. `control_request_forward` is the **unified gate event** for both permissions and `AskUserQuestion`, differentiated by `is_question`. Response types: `tool_approval` (permission) or `question_answer` (question). `control_request_forward` is NOT named `tool_approval_request` — the roadmap previously assumed separate events; there's one.
-   - **Tests 13, 17, 20** — session command readiness. `session_command: "new"` and `"fork"` kill and respawn the subprocess with a **readiness gap** (`session_init` fires with `session_id: "pending"` or `"pending-fork"` before the new process is ready — don't send messages until a non-pending `session_init` arrives). `session_command: "continue"` is in-place and immediate.
-   - **Tests 3, 4, 12, 15, 19, 26, 30** — slash command landscape. **Three categories**: (a) skill-based commands with text output that arrives via replay (`/cost`, `/compact`, `/commit`, `/tugplug:dash`) — tugtalk has a synthetic-message fix so text flows; (b) skill-based commands without text (`/cost`/`/compact` produce only structured events like `cost_update`); (c) terminal-only commands with NO stream-json equivalent (`/status`, `/model`, `/resume`, `/btw`, `/clear`, `/vim`) — the UI must reimplement these from cached `system_metadata`.
-   - **Tests 23, 24** — attachments (base64 images in `user_message.attachments[]`), `@` file references (terminal-only; the UI must implement its own file picker + inject content as attachment or text).
-   - **Tests 16, 22, 35** — `model_change` produces a synthetic `assistant_text` confirmation and updates the next `system_metadata`; subagent spawns surface their tool calls through the normal event stream bracketed by the parent Agent `tool_use_id`; `AskUserQuestion` arrives as `control_request_forward` with `is_question: true` and requires a `question_answer` response.
+   Essential probes for T3.4.a, by **fixture filename** (all under `v2.1.105/`):
 
-3. **[`roadmap/ws-verification.md`](ws-verification.md)** — brief. Confirms the WebSocket transport layer is verified green end-to-end. The four issues found in Phase 2b (T8 session_init race, T9 double-delivery, T10 agent bridge channel encapsulation, T11 session ID migration to tugbank) are all landed. Context for "don't re-verify the transport; trust it."
+   - **`test-01-round-trip.jsonl`, `test-02-streaming-deltas.jsonl`, `test-10-pacing.jsonl`** — basic round-trip, streaming-delta accumulation rule (partials are deltas, `complete` is full), pacing, `thinking_text` ordering before `assistant_text`.
+   - **`test-05-tool-use.jsonl`, `test-07-tool-interleave.jsonl`, `test-09-tool-structured.jsonl`, `test-21-concurrent-tools.jsonl`, `test-22-subagent.jsonl`** — tool-call lifecycle, concurrent-call interleaving (events correlated by `tool_use_id`), `tool_use_structured` shapes for Read/Bash/Edit, subagent tool calls bracketed by the parent Agent `tool_use_id`.
+   - **`test-06-interrupt.jsonl`, `test-14-mid-turn-send.jsonl`** — interrupt semantics. `interrupt` surfaces as `turn_complete(result: "error")`, **not** a dedicated `turn_cancelled`. Mid-turn `user_message` sends do NOT interrupt — they queue.
+   - **`test-08-permission.jsonl`, `test-11-tool-deny.jsonl`, `test-35-ask-user-question.jsonl`** — `control_request_forward` is the **unified gate event** for permissions and `AskUserQuestion`, differentiated by `is_question`. Permission responses use `tool_approval`; questions use `question_answer`. Both carry `request_id` for correlation.
+   - **`test-13-session-new.jsonl`, `test-17-session-continue.jsonl`, `test-20-session-fork.jsonl`** — *currently skipped* in the `v2.1.105/` manifest pending [P16](#p16-session-command-continue). T3.4.a is single-session-per-store; `session_command` routing is outside the first landing. Included here only so the implementer knows they are deliberately out of scope and will be re-enabled when P16 closes.
+   - **`test-03-*.jsonl`, `test-04-*.jsonl`, `test-12-*.jsonl`, `test-15-*.jsonl`, `test-19-*.jsonl`, `test-26-*.jsonl`, `test-30-*.jsonl`** — slash-command landscape in three categories: (a) skill-based with text output via replay; (b) skill-based with no text (only structured events like `cost_update`); (c) terminal-only commands the Tide card must reimplement from cached `system_metadata` (Phase T10). For T3.4.a the store treats (a) and (b) identically — a turn is a turn regardless of whether it produced `assistant_text` — and is oblivious to (c).
+   - **`test-23-attachment.jsonl`, `test-24-at-file.jsonl`** — base64 image attachments and file references on `user_message.attachments[]`.
+   - **`test-16-model-change.jsonl`** — `model_change` produces a synthetic `assistant_text` confirmation and updates the next `system_metadata`; treat it as a normal turn.
 
-4. **[`roadmap/tide-conversation-log.md`](tide-conversation-log.md)** — optional. Strategic context for what Tide is trying to be: a unified graphical command surface that replaces the terminal, with Claude Code and (eventually) shell commands as two adapters on the same rendering pipeline. Useful for understanding why `CodeSessionStore` is shaped the way it is and why Tide cards are long-lived chat threads rather than ephemeral panes. Not strictly required for implementation.
+4. **[`roadmap/ws-verification.md`](ws-verification.md)** — brief. The WebSocket transport is verified green; T8/T9/T10/T11 fixes are landed. Context for "don't re-verify the transport; trust it."
 
-**Essential wire-level invariants** (distilled from the above — violate these and CodeSessionStore silently corrupts its own state):
+**Optional:** [`roadmap/tide-conversation-log.md`](tide-conversation-log.md) — strategic context for why Tide cards are long-lived chat threads rather than ephemeral panes. Not required for implementation.
 
-- **Text accumulation is the store's job.** `assistant_text` partials carry *deltas*, not accumulated text. The `complete` event has the full text. Accumulate deltas during `is_partial: true`; replace with the full text on `complete` for verification. Same rule for `thinking_text`.
-- **Tool events interleave across concurrent calls.** Don't assume `tool_use → tool_result → tool_use_structured` ordering within a turn when multiple tool calls are in flight. Each pair is correlated by `tool_use_id`; track them independently in a `Map<tool_use_id, ToolCall>`.
-- **Interrupt surfaces as `turn_complete(result: "error")`.** There is NO `turn_cancelled` event. The store's `interrupted` phase must listen for `turn_complete` with `result === "error"` as the interrupt signal, not wait for a cancellation event that will never fire.
-- **`control_request_forward` is one event type for two UI flows.** Dispatch on `is_question`: `false` → permission dialog (respond with `tool_approval`); `true` → question dialog (respond with `question_answer`). Both share `request_id` for response correlation.
-- **Session command readiness is command-dependent.** `continue` is immediate — fire-and-forget. `new` and `fork` kill the subprocess and emit `session_init` with a `pending*` id before the new process is ready; the store must suppress message sends and display a "spawning" affordance until a non-`pending*` `session_init` arrives.
-- **Slash commands with terminal-only behavior produce NO text.** The store should not wait for `assistant_text` on `/status`, `/model`, `/cost`, `/clear`, `/vim`, `/btw`, `/resume`. A short turn that emits only `system_metadata` + `cost_update` + `turn_complete` is a legitimate completion and the UI must render its own display from the structured events (or from the last cached `system_metadata`).
-- **`system_metadata` is the chrome source of truth.** Fires at the start of every turn. Fields: `tools`, `model`, `permissionMode`, `slash_commands`, `skills`, `plugins`, `agents`, `mcp_servers`, `cwd`, `version`. The store caches the most recent snapshot for display of model name, mode indicator, slash-command popup, skill list, etc.
+**Essential wire-level invariants** (violate these and CodeSessionStore silently corrupts its own state):
+
+- **Text accumulation is the store's job.** `assistant_text` partials carry *deltas*, not accumulated text. The `complete` event has the full text. Accumulate deltas during `is_partial: true`; on `complete`, replace the accumulator with the authoritative full text. Same rule for `thinking_text`.
+- **Tool events interleave across concurrent calls.** Don't assume `tool_use → tool_result → tool_use_structured` ordering when multiple tool calls are in flight. Each group is correlated by `tool_use_id`; track them independently in a `Map<tool_use_id, ToolCallState>`.
+- **Interrupt surfaces as `turn_complete(result: "error")`.** There is NO `turn_cancelled` event. The `interrupted` phase triggers on `turn_complete` with `result === "error"`, not on a cancellation event that never fires.
+- **`control_request_forward` is one event type for two UI flows.** Dispatch on `is_question`: `false` → permission (respond with `tool_approval`); `true` → question (respond with `question_answer`). Both carry `request_id` for response correlation.
+- **`system_metadata` is chrome source of truth** — but it's consumed by `SessionMetadataStore`, **not** `CodeSessionStore`. The two stores are independent; the Tide card holds references to both. CodeSessionStore does not read `system_metadata` directly.
+- **Slash commands with terminal-only behavior produce NO text.** A short turn that emits only `cost_update` + `turn_complete` is a legitimate completion. Don't block idle-transition waiting for `assistant_text`.
+
+---
+
+**Identity model.** After W2, a Tide card carries three distinct identifiers, each with a single purpose:
+
+| Identifier | Purpose | Lifetime | Who mints |
+|------------|---------|----------|-----------|
+| `tug_session_id` | Wire-level routing key. Every CODE_OUTPUT / CODE_INPUT / SESSION_STATE / SESSION_METADATA frame carries this as its first field. Store subscribes to feeds with a filter keyed on this value. | Per card, persisted via `CardSessionBindingStore`; survives reload. | Client-side on first mount: `crypto.randomUUID()`. |
+| `claude_session_id` | Claude Code's own session id, appears in `session_init.session_id`. Drives `--resume` in [P14](#p14-claude-resume). | Per Claude subprocess lifetime. | Claude, captured in `relay_session_io`'s atomic-promote block. |
+| `project_dir` | Canonical project path; becomes Claude's cwd AND the workspace key for FILETREE / FILESYSTEM / GIT feeds. | Per card, persisted via `CardSessionBindingStore`. | User, selected via the Tide card's picker (T3.4.c); validated server-side by `spawn_session`. |
+
+The store operates entirely on `tug_session_id`. It observes `claude_session_id` through `session_init` only to expose it on the snapshot for downstream display. It never sees `project_dir` directly — that's the card's responsibility at spawn time.
+
+A fourth value — **`displayLabel`** — is an optional human-readable string ("my scratch thread") that the card passes in for UI chrome. It has **zero wire footprint**. It is not used for filtering, routing, correlation, or persistence-as-identity. It's the name that appears in a tab and nowhere else.
+
+---
+
+**Lifecycle ownership.** The Tide card (T3.4.c) owns the `spawn_session` / `close_session` CONTROL frames. The CodeSessionStore owns turn state and message I/O on an already-claimed session. The card constructs the store *after* it has called `encodeSpawnSession(cardId, tugSessionId, projectDir)` and persisted the binding via `CardSessionBindingStore.setBinding`. This keeps the store's responsibilities tight: it handles what happens on a live session, not how the session is brought up.
+
+Concretely: the store can be constructed while `SESSION_STATE` is still `pending` (lazy spawn — the first `send()` is what actually flips the ledger `Idle → Spawning`). The store tracks `SESSION_STATE` transitions internally and exposes readiness via the snapshot.
+
+---
 
 **Work:**
 
 File: `tugdeck/src/lib/code-session-store.ts` (new).
 
-- **Per Tide card instance (D-T3-09).** Constructor takes `{ feedStore: FeedStore, sessionKey: string, codeOutputFeedId, codeInputFeedId, dispatch, streamingStore: PropertyStore, streamingPath: string }`. The `sessionKey` identifies which Claude Code session this store talks to and is used both as the inbound filter and as the outbound tag on every `CODE_INPUT` frame. Built per-card; `SessionMetadataStore` and `FileTreeStore` remain shared lazy singletons for now (they will become session-scoped when session-aware metadata feeds ship in a later phase), `PromptHistoryStore` remains shared but keys on `(sessionKey, route, cardId)`.
-- **Wire contract per Phase T0.5 P2 (approved approach: session_id in payload, filter client-side).** Every `CODE_OUTPUT` frame the store sees is parsed as JSON-line and accepted only if `payload.session_id === sessionKey`. Every `CODE_INPUT` frame the store dispatches carries `session_id: sessionKey` as a top-level field. Until P2 lands, the first Tide card opened gets the default session and the store runs without a filter; subsequent cards either share that default session (with a visible "single-session mode" indicator) or are blocked from opening — D-T3-09's exit criteria for multi-session are gated on P2.
-- Subscribes to `CODE_OUTPUT` via `FeedStore.subscribe`. Decodes each payload as JSON-line per [transport-exploration.md](transport-exploration.md), then applies the `sessionKey` filter.
-- Maintains a **turn-state machine** with phases:
+**Constructor:**
 
-  ```
-  idle → submitting → awaiting_first_token → streaming
-       ↘                                   ↘ tool_work ↔ streaming
-                                            ↘ awaiting_approval ↔ streaming
-                                            ↘ complete → idle
-                                            ↘ interrupted → idle
-                                            ↘ errored → idle
-  ```
+```ts
+interface CodeSessionStoreOptions {
+  conn: TugConnection;        // from getConnection()
+  tugSessionId: string;       // already persisted via CardSessionBindingStore
+  displayLabel?: string;      // UI-only; defaults to tugSessionId.slice(0, 8)
+}
 
-  Transition table (event source → target phase):
+class CodeSessionStore {
+  constructor(options: CodeSessionStoreOptions);
+}
+```
 
-  | From | Event | To | Notes |
-  |------|-------|----|----|
-  | `idle` | `send()` action | `submitting` | Write `user_message` frame to `CODE_INPUT` |
-  | `submitting` | First `system_metadata`/`thinking_text`/`assistant_text` partial for a new `msg_id` | `awaiting_first_token` → `streaming` | Fast collapse; `awaiting_first_token` exists so the UI can show a "connecting..." affordance distinct from streaming |
-  | `streaming` | `assistant_text` partial (delta) | `streaming` | Append to `streamingStore` at `streamingPath` |
-  | `streaming` | `thinking_text` partial | `streaming` | Routed to a separate region key (e.g. `stream.thinking.<msgId>`) |
-  | `streaming` | `tool_use` partial/complete | `tool_work` | Sub-state; `canInterrupt` remains true |
-  | `tool_work` | `tool_use_structured` / `tool_result` | `streaming` | Back to streaming until next event |
-  | `streaming` / `tool_work` | `control_request_forward` (permission or question) | `awaiting_approval` | Parse `is_question` to select `pendingApproval` vs `pendingQuestion`. Still a sub-state of the running turn; `canInterrupt` remains true. |
-  | `awaiting_approval` | `respondApproval()` / `respondQuestion()` | previous phase | Writes `tool_approval` / `question_answer` frame to `CODE_INPUT` |
-  | any non-idle | `turn_complete(result: "success")` | `complete → idle` | Finalize: replace streamed text with `assistant_text` `complete` payload per Test 2 |
-  | any non-idle | `turn_complete(result: "error")` | `interrupted → idle` | Per Test 6: interrupt surfaces as `turn_complete(error)`; preserve accumulated text |
-  | any non-idle | transport error / close | `errored → idle` | `lastError` set, UI shows an inline error block |
-  | `interrupted` / `complete` | idle-transition tick | `idle` | Flush any queued user_messages (see U19) |
+**Internal wiring:**
 
-- Snapshot shape (exposed via `getSnapshot`):
+- On construction, the store builds its own filtered `FeedStore`:
 
   ```ts
-  interface CodeSessionSnapshot {
-    phase: "idle" | "submitting" | "awaiting_first_token" | "streaming"
-         | "tool_work" | "awaiting_approval" | "complete" | "interrupted" | "errored";
-    sessionId: string | null;          // from session_init (watch-channel snapshot, ws-verification.md T8)
-    activeMsgId: string | null;
-    canSubmit: boolean;                // phase === "idle" && !isEmptyInput (component supplies emptiness)
-    canInterrupt: boolean;              // phase ∈ { submitting, awaiting_first_token, streaming, tool_work, awaiting_approval }
-    pendingApproval: ControlRequestForward | null;
-    pendingQuestion: ControlRequestForward | null;
-    queuedSends: number;                // U19 depth
-    lastCostUsd: number | null;         // from cost_update
-    lastError: { message: string; at: number } | null;
-    streamRegionKey: string;            // the PropertyStore path TugMarkdownView should observe
-  }
+  const filter = (_feedId, decoded) =>
+    (decoded as { tug_session_id?: string }).tug_session_id === this.tugSessionId;
+  this.feedStore = new FeedStore(
+    conn,
+    [FeedId.CODE_OUTPUT, FeedId.SESSION_STATE],
+    undefined,
+    filter,
+  );
   ```
 
-- Actions:
-  - `send(text: string, atoms: AtomSegment[], route: Route): void` — serializes `{ type: "user_message", text, attachments: atoms.map(...) }` and dispatches on `CODE_INPUT`. If `phase !== idle`, enqueue locally instead per D-T3-07.
-  - `interrupt(): void` — dispatches `{ type: "interrupt" }` on `CODE_INPUT`. Drains the local queue. Relies on `turn_complete(error)` arriving to clear phase.
-  - `respondApproval(req_id, { decision, updatedInput?, message? })` — dispatches `{ type: "tool_approval", request_id, ... }`.
-  - `respondQuestion(req_id, { answers })` — dispatches `{ type: "question_answer", request_id, answers }`.
-  - `dispose()` — unsubscribes from feed, clears listeners.
+  The filter encapsulation is intentional: the store owns the filter shape, so consumers never construct a mis-keyed `FeedStore` by accident. `SESSION_METADATA` is *not* subscribed here — `SessionMetadataStore` owns that feed independently.
 
-- Streaming accumulator: on each `assistant_text` partial, append delta to a scratch buffer keyed by `msg_id`, then `streamingStore.set(streamingPath, accumulated)`. On the partial's `complete` event per Test 1/2, replace the buffer with the authoritative full text. `TugMarkdownView` mounted with `streamingStore` + `streamingPath` picks this up via its existing `observe` path.
+- Outbound dispatch goes through `encodeCodeInput(msg, tugSessionId)` from `tugdeck/src/protocol.ts`. The store calls `conn.send(...)` directly; consumers never see raw frames. Outbound message types (`user_message`, `interrupt`, `tool_approval`, `question_answer`) are all exposed as named actions — not as a generic `dispatch(bytes)` hole.
 
-- `SESSION_METADATA` is consumed by `SessionMetadataStore`, not by `CodeSessionStore`. The two stores are independent; the Tide card holds references to both.
+- `dispose()` tears down the `FeedStore`, clears listeners, and clears the queued-sends buffer. It does **not** send `close_session` — that's the card's job via `CardSessionBindingStore` / T3.4.c.
+
+---
+
+**Transcript and streaming model.** Tide cards are long-lived chat threads, so the store maintains a growing transcript — not a single in-flight scratch buffer that gets replaced per turn.
+
+The store owns two pieces of per-card content state:
+
+1. **`transcript: ReadonlyArray<TurnEntry>`** — immutable, append-only. Each completed turn becomes one `TurnEntry` with `{ msgId, userMessage, thinking, assistant, toolCalls, result, endedAt }`. Exposed on the snapshot; drives long-form history rendering.
+
+2. **`streamingDocument: PropertyStore`** — owned by the store, constructed internally. Holds the *in-flight* turn's content at stable, stringly-named paths:
+   - `"inflight.assistant"` — accumulated `assistant_text` deltas for the current turn.
+   - `"inflight.thinking"` — accumulated `thinking_text` deltas.
+   - `"inflight.tools"` — serialized `ToolCallState[]` for the current turn.
+
+   `TugMarkdownView` observes whichever path the card wires up (see T3.4.c). The PropertyStore instance is exposed as a public property on the store (`store.streamingDocument`), not via the React snapshot, because PropertyStores aren't plain data. The snapshot exposes **only the path strings** so consumers can thread them through props without coupling to the instance.
+
+On `turn_complete(success)`:
+- The in-flight `assistant_text` accumulator is replaced with the `complete` event's authoritative full text (verification per fixture `test-02-streaming-deltas.jsonl`).
+- A new `TurnEntry` is built from the in-flight state and appended to `transcript`.
+- The `inflight.*` paths are cleared (set to empty strings / empty arrays).
+
+On `turn_complete(error)` (interrupt path):
+- The accumulated in-flight text is **preserved** — copied into the `TurnEntry` with `result: "interrupted"` — then committed to `transcript` and cleared from `inflight.*`.
+- Per fixture `test-06-interrupt.jsonl`, the final partial's text is the user-visible truth.
+
+This collapses the former `streamingStore / streamingPath / streamRegionKey` triplet into a single instance-owned `streamingDocument` plus a small set of stable path strings. There is exactly one `PropertyStore` per card, owned by the store.
+
+---
+
+**Turn-state machine.** Phases:
+
+```
+idle → submitting → awaiting_first_token → streaming
+     ↘                                   ↘ tool_work ↔ streaming
+                                          ↘ awaiting_approval ↔ streaming
+                                          ↘ complete → idle
+                                          ↘ interrupted → idle
+                                          ↘ errored → idle
+```
+
+Transition table:
+
+| From | Event | To | Notes |
+|------|-------|----|----|
+| `idle` | `send()` action | `submitting` | Write `user_message` frame to `CODE_INPUT`. May span a subprocess spawn (lazy spawn per §P2 integration reference). |
+| `submitting` | First `thinking_text` / `assistant_text` partial with a new `msg_id` | `awaiting_first_token` → `streaming` | Fast collapse; `awaiting_first_token` exists so the UI can show "connecting…" distinct from "streaming". |
+| `streaming` | `assistant_text` partial (delta) | `streaming` | Append delta to `streamingDocument` at `inflight.assistant`. |
+| `streaming` | `thinking_text` partial (delta) | `streaming` | Append delta to `inflight.thinking`. |
+| `streaming` | `tool_use` partial/complete | `tool_work` | Sub-state; `canInterrupt` remains true. Upsert a `ToolCallState` in the in-flight tool map keyed by `tool_use_id`. |
+| `tool_work` | `tool_use_structured` / `tool_result` (matching `tool_use_id`) | `streaming` | Back to streaming. Concurrent tool calls may keep the machine in `tool_work` until all ids resolve. |
+| `streaming` / `tool_work` | `control_request_forward` (permission or question) | `awaiting_approval` | Dispatch on `is_question` to select `pendingApproval` vs `pendingQuestion`. Sub-state of the running turn; `canInterrupt` remains true. |
+| `awaiting_approval` | `respondApproval()` / `respondQuestion()` | previous phase | Writes `tool_approval` / `question_answer` to `CODE_INPUT`. |
+| any non-idle | `turn_complete(result: "success")` | `complete` → `idle` | Commit in-flight to `transcript`; clear `inflight.*`; flush one queued `send()` if any. |
+| any non-idle | `turn_complete(result: "error")` | `interrupted` → `idle` | Per fixture `test-06-interrupt.jsonl`: interrupt surfaces here; preserve accumulated text into the transcript as `result: "interrupted"`. **Queue is cleared, not flushed** (see Actions). |
+| any non-idle | `SESSION_STATE = errored` / connection close / `session_unknown` / `session_not_owned` | `errored` → `idle` | `lastError` set with a cause tag (see below); transcript preserved as-is. |
+| `errored` | next `send()` | `submitting` | `send()` from `errored` is a manual recovery hook (user chooses to retry). The card UI may render a dedicated "try again" affordance. |
+
+---
+
+**Snapshot shape:**
+
+```ts
+interface CodeSessionSnapshot {
+  phase: "idle" | "submitting" | "awaiting_first_token" | "streaming"
+       | "tool_work" | "awaiting_approval" | "complete" | "interrupted" | "errored";
+
+  // Identity (observed, not owned).
+  tugSessionId: string;                     // constant; echoed from constructor
+  claudeSessionId: string | null;           // from session_init; null until first spawn
+  displayLabel: string;                     // UI chrome only
+
+  // Live turn state.
+  activeMsgId: string | null;
+  canSubmit: boolean;                       // phase === "idle" (composition-emptiness is the component's concern)
+  canInterrupt: boolean;                    // phase ∈ { submitting, awaiting_first_token, streaming, tool_work, awaiting_approval }
+  pendingApproval: ControlRequestForward | null;
+  pendingQuestion: ControlRequestForward | null;
+  queuedSends: number;                      // U19 depth
+
+  // Transcript (append-only).
+  transcript: ReadonlyArray<TurnEntry>;
+
+  // Streaming paths (the PropertyStore instance lives on the store, not the snapshot).
+  streamingPaths: {
+    assistant: "inflight.assistant";
+    thinking: "inflight.thinking";
+    tools: "inflight.tools";
+  };
+
+  // Telemetry.
+  lastCostUsd: number | null;               // from cost_update
+  lastError: {
+    cause: "session_state_errored" | "transport_closed" | "session_not_owned" | "session_unknown";
+    message: string;
+    at: number;                             // Date.now()
+  } | null;
+}
+```
+
+---
+
+**Actions:**
+
+- **`send(text: string, atoms: AtomSegment[], route: Route): void`** — serializes `{ type: "user_message", text, attachments: atoms.map(...) }` and dispatches via `encodeCodeInput(msg, tugSessionId)`. If `phase !== "idle"`, enqueues locally (D-T3-07). From `errored`, `send()` is a manual retry.
+- **`interrupt(): void`** — dispatches `{ type: "interrupt" }` via `encodeCodeInput`. **Clears the local queue** — queued sends are discarded, not flushed on the next idle. Rationale: the user pressed Stop; any queued messages were typed with an expectation the current turn would complete. If the user still wants them, they can resubmit. Relies on `turn_complete(error)` arriving to drive the `interrupted → idle` transition.
+- **`respondApproval(requestId: string, payload: { decision: "allow" | "deny"; updatedInput?: unknown; message?: string }): void`** — dispatches `{ type: "tool_approval", request_id, ... }`. Kept separate from `respondQuestion` (not unified under a single `respond()`) because the wire shapes are distinct and the split produces clearer call sites in the component layer.
+- **`respondQuestion(requestId: string, payload: { answers: Record<string, unknown> }): void`** — dispatches `{ type: "question_answer", request_id, answers }`.
+- **`dispose(): void`** — tears down the owned `FeedStore`, clears listeners, clears the queue, and clears `inflight.*` paths. Does not send `close_session`.
+
+---
+
+**`errored` phase triggers (fully specified).** The store transitions to `errored` on any of:
+
+| Trigger | Source | `lastError.cause` | Detection |
+|---------|--------|-------------------|-----------|
+| `SESSION_STATE = errored` frame observed | supervisor (e.g. crash budget exhausted, future `concurrent_session_cap_exceeded` from P13) | `"session_state_errored"` | Filter-matched SESSION_STATE frame with `state === "errored"`; `detail` copied into `message`. |
+| WebSocket connection closed while a turn is in flight | transport layer | `"transport_closed"` | `conn.onClose` observer; store subscribes while `phase !== "idle"` and transitions on close. |
+| CONTROL error `session_not_owned` | router's P5 authz check | `"session_not_owned"` | Frame on CONTROL feed matching this card's `tugSessionId`. |
+| CONTROL error `session_unknown` | supervisor dispatcher (orphaned session) | `"session_unknown"` | Same. |
+
+`lastError` is preserved until the next successful `send()` completes, at which point it clears. The UI affordance driven by `errored` is left to T3.4.c; T3.4.a only populates the snapshot field.
+
+**Not in scope for `errored`:**
+- `turn_complete(result: "error")` — this is the **interrupt** path, not `errored`. Distinct transition.
+- Malformed stream-json events — these are a stream_json_divergence concern handled by [P15](#p15-stream-json-version-gate); T3.4.a logs a `console.warn` and drops the frame without transitioning phase.
+
+---
+
+**Streaming accumulator (specifics):**
+
+On each `assistant_text` frame:
+1. Parse `msg_id`, `seq`, `text`, `is_partial`.
+2. If `is_partial === true`:
+   - Append `text` to an in-memory scratch buffer keyed by `msg_id`.
+   - `this.streamingDocument.set("inflight.assistant", scratchBuffer)`.
+3. If `is_partial === false` (the `complete` event):
+   - Replace the scratch buffer with the authoritative `text` field.
+   - `this.streamingDocument.set("inflight.assistant", scratchBuffer)`.
+   - Do **not** commit to transcript yet — that happens on `turn_complete`, which can arrive with additional events between `complete` and the end of the turn.
+
+Same pattern for `thinking_text` on `inflight.thinking`.
+
+For tool calls, maintain `Map<tool_use_id, ToolCallState>` keyed on `tool_use_id`. On each `tool_use` / `tool_result` / `tool_use_structured` frame, upsert the corresponding entry and write the serialized map to `inflight.tools`.
+
+---
+
+**Test fixtures in Vitest.** Ground truth for unit tests is the golden fixture directory at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/`. Vitest reads the `.jsonl` files directly via a tugdeck-side helper at `tugdeck/src/lib/code-session-store/testing/golden-catalog.ts`:
+
+```ts
+export function loadGoldenProbe(
+  version: string,
+  probeName: string,
+): GoldenProbe {
+  const relativePath = `../../../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/${version}/${probeName}.jsonl`;
+  const jsonl = readFileSync(resolve(__dirname, relativePath), "utf8");
+  return parseGoldenProbe(jsonl);   // substitutes placeholders, returns typed events
+}
+```
+
+The helper substitutes golden placeholders (`{{uuid}}`, `{{iso}}`, `{{msg_id}}`, `{{tool_use_id}}`, `{{f64}}`, `{{i64}}`, `{{text:len=N}}`) with test-fixture values deterministic to the test (not randomized), so each test asserts reducer behavior against a stable, known input stream. A mock `FeedStore` wraps the parsed frames and replays them to the store's subscription handler, producing exactly the same byte sequence the real router would emit.
+
+**Rationale:** reading the `.jsonl` files in-place avoids copy/export drift between a Rust-owned source of truth and a tugdeck-owned copy. The drift test ([§P2 follow-up](#p2-followup-golden-catalog)) already guards against divergence on the Rust side. The relative path is stable because both `tugdeck/` and `tugrust/` live in the same repo root.
+
+**Not chosen:**
+- **Symlinking into `tugdeck/tests/fixtures/`** — creates duplication hazard and breaks on Windows.
+- **A Rust-side export step** emitting a tugdeck-consumable bundle — adds a build step and a new bidirectional coupling for zero benefit.
+
+---
 
 **Exit criteria:**
-- Unit tests drive the store through each transition using mock `FeedStore` frames replayed from transport-exploration.md fixtures (Test 1, 2, 5, 6, 8, 11).
-- Interrupt test: while `phase === "streaming"`, call `interrupt()`, inject a `turn_complete(error)` frame, assert `phase → interrupted → idle` and that the streamed text is preserved (per Test 6).
-- Queue test: three `send()` calls during `streaming` leave `queuedSends === 3`; on `turn_complete(success)`, the store flushes one queued send and transitions back through `submitting`.
-- Approval test: inject `control_request_forward({is_question: false})` → `phase === "awaiting_approval"`, `pendingApproval` populated; `respondApproval("allow")` writes a `tool_approval` frame.
-- Question test: same via `is_question: true` / `question_answer`.
-- No React code imported. Store is pure TS + L02.
+
+Each exit-criterion test loads the named fixture via `loadGoldenProbe("v2.1.105", "test-NN-…")`, replays it against the store, and asserts the snapshot transitions and side-effects.
+
+- **Basic round-trip (`test-01-round-trip.jsonl`, `test-02-streaming-deltas.jsonl`):** `send("hello")` writes a `user_message` CODE_INPUT frame via `encodeCodeInput`; replaying the fixture drives `idle → submitting → awaiting_first_token → streaming → complete → idle`; the snapshot's `transcript` has exactly one `TurnEntry`; `streamingDocument.get("inflight.assistant") === ""` after commit.
+- **Delta accumulation (`test-02-streaming-deltas.jsonl`):** while streaming, `inflight.assistant` contains each delta concatenated in arrival order. On `complete`, the buffer equals the event's `text` field byte-for-byte.
+- **Interrupt with text preservation (`test-06-interrupt.jsonl`):** while `phase === "streaming"`, call `interrupt()`; a mock assertion verifies the `interrupt` frame was written to CODE_INPUT. Replaying the fixture's `turn_complete(error)` frame drives `streaming → interrupted → idle`; `transcript` gets one entry with `result: "interrupted"` and the accumulated text preserved.
+- **Interrupt clears the queue (new test, synthetic):** three `send()` calls during `streaming` leave `queuedSends === 3`. Call `interrupt()`. Replay `turn_complete(error)`. Assert `queuedSends === 0` after the transition to `idle`, and assert no `user_message` CODE_INPUT frames were written for the queued sends (only the original submit and the `interrupt`).
+- **Queue flush on success (`test-01-round-trip.jsonl`, chained):** three `send()` calls during `streaming` leave `queuedSends === 3`. Replay `turn_complete(success)`. Assert the store writes exactly one queued `user_message` to CODE_INPUT (not all three — only the next send is flushed on each idle tick) and transitions `complete → idle → submitting`.
+- **Tool call lifecycle (`test-05-tool-use.jsonl`):** `phase` flips to `tool_work` on the first `tool_use` partial; returns to `streaming` after `tool_use_structured` or `tool_result` matching the same `tool_use_id`; `inflight.tools` contains a serialized entry with the fixture's tool name.
+- **Concurrent tools (`test-21-concurrent-tools.jsonl`):** two overlapping `tool_use_id`s both appear in `inflight.tools` simultaneously; `phase` remains `tool_work` until both are resolved.
+- **Permission approval (`test-08-permission.jsonl`):** replaying `control_request_forward(is_question: false)` drives `streaming → awaiting_approval`; `pendingApproval` is populated. Calling `respondApproval(requestId, { decision: "allow" })` writes a `tool_approval` frame to CODE_INPUT with the correct `request_id` and `decision`.
+- **Permission deny (`test-11-tool-deny.jsonl`):** same flow with `{ decision: "deny" }`; assert the resulting `tool_approval` frame carries `decision: "deny"`.
+- **AskUserQuestion (`test-35-ask-user-question.jsonl`):** replaying `control_request_forward(is_question: true)` populates `pendingQuestion`; `respondQuestion(requestId, { answers })` writes a `question_answer` frame with the correct shape.
+- **`errored` on SESSION_STATE (synthetic):** inject a `SESSION_STATE { state: "errored", detail: "crash_budget_exhausted" }` frame during `streaming`. Assert `phase → errored`, `lastError.cause === "session_state_errored"`, `lastError.message` contains `"crash_budget_exhausted"`, transcript preserved as-is.
+- **`errored` on transport close (synthetic):** simulate `conn.onClose` while `phase === "submitting"`. Assert `phase → errored`, `lastError.cause === "transport_closed"`.
+- **`errored` on CONTROL `session_not_owned` (synthetic):** inject a CONTROL error frame with `detail: "session_not_owned"` for this `tugSessionId`. Assert `phase → errored`, `lastError.cause === "session_not_owned"`.
+- **Recovery from `errored`:** from `phase === "errored"`, call `send("retry")`. Assert `phase → submitting`, `lastError` is cleared once a subsequent `turn_complete(success)` lands.
+- **Filter correctness:** construct two `CodeSessionStore` instances with distinct `tugSessionId`s against a shared mock connection. Replay a fixture stream tagged with only the first store's id; assert the second store's snapshot is unchanged.
+- **`dispose()` teardown:** after `dispose()`, new frames on the connection do not update the snapshot; `streamingDocument` is cleared; no `close_session` frame was written (that's the card's responsibility).
+- **No React imports.** `rg "from \"react\"" tugdeck/src/lib/code-session-store.ts` returns zero matches.
+
+All tests run under Vitest (`cd tugdeck && bun test`). The store is pure TypeScript + L02 — no React, no DOM, no connection construction beyond what the constructor accepts.
 
 ---
 
