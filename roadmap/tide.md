@@ -651,7 +651,8 @@ Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completion
   T3.0.W: Workspace Registry Refactor      — multi-workspace tugcast; prerequisite for T3.4.a
     T3.0.W1: WorkspaceRegistry                — new registry, one-shot bootstrap, workspace_key splicing on FILETREE/FILESYSTEM/GIT
     T3.0.W2: Per-session workspace binding    — project_dir on spawn_session, ChildSpawner::spawn_child takes project_dir, LedgerEntry.workspace_key
-    T3.0.W3: Retire --dir                     — rename CLI to --source-tree, remove bootstrap workspace, remove AgentSupervisorConfig::project_dir
+    T3.0.W3.a: CLI + config cleanup           — rename --dir → --source-tree, new resources::source_tree() helper, gate dev-only code; keeps bootstrap alive
+    T3.0.W3.b: Retire bootstrap workspace     — delete --source-tree flag + bootstrap entirely. **Rides with T3.4.c.**
   T3.4: Tide Card                          — prompt-entry + CodeSessionStore (turn state) + live Tide card
     T3.4.a: CodeSessionStore                 — per-card L02 store observing CODE_OUTPUT (filtered by tug_session_id); owns turn state machine + send/interrupt/approve; sessionKey is purely a human display label
     T3.4.b: tug-prompt-entry                 — compose input + route indicator + submit/stop driven by CodeSessionStore
@@ -686,6 +687,69 @@ Phase F3: Feed CLI + Tugcast             — tugcode feed commands, events reach
 Phase F4: Agent-Internal Events          — file/command detail from within agents
 Phase F5: Custom Block Renderers         — rich UI for agent output
 ```
+
+---
+
+### Execution Order: Close W2 → Tide Card {#execution-order-w2-to-tide}
+
+The `T0.5` / `T3.0.W` / `T3.4` phases above resolve to the exact sequence below. Every item lists its direct dependency and any hard gate that must pass before the next step starts. Each entry links to its detail section elsewhere in this document — click through for scope, work items, and exit criteria.
+
+**Rationale:** after W2 landed, the W2 plan's Step 8 manual smoke test ("open a card pointed at project A, open a second card pointed at project B, verify distinct feeds") turned out to require UI affordances that don't exist yet — the Tide card with its project-dir picker is T3.4.c. The sequence below threads that needle: it keeps every intermediate commit in a fully-working state and lands the manual smoke exactly when the UI makes it executable.
+
+**1. Close [T3.0.W2](#t3-workspace-registry-w2)** — Run the automated Step 8 checkpoints (`cargo nextest`, `bun test`, grep verifications); they're all green today. Mark Step 8 complete with a roadmap note that the manual A/B smoke defers to [T3.4.c](#t3-4-c-tide-card). Vet `#deliverables` and `#exit-criteria` in `roadmap/tugplan-workspace-registry-w2.md`; check off what's met; note the manual criterion as "deferred to T3.4.c."
+  - **Gate:** cleanup only.
+  - **Blocks:** T3.0.W3.a.
+
+**2. [T3.0.W3.a](#t3-workspace-registry-w3a) — CLI rename + config cleanup (bootstrap kept alive)** — Rename `--dir` to `--source-tree` across tugcast CLI, `main.rs`, Tug.app AppDelegate, docs. Introduce `resources::source_tree()` helper and route `resolve_tugcode_path`, `server.rs`'s `dist_path` computation, and the dev-only `BuildStatusCollector` / legacy settings migration / `.ts` tugcode fallback through it with `#[cfg(debug_assertions)]` gating. **Keep the W1 bootstrap `registry.get_or_create(&watch_dir, cancel.clone())` call in `main.rs`** so daily development against Tug.app still shows git/filetree content while T3.4.a–c are in flight.
+  - **Gate:** W2 closed.
+  - **Blocks:** T3.4.a.
+
+**3. [T3.4.a](#t3-4-a-code-session-store) — CodeSessionStore** — Per-card L02 store observing `CODE_OUTPUT` via the `FeedStore` filter API (`tug_session_id` match). Owns the turn state machine: idle / thinking / tool-use / waiting-approval / complete / errored. Exposes `send` / `interrupt` / `approve` methods that encode outbound `CONTROL` / `CODE_INPUT` frames. Consumes `tests/fixtures/stream-json-catalog/v2.1.105/` as ground truth for reducer branches. Single-session per store instance (no `session_command new/continue/fork` — that's [P16](#p16-session-command-continue), deferred and non-blocking).
+  - **Gate:** W3.a landed.
+  - **Blocks:** P13, T3.4.b.
+
+**4. [P13](#p13-spawn-cap) — Spawn cap + leaky-bucket rate limit** — `AgentSupervisorConfig::max_concurrent_sessions` (default 8), `max_spawns_per_minute` (default 20). Check at the top of `spawn_session_worker` before any channel allocation. `ControlError::CapExceeded` variant; `SESSION_STATE = errored { detail: "concurrent_session_cap_exceeded" | "spawn_rate_limited" }`. Interleaves here as cheap insurance before T3.4.b/c produce real UI load.
+  - **Gate:** T3.4.a landed.
+  - **Blocks:** T3.4.b (advisable, not structural).
+
+**5. [T3.4.b](#t3-4-b-prompt-entry) — tug-prompt-entry** — New tugways component: compose input + route indicator + submit/stop button. Submit drives `codeSessionStore.send(...)`; stop drives `.interrupt()`; route indicator reads turn state. Built and tested in the gallery card against a mock `CodeSessionStore`; no running backend required for unit tests.
+  - **Gate:** T3.4.a landed; P13 recommended first.
+  - **Blocks:** T3.4.c.
+
+**6. [T3.4.c](#t3-4-c-tide-card) — Tide card + [T3.0.W3.b](#t3-workspace-registry-w3b) bootstrap removal** *(ship together)* — Register the Tide card: `TugSplitPane` with `TugMarkdownView` (top) and `TugPromptEntry` (bottom), one `CodeSessionStore` per instance, `project_dir` chosen at card mount via a UI affordance (file picker / recent projects / "open this repo" button). On mount, send `spawn_session(cardId, tugSessionId, projectDir)` → wait for `spawn_session_ok` ack → `cardSessionBindingStore.setBinding` (already wired in W2 Step 7). On unmount, `sendCloseSession(...)` clears binding (already wired in W2 Step 7). **Rides with T3.0.W3.b**: delete the `--source-tree` CLI flag, delete the `registry.get_or_create(&watch_dir, cancel.clone())` bootstrap call, drop `server.rs::source_tree` parameter threading, unwire bootstrap-related router plumbing (`bootstrap.fs_watch_rx` etc.). **The manual A/B smoke from W2's Step 8 becomes executable here** — this is the first point where you can open a card pointed at project A, open a second card pointed at project B, and verify distinct workspace_key filters end-to-end.
+  - **Gate:** T3.4.b landed.
+  - **Blocks:** P14, P15, T3.4.d multi-session work.
+
+**7. [P14](#p14-claude-resume) — Claude Code `--resume` for persistent session history** — Persist `claude_session_id` alongside `tug_session_id`. The `SessionKeyRecord.claude_session_id: Option<String>` field **already exists** — W2 Step 1 reserved it explicitly for P14, so no schema bump is required. Extend `run_session_bridge`'s `session_init` handler to persist the id via `SessionKeysStore`; `TugcodeSpawner` appends `--resume <id>` when the ledger entry has one; `rebind_from_tugbank` reads it back into the reconstructed `LedgerEntry`. UI: Tide card's "reset vs resume" semantics are informed by real-user feedback at T3.4.c — explicit reset starts fresh, default behavior resumes.
+  - **Gate:** T3.4.c landed; UX on Tide card informs the semantics.
+  - **Blocks:** first external users (closing the laptop and reopening must not lose conversation history).
+
+**8. [P15](#p15-stream-json-version-gate) — Version gate + divergence telemetry** — New `FeedId::SUPERVISOR_TELEMETRY = 0x53` broadcast feed (next free slot after `SESSION_STATE`). Runtime version capture from `system_metadata.version` into `LedgerEntry`, exposed via `CodeSessionStore`'s public API. Structured `stream_json_divergence` events on `SUPERVISOR_TELEMETRY` when the runtime shape doesn't match the pinned golden catalog. Tugdeck-side: persistent "⚠ Claude Code version drift" banner in Tide card chrome. Version-adaptive reducer scaffold — a thin branching layer on top of the `CodeSessionStore` turn reducer, informed by which fields the store actually depends on (only legible once the store exists; hence the sequencing).
+  - **Gate:** T3.4.c landed; `CodeSessionStore` reducer has run against real Claude long enough to know its version-sensitive paths.
+  - **Blocks:** first external users (safety net against Anthropic version drift).
+
+#### Optional parallel work {#execution-order-parallel}
+
+These items do not block the critical path. Schedule opportunistically or interleave with the numbered items above if a second pair of hands is available.
+
+- **[P16](#p16-session-command-continue) — `session_command: continue/new/fork` through the multi-session router.** Currently skipped in `v2.1.104/` + `v2.1.105/` probe manifests with §T0.5 P16 pointers. **Blocks [T3.4.d](#t3-4-d-polish-exit) multi-session** (multiple forked sessions within a Tide card), not T3.4.a/b/c. Can run in parallel with T3.4.a/b/c at any time.
+- **[P20](#p20-rate-limit-event-dropped) — `rate_limit_event` routing in tugcode.** Small `tugcode/src/session.ts` allowlist extension + shape translation. Slots anywhere. Pair with rate-limit UI work whenever that lands — no hard T3.4 dependency.
+- **P3, P5, P6, P8, P9, P10, P11 (LOW T0.5 items).** Genuinely defer-able. No impact on the path to first external users.
+
+#### Summary table {#execution-order-table}
+
+| # | Item | Depends on | Blocks |
+|---|------|-----------|--------|
+| 1 | [W2 closeout](#t3-workspace-registry-w2) | — | W3.a |
+| 2 | [T3.0.W3.a](#t3-workspace-registry-w3a) (rename + cleanup, keep bootstrap) | W2 closeout | T3.4.a |
+| 3 | [T3.4.a](#t3-4-a-code-session-store) CodeSessionStore | W3.a | P13, T3.4.b |
+| 4 | [P13](#p13-spawn-cap) spawn cap | T3.4.a | T3.4.b (advisable) |
+| 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry | T3.4.a (P13 optional) | T3.4.c |
+| 6 | [T3.4.c](#t3-4-c-tide-card) Tide card + [T3.0.W3.b](#t3-workspace-registry-w3b) bootstrap removal | T3.4.b | P14, P15, T3.4.d |
+| 7 | [P14](#p14-claude-resume) `--resume` | T3.4.c | first external users |
+| 8 | [P15](#p15-stream-json-version-gate) version gate | T3.4.c (reducer exists) | first external users |
+| — | [P16](#p16-session-command-continue) (parallel) | — | T3.4.d multi-session |
+| — | [P20](#p20-rate-limit-event-dropped) (parallel) | — | rate-limit UI |
 
 ---
 
@@ -1415,7 +1479,7 @@ The cost is 1 extra byte per frame — negligible at any realistic throughput. T
 
 **Scope:** tugcast-core `protocol.rs` (Frame struct, encode/decode, HEADER_SIZE 5→6, tests), tugdeck `protocol.ts` (mirror changes), tugdeck `connection.ts` (decode path), all golden-byte tests.
 
-#### P13: Session spawn rate limit + concurrent-session cap (HIGH)
+#### P13: Session spawn rate limit + concurrent-session cap (HIGH) {#p13-spawn-cap}
 
 **Prerequisite reading:** [§P2 integration reference](#p2-integration-reference) — the entry-point table names `AgentSupervisor::spawn_session_worker` as the hook point and `AgentSupervisorConfig` as the config surface.
 
@@ -1433,7 +1497,7 @@ Both limits are configurable so power users and CI harnesses can raise them. `#[
 
 **Schedule:** Land opportunistically after T3.4.a as a single-commit drop. Cheap insurance before any real user gets hold of Tide.
 
-#### P14: Claude Code `--resume` for persistent session history (HIGH)
+#### P14: Claude Code `--resume` for persistent session history (HIGH) {#p14-claude-resume}
 
 **Prerequisite reading:** [§P2 integration reference](#p2-integration-reference) — the entry-point table names the specific hook points: `LedgerEntry::claude_session_id` is captured today in `relay_session_io`'s atomic-promote block; `SessionKeysStore` is the persistence trait to extend; `rebind_from_tugbank` is where reload-side re-hydration happens; `TugcodeSpawner` is where the resume id gets threaded into the subprocess spawn. The [B3 alignment note](#p2-integration-reference) in that section also documents the atomic-promote invariant you must preserve when adding the persistence write.
 
@@ -2114,41 +2178,89 @@ Tugdeck side:
 
 ##### T3.0.W3 — Retire tugcast's workspace-dir CLI flag entirely {#t3-workspace-registry-w3}
 
-**Goal:** Remove the "tugcast has a workspace" concept from the codebase entirely, and — separately — remove the CLI's ability to point tugcast at its own source tree, because that path has no honest user-facing meaning. Tugcast launches with an empty `WorkspaceRegistry` and acquires workspaces only via client `spawn_session{project_dir}`. Tugcast's own internal resources (the `tugdeck/dist/` frontend bundle, the dev-mode `tugcode/src/main.ts` fallback, the dev-mode cargo `target/` for `BuildStatusCollector`) are discovered via build-mode dispatch with zero CLI surface.
+**Goal:** Remove the "tugcast has a workspace" concept from the codebase entirely, and — separately — remove the CLI's ability to point tugcast at its own source tree, because that path has no honest user-facing meaning. Tugcast ultimately launches with an empty `WorkspaceRegistry` and acquires workspaces only via client `spawn_session{project_dir}`. Tugcast's own internal resources (the `tugdeck/dist/` frontend bundle, the dev-mode `tugcode/src/main.ts` fallback, the dev-mode cargo `target/` for `BuildStatusCollector`) are discovered via build-mode dispatch with zero CLI surface.
 
-**Why this shape:** After W2, `--dir` is doing two unrelated things that share a variable: (a) workspace bootstrap — a relic of W1's need to preserve bit-identical behavior, now structurally unnecessary because workspaces are client-driven; and (b) **tugtool source-tree locator** — finding tugcast's own internal assets, the `tugdeck` frontend bundle, the dev-mode tugcode fallback, the cargo `target/` dir. Job (a) vanishes in W3. Job (b) is **not user-configurable in any honest sense**. In dev, a binary built from checkout A cannot serve resources from checkout B — the build baked the path in at compile time. In production, resources live at a fixed bundle-relative location next to the binary (`Tug.app/Contents/Resources/`). Neither case benefits from a CLI override. Exposing one is an invitation for misconfiguration and pretends a knob exists that doesn't. So W3 removes the CLI flag outright — there is no `--source-tree` replacement — and replaces Job C with a small private helper that dispatches on build mode.
+**Why this shape:** After W2, `--dir` is doing two unrelated things that share a variable: (a) workspace bootstrap — a relic of W1's need to preserve bit-identical behavior, now structurally unnecessary because workspaces are client-driven; and (b) **tugtool source-tree locator** — finding tugcast's own internal assets, the `tugdeck` frontend bundle, the dev-mode tugcode fallback, the cargo `target/` dir. Job (b) is **not user-configurable in any honest sense**. In dev, a binary built from checkout A cannot serve resources from checkout B — the build baked the path in at compile time. In production, resources live at a fixed bundle-relative location next to the binary (`Tug.app/Contents/Resources/`). Neither case benefits from a CLI override. Exposing one is an invitation for misconfiguration and pretends a knob exists that doesn't. So W3 ultimately removes the CLI flag outright — there is no `--source-tree` as a long-term flag — and replaces Job (b) with a small private helper that dispatches on build mode.
+
+**Split into W3.a + W3.b:** W3 is sequenced into two sub-steps so every intermediate commit keeps Tug.app's daily development workflow in a fully-working state. [W3.a](#t3-workspace-registry-w3a) lands the source-tree helper and all the dev-only `#[cfg]` gating while **keeping the bootstrap workspace alive** (renaming `--dir` to `--source-tree` as a transitional measure). [W3.b](#t3-workspace-registry-w3b) rides with [T3.4.c](#t3-4-c-tide-card) and deletes the bootstrap workspace + the `--source-tree` flag in one coherent commit, at the exact point where the Tide card's UI picker makes a launch-time workspace unnecessary. See [Execution Order](#execution-order-w2-to-tide) for the full sequence.
+
+---
+
+###### T3.0.W3.a — CLI rename + source-tree helper + dev-only gating (bootstrap kept) {#t3-workspace-registry-w3a}
+
+**Goal:** Introduce the `resources::source_tree()` helper, route all internal resource lookups through it, gate dev-only code paths behind `#[cfg(debug_assertions)]`, and rename the `--dir` CLI flag to `--source-tree` as a transitional measure. **Keep the W1 bootstrap workspace alive** so the running Tug.app still shows git/filetree card content during T3.4.a → T3.4.b development.
+
+**Why keep the bootstrap for now:** Removing the bootstrap workspace before the Tide card's UI picker exists ([T3.4.c](#t3-4-c-tide-card)) creates a regression window where the existing git/filetree cards register on mount, subscribe to `FILETREE` / `FILESYSTEM` / `GIT`, and never receive a frame — because nothing is publishing one. Developers doing T3.4.a and T3.4.b work would stare at empty `Loading...` placeholders in the app. The W3.a/W3.b split closes that window: the destructive bootstrap-removal work rides with T3.4.c in [W3.b](#t3-workspace-registry-w3b), where the UI picker is landing in the same commit and the first real `spawn_session` flow replaces the bootstrap as the source of workspace frames.
 
 **Work:**
 
 New module — `tugrust/crates/tugcast/src/resources.rs` (new):
 - `pub(crate) fn source_tree() -> PathBuf`. In `#[cfg(debug_assertions)]` (dev/cargo) builds, returns the tugtool workspace root derived at compile time from `env!("CARGO_MANIFEST_DIR")` by walking three parents up (`tugcast` crate → `crates` → `tugrust` → workspace root). In `#[cfg(not(debug_assertions))]` (release/bundled) builds, returns the bundle-relative `Resources` directory derived at runtime from `std::env::current_exe()` by walking to the `.app/Contents/` ancestor and joining `Resources`. The exact bundle walk is pinned to whatever layout Tug.app decides; if that layout changes, this is the one place to update.
 
-CLI flag removal:
-- Delete `cli.dir` from `main.rs`'s clap definition. Tugcast takes no positional args and no `--dir` / `--source-tree` flag. Its remaining CLI surface is tugbank path, port, auth config.
-- Delete the `registry.get_or_create(&watch_dir)` bootstrap call that W1 introduced. `WorkspaceRegistry::new()` is called; no workspaces are pre-created; the map starts empty.
+CLI flag rename (NOT deletion — W3.b deletes it):
+- Rename `cli.dir` → `cli.source_tree` in `main.rs`'s clap definition; the flag becomes `--source-tree`. Short-form `-d` (if any) either goes away or is kept as a transitional alias with a deprecation warning. The variable the flag populates continues to feed the bootstrap `registry.get_or_create(&watch_dir, cancel.clone())` call exactly as W1 wired it.
+- The bootstrap workspace stays alive. `WorkspaceRegistry::new()` is still called, and the first `get_or_create` call still runs with the CLI-provided path.
 
-Job C callsite updates (all dev-only):
-- **`resolve_tugcode_path`** at `agent_bridge.rs:88` stops taking any parameter for the source tree. Its `.ts` fallback path becomes `resources::source_tree().join("tugcode/src/main.ts")` and the whole fallback branch is wrapped in `#[cfg(debug_assertions)]` — in release builds, tugcode is only ever resolved as a compiled binary on `PATH` or in the bundle, and the `.ts` fallback does not exist in the compiled output at all.
-- **`BuildStatusCollector`** — option (a), dev-only. The entire `BuildStatusCollector::new(...)` construction in `main.rs:257-259` and the feed registration that follows are wrapped in `#[cfg(debug_assertions)]`. `STATS_BUILD_STATUS` simply does not publish in a production Tug.app. Tugdeck's chrome treats an absent/empty `STATS_BUILD_STATUS` feed as "widget not available" and hides the display. The `target/` path is `resources::source_tree().join("target")` inside the dev-only block. **Followup (not in W3 scope):** per-workspace `BuildStatusCollector` that detects `Cargo.toml` / `package.json` / `go.mod` in each workspace and publishes a per-workspace build status. Would replace the dev-only chrome widget with a workspace-scoped feature. Tracked separately.
+Job (b) callsite updates (all can happen without removing the bootstrap):
+- **`resolve_tugcode_path`** at `agent_bridge.rs:88` stops taking a parameter for the source tree and reads from `resources::source_tree()` internally. Its `.ts` fallback path becomes `resources::source_tree().join("tugcode/src/main.ts")` and the whole fallback branch is wrapped in `#[cfg(debug_assertions)]` — in release builds, tugcode is only ever resolved as a compiled binary on `PATH` or in the bundle, and the `.ts` fallback does not exist in the compiled output at all.
+- **`BuildStatusCollector`** — dev-only. The entire `BuildStatusCollector::new(...)` construction in `main.rs:257-259` and the feed registration that follows are wrapped in `#[cfg(debug_assertions)]`. `STATS_BUILD_STATUS` simply does not publish in a production Tug.app. Tugdeck's chrome treats an absent/empty `STATS_BUILD_STATUS` feed as "widget not available" and hides the display. The `target/` path is `resources::source_tree().join("target")` inside the dev-only block. **Followup (not in W3 scope):** per-workspace `BuildStatusCollector` that detects `Cargo.toml` / `package.json` / `go.mod` in each workspace and publishes a per-workspace build status. Would replace the dev-only chrome widget with a workspace-scoped feature. Tracked separately.
 - **`server.rs`'s `source_tree: Option<PathBuf>` parameter** is deleted. `build_app` and `run_server` no longer take it. The `dist_path` computation becomes `resources::source_tree().join("tugdeck").join("dist")` — same path expression, now sourced from the helper rather than threaded through function parameters. Static serving works in both dev (Vite prebuild or `bun run build` output) and prod (bundled `dist/`) without any caller-side knowledge.
 - **`migrate_settings_to_tugbank(&watch_dir, client)`** — wrap the callsite in `#[cfg(debug_assertions)]`. The legacy flat-file settings only ever existed on developer machines during the pre-tugbank transition; production Tug.app has no legacy state to migrate. Inside the dev-only block, the path becomes `resources::source_tree()`. Long-term the function itself is a deletion candidate (tracked separately).
 
-Documentation updates:
-- README, `tugtool worktree setup` scaffolding, and any developer setup notes that mention `tugcast --dir` are updated: the command is just `tugcast` (plus whatever tugbank/port/auth flags it already takes), with no positional path. Instructions that used to say "run tugcast against the tugtool checkout" now say "run tugcast from a binary built in the tugtool checkout."
+Documentation updates (partial — final pass in W3.b):
+- README, `tugtool worktree setup` scaffolding, and any developer setup notes that mention `tugcast --dir` are updated to say `--source-tree`. Note in the same pass that the flag is transitional and will be removed in T3.4.c. Full deletion of these references happens in W3.b.
+
+`AgentSupervisorConfig::project_dir` confirmation:
+- This field **was already deleted** in [T3.0.W2 Step 6](#t3-workspace-registry-w2). W3.a should `rg AgentSupervisorConfig::project_dir tugrust/crates/tugcast/src` and confirm zero matches — if any residual references slipped through Step 6's grep audit, delete them now.
+
+**Exit criteria:**
+- `tugcast` launches with `--source-tree` (not `--dir`); `--dir` is gone or deprecated.
+- `resources::source_tree()` exists and is used by `resolve_tugcode_path`, `server.rs`, `BuildStatusCollector` (dev-only), and `migrate_settings_to_tugbank` (dev-only).
+- A release build (`cargo build --release`) compiles with `BuildStatusCollector`, the `.ts` tugcode fallback, and the legacy settings migration all `#[cfg]`-gated out — confirmed by reading the expanded module tree or by a `cargo expand --release` spot check. Production tugcast binary contains no references to `env!("CARGO_MANIFEST_DIR")` through `resources::source_tree()` — the release path walks `current_exe()` only.
+- `rg AgentSupervisorConfig::project_dir tugrust/crates/tugcast/src` returns zero matches.
+- The W1 bootstrap workspace **still exists** — daily development against Tug.app continues to show git/filetree card content from whatever directory `--source-tree` points at.
+- Dev-mode tugdeck is still served correctly: `resources::source_tree().join("tugdeck/dist")` resolves to `<repo>/tugdeck/dist/` and static serving works.
+- `cargo nextest run` green; `cargo build -p tugcast` clean under `-D warnings`.
+
+**Scope:** ~150-200 lines of Rust touching `main.rs` (CLI rename + `#[cfg]` gating of `BuildStatusCollector` and legacy migration), new `resources.rs` module (~40 lines including both cfg branches), `agent_bridge.rs` (`.ts` fallback gating + path update), `server.rs` (parameter removal), plus developer-facing docs.
+
+**Schedule:** Lands after [W2 closeout](#t3-workspace-registry-w2), before [T3.4.a](#t3-4-a-code-session-store). See [Execution Order](#execution-order-w2-to-tide) for the full sequence.
+
+---
+
+###### T3.0.W3.b — Retire bootstrap workspace + delete `--source-tree` (rides with T3.4.c) {#t3-workspace-registry-w3b}
+
+**Goal:** Delete the W1 bootstrap workspace and the `--source-tree` CLI flag entirely. Tugcast ends this step launching with an empty `WorkspaceRegistry` and acquiring workspaces only via client `spawn_session{project_dir}`.
+
+**Why this rides with T3.4.c:** The bootstrap workspace's sole remaining purpose after [W3.a](#t3-workspace-registry-w3a) is to make the existing git/filetree cards show content in daily development. Once [T3.4.c](#t3-4-c-tide-card) lands with the Tide card's UI picker, cards mount with an explicit `project_dir` from the user's choice and send `spawn_session` themselves — there is nothing left for the bootstrap to do. Landing the removal in the same commit as T3.4.c keeps the transition atomic: no intermediate commit has both "bootstrap gone" and "no UI picker yet."
+
+**Work:**
+
+CLI flag removal:
+- Delete `cli.source_tree` from `main.rs`'s clap definition. Tugcast takes no positional args and no `--source-tree` flag. Its remaining CLI surface is tugbank path, port, auth config.
+
+Bootstrap removal:
+- Delete the `registry.get_or_create(&watch_dir, cancel.clone())` bootstrap call. `WorkspaceRegistry::new()` is still called; no workspaces are pre-created; the map starts empty.
+- Delete the `let bootstrap = ...` binding and all references to `bootstrap.fs_watch_rx` / `bootstrap.ft_watch_rx` / `bootstrap.git_watch_rx` / `bootstrap.ft_query_tx` in `main.rs`'s router wiring. The router's FILETREE_QUERY adapter and the watch-receiver registrations that assumed a single bootstrap workspace are either removed (if they were bootstrap-specific) or rewritten to work from the registry alone (if they need to fan out across multiple workspaces in future).
+- Delete any `watch_dir` variable and `PathBuf` plumbing that was only kept alive to feed the bootstrap call.
+
+Documentation updates (final pass):
+- README, developer setup notes, `tugtool worktree setup` scaffolding: delete remaining references to `--source-tree` entirely. Instructions that used to say "run tugcast against the tugtool checkout" now say "run tugcast from a binary built in the tugtool checkout" — the same language W3's original writeup specified, now landing in this sub-step.
+
+Test updates:
+- New test `test_startup_has_no_bootstrap_workspace` in `feeds/workspace_registry.rs` or `tests/` — constructs a fresh `WorkspaceRegistry`, asserts `inner_for_test().len() == 0`, drops the registry cleanly.
+- Any existing integration test that assumed the bootstrap workspace ([grep for `bootstrap.` and `watch_dir` in the test suite](../tugrust/crates/tugcast/tests/)) is either rewritten to call `spawn_session` explicitly or deleted if it's redundant with T3.4.c's card-mount tests.
 
 **Exit criteria:**
 - `tugcast` launches with no path argument. The entire `--dir` / `--source-tree` CLI surface is gone.
-- `AgentSupervisorConfig` has no path field at all. `rg AgentSupervisorConfig::project_dir` returns zero matches.
-- `rg -- '--dir' tugrust/crates/tugcast/src` returns zero matches (no residual flag plumbing).
-- A fresh `tugcast` launched with no connected clients has an empty `WorkspaceRegistry`. New test `test_startup_has_no_bootstrap_workspace` asserts this.
-- A release build (`cargo build --release`) compiles with `BuildStatusCollector`, the `.ts` tugcode fallback, and the legacy settings migration all `#[cfg]`-gated out — confirmed by reading the expanded module tree or by a `cargo expand --release` spot check. Production tugcast binary contains no references to `env!("CARGO_MANIFEST_DIR")` through `resources::source_tree()` — the release path walks `current_exe()` only.
-- A client that connects, sends `spawn_session{card_id, tug_session_id, project_dir}` with a valid path, and then sends a `CODE_INPUT` turn, receives feed frames for `FILETREE` / `FILESYSTEM` / `GIT` whose `workspace_key` matches their chosen `project_dir`, and a `system_metadata.cwd` from Claude that also matches.
-- Dev-mode tugdeck is still served correctly: `resources::source_tree().join("tugdeck/dist")` resolves to `<repo>/tugdeck/dist/` and static serving works.
-- `cargo nextest run` green.
+- `rg -- '--dir|--source-tree' tugrust/crates/tugcast/src` returns zero matches (no residual flag plumbing).
+- A fresh `tugcast` launched with no connected clients has an empty `WorkspaceRegistry`. `test_startup_has_no_bootstrap_workspace` passes.
+- A client that connects, sends `spawn_session{card_id, tug_session_id, project_dir}` with a valid path, and then sends a `CODE_INPUT` turn, receives feed frames for `FILETREE` / `FILESYSTEM` / `GIT` whose `workspace_key` matches their chosen `project_dir`, and a `system_metadata.cwd` from Claude that also matches. **This is the manual A/B smoke deferred from [W2 Step 8](#t3-workspace-registry-w2).**
+- `cargo nextest run` green; `cargo build -p tugcast` clean under `-D warnings`.
 
-**Scope:** ~200-300 lines of Rust touching `main.rs` (CLI parsing removal, bootstrap removal, `#[cfg]` gating of `BuildStatusCollector` and legacy migration), new `resources.rs` module (~40 lines including both cfg branches), `agent_bridge.rs` (`.ts` fallback gating + path update), `server.rs` (parameter removal), `agent_supervisor.rs` (delete `AgentSupervisorConfig::project_dir` field), plus developer-facing docs.
+**Scope:** ~50-100 lines of Rust touching `main.rs` (CLI deletion, bootstrap deletion, router wiring cleanup), new test, docs cleanup.
 
-**Schedule:** Lands after W2, before T3.4.a. T3.4.a then inherits a world where tugcast has no launch-time project configuration at all — the workspace comes from CONTROL frames, the source tree is discovered from the build — and `sessionKey` is honestly a display label with every other field having a single, unambiguous role.
+**Schedule:** Lands alongside [T3.4.c](#t3-4-c-tide-card) in the same commit, or as its immediate follow-on. See [Execution Order](#execution-order-w2-to-tide) for the full sequence. T3.4.a then inherits a world where tugcast has no launch-time project configuration at all — the workspace comes from CONTROL frames, the source tree is discovered from the build — and `sessionKey` is honestly a display label with every other field having a single, unambiguous role.
 
 ---
 
@@ -2170,7 +2282,7 @@ Documentation updates:
 
 ---
 
-##### T3.4.a — CodeSessionStore (turn state machine)
+##### T3.4.a — CodeSessionStore (turn state machine) {#t3-4-a-code-session-store}
 
 > **⚠ Pending substantial rewrite after T3.0.W lands.** The body of this section below still reflects the pre-T3.0.W world: it conflates `sessionKey` with the wire filter key, has a "single-session fallback" paragraph, cites `transport-exploration.md` Test-N numbers where the current ground truth is the `v2.1.105/test-NN-*.jsonl` golden fixtures, and leaves several load-bearing questions undecided. A coherent rewrite is planned as a follow-up pass once [T3.0.W](#t3-workspace-registry) has landed, so the rewrite can reference the three-identifier model (`tug_session_id` / `claude_session_id` / `project_dir`) and the per-workspace wire contract by name instead of re-explaining them. Until that rewrite lands, treat this section as **directionally correct but not implementation-ready** — the state-machine shape, phase transitions, action list, and essential wire-level invariants are the load-bearing parts; the constructor signature and exit criteria's fixture references will change.
 >
@@ -2299,7 +2411,7 @@ File: `tugdeck/src/lib/code-session-store.ts` (new).
 
 ---
 
-##### T3.4.b — tug-prompt-entry (composition component)
+##### T3.4.b — tug-prompt-entry (composition component) {#t3-4-b-prompt-entry}
 
 **Goal:** A compound React component that composes `tug-prompt-input` + route indicator + submit/stop into a single token-scoped surface. All turn behavior is read from a `CodeSessionStore` passed in as a prop.
 
@@ -2345,7 +2457,7 @@ Files: `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` (new).
 
 ---
 
-##### T3.4.c — Tide card (functional registration)
+##### T3.4.c — Tide card (functional registration) {#t3-4-c-tide-card}
 
 **Goal:** Register `tide` as a full card type in the card registry, alongside `git` and `hello`. This is the Tide card — the Unified Command Surface envisioned in the Vision section of this document — in its first shippable form.
 
@@ -2421,7 +2533,7 @@ export function registerTideCard(): void {
 
 ---
 
-##### T3.4.d — Polish & exit criteria (folded from old T3.5)
+##### T3.4.d — Polish & exit criteria (folded from old T3.5) {#t3-4-d-polish-exit}
 
 **Goal:** Everything needed to declare Phase T3 done.
 
