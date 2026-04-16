@@ -7,18 +7,19 @@
  * tokens [L20]. The entry reuses existing base-tier global/field/badge tokens
  * per [D11].
  *
- * This is the Step 2 scaffold: the component mounts, subscribes to the
- * session-store snapshot, wires the responder scope, renders the JSX layout
- * per Spec S03, and registers no-op / empty-body action handlers that Step 4
- * (SELECT_VALUE) and Step 5 (SUBMIT) will fill in. The no-op SUBMIT stub is
- * intentional: it keeps TugPushButton's chain-action mode out of its
- * aria-disabled fallback so the submit button is live from the first commit
- * (see Risk R04 in the plan).
+ * Step 2 landed the scaffold (mount, store snapshot, responder scope, JSX
+ * per Spec S03, no-op SUBMIT stub that keeps TugPushButton's chain-action
+ * mode out of its aria-disabled fallback — Risk R04). Step 3 fills in the
+ * input-delegate pass-throughs (`focus`, `clear`) and wires
+ * `handleInputChange` to write `data-empty` directly to the root element
+ * via `setAttribute`, bypassing React state on keystroke [L06][L22].
+ * Step 4 (SELECT_VALUE) and Step 5 (SUBMIT) still land later.
  *
  * Laws: [L02] useSyncExternalStore for store state, [L06] appearance via
  *       CSS/DOM, [L07] handlers read state via refs, [L11] controls emit
  *       actions, [L15] token-driven states, [L16] pairings declared,
- *       [L19] component authoring guide, [L20] token sovereignty.
+ *       [L19] component authoring guide, [L20] token sovereignty,
+ *       [L22] direct DOM writes for high-frequency updates.
  * Decisions: [D-T3-01] route selection, [D-T3-06] submit is interrupt,
  *            [D-T3-07] queue during turn, [D-T3-09] 1:1 card↔store.
  */
@@ -27,6 +28,7 @@ import "./tug-prompt-entry.css";
 
 import React, {
   useCallback,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useSyncExternalStore,
@@ -125,11 +127,17 @@ export interface TugPromptEntryProps {
  * Imperative handle exposed via `forwardRef`. Used by the Tide card (T3.4.c)
  * to drive focus from global keyboard shortcuts.
  *
- * Intentionally empty in Step 2 — Step 3 fills in `focus()` and `clear()`
- * as pass-throughs to the input's delegate.
+ * Both methods are thin pass-throughs to the composed `TugPromptInput`'s
+ * delegate. The entry does not own text state — keeping the pass-through
+ * semantics honest avoids divergence between the entry's imperative
+ * surface and the input's actual behavior.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TugPromptEntryDelegate {}
+export interface TugPromptEntryDelegate {
+  /** Move keyboard focus to the underlying input's editor element. */
+  focus(): void;
+  /** Clear the input's content. */
+  clear(): void;
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -138,7 +146,7 @@ export interface TugPromptEntryDelegate {}
 export const TugPromptEntry = React.forwardRef<
   TugPromptEntryDelegate,
   TugPromptEntryProps
->(function TugPromptEntry(props, _ref) {
+>(function TugPromptEntry(props, ref) {
   const {
     id,
     codeSessionStore,
@@ -220,12 +228,32 @@ export const TugPromptEntry = React.forwardRef<
     // Step 4 fills this in.
   }, []);
 
-  // Input onChange callback. Step 3 writes `data-empty` to the root via
-  // `rootRef` and `promptInputRef.current.isEmpty()`. Declared empty here
-  // so the JSX prop wiring is stable across step boundaries.
+  // Input onChange callback. Writes `data-empty` to the root element
+  // directly via `rootRef` — no React state update, no re-render of the
+  // entry on every keystroke [L06][L22]. Reads freshness from
+  // `promptInputRef.current?.isEmpty()`; refs are always current, so the
+  // empty-deps `useCallback` is safe.
   const handleInputChange = useCallback(() => {
-    // Step 3 fills this in.
+    const root = rootRef.current;
+    if (!root) return;
+    const isEmpty = promptInputRef.current?.isEmpty() ?? true;
+    root.setAttribute("data-empty", String(isEmpty));
   }, []);
+
+  // Expose the imperative delegate. Pass-throughs to the underlying input
+  // delegate — the entry does not own text state.
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus() {
+        promptInputRef.current?.focus();
+      },
+      clear() {
+        promptInputRef.current?.clear();
+      },
+    }),
+    [],
+  );
 
   // Compose rootRef + responderRef onto the same DOM element. useResponder's
   // `responderRef` writes `data-responder-id` there; `rootRef` is the

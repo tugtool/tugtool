@@ -1,13 +1,14 @@
 /**
- * TugPromptEntry — Step 2 smoke suite (plan Spec S01–S03, Step 2 tests).
+ * TugPromptEntry — Step 2 scaffold + Step 3 input-delegate wiring suite.
  *
  * Step 2 is the scaffold commit: the component mounts, subscribes to the
  * session-store snapshot, registers a responder scope with no-op SUBMIT and
  * signature-correct SELECT_VALUE handler bodies, and renders its layout
- * against a minimal `MockTugConnection`-backed store. Later steps extend
- * this file:
+ * against a minimal `MockTugConnection`-backed store.
  *
- *   • Step 3 — data-empty writes + delegate forwarding tests.
+ * Step 3 extends the file with delegate forwarding + `data-empty` tests.
+ * Later steps extend this file:
+ *
  *   • Step 4 — route indicator ↔ input round-trip tests.
  *   • Step 5 — send / interrupt / queue / errored tests.
  *
@@ -49,10 +50,12 @@
 import "../../../__tests__/setup-rtl";
 
 import React from "react";
-import { describe, it, expect, afterEach } from "bun:test";
+import { act } from "react";
+import { describe, it, expect, afterEach, beforeEach, spyOn } from "bun:test";
 import { render, cleanup } from "@testing-library/react";
 
-import { TugPromptEntry } from "@/components/tugways/tug-prompt-entry";
+import { TugPromptEntry, type TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-entry";
+import { TugTextEngine } from "@/lib/tug-text-engine";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
@@ -230,5 +233,279 @@ describe("TugPromptEntry — Step 2 scaffold", () => {
     const { container } = renderEntry();
     const badge = container.querySelector(".tug-prompt-entry-queue-badge");
     expect(badge).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 3: shims
+// ---------------------------------------------------------------------------
+//
+// The keystroke-driven tests in the Step 3 suite below need to drive the
+// TugTextEngine's `input` listener so the `onChange` callback (and
+// therefore the entry's `handleInputChange`) fires. happy-dom does not
+// implement `document.execCommand` or `HTMLCanvasElement.getContext("2d")`
+// in a way that is useful to the engine's route-detection and atom-
+// rendering paths, so we supply the same minimal shims used by the
+// TugPromptInput Spec S04 suite. Scoped to beforeEach/afterEach of the
+// Step 3 describe block.
+
+let originalExecCommand: Document["execCommand"] | undefined;
+
+function findEditableRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[contenteditable="true"]');
+}
+
+function installExecCommandShim() {
+  originalExecCommand = document.execCommand;
+  document.execCommand = function (
+    command: string,
+    _showUI?: boolean,
+    value?: string,
+  ): boolean {
+    const root = findEditableRoot();
+    if (!root) return true;
+
+    if (command === "insertText" && typeof value === "string") {
+      const textNode = document.createTextNode(value);
+      root.appendChild(textNode);
+      const ev = new InputEvent("input", {
+        bubbles: true,
+        cancelable: false,
+        inputType: "insertText",
+        data: value,
+      });
+      root.dispatchEvent(ev);
+      return true;
+    }
+
+    if (command === "delete") {
+      // Simulate a backspace: trim one character off the last text
+      // node in the editor root and emit a synthetic input event so
+      // the engine's `input` listener fires. We ignore the live
+      // selection here — happy-dom's Selection API does not reliably
+      // model a collapsed caret inside a contenteditable we've
+      // populated via appendChild, and the Step 3 tests only need
+      // the single-character-backspace path to flip data-empty back
+      // to "true". deleteContents on a collapsed range is a no-op in
+      // happy-dom, so we always trim unconditionally.
+      const last = root.lastChild;
+      if (last && last.nodeType === Node.TEXT_NODE) {
+        const t = last as Text;
+        if (t.data.length > 1) {
+          t.data = t.data.slice(0, -1);
+        } else {
+          root.removeChild(t);
+        }
+      }
+      const ev = new InputEvent("input", {
+        bubbles: true,
+        cancelable: false,
+        inputType: "deleteContentBackward",
+      });
+      root.dispatchEvent(ev);
+      return true;
+    }
+
+    if (command === "insertHTML" && typeof value === "string") {
+      const template = document.createElement("template");
+      template.innerHTML = value;
+      root.appendChild(template.content);
+      return true;
+    }
+
+    return true;
+  } as Document["execCommand"];
+}
+
+function uninstallExecCommandShim() {
+  if (originalExecCommand) {
+    document.execCommand = originalExecCommand;
+    originalExecCommand = undefined;
+  }
+}
+
+interface MinimalCtx2D {
+  font: string;
+  measureText(text: string): { width: number };
+}
+
+let originalGetContext: HTMLCanvasElement["getContext"] | undefined;
+
+function getCanvasProto(): { getContext: HTMLCanvasElement["getContext"] } | null {
+  const probe = document.createElement("canvas");
+  const proto = Object.getPrototypeOf(probe);
+  return proto && typeof proto.getContext === "function" ? proto : null;
+}
+
+function installCanvas2DShim() {
+  const proto = getCanvasProto();
+  if (!proto) return;
+  originalGetContext = proto.getContext;
+  proto.getContext = function (contextId: string): MinimalCtx2D | null {
+    if (contextId !== "2d") return null;
+    let fontState = "12px sans-serif";
+    return {
+      get font() { return fontState; },
+      set font(v: string) { fontState = v; },
+      measureText(text: string) {
+        return { width: text.length * 8 };
+      },
+    };
+  } as unknown as HTMLCanvasElement["getContext"];
+}
+
+function uninstallCanvas2DShim() {
+  const proto = getCanvasProto();
+  if (proto && originalGetContext) {
+    proto.getContext = originalGetContext;
+    originalGetContext = undefined;
+  }
+}
+
+/**
+ * Render the entry with a forwarded ref and (optionally) a React.Profiler
+ * wrapping it. Returns handles the Step 3 tests need.
+ */
+function renderEntryWithRef(opts: {
+  id?: string;
+  onRender?: React.ProfilerOnRenderCallback;
+} = {}) {
+  const id = opts.id ?? "prompt-entry-step3";
+  const services = buildMockServices();
+  const entryRef = React.createRef<TugPromptEntryDelegate>();
+  const tree = (
+    <ResponderChainProvider>
+      <TugPromptEntry ref={entryRef} id={id} {...services} />
+    </ResponderChainProvider>
+  );
+  const utils = render(
+    opts.onRender ? (
+      <React.Profiler id="entry" onRender={opts.onRender}>
+        {tree}
+      </React.Profiler>
+    ) : tree,
+  );
+  return { ...utils, services, id, entryRef };
+}
+
+function placeCaretAtEnd(el: HTMLElement) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+describe("TugPromptEntry — Step 3 input delegate + data-empty", () => {
+  beforeEach(() => {
+    installExecCommandShim();
+    installCanvas2DShim();
+  });
+
+  afterEach(() => {
+    cleanup();
+    uninstallExecCommandShim();
+    uninstallCanvas2DShim();
+  });
+
+  it("initial mount: data-empty=\"true\" on root", () => {
+    const { container } = renderEntryWithRef();
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.getAttribute("data-empty")).toBe("true");
+  });
+
+  it("typing a character flips data-empty to \"false\" without re-rendering the entry", () => {
+    // React.Profiler measures commits for its subtree. handleInputChange
+    // uses setAttribute only (no setState), so after the initial-mount
+    // commit there must be zero "update" commits in response to the
+    // keystroke. If a future regression introduces setState on this
+    // path, this assertion catches it immediately.
+    const phases: string[] = [];
+    const { container } = renderEntryWithRef({
+      onRender: (_id, phase) => {
+        phases.push(phase);
+      },
+    });
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.getAttribute("data-empty")).toBe("true");
+
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    placeCaretAtEnd(editor!);
+
+    const updatesAtStart = phases.filter((p) => p === "update").length;
+
+    act(() => {
+      document.execCommand("insertText", false, "x");
+    });
+
+    expect(root.getAttribute("data-empty")).toBe("false");
+    const updatesAfter = phases.filter((p) => p === "update").length;
+    expect(updatesAfter).toBe(updatesAtStart);
+  });
+
+  it("backspacing back to empty flips data-empty to \"true\"", () => {
+    const { container } = renderEntryWithRef();
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    placeCaretAtEnd(editor!);
+
+    act(() => {
+      document.execCommand("insertText", false, "x");
+    });
+    expect(root.getAttribute("data-empty")).toBe("false");
+
+    // Re-place caret at end (the shim's insertText appends without
+    // moving the selection) then issue a delete.
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("delete", false);
+    });
+
+    expect(root.getAttribute("data-empty")).toBe("true");
+  });
+
+  it("ref.current.focus() forwards to the underlying editor element", () => {
+    const { container, entryRef } = renderEntryWithRef();
+    expect(entryRef.current).not.toBeNull();
+
+    const editor = container.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(editor).not.toBeNull();
+
+    act(() => {
+      entryRef.current!.focus();
+    });
+
+    // TugPromptInput.focus() calls `engineRef.current.root.focus()` on
+    // the contenteditable element. After forwarding through the entry,
+    // document.activeElement should be the editor.
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it("ref.current.clear() forwards to TugPromptInput.clear() → TugTextEngine.prototype.clear", () => {
+    const { entryRef } = renderEntryWithRef();
+    expect(entryRef.current).not.toBeNull();
+
+    const clearSpy = spyOn(TugTextEngine.prototype, "clear");
+    try {
+      act(() => {
+        entryRef.current!.clear();
+      });
+      expect(clearSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      clearSpy.mockRestore();
+    }
   });
 });
