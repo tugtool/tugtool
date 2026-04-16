@@ -735,9 +735,64 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     });
 
     const updatesAfter = phases.filter((p) => p === "update").length;
-    // At most one additional commit — NOT two. If a future regression
-    // introduces a second setRouteState with a different value during
-    // the round-trip, this bumps to 2 and the test fails.
-    expect(updatesAfter - updatesBefore).toBeLessThanOrEqual(1);
+    // Exactly one additional commit — the state change "" → "$" is a
+    // real change so React must commit once; the *second* setRouteState
+    // call (from the onRouteChange round-trip with the same value)
+    // must bail out via Object.is. If a regression introduces a second
+    // setState with a different value, this bumps to 2 and fails.
+    expect(updatesAfter - updatesBefore).toBe(1);
+  });
+
+  it("onRouteChange(null) clears the pill (backspacing past the leading atom)", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    // First, dispatch SELECT_VALUE "$" to put the pill in a non-empty
+    // state. This also exercises the SELECT_VALUE → setRoute path
+    // which would normally have driven the pill via the engine.
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SELECT_VALUE,
+        sender: `${id}-route-indicator`,
+        value: "$",
+        phase: "discrete",
+      });
+    });
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
+
+    // Now simulate the "user backspaced past the leading atom" event:
+    // the engine normally fires onRouteChange(null) in that case. We
+    // invoke the component's callback indirectly by dispatching
+    // another SELECT_VALUE with value="" — but that's a *different*
+    // path. To test the null case specifically, we call the input's
+    // onRouteChange prop through the rendered TugPromptInput. The
+    // simplest way is to dispatch an input event that wipes the
+    // route atom; equivalent is to assert via a direct handler call,
+    // which is what we do here by re-triggering through setRoute
+    // with an empty string and letting the engine's detection clear.
+    //
+    // Practical shortcut: use the engine's clear() via the delegate
+    // and then fire a synthetic input event so onRouteChange(null)
+    // propagates through the normal path.
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    act(() => {
+      // Clear the editor's content. The engine's route-detection
+      // runs on the next input event; firing an empty input event
+      // triggers onRouteChange(null) because the leading atom is
+      // gone.
+      while (editor!.firstChild) editor!.removeChild(editor!.firstChild);
+      const ev = new InputEvent("input", {
+        bubbles: true,
+        cancelable: false,
+        inputType: "deleteContentBackward",
+      });
+      editor!.dispatchEvent(ev);
+    });
+
+    // Pill cleared — no segment is active.
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+    expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
   });
 });
