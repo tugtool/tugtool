@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{find_tugplans, tugplan_name_from_path, PLAN_SEARCH_DIRS};
+use crate::config::{PLAN_SEARCH_DIRS, find_tugplans, tugplan_name_from_path};
 use crate::error::TugError;
 
 /// Which cascade stage produced the match
