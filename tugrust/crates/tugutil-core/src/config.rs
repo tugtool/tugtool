@@ -96,6 +96,15 @@ impl Config {
 /// Reserved file names that are not treated as plan files
 pub const RESERVED_FILES: &[&str] = &["tugplan-implementation-log.md"];
 
+/// Directories searched for plan files, in priority order.
+///
+/// `.tugtool/` is the canonical directory (and also marks the project root).
+/// `roadmap/` is searched as a secondary location for longer-lived or
+/// proposed plans. Lookups try directories in this order, so an entry in
+/// `.tugtool/` takes precedence over an entry with the same filename in
+/// `roadmap/`.
+pub const PLAN_SEARCH_DIRS: &[&str] = &[".tugtool", "roadmap"];
+
 /// Check if a filename is reserved (not a plan file)
 pub fn is_reserved_file(filename: &str) -> bool {
     RESERVED_FILES.contains(&filename)
@@ -127,23 +136,42 @@ pub fn find_project_root_from(start: PathBuf) -> Result<PathBuf, TugError> {
     }
 }
 
-/// Find all plan files in the project plan directory
+/// Find all plan files in the project plan directories
 ///
 /// Per [D03], plan files match the configured prefix (e.g. plan-*.md) except reserved files.
+/// Searches every directory listed in [`PLAN_SEARCH_DIRS`]. `.tugtool/` must exist (it
+/// defines the project root); secondary directories like `roadmap/` are scanned only if
+/// present.
 pub fn find_tugplans(project_root: &Path) -> Result<Vec<PathBuf>, TugError> {
-    let tugplan_dir = project_root.join(".tugtool");
-    if !tugplan_dir.is_dir() {
+    let primary_dir = project_root.join(PLAN_SEARCH_DIRS[0]);
+    if !primary_dir.is_dir() {
         return Err(TugError::NotInitialized);
     }
 
     let mut tugplans = Vec::new();
-    let entries = fs::read_dir(&tugplan_dir).map_err(TugError::Io)?;
+    for search_dir in PLAN_SEARCH_DIRS {
+        let dir = project_root.join(search_dir);
+        if !dir.is_dir() {
+            continue;
+        }
+        tugplans.extend(find_tugplans_in_dir(&dir)?);
+    }
+
+    // Sort by full path for consistent ordering
+    tugplans.sort();
+    Ok(tugplans)
+}
+
+/// Enumerate plan files in a single directory. Returns only files matching
+/// `tugplan-*.md` and not in [`RESERVED_FILES`].
+fn find_tugplans_in_dir(dir: &Path) -> Result<Vec<PathBuf>, TugError> {
+    let mut tugplans = Vec::new();
+    let entries = fs::read_dir(dir).map_err(TugError::Io)?;
 
     for entry in entries {
         let entry = entry.map_err(TugError::Io)?;
         let path = entry.path();
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            // Check if it matches tugplan-*.md pattern and is not reserved
             if filename.starts_with("tugplan-")
                 && filename.ends_with(".md")
                 && !is_reserved_file(filename)
@@ -153,8 +181,6 @@ pub fn find_tugplans(project_root: &Path) -> Result<Vec<PathBuf>, TugError> {
         }
     }
 
-    // Sort by filename for consistent ordering
-    tugplans.sort();
     Ok(tugplans)
 }
 

@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{find_tugplans, tugplan_name_from_path};
+use crate::config::{find_tugplans, tugplan_name_from_path, PLAN_SEARCH_DIRS};
 use crate::error::TugError;
 
 /// Which cascade stage produced the match
@@ -75,27 +75,29 @@ pub fn resolve_plan(input: &str, project_root: &Path) -> Result<ResolveResult, T
         } else {
             format!("{}.md", input)
         };
-        let path = project_root.join(".tugtool").join(&filename);
-        if path.exists() {
-            return Ok(ResolveResult::Found {
-                path,
-                stage: ResolveStage::Filename,
-            });
-        } else {
-            return Ok(ResolveResult::NotFound);
+        for search_dir in PLAN_SEARCH_DIRS {
+            let path = project_root.join(search_dir).join(&filename);
+            if path.exists() {
+                return Ok(ResolveResult::Found {
+                    path,
+                    stage: ResolveStage::Filename,
+                });
+            }
         }
+        return Ok(ResolveResult::NotFound);
     }
 
     // Stage 3: Slug (tugplan-{input}.md)
     if !input.is_empty() {
-        let slug_path = project_root
-            .join(".tugtool")
-            .join(format!("tugplan-{}.md", input));
-        if slug_path.exists() {
-            return Ok(ResolveResult::Found {
-                path: slug_path,
-                stage: ResolveStage::Slug,
-            });
+        let filename = format!("tugplan-{}.md", input);
+        for search_dir in PLAN_SEARCH_DIRS {
+            let path = project_root.join(search_dir).join(&filename);
+            if path.exists() {
+                return Ok(ResolveResult::Found {
+                    path,
+                    stage: ResolveStage::Slug,
+                });
+            }
         }
     }
 
@@ -168,6 +170,23 @@ mod tests {
         }
 
         tmp
+    }
+
+    /// Helper: write plan files into roadmap/ (creating it if needed)
+    fn add_roadmap_plans(tmp: &TempDir, plans: &[&str]) {
+        let roadmap_dir = tmp.path().join("roadmap");
+        if !roadmap_dir.exists() {
+            fs::create_dir(&roadmap_dir).unwrap();
+        }
+        for plan in plans {
+            let filename = if plan.starts_with("tugplan-") {
+                plan.to_string()
+            } else {
+                format!("tugplan-{}.md", plan)
+            };
+            let path = roadmap_dir.join(&filename);
+            fs::write(&path, "# Roadmap Plan\n").unwrap();
+        }
     }
 
     #[test]
@@ -369,6 +388,121 @@ mod tests {
                 assert!(path.ends_with("tugplan-only-plan.md"));
             }
             _ => panic!("Expected Found with Auto stage"),
+        }
+    }
+
+    #[test]
+    fn test_slug_resolves_from_roadmap() {
+        let tmp = setup_project(&[]);
+        add_roadmap_plans(&tmp, &["tide"]);
+
+        let result = resolve_plan("tide", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Slug);
+                assert!(path.ends_with("roadmap/tugplan-tide.md"));
+            }
+            _ => panic!("Expected Found with Slug stage from roadmap/"),
+        }
+    }
+
+    #[test]
+    fn test_bare_filename_resolves_from_roadmap() {
+        let tmp = setup_project(&[]);
+        add_roadmap_plans(&tmp, &["tide"]);
+
+        let result = resolve_plan("tugplan-tide", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Filename);
+                assert!(path.ends_with("roadmap/tugplan-tide.md"));
+            }
+            _ => panic!("Expected Found with Filename stage from roadmap/"),
+        }
+    }
+
+    #[test]
+    fn test_tugtool_wins_over_roadmap_for_same_slug() {
+        let tmp = setup_project(&["shared"]);
+        add_roadmap_plans(&tmp, &["shared"]);
+
+        let result = resolve_plan("shared", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Slug);
+                // .tugtool/ is searched first, so it wins
+                assert!(path.to_string_lossy().contains(".tugtool"));
+                assert!(!path.to_string_lossy().contains("roadmap"));
+            }
+            _ => panic!("Expected Found preferring .tugtool/"),
+        }
+    }
+
+    #[test]
+    fn test_prefix_match_across_dirs() {
+        let tmp = setup_project(&["active-work"]);
+        add_roadmap_plans(&tmp, &["future-idea"]);
+
+        let result = resolve_plan("active", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Prefix);
+                assert!(path.ends_with("tugplan-active-work.md"));
+            }
+            _ => panic!("Expected Found with Prefix from .tugtool/"),
+        }
+
+        let result = resolve_plan("future", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Prefix);
+                assert!(path.ends_with("tugplan-future-idea.md"));
+            }
+            _ => panic!("Expected Found with Prefix from roadmap/"),
+        }
+    }
+
+    #[test]
+    fn test_ambiguous_across_dirs() {
+        let tmp = setup_project(&["user-auth"]);
+        add_roadmap_plans(&tmp, &["user-roles"]);
+
+        let result = resolve_plan("user", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Ambiguous(candidates) => {
+                assert_eq!(candidates.len(), 2);
+                // Sorted by full path: .tugtool/... < roadmap/...
+                assert!(candidates[0].ends_with(".tugtool/tugplan-user-auth.md"));
+                assert!(candidates[1].ends_with("roadmap/tugplan-user-roles.md"));
+            }
+            _ => panic!("Expected Ambiguous across dirs"),
+        }
+    }
+
+    #[test]
+    fn test_auto_select_picks_only_roadmap_plan() {
+        let tmp = setup_project(&[]);
+        add_roadmap_plans(&tmp, &["lonely"]);
+
+        let result = resolve_plan("", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { path, stage } => {
+                assert_eq!(stage, ResolveStage::Auto);
+                assert!(path.ends_with("roadmap/tugplan-lonely.md"));
+            }
+            _ => panic!("Expected Found with Auto stage from roadmap/"),
+        }
+    }
+
+    #[test]
+    fn test_missing_roadmap_dir_is_ok() {
+        // Only .tugtool/ exists; roadmap/ is absent — should still resolve normally.
+        let tmp = setup_project(&["only-plan"]);
+
+        let result = resolve_plan("only-plan", tmp.path()).unwrap();
+        match result {
+            ResolveResult::Found { stage, .. } => assert_eq!(stage, ResolveStage::Slug),
+            _ => panic!("Expected Found with Slug stage when roadmap/ is absent"),
         }
     }
 }
