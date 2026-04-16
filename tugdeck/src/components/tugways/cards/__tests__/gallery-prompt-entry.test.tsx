@@ -22,7 +22,7 @@ describe("GalleryPromptEntry — gallery card", () => {
   it("renders the split pane and mounts TugPromptEntry in the bottom panel", () => {
     const { container } = render(
       <ResponderChainProvider>
-        <GalleryPromptEntry />
+        <GalleryPromptEntry cardId="test-card" />
       </ResponderChainProvider>,
     );
 

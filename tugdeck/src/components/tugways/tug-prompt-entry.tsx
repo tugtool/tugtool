@@ -111,8 +111,13 @@ export interface TugPromptEntryProps {
   sessionMetadataStore: SessionMetadataStore;
   /** Prompt history (recall on arrow up/down). Forwarded to TugPromptInput. */
   historyStore: PromptHistoryStore;
-  /** File completion for `@` trigger. Forwarded to TugPromptInput. */
-  fileCompletionProvider: CompletionProvider;
+  /**
+   * Completion providers keyed by trigger character, forwarded to the
+   * underlying `TugPromptInput`. Example: `{ "@": fileProvider, "/": commandProvider }`.
+   * Mirrors `TugPromptInput`'s own `completionProviders` prop — the entry
+   * is a pass-through. Leave undefined to disable all trigger completions.
+   */
+  completionProviders?: Record<string, CompletionProvider>;
   /** Drop handler for dragging files from Finder. Forwarded to TugPromptInput. */
   dropHandler?: DropHandler;
   /**
@@ -161,8 +166,8 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore,
     // sessionMetadataStore — accepted for T3.4.c, unused in T3.4.b.
     historyStore: _historyStore,
-    fileCompletionProvider: _fileCompletionProvider,
-    dropHandler: _dropHandler,
+    completionProviders,
+    dropHandler,
     localCommandHandler,
     className,
   } = props;
@@ -339,6 +344,9 @@ export const TugPromptEntry = React.forwardRef<
         <TugPromptInput
           ref={promptInputRef}
           borderless
+          maximized
+          completionProviders={completionProviders}
+          dropHandler={dropHandler}
           routePrefixes={[...ROUTE_PREFIXES]}
           onRouteChange={handleRouteChange}
           onChange={handleInputChange}

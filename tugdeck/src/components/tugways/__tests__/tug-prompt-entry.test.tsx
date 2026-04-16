@@ -72,7 +72,6 @@ import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-st
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
-import type { CompletionProvider } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Minimal FeedStore shim for SessionMetadataStore
@@ -100,7 +99,6 @@ interface MockServices {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   historyStore: PromptHistoryStore;
-  fileCompletionProvider: CompletionProvider;
 }
 
 /**
@@ -117,12 +115,10 @@ function buildMockServices(): MockServices {
   const inertFeed = new InertFeedStore() as never;
   const sessionMetadataStore = new SessionMetadataStore(inertFeed, 0x40 as never);
   const historyStore = new PromptHistoryStore();
-  const fileCompletionProvider: CompletionProvider = () => [];
   return {
     codeSessionStore,
     sessionMetadataStore,
     historyStore,
-    fileCompletionProvider,
   };
 }
 

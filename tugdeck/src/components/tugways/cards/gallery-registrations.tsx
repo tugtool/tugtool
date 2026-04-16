@@ -350,7 +350,7 @@ export function registerGalleryCards(): void {
 
   registerCard({
     componentId: "gallery-prompt-entry",
-    contentFactory: (_cardId) => <GalleryPromptEntry />,
+    contentFactory: (cardId) => <GalleryPromptEntry cardId={cardId} />,
     defaultMeta: { title: "TugPromptEntry", icon: "MessageSquareText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],

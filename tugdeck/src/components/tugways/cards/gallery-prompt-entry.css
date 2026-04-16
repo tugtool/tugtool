@@ -2,8 +2,9 @@
    gallery-prompt-entry.css
    ============================================================================
    Showcase card for TugPromptEntry mounted inside a horizontal TugSplitPane
-   (top 70% / bottom 30%). The card itself is a full-height flex column so
-   the split pane can measure against a concrete height.
+   (top 70% / bottom 30%, bottom capped at 85%). The card itself is a
+   full-height flex column so the split pane has a concrete height to
+   measure against.
    ========================================================================= */
 
 .gallery-prompt-entry-card {
@@ -13,24 +14,24 @@
   height: 100%;
 }
 
-/* The entry pane: inner padding so the entry doesn't butt against the sash
-   or the card edges; column layout so the entry can fill vertically. */
+/* Entry pane wrapper — a TugBox rendered plain + inset={false}.
+   TugBox's default width:fit-content would collapse the box to content
+   width; we need it to fill the pane. Using flex + 100% + min-height:0
+   lets the entry stretch edge-to-edge. The fieldset element is otherwise
+   already reset by tug-box.css (no border, no margin, no padding when
+   plain + inset={false}). */
 .gallery-prompt-entry-entry-pane {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  width: 100%;
   height: 100%;
-  padding: var(--tug-space-sm);
-}
-
-.gallery-prompt-entry-entry-pane > .tug-prompt-entry {
-  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
 }
 
-/* Placeholder filler for the top pane — T3.4.c replaces this with the real
-   transcript/preview surface. Keeps the split visible in the gallery without
-   adding borrowed chrome. */
+/* Placeholder filler for the top pane — T3.4.c replaces this with the
+   real transcript/preview surface. Keeps the split visible in the gallery
+   without adding borrowed chrome. */
 .gallery-prompt-entry-placeholder {
   height: 100%;
   width: 100%;

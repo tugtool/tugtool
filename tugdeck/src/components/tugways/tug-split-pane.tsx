@@ -153,6 +153,18 @@ export interface TugSplitPaneProps
    */
   disabled?: boolean;
   /**
+   * Whether to show the grip pill on each sash. Set to `false` to suppress
+   * the decorative pill (the `.tug-split-sash-handle` + its `.tug-split-sash-grip`
+   * icon) while keeping the sash line visible and fully draggable. Useful on
+   * cards where the grip reads as too prominent for the content.
+   *
+   * Accessibility: the sash itself keeps its separator role, keyboard
+   * affordance, and full hit area — only the visual pill is suppressed.
+   * @selector [data-show-handle="false"]
+   * @default true
+   */
+  showHandle?: boolean;
+  /**
    * Persist the sash layout across reloads under this key in tugbank
    * (domain: `dev.tugtool.tugways.split-pane`). When set, the layout is
    * read on mount and re-saved on pointer release. Omit to run a
@@ -180,6 +192,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     {
       orientation = "horizontal",
       disabled = false,
+      showHandle = true,
       storageKey,
       className,
       children,
@@ -289,6 +302,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
         className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
         data-slot="tug-split-pane"
         data-disabled={effectiveDisabled || undefined}
+        data-show-handle={showHandle ? undefined : "false"}
         {...rest}
       >
         {interleaved}

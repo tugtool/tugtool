@@ -311,3 +311,10 @@ body {
   cursor: default;
   opacity: var(--tugx-control-disabled-opacity, 0.5);
 }
+
+/* showHandle={false}: suppress the decorative pill + grip icon only. The
+   sash line (::before) stays visible and the full hit area remains draggable.
+   display: none removes the pill entirely so it reserves no space. */
+.tug-split-pane[data-show-handle="false"] .tug-split-sash-handle {
+  display: none;
+}
