@@ -1267,6 +1267,18 @@ These aliases are local to `tug-prompt-entry.css`; they do not land in the theme
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+**Handover to T3.4.c.** T3.4.c (the Tide card — functional registration) can assume the following are in place and stable:
+
+- `TugPromptEntry` exports a `forwardRef` component whose props are `TugPromptEntryProps` (codeSessionStore, sessionMetadataStore, historyStore, fileCompletionProvider, dropHandler?, sessionId, responderId, onRouteChange?, localCommandHandler?, className?) and whose imperative handle is `TugPromptEntryDelegate { focus(): void; clear(): void }`.
+- The entry subscribes to `codeSessionStore` via a single `useSyncExternalStore`; it never owns turn state. T3.4.c supplies the store and the entry reacts.
+- Route state (`>`, `$`, `:`) is the sole React state inside the entry [D04]; T3.4.c does not need to coordinate route between card and entry — it is self-contained. If T3.4.c wants to observe route changes (for card-level model badges, etc.), pass an `onRouteChange` callback.
+- Submit / interrupt are unified on `snap.canInterrupt` [D05]; T3.4.c does not wire a separate stop affordance.
+- `localCommandHandler(route, atoms) => boolean` is the T10 seam [D06]. T3.4.c owns the registry of `:`-surface commands and wraps them in this closure; a `false` return falls through to `codeSessionStore.send(...)`.
+- The two gallery cards (`gallery-prompt-entry` pristine, `gallery-prompt-entry-sandbox` interactive) exercise the full phase matrix [D07]; T3.4.c can reuse `buildMockServices()` from `cards/gallery-prompt-entry.tsx` for card-level gallery demos if desired.
+- CSS is self-contained in `tug-prompt-entry.css` with no descendant reach-ins [L20]; T3.4.c should not override `.tug-prompt-entry *` selectors.
+
+**Follow-ons explicitly deferred:**
+
 - **Local command registry** (T10). The `localCommandHandler` prop is a seam; populating `:help`, `:settings`, etc. is T10's work.
 - **`SessionMetadataStore` rendering** (T3.4.c). Model name + version display near the entry's toolbar. The prop is in place.
 - **`PromptHistoryStore` integration beyond forwarding** (post-T3.4.c). Up/down arrow recall on an empty input lives in `TugPromptInput` today; any "history peek" UI inside the entry is future work.

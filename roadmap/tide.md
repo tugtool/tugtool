@@ -745,7 +745,7 @@ These items do not block the critical path. Schedule opportunistically or interl
 | 3 | [T3.4.a](#t3-4-a-code-session-store) CodeSessionStore | W3.a | T3.4.a.1, P13, T3.4.b |
 | 3a | T3.4.a.1 CONTROL error routing (`session_unknown`, `session_not_owned`) | T3.4.a | T3.4.d |
 | 4 | [P13](#p13-spawn-cap) spawn cap ✓ LANDED | T3.4.a | T3.4.b (advisable) |
-| 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry | T3.4.a (P13, T3.4.a.1 optional) | T3.4.c |
+| 5 | [T3.4.b](#t3-4-b-prompt-entry) tug-prompt-entry ✓ LANDED | T3.4.a (P13, T3.4.a.1 optional) | T3.4.c |
 | 6 | [T3.4.c](#t3-4-c-tide-card) Tide card + [T3.0.W3.b](#t3-workspace-registry-w3b) bootstrap removal | T3.4.b | P14, P15, T3.4.d |
 | 7 | [P14](#p14-claude-resume) `--resume` | T3.4.c | first external users |
 | 8 | [P15](#p15-stream-json-version-gate) version gate | T3.4.c (reducer exists) | first external users |
@@ -2628,6 +2628,8 @@ Files: `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` (new).
   - `snap.queuedSends` changes are reflected purely via `data-queued` without a React state update in the component.
 - Conforms to the component authoring guide checklist.
 - **No gallery card is added** per D-T3-04.
+
+**Status: ✓ LANDED.** Implemented via [`tugplan-tug-prompt-entry`](tugplan-tug-prompt-entry.md). `TugPromptEntry` (`tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css`) composes `TugPromptInput` + `TugChoiceGroup` + `TugPushButton`, subscribes to a `CodeSessionStore` via `useSyncExternalStore`, and surfaces `data-phase` / `data-empty` / `data-queued` / `data-errored` attributes per [L06] / [L15]. Submit and interrupt share a single `TugPushButton` whose click handler branches on `snap.canInterrupt` [D05]; a `localCommandHandler` prop provides the command-registry seam for T10 [D06]. Route state is the only React state in the component [D04]; the input's `delegate.setRoute(char)` method drives indicator → input sync. Two gallery cards ship alongside the component (supersedes the D-T3-04 "no gallery card" line via [D07] in the plan): a pristine `gallery-prompt-entry` and an interactive `gallery-prompt-entry-sandbox` with SYNTHETIC frame factories from `MockTugConnection`. 2086/2086 tugdeck tests green; `bun run check` clean; no theme-file edits [D11]. **Handover to T3.4.c:** the component is purely a composition surface — T3.4.c's Tide card supplies real `codeSessionStore` / `sessionMetadataStore` / `historyStore` / `fileCompletionProvider` / `localCommandHandler` props and mounts the entry in the card body without touching the component's TSX or CSS.
 
 ---
 
