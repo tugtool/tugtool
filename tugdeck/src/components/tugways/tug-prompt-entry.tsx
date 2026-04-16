@@ -43,6 +43,8 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
+import { ArrowUp, Square } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import type { AtomSegment, CompletionProvider, DropHandler } from "@/lib/tug-text-engine";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -336,6 +338,7 @@ export const TugPromptEntry = React.forwardRef<
       >
         <TugPromptInput
           ref={promptInputRef}
+          borderless
           routePrefixes={[...ROUTE_PREFIXES]}
           onRouteChange={handleRouteChange}
           onChange={handleInputChange}
@@ -358,12 +361,18 @@ export const TugPromptEntry = React.forwardRef<
           )}
           <TugPushButton
             action={TUG_ACTIONS.SUBMIT}
+            subtype="icon"
+            size="sm"
+            emphasis="filled"
             role={snap.canInterrupt ? "danger" : "action"}
             disabled={!snap.canSubmit && !snap.canInterrupt}
             aria-label={snap.canInterrupt ? "Stop turn" : "Send prompt"}
-          >
-            {snap.canInterrupt ? "Stop" : "Send"}
-          </TugPushButton>
+            icon={
+              snap.canInterrupt
+                ? <Square size={14} strokeWidth={3} />
+                : <ArrowUp size={16} strokeWidth={2.5} />
+            }
+          />
         </div>
       </div>
     </ResponderScope>

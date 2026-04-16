@@ -212,8 +212,10 @@ describe("TugPromptEntry — Step 2 scaffold", () => {
     // Defensive: HTML disabled should also be unset in idle (because
     // canSubmit=true).
     expect(submitButton!.hasAttribute("disabled")).toBe(false);
-    // Label is "Send" (canInterrupt=false path).
-    expect(submitButton!.textContent).toContain("Send");
+    // Icon button: the aria-label is the accessible name; the visible
+    // children are a lucide-react SVG. The aria-label assertion above
+    // already pins the canInterrupt=false branch.
+    expect(submitButton!.querySelector("svg")).not.toBeNull();
   });
 
   it("renders the tug-prompt-entry chrome classes (class-name fallback for JSDOM computed-style unreliability)", () => {
@@ -1132,13 +1134,15 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
     expect(root.getAttribute("data-phase")).toBe("errored");
   });
 
-  it("submit button label reads 'Send' when canInterrupt=false and 'Stop' when canInterrupt=true", () => {
+  it("submit button aria-label flips between 'Send prompt' and 'Stop turn' as canInterrupt toggles", () => {
     const { container, store } = renderEntryWithStore();
     const sendButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Send prompt"]',
     );
     expect(sendButton).not.toBeNull();
-    expect(sendButton!.textContent).toContain("Send");
+    // Icon-only button: accessible name is the aria-label; the visible
+    // glyph is a lucide-react SVG.
+    expect(sendButton!.querySelector("svg")).not.toBeNull();
 
     act(() => {
       store.setSnapshot({
@@ -1152,7 +1156,7 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
       'button[aria-label="Stop turn"]',
     );
     expect(stopButton).not.toBeNull();
-    expect(stopButton!.textContent).toContain("Stop");
+    expect(stopButton!.querySelector("svg")).not.toBeNull();
   });
 
   it("phase transitions flip data-phase with exactly one commit per snapshot update (no internal useState in the entry path)", () => {

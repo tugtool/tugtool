@@ -27,7 +27,7 @@
  * @tug-pairings
  * | Element                                             | Surface                                              | Role          | Context                                                        |
  * |-----------------------------------------------------|------------------------------------------------------|---------------|----------------------------------------------------------------|
- * | --tug7-element-global-border-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry-toolbar (border-top) — divider above toolbar |
+ * | --tug7-element-global-border-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry (border) — unified outer ring                |
  * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)             |
  * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring       |
  */
@@ -48,37 +48,45 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry — root container
    ----------------------------------------------------------------------------
-   Flex column so the input grows vertically and the toolbar sits beneath it.
-   Sets both the element backdrop and (for comb-annotation purposes) has no
-   element properties here that need an @tug-renders-on — the surface itself
-   is declared in the same rule.
+   Unified composition: the entry owns the outer border + radius so the input
+   and toolbar beneath it read as one continuous surface. The input is
+   rendered in `borderless` mode; no divider sits between input and toolbar.
    ----------------------------------------------------------------------------- */
 
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
 .tug-prompt-entry {
   display: flex;
   flex-direction: column;
   min-height: 0;
   background-color: var(--tugx-prompt-entry-surface);
+  border: 1px solid var(--tugx-prompt-entry-divider);
+  border-radius: var(--tug-radius-md, 8px);
+  padding: var(--tug-space-xs);
+  gap: var(--tug-space-xs);
 }
 
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
    ----------------------------------------------------------------------------
    Hosts the route indicator, queue badge (when present), and the submit /
-   stop button. A thin 1px border-top separates it from the editor above.
-   Background matches the container so the toolbar reads as part of the
-   same surface plane.
+   stop button. Shares the unified surface with the input above — no
+   divider, no extra background rule. Padding aligns the controls with the
+   input's own inline padding so the whole entry reads as one card.
    ----------------------------------------------------------------------------- */
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
 .tug-prompt-entry-toolbar {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: var(--tug-space-sm);
-  padding: var(--tug-space-xs) var(--tug-space-sm);
-  background-color: var(--tugx-prompt-entry-surface);
-  border-top: 1px solid var(--tugx-prompt-entry-divider);
+  padding: 0 var(--tug-space-xs) var(--tug-space-2xs, 4px);
+}
+
+/* Submit button anchors to the trailing edge; the route indicator +
+   optional queue badge float on the leading side. `margin-inline-start:
+   auto` works in both LTR and RTL. */
+.tug-prompt-entry-toolbar > :last-child {
+  margin-inline-start: auto;
 }
 
 /* ----------------------------------------------------------------------------
