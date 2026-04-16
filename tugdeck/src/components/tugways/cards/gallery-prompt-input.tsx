@@ -14,7 +14,7 @@
 
 import React, { useRef, useCallback, useEffect, useId, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
-import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
+import type { TugPromptInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
@@ -158,7 +158,7 @@ interface GalleryPromptInputProps {
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
 
 export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
-  const inputRef = useRef<TugTextInputDelegate>(null);
+  const inputRef = useRef<TugPromptInputDelegate>(null);
   const nextAtomIdx = useRef(0);
   const routeRef = useRef<HTMLSpanElement>(null);
   const editorWrapRef = useRef<HTMLDivElement>(null);

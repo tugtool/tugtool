@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-16T10:22:01Z
+---
+
+## step-1: Step 1 preconditions: added TugPromptInputDelegate interface with setRoute method, SUBMIT action in TUG_ACTIONS, and 5 new test cases covering the widened forwardRef surface. Minor drift: gallery-prompt-input.tsx ref generic updated as required fallout.
+
+**Files changed:**
+- tug-prompt-entry-f3a4fc3-2
+
+---
+
+---
 step: audit-fix
 date: 2025-04-10T16:29:53Z
 ---

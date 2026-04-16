@@ -127,6 +127,23 @@ export const TUG_ACTIONS = {
   DELETE:    "delete",
   DUPLICATE: "duplicate",
 
+  // ---- Submission ----
+  //
+  // TUG_ACTIONS.SUBMIT:
+  //     payload — none. Dispatched by a form or submission-shaped
+  //     control to mean "commit the current draft intent." The
+  //     responder handler reads the live state from the store or
+  //     delegate at dispatch time (per [L07]) to decide what
+  //     "commit" means — send, interrupt, save, etc. For
+  //     TugPromptEntry, the single action covers both send and
+  //     interrupt depending on `snap.canInterrupt` at dispatch
+  //     time (see plan [D05] for the submit/interrupt unification
+  //     rationale). Phase is always `discrete`.
+  //     sender — typically the submit button's id; handlers
+  //     generally do not narrow on sender because any submit
+  //     dispatch routed to the handler means the same thing.
+  SUBMIT: "submit",
+
   // ---- Navigation ----
   //
   // CYCLE_CARD:     payload — none. Canvas-level: rotate through cards.

@@ -178,6 +178,45 @@ export function createEngineAdapter(engine: TugTextEngine): TextSelectionAdapter
   };
 }
 
+// ---------------------------------------------------------------------------
+// TugPromptInputDelegate — widened imperative handle
+// ---------------------------------------------------------------------------
+
+/**
+ * Widened imperative handle for `TugPromptInput`. Extends the engine-level
+ * `TugTextInputDelegate` (defined in `@/lib/tug-text-engine`) with
+ * composition-layer methods that belong to this component — `setRoute(char)`
+ * is a first-class concept at this layer because `routePrefixes` and
+ * `onRouteChange` already live here as peer APIs.
+ *
+ * Kept separate from the engine delegate so the UITextInput-inspired
+ * primitive contract in `tug-text-engine.ts` stays free of
+ * composition-layer concepts. See plan [Q01] for the full layering
+ * rationale and the decision to widen here instead of modifying
+ * `TugTextInputDelegate` directly.
+ */
+export interface TugPromptInputDelegate extends TugTextInputDelegate {
+  /**
+   * Set the leading route atom to `char`. Clears the input and inserts a
+   * single route-prefix character; the existing route-detection path
+   * inside `TugTextEngine` converts it to a route atom and fires
+   * `onRouteChange(char)` as a side effect.
+   *
+   * Used by `TugPromptEntry` when the user selects a segment in the
+   * route indicator — the indicator's `TUG_ACTIONS.SELECT_VALUE`
+   * responder handler calls this method to keep the input's leading
+   * atom in sync with the indicator's pill position.
+   *
+   * Passing a character that is not in the component's configured
+   * `routePrefixes` is allowed — the character is inserted but no
+   * `onRouteChange` fires. Callers are responsible for passing valid
+   * prefixes.
+   *
+   * @param char — one of the configured route prefix characters (e.g. `">"`, `"$"`, `":"`).
+   */
+  setRoute(char: string): void;
+}
+
 /**
  * TugPromptInput props interface.
  */
@@ -334,7 +373,7 @@ const PADDING_Y = 14;
 
 // ---- Component ----
 
-export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptInputProps>(
+export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPromptInputProps>(
   function TugPromptInput({
     placeholder = "",
     maxRows = DEFAULT_MAX_ROWS,
@@ -397,6 +436,19 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
       regenerateAtoms() { engineRef.current?.regenerateAtoms(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
+      // Composition-layer method widening TugTextInputDelegate [Q01].
+      // Clears the input and inserts `char`; the engine's input-event
+      // handler runs `detectRoutePrefix()`, which (when `char` is in
+      // `routePrefixes`) replaces the typed character with a route atom
+      // and fires `onRouteChange(char)` as a side effect. When `char`
+      // is not a configured prefix, the character is inserted but no
+      // `onRouteChange` fires — caller responsibility.
+      setRoute(char: string) {
+        const engine = engineRef.current;
+        if (!engine) return;
+        engine.clear();
+        engine.insertText(char);
+      },
     }), []);
 
     // Stable callback/config refs — engine reads these via closure over refs [L07]
