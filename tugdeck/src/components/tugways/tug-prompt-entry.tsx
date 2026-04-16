@@ -9,11 +9,15 @@
  *
  * Step 2 landed the scaffold (mount, store snapshot, responder scope, JSX
  * per Spec S03, no-op SUBMIT stub that keeps TugPushButton's chain-action
- * mode out of its aria-disabled fallback — Risk R04). Step 3 fills in the
- * input-delegate pass-throughs (`focus`, `clear`) and wires
+ * mode out of its aria-disabled fallback — Risk R04). Step 3 filled in the
+ * input-delegate pass-throughs (`focus`, `clear`) and wired
  * `handleInputChange` to write `data-empty` directly to the root element
  * via `setAttribute`, bypassing React state on keystroke [L06][L22].
- * Step 4 (SELECT_VALUE) and Step 5 (SUBMIT) still land later.
+ * Step 4 wires the bidirectional route-indicator sync [D04]: typing a
+ * prefix in the input fires `onRouteChange` → `setRouteState`;
+ * selecting a segment dispatches SELECT_VALUE → `setRouteState` +
+ * `setRoute` (which in turn fires `onRouteChange`, but React bails on
+ * the equal setRouteState). Step 5 (SUBMIT body) still lands later.
  *
  * Laws: [L02] useSyncExternalStore for store state, [L06] appearance via
  *       CSS/DOM, [L07] handlers read state via refs, [L11] controls emit
@@ -193,21 +197,38 @@ export const TugPromptEntry = React.forwardRef<
     routeRef.current = route;
   }, [route]);
 
-  // [L07] Register the responder node. Handler bodies for SUBMIT and
-  // SELECT_VALUE land in Steps 4 and 5 — the Step 2 scaffold installs
-  // signature-correct placeholders so TugPushButton's chain-action mode
-  // sees `nodeCanHandle` return true for TUG_ACTIONS.SUBMIT and renders
-  // the submit button live (not aria-disabled). This is the transient-
-  // state fix called out in Risk R04 of the plan.
+  // [L07] Register the responder node. Step 4 fills in the SELECT_VALUE
+  // body with the defensive sender/value narrowing + `setRouteState` +
+  // `setRoute` round-trip per Spec S02. The SUBMIT body stays a no-op
+  // through Step 4 and is completed in Step 5; it exists here so
+  // TugPushButton's chain-action mode sees `nodeCanHandle(SUBMIT)`
+  // return true from the first commit (Risk R04 — the transient-state
+  // fix).
   const { ResponderScope, responderRef } = useResponder({
     id,
     actions: {
-      // Step 4 replaces this body with real sender/value narrowing +
-      // `setRouteState(event.value)` + `promptInputRef.current?.setRoute(event.value)`.
       [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
+        // Narrow on sender first — this responder should only react
+        // to events from its own route indicator [L11]. Other senders
+        // (different card's indicator, a gallery harness, etc.) must
+        // be ignored so state doesn't cross-contaminate.
         if (event.sender !== routeIndicatorSenderId) return;
+        // Defensive value-shape narrowing [L11]. ActionEvent.value is
+        // `unknown`; a test or future caller could dispatch a number
+        // or object. Drop anything that isn't the string the
+        // indicator normally sends.
         if (typeof event.value !== "string") return;
-        // Intentional no-op — Step 4 wires this through to state + input.
+        // Update the controlled indicator's `value` prop source of
+        // truth. [D04]
+        setRouteState(event.value);
+        // Sync the input's leading atom to match. setRoute fires the
+        // engine's route-detection path, which calls onRouteChange
+        // with the same char, which calls `handleRouteChange` below,
+        // which calls `setRouteState(event.value)` a second time.
+        // React bails on the second call via Object.is equality, so
+        // the dispatch produces exactly one commit. See the round-
+        // trip test for the guard.
+        promptInputRef.current?.setRoute(event.value);
       },
       // Step 5 replaces this no-op with the branching body that reads
       // `snapRef.current.canInterrupt` to choose between `interrupt()`
@@ -220,12 +241,15 @@ export const TugPromptEntry = React.forwardRef<
     },
   });
 
-  // Input → indicator callback. Step 4 wires this to `setRouteState(r ?? "")`
-  // so typing a prefix character in the input animates the pill. Declared
-  // here as a scaffold so Spec S03's JSX signature stays stable across
-  // step boundaries.
-  const handleRouteChange = useCallback((_r: string | null) => {
-    // Step 4 fills this in.
+  // Input → indicator callback. The engine fires onRouteChange with
+  // the detected prefix char (or null when the leading route atom is
+  // removed). Mirror that into the controlled indicator's value state;
+  // `null` maps to an empty string so TugChoiceGroup clears its pill.
+  // [D04] routes its state through React rather than a direct DOM
+  // write because the pill is positioned by TugChoiceGroup's own
+  // useLayoutEffect keyed on `value`.
+  const handleRouteChange = useCallback((r: string | null) => {
+    setRouteState(r ?? "");
   }, []);
 
   // Input onChange callback. Writes `data-empty` to the root element

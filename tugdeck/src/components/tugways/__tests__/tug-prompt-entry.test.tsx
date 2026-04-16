@@ -1,5 +1,6 @@
 /**
- * TugPromptEntry — Step 2 scaffold + Step 3 input-delegate wiring suite.
+ * TugPromptEntry — Step 2 scaffold + Step 3 input-delegate + Step 4
+ * route-indicator bidirectional sync suite.
  *
  * Step 2 is the scaffold commit: the component mounts, subscribes to the
  * session-store snapshot, registers a responder scope with no-op SUBMIT and
@@ -7,9 +8,9 @@
  * against a minimal `MockTugConnection`-backed store.
  *
  * Step 3 extends the file with delegate forwarding + `data-empty` tests.
- * Later steps extend this file:
+ * Step 4 extends it with route-indicator ↔ input round-trip tests. Later
+ * steps extend this file:
  *
- *   • Step 4 — route indicator ↔ input round-trip tests.
  *   • Step 5 — send / interrupt / queue / errored tests.
  *
  * What this file verifies (Step 2 only):
@@ -52,10 +53,15 @@ import "../../../__tests__/setup-rtl";
 import React from "react";
 import { act } from "react";
 import { describe, it, expect, afterEach, beforeEach, spyOn } from "bun:test";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, fireEvent } from "@testing-library/react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-entry";
 import { TugTextEngine } from "@/lib/tug-text-engine";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import {
+  ResponderChainContext,
+  type ResponderChainManager,
+} from "@/components/tugways/responder-chain";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
@@ -507,5 +513,231 @@ describe("TugPromptEntry — Step 3 input delegate + data-empty", () => {
     } finally {
       clearSpy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 4: helper — capture the ResponderChainManager via context
+// ---------------------------------------------------------------------------
+//
+// The step-4 negative tests (wrong sender, wrong value type) dispatch
+// SELECT_VALUE events directly rather than by clicking a segment, because
+// the indicator itself can only send the one well-formed shape. A tiny
+// wrapper component reads the manager from ResponderChainContext and
+// stashes it in a ref the test can read after render.
+
+function ChainCapture({ into }: { into: { current: ResponderChainManager | null } }) {
+  const mgr = React.useContext(ResponderChainContext);
+  into.current = mgr;
+  return null;
+}
+
+function renderEntryWithManager(opts: {
+  id?: string;
+  onRender?: React.ProfilerOnRenderCallback;
+} = {}) {
+  const id = opts.id ?? "prompt-entry-step4";
+  const services = buildMockServices();
+  const entryRef = React.createRef<TugPromptEntryDelegate>();
+  const managerRef: { current: ResponderChainManager | null } = { current: null };
+  const tree = (
+    <ResponderChainProvider>
+      <ChainCapture into={managerRef} />
+      <TugPromptEntry ref={entryRef} id={id} {...services} />
+    </ResponderChainProvider>
+  );
+  const utils = render(
+    opts.onRender ? (
+      <React.Profiler id="entry" onRender={opts.onRender}>
+        {tree}
+      </React.Profiler>
+    ) : tree,
+  );
+  return { ...utils, services, id, entryRef, managerRef };
+}
+
+function getSegment(container: HTMLElement, label: string): HTMLButtonElement {
+  const segments = container.querySelectorAll<HTMLButtonElement>(
+    'button[role="radio"]',
+  );
+  for (const seg of segments) {
+    if (seg.textContent?.trim() === label) return seg;
+  }
+  throw new Error(`no segment with label "${label}" found`);
+}
+
+describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
+  beforeEach(() => {
+    installExecCommandShim();
+    installCanvas2DShim();
+  });
+
+  afterEach(() => {
+    cleanup();
+    uninstallExecCommandShim();
+    uninstallCanvas2DShim();
+  });
+
+  it("typing '>' in the input updates route state and activates the '>' segment", () => {
+    const { container } = renderEntryWithManager();
+    // The ">" segment starts inactive — no route selected yet.
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
+
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    placeCaretAtEnd(editor!);
+
+    act(() => {
+      document.execCommand("insertText", false, ">");
+    });
+
+    // The engine's route-detection path fires onRouteChange(">"),
+    // the entry's handleRouteChange calls setRouteState(">"),
+    // TugChoiceGroup re-renders and marks the ">" segment active.
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
+    // Sibling segments remain inactive.
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+    expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
+  });
+
+  it("dispatching SELECT_VALUE from the indicator sets route state AND calls setRoute on the input", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    // Spy on the engine primitives setRoute delegates to. A call with
+    // "$" confirms `promptInputRef.current.setRoute("$")` ran; the
+    // clear + insertText pair is the documented delegation order.
+    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
+    const clearSpy = spyOn(TugTextEngine.prototype, "clear");
+
+    try {
+      act(() => {
+        managerRef.current!.sendToTarget(id, {
+          action: TUG_ACTIONS.SELECT_VALUE,
+          sender: `${id}-route-indicator`,
+          value: "$",
+          phase: "discrete",
+        });
+      });
+
+      // Route state updated — the "$" segment is now active.
+      expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
+      // setRoute("$") routed through the engine.
+      expect(insertSpy).toHaveBeenCalledWith("$");
+      // clear() ran before insertText (setRoute's documented order).
+      const clearOrders = clearSpy.mock.invocationCallOrder;
+      const insertOrders = insertSpy.mock.invocationCallOrder;
+      expect(clearOrders.length).toBeGreaterThan(0);
+      expect(insertOrders.length).toBeGreaterThan(0);
+      const clearOrder = clearOrders[clearOrders.length - 1];
+      const insertOrder = insertOrders[insertOrders.length - 1];
+      expect(clearOrder).toBeLessThan(insertOrder);
+    } finally {
+      insertSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+  });
+
+  it("SELECT_VALUE from a different sender is a no-op (state unchanged, setRoute not called)", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
+    try {
+      act(() => {
+        managerRef.current!.sendToTarget(id, {
+          action: TUG_ACTIONS.SELECT_VALUE,
+          sender: "some-other-sender",
+          value: "$",
+          phase: "discrete",
+        });
+      });
+
+      // Route state untouched — no segment flipped to active.
+      expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
+      expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+      expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
+      // Defensive narrowing — setRoute was not called, so the engine's
+      // insertText did not run for a route character.
+      const called$ = insertSpy.mock.calls.some(([arg]) => arg === "$");
+      expect(called$).toBe(false);
+    } finally {
+      insertSpy.mockRestore();
+    }
+  });
+
+  it("SELECT_VALUE with a non-string value is a no-op (defensive value narrowing)", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
+    try {
+      act(() => {
+        managerRef.current!.sendToTarget(id, {
+          action: TUG_ACTIONS.SELECT_VALUE,
+          sender: `${id}-route-indicator`,
+          value: 42 as unknown,
+          phase: "discrete",
+        });
+      });
+
+      // All segments still inactive.
+      expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
+      expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+      expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
+      // No engine insertText invocation took place.
+      expect(insertSpy.mock.calls.length).toBe(0);
+    } finally {
+      insertSpy.mockRestore();
+    }
+  });
+
+  it("clicking a segment dispatches SELECT_VALUE end-to-end through the indicator → entry → input", () => {
+    const { container } = renderEntryWithManager();
+    const segment = getSegment(container, ":");
+    expect(segment.getAttribute("data-state")).toBe("inactive");
+
+    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
+    try {
+      act(() => {
+        fireEvent.click(segment);
+      });
+      expect(getSegment(container, ":").getAttribute("data-state")).toBe("active");
+      expect(insertSpy).toHaveBeenCalledWith(":");
+    } finally {
+      insertSpy.mockRestore();
+    }
+  });
+
+  it("SELECT_VALUE round-trip (setRouteState → setRoute → onRouteChange → setRouteState) produces at most one entry commit — React bails on the equal value", () => {
+    // React batches synchronous setState inside an event handler into a
+    // single commit. The handler calls setRouteState("$") directly,
+    // then calls promptInputRef.current.setRoute("$"), which fires the
+    // engine's onRouteChange("$"), which calls setRouteState("$") a
+    // second time with the same value. React's Object.is check bails
+    // out on the redundant call; the dispatch produces one commit.
+    const phases: string[] = [];
+    const { id, managerRef } = renderEntryWithManager({
+      onRender: (_id, phase) => {
+        phases.push(phase);
+      },
+    });
+    expect(managerRef.current).not.toBeNull();
+    const updatesBefore = phases.filter((p) => p === "update").length;
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SELECT_VALUE,
+        sender: `${id}-route-indicator`,
+        value: "$",
+        phase: "discrete",
+      });
+    });
+
+    const updatesAfter = phases.filter((p) => p === "update").length;
+    // At most one additional commit — NOT two. If a future regression
+    // introduces a second setRouteState with a different value during
+    // the round-trip, this bumps to 2 and the test fails.
+    expect(updatesAfter - updatesBefore).toBeLessThanOrEqual(1);
   });
 });
