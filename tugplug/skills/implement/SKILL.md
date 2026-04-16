@@ -24,13 +24,12 @@ hooks:
 - Reading, writing, editing, or creating ANY files
 - Running ANY shell commands other than `tugutil` CLI commands
 - Implementing code (the coder-agent does this)
-- Analyzing the plan yourself (the architect-agent does this)
 - Spawning planning agents (clarifier, author, critic)
 - Using any tool other than Task, AskUserQuestion, and Bash (tugutil commands only)
 
 **YOUR ENTIRE JOB:** Spawn agents in sequence, parse their JSON output, pass data between them, ask the user questions when needed, and **report progress at every step**.
 
-**GOAL:** Execute plan steps by creating the worktree via `tugutil` CLI, then orchestrating: architect, coder, reviewer, committer.
+**GOAL:** Execute plan steps by creating the worktree via `tugutil` CLI, then orchestrating: coder, committer. After all steps complete: auditor, integrator.
 
 **EXECUTION STYLE:** Be mechanical. Parse JSON, format message, spawn agent, parse output, repeat. Do not deliberate or second-guess data from the CLI or from agents. If a field is present, use it as-is. If a field is missing, halt. No analysis beyond what this prompt explicitly specifies.
 
@@ -68,17 +67,9 @@ Implementation complete
 
 ### Step header
 
-Output once per step, before the architect call:
+Output once per step, before the coder call:
 ```
 --- {step_anchor} ---
-```
-
-### architect-agent post-call
-
-```
-**tugplug:architect-agent**(Complete)
-  Approach: {approach — first ~120 chars, truncate with ... if longer}
-  Files to touch: {expected_touch_set.length} | Implementation steps: {implementation_steps.length} | Risks: {risks.length}
 ```
 
 ### coder-agent post-call
@@ -98,25 +89,6 @@ Omit `Created files` or `Modified files` sections if their lists are empty. If d
 ```
   Unexpected changes:
     - {file} ({category} — {reason})
-```
-
-On coder retry (from reviewer feedback), show only the files that changed in this pass.
-
-### reviewer-agent post-call
-
-```
-**tugplug:reviewer-agent**(Complete)
-  Recommendation: {recommendation}
-  Plan conformance: {passed_tasks}/{total_tasks} tasks | {passed_checkpoints}/{total_checkpoints} checkpoints | {passed_decisions}/{total_decisions} decisions
-  Quality: structure {review_categories.structure} | error handling {review_categories.error_handling} | security {review_categories.security}
-  Issues: {issues.length} ({count by severity: N critical, N major, N minor — omit zeros})
-```
-
-If REVISE, append:
-```
-  Issues requiring fixes:
-    {issue.description} ({issue.severity})
-  Retry: {reviewer_attempts}/{max_attempts}
 ```
 
 ### committer-agent post-call
@@ -216,13 +188,6 @@ For `state_update_failed` (escalation):
      ═══ STEP LOOP (each ready step) ═══
 
 ┌──────────────────────────────────────────┐
-│ architect-agent                          │
-│ Pass 0: SPAWN → architect_id             │
-│ Pass N: RESUME architect_id              │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
 │ coder-agent                              │
 │ Pass 0: SPAWN → coder_id                 │
 │ Pass N: RESUME coder_id                  │
@@ -239,26 +204,12 @@ For `state_update_failed` (escalation):
                  │
                  ▼
 ┌──────────────────────────────────────────┐
-│ reviewer-agent                           │◄──┐
-│ Pass 0: SPAWN → reviewer_id              │   │
-│ Pass N: RESUME reviewer_id               │   │
-└────────────────────┬─────────────────────┘   │
-                     │                         │
-                     ▼                         │ review
-             ┌───────────────┐                 │ retry
-             │   reviewer    │                 │
-             │recommendation?│                 │
-             └──┬─────────┬──┘                 │
-        APPROVE │         │ REVISE (max 3)     │
-                │         └─► coder fix ───────┘
-                ▼
-┌──────────────────────────────────────────┐
 │ committer-agent                          │
 │ SPAWN/RESUME → commit + state complete   │
 └────────────────────┬─────────────────────┘
                      │
              ┌───────────────┐
-             │  more steps?  │─ yes ─► back to architect
+             │  more steps?  │─ yes ─► back to coder
              └───────┬───────┘
                      │ no
                      ▼
@@ -304,10 +255,10 @@ For `state_update_failed` (escalation):
 **Architecture principles:**
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugutil CLI only)
 - All file I/O, git operations, and code execution happen in subagents (except tugutil CLI calls which the orchestrator runs directly)
-- **Persistent agents**: architect, coder, reviewer, committer are each spawned ONCE (during step 1) and RESUMED for all subsequent steps
+- **Persistent agents**: coder and committer are each spawned ONCE (during step 1) and RESUMED for all subsequent steps
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
 - Agents accumulate cross-step knowledge: codebase structure, files created, patterns established
-- Architect does read-only strategy; coder receives strategy and implements
+- Auditor runs once after all steps complete; integrator runs once after auditor approves
 - Task-Resumed for retry loops AND across steps (same agent IDs throughout session)
 
 ---
@@ -361,14 +312,10 @@ Note: Step identity now comes from `tugutil state claim` response, not from a pr
 ### 3. For Each Step in `steps_to_implement`
 
 Initialize once (persists across all steps):
-- `architect_id = null`
 - `coder_id = null`
-- `reviewer_id = null`
 - `committer_id = null`
 - `auditor_id = null`
 - `integrator_id = null`
-
-Initialize per step: `reviewer_attempts = 0`
 
 Initialize for post-loop phases:
 - `auditor_attempts = 0`
@@ -390,56 +337,7 @@ If the command fails (non-zero exit), HALT.
 
 Output the step header.
 
-#### 3a. Architect: Plan Strategy
-
-**First step (architect_id is null) — FRESH spawn:**
-
-```
-Task(
-  subagent_type: "tugplug:architect-agent",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "step-1",
-    "all_steps": ["step-1", "step-2", ...]
-  }',
-  description: "Plan strategy for step 1"
-)
-```
-
-**Save the `agentId` as `architect_id`.**
-
-**Subsequent steps — RESUME:**
-
-```
-Task(
-  subagent_type: "tugplug:architect-agent",
-  resume: "<architect_id>",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "{step_anchor}",
-    "previous_step_summary": "<step_summary>"
-  }',
-  description: "Plan strategy for step N"
-)
-```
-
-Parse the architect's JSON output. Extract `approach`, `expected_touch_set`, `implementation_steps`, `test_plan`, `risks`. If `risks` contains an error message (empty `approach`), output failure message and HALT.
-
-Output the Architect post-call message.
-
-**Tugstate calls:**
-
-```
-Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
-```
-
-```
-Bash: tugutil state artifact {plan_id} {step_anchor} --kind architect_strategy --summary "{first 500 chars of approach}" --worktree {worktree_path}
-```
-
-#### 3b. Coder: Implement Strategy
+#### 3a. Coder: Implement Step
 
 **First step (coder_id is null) — FRESH spawn:**
 
@@ -478,7 +376,7 @@ Parse the coder's JSON output. If `success == false` and `halted_for_drift == fa
 - Full initial spawn JSON (worktree_path, plan_id, step_anchor)
 - `"continuation": true`
 - `"files_already_modified": [<files from previous coder output>]`
-- Instruction: "A previous coder modified these files but did not complete the step. Verify ALL files in expected_touch_set are addressed. Do NOT re-modify files that are already correct."
+- Instruction: "A previous coder modified these files but did not complete the step. Verify ALL files required by the plan step are addressed. Do NOT re-modify files that are already correct."
 
 Save the NEW agent ID as `coder_id` (replacing the exhausted one). The old coder is dead — all subsequent resumes use the new ID.
 
@@ -490,21 +388,21 @@ Output the Coder post-call message.
 Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
-#### 3c. Drift Check
+#### 3b. Drift Check
 
 Evaluate `drift_assessment.drift_severity` from coder output:
 
 | Severity | Action |
 |----------|--------|
-| `none` or `minor` | Continue to review |
+| `none` or `minor` | Continue to commit |
 | `moderate` | AskUserQuestion: "Moderate drift detected. Continue, revise, or abort?" |
 | `major` | AskUserQuestion: "Major drift detected. Revise strategy or abort?" |
 
-- If **Revise**: resume coder with feedback (see 3c-resume below)
+- If **Revise**: resume coder with feedback (see 3b-resume below)
 - If **Abort**: HALT
-- If **Continue**: proceed to review
+- If **Continue**: proceed to commit
 
-**3c-resume (drift revision):**
+**3b-resume (drift revision):**
 
 ```
 Task(
@@ -528,80 +426,23 @@ Output the Coder post-call message.
 Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
-**Record coder report artifact (after coder completes successfully, before reviewer):**
-
-```
-Bash: echo '<coder's full JSON output>' | tugutil state artifact {plan_id} {step_anchor} --worktree {worktree_path} --kind coder_report --summary "{first 500 chars of build_and_test_report}"
-```
-
-This stores the coder's complete output (including `build_and_test_report` with checkpoint results) in the state database. The reviewer reads it from `state show --json` output under `data.plan.steps[N].artifacts`.
-
-#### 3d. Reviewer: Verify Implementation
-
-**First step (reviewer_id is null) — FRESH spawn:**
-
-```
-Task(
-  subagent_type: "tugplug:reviewer-agent",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "step-1"
-  }',
-  description: "Verify step 1 completion"
-)
-```
-
-**Save the `agentId` as `reviewer_id`.**
-
-**Subsequent steps — RESUME:**
-
-```
-Task(
-  subagent_type: "tugplug:reviewer-agent",
-  resume: "<reviewer_id>",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "{step_anchor}"
-  }',
-  description: "Verify step N completion"
-)
-```
-
-Output the Reviewer post-call message.
-
-**Tugstate calls:**
-
-```
-Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
-```
-
-```
-Bash: tugutil state artifact {plan_id} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
-```
-
-#### 3e. Handle Reviewer Recommendation
-
-| Recommendation | Action |
-|----------------|--------|
-| `APPROVE` | Mark all checkboxes complete, then proceed to commit (3f) |
-| `REVISE` | Resume coder with feedback, then resume reviewer (3e-retry) |
-| `ESCALATE` | AskUserQuestion showing issues, get user decision |
-
-**After APPROVE — progress message and simplified batch update:**
+#### 3c. Mark Checklist Complete and Commit
 
 **Step 1: Emit a progress message:**
 
 ```
-Reviewer approved. Committing step.
+Coder completed step. Committing.
 ```
 
-**Step 2: Collect deferred checkpoint items** from the reviewer's `plan_conformance.checkpoints[]`:
+**Step 2: Collect deferred checklist items from the coder's output:**
 
-- Iterate `plan_conformance.checkpoints[]`
-- For each entry with verdict NOT equal to `PASS` (i.e., `FAIL`, `BLOCKED`, or `UNVERIFIED`), create: `{"kind": "checkpoint", "ordinal": N, "status": "deferred", "reason": "<reviewer's verdict or description>"}`
-- Ignore entries with verdict `PASS` — they will be auto-completed by `state complete-checklist`
+Iterate three arrays from the coder's JSON output and build deferred entries:
+
+- `checklist_status.tasks[]`: entries with status != `completed` → `{"kind": "task", "ordinal": N, "status": "deferred", "reason": "<coder's reason>"}`
+- `checklist_status.tests[]`: entries with status != `completed` → `{"kind": "test", "ordinal": N, "status": "deferred", "reason": "<coder's reason>"}`
+- `build_and_test_report.checkpoints[]`: entries with `passed == false` → `{"kind": "checkpoint", "ordinal": N, "status": "deferred", "reason": "checkpoint failed: <output tail>"}`
+
+Ordinals for checkpoints are their 0-indexed position in the coder's `build_and_test_report.checkpoints[]` array (matching plan order).
 
 **Step 3: Send complete-checklist:**
 
@@ -610,78 +451,14 @@ If there are deferred items:
 echo '<deferred_items_json>' | tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
-If there are no deferred items (all checkpoints PASS):
+If there are no deferred items:
 ```
 tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
-`state complete-checklist` marks all open checklist items (tasks, tests, and checkpoints) as completed. When deferral JSON is piped via stdin, those items get `deferred` status first; all remaining open items are then marked completed. When no stdin is piped (TTY or empty), all open items are marked completed. This eliminates fragile ordinal counting — the CLI is the single source of truth for item counts.
+`state complete-checklist` marks all open checklist items (tasks, tests, and checkpoints) as completed. When deferral JSON is piped via stdin, those items get `deferred` status first; all remaining open items are then marked completed. When no stdin is piped (TTY or empty), all open items are marked completed.
 
-**3e-retry (REVISE loop):**
-
-Increment `reviewer_attempts`. If `reviewer_attempts >= 3`, ESCALATE to user.
-
-1. **Resume coder** with reviewer feedback:
-
-```
-Task(
-  subagent_type: "tugplug:coder-agent",
-  resume: "<coder_id>",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "{step_anchor}",
-    "revision": "Reviewer found issues. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output."
-  }',
-  description: "Fix reviewer issues for step N"
-)
-```
-
-Output the Coder post-call message.
-
-**Tugstate call:**
-
-```
-Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
-```
-
-```
-Bash: echo '<coder's full JSON output>' | tugutil state artifact {plan_id} {step_anchor} --worktree {worktree_path} --kind coder_report --summary "{first 500 chars of build_and_test_report}"
-```
-
-2. **Resume reviewer** for re-review:
-
-```
-Task(
-  subagent_type: "tugplug:reviewer-agent",
-  resume: "<reviewer_id>",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "{step_anchor}",
-    "re_review": true
-  }',
-  description: "Re-review step N"
-)
-```
-
-Output the Reviewer post-call message.
-
-**Tugstate calls:**
-
-```
-Bash: tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
-```
-
-```
-Bash: tugutil state artifact {plan_id} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
-```
-
-Go back to 3e to check the new recommendation.
-
-Using persistent agents means both retain their full accumulated context — the coder remembers all files it read across ALL steps, and the reviewer remembers requirements and prior verifications.
-
-#### 3f. Committer: Commit Step
+**Step 4: Committer — Commit Step**
 
 **First step (committer_id is null) — FRESH spawn:**
 
@@ -739,7 +516,7 @@ Read `state_failure_reason` from the committer JSON output. Switch on its value:
   ```
   HALT after escalation.
 
-- `"open_items"` (defensive fallback — this reason is unreachable after `StateIncompleteSubsteps` removal, but kept as an explicit escalation case):
+- `"open_items"` (defensive fallback):
   ```
   AskUserQuestion: "State complete-checklist failed: open checklist items remain for step {step_anchor}. The git commit succeeded. Manual recovery: tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
   ```
@@ -753,7 +530,7 @@ Read `state_failure_reason` from the committer JSON output. Switch on its value:
 
 Output the Committer post-call message.
 
-#### 3g. Next Step
+#### 3d. Next Step
 
 1. If more steps: **GO TO 3a** for next step (all agent IDs are preserved)
 2. If all done: proceed to Auditor Phase (section 4)
@@ -981,13 +758,11 @@ Implementation complete
 
 ## Reference: Persistent Agent Pattern
 
-All six implementation agents are **spawned once** and **resumed** for retries or subsequent phases:
+All four implementation agents are **spawned once** and **resumed** for retries or subsequent phases:
 
 | Agent | Spawned | Resumed For | Accumulated Knowledge |
 |-------|---------|-------------|----------------------|
-| **architect** | Step 1 | Steps 2..N | Codebase structure, plan contents, patterns |
-| **coder** | Step 1 | Steps 2..N + review retries + audit fixes + CI fixes | Files created/modified, build system, test suite |
-| **reviewer** | Step 1 | Steps 2..N + re-reviews | Plan requirements, audit patterns, prior findings |
+| **coder** | Step 1 | Steps 2..N + drift revisions + audit fixes + CI fixes | Plan contents, files created/modified, build system, test suite |
 | **committer** | Step 1 | Steps 2..N + audit fixup + CI fixup | Worktree layout, commit history, log format |
 | **auditor** | Post-loop | Audit retries | Deliverables, build state, cross-step issues |
 | **integrator** | Post-loop | CI retries | PR state, CI failures, check patterns |
@@ -995,11 +770,11 @@ All six implementation agents are **spawned once** and **resumed** for retries o
 **Why this matters:**
 - **Faster**: No cold-start exploration on steps 2..N — agents already know the codebase
 - **Smarter**: Coder remembers files created in step 1 when implementing step 2
-- **Consistent**: Reviewer applies the same standards across all steps
+- **Consistent**: Same coder applies same patterns across all steps
 - **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
 
 **Agent ID management:**
-- Store `architect_id`, `coder_id`, `reviewer_id`, `committer_id` after first spawn (step 1)
+- Store `coder_id`, `committer_id` after first spawn (step 1)
 - Store `auditor_id`, `integrator_id` after post-loop spawn
 - Pass these IDs to `Task(subagent_type: "<type>", resume: "<id>")` for all subsequent invocations
 - IDs persist for the entire implementer session
@@ -1037,16 +812,15 @@ Tugstate tracks per-step execution state in an embedded SQLite database. The orc
 **Step lifecycle:**
 1. `tugutil state claim {plan_id} --worktree {worktree_path} --json` — get next ready step
 2. `tugutil state start {plan_id} {step_anchor} --worktree {worktree_path}` — transition to in_progress
-3. `tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}` — after each agent call
-4. `tugutil state artifact {plan_id} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy), coder (coder_report, piped via stdin), and reviewer (reviewer_verdict)
-5. `tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}` — after reviewer approval; pipe non-PASS checkpoint items as deferred JSON via stdin, or invoke with no pipe to complete all items; the command auto-completes all other open items (tasks, tests, remaining checkpoints)
-6. `tugutil commit` — internally calls `state complete` (no separate orchestrator call needed)
+3. `tugutil state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}` — after each coder call
+4. `tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}` — after coder completes and drift is accepted; pipe non-`completed` tasks/tests and failed checkpoints as deferred JSON via stdin, or invoke with no pipe to complete all items
+5. `tugutil commit` — internally calls `state complete` (invoked by committer-agent; no separate orchestrator call needed)
 
 **Using `state complete-checklist`:**
 
-`state complete-checklist` eliminates fragile ordinal counting. The orchestrator pipes only deferred items (non-PASS checkpoints from the reviewer) and the CLI marks everything else completed. The coder's `checklist_status` is used only for progress display — never for state management.
+`state complete-checklist` eliminates fragile ordinal counting. The orchestrator pipes only deferred items (derived from the coder's `checklist_status` and `build_and_test_report.checkpoints`) and the CLI marks everything else completed.
 
-- No stdin pipe (TTY): marks all open items completed (use when reviewer had no non-PASS checkpoints)
+- No stdin pipe (TTY): marks all open items completed (use when coder completed all tasks, tests, and checkpoints)
 - Piped deferral JSON: applies explicit deferred entries first, then marks remaining open items completed
 - Piped empty string or `/dev/null`: same as no pipe — marks all open items completed
 - The `WHERE status = 'open'` SQL clause means `complete-checklist` never overwrites items already set to `deferred` by explicit entries
@@ -1065,7 +839,7 @@ When `state_update_failed == true` in the commit JSON, the `state_failure_reason
 
 **Error handling:**
 - All `tugutil state` command failures (non-zero exit) are **fatal** — halt immediately
-- If `state_update_failed == true`: read `state_failure_reason` and follow the escalation handler in section 3f (all reasons escalate immediately — no retry loop)
+- If `state_update_failed == true`: read `state_failure_reason` and follow the escalation handler in section 3c (all reasons escalate immediately — no retry loop)
 - Manual recovery (escalation path only): `tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}`
 - The orchestrator never calls `tugutil state reconcile` automatically — it is a manual recovery tool only
 
@@ -1082,18 +856,6 @@ When you receive an agent response:
 3. **Verify field types**: Ensure fields match expected types
 4. **Check enum values**: Validate status/recommendation fields
 
-**Architect validation:**
-```json
-{
-  "step_anchor": string (required),
-  "approach": string (required),
-  "expected_touch_set": array (required),
-  "implementation_steps": array (required),
-  "test_plan": string (required),
-  "risks": array (required)
-}
-```
-
 **Coder validation:**
 ```json
 {
@@ -1105,18 +867,6 @@ When you receive an agent response:
   "checklist_status": object (required: tasks, tests),
   "build_and_test_report": object (required: build, test, lint, checkpoints),
   "drift_assessment": object (required: drift_severity, expected_files, actual_changes, unexpected_changes, drift_budget, qualitative_assessment)
-}
-```
-
-**Reviewer validation:**
-```json
-{
-  "plan_conformance": object (required: tasks, checkpoints, decisions),
-  "tests_match_plan": boolean (required),
-  "issues": array (required),
-  "drift_notes": string or null (required),
-  "review_categories": object (required: structure, error_handling, security — each PASS/WARN/FAIL),
-  "recommendation": enum (required: APPROVE, REVISE, ESCALATE)
 }
 ```
 
