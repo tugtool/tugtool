@@ -1,0 +1,15 @@
+/* ============================================================================
+   gallery-prompt-entry.css
+   ============================================================================
+   Pristine showcase card for TugPromptEntry. Minimal wrapper around the
+   component so the card fills its container and delegates every visual
+   concern (background, tokens, phase selectors) to tug-prompt-entry.css.
+   ========================================================================= */
+
+.gallery-prompt-entry-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: var(--tug-space-sm);
+}
