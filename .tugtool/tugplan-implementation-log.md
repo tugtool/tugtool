@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-16T10:34:17Z
+---
+
+## step-2: Step 2: created tug-prompt-entry.tsx (component shell with single useSyncExternalStore + single useState route, no-op SUBMIT and SELECT_VALUE responder handlers), tug-prompt-entry.css (Spec S07 token pairings + base styles), and a 6-test smoke suite. No-drift. Token-audit lint deferred: 6 pre-existing baseline violations in unrelated files, zero new from this step.
+
+**Files changed:**
+- tug-prompt-entry-f3a4fc3-2
+
+---
+
+---
 step: step-1
 date: 2025-04-16T10:22:01Z
 ---

@@ -1,0 +1,121 @@
+/* ============================================================================
+   tug-prompt-entry.css
+   ============================================================================
+   Compound composition: TugPromptInput + TugChoiceGroup + TugPushButton,
+   wrapped in a container with a thin toolbar row.
+
+   Per [D11], TugPromptEntry reuses existing base-tier global / field / badge
+   tokens. No new component-slot tokens are authored; both brio.css and
+   harmony.css remain untouched by this plan. If a visual need surfaces that
+   no existing token satisfies, re-open [D11] — do not silently add theme
+   edits in this file's name.
+
+   [L16] The @tug-pairings block below is the definitive contract for the
+   foreground-on-background pairings this file declares. Every rule that
+   sets an element property (color, border, border-top, outline-color…)
+   without also setting background-color in the same rule carries an
+   explicit `@tug-renders-on: <surface>` annotation immediately above it.
+   ========================================================================= */
+
+/* @tug-pairings {
+ *   --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
+ *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
+ * } */
+
+/**
+ * @tug-pairings
+ * | Element                                             | Surface                                              | Role          | Context                                                        |
+ * |-----------------------------------------------------|------------------------------------------------------|---------------|----------------------------------------------------------------|
+ * | --tug7-element-global-border-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry-toolbar (border-top) — divider above toolbar |
+ * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)             |
+ * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring       |
+ */
+
+/* ----------------------------------------------------------------------------
+   Component-tier aliases [L17]
+   ----------------------------------------------------------------------------
+   Each alias resolves to a base-tier --tug7-* token in exactly one hop.
+   Local to this file; never authored into the theme files per [D11].
+   ----------------------------------------------------------------------------- */
+
+body {
+  --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
+  --tugx-prompt-entry-divider: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry — root container
+   ----------------------------------------------------------------------------
+   Flex column so the input grows vertically and the toolbar sits beneath it.
+   Sets both the element backdrop and (for comb-annotation purposes) has no
+   element properties here that need an @tug-renders-on — the surface itself
+   is declared in the same rule.
+   ----------------------------------------------------------------------------- */
+
+.tug-prompt-entry {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--tugx-prompt-entry-surface);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry-toolbar — the row under the editor
+   ----------------------------------------------------------------------------
+   Hosts the route indicator, queue badge (when present), and the submit /
+   stop button. A thin 1px border-top separates it from the editor above.
+   Background matches the container so the toolbar reads as part of the
+   same surface plane.
+   ----------------------------------------------------------------------------- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tug-prompt-entry-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  background-color: var(--tugx-prompt-entry-surface);
+  border-top: 1px solid var(--tugx-prompt-entry-divider);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry-queue-badge — compact pill beside the submit button
+   ----------------------------------------------------------------------------
+   Rendered conditionally by the component when `snap.queuedSends > 0`. The
+   badge shares tinted-action role tokens with other submit-surface badges
+   so queued-work signals read the same across the UI.
+   ----------------------------------------------------------------------------- */
+
+.tug-prompt-entry-queue-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 9px;
+  background-color: var(--tug7-surface-badge-primary-tinted-action-rest);
+  color: var(--tug7-element-badge-text-tinted-action-rest);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry[data-errored] — errored ring
+   ----------------------------------------------------------------------------
+   Drawn as an outline (not a border) so it does not shift layout. The outline
+   sits just outside the container's edge; `outline-offset: -2px` pulls it
+   back inside the bounding box so it aligns with the input's focus ring.
+   Step 5 extends this with phase-sensitive selectors; Step 2 only ships the
+   base errored treatment.
+   ----------------------------------------------------------------------------- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tug-prompt-entry[data-errored] {
+  outline: 2px solid var(--tugx-prompt-entry-errored);
+  outline-offset: -2px;
+}

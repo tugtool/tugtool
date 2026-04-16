@@ -1,0 +1,290 @@
+/**
+ * TugPromptEntry — Compound composition: TugPromptInput + route indicator +
+ * submit/stop button, driven by a CodeSessionStore snapshot.
+ *
+ * Composes TugPromptInput (editor + route detection), TugChoiceGroup (route
+ * indicator), TugPushButton (submit/stop). Each composed child keeps its own
+ * tokens [L20]. The entry reuses existing base-tier global/field/badge tokens
+ * per [D11].
+ *
+ * This is the Step 2 scaffold: the component mounts, subscribes to the
+ * session-store snapshot, wires the responder scope, renders the JSX layout
+ * per Spec S03, and registers no-op / empty-body action handlers that Step 4
+ * (SELECT_VALUE) and Step 5 (SUBMIT) will fill in. The no-op SUBMIT stub is
+ * intentional: it keeps TugPushButton's chain-action mode out of its
+ * aria-disabled fallback so the submit button is live from the first commit
+ * (see Risk R04 in the plan).
+ *
+ * Laws: [L02] useSyncExternalStore for store state, [L06] appearance via
+ *       CSS/DOM, [L07] handlers read state via refs, [L11] controls emit
+ *       actions, [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide, [L20] token sovereignty.
+ * Decisions: [D-T3-01] route selection, [D-T3-06] submit is interrupt,
+ *            [D-T3-07] queue during turn, [D-T3-09] 1:1 card↔store.
+ */
+
+import "./tug-prompt-entry.css";
+
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
+
+import { cn } from "@/lib/utils";
+import type { AtomSegment, CompletionProvider, DropHandler } from "@/lib/tug-text-engine";
+import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { PromptHistoryStore } from "@/lib/prompt-history-store";
+
+import { TugPromptInput, type TugPromptInputDelegate } from "./tug-prompt-input";
+import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
+import { TugPushButton } from "./tug-push-button";
+import { useResponder } from "./use-responder";
+import type { ActionEvent } from "./responder-chain";
+import { TUG_ACTIONS } from "./action-vocabulary";
+
+// ---------------------------------------------------------------------------
+// Module constants
+// ---------------------------------------------------------------------------
+
+/**
+ * The three route prefix characters surfaced in the indicator. Matches the
+ * `routePrefixes` array passed to the underlying `TugPromptInput`. Declared
+ * once at module scope so both the indicator `items` and the input prop
+ * reference a single source of truth.
+ */
+const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
+  { value: ">", label: ">" },
+  { value: "$", label: "$" },
+  { value: ":", label: ":" },
+];
+
+const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
+
+// ---------------------------------------------------------------------------
+// Props / delegate
+// ---------------------------------------------------------------------------
+
+/**
+ * TugPromptEntry props interface.
+ *
+ * Data attributes written on the root element (all documented below with
+ * `@selector` annotations):
+ *
+ * @selector [data-slot="tug-prompt-entry"]         — stable slot selector
+ * @selector [data-responder-id]                    — from `id` (written by useResponder)
+ * @selector [data-phase="idle" | "submitting" | "awaiting_first_token" |
+ *                         "streaming" | "tool_work" | "awaiting_approval" |
+ *                         "errored"]                — from snap.phase (React-rendered)
+ * @selector [data-can-interrupt="true" | "false"]  — from snap.canInterrupt (React-rendered)
+ * @selector [data-can-submit="true" | "false"]     — from snap.canSubmit (React-rendered)
+ * @selector [data-queued]                          — presence when snap.queuedSends > 0
+ * @selector [data-errored]                         — presence when snap.lastError !== null
+ * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
+ * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
+ * @selector [data-empty="true" | "false"]          — direct DOM write from input's onChange (Step 3)
+ */
+export interface TugPromptEntryProps {
+  /**
+   * Stable responder id. Typically `${cardId}-entry`.
+   * @selector [data-responder-id]
+   */
+  id: string;
+  /** Store owning Claude Code turn state for this card. */
+  codeSessionStore: CodeSessionStore;
+  /** Session metadata (model name, version). Accepted for T3.4.c; unused in T3.4.b. */
+  sessionMetadataStore: SessionMetadataStore;
+  /** Prompt history (recall on arrow up/down). Forwarded to TugPromptInput. */
+  historyStore: PromptHistoryStore;
+  /** File completion for `@` trigger. Forwarded to TugPromptInput. */
+  fileCompletionProvider: CompletionProvider;
+  /** Drop handler for dragging files from Finder. Forwarded to TugPromptInput. */
+  dropHandler?: DropHandler;
+  /**
+   * Optional synchronous interceptor for local `:`-surface commands. Called
+   * before `codeSessionStore.send(...)` on every submission. Returning `true`
+   * suppresses the store send; returning `false` or omitting the prop falls
+   * through. The input is cleared on either path. [D06]
+   *
+   * Unused in Step 2; Step 5 fills in the submit-handler body that invokes it.
+   */
+  localCommandHandler?: (
+    route: string | null,
+    atoms: ReadonlyArray<AtomSegment>,
+  ) => boolean;
+  /**
+   * Caller-supplied className merged with the root.
+   * @selector standard
+   */
+  className?: string;
+}
+
+/**
+ * Imperative handle exposed via `forwardRef`. Used by the Tide card (T3.4.c)
+ * to drive focus from global keyboard shortcuts.
+ *
+ * Intentionally empty in Step 2 — Step 3 fills in `focus()` and `clear()`
+ * as pass-throughs to the input's delegate.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface TugPromptEntryDelegate {}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export const TugPromptEntry = React.forwardRef<
+  TugPromptEntryDelegate,
+  TugPromptEntryProps
+>(function TugPromptEntry(props, _ref) {
+  const {
+    id,
+    codeSessionStore,
+    // sessionMetadataStore — accepted for T3.4.c, unused in T3.4.b.
+    historyStore: _historyStore,
+    fileCompletionProvider: _fileCompletionProvider,
+    dropHandler: _dropHandler,
+    localCommandHandler: _localCommandHandler,
+    className,
+  } = props;
+
+  // [L02] external store state enters React through useSyncExternalStore only.
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+
+  // Refs for the composed input, the root element (direct DOM writes per
+  // [L06] — Step 3 writes `data-empty` here), and a live snapshot mirror
+  // for responder handlers [L07].
+  const promptInputRef = useRef<TugPromptInputDelegate | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const snapRef = useRef(snap);
+  useLayoutEffect(() => {
+    snapRef.current = snap;
+  }, [snap]);
+
+  // Stable sender id for the route indicator. Derived from `id` so parent
+  // cards can predict it for integration tests and multi-entry forms if
+  // they ever land. Step 4 uses this in the SELECT_VALUE handler body to
+  // narrow on `event.sender`.
+  const routeIndicatorSenderId = `${id}-route-indicator`;
+
+  // [D04] the route value is React state — TugChoiceGroup is a controlled
+  // component that derives its pill position from `value`. L06 explicitly
+  // allows React state for "selected item in a list" — the route is data
+  // (user-readable semantics), not appearance.
+  const [route, setRouteState] = React.useState<string>("");
+
+  // Live route ref so the submit handler in Step 5 can read the current
+  // value without closing over a stale `route` closure variable [L07].
+  const routeRef = useRef(route);
+  useLayoutEffect(() => {
+    routeRef.current = route;
+  }, [route]);
+
+  // [L07] Register the responder node. Handler bodies for SUBMIT and
+  // SELECT_VALUE land in Steps 4 and 5 — the Step 2 scaffold installs
+  // signature-correct placeholders so TugPushButton's chain-action mode
+  // sees `nodeCanHandle` return true for TUG_ACTIONS.SUBMIT and renders
+  // the submit button live (not aria-disabled). This is the transient-
+  // state fix called out in Risk R04 of the plan.
+  const { ResponderScope, responderRef } = useResponder({
+    id,
+    actions: {
+      // Step 4 replaces this body with real sender/value narrowing +
+      // `setRouteState(event.value)` + `promptInputRef.current?.setRoute(event.value)`.
+      [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
+        if (event.sender !== routeIndicatorSenderId) return;
+        if (typeof event.value !== "string") return;
+        // Intentional no-op — Step 4 wires this through to state + input.
+      },
+      // Step 5 replaces this no-op with the branching body that reads
+      // `snapRef.current.canInterrupt` to choose between `interrupt()`
+      // and `send(...)`. The no-op body is *required* here so
+      // TugPushButton's nodeCanHandle(SUBMIT) returns true — otherwise
+      // the button would render as aria-disabled until Step 5 lands.
+      [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
+        // Intentional no-op — Step 5 wires this to send/interrupt.
+      },
+    },
+  });
+
+  // Input → indicator callback. Step 4 wires this to `setRouteState(r ?? "")`
+  // so typing a prefix character in the input animates the pill. Declared
+  // here as a scaffold so Spec S03's JSX signature stays stable across
+  // step boundaries.
+  const handleRouteChange = useCallback((_r: string | null) => {
+    // Step 4 fills this in.
+  }, []);
+
+  // Input onChange callback. Step 3 writes `data-empty` to the root via
+  // `rootRef` and `promptInputRef.current.isEmpty()`. Declared empty here
+  // so the JSX prop wiring is stable across step boundaries.
+  const handleInputChange = useCallback(() => {
+    // Step 3 fills this in.
+  }, []);
+
+  // Compose rootRef + responderRef onto the same DOM element. useResponder's
+  // `responderRef` writes `data-responder-id` there; `rootRef` is the
+  // direct-DOM handle Step 3 writes `data-empty` to.
+  const composedRootRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
+
+  return (
+    <ResponderScope>
+      <div
+        ref={composedRootRef}
+        data-slot="tug-prompt-entry"
+        data-phase={snap.phase}
+        data-can-interrupt={String(snap.canInterrupt)}
+        data-can-submit={String(snap.canSubmit)}
+        data-errored={snap.lastError ? "" : undefined}
+        data-pending-approval={snap.pendingApproval ? "" : undefined}
+        data-pending-question={snap.pendingQuestion ? "" : undefined}
+        data-queued={snap.queuedSends > 0 ? "" : undefined}
+        data-empty="true"
+        className={cn("tug-prompt-entry", className)}
+      >
+        <TugPromptInput
+          ref={promptInputRef}
+          routePrefixes={[...ROUTE_PREFIXES]}
+          onRouteChange={handleRouteChange}
+          onChange={handleInputChange}
+        />
+        <div className="tug-prompt-entry-toolbar">
+          <TugChoiceGroup
+            items={[...ROUTE_ITEMS]}
+            value={route}
+            senderId={routeIndicatorSenderId}
+            size="sm"
+            aria-label="Command route"
+          />
+          {snap.queuedSends > 0 && (
+            <span
+              className="tug-prompt-entry-queue-badge"
+              aria-live="polite"
+            >
+              {snap.queuedSends}
+            </span>
+          )}
+          <TugPushButton
+            action={TUG_ACTIONS.SUBMIT}
+            role={snap.canInterrupt ? "danger" : "action"}
+            disabled={!snap.canSubmit && !snap.canInterrupt}
+            aria-label={snap.canInterrupt ? "Stop turn" : "Send prompt"}
+          >
+            {snap.canInterrupt ? "Stop" : "Send"}
+          </TugPushButton>
+        </div>
+      </div>
+    </ResponderScope>
+  );
+});
