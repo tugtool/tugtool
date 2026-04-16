@@ -318,3 +318,18 @@ body {
 .tug-split-pane[data-show-handle="false"] .tug-split-sash-handle {
   display: none;
 }
+
+/* showHandle={false}: collapse the sash hit-area to equal the visible
+   line thickness. With the grabber pill gone, the 13px of transparent
+   hit-area around the line was showing the parent's background through —
+   visible as a color mismatch against adjacent pane content. Shrinking
+   the sash so the line IS the sash eliminates that entirely. The ::before
+   line still renders (centered in a 3px box fills it exactly) and the
+   Separator remains draggable on the line itself. */
+.tug-split-pane[data-show-handle="false"] .tug-split-sash-horizontal {
+  height: var(--tug-split-sash-thickness);
+}
+
+.tug-split-pane[data-show-handle="false"] .tug-split-sash-vertical {
+  width: var(--tug-split-sash-thickness);
+}

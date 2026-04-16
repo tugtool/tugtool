@@ -18,11 +18,9 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   --tug7-element-badge-text-tinted-action-rest      | --tug7-surface-badge-primary-tinted-action-rest    | content
- *   --tug7-element-field-border-normal-danger-rest    | --tug7-surface-global-primary-normal-control-rest | informational
- *   --tug7-element-global-text-normal-muted-rest      | --tug7-surface-global-primary-normal-control-rest | content
- *   --tug7-element-global-text-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest | content
- *   --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
+ *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | content
  * } */
 
 /**
@@ -31,9 +29,7 @@
  * |-----------------------------------------------------|------------------------------------------------------|---------------|--------------------------------------------------------------------|
  * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)                 |
  * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
- * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text        |
- * | --tug7-element-global-text-normal-default-rest      | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-tools-toggle:hover (color) — tools toggle button |
- * | --tug7-element-global-fill-normal-accentCool-rest   | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry-tools-toggle:focus-visible (outline)             |
+ * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text         |
  */
 
 /* ----------------------------------------------------------------------------
@@ -105,7 +101,12 @@ body {
   flex-direction: row;
   align-items: center;
   gap: var(--tug-space-sm);
-  padding: var(--tug-space-2xs, 4px) var(--tug-space-xs) var(--tug-space-2xs, 4px);
+  /* Breathing room: space above separates the toolbar from the input area;
+     space below separates it from the component's bottom edge. Inline
+     padding keeps the buttons off the side edges. */
+  margin-top: var(--tug-space-md);
+  margin-bottom: var(--tug-space-md);
+  padding: 0 var(--tug-space-md);
 }
 
 /* Submit button anchors to the trailing edge; the route indicator +
@@ -202,62 +203,28 @@ body {
   font-size: var(--tug-font-size-xs);
 }
 
-/* Toggle button — a minimal icon-only control. Uses the ghost emphasis
-   visual palette inline (no TugButton chrome) so the status row stays
-   compact. The button is accessible: aria-label + aria-expanded are
-   synced by the toggle handler. */
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
-.tug-prompt-entry-tools-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: color var(--tug-motion-duration-fast, 120ms) ease,
-              background-color var(--tug-motion-duration-fast, 120ms) ease;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
-.tug-prompt-entry-tools-toggle:hover {
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-.tug-prompt-entry-tools-toggle:focus-visible {
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline-offset: 2px;
-}
-
-/* Rotate the chevron when the panel is open. The icon itself is owned
-   by the entry's JSX (its class name is part of the entry's DOM), so
-   targeting it from entry CSS is not a [L20] violation. */
-.tug-prompt-entry-tools-toggle-icon {
-  transition: transform var(--tug-motion-duration-fast, 120ms) ease;
-}
-
-.tug-prompt-entry[data-tools-open="true"] .tug-prompt-entry-tools-toggle-icon {
-  transform: rotate(180deg);
-}
+/* Toggle button — a TugPushButton subtype="icon" whose `emphasis` + `role`
+   are switched by the entry based on the toolsOpen state (filled+accent
+   when open, ghost+action when closed). The entry owns no CSS for the
+   button's visuals beyond layout — [L20] keeps TugPushButton's tokens
+   under its own slot. */
 
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-tools-panel — expandable area beneath the status row
    ----------------------------------------------------------------------------
    Hidden by default (data-tools-open="false" on the root). When the toggle
    flips the attribute to "true", the panel reveals. Caller fills the
-   content via the toolsContent prop. No animation for now — toggle is a
-   user-driven action, snap shows/hides is acceptable.
+   content via the toolsContent prop. Panel content is right-aligned below
+   the status bar — the toggle sits on the trailing edge of the status row
+   so aligning the panel to the same edge reads as a disclosure drop-down.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry-tools-panel {
   display: none;
   flex: 0 0 auto;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--tug-space-xs);
   padding: var(--tug-space-xs);
 }

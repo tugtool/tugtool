@@ -43,7 +43,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, ChevronDown, Square } from "lucide-react";
+import { ArrowUp, Settings, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { AtomSegment, CompletionProvider, DropHandler } from "@/lib/tug-text-engine";
@@ -358,22 +358,17 @@ export const TugPromptEntry = React.forwardRef<
     [responderRef],
   );
 
-  // Tools-panel disclosure toggle. The open/closed state is pure appearance
-  // state — the only consumer is rendering (CSS visibility + the toggle
-  // button's aria-expanded). Per [L06] it belongs in the DOM: we flip
-  // `data-tools-open` directly on the root and let CSS show/hide the
-  // panel. No React state; no re-render on toggle.
+  // Tools-panel disclosure toggle. The open/closed state drives both the
+  // panel's visibility (via `data-tools-open` on the root, consumed by CSS)
+  // AND the toggle button's `emphasis` + `role` props (swap to filled/accent
+  // when open). Because the button's rendered chrome must flip with the
+  // state, the toggle lives in React state — rendering is the consumer,
+  // and there is no background store that owns this. This is one `useState`
+  // for disclosure UX; all other appearance (panel display, etc.) still
+  // routes through CSS rules keyed on `data-tools-open`.
+  const [toolsOpen, setToolsOpen] = React.useState(false);
   const handleToolsToggle = useCallback(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const isOpen = root.getAttribute("data-tools-open") === "true";
-    const next = isOpen ? "false" : "true";
-    root.setAttribute("data-tools-open", next);
-    // Mirror on the toggle button's aria-expanded for assistive tech.
-    const button = root.querySelector<HTMLButtonElement>(
-      ".tug-prompt-entry-tools-toggle",
-    );
-    button?.setAttribute("aria-expanded", next);
+    setToolsOpen((open) => !open);
   }, []);
 
   // Render the status row only when there is something to put in it.
@@ -394,7 +389,7 @@ export const TugPromptEntry = React.forwardRef<
         data-pending-question={snap.pendingQuestion ? "" : undefined}
         data-queued={snap.queuedSends > 0 ? "" : undefined}
         data-empty="true"
-        data-tools-open="false"
+        data-tools-open={toolsOpen ? "true" : "false"}
         className={cn("tug-prompt-entry", className)}
       >
         {hasStatusRow && (
@@ -403,20 +398,17 @@ export const TugPromptEntry = React.forwardRef<
               {statusContent}
             </div>
             {toolsContent !== undefined && (
-              <button
-                type="button"
+              <TugPushButton
                 className="tug-prompt-entry-tools-toggle"
+                subtype="icon"
+                size="sm"
+                emphasis={toolsOpen ? "filled" : "ghost"}
+                role={toolsOpen ? "accent" : "action"}
                 aria-label="Toggle tools"
-                aria-expanded="false"
+                aria-expanded={toolsOpen}
                 onClick={handleToolsToggle}
-              >
-                <ChevronDown
-                  className="tug-prompt-entry-tools-toggle-icon"
-                  size={14}
-                  strokeWidth={2}
-                  aria-hidden="true"
-                />
-              </button>
+                icon={<Settings size={14} strokeWidth={2} aria-hidden="true" />}
+              />
             )}
           </div>
         )}

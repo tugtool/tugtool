@@ -37,21 +37,3 @@
   width: 100%;
 }
 
-/* Status-row content (leading "Demo project" label + muted path). */
-.gallery-prompt-entry-status-label {
-  font-weight: 500;
-  margin-inline-end: var(--tug-space-xs);
-}
-
-.gallery-prompt-entry-status-path {
-  font-family: var(--tug-font-family-mono);
-}
-
-/* Tools-panel content — compact inline row of labels + popup buttons. */
-.gallery-prompt-entry-tools-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--tug-space-xs);
-  flex-wrap: wrap;
-}

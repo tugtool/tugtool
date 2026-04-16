@@ -28,7 +28,7 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExter
 import { TugPromptEntry } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel } from "../tug-split-pane";
 import { TugBox } from "../tug-box";
-import { TugLabel } from "../tug-label";
+import { TugBadge } from "../tug-badge";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { useResponderForm } from "../use-responder-form";
@@ -271,33 +271,26 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
 
   // --- Status row + tools panel content. ---
   const statusContent = (
-    <>
-      <span className="gallery-prompt-entry-status-label">
-        Demo project
-      </span>
-      <span className="gallery-prompt-entry-status-path">
-        /gallery/demo
-      </span>
-    </>
+    <TugBadge size="sm" emphasis="tinted" role="data">
+      Project path /gallery/demo
+    </TugBadge>
   );
 
   const toolsContent = (
-    <div className="gallery-prompt-entry-tools-row">
-      <TugLabel size="2xs" color="muted">Font</TugLabel>
+    <>
       <TugPopupButton
         label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
         items={EDITOR_FONT_OPTIONS}
         senderId={fontPopupId}
         size="sm"
       />
-      <TugLabel size="2xs" color="muted">Size</TugLabel>
       <TugPopupButton
         label={`${editorSettings.fontSize}px`}
         items={FONT_SIZE_OPTIONS}
         senderId={fontSizePopupId}
         size="sm"
       />
-    </div>
+    </>
   );
 
   return (
