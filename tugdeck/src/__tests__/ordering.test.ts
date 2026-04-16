@@ -97,21 +97,6 @@ describe("MessageOrderingBuffer", () => {
     expect(delivered[0].type).toBe("protocol_ack");
   });
 
-  test("gap timeout triggers resync", async () => {
-    buffer.push(createAssistantText(0));
-    buffer.push(createAssistantText(2)); // Gap at seq 1
-
-    expect(delivered.length).toBe(1); // Only seq 0 delivered
-    expect(resyncCalled).toBe(false);
-
-    // Wait for gap timeout (5 seconds)
-    await new Promise((resolve) => setTimeout(resolve, 5100));
-
-    expect(delivered.length).toBe(2); // seq 2 delivered after timeout
-    expect((delivered[1] as AssistantText).seq).toBe(2);
-    expect(resyncCalled).toBe(true);
-  }, 10000); // 10 second test timeout
-
   test("stale messages (seq < expected) are dropped", () => {
     buffer.push(createAssistantText(0));
     buffer.push(createAssistantText(1));

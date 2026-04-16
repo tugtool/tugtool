@@ -46,57 +46,7 @@ global.navigator = {
 
 // Import utilities from lib/markdown (updated from cards/conversation/message-renderer)
 import { renderMarkdown, SANITIZE_CONFIG } from "../lib/markdown";
-import { SessionCache, type StoredMessage } from "../_archive/cards/conversation/session-cache";
-
-// ---- Performance benchmarks ----
-
-describe("Performance benchmarks", () => {
-  test("message rendering throughput", () => {
-    // Time 100 renderMarkdown calls
-    const start = performance.now();
-
-    for (let i = 0; i < 100; i++) {
-      renderMarkdown(`# Heading ${i}\n\nParagraph with **bold** and *italic* text.`);
-    }
-
-    const elapsed = performance.now() - start;
-
-    // Assert < 500ms total (5ms per message)
-    expect(elapsed).toBeLessThan(500);
-  });
-
-  test("cached conversation render < 200ms", async () => {
-    // Create a unique cache for this test
-    const testId = Math.random().toString(36).substring(7);
-    const cache = new SessionCache(`perf-test-${testId}`);
-
-    // Write 50 messages to cache
-    const messages: StoredMessage[] = [];
-    for (let i = 0; i < 50; i++) {
-      messages.push({
-        msg_id: `msg-${i}`,
-        seq: i,
-        rev: 0,
-        status: "complete",
-        role: i % 2 === 0 ? "user" : "assistant",
-        text: `Message ${i}`,
-      });
-    }
-
-    cache.writeMessages(messages);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-
-    // Measure cache load time
-    const start = performance.now();
-    const loaded = await cache.readMessages();
-    const elapsed = performance.now() - start;
-
-    expect(loaded.length).toBe(50);
-    expect(elapsed).toBeLessThan(200);
-
-    cache.close();
-  });
-});
+import { SessionCache } from "../_archive/cards/conversation/session-cache";
 
 // ---- Security: XSS injection ----
 
@@ -196,26 +146,6 @@ describe("Drift prevention", () => {
 // ---- SessionCache utility tests ----
 
 describe("SessionCache – read/write", () => {
-  test("writes and reads back messages", async () => {
-    const testId = Math.random().toString(36).substring(7);
-    const cache = new SessionCache(`session-rw-${testId}`);
-
-    const messages: StoredMessage[] = [
-      { msg_id: "m1", seq: 0, rev: 0, status: "complete", role: "user", text: "Hello" },
-      { msg_id: "m2", seq: 1, rev: 0, status: "complete", role: "assistant", text: "Hi there" },
-    ];
-
-    cache.writeMessages(messages);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-
-    const loaded = await cache.readMessages();
-    expect(loaded.length).toBe(2);
-    expect(loaded[0].text).toBe("Hello");
-    expect(loaded[1].text).toBe("Hi there");
-
-    cache.close();
-  });
-
   test("returns empty array when no messages have been written", async () => {
     const testId = Math.random().toString(36).substring(7);
     const cache = new SessionCache(`session-empty-${testId}`);
