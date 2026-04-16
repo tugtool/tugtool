@@ -62,6 +62,9 @@ import {
   ResponderChainContext,
   type ResponderChainManager,
 } from "@/components/tugways/responder-chain";
+import type { CodeSessionSnapshot } from "@/lib/code-session-store/types";
+import { STREAMING_PATHS } from "@/lib/code-session-store/types";
+import type { AtomSegment } from "@/lib/tug-text-engine";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
@@ -794,5 +797,416 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
     expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
     expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 5: ScriptedStore — minimal CodeSessionStore stub with controllable
+// snapshot and spy-able send/interrupt methods.
+// ---------------------------------------------------------------------------
+//
+// The real CodeSessionStore derives its snapshot from the reducer's state,
+// which only advances in response to outbound `send`/`interrupt` calls or
+// inbound CODE_OUTPUT frames. Driving the store into specific states
+// (canInterrupt=true, awaiting_approval, queuedSends=2, lastError set)
+// for the step-5 responder-handler tests would require either golden-
+// probe replays or carefully sequenced send/frame dance — both overkill
+// for testing the component's handler-branching logic. A stub lets each
+// test assert exactly the shape it cares about.
+
+function defaultSnapshot(): CodeSessionSnapshot {
+  return {
+    phase: "idle",
+    tugSessionId: "tug-session-id",
+    claudeSessionId: null,
+    displayLabel: "test",
+    activeMsgId: null,
+    canSubmit: true,
+    canInterrupt: false,
+    pendingApproval: null,
+    pendingQuestion: null,
+    queuedSends: 0,
+    transcript: [],
+    streamingPaths: STREAMING_PATHS,
+    lastCost: null,
+    lastError: null,
+  };
+}
+
+class ScriptedStore {
+  private snap: CodeSessionSnapshot;
+  private listeners = new Set<() => void>();
+
+  readonly sendCalls: Array<{ text: string; atoms: AtomSegment[] }> = [];
+  readonly interruptCalls: number[] = [];
+
+  constructor(initial: Partial<CodeSessionSnapshot> = {}) {
+    this.snap = { ...defaultSnapshot(), ...initial };
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  getSnapshot = (): CodeSessionSnapshot => this.snap;
+
+  send = (text: string, atoms: AtomSegment[]): void => {
+    this.sendCalls.push({ text, atoms });
+  };
+
+  interrupt = (): void => {
+    this.interruptCalls.push(Date.now());
+  };
+
+  setSnapshot(partial: Partial<CodeSessionSnapshot>): void {
+    this.snap = { ...this.snap, ...partial };
+    for (const l of this.listeners) l();
+  }
+}
+
+function renderEntryWithStore(opts: {
+  id?: string;
+  store?: ScriptedStore;
+  localCommandHandler?: (
+    route: string | null,
+    atoms: ReadonlyArray<AtomSegment>,
+  ) => boolean;
+  onRender?: React.ProfilerOnRenderCallback;
+} = {}) {
+  const id = opts.id ?? "prompt-entry-step5";
+  const store = opts.store ?? new ScriptedStore();
+  const services = buildMockServices();
+  // Swap in the scripted store while keeping the other real-ish services.
+  const scripted = {
+    ...services,
+    codeSessionStore: store as unknown as CodeSessionStore,
+  };
+  const entryRef = React.createRef<TugPromptEntryDelegate>();
+  const managerRef: { current: ResponderChainManager | null } = { current: null };
+  const tree = (
+    <ResponderChainProvider>
+      <ChainCapture into={managerRef} />
+      <TugPromptEntry
+        ref={entryRef}
+        id={id}
+        {...scripted}
+        localCommandHandler={opts.localCommandHandler}
+      />
+    </ResponderChainProvider>
+  );
+  const utils = render(
+    opts.onRender ? (
+      <React.Profiler id="entry" onRender={opts.onRender}>
+        {tree}
+      </React.Profiler>
+    ) : tree,
+  );
+  return { ...utils, store, id, entryRef, managerRef };
+}
+
+describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () => {
+  beforeEach(() => {
+    installExecCommandShim();
+    installCanvas2DShim();
+  });
+
+  afterEach(() => {
+    cleanup();
+    uninstallExecCommandShim();
+    uninstallCanvas2DShim();
+  });
+
+  it("SUBMIT with canInterrupt=false sends the input text and clears it", () => {
+    const { id, store, managerRef } = renderEntryWithStore();
+    expect(managerRef.current).not.toBeNull();
+
+    // Type "hello" into the editor via the execCommand shim so
+    // input.getText() returns it when the handler reads.
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hello");
+    });
+
+    const clearSpy = spyOn(TugTextEngine.prototype, "clear");
+    try {
+      act(() => {
+        managerRef.current!.sendToTarget(id, {
+          action: TUG_ACTIONS.SUBMIT,
+          phase: "discrete",
+        });
+      });
+
+      expect(store.sendCalls.length).toBe(1);
+      expect(store.sendCalls[0].text).toBe("hello");
+      // interrupt was NOT the branch taken.
+      expect(store.interruptCalls.length).toBe(0);
+      // Input was cleared after the send.
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      clearSpy.mockRestore();
+    }
+  });
+
+  it("SUBMIT with canInterrupt=true calls interrupt(); send is not invoked", () => {
+    const store = new ScriptedStore({
+      phase: "streaming",
+      canSubmit: false,
+      canInterrupt: true,
+    });
+    const { id, managerRef } = renderEntryWithStore({ store });
+    expect(managerRef.current).not.toBeNull();
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.interruptCalls.length).toBe(1);
+    expect(store.sendCalls.length).toBe(0);
+  });
+
+  it("SUBMIT with canSubmit=false && canInterrupt=false is a no-op (awaiting_approval)", () => {
+    const store = new ScriptedStore({
+      phase: "awaiting_approval",
+      canSubmit: false,
+      canInterrupt: false,
+    });
+    const { id, managerRef } = renderEntryWithStore({ store });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.sendCalls.length).toBe(0);
+    expect(store.interruptCalls.length).toBe(0);
+  });
+
+  it("localCommandHandler returning true suppresses send but still clears the input", () => {
+    const handler = (_route: string | null, _atoms: ReadonlyArray<AtomSegment>) => true;
+    const { id, store, managerRef } = renderEntryWithStore({
+      localCommandHandler: handler,
+    });
+    expect(managerRef.current).not.toBeNull();
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, ":save");
+    });
+
+    const clearSpy = spyOn(TugTextEngine.prototype, "clear");
+    try {
+      act(() => {
+        managerRef.current!.sendToTarget(id, {
+          action: TUG_ACTIONS.SUBMIT,
+          phase: "discrete",
+        });
+      });
+
+      expect(store.sendCalls.length).toBe(0);
+      // Input cleared regardless: the user sees a reset entry even when
+      // the local handler short-circuits.
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      clearSpy.mockRestore();
+    }
+  });
+
+  it("localCommandHandler returning false falls through to store.send", () => {
+    let received: { route: string | null; atomCount: number } | null = null;
+    const handler = (route: string | null, atoms: ReadonlyArray<AtomSegment>) => {
+      received = { route, atomCount: atoms.length };
+      return false;
+    };
+    const { id, store, managerRef } = renderEntryWithStore({
+      localCommandHandler: handler,
+    });
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hi");
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.sendCalls.length).toBe(1);
+    expect(store.sendCalls[0].text).toBe("hi");
+    // Handler was called with a defined route/atoms shape.
+    expect(received).not.toBeNull();
+    expect(received!.route).toBeNull(); // no prefix typed
+  });
+
+  it("omitting localCommandHandler is equivalent to returning false (send is called)", () => {
+    const { id, store, managerRef } = renderEntryWithStore();
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hi");
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.sendCalls.length).toBe(1);
+    expect(store.sendCalls[0].text).toBe("hi");
+  });
+
+  it("queuedSends=2 adds data-queued and renders the badge with text '2'", () => {
+    const store = new ScriptedStore({ queuedSends: 2 });
+    const { container } = renderEntryWithStore({ store });
+
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.hasAttribute("data-queued")).toBe(true);
+    const badge = container.querySelector<HTMLElement>(
+      ".tug-prompt-entry-queue-badge",
+    );
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent?.trim()).toBe("2");
+  });
+
+  it("queuedSends=0 removes data-queued and the badge", () => {
+    const store = new ScriptedStore({ queuedSends: 2 });
+    const { container } = renderEntryWithStore({ store });
+
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.hasAttribute("data-queued")).toBe(true);
+
+    act(() => {
+      store.setSnapshot({ queuedSends: 0 });
+    });
+
+    expect(root.hasAttribute("data-queued")).toBe(false);
+    expect(
+      container.querySelector(".tug-prompt-entry-queue-badge"),
+    ).toBeNull();
+  });
+
+  it("lastError !== null sets data-errored on the root (session_state errored flow)", () => {
+    const store = new ScriptedStore();
+    const { container } = renderEntryWithStore({ store });
+
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.hasAttribute("data-errored")).toBe(false);
+
+    act(() => {
+      store.setSnapshot({
+        phase: "errored",
+        canSubmit: true,
+        canInterrupt: false,
+        lastError: {
+          cause: "session_state_errored",
+          message: "boom",
+          at: Date.now(),
+        },
+      });
+    });
+
+    expect(root.hasAttribute("data-errored")).toBe(true);
+    expect(root.getAttribute("data-phase")).toBe("errored");
+  });
+
+  it("submit button label reads 'Send' when canInterrupt=false and 'Stop' when canInterrupt=true", () => {
+    const { container, store } = renderEntryWithStore();
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Send prompt"]',
+    );
+    expect(sendButton).not.toBeNull();
+    expect(sendButton!.textContent).toContain("Send");
+
+    act(() => {
+      store.setSnapshot({
+        phase: "streaming",
+        canSubmit: false,
+        canInterrupt: true,
+      });
+    });
+
+    const stopButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Stop turn"]',
+    );
+    expect(stopButton).not.toBeNull();
+    expect(stopButton!.textContent).toContain("Stop");
+  });
+
+  it("phase transitions flip data-phase with exactly one commit per snapshot update (no internal useState in the entry path)", () => {
+    const phases: string[] = [];
+    const store = new ScriptedStore();
+    const { container } = renderEntryWithStore({
+      store,
+      onRender: (_id, phase) => {
+        phases.push(phase);
+      },
+    });
+
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.getAttribute("data-phase")).toBe("idle");
+
+    const updatesBefore1 = phases.filter((p) => p === "update").length;
+    act(() => {
+      store.setSnapshot({ phase: "submitting", canSubmit: false, canInterrupt: true });
+    });
+    expect(root.getAttribute("data-phase")).toBe("submitting");
+    expect(root.getAttribute("data-can-interrupt")).toBe("true");
+    const updatesAfter1 = phases.filter((p) => p === "update").length;
+    expect(updatesAfter1 - updatesBefore1).toBe(1);
+
+    const updatesBefore2 = phases.filter((p) => p === "update").length;
+    act(() => {
+      store.setSnapshot({ phase: "streaming" });
+    });
+    expect(root.getAttribute("data-phase")).toBe("streaming");
+    const updatesAfter2 = phases.filter((p) => p === "update").length;
+    expect(updatesAfter2 - updatesBefore2).toBe(1);
+  });
+
+  it("awaiting_approval phase applies the dim class selector via CSS (data-phase drives the selector)", () => {
+    // Pure DOM check: the CSS selector
+    // `.tug-prompt-entry[data-phase="awaiting_approval"] > :first-child`
+    // only matches when `data-phase` is set to that value. Happy-dom
+    // doesn't evaluate computed styles reliably for CSS variables, but
+    // it does apply attribute selectors — so we verify the attribute
+    // is wired correctly. The CSS rule itself is exercised by the
+    // token-audit lint in the plan's checkpoint.
+    const store = new ScriptedStore({
+      phase: "awaiting_approval",
+      canSubmit: false,
+      canInterrupt: false,
+      pendingApproval: {} as unknown as CodeSessionSnapshot["pendingApproval"],
+    });
+    const { container } = renderEntryWithStore({ store });
+    const root = container.querySelector<HTMLElement>(
+      '[data-slot="tug-prompt-entry"]',
+    )!;
+    expect(root.getAttribute("data-phase")).toBe("awaiting_approval");
+    expect(root.hasAttribute("data-pending-approval")).toBe(true);
   });
 });

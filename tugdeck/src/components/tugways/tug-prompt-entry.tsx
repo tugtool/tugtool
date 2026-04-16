@@ -17,7 +17,12 @@
  * prefix in the input fires `onRouteChange` → `setRouteState`;
  * selecting a segment dispatches SELECT_VALUE → `setRouteState` +
  * `setRoute` (which in turn fires `onRouteChange`, but React bails on
- * the equal setRouteState). Step 5 (SUBMIT body) still lands later.
+ * the equal setRouteState).
+ * Step 5 fills in the SUBMIT handler per [D05]: branches on
+ * `snapRef.current.canInterrupt` to route to `codeSessionStore.interrupt()`
+ * vs `codeSessionStore.send(text, atoms)`, threading `localCommandHandler`
+ * as an optional [D06] synchronous interceptor; clears the input and
+ * resets the route indicator after submit.
  *
  * Laws: [L02] useSyncExternalStore for store state, [L06] appearance via
  *       CSS/DOM, [L07] handlers read state via refs, [L11] controls emit
@@ -113,8 +118,6 @@ export interface TugPromptEntryProps {
    * before `codeSessionStore.send(...)` on every submission. Returning `true`
    * suppresses the store send; returning `false` or omitting the prop falls
    * through. The input is cleared on either path. [D06]
-   *
-   * Unused in Step 2; Step 5 fills in the submit-handler body that invokes it.
    */
   localCommandHandler?: (
     route: string | null,
@@ -158,7 +161,7 @@ export const TugPromptEntry = React.forwardRef<
     historyStore: _historyStore,
     fileCompletionProvider: _fileCompletionProvider,
     dropHandler: _dropHandler,
-    localCommandHandler: _localCommandHandler,
+    localCommandHandler,
     className,
   } = props;
 
@@ -197,13 +200,11 @@ export const TugPromptEntry = React.forwardRef<
     routeRef.current = route;
   }, [route]);
 
-  // [L07] Register the responder node. Step 4 fills in the SELECT_VALUE
-  // body with the defensive sender/value narrowing + `setRouteState` +
-  // `setRoute` round-trip per Spec S02. The SUBMIT body stays a no-op
-  // through Step 4 and is completed in Step 5; it exists here so
-  // TugPushButton's chain-action mode sees `nodeCanHandle(SUBMIT)`
-  // return true from the first commit (Risk R04 — the transient-state
-  // fix).
+  // [L07] Register the responder node. Both handler bodies are now
+  // real: SELECT_VALUE runs the defensive sender/value narrowing +
+  // `setRouteState` + `setRoute` round-trip per Spec S02 (Step 4);
+  // SUBMIT branches on `snapRef.current.canInterrupt` to route to
+  // `interrupt()` vs `send()` per [D05] (Step 5).
   const { ResponderScope, responderRef } = useResponder({
     id,
     actions: {
@@ -230,13 +231,41 @@ export const TugPromptEntry = React.forwardRef<
         // trip test for the guard.
         promptInputRef.current?.setRoute(event.value);
       },
-      // Step 5 replaces this no-op with the branching body that reads
-      // `snapRef.current.canInterrupt` to choose between `interrupt()`
-      // and `send(...)`. The no-op body is *required* here so
-      // TugPushButton's nodeCanHandle(SUBMIT) returns true — otherwise
-      // the button would render as aria-disabled until Step 5 lands.
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
-        // Intentional no-op — Step 5 wires this to send/interrupt.
+        const input = promptInputRef.current;
+        const snap = snapRef.current;
+        if (!input) return;
+        // [D05] Submit is interrupt: the single SUBMIT action routes
+        // to `interrupt()` during an in-flight turn and to `send()`
+        // otherwise. `canInterrupt` is the authoritative signal —
+        // read via `snapRef` per [L07] so we see the live value even
+        // if React hasn't committed yet.
+        if (snap.canInterrupt) {
+          codeSessionStore.interrupt();
+          return;
+        }
+        // [D-T3-08] awaiting_approval / awaiting_question block the
+        // submit path. `canSubmit` captures both (plus any future
+        // phase that should disable submit). Defensive guard: the
+        // button is already disabled in this state, but the action
+        // could still arrive from a keyboard shortcut.
+        if (!snap.canSubmit) return;
+        const atoms = input.getAtoms();
+        const text = input.getText();
+        // [D06] localCommandHandler seam — called BEFORE the store
+        // send so local `:`-surface commands can intercept. Route
+        // is the live route ref (string) or null if no prefix is
+        // active. Returning `true` suppresses the store send but
+        // does NOT suppress the input clear or route reset: the
+        // user still sees the entry reset, as if the submit had
+        // gone through.
+        const route = routeRef.current || null;
+        const handled = localCommandHandler?.(route, atoms) ?? false;
+        if (!handled) {
+          codeSessionStore.send(text, atoms);
+        }
+        input.clear();
+        setRouteState("");
       },
     },
   });

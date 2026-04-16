@@ -119,3 +119,21 @@ body {
   outline: 2px solid var(--tugx-prompt-entry-errored);
   outline-offset: -2px;
 }
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry[data-phase="awaiting_approval"] — dim the input area
+   ----------------------------------------------------------------------------
+   Per the §Phase → visual binding table: while the user is answering an
+   approval or question prompt (rendered upstream in the card body), the
+   entry's input area dims and pointer events are blocked so the user
+   can't start a second prompt in parallel. The toolbar remains visible
+   and interactive — its buttons are gated separately by `snap.canSubmit`
+   on the submit button. `:first-child` targets the TugPromptInput wrapper
+   (the input is authored as the first child of the entry's root per
+   Spec S03); no new tokens per [D11].
+   ----------------------------------------------------------------------------- */
+
+.tug-prompt-entry[data-phase="awaiting_approval"] > :first-child {
+  opacity: 0.6;
+  pointer-events: none;
+}
