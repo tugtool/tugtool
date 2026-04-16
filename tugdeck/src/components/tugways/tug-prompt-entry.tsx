@@ -54,6 +54,7 @@ import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { TugPromptInput, type TugPromptInputDelegate } from "./tug-prompt-input";
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
+import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -66,15 +67,27 @@ import { TUG_ACTIONS } from "./action-vocabulary";
  * The three route prefix characters surfaced in the indicator. Matches the
  * `routePrefixes` array passed to the underlying `TugPromptInput`. Declared
  * once at module scope so both the indicator `items` and the input prop
- * reference a single source of truth.
+ * reference a single source of truth. Each segment pairs a descriptive
+ * label (what the route does) with the prefix character rendered as a
+ * leading icon so the control is both scannable and self-documenting.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: ">", label: ">" },
-  { value: "$", label: "$" },
-  { value: ":", label: ":" },
+  { value: ">", label: "Prompt", icon: <span aria-hidden="true">&gt;</span> },
+  { value: "$", label: "Shell", icon: <span aria-hidden="true">$</span> },
+  { value: ":", label: "Command", icon: <span aria-hidden="true">:</span> },
 ];
 
 const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
+
+/**
+ * Default route when the input has no typed prefix. One of the three
+ * segments must always be active — there is no "no route" state in the
+ * indicator. Prompt (`>`) is the sensible default: it's what the user
+ * most often wants (talking to Claude). If the user types `$` or `:`
+ * the indicator syncs to match; if they backspace the prefix away, the
+ * indicator returns to `DEFAULT_ROUTE`.
+ */
+const DEFAULT_ROUTE = ">";
 
 // ---------------------------------------------------------------------------
 // Props / delegate
@@ -98,7 +111,6 @@ const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
  * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
  * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
  * @selector [data-empty="true" | "false"]          — direct DOM write from input's onChange (Step 3)
- * @selector [data-tools-open="true" | "false"]     — direct DOM write from tools toggle; CSS shows/hides .tug-prompt-entry-tools-panel
  */
 export interface TugPromptEntryProps {
   /**
@@ -140,11 +152,10 @@ export interface TugPromptEntryProps {
    */
   statusContent?: React.ReactNode;
   /**
-   * Optional content rendered in an expandable tools panel below the
-   * status row. When provided, a toggle button appears on the right of
-   * the status row; clicking it flips the entry's `data-tools-open`
-   * attribute, which CSS uses to show/hide the panel. When undefined,
-   * the toggle button is not rendered and the panel is never present.
+   * Optional content rendered inside a `TugPopover` anchored to a
+   * toggle button on the trailing edge of the status row. The popover's
+   * internal open state is owned by `TugPopover`. When undefined, the
+   * toggle button is not rendered.
    */
   toolsContent?: React.ReactNode;
   /**
@@ -217,7 +228,12 @@ export const TugPromptEntry = React.forwardRef<
   // component that derives its pill position from `value`. L06 explicitly
   // allows React state for "selected item in a list" — the route is data
   // (user-readable semantics), not appearance.
-  const [route, setRouteState] = React.useState<string>("");
+  //
+  // There is no "no route selected" state: one of the three segments is
+  // always active. The input itself may or may not carry a leading prefix
+  // atom — if it doesn't, the indicator reflects the default (`DEFAULT_ROUTE`,
+  // Prompt). If it does, the indicator mirrors that prefix.
+  const [route, setRouteState] = React.useState<string>(DEFAULT_ROUTE);
 
   // Live route ref so the submit handler in Step 5 can read the current
   // value without closing over a stale `route` closure variable [L07].
@@ -269,7 +285,7 @@ export const TugPromptEntry = React.forwardRef<
       codeSessionStore.send(text, atoms);
     }
     input.clear();
-    setRouteState("");
+    setRouteState(DEFAULT_ROUTE);
   }, [codeSessionStore]);
 
   // [L07] Register the responder node. Both handler bodies are now
@@ -312,12 +328,10 @@ export const TugPromptEntry = React.forwardRef<
   // Input → indicator callback. The engine fires onRouteChange with
   // the detected prefix char (or null when the leading route atom is
   // removed). Mirror that into the controlled indicator's value state;
-  // `null` maps to an empty string so TugChoiceGroup clears its pill.
-  // [D04] routes its state through React rather than a direct DOM
-  // write because the pill is positioned by TugChoiceGroup's own
-  // useLayoutEffect keyed on `value`.
+  // `null` (no leading prefix in the input) snaps the indicator back to
+  // `DEFAULT_ROUTE` so one segment is always active. [D04]
   const handleRouteChange = useCallback((r: string | null) => {
-    setRouteState(r ?? "");
+    setRouteState(r ?? DEFAULT_ROUTE);
   }, []);
 
   // Input onChange callback. Writes `data-empty` to the root element
@@ -325,11 +339,32 @@ export const TugPromptEntry = React.forwardRef<
   // entry on every keystroke [L06][L22]. Reads freshness from
   // `promptInputRef.current?.isEmpty()`; refs are always current, so the
   // empty-deps `useCallback` is safe.
+  //
+  // Also auto-inserts the current route's prefix atom when the user has
+  // started typing into an input that has no leading route atom — i.e.
+  // they backspaced the atom, then resumed typing. The current route is
+  // the entry's `route` state (always a valid prefix char per the
+  // always-one-selected invariant). We skip the insert when the first
+  // typed character is itself a prefix, since the engine's own
+  // `detectRoutePrefix` will convert it to an atom in the same tick.
   const handleInputChange = useCallback(() => {
     const root = rootRef.current;
+    const input = promptInputRef.current;
     if (!root) return;
-    const isEmpty = promptInputRef.current?.isEmpty() ?? true;
+    const isEmpty = input?.isEmpty() ?? true;
     root.setAttribute("data-empty", String(isEmpty));
+    if (isEmpty || !input) return;
+    const atoms = input.getAtoms();
+    const hasRouteAtom = atoms.length > 0 && atoms[0].type === "route";
+    if (hasRouteAtom) return;
+    const text = input.getText();
+    const firstCharIsPrefix =
+      text.length > 0 && ROUTE_PREFIXES.includes(text[0]);
+    if (firstCharIsPrefix) return;
+    const currentRoute = routeRef.current;
+    if (currentRoute) {
+      input.prependRouteAtom(currentRoute);
+    }
   }, []);
 
   // Expose the imperative delegate. Pass-throughs to the underlying input
@@ -358,23 +393,17 @@ export const TugPromptEntry = React.forwardRef<
     [responderRef],
   );
 
-  // Tools-panel disclosure toggle. The open/closed state drives both the
-  // panel's visibility (via `data-tools-open` on the root, consumed by CSS)
-  // AND the toggle button's `emphasis` + `role` props (swap to filled/accent
-  // when open). Because the button's rendered chrome must flip with the
-  // state, the toggle lives in React state — rendering is the consumer,
-  // and there is no background store that owns this. This is one `useState`
-  // for disclosure UX; all other appearance (panel display, etc.) still
-  // routes through CSS rules keyed on `data-tools-open`.
-  const [toolsOpen, setToolsOpen] = React.useState(false);
-  const handleToolsToggle = useCallback(() => {
-    setToolsOpen((open) => !open);
-  }, []);
-
   // Render the status row only when there is something to put in it.
   // Otherwise the row collapses to nothing and the input + toolbar stay
   // flush against the top of the entry, matching pre-polish behavior.
   const hasStatusRow = statusContent !== undefined || toolsContent !== undefined;
+
+  // Tools popover open state. The entry is the single source of truth —
+  // TugPopover runs in controlled mode via the `open` / `onOpenChange`
+  // pair, so there is no internal popover state to sync with. Drives
+  // both the popover's visibility AND the toggle button's emphasis +
+  // role (accent-on-open).
+  const [toolsOpen, setToolsOpen] = React.useState(false);
 
   return (
     <ResponderScope>
@@ -389,7 +418,6 @@ export const TugPromptEntry = React.forwardRef<
         data-pending-question={snap.pendingQuestion ? "" : undefined}
         data-queued={snap.queuedSends > 0 ? "" : undefined}
         data-empty="true"
-        data-tools-open={toolsOpen ? "true" : "false"}
         className={cn("tug-prompt-entry", className)}
       >
         {hasStatusRow && (
@@ -398,22 +426,32 @@ export const TugPromptEntry = React.forwardRef<
               {statusContent}
             </div>
             {toolsContent !== undefined && (
-              <TugPushButton
-                className="tug-prompt-entry-tools-toggle"
-                subtype="icon"
-                size="sm"
-                emphasis={toolsOpen ? "filled" : "ghost"}
-                role={toolsOpen ? "accent" : "action"}
-                aria-label="Toggle tools"
-                aria-expanded={toolsOpen}
-                onClick={handleToolsToggle}
-                icon={<Settings size={14} strokeWidth={2} aria-hidden="true" />}
-              />
+              <TugPopover
+                open={toolsOpen}
+                onOpenChange={setToolsOpen}
+                dismissOnChainActivity={false}
+              >
+                <TugPopoverTrigger>
+                  <TugPushButton
+                    className="tug-prompt-entry-tools-toggle"
+                    subtype="icon"
+                    size="sm"
+                    emphasis={toolsOpen ? "filled" : "ghost"}
+                    role={toolsOpen ? "accent" : "action"}
+                    aria-label="Toggle tools"
+                    icon={<Settings size={14} strokeWidth={2} aria-hidden="true" />}
+                  />
+                </TugPopoverTrigger>
+                <TugPopoverContent
+                  side="bottom"
+                  align="end"
+                  className="tug-prompt-entry-tools-popover"
+                >
+                  {toolsContent}
+                </TugPopoverContent>
+              </TugPopover>
             )}
           </div>
-        )}
-        {toolsContent !== undefined && (
-          <div className="tug-prompt-entry-tools-panel">{toolsContent}</div>
         )}
         <div className="tug-prompt-entry-input-area">
           <TugPromptInput

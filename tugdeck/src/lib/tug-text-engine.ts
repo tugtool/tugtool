@@ -82,6 +82,12 @@ export interface TugTextInputDelegate {
   // --- Mutation ---
   insertText(text: string): void;
   insertAtom(atom: AtomSegment): void;
+  /**
+   * Insert a route-prefix atom at position 0 without clearing existing
+   * content. No-op when a route atom is already present. Fires
+   * `onRouteChange(char)` as a side effect.
+   */
+  prependRouteAtom(char: string): void;
   paste(html: string, plain: string): void;
   deleteSelection(): void;
   deleteRange(start: number, end: number): number;
@@ -476,6 +482,36 @@ export class TugTextEngine {
     this.root.focus();
     const html = atomImgHTML(atom.type, atom.label, atom.value);
     document.execCommand("insertHTML", false, html);
+  }
+
+  /**
+   * Insert a route-prefix atom at position 0 of the editor without
+   * clearing existing content. Used by the entry-level auto-insert flow:
+   * when the user resumed typing after having backspaced the route
+   * atom away, the expected prefix is reinserted so the input reads as
+   * `[>] whatever I just typed`.
+   *
+   * No-op when a route atom is already at position 0. Fires
+   * `onRouteChange(char)` so subscribers can sync their state.
+   */
+  prependRouteAtom(char: string): void {
+    if (this._hasRouteAtom) return;
+    this.root.focus();
+    // Capture caret position (in text-offset space) so we can restore it
+    // after the insertion shifts every offset by +1.
+    const range = this.getSelectedRange();
+    const savedStart = range?.start ?? 0;
+    const savedEnd = range?.end ?? savedStart;
+
+    // Move the insertion point to position 0 and insert the atom there.
+    this.setSelectedRange(0, 0);
+    document.execCommand("insertHTML", false, routeAtomImgHTML(char));
+    this._hasRouteAtom = true;
+
+    // Restore the caret, shifted past the atom we just inserted.
+    this.setSelectedRange(savedStart + 1, savedEnd + 1);
+
+    this.onRouteChange?.(char);
   }
 
   /**

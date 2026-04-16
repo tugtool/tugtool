@@ -218,7 +218,11 @@ export function createRouteAtomImgElement(char: string): HTMLImageElement {
   img.width = w;
   img.height = atomHeight();
   img.style.verticalAlign = `${-Math.round(atomHeight() * 0.5 - _editorFontSize * 0.35)}px`;
-  img.style.margin = "0 2px";
+  // Extra right margin (vs. the symmetric 2px on regular atoms) creates
+  // a small visual gap between the route atom and the caret that
+  // naturally sits at position 1 next to it. Keeps the caret visible
+  // and accurately placed while separating it from the atom's edge.
+  img.style.margin = "0 4px 0 2px";
   img.dataset.atomType = "route";
   img.dataset.atomLabel = char;
   img.dataset.atomValue = char;

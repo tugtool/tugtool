@@ -100,7 +100,7 @@ body {
   flex: 0 0 auto;
   flex-direction: row;
   align-items: center;
-  gap: var(--tug-space-sm);
+  gap: var(--tug-space-md);
   /* Breathing room: space above separates the toolbar from the input area;
      space below separates it from the component's bottom edge. Inline
      padding keeps the buttons off the side edges. */
@@ -168,8 +168,7 @@ body {
    Spec S03); no new tokens per [D11].
    ----------------------------------------------------------------------------- */
 
-.tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-input-area,
-.tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-tools-panel {
+.tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-input-area {
   opacity: 0.6;
   pointer-events: none;
 }
@@ -186,9 +185,12 @@ body {
   display: flex;
   flex: 0 0 auto;
   flex-direction: row;
-  align-items: center;
+  /* Align items by their bottom edges so the badge on the leading side
+     and the tools-toggle on the trailing side share a baseline — even
+     though the two components render at different heights. */
+  align-items: flex-end;
   gap: var(--tug-space-sm);
-  padding: var(--tug-space-2xs, 4px) var(--tug-space-xs);
+  padding: var(--tug-space-md);
   min-height: 24px;
 }
 
@@ -203,32 +205,21 @@ body {
   font-size: var(--tug-font-size-xs);
 }
 
-/* Toggle button — a TugPushButton subtype="icon" whose `emphasis` + `role`
-   are switched by the entry based on the toolsOpen state (filled+accent
-   when open, ghost+action when closed). The entry owns no CSS for the
-   button's visuals beyond layout — [L20] keeps TugPushButton's tokens
-   under its own slot. */
+/* Tools toggle button — a TugPushButton subtype="icon" that acts as the
+   trigger for a TugPopover rendered inside the status row. The entry
+   owns no CSS for the button's chrome — TugPushButton's tokens stay
+   in its own slot [L20]. */
 
 /* ----------------------------------------------------------------------------
-   .tug-prompt-entry-tools-panel — expandable area beneath the status row
+   .tug-prompt-entry-tools-popover — content node of the tools popover
    ----------------------------------------------------------------------------
-   Hidden by default (data-tools-open="false" on the root). When the toggle
-   flips the attribute to "true", the panel reveals. Caller fills the
-   content via the toolsContent prop. Panel content is right-aligned below
-   the status bar — the toggle sits on the trailing edge of the status row
-   so aligning the panel to the same edge reads as a disclosure drop-down.
+   Inline-flex row; the TugPopover wrapper owns background/border/shadow.
    ----------------------------------------------------------------------------- */
 
-.tug-prompt-entry-tools-panel {
-  display: none;
-  flex: 0 0 auto;
+.tug-prompt-entry-tools-popover {
+  display: inline-flex;
   flex-direction: row;
   align-items: center;
-  justify-content: flex-end;
   gap: var(--tug-space-xs);
   padding: var(--tug-space-xs);
-}
-
-.tug-prompt-entry[data-tools-open="true"] .tug-prompt-entry-tools-panel {
-  display: flex;
 }

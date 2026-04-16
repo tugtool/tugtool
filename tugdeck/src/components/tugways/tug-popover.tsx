@@ -150,6 +150,11 @@ interface TugPopoverInternalContextValue {
   close: () => void;
   /** Stable sender id used by the root when re-emitting cancelDialog from Radix dismissal. */
   senderId: string;
+  /** When false, the inner shell skips its `observeDispatch` subscription —
+   *  the popover stays open across nested chain traffic (e.g. a TugPopupButton
+   *  menu selection inside the popover). Click-outside / Escape dismissal via
+   *  Radix still work. Default true. */
+  dismissOnChainActivity: boolean;
 }
 
 const TugPopoverInternalContext =
@@ -161,7 +166,16 @@ const TugPopoverInternalContext =
 
 /** TugPopover props. */
 export interface TugPopoverProps {
-  /** Default open state. */
+  /**
+   * Controlled open state. When provided, TugPopover is controlled: the
+   * caller owns the value, TugPopover simply reflects it, and dismissal
+   * paths (trigger, Escape, click-outside, imperative close, chain
+   * actions) route through `onOpenChange` to ask the caller to update.
+   * Leave undefined to run TugPopover uncontrolled — it then manages its
+   * own state internally, seeded by `defaultOpen`.
+   */
+  open?: boolean;
+  /** Default open state. Used only in uncontrolled mode (when `open` is undefined). */
   defaultOpen?: boolean;
   /**
    * Whether popover is modal (traps focus, dims outside).
@@ -174,6 +188,33 @@ export interface TugPopoverProps {
    * parent responder observes dispatches by sender. [L11]
    */
   senderId?: string;
+  /**
+   * When `true` (default), any chain dispatch that happens while the
+   * popover is open closes the popover — this is the "responders outside
+   * the popover took the focus" dismissal the form-content gallery
+   * example relies on. Set to `false` for popovers whose content itself
+   * dispatches chain actions (e.g. a TugPopupButton menu inside the
+   * popover) — without this, activating a nested menu item closes the
+   * outer popover. Click-outside and Escape dismissal via Radix remain
+   * active regardless of this flag.
+   * @default true
+   */
+  dismissOnChainActivity?: boolean;
+  /**
+   * Fires whenever the popover's open state should change — on trigger
+   * activation, Escape, click-outside, Close activation, chain-action
+   * dismissal, and imperative `handle.open()` / `handle.close()` calls.
+   *
+   * In **controlled** mode (`open` prop set), this is the setter the
+   * caller uses to update its own state — TugPopover will not close
+   * itself without the caller honoring the callback.
+   *
+   * In **uncontrolled** mode, this is an optional observer — TugPopover
+   * flips its internal state regardless, and the callback just notifies
+   * the caller for side effects (e.g. flipping the trigger button's
+   * emphasis to accent).
+   */
+  onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
 }
 
@@ -187,10 +228,22 @@ export interface TugPopoverProps {
  */
 export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
   function TugPopover(
-    { defaultOpen = false, modal = false, senderId: senderIdProp, children },
+    {
+      open: openProp,
+      defaultOpen = false,
+      modal = false,
+      senderId: senderIdProp,
+      dismissOnChainActivity = true,
+      onOpenChange: onOpenChangeProp,
+      children,
+    },
     ref,
   ) {
-    const [open, setOpen] = React.useState(defaultOpen);
+    // Uncontrolled-mode internal state, seeded by `defaultOpen`. Ignored
+    // when `openProp !== undefined` (controlled mode).
+    const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
+    const isControlled = openProp !== undefined;
+    const effectiveOpen = isControlled ? openProp : internalOpen;
 
     // Chain manager — null when rendered outside a ResponderChainProvider
     // (standalone previews, unit tests). Dismissal re-emission below
@@ -200,42 +253,60 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     const fallbackSenderId = React.useId();
     const senderId = senderIdProp ?? fallbackSenderId;
 
-    // Track current open state in a ref so the imperative handle's
-    // isOpen() closure reads the latest value without needing `open`
-    // in the useImperativeHandle dependency array.
-    const openRef = React.useRef(open);
-    openRef.current = open;
+    // Track effective open state in a ref so the imperative handle's
+    // isOpen() closure reads the latest value without triggering
+    // dependency-array churn.
+    const openRef = React.useRef(effectiveOpen);
+    openRef.current = effectiveOpen;
 
+    // Refs for policy parameters so `close` (below) can stay
+    // identity-stable even when `isControlled` or `onOpenChangeProp`
+    // change between renders. Context consumers get a stable `close`,
+    // so responder handlers that close over it don't re-register.
+    const isControlledRef = React.useRef(isControlled);
+    isControlledRef.current = isControlled;
+    const onOpenChangePropRef = React.useRef(onOpenChangeProp);
+    onOpenChangePropRef.current = onOpenChangeProp;
+
+    // Single helper the chain-action shell and the imperative handle
+    // both route through for "close." In controlled mode it cannot flip
+    // state directly — it just asks the caller to update via the
+    // callback. In uncontrolled mode it flips internal state AND
+    // notifies the caller. Stable identity via useCallback + refs.
     const close = React.useCallback(() => {
-      setOpen(false);
+      if (!isControlledRef.current) setInternalOpen(false);
+      onOpenChangePropRef.current?.(false);
     }, []);
 
     React.useImperativeHandle(
       ref,
       () => ({
         open() {
-          setOpen(true);
+          if (!isControlledRef.current) setInternalOpen(true);
+          onOpenChangePropRef.current?.(true);
         },
         close() {
-          setOpen(false);
+          close();
         },
         isOpen() {
           return openRef.current;
         },
       }),
-      [],
+      [close],
     );
 
     // Radix-level dismissal (Escape via DismissableLayer, click-outside
-    // via DismissableLayer, explicit TugPopoverClose activation). Flip
-    // internal state AND dispatch cancelDialog through the chain so
-    // inner composites (e.g. TugConfirmPopover) can observe the
-    // dismissal and resolve their pending promises. The dispatch
-    // carries our own senderId so the observeDispatch subscription
-    // in TugPopoverContent filters it out.
+    // via DismissableLayer, explicit TugPopoverClose activation). In
+    // uncontrolled mode, flip internal state; in controlled mode, let
+    // the caller's onOpenChange drive it. Always re-emit cancelDialog
+    // through the chain on close so inner composites (e.g.
+    // TugConfirmPopover) can observe the dismissal. The dispatch
+    // carries our own senderId so the observeDispatch subscription in
+    // TugPopoverContent filters it out.
     function handleOpenChange(nextOpen: boolean) {
       if (!nextOpen) {
-        setOpen(false);
+        if (!isControlled) setInternalOpen(false);
+        onOpenChangeProp?.(false);
         if (manager) {
           manager.sendToFirstResponder({
             action: TUG_ACTIONS.CANCEL_DIALOG,
@@ -245,17 +316,18 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
         }
         return;
       }
-      setOpen(nextOpen);
+      if (!isControlled) setInternalOpen(nextOpen);
+      onOpenChangeProp?.(nextOpen);
     }
 
     const contextValue = React.useMemo<TugPopoverInternalContextValue>(
-      () => ({ close, senderId }),
-      [close, senderId],
+      () => ({ close, senderId, dismissOnChainActivity }),
+      [close, senderId, dismissOnChainActivity],
     );
 
     return (
       <TugPopoverInternalContext.Provider value={contextValue}>
-        <Popover.Root open={open} onOpenChange={handleOpenChange} modal={modal}>
+        <Popover.Root open={effectiveOpen} onOpenChange={handleOpenChange} modal={modal}>
           {children}
         </Popover.Root>
       </TugPopoverInternalContext.Provider>
@@ -439,6 +511,10 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
   // [L03]
   React.useLayoutEffect(() => {
     if (!manager || !ctx) return;
+    // Caller opted out of chain-triggered dismissal — the popover stays
+    // open across nested dispatches. Click-outside + Escape still close
+    // it via Radix's own handlers.
+    if (!ctx.dismissOnChainActivity) return;
     const selfSenderId = ctx.senderId;
     return manager.observeDispatch((event) => {
       if (event.sender === selfSenderId) return;
