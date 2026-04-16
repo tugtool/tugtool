@@ -1,17 +1,7 @@
 ---
 name: plan
 description: Orchestrates the planning workflow - spawns sub-agents via Task
-allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
-hooks:
-  PreToolUse:
-    - matcher: "Write|Edit"
-      hooks:
-        - type: command
-          command: "echo 'Orchestrator must not use Write/Edit directly' >&2; exit 2"
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugutil\\ *|*\\|\\ tugutil\\ *|*\\|tugutil\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugutil commands' >&2; exit 2 ;; esac"
+allowed-tools: Task, AskUserQuestion
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator
@@ -134,7 +124,7 @@ or:
                       ▼
 ┌──────────────────────────────────────────────┐
 │         clarifier-agent (runs once)          │
-│         SPAWN → clarifier_id                 │
+│         fresh spawn                          │
 └─────────────────────┬────────────────────────┘
                       │
                       ▼
@@ -149,9 +139,8 @@ or:
             └──────┬─────┘
                    │
 ┌──────────────────▼───────────────────────────┐
-│ author-agent                                 │
-│ Pass 0: SPAWN (FRESH) → author_id            │◄─┐
-│ Pass N: RESUME author_id (latest-round only) │  │
+│ author-agent (fresh spawn every round;       │◄─┐
+│ reads plan_path to recover prior state)      │  │
 └─────────────────────┬────────────────────────┘  │
                       │                           │
                       ▼                           │
@@ -160,8 +149,7 @@ or:
      ▼                                  ▼         │
 ┌────────────────┐             ┌────────────────┐ │
 │conformance-    │             │  critic-agent  │ │ revision
-│agent           │             │                │ │ loop
-│SPAWN/RESUME    │             │ SPAWN/RESUME   │ │
+│agent (fresh)   │             │    (fresh)     │ │ loop
 └───────┬────────┘             └───────┬────────┘ │
         │                             │           │
         └──────────┬──────────────────┘           │
@@ -175,8 +163,7 @@ or:
              │
              ▼
 ┌──────────────────────────────────────────────┐
-│  overviewer-agent (ALWAYS fresh spawn)       │
-│  SPAWN fresh every round (never resumed)     │
+│  overviewer-agent (fresh spawn every round)  │
 └─────────────────────┬────────────────────────┘
                       │
                       ▼
@@ -208,13 +195,12 @@ or:
 
 **Architecture principles:**
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` only
-- **Clarifier** runs once on the first pass; it is NOT resumed for revisions
-- **Author, conformance-agent, and critic** are spawned once and RESUMED for all revision loops
-- **Overviewer** is ALWAYS a fresh spawn (never resumed); fresh eyes every time is the entire point
-- **Parallel dispatch**: conformance-agent and critic-agent are dispatched in a single message with two Task calls
-- **Latest-round-only** resume payloads: only the latest round's feedback is passed to agents on resume; agents use their persistent accumulated knowledge for prior rounds
-- Auto-compaction handles context overflow — agents compact at ~95% capacity
-- Agents accumulate knowledge: codebase patterns, skeleton format, prior findings
+- **Every agent call is a fresh spawn.** No agent IDs are tracked, reused, or passed between calls.
+- **Cross-round continuity comes from the plan file on disk**, not from agent memory. Author, conformance, critic, and overviewer all read `plan_path` to recover prior state.
+- **Clarifier** runs once on the first pass — it is not invoked again in revision rounds (no need; the idea is already understood and captured in the plan file).
+- **Parallel dispatch**: conformance-agent and critic-agent are dispatched in a single message with two Task calls.
+- **Latest-round-only** payloads: each revision call passes only the latest round's feedback. The plan file carries the accumulated state.
+- Auto-compaction handles context overflow within a single agent call — agents compact at ~95% capacity.
 
 ---
 
@@ -225,10 +211,6 @@ or:
 Output the session start message.
 
 ```
-clarifier_id = null
-author_id = null
-conformance_id = null
-critic_id = null
 conformance_feedback = null
 critic_feedback = null
 critic_question_answers = null
@@ -241,11 +223,11 @@ max_revision_count = 5
 previous_high_findings = []     # IDs of HIGH+ findings from prior round (for stagnation detection)
 ```
 
-Note: there is no `overviewer_id` variable. The overviewer is always a fresh spawn (never resumed), so no agent ID needs to be tracked.
+No agent IDs are tracked. Every Task call is a fresh spawn.
 
 ### 2. Clarifier: Analyze and Question (First Pass Only)
 
-The clarifier runs ONCE to understand the idea and gather user input. It is NOT resumed for revision loops.
+The clarifier runs ONCE to understand the idea and gather user input. It is not invoked again in revision rounds.
 
 ```
 Task(
@@ -254,8 +236,6 @@ Task(
   description: "Analyze idea and generate questions"
 )
 ```
-
-**Save the `agentId` as `clarifier_id`.**
 
 Output the Clarifier post-call message. Store response in memory.
 
@@ -281,7 +261,9 @@ Store user answers in memory.
 
 ### 3. Author: Write or Revise Plan
 
-**First pass (author_id is null) — FRESH spawn:**
+Spawn a fresh author for every call. On revisions, pass `plan_path` so the author can read the current plan file to recover prior-round state.
+
+**First pass:**
 
 ```
 Task(
@@ -299,24 +281,25 @@ Task(
 )
 ```
 
-**Save the `agentId` as `author_id`.**
-
-**Revision loop — RESUME (latest-round only):**
+**Revision loop (fresh spawn, latest-round feedback):**
 
 ```
 Task(
-  resume: "<author_id>",
-  prompt: 'Revise the plan. Latest-round feedback only — do not look for prior rounds in this payload.
-conformance_feedback: <conformance_feedback JSON or null>
-critic_feedback: <critic_feedback JSON or null>
-critic_question_answers: <critic_question_answers JSON or null>
-overviewer_feedback: <overviewer_feedback JSON or null>
-overviewer_question_answers: <overviewer_question_answers JSON or null>',
+  subagent_type: "tugplug:author-agent",
+  prompt: '{
+    "idea": null,
+    "plan_path": "<plan_path>",
+    "conformance_feedback": <conformance_feedback JSON or null>,
+    "critic_feedback": <critic_feedback JSON or null>,
+    "critic_question_answers": <critic_question_answers JSON or null>,
+    "overviewer_feedback": <overviewer_feedback JSON or null>,
+    "overviewer_question_answers": <overviewer_question_answers JSON or null>
+  }',
   description: "Revise plan from review feedback"
 )
 ```
 
-Pass only the latest round's feedback. Do not accumulate or combine feedback across rounds. The author uses its persistent memory for prior-round context. When revising after overviewer feedback, pass the overviewer's output as `overviewer_feedback` and any collected answers as `overviewer_question_answers`; set `conformance_feedback` and `critic_feedback` to null (the overviewer round does not re-run conformance/critic before sending to author).
+Pass only the latest round's feedback. Do not accumulate or combine feedback across rounds — the plan file on disk carries the accumulated state. The author reads `plan_path` at the start of every call. When revising after overviewer feedback, pass the overviewer's output as `overviewer_feedback` and any collected answers as `overviewer_question_answers`; set `conformance_feedback` and `critic_feedback` to null (the overviewer round does not re-run conformance/critic before sending to author).
 
 Store response in memory.
 
@@ -326,9 +309,9 @@ Output the Author post-call message.
 
 ### 4. Conformance + Critic: Parallel Review
 
-Dispatch both agents in a single message with two Task calls.
+Dispatch both agents in a single message with two Task calls. Every call is a fresh spawn — both agents read `plan_path` on entry to recover the current plan state.
 
-**First pass (conformance_id is null) — FRESH spawn both:**
+**Normal case (dispatch both in parallel):**
 
 ```
 Task(
@@ -343,46 +326,38 @@ Task(
 )
 ```
 
-**Save `agentId` values as `conformance_id` and `critic_id`.**
-
-**Revision loop — normal case (RESUME both in parallel, latest-round only):**
+On revision rounds, include the latest author output in the prompt as context for targeted re-review:
 
 ```
 Task(
-  resume: "<conformance_id>",
-  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
-Re-check conformance focusing on whether prior violations were fixed.',
+  subagent_type: "tugplug:conformance-agent",
+  prompt: '{"plan_path": "<path>", "skeleton_path": "tuglaws/tugplan-skeleton.md", "author_output": <author_output JSON>, "re_check": true}',
   description: "Re-check plan conformance"
 )
 Task(
-  resume: "<critic_id>",
-  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
-User answered your clarifying questions: <critic_question_answers JSON or null>.
-Re-review focusing on whether prior findings were addressed and questions resolved.',
+  subagent_type: "tugplug:critic-agent",
+  prompt: '{"plan_path": "<path>", "author_output": <author_output JSON>, "critic_question_answers": <critic_question_answers JSON or null>, "re_review": true}',
   description: "Re-review plan quality"
 )
 ```
 
-**Revision loop — after prior conformance ESCALATE (two-phase sequential dispatch):**
+**After prior conformance ESCALATE (two-phase sequential dispatch):**
 
-When the previous round ended with `conformance_feedback.recommendation == ESCALATE`, use sequential dispatch instead:
+When the previous round ended with `conformance_feedback.recommendation == ESCALATE`, dispatch conformance alone first:
 
 ```
-# Phase 1: Resume conformance only
+# Phase 1: Conformance only
 Task(
-  resume: "<conformance_id>",
-  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
-Re-check conformance focusing on whether prior violations were fixed.',
+  subagent_type: "tugplug:conformance-agent",
+  prompt: '{"plan_path": "<path>", "skeleton_path": "tuglaws/tugplan-skeleton.md", "author_output": <author_output JSON>, "re_check": true}',
   description: "Re-check plan conformance"
 )
 
-# Phase 2: If conformance now passes (recommendation != ESCALATE), resume critic
+# Phase 2: If conformance now passes (recommendation != ESCALATE), spawn critic
 if conformance.recommendation != "ESCALATE":
   Task(
-    resume: "<critic_id>",
-    prompt: 'Author has revised the plan. Author output: <author_output JSON>.
-User answered your clarifying questions: <critic_question_answers JSON or null>.
-Re-review focusing on whether prior findings were addressed and questions resolved.',
+    subagent_type: "tugplug:critic-agent",
+    prompt: '{"plan_path": "<path>", "author_output": <author_output JSON>, "critic_question_answers": <critic_question_answers JSON or null>, "re_review": true}',
     description: "Re-review plan quality"
   )
 # If conformance still ESCALATEs, skip critic; critic_feedback remains null
@@ -610,32 +585,27 @@ DO NOT include Co-Authored-By lines or mention AI models in the commit message.
 
 ---
 
-## Reference: Persistent Agent Pattern
+## Reference: Fresh-Spawn Pattern
 
-The author, conformance-agent, and critic are **spawned once** and **resumed** for revision loops. The clarifier runs once on the first pass only. The overviewer is **always a fresh spawn** — it is never resumed.
+Every agent call is a fresh spawn. Agent IDs are NOT tracked or passed between calls. Cross-round continuity comes from the plan file on disk — not from agent memory.
 
-| Agent | Spawned | Resumed For | Accumulated Knowledge |
-|-------|---------|-------------|----------------------|
-| **clarifier** | First pass | Not resumed | Codebase patterns, user answers |
-| **author** | First pass | Revision loops | Skeleton format, plan structure, what it wrote |
-| **conformance** | First pass | Revision loops | Skeleton rules, prior violations |
-| **critic** | First pass | Revision loops | Codebase state, prior findings, clarifying questions |
-| **overviewer** | Every overviewer round (fresh spawn) | Never resumed | None — fresh eyes by design |
+| Agent | Cadence | Prior-round context comes from |
+|-------|---------|--------------------------------|
+| **clarifier** | Once, first pass only | N/A (single call) |
+| **author** | Every round (first + revisions) | Reads `plan_path` to see current plan state |
+| **conformance** | Every round | Reads `plan_path`; receives latest `author_output` on re-check |
+| **critic** | Every round | Reads `plan_path`; receives latest `author_output` on re-review |
+| **overviewer** | Every overviewer round | Reads `plan_path`; fresh eyes by design |
 
-**Why this matters:**
-- **Faster**: Author remembers what it wrote and makes targeted fixes
-- **Smarter**: Conformance remembers prior violations; critic remembers what it already checked
-- **Focused**: Revision loops skip the clarifier — the idea is already understood
-- **Fresh eyes**: Overviewer is always a fresh spawn; it cannot be biased by prior review rounds
-- **Latest-round-only**: Resume payloads carry only the latest round's feedback; agents use persistent memory for prior rounds (avoids context bloat)
-- **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
+**Why this pattern:**
+- The Task API does not support `resume:` — it silently does nothing. Relying on it made every "revision" call a cold start that *thought* it had context but didn't.
+- The plan file is the durable source of truth. Agents that need prior-round state read it on entry.
+- Latest-round feedback is passed in the prompt; prior-round feedback is embedded in the plan file itself (the author already addressed it when it revised).
 
-**Agent ID management:**
-- Store `clarifier_id`, `author_id`, `conformance_id`, `critic_id` after first spawn
-- Pass `author_id`, `conformance_id`, and `critic_id` to `Task(resume: "<id>")` for revision loops
-- The clarifier is not resumed after the first pass
-- The overviewer is never resumed; no overviewer ID is stored
-- IDs persist for the entire plan skill session
+**What the orchestrator does NOT do:**
+- Does not track `clarifier_id`, `author_id`, `conformance_id`, or `critic_id`.
+- Does not pass `resume:` to `Task`.
+- Does not carry prior-round feedback across calls — only the latest round is passed.
 
 ---
 

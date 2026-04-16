@@ -2,16 +2,6 @@
 name: dash
 description: Lightweight dash workflow for quick tasks without plan/implement ceremony
 allowed-tools: Task, AskUserQuestion, Bash
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: bash
-          command: |
-            if ! echo "$BASH_COMMAND" | grep -qE '^tugutil\s'; then
-              echo "ERROR: Bash restricted to tugutil commands only in dash skill" >&2
-              exit 2
-            fi
 ---
 
 ## Purpose

@@ -1,17 +1,7 @@
 ---
 name: implement
 description: Orchestrates the implementation workflow - spawns sub-agents via Task
-allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
-hooks:
-  PreToolUse:
-    - matcher: "Write|Edit"
-      hooks:
-        - type: command
-          command: "echo 'Orchestrator must not use Write/Edit directly' >&2; exit 2"
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugutil\\ *|*\\|\\ tugutil\\ *|*\\|tugutil\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugutil commands' >&2; exit 2 ;; esac"
+allowed-tools: Task, AskUserQuestion, Bash
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator
@@ -188,9 +178,9 @@ For `state_update_failed` (escalation):
      ═══ STEP LOOP (each ready step) ═══
 
 ┌──────────────────────────────────────────┐
-│ coder-agent                              │
-│ Pass 0: SPAWN → coder_id                 │
-│ Pass N: RESUME coder_id                  │
+│ coder-agent (fresh spawn each call)      │
+│ reads .tugtool/session-memory.md on entry│
+│ writes it before returning               │
 └────────────────────┬─────────────────────┘
                      │
                      ▼
@@ -204,8 +194,8 @@ For `state_update_failed` (escalation):
                  │
                  ▼
 ┌──────────────────────────────────────────┐
-│ committer-agent                          │
-│ SPAWN/RESUME → commit + state complete   │
+│ committer-agent (fresh spawn each call)  │
+│ commit + state complete                  │
 └────────────────────┬─────────────────────┘
                      │
              ┌───────────────┐
@@ -217,8 +207,7 @@ For `state_update_failed` (escalation):
           ═══ AUDITOR PHASE ═══
 
 ┌──────────────────────────────────────────┐
-│               auditor-agent              │◄─────────────┐
-│               SPAWN/RESUME               │              │
+│          auditor-agent (fresh)           │◄─────────────┐
 └────────────────────┬─────────────────────┘              │
                      │                                    │
                      ▼                                    │ audit
@@ -233,8 +222,8 @@ For `state_update_failed` (escalation):
         ═══ INTEGRATOR PHASE ═══
 
 ┌──────────────────────────────────────────┐
-│            integrator-agent              │◄─────────────┐
-│            SPAWN/RESUME → push, PR, CI   │              │
+│        integrator-agent (fresh)          │◄─────────────┐
+│        push, PR, CI                      │              │
 └────────────────────┬─────────────────────┘              │
                      │                                    │
                      ▼                                    │ CI
@@ -255,11 +244,10 @@ For `state_update_failed` (escalation):
 **Architecture principles:**
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugutil CLI only)
 - All file I/O, git operations, and code execution happen in subagents (except tugutil CLI calls which the orchestrator runs directly)
-- **Persistent agents**: coder and committer are each spawned ONCE (during step 1) and RESUMED for all subsequent steps
-- Auto-compaction handles context overflow — agents compact at ~95% capacity
-- Agents accumulate cross-step knowledge: codebase structure, files created, patterns established
-- Auditor runs once after all steps complete; integrator runs once after auditor approves
-- Task-Resumed for retry loops AND across steps (same agent IDs throughout session)
+- **Fresh-spawn agents**: every Task call spawns a new agent instance; no agent IDs are tracked or reused
+- **Coder cross-step continuity** comes from the session-memory file at `{worktree_path}/.tugtool/session-memory.md` — the coder reads it on entry and writes it before returning
+- Committer, auditor, and integrator are each fresh spawns on every call (they do not need cross-call context)
+- Auto-compaction handles context overflow within a single agent call — agents compact at ~95% capacity
 
 ---
 
@@ -311,15 +299,11 @@ Note: Step identity now comes from `tugutil state claim` response, not from a pr
 
 ### 3. For Each Step in `steps_to_implement`
 
-Initialize once (persists across all steps):
-- `coder_id = null`
-- `committer_id = null`
-- `auditor_id = null`
-- `integrator_id = null`
-
 Initialize for post-loop phases:
 - `auditor_attempts = 0`
 - `integrator_attempts = 0`
+
+Every agent call below is a **fresh spawn** — do not track or pass agent IDs between calls.
 
 #### Claim and Start Step
 
@@ -339,46 +323,21 @@ Output the step header.
 
 #### 3a. Coder: Implement Step
 
-**First step (coder_id is null) — FRESH spawn:**
+Spawn a fresh coder for every step. The coder recovers cross-step context by reading `{worktree_path}/.tugtool/session-memory.md` on entry and updates that file before returning.
 
 ```
 Task(
   subagent_type: "tugplug:coder-agent",
-  prompt: '{
-    "worktree_path": "<worktree_path>",
-    "plan_id": "<plan_id>",
-    "step_anchor": "step-1"
-  }',
-  description: "Implement step 1"
-)
-```
-
-**Save the `agentId` as `coder_id`.**
-
-**Subsequent steps — RESUME:**
-
-```
-Task(
-  subagent_type: "tugplug:coder-agent",
-  resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}"
   }',
-  description: "Implement step N"
+  description: "Implement {step_anchor}"
 )
 ```
 
 Parse the coder's JSON output. If `success == false` and `halted_for_drift == false`, output failure message and HALT.
-
-**Context exhaustion recovery:** If the coder resume fails with "Prompt is too long", the coder's context is full. Spawn a FRESH coder with an explicit list of files already modified (from the last successful coder output). The fresh coder prompt must include:
-- Full initial spawn JSON (worktree_path, plan_id, step_anchor)
-- `"continuation": true`
-- `"files_already_modified": [<files from previous coder output>]`
-- Instruction: "A previous coder modified these files but did not complete the step. Verify ALL files required by the plan step are addressed. Do NOT re-modify files that are already correct."
-
-Save the NEW agent ID as `coder_id` (replacing the exhausted one). The old coder is dead — all subsequent resumes use the new ID.
 
 Output the Coder post-call message.
 
@@ -404,17 +363,18 @@ Evaluate `drift_assessment.drift_severity` from coder output:
 
 **3b-resume (drift revision):**
 
+Spawn a fresh coder with a `revision` field. It will read the session memory to recover what it did previously, then apply the revision.
+
 ```
 Task(
   subagent_type: "tugplug:coder-agent",
-  resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}",
     "revision": "Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope."
   }',
-  description: "Revise implementation for step N"
+  description: "Revise implementation for {step_anchor}"
 )
 ```
 
@@ -460,7 +420,7 @@ tugutil state complete-checklist {plan_id} {step_anchor} --worktree {worktree_pa
 
 **Step 4: Committer — Commit Step**
 
-**First step (committer_id is null) — FRESH spawn:**
+Spawn a fresh committer. The committer does not need cross-call context — each commit is independent.
 
 ```
 Task(
@@ -470,27 +430,13 @@ Task(
     "operation": "commit",
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
-    "step_anchor": "step-N",
+    "step_anchor": "{step_anchor}",
     "proposed_message": "feat(<scope>): <description>",
     "log_entry": {
       "summary": "<brief description of what was done>"
     }
   }',
-  description: "Commit step 1"
-)
-```
-
-**Save the `agentId` as `committer_id`.**
-
-**Subsequent steps — RESUME:**
-
-```
-Task(
-  subagent_type: "tugplug:committer-agent",
-  resume: "<committer_id>",
-  max_turns: 5,
-  prompt: '<same JSON payload as above for the new step>',
-  description: "Commit step N"
+  description: "Commit {step_anchor}"
 )
 ```
 
@@ -532,12 +478,12 @@ Output the Committer post-call message.
 
 #### 3d. Next Step
 
-1. If more steps: **GO TO 3a** for next step (all agent IDs are preserved)
+1. If more steps: **GO TO 3a** for next step
 2. If all done: proceed to Auditor Phase (section 4)
 
 ### 4. Auditor Phase
 
-After all steps complete, spawn the auditor agent for holistic quality verification:
+After all steps complete, spawn a fresh auditor for holistic quality verification:
 
 ```
 Task(
@@ -549,8 +495,6 @@ Task(
   description: "Post-loop quality audit"
 )
 ```
-
-**Save the `agentId` as `auditor_id`.**
 
 Parse the auditor's JSON output per Spec S02:
 - `build_results`: Fresh build/test/lint/format results
@@ -578,15 +522,15 @@ Increment `auditor_attempts`. If `auditor_attempts >= 3`, ESCALATE to user:
 AskUserQuestion: "Auditor retry limit reached (3 attempts). Issues: <issues>. Options: (1) Continue anyway, (2) Let me fix manually, (3) Abort."
 ```
 
-1. **Resume coder** with auditor issues:
+1. **Spawn a fresh coder** with auditor issues:
 
 ```
 Task(
   subagent_type: "tugplug:coder-agent",
-  resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
+    "step_anchor": "<most-recent step_anchor>",
     "revision": "Auditor found issues. Fix these: <issues array with P0/P1 priority>. Then return updated output."
   }',
   description: "Fix auditor issues"
@@ -595,12 +539,11 @@ Task(
 
 Output the Coder post-call message.
 
-2. **Resume committer** in fixup mode:
+2. **Spawn a fresh committer** in fixup mode:
 
 ```
 Task(
   subagent_type: "tugplug:committer-agent",
-  resume: "<committer_id>",
   max_turns: 5,
   prompt: '{
     "operation": "fixup",
@@ -617,12 +560,11 @@ Task(
 
 Output the Committer fixup post-call message.
 
-3. **Resume auditor** for re-audit:
+3. **Spawn a fresh auditor** for re-audit:
 
 ```
 Task(
   subagent_type: "tugplug:auditor-agent",
-  resume: "<auditor_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
@@ -639,7 +581,7 @@ Go back to 4a to check the new recommendation.
 
 ### 5. Integrator Phase
 
-After auditor passes, spawn the integrator agent to push branch, create PR, and verify CI:
+After auditor passes, spawn a fresh integrator to push branch, create PR, and verify CI:
 
 ```
 Task(
@@ -656,8 +598,6 @@ Task(
   description: "Push branch and create PR"
 )
 ```
-
-**Save the `agentId` as `integrator_id`.**
 
 Parse the integrator's JSON output per Spec S04:
 - `pr_url`: The PR URL
@@ -685,15 +625,15 @@ Increment `integrator_attempts`. If `integrator_attempts >= 3`, ESCALATE to user
 AskUserQuestion: "Integrator retry limit reached (3 attempts). CI status: <ci_status>. CI details: <ci_details>. Options: (1) Continue anyway, (2) Let me investigate manually, (3) Abort."
 ```
 
-1. **Resume coder** with CI failure details:
+1. **Spawn a fresh coder** with CI failure details:
 
 ```
 Task(
   subagent_type: "tugplug:coder-agent",
-  resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
+    "step_anchor": "<most-recent step_anchor>",
     "revision": "CI checks failed. Status: <ci_status>. Details: <ci_details array>. Fix the failures and return updated output."
   }',
   description: "Fix CI failures"
@@ -702,12 +642,11 @@ Task(
 
 Output the Coder post-call message.
 
-2. **Resume committer** in fixup mode:
+2. **Spawn a fresh committer** in fixup mode:
 
 ```
 Task(
   subagent_type: "tugplug:committer-agent",
-  resume: "<committer_id>",
   max_turns: 5,
   prompt: '{
     "operation": "fixup",
@@ -724,12 +663,11 @@ Task(
 
 Output the Committer fixup post-call message.
 
-3. **Resume integrator** for re-push and re-check:
+3. **Spawn a fresh integrator** for re-push and re-check:
 
 ```
 Task(
   subagent_type: "tugplug:integrator-agent",
-  resume: "<integrator_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_id": "<plan_id>",
@@ -756,29 +694,34 @@ Implementation complete
 
 ---
 
-## Reference: Persistent Agent Pattern
+## Reference: Session Memory (coder cross-step continuity)
 
-All four implementation agents are **spawned once** and **resumed** for retries or subsequent phases:
+Every Task call is a fresh spawn — agent IDs are NOT tracked or reused. The coder recovers cross-step context through a markdown file:
 
-| Agent | Spawned | Resumed For | Accumulated Knowledge |
-|-------|---------|-------------|----------------------|
-| **coder** | Step 1 | Steps 2..N + drift revisions + audit fixes + CI fixes | Plan contents, files created/modified, build system, test suite |
-| **committer** | Step 1 | Steps 2..N + audit fixup + CI fixup | Worktree layout, commit history, log format |
-| **auditor** | Post-loop | Audit retries | Deliverables, build state, cross-step issues |
-| **integrator** | Post-loop | CI retries | PR state, CI failures, check patterns |
+```
+{worktree_path}/.tugtool/session-memory.md
+```
 
-**Why this matters:**
-- **Faster**: No cold-start exploration on steps 2..N — agents already know the codebase
-- **Smarter**: Coder remembers files created in step 1 when implementing step 2
-- **Consistent**: Same coder applies same patterns across all steps
-- **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
+**How it works:**
+- On step 1 the file does not exist; the coder creates it at the end of the step.
+- On step N (N > 1), the fresh coder reads the file first to recover the project map, files touched so far, patterns established, and build/test quirks — avoiding cold-start re-exploration.
+- Before returning, the coder updates the file with new facts and prunes stale ones. It stays under ~2KB.
+- The file is exempt from drift accounting. The coder does NOT list it in `files_created`/`files_modified`.
 
-**Agent ID management:**
-- Store `coder_id`, `committer_id` after first spawn (step 1)
-- Store `auditor_id`, `integrator_id` after post-loop spawn
-- Pass these IDs to `Task(subagent_type: "<type>", resume: "<id>")` for all subsequent invocations
-- IDs persist for the entire implementer session
-- Never reset IDs between steps or phases
+**Why this pattern:**
+- No dependency on Task-level resume (which this orchestration previously used and which silently does nothing in the current Task API).
+- Context stays in a durable artifact (readable by the user post-hoc) rather than in a volatile agent memory.
+- Survives agent compaction, context exhaustion, and orchestrator restarts.
+
+**What the orchestrator does NOT do:**
+- Does not track `coder_id`, `committer_id`, `auditor_id`, or `integrator_id`.
+- Does not pass `resume:` to `Task`.
+- Does not read or write the session-memory file itself — that is the coder's responsibility.
+
+**Committer / auditor / integrator** do not have cross-call context needs. Each call stands alone:
+- Committer reads git state and the plan; state is on disk.
+- Auditor runs once post-loop; retries re-read everything from scratch.
+- Integrator runs once after auditor approves; CI retries pick up git state and PR state via `gh`.
 
 ---
 
