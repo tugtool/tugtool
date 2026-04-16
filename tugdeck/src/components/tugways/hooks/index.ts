@@ -3,9 +3,9 @@
  *
  * Three appearance-zone hooks for zero-re-render DOM mutations.
  *
- * **Authoritative reference:** design-system-concepts.md Concept 5
- * ([D12] appearance-zone discipline, [D13] single-property signatures,
- * [D14] five structure-zone rules).
+ * **Governing rules:** [L24] three-zone architecture and [L01]-[L05]
+ * structure-zone rules (in `tuglaws/tuglaws.md`); [D13] DOM utility hooks
+ * for the appearance zone (in `tuglaws/design-decisions.md`).
  *
  * ## Usage
  *

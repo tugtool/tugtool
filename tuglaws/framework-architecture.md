@@ -10,7 +10,7 @@ The framework doesn't rest on a single foundation. React handles tree reconcilia
 
 ## Contents
 
-1. [**The zone architecture**](#1-the-zone-architecture-d12) — Three zones (appearance, local data, structure), each with one mechanism. The core model the rest of the document elaborates.
+1. [**The zone architecture**](#1-the-zone-architecture-l24) — Three zones (appearance, local data, structure), each with one mechanism. The core model the rest of the document elaborates.
 2. [**State: how data enters React**](#2-state-how-data-enters-react) — External state lives in stores, enters React through `useSyncExternalStore`, and is read from handlers through refs.
 3. [**Events: how actions route**](#3-events-how-actions-route) — User input becomes typed actions that walk through a responder chain — a tree of state-owning components — until one of them handles the action.
 4. [**Appearance: how visual changes happen**](#4-appearance-how-visual-changes-happen) — Visual changes go through CSS and DOM, not React state. Gesture previews snapshot state at gesture start and either commit or revert at gesture end.
@@ -31,7 +31,7 @@ The framework doesn't rest on a single foundation. React handles tree reconcilia
 
 ---
 
-## 1. The zone architecture [D12]
+## 1. The zone architecture [L24]
 
 Every piece of state in an application built on the tug framework belongs to one of three zones. The zone determines the mechanism used to read, write, and observe that state.
 
@@ -278,4 +278,75 @@ No code is adopted from Cocoa or AppKit — the debt is architectural. The frame
 ### The web platform
 
 The framework also depends on patterns the web platform itself provides and that this document treats as given. React's tree reconciliation (§7) is the foundation the structure zone is built on. React's concurrent rendering primitives (§7) are what the structure zone's lightness is supposed to enable. The DOM's native capture/bubble event model is the substrate the responder chain sits on top of rather than replaces. [Radix UI](https://www.radix-ui.com/) supplies the accessible, unstyled primitives that tug components wrap — every interactive component in the framework leans on Radix for keyboard handling, ARIA semantics, and focus management, and those behaviors would be prohibitively expensive to reimplement correctly. These dependencies are runtime rather than adopted code, but they shape the framework's design as much as the historical precedents do.
+
+---
+
+## Appendix: Laws referenced
+
+*Full text of every Tuglaw cited in this document. Quoted from [tuglaws.md](tuglaws.md) — consult that file for the authoritative version if the two differ.*
+
+<a id="l02"></a>
+### L02. External state enters React through `useSyncExternalStore` only.
+
+No `useState` + manual sync. No `useEffect` copying external values into React state. [D40, D68]
+
+<a id="l03"></a>
+### L03. Use `useLayoutEffect` for registrations that events depend on.
+
+Responder nodes, selection boundaries, and any setup that keyboard/pointer handlers require must be complete before events fire. [D41]
+
+<a id="l04"></a>
+### L04. Never measure child DOM inline after triggering child `setState` from a parent effect.
+
+The child's DOM is stale until its own commit. Use a child-driven ready callback via `useLayoutEffect`. [D78]
+
+<a id="l05"></a>
+### L05. Never use `requestAnimationFrame` for operations that depend on React state commits.
+
+RAF timing relative to React's commit cycle is a browser implementation detail, not a contract. Use the ready-callback pattern (L04). [D79]
+
+<a id="l06"></a>
+### L06. Ephemeral appearance state goes through CSS and DOM, never React state.
+
+State whose only consumer is rendering and whose only purpose is to look a certain way — hover highlights, focus rings, active-press feedback, `data-state` toggles — belongs in the DOM. Class toggles, attribute changes, and style mutations that don't affect React's subtree are free. Use them.
+
+This law does not apply to semantic data that happens to have a visual representation. Data is state that non-rendering code reads and acts on; rendering is a downstream consequence of the data, not the reason it exists. Examples: a form field's current value, the selected item in a list, a card's title, a user's zoom level. Data flows through React's render cycle because that is how controlled components and derived UI work — that is the contract, not an L06 violation.
+
+The test: *does any non-rendering consumer depend on this state?* If yes, it is data and may live in React. If no — if the only thing that reads it is the renderer itself — it is appearance and belongs in the DOM. Get this test wrong in either direction and things break: data pushed into DOM refs becomes invisible to the code that cares about it; ephemeral visual state pushed through React triggers unnecessary re-renders and subtree invalidations. [D01, D03, D84, D13]
+
+<a id="l07"></a>
+### L07. Every action handler must access current state through refs or stable singletons, never stale closures.
+
+`useResponder` registers actions once at mount. If a handler reads a value that changes over time, it must go through a ref. [D09, D11]
+
+<a id="l08"></a>
+### L08. Live preview in mutation transactions is appearance-zone only; commit crosses zone boundaries.
+
+A *mutation transaction* is the specific UX pattern where the user begins an interaction that *drafts* a change, sees the draft rendered live against the target, and then either commits the draft (persisting it) or cancels it (rolling back). The defining feature is that the draft value is not yet a committed value — it exists only long enough to be previewed, and the user may discard it. Examples: scrubbing a hue onto a mock card, dragging to reposition a draggable element, dragging an opacity slider in a style inspector.
+
+During the draft phase, all preview mutations are CSS/DOM — the draft is not React state because it may never be committed. The commit handler may write to stores or React state; cancel rolls back via DOM. Never mix preview with state changes.
+
+This law does not apply to continuous controls whose every intermediate value *is* a committed value. Such interactions are not mutation transactions: there is no draft-vs-commit distinction, only a stream of atomic commits. Their values flow through React state normally, the same as any other data. Examples: a volume slider, a font-size stepper, a choice group, a color picker used as a setting editor rather than as a preview tool. The phase system (`begin` / `change` / `commit` / `discrete` / `cancel`) enables mutation-tx usage where needed — it does not require it, and the presence of phased dispatches does not by itself turn a value picker into a mutation transaction.
+
+The test: *can the user end the interaction with a result that was never committed?* If yes, it is a mutation transaction and L08 applies — preview belongs in the DOM. If no — if releasing, committing, or disconnecting always leaves the last seen value as the committed value — it is not a mutation transaction and L08 does not apply. [D64, D65]
+
+<a id="l11"></a>
+### L11. Controls emit actions; responders own state that actions operate on.
+
+A *control* translates a user gesture into a typed intent and dispatches it into the chain — the state that handlers will modify lives elsewhere (a parent, a store, a separate component). A *responder* owns persistent semantic state that actions mutate over time and registers handlers for the actions that mutate it. Responders have a stable identity in the chain so the first-responder promotion mechanism can address them.
+
+The distinction is conceptual, not categorical: it is about *who owns the state an action changes*, not about what kind of widget the component happens to be. The test is, "does this component own the state that this action is going to mutate?" If no, the component is an emitter — it can dispatch the action but another node owns the state, so another node is the responder. If yes, the component must register as a responder because it is the only code that knows how to perform the action on its own state.
+
+Most interactive widgets are controls: their state lives in a parent that passes it back in via props. When such a widget interacts with the user, it dispatches an action whose handler — somewhere up the chain — updates the parent's state, which flows back down. The widget itself holds no authoritative state. Push buttons, sliders, checkboxes, switches, radio groups, choice groups, tab bars, accordions, and popup menus are all examples of this shape.
+
+A component that owns its own state is a responder for the actions that mutate that state. A component that owns a caret, a selection, an undo stack, and a content document is a responder for `cut` / `copy` / `paste` / `selectAll` / `undo` / `redo` — those actions operate directly on state that lives inside the component and nowhere else. A component that owns a window and its contained document is a responder for `close` / `find` / `toggleMenu`. A component that owns a layout tree is a responder for `cycleCard` / `resetLayout`. Text editors, cards, and canvases are examples of this shape.
+
+A single component may be both an emitter and a responder for the same action. A text editor with a context menu dispatches `cut` when the user clicks the menu item; the chain's innermost-first walk routes that dispatch right back to the editor, which handles it on its own selection. Components that own state close the loop on themselves. [D08, D61, D62, D63]
+
+The full chain mechanism — `ActionEvent`, the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline, and the registration hooks — is documented in [responder-chain.md](responder-chain.md). Read that document before writing a component that participates in the chain.
+
+<a id="l24"></a>
+### L24. State is partitioned into three zones: appearance, local data, and structure.
+
+Every piece of state belongs to exactly one zone, and the zone determines its mechanism. *Appearance* (visible-only state with no non-rendering consumer): CSS and DOM mutation, never React. *Local data* (component-scoped state that does not coordinate outside the component): `useState` and `useRef`. *Structure* (what components exist, subscriptions to external stores, responder registration, event routing): `useSyncExternalStore`, `useLayoutEffect` at mount, props and composition. L06 enforces the appearance zone; L02 and L07 govern the structure zone's entry points; L08 and L22 govern the boundaries between zones. This law names the architecture those laws collectively produce.
 

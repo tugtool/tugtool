@@ -22,11 +22,13 @@
 
 ## State and Mutation Zones
 
+**L24. State is partitioned into three zones: appearance, local data, and structure.** Every piece of state belongs to exactly one zone, and the zone determines its mechanism. *Appearance* (visible-only state with no non-rendering consumer): CSS and DOM mutation, never React. *Local data* (component-scoped state that does not coordinate outside the component): `useState` and `useRef`. *Structure* (what components exist, subscriptions to external stores, responder registration, event routing): `useSyncExternalStore`, `useLayoutEffect` at mount, props and composition. L06 enforces the appearance zone; L02 and L07 govern the structure zone's entry points; L08 and L22 govern the boundaries between zones. This law names the architecture those laws collectively produce.
+
 **L06. Ephemeral appearance state goes through CSS and DOM, never React state.** State whose only consumer is rendering and whose only purpose is to look a certain way — hover highlights, focus rings, active-press feedback, `data-state` toggles — belongs in the DOM. Class toggles, attribute changes, and style mutations that don't affect React's subtree are free. Use them.
 
 This law does not apply to semantic data that happens to have a visual representation. Data is state that non-rendering code reads and acts on; rendering is a downstream consequence of the data, not the reason it exists. Examples: a form field's current value, the selected item in a list, a card's title, a user's zoom level. Data flows through React's render cycle because that is how controlled components and derived UI work — that is the contract, not an L06 violation.
 
-The test: *does any non-rendering consumer depend on this state?* If yes, it is data and may live in React. If no — if the only thing that reads it is the renderer itself — it is appearance and belongs in the DOM. Get this test wrong in either direction and things break: data pushed into DOM refs becomes invisible to the code that cares about it; ephemeral visual state pushed through React triggers unnecessary re-renders and subtree invalidations. [D01, D03, D84, D12, D13]
+The test: *does any non-rendering consumer depend on this state?* If yes, it is data and may live in React. If no — if the only thing that reads it is the renderer itself — it is appearance and belongs in the DOM. Get this test wrong in either direction and things break: data pushed into DOM refs becomes invisible to the code that cares about it; ephemeral visual state pushed through React triggers unnecessary re-renders and subtree invalidations. [D01, D03, D84, D13]
 
 **L07. Every action handler must access current state through refs or stable singletons, never stale closures.** `useResponder` registers actions once at mount. If a handler reads a value that changes over time, it must go through a ref. [D09, D11]
 

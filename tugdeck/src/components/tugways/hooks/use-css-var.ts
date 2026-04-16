@@ -15,11 +15,15 @@
  * `style.setProperty()` inside a `useEffect`, bypassing React's reconciler
  * entirely. No state changes. No re-renders.
  *
- * ## Design Decisions
+ * ## Governing rules
  *
- * - [D12] Appearance-zone mutations never use React state
- * - [D13] Single-property hook signatures: call the hook multiple times for
- *   multiple properties instead of passing an object (no Rule 5 footgun)
+ * - [L24] Appearance-zone mutations never use React state
+ * - [D13] DOM utility hooks for the appearance zone
+ *
+ * ## Design choice
+ *
+ * Single-property signature: call the hook multiple times for multiple
+ * properties instead of passing an object (avoids the Rule 5 footgun).
  *
  * ## Usage
  *

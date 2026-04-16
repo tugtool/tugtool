@@ -94,8 +94,6 @@
 
 ## State & Mutation Zones
 
-**D12.** Three-zone mutation model: *appearance* (CSS/DOM, zero re-renders), *local data* (targeted React state), *structure* (subtree changes via store). [L06, L08]
-
 **D13.** DOM utility hooks for appearance zone: `useCSSVar`, `useDOMClass`, `useDOMStyle`. All bypass React state. [L06]
 
 **D40.** DeckManager is a subscribable store. Implements `subscribe()`/`getSnapshot()` for `useSyncExternalStore`. Exactly one `root.render()` call, at construction. [L01, L02]
