@@ -13,17 +13,26 @@
  *     respective provider is simply omitted from `completionProviders`
  *     and the trigger produces no suggestions — no throws, no warnings.
  *   • A local `PromptHistoryStore` for arrow-up/down recall.
+ *   • A per-card `EditorSettingsStore` whose CSS variables cascade from
+ *     the entry-pane TugBox down to the input editor. The tools panel
+ *     (toggled via the button on the status row) exposes font-family
+ *     and font-size popup buttons that write back to the store.
  *
  * The entry is mounted inside a `TugBox` with `inset={false}` so the
  * pane fills edge-to-edge. The split pane's grip pill is suppressed via
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { TugPromptEntry } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel } from "../tug-split-pane";
 import { TugBox } from "../tug-box";
+import { TugLabel } from "../tug-label";
+import { TugPopupButton } from "../tug-popup-button";
+import type { TugPopupButtonItem } from "../tug-popup-button";
+import { useResponderForm } from "../use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
 import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
@@ -31,6 +40,7 @@ import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
+import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
@@ -49,6 +59,21 @@ import "./gallery-prompt-entry.css";
  * entirely against the `MockTugConnection`.
  */
 export const GALLERY_TUG_SESSION_ID = "gallery-prompt-entry-session";
+
+const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "inter", label: "Inter" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "hack", label: "Hack (mono)" },
+];
+
+const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: 11, label: "11 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
+  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
+];
 
 // ---------------------------------------------------------------------------
 // SessionMetadataStore shim
@@ -90,7 +115,6 @@ export interface GalleryPromptEntryProps {
 
 export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   // --- Mock-backed CodeSessionStore (turn-state surface). ---
-  // Constructed once per card; disposed on unmount.
   const mockSessionRef = useRef<{
     connection: MockTugConnection;
     codeSessionStore: CodeSessionStore;
@@ -111,7 +135,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   }, []);
 
   // --- SessionMetadataStore for command completions. ---
-  // Real backend when a connection is available; shim otherwise.
   const metadataStackRef = useRef<{
     feedStore: FeedStore | null;
     store: SessionMetadataStore;
@@ -125,8 +148,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
         const store = new SessionMetadataStore(feedStore, FeedId.SESSION_METADATA);
         built = { feedStore, store };
       } catch {
-        // Partial / invalid connection (happens in tests with a leaked
-        // stub). Fall through to the inert shim below.
+        // Partial / invalid connection (tests). Fall through to inert shim.
       }
     }
     if (!built) {
@@ -144,9 +166,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   }, []);
 
   // --- File tree stack with workspace filter. ---
-  // Mirrors gallery-prompt-input: a per-card FeedStore + FileTreeStore, with
-  // workspace filtering via useCardWorkspaceKey. Constructed once per card
-  // on first render when a connection is available; disposed on unmount.
   const workspaceKey = useCardWorkspaceKey(cardId);
   const workspaceFilter: FeedStoreFilter = useMemo(
     () =>
@@ -178,8 +197,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
         const provider = fileTreeStore.getFileCompletionProvider();
         fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
       } catch {
-        // Partial / invalid connection — skip file completion. `@`-trigger
-        // will return no results but the card still renders.
+        // Partial / invalid connection — skip file completion.
       }
     }
   }
@@ -204,8 +222,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   }
 
   // --- Compose completion providers. ---
-  // Stable — providers live in refs for the card's lifetime, so the memo's
-  // empty deps are correct.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(() => {
     const out: Record<string, CompletionProvider> = {};
@@ -216,6 +232,74 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     return out;
   }, []);
 
+  // --- EditorSettingsStore for the tools-panel controls. ---
+  // Constructed once per card; binds via the paneRef below so the
+  // `--tug-font-family-editor` / `--tug-font-size-editor` / `--tug-letter-spacing-editor`
+  // custom properties cascade from the pane down to the embedded input.
+  const editorStoreRef = useRef<EditorSettingsStore | null>(null);
+  if (editorStoreRef.current === null) {
+    editorStoreRef.current = new EditorSettingsStore();
+  }
+  const editorStore = editorStoreRef.current;
+  const editorSettings = useSyncExternalStore(
+    editorStore.subscribe,
+    editorStore.getSnapshot,
+  );
+
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    // `regenerateAtoms` argument is fine as a no-op for this card — the
+    // entry doesn't yet re-render atom glyphs on font changes. If the
+    // gallery grows to need it, route through a TugPromptEntryDelegate.
+    editorStore.bind(el, () => {});
+    return () => editorStore.unbind();
+  }, [editorStore]);
+
+  // --- Responder scope for tools-panel popup buttons. ---
+  const fontPopupId = useId();
+  const fontSizePopupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
+    },
+    setValueNumber: {
+      [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
+    },
+  });
+
+  // --- Status row + tools panel content. ---
+  const statusContent = (
+    <>
+      <span className="gallery-prompt-entry-status-label">
+        Demo project
+      </span>
+      <span className="gallery-prompt-entry-status-path">
+        /gallery/demo
+      </span>
+    </>
+  );
+
+  const toolsContent = (
+    <div className="gallery-prompt-entry-tools-row">
+      <TugLabel size="2xs" color="muted">Font</TugLabel>
+      <TugPopupButton
+        label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
+        items={EDITOR_FONT_OPTIONS}
+        senderId={fontPopupId}
+        size="sm"
+      />
+      <TugLabel size="2xs" color="muted">Size</TugLabel>
+      <TugPopupButton
+        label={`${editorSettings.fontSize}px`}
+        items={FONT_SIZE_OPTIONS}
+        senderId={fontSizePopupId}
+        size="sm"
+      />
+    </div>
+  );
+
   return (
     <div className="gallery-prompt-entry-card" data-testid="gallery-prompt-entry">
       <TugSplitPane orientation="horizontal" showHandle={false}>
@@ -223,19 +307,27 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
           <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
         </TugSplitPanel>
         <TugSplitPanel defaultSize="30%" minSize="15%" maxSize="85%">
-          <TugBox
-            variant="plain"
-            inset={false}
-            className="gallery-prompt-entry-entry-pane"
-          >
-            <TugPromptEntry
-              id={`${cardId}-entry`}
-              codeSessionStore={mockSessionRef.current!.codeSessionStore}
-              sessionMetadataStore={metadataStackRef.current!.store}
-              historyStore={historyStoreRef.current}
-              completionProviders={completionProviders}
-            />
-          </TugBox>
+          <ResponderScope>
+            <TugBox
+              ref={(el) => {
+                paneRef.current = el as HTMLDivElement | null;
+                (responderRef as (node: Element | null) => void)(el as Element | null);
+              }}
+              variant="plain"
+              inset={false}
+              className="gallery-prompt-entry-entry-pane"
+            >
+              <TugPromptEntry
+                id={`${cardId}-entry`}
+                codeSessionStore={mockSessionRef.current!.codeSessionStore}
+                sessionMetadataStore={metadataStackRef.current!.store}
+                historyStore={historyStoreRef.current}
+                completionProviders={completionProviders}
+                statusContent={statusContent}
+                toolsContent={toolsContent}
+              />
+            </TugBox>
+          </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
     </div>

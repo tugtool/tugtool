@@ -43,7 +43,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { AtomSegment, CompletionProvider, DropHandler } from "@/lib/tug-text-engine";
@@ -98,6 +98,7 @@ const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
  * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
  * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
  * @selector [data-empty="true" | "false"]          — direct DOM write from input's onChange (Step 3)
+ * @selector [data-tools-open="true" | "false"]     — direct DOM write from tools toggle; CSS shows/hides .tug-prompt-entry-tools-panel
  */
 export interface TugPromptEntryProps {
   /**
@@ -130,6 +131,22 @@ export interface TugPromptEntryProps {
     route: string | null,
     atoms: ReadonlyArray<AtomSegment>,
   ) => boolean;
+  /**
+   * Optional content rendered in the status row above the input — e.g. the
+   * current project path, session model name, or a live status indicator.
+   * The row also hosts the tools-toggle button on the trailing edge when
+   * `toolsContent` is provided. If both `statusContent` and `toolsContent`
+   * are undefined, the status row is omitted entirely.
+   */
+  statusContent?: React.ReactNode;
+  /**
+   * Optional content rendered in an expandable tools panel below the
+   * status row. When provided, a toggle button appears on the right of
+   * the status row; clicking it flips the entry's `data-tools-open`
+   * attribute, which CSS uses to show/hide the panel. When undefined,
+   * the toggle button is not rendered and the panel is never present.
+   */
+  toolsContent?: React.ReactNode;
   /**
    * Caller-supplied className merged with the root.
    * @selector standard
@@ -169,6 +186,8 @@ export const TugPromptEntry = React.forwardRef<
     completionProviders,
     dropHandler,
     localCommandHandler,
+    statusContent,
+    toolsContent,
     className,
   } = props;
 
@@ -207,6 +226,52 @@ export const TugPromptEntry = React.forwardRef<
     routeRef.current = route;
   }, [route]);
 
+  // Live ref for the optional localCommandHandler so `performSubmit` (the
+  // shared submit closure) can read the latest callback without rebuilding
+  // on every render. The chain-action handler registered via `useResponder`
+  // is a stable closure — we read policy through refs per [L07].
+  const localCommandHandlerRef = useRef(localCommandHandler);
+  useLayoutEffect(() => {
+    localCommandHandlerRef.current = localCommandHandler;
+  }, [localCommandHandler]);
+
+  // Shared submit logic. Invoked by both the SUBMIT chain-action handler
+  // (button click, Cmd+Enter, etc.) and the Return/Shift+Return keyboard
+  // path (via `onSubmit` on TugPromptInput). Keeping a single performSubmit
+  // means keyboard and pointer converge on the same interrupt-vs-send
+  // decision, the same localCommandHandler intercept, and the same
+  // clear-and-reset-route teardown.
+  //
+  // Stable identity (`useCallback` with deps that are themselves stable —
+  // `codeSessionStore` is a prop reference, not regenerated each render);
+  // policy is read through refs so the closure never goes stale [L07].
+  const performSubmit = useCallback(() => {
+    const input = promptInputRef.current;
+    const snap = snapRef.current;
+    if (!input) return;
+    // [D05] Submit is interrupt: the single SUBMIT action routes to
+    // `interrupt()` during an in-flight turn and to `send()` otherwise.
+    if (snap.canInterrupt) {
+      codeSessionStore.interrupt();
+      return;
+    }
+    // [D-T3-08] awaiting_approval / awaiting_question block the submit
+    // path. `canSubmit` captures both.
+    if (!snap.canSubmit) return;
+    const atoms = input.getAtoms();
+    const text = input.getText();
+    // [D06] localCommandHandler seam — called BEFORE the store send so
+    // local `:`-surface commands can intercept.
+    const currentRoute = routeRef.current || null;
+    const handled =
+      localCommandHandlerRef.current?.(currentRoute, atoms) ?? false;
+    if (!handled) {
+      codeSessionStore.send(text, atoms);
+    }
+    input.clear();
+    setRouteState("");
+  }, [codeSessionStore]);
+
   // [L07] Register the responder node. Both handler bodies are now
   // real: SELECT_VALUE runs the defensive sender/value narrowing +
   // `setRouteState` + `setRoute` round-trip per Spec S02 (Step 4);
@@ -239,40 +304,7 @@ export const TugPromptEntry = React.forwardRef<
         promptInputRef.current?.setRoute(event.value);
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
-        const input = promptInputRef.current;
-        const snap = snapRef.current;
-        if (!input) return;
-        // [D05] Submit is interrupt: the single SUBMIT action routes
-        // to `interrupt()` during an in-flight turn and to `send()`
-        // otherwise. `canInterrupt` is the authoritative signal —
-        // read via `snapRef` per [L07] so we see the live value even
-        // if React hasn't committed yet.
-        if (snap.canInterrupt) {
-          codeSessionStore.interrupt();
-          return;
-        }
-        // [D-T3-08] awaiting_approval / awaiting_question block the
-        // submit path. `canSubmit` captures both (plus any future
-        // phase that should disable submit). Defensive guard: the
-        // button is already disabled in this state, but the action
-        // could still arrive from a keyboard shortcut.
-        if (!snap.canSubmit) return;
-        const atoms = input.getAtoms();
-        const text = input.getText();
-        // [D06] localCommandHandler seam — called BEFORE the store
-        // send so local `:`-surface commands can intercept. Route
-        // is the live route ref (string) or null if no prefix is
-        // active. Returning `true` suppresses the store send but
-        // does NOT suppress the input clear or route reset: the
-        // user still sees the entry reset, as if the submit had
-        // gone through.
-        const route = routeRef.current || null;
-        const handled = localCommandHandler?.(route, atoms) ?? false;
-        if (!handled) {
-          codeSessionStore.send(text, atoms);
-        }
-        input.clear();
-        setRouteState("");
+        performSubmit();
       },
     },
   });
@@ -326,6 +358,29 @@ export const TugPromptEntry = React.forwardRef<
     [responderRef],
   );
 
+  // Tools-panel disclosure toggle. The open/closed state is pure appearance
+  // state — the only consumer is rendering (CSS visibility + the toggle
+  // button's aria-expanded). Per [L06] it belongs in the DOM: we flip
+  // `data-tools-open` directly on the root and let CSS show/hide the
+  // panel. No React state; no re-render on toggle.
+  const handleToolsToggle = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const isOpen = root.getAttribute("data-tools-open") === "true";
+    const next = isOpen ? "false" : "true";
+    root.setAttribute("data-tools-open", next);
+    // Mirror on the toggle button's aria-expanded for assistive tech.
+    const button = root.querySelector<HTMLButtonElement>(
+      ".tug-prompt-entry-tools-toggle",
+    );
+    button?.setAttribute("aria-expanded", next);
+  }, []);
+
+  // Render the status row only when there is something to put in it.
+  // Otherwise the row collapses to nothing and the input + toolbar stay
+  // flush against the top of the entry, matching pre-polish behavior.
+  const hasStatusRow = statusContent !== undefined || toolsContent !== undefined;
+
   return (
     <ResponderScope>
       <div
@@ -339,18 +394,49 @@ export const TugPromptEntry = React.forwardRef<
         data-pending-question={snap.pendingQuestion ? "" : undefined}
         data-queued={snap.queuedSends > 0 ? "" : undefined}
         data-empty="true"
+        data-tools-open="false"
         className={cn("tug-prompt-entry", className)}
       >
-        <TugPromptInput
-          ref={promptInputRef}
-          borderless
-          maximized
-          completionProviders={completionProviders}
-          dropHandler={dropHandler}
-          routePrefixes={[...ROUTE_PREFIXES]}
-          onRouteChange={handleRouteChange}
-          onChange={handleInputChange}
-        />
+        {hasStatusRow && (
+          <div className="tug-prompt-entry-status">
+            <div className="tug-prompt-entry-status-content">
+              {statusContent}
+            </div>
+            {toolsContent !== undefined && (
+              <button
+                type="button"
+                className="tug-prompt-entry-tools-toggle"
+                aria-label="Toggle tools"
+                aria-expanded="false"
+                onClick={handleToolsToggle}
+              >
+                <ChevronDown
+                  className="tug-prompt-entry-tools-toggle-icon"
+                  size={14}
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+              </button>
+            )}
+          </div>
+        )}
+        {toolsContent !== undefined && (
+          <div className="tug-prompt-entry-tools-panel">{toolsContent}</div>
+        )}
+        <div className="tug-prompt-entry-input-area">
+          <TugPromptInput
+            ref={promptInputRef}
+            borderless
+            maximized
+            completionProviders={completionProviders}
+            dropHandler={dropHandler}
+            returnAction="newline"
+            routePrefixes={[...ROUTE_PREFIXES]}
+            onRouteChange={handleRouteChange}
+            onChange={handleInputChange}
+            onSubmit={performSubmit}
+          />
+        </div>
         <div className="tug-prompt-entry-toolbar">
           <TugChoiceGroup
             items={[...ROUTE_ITEMS]}

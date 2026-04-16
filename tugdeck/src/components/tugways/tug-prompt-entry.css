@@ -18,16 +18,22 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
- *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-badge-text-tinted-action-rest      | --tug7-surface-badge-primary-tinted-action-rest    | content
+ *   --tug7-element-field-border-normal-danger-rest    | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-global-text-normal-muted-rest      | --tug7-surface-global-primary-normal-control-rest | content
+ *   --tug7-element-global-text-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest | content
+ *   --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-global-primary-normal-control-rest | informational
  * } */
 
 /**
  * @tug-pairings
- * | Element                                             | Surface                                              | Role          | Context                                                        |
- * |-----------------------------------------------------|------------------------------------------------------|---------------|----------------------------------------------------------------|
- * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)             |
- * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring       |
+ * | Element                                             | Surface                                              | Role          | Context                                                            |
+ * |-----------------------------------------------------|------------------------------------------------------|---------------|--------------------------------------------------------------------|
+ * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)                 |
+ * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
+ * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text        |
+ * | --tug7-element-global-text-normal-default-rest      | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-tools-toggle:hover (color) — tools toggle button |
+ * | --tug7-element-global-fill-normal-accentCool-rest   | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry-tools-toggle:focus-visible (outline)             |
  */
 
 /* ----------------------------------------------------------------------------
@@ -59,14 +65,30 @@ body {
   height: 100%;
   min-height: 0;
   background-color: var(--tugx-prompt-entry-surface);
+  transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
 }
 
-/* The input's own `maximized` prop (passed from tug-prompt-entry.tsx)
-   applies `flex: 1; min-height: 0` to .tug-prompt-input[data-maximized]
-   in tug-prompt-input.css, so the input stretches inside this flex
-   column without the entry needing to reach across [L20]. The toolbar
-   stays pinned to the bottom naturally because it is the second flex
-   child with default `flex: 0 0 auto`. */
+/* When the composed input is focused (editor carries focus), the whole
+   entry adopts the input's focus surface so the status row, tools panel,
+   input, and toolbar all read as one coherent control. This is the
+   informational coloration the user sees when the prompt is active.
+   Rule sets only background-color — self-documenting per [L16]. */
+.tug-prompt-entry:focus-within {
+  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
+}
+
+/* .tug-prompt-entry-input-area — thin wrapper around TugPromptInput.
+   Exists so phase-sensitive selectors (e.g., awaiting_approval dim) can
+   target the input region without reaching into the composed input's
+   own token slot [L20]. The input is stretched inside by its own
+   `.tug-prompt-input[data-maximized]` rule; this wrapper just passes
+   the flex-column constraints through. */
+.tug-prompt-entry-input-area {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
 
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
@@ -145,7 +167,101 @@ body {
    Spec S03); no new tokens per [D11].
    ----------------------------------------------------------------------------- */
 
-.tug-prompt-entry[data-phase="awaiting_approval"] > :first-child {
+.tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-input-area,
+.tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-tools-panel {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry-status — the row above the input
+   ----------------------------------------------------------------------------
+   Hosts caller-supplied status content on the leading edge and (optionally)
+   the tools disclosure toggle on the trailing edge. Keeps its content size;
+   the input below flexes to fill.
+   ----------------------------------------------------------------------------- */
+
+.tug-prompt-entry-status {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-2xs, 4px) var(--tug-space-xs);
+  min-height: 24px;
+}
+
+.tug-prompt-entry-status-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+}
+
+/* Toggle button — a minimal icon-only control. Uses the ghost emphasis
+   visual palette inline (no TugButton chrome) so the status row stays
+   compact. The button is accessible: aria-label + aria-expanded are
+   synced by the toggle handler. */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tug-prompt-entry-tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color var(--tug-motion-duration-fast, 120ms) ease,
+              background-color var(--tug-motion-duration-fast, 120ms) ease;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tug-prompt-entry-tools-toggle:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.tug-prompt-entry-tools-toggle:focus-visible {
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: 2px;
+}
+
+/* Rotate the chevron when the panel is open. The icon itself is owned
+   by the entry's JSX (its class name is part of the entry's DOM), so
+   targeting it from entry CSS is not a [L20] violation. */
+.tug-prompt-entry-tools-toggle-icon {
+  transition: transform var(--tug-motion-duration-fast, 120ms) ease;
+}
+
+.tug-prompt-entry[data-tools-open="true"] .tug-prompt-entry-tools-toggle-icon {
+  transform: rotate(180deg);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry-tools-panel — expandable area beneath the status row
+   ----------------------------------------------------------------------------
+   Hidden by default (data-tools-open="false" on the root). When the toggle
+   flips the attribute to "true", the panel reveals. Caller fills the
+   content via the toolsContent prop. No animation for now — toggle is a
+   user-driven action, snap shows/hides is acceptable.
+   ----------------------------------------------------------------------------- */
+
+.tug-prompt-entry-tools-panel {
+  display: none;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-xs);
+}
+
+.tug-prompt-entry[data-tools-open="true"] .tug-prompt-entry-tools-panel {
+  display: flex;
 }
