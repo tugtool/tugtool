@@ -1089,8 +1089,43 @@ export class TugTextEngine {
         this.acceptTypeahead();
         return;
       }
+      // Cmd+Up/Down → jump to first/last (Mac convention, matches Finder
+      // and Safari typeahead lists). Meta without shift/alt/ctrl only.
+      if ((ke.key === "ArrowDown" || ke.key === "ArrowUp") && ke.metaKey && !ke.shiftKey && !ke.altKey && !ke.ctrlKey) {
+        ke.preventDefault();
+        ke.stopImmediatePropagation();
+        this.typeaheadNavigate(ke.key === "ArrowDown" ? this._typeahead.filtered.length - 1 : 0);
+        return;
+      }
       if (ke.key === "ArrowDown") { ke.preventDefault(); ke.stopImmediatePropagation(); this.typeaheadNavigate("down"); return; }
       if (ke.key === "ArrowUp") { ke.preventDefault(); ke.stopImmediatePropagation(); this.typeaheadNavigate("up"); return; }
+      // PageDown/PageUp jump by a fixed 10-row page. The popup's visible
+      // slice caps out around 10 items in the current CSS, so this matches
+      // "one screenful" without needing to measure the DOM from here.
+      if (ke.key === "PageDown") {
+        ke.preventDefault();
+        ke.stopImmediatePropagation();
+        this.typeaheadNavigate(this._typeahead.selectedIndex + 10);
+        return;
+      }
+      if (ke.key === "PageUp") {
+        ke.preventDefault();
+        ke.stopImmediatePropagation();
+        this.typeaheadNavigate(this._typeahead.selectedIndex - 10);
+        return;
+      }
+      if (ke.key === "Home") {
+        ke.preventDefault();
+        ke.stopImmediatePropagation();
+        this.typeaheadNavigate(0);
+        return;
+      }
+      if (ke.key === "End") {
+        ke.preventDefault();
+        ke.stopImmediatePropagation();
+        this.typeaheadNavigate(this._typeahead.filtered.length - 1);
+        return;
+      }
       if (ke.key === "Escape") { ke.preventDefault(); ke.stopImmediatePropagation(); this.cancelTypeahead(); return; }
     });
 

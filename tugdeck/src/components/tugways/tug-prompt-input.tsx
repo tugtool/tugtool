@@ -510,6 +510,12 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
               (k === selectedIndex ? " tug-completion-menu-item-selected" : "");
           });
           popup.style.display = "block";
+          // Keep keyboard-selected item visible when nav runs off the visible
+          // slice of a long list. `block: "nearest"` means clicks/hover don't
+          // cause unexpected scrolls — only arrow nav past the viewport edge.
+          (items[selectedIndex] as HTMLElement | undefined)?.scrollIntoView({
+            block: "nearest",
+          });
           return;
         }
 
@@ -551,6 +557,12 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
           });
           popup.appendChild(div);
         });
+        // Keep the selected item visible after a full rebuild (e.g. the
+        // selection survived a query change but the popup's children were
+        // re-created). `block: "nearest"` avoids any scroll when the item
+        // is already in view.
+        const selectedEl = popup.children[selectedIndex] as HTMLElement | undefined;
+        selectedEl?.scrollIntoView({ block: "nearest" });
         // Position at the @ anchor rect, auto-flipping to avoid clipping.
         // Find the nearest scrollable ancestor (overflow: auto/scroll) to
         // measure available space. The popup stays inside that boundary.

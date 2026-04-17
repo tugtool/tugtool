@@ -227,10 +227,10 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   useLayoutEffect(() => {
     const el = paneRef.current;
     if (!el) return;
-    // `regenerateAtoms` argument is fine as a no-op for this card — the
-    // entry doesn't yet re-render atom glyphs on font changes. If the
-    // gallery grows to need it, route through a TugPromptEntryDelegate.
-    editorStore.bind(el, () => {});
+    // `regenerateAtoms` re-renders the SVG atom glyphs when the editor
+    // font changes via the tools popover — atoms must track the editor
+    // font so a chosen monospace actually reaches the atom chip labels.
+    editorStore.bind(el, () => entryDelegateRef.current?.regenerateAtoms());
     return () => editorStore.unbind();
   }, [editorStore]);
 

@@ -366,6 +366,12 @@ export interface TugPromptEntryDelegate {
    * the scroll-source signal for content-driven panel growth.
    */
   getEditorElement(): HTMLElement | null;
+  /**
+   * Regenerate atom glyphs — needed when the editor font or theme tokens
+   * change so the SVG-rendered atom chips pick up the new family/size.
+   * Forwards to the underlying `TugPromptInput`'s `regenerateAtoms`.
+   */
+  regenerateAtoms(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -750,6 +756,9 @@ export const TugPromptEntry = React.forwardRef<
       },
       getEditorElement() {
         return promptInputRef.current?.getEditorElement() ?? null;
+      },
+      regenerateAtoms() {
+        promptInputRef.current?.regenerateAtoms();
       },
     }),
     [],
