@@ -329,25 +329,33 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       [],
     );
 
-    // Apply storedLayout imperatively when it arrives post-mount. The
-    // library's `defaultLayout` prop is a MOUNT-TIME input only — later
-    // changes are ignored. If tugbank's cache is empty at our mount
-    // (async WebSocket load), `storedLayout` starts null and the library
-    // falls back to `defaultSize`. When the cache fills, we imperatively
-    // apply via `groupRef.setLayout()` and bump the reseed epoch so
-    // descendant auto-size panels update their anchor to match.
+    // Apply storedLayout imperatively ONCE, to cover the mount race:
+    // the library's `defaultLayout` prop is a mount-time input only,
+    // and tugbank's cache may still be loading via WebSocket when the
+    // component mounts. If the cache was cold at mount, `storedLayout`
+    // starts null and the library falls back to `defaultSize`; when the
+    // cache fills, we call `groupRef.setLayout()` to snap to the real
+    // stored value and bump the reseed epoch so descendant auto-size
+    // panels update their anchor.
     //
-    // `prevStoredLayoutRef` is initialized to the current value so the
-    // first run of this effect (post-mount) is a no-op if the layout was
-    // already present at mount time (the library already applied it via
-    // `defaultLayout`).
-    const prevStoredLayoutRef = React.useRef<Layout | null>(storedLayout);
+    // Guarded to fire at most once per mount AND never while the user
+    // is in the middle of a sash drag. Applying a stored layout mid-
+    // drag would jump the pane out from under the user — typically
+    // perceived as the sash "going in the opposite direction" — because
+    // the restored layout can be very different from the live drag
+    // position. If a drag is in progress when we try to apply, we leave
+    // the flag unset so the next storedLayout transition (after drag
+    // release) gets another chance; by that point, the user's own PUT
+    // will have round-tripped through the cache and `setLayout(current)`
+    // becomes a no-op.
+    const initialApplyDoneRef = React.useRef(false);
     React.useEffect(() => {
-      if (storedLayout === prevStoredLayoutRef.current) return;
-      prevStoredLayoutRef.current = storedLayout;
+      if (initialApplyDoneRef.current) return;
       if (!storedLayout) return;
+      if (userDragActiveRef.current) return;
       const group = groupRef.current;
       if (!group) return;
+      initialApplyDoneRef.current = true;
       reseedEpochRef.current += 1;
       group.setLayout(storedLayout);
     }, [storedLayout]);

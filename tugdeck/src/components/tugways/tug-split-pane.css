@@ -319,18 +319,14 @@ body {
   display: none;
 }
 
-
-/* showHandle={false}: collapse the sash hit-area to equal the visible
-   line thickness. With the grabber pill gone, the 13px of transparent
-   hit-area around the line was showing the parent's background through —
-   visible as a color mismatch against adjacent pane content. Shrinking
-   the sash so the line IS the sash eliminates that entirely. The ::before
-   line still renders (centered in a 3px box fills it exactly) and the
-   Separator remains draggable on the line itself. */
-.tug-split-pane[data-show-handle="false"] .tug-split-sash-horizontal {
-  height: var(--tug-split-sash-thickness);
-}
-
-.tug-split-pane[data-show-handle="false"] .tug-split-sash-vertical {
-  width: var(--tug-split-sash-thickness);
-}
+/* showHandle={false}: hit-area keeps the full `--tug-split-sash-hit-area`
+   width (~16px) so clicks near the visible line reliably target the sash
+   element. Collapsing the sash to 3px tall (as an earlier iteration did)
+   made the visible line hard to grab AND broke DOM-target-based drag
+   detection — react-resizable-panels' own hit detection expands to a
+   10px minimum, so the library would process drags that our own
+   `target.closest('.tug-split-sash')` check missed, leading to visible
+   resizes that never made it through to persistence. A faintly-visible
+   transparent band around the line is an acceptable trade for reliable
+   interaction; theme-matching the sash background can address any
+   residual color mismatch without shrinking the target. */
