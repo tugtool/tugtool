@@ -45,6 +45,12 @@
 body {
   --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
   --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
+  /* Vertical text inset shared by the gutter and the editor inside the
+     entry: both stack on the same flex row, so their first-line
+     baselines only line up when their top padding matches. One value
+     in one place, referenced by both rules below. */
+  --tugx-prompt-entry-text-inset-y: 6px;
+  --tugx-prompt-entry-route-inset-y: 7px;
 }
 
 /* ----------------------------------------------------------------------------
@@ -102,30 +108,30 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-gutter — static route indicator next to the editor
    ----------------------------------------------------------------------------
-   Renders the active route's lucide icon. Fixed-width column outside
-   the editor's text flow — the caret can never land in it, bulk edits
-   on the editor can never remove it, and switching routes never
-   requires re-inserting an atom. Vertically aligned with the first
-   visual line of the editor via `padding-top`, so the icon sits flush
-   with the first line of text regardless of wrap count.
+   Renders the active route's prefix character (`>`, `$`, `:`) as plain
+   text in the editor's own font and size. Because the gutter uses the
+   same font-family, font-size, and line-height as the editor, the
+   character shares the editor's baseline and line-box geometry — no
+   per-route nudge, no SVG metric mismatch across fonts. Fixed-width
+   column outside the editor's text flow: the caret can never land in
+   it, bulk edits can never remove it, and switching routes never
+   requires re-inserting an atom.
    ----------------------------------------------------------------------------- */
 
 /* @tug-renders-on: --tugx-prompt-entry-surface */
 .tug-prompt-entry-gutter {
   display: flex;
   flex: 0 0 auto;
-  /* Inherit the editor's font size so the icon tracks the text size
-     when `--tug-font-size-editor` is tuned — the SVG rule below sizes
-     the glyph relative to `1em`. */
+  /* Match the editor's font stack + size + line-height + top padding
+     (see tug-prompt-input.css `.tug-prompt-input-editor`) so the route
+     glyph shares the editor's baseline and line-box geometry — the
+     font does the alignment work, not per-route padding. */
+  font-family: var(--tug-font-family-editor, inherit);
   font-size: var(--tug-font-size-editor, 13px);
   line-height: 1.7;
-  /* Leading padding aligns the icon with the status-row content; a
-     tiny trailing gap keeps it a couple pixels off the caret. */
+  padding-top: var(--tugx-prompt-entry-route-inset-y);
   padding-left: var(--tug-space-md);
   padding-right: 2px;
-  /* Mirror the editor's top padding (6px) so the icon sits on the
-     first visual line of text rather than drifting above it. */
-  padding-top: 6px;
   justify-content: flex-start;
   align-items: flex-start;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -133,37 +139,24 @@ body {
   user-select: none;
 }
 
-/* Scale the lucide SVG with the gutter's font-size — the icon tracks
-   the editor's line height as the font scales, rather than being
-   pinned to the `size` prop's pixel value. Per-route overrides tune
-   for each glyph's intrinsic density: `$` and the puzzle icon are
-   visually heavier than the chevron, so they shrink to match. */
-.tug-prompt-entry-gutter svg {
-  padding-bottom: 1px;
-  width: 1.2em;
-  height: 1.2em;
-}
-
-.tug-prompt-entry-gutter[data-route="$"] svg {
-  padding-top: 1px;
-  padding-left: 1px;
-  width: 1em;
-  height: 1em;
-}
-
-.tug-prompt-entry-gutter[data-route=":"] svg {
-  padding-top: 2px;
-  width: 1.0em;
-  height: 1.0em;
-}
-
 /* Tighten the editor's leading padding inside the entry so the caret
-   sits a couple pixels past the gutter icon instead of the default
-   10px. Scoped to the compound — other TugPromptInput consumers keep
-   the standard padding. */
+   sits a couple pixels past the gutter glyph instead of the default
+   10px, and pin the vertical inset to the shared alias so the gutter
+   and the editor share one source of truth for their first-line
+   baseline offset. Scoped to the compound — other TugPromptInput
+   consumers keep the standard padding. */
 .tug-prompt-entry-input-area .tug-prompt-input-editor {
-  padding-top: 2px;
+  padding-top: var(--tugx-prompt-entry-text-inset-y);
+  padding-bottom: var(--tugx-prompt-entry-text-inset-y);
   padding-left: 2px;
+}
+
+/* Nudge the route glyph (`>`, `$`, `:`) up a touch inside the choice-group
+   buttons at the bottom of the entry. Text characters baseline-align to the
+   label, which optically reads too low next to a cap-height word like
+   `Prompt`. One scoped rule — the rest of the choice group is untouched. */
+.tug-prompt-entry-toolbar .tug-group-item-icon {
+  transform: translateY(-1px);
 }
 
 /* When the compound is focus-within (editor carries focus), surface

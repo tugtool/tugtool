@@ -44,14 +44,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import {
-  ArrowUp,
-  ChevronRight,
-  DollarSign,
-  Puzzle,
-  Settings,
-  Square,
-} from "lucide-react";
+import { ArrowUp, Settings, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -87,33 +80,10 @@ import { useTugcardPersistence } from "./use-tugcard-persistence";
  * leading icon so the control is both scannable and self-documenting.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  {
-    value: ">",
-    label: "Prompt",
-    icon: <ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />,
-  },
-  {
-    value: "$",
-    label: "Shell",
-    icon: <DollarSign size={12} strokeWidth={2.5} aria-hidden="true" />,
-  },
-  {
-    value: ":",
-    label: "Command",
-    icon: <Puzzle size={12} strokeWidth={2.5} aria-hidden="true" />,
-  },
+  { value: ">", label: "Prompt",  icon: ">" },
+  { value: "$", label: "Shell",   icon: "$" },
+  { value: ":", label: "Command", icon: ":" },
 ];
-
-/**
- * Lucide icon element for the gutter, keyed by route prefix. Shares the
- * source-of-truth with `ROUTE_ITEMS` — if either is edited, update both.
- * Rendered by the `.tug-prompt-entry-gutter` element next to the editor.
- */
-const ROUTE_GUTTER_ICONS: Readonly<Record<string, React.ReactNode>> = {
-  ">": <ChevronRight strokeWidth={2} aria-hidden="true" />,
-  "$": <DollarSign strokeWidth={2} aria-hidden="true" />,
-  ":": <Puzzle strokeWidth={2} aria-hidden="true" />,
-};
 
 /**
  * Route prefix characters. When the user types one of these as the
@@ -841,7 +811,7 @@ export const TugPromptEntry = React.forwardRef<
             aria-hidden="true"
             data-route={route}
           >
-            {ROUTE_GUTTER_ICONS[route]}
+            {route}
           </div>
           <TugPromptInput
             ref={promptInputRef}
