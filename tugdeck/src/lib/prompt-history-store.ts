@@ -102,6 +102,65 @@ class SessionHistoryProvider implements HistoryProvider {
   }
 }
 
+/**
+ * Route-scoped HistoryProvider returned by `PromptHistoryStore.createRouteProvider()`.
+ *
+ * Same shape as `SessionHistoryProvider` but with an extra filter: only
+ * entries whose `route` field matches the configured route are
+ * surfaced. Each route within a session therefore gets an independent
+ * history timeline, matching the per-route-drafts semantics of
+ * TugPromptEntry's Tugcard persistence payload.
+ *
+ * Cursor and `_draft` are in-memory and per-provider. Callers that
+ * create one provider per route and retain the reference across route
+ * switches preserve their browsing position for each route.
+ */
+class RouteHistoryProvider implements HistoryProvider {
+  private _cursor = -1;
+  private _draft: TugTextEditingState = { text: "", atoms: [], selection: null };
+
+  constructor(
+    private readonly _sessionId: string,
+    private readonly _store: PromptHistoryStore,
+    private readonly _route: string,
+  ) {}
+
+  private _entries(): HistoryEntry[] {
+    return this._store
+      ._getSessionEntries(this._sessionId)
+      .filter((e) => e.route === this._route);
+  }
+
+  back(current: TugTextEditingState): TugTextEditingState | null {
+    const entries = this._entries();
+    if (entries.length === 0) return null;
+
+    if (this._cursor === -1) {
+      this._draft = current;
+      this._cursor = entries.length - 1;
+    } else if (this._cursor > 0) {
+      this._cursor--;
+    } else {
+      return null;
+    }
+    return entryToEditingState(entries[this._cursor]);
+  }
+
+  forward(): TugTextEditingState | null {
+    const entries = this._entries();
+
+    if (this._cursor === -1) return null;
+
+    if (this._cursor < entries.length - 1) {
+      this._cursor++;
+      return entryToEditingState(entries[this._cursor]);
+    }
+
+    this._cursor = -1;
+    return this._draft;
+  }
+}
+
 /** Convert a HistoryEntry into a TugTextEditingState for engine restore. */
 function entryToEditingState(entry: HistoryEntry): TugTextEditingState {
   return {
@@ -237,6 +296,27 @@ export class PromptHistoryStore {
     }
 
     return new SessionHistoryProvider(sessionId, this);
+  }
+
+  /**
+   * Create a route-scoped HistoryProvider for the given session + route.
+   *
+   * Same semantics as `createProvider`, plus a `route` filter: only
+   * entries whose `route` field matches are visible via `back()` /
+   * `forward()`. Intended for compound inputs that present a per-route
+   * history timeline (e.g. `TugPromptEntry`). Each provider instance
+   * owns its own cursor + in-memory draft, so callers that cache one
+   * provider per route keep their browsing position for that route
+   * across route switches.
+   */
+  createRouteProvider(sessionId: string, route: string): HistoryProvider {
+    this._lastActiveSessionId = sessionId;
+
+    if (!this._loadedSessions.has(sessionId)) {
+      void this.loadSession(sessionId);
+    }
+
+    return new RouteHistoryProvider(sessionId, this, route);
   }
 
   // ── Internal helpers (used by SessionHistoryProvider) ─────────────────────

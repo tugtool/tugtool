@@ -39,6 +39,7 @@ import React, {
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useSyncExternalStore,
 } from "react";
@@ -50,6 +51,7 @@ import type {
   AtomSegment,
   CompletionProvider,
   DropHandler,
+  HistoryProvider,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -283,7 +285,7 @@ export const TugPromptEntry = React.forwardRef<
     id,
     codeSessionStore,
     // sessionMetadataStore — accepted for T3.4.c, unused in T3.4.b.
-    historyStore: _historyStore,
+    historyStore,
     completionProviders,
     dropHandler,
     localCommandHandler,
@@ -338,6 +340,24 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     routeRef.current = route;
   }, [route]);
+
+  // Per-route history providers. One provider per route — each holds
+  // its own cursor + in-memory "return to draft" cache, so the user's
+  // browsing position in history survives route switches. Providers
+  // are created lazily on first use and persist for the lifetime of
+  // the entry mount. Unified-timeline model: the provider's `_draft`
+  // slot is the "top of history" for this route, and submitted entries
+  // are index 1..N.
+  const historyProvidersRef = useRef<Record<string, HistoryProvider>>({});
+  const currentHistoryProvider = useMemo<HistoryProvider | null>(() => {
+    const sessionId = snap.tugSessionId;
+    if (!sessionId) return null;
+    const cached = historyProvidersRef.current[route];
+    if (cached) return cached;
+    const fresh = historyStore.createRouteProvider(sessionId, route);
+    historyProvidersRef.current[route] = fresh;
+    return fresh;
+  }, [historyStore, route, snap.tugSessionId]);
 
   // Live ref for the optional localCommandHandler so `performSubmit` (the
   // shared submit closure) can read the latest callback without rebuilding
@@ -394,6 +414,28 @@ export const TugPromptEntry = React.forwardRef<
     if (!handled) {
       codeSessionStore.send(text, atoms);
     }
+    // Record the submission in per-session history. The route field is
+    // what lets `RouteHistoryProvider` filter this entry into the
+    // current route's timeline. Captured before `input.clear()` so the
+    // live state is still the submitted content.
+    const sessionId = snapRef.current.tugSessionId;
+    if (sessionId) {
+      const state = input.captureState();
+      historyStore.push({
+        id: `${sessionId}-${Date.now()}`,
+        sessionId,
+        projectPath: "",
+        route: currentRoute ?? "",
+        text: state.text,
+        atoms: state.atoms.map((a) => ({
+          position: a.position,
+          type: a.type,
+          label: a.label,
+          value: a.value,
+        })),
+        timestamp: Date.now(),
+      });
+    }
     // Fire the pre-clear hook so hosts can drive submit-specific
     // effects (e.g., animated snap-back of a content-sized panel)
     // BEFORE `input.clear()` sets `data-empty="true"` and triggers
@@ -403,7 +445,7 @@ export const TugPromptEntry = React.forwardRef<
     // Route is a sticky user preference. Do not reset it on submit —
     // if the user switched to Shell, subsequent prompts stay on Shell
     // until they choose otherwise.
-  }, [codeSessionStore]);
+  }, [codeSessionStore, historyStore]);
 
   // [L07] Register the responder node. Both handler bodies are now
   // real: SELECT_VALUE runs the defensive sender/value narrowing +
@@ -674,6 +716,7 @@ export const TugPromptEntry = React.forwardRef<
             maximized
             completionProviders={completionProviders}
             dropHandler={dropHandler}
+            historyProvider={currentHistoryProvider ?? undefined}
             returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
             routePrefixes={[...ROUTE_PREFIXES]}
             onRouteChange={handleRouteChange}
