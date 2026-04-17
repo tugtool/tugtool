@@ -41,17 +41,19 @@ export class ErrorBoundary extends React.Component<
           visible={true}
           tone="danger"
           message={this.state.error.message}
+          footer={
+            <TugPushButton
+              emphasis="outlined"
+              role="danger"
+              onClick={() => window.location.reload()}
+            >
+              Reload
+            </TugPushButton>
+          }
         >
-          <pre style={{ margin: "0 0 16px", whiteSpace: "pre-wrap" }}>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
             {this.state.error.stack}
           </pre>
-          <TugPushButton
-            emphasis="outlined"
-            role="danger"
-            onClick={() => window.location.reload()}
-          >
-            Reload
-          </TugPushButton>
         </TugBanner>
       );
     }

@@ -126,12 +126,14 @@ interface TugPromptEntryPersistedState {
 }
 
 /**
- * Default route when the input has no typed prefix. One of the three
- * segments must always be active — there is no "no route" state in the
- * indicator. Prompt (`>`) is the sensible default: it's what the user
- * most often wants (talking to Claude). If the user types `$` or `:`
- * the indicator syncs to match; if they backspace the prefix away, the
- * indicator returns to `DEFAULT_ROUTE`.
+ * Default route at initial mount when no persisted state restores a
+ * prior selection. One of the three segments must always be active —
+ * there is no "no route" state in the indicator. Prompt (`>`) is the
+ * sensible default: it's what the user most often wants (talking to
+ * Claude). Route selection is sticky after mount: typing `$` or `:`
+ * syncs the indicator; backspacing the prefix away leaves the
+ * indicator on the last-selected route, and the next keystroke
+ * auto-inserts a matching route atom.
  */
 const DEFAULT_ROUTE = ">";
 
@@ -602,15 +604,32 @@ export const TugPromptEntry = React.forwardRef<
       return { currentRoute: routeRef.current, perRoute };
     },
     onRestore: (state) => {
-      savedContentByRouteRef.current = { ...state.perRoute };
-      setRouteState(state.currentRoute);
+      // Defensive shape check. Before commit 99809d06 the child
+      // `TugPromptInput` owned persistence and wrote a flat
+      // `TugTextEditingState` payload. After the upgrade, an old
+      // payload restored from tugbank is still the previous shape —
+      // reading `state.perRoute[state.currentRoute]` on that shape
+      // crashes the mount. Treat any payload missing the expected
+      // fields as a legacy value and fall back to defaults rather
+      // than destructuring blindly.
+      const perRoute =
+        state && typeof state === "object" && state.perRoute &&
+        typeof state.perRoute === "object"
+          ? state.perRoute
+          : {};
+      const currentRoute =
+        state && typeof state === "object" && typeof state.currentRoute === "string"
+          ? state.currentRoute
+          : DEFAULT_ROUTE;
+      savedContentByRouteRef.current = { ...perRoute };
+      setRouteState(currentRoute);
       const input = promptInputRef.current;
       if (input) {
-        const saved = state.perRoute[state.currentRoute];
+        const saved = perRoute[currentRoute];
         if (saved) {
           input.restoreState(saved);
         } else {
-          input.setRoute(state.currentRoute);
+          input.setRoute(currentRoute);
         }
       }
       const root = rootRef.current;

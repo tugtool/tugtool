@@ -101,6 +101,19 @@ body {
   align-self: stretch;
 }
 
+/* Contained error — for gallery demos. Swap fixed positioning for
+   absolute so the banner fills only its nearest positioned ancestor
+   (the mini-viewport) instead of the whole window. Detail panel max
+   height also switches to a percentage of the container. */
+.tug-banner[data-variant="error"][data-contained="true"] {
+  position: absolute;
+}
+
+.tug-banner[data-variant="error"][data-contained="true"] .tug-banner-detail-panel {
+  margin-top: 16px;
+  max-height: calc(100% - 80px);
+}
+
 /* Detail panel — contained, centered, scrollable diagnostic area */
 .tug-banner-detail-panel {
   margin-top: 32px;

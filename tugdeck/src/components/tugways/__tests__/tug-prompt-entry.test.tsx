@@ -760,13 +760,11 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     expect(updatesAfter - updatesBefore).toBe(1);
   });
 
-  it("onRouteChange(null) clears the pill (backspacing past the leading atom)", () => {
+  it("onRouteChange(null) leaves the pill on the last-selected route (sticky)", () => {
     const { container, id, managerRef } = renderEntryWithManager();
     expect(managerRef.current).not.toBeNull();
 
-    // First, dispatch SELECT_VALUE "$" to put the pill in a non-empty
-    // state. This also exercises the SELECT_VALUE → setRoute path
-    // which would normally have driven the pill via the engine.
+    // First, dispatch SELECT_VALUE "$" to put the pill on Shell.
     act(() => {
       managerRef.current!.sendToTarget(id, {
         action: TUG_ACTIONS.SELECT_VALUE,
@@ -777,27 +775,14 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     });
     expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
 
-    // Now simulate the "user backspaced past the leading atom" event:
-    // the engine normally fires onRouteChange(null) in that case. We
-    // invoke the component's callback indirectly by dispatching
-    // another SELECT_VALUE with value="" — but that's a *different*
-    // path. To test the null case specifically, we call the input's
-    // onRouteChange prop through the rendered TugPromptInput. The
-    // simplest way is to dispatch an input event that wipes the
-    // route atom; equivalent is to assert via a direct handler call,
-    // which is what we do here by re-triggering through setRoute
-    // with an empty string and letting the engine's detection clear.
-    //
-    // Practical shortcut: use the engine's clear() via the delegate
-    // and then fire a synthetic input event so onRouteChange(null)
-    // propagates through the normal path.
+    // Simulate the "user backspaced past the leading atom" event: the
+    // engine fires onRouteChange(null) when no leading route atom is
+    // present. Route is a sticky user preference — the pill must stay
+    // on "$" rather than snapping back to the default. The next
+    // keystroke auto-inserts a "$" route atom via handleInputChange.
     const editor = findEditableRoot();
     expect(editor).not.toBeNull();
     act(() => {
-      // Clear the editor's content. The engine's route-detection
-      // runs on the next input event; firing an empty input event
-      // triggers onRouteChange(null) because the leading atom is
-      // gone.
       while (editor!.firstChild) editor!.removeChild(editor!.firstChild);
       const ev = new InputEvent("input", {
         bubbles: true,
@@ -807,10 +792,9 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
       editor!.dispatchEvent(ev);
     });
 
-    // Pill returned to the default — ">" (Prompt) is active; the other
-    // two are inactive. There is no "no route selected" state.
-    expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
-    expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+    // Pill remains on "$" (sticky). The other two stay inactive.
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
     expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
   });
 });

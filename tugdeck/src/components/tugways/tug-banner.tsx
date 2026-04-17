@@ -43,6 +43,12 @@ export interface TugBannerProps {
   /** Rich content for the error detail panel (error variant only) */
   children?: React.ReactNode;
   /**
+   * Pinned footer content for the error detail panel — stays fixed at
+   * the bottom of the panel while `children` scrolls above it. Typically
+   * the primary action (e.g. Reload). Error variant only.
+   */
+  footer?: React.ReactNode;
+  /**
    * Disables the inert/scrim blocking behavior — use in gallery demos
    * to show the banner inside a contained preview without blocking the app.
    * @default false
@@ -61,6 +67,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
       message,
       icon,
       children,
+      footer,
       contained = false,
       className,
     },
@@ -162,6 +169,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
           data-variant="error"
           data-visible="true"
           data-tone={tone}
+          data-contained={contained ? "true" : undefined}
           role="alert"
           aria-live="assertive"
           className={cn("tug-banner", className)}
@@ -170,9 +178,14 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
           <div className="tug-banner-strip">
             <span className="tug-banner-message">{message}</span>
           </div>
-          {/* Detail panel — centered, constrained, scrollable diagnostic area */}
+          {/* Detail panel — centered, constrained, scrollable diagnostic
+              area with an optional pinned footer that stays fixed while
+              the body scrolls. */}
           <div className="tug-banner-detail-panel">
             <div className="tug-banner-detail-body">{children}</div>
+            {footer !== undefined && (
+              <div className="tug-banner-detail-footer">{footer}</div>
+            )}
           </div>
         </div>
       );

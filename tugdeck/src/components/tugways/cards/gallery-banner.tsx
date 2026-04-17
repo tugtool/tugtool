@@ -75,12 +75,54 @@ export function GalleryBanner() {
     timerRefs.current.push(t);
   }
 
-  const sampleStack = `Error: Something went critically wrong
-    at ComponentTree.render (bundle.js:1234)
-    at ErrorBoundary.render (bundle.js:5678)
-    at ReactDOM.render (bundle.js:9012)
-    at Object.create (bundle.js:3456)
-    at Module.evaluate (bundle.js:7890)`;
+  // Long simulated stack trace — intentionally sized well past the
+  // mini-viewport detail panel so the body scrolls and the pinned
+  // footer stays visible at the bottom. Mirrors a realistic React
+  // fiber unwind pulled from a dev build.
+  const sampleStack = [
+    "TypeError: undefined is not an object (evaluating 'state.perRoute[state.currentRoute]')",
+    "    at onRestore (tug-prompt-entry.tsx:217:39)",
+    "    at TugCard.onRestore (tug-card.tsx:356:48)",
+    "    at react_stack_bottom_frame (react-dom-client.js:18567:26)",
+    "    at runWithFiberInDEV (react-dom-client.js:999:23)",
+    "    at commitHookEffectListMount (react-dom-client.js:9411:180)",
+    "    at commitHookLayoutEffects (react-dom-client.js:9391:85)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9904:49)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9992:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9903:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9992:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9992:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:10074:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9903:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9903:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:10074:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:10074:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9907:45)",
+    "    at recursivelyTraverseLayoutEffects (react-dom-client.js:10792:38)",
+    "    at commitLayoutEffectOnFiber (react-dom-client.js:9963:45)",
+    "    at flushLayoutEffects (react-dom-client.js:12924:145)",
+    "    at commitRoot (react-dom-client.js:12803:29)",
+    "    at commitRootWhenReady (react-dom-client.js:12016:19)",
+    "    at performWorkOnRoot (react-dom-client.js:11950:36)",
+    "    at performWorkOnRootViaSchedulerTask (react-dom-client.js:13505:26)",
+    "    at performWorkUntilDeadline (react-dom-client.js:36:58)",
+  ].join("\n");
+
+  /** Tall mini-viewport so the contained error variant has room to render. */
+  const errorMiniViewport: React.CSSProperties = {
+    ...miniViewport,
+    height: "420px",
+  };
 
   return (
     <div className="cg-content" data-testid="gallery-banner">
@@ -219,8 +261,8 @@ export function GalleryBanner() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Error Variant</TugLabel>
         <div style={labelStyle}>
-          variant="error" — two parts: bold strip at top (same urgency as status), centered detail panel
-          below with stack trace + reload. Detail panel is scrollable and non-alarming.
+          variant="error" — bold strip at top (same urgency as status), centered detail panel below.
+          The body scrolls; the footer (Reload) stays pinned at the bottom-right.
         </div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
@@ -232,29 +274,32 @@ export function GalleryBanner() {
             {errorVisible ? "Hide Error" : "Show Error"}
           </TugPushButton>
         </div>
-        {errorVisible && (
-          <TugBanner
-            contained
-            visible={true}
-            variant="error"
-            tone="danger"
-            message="Render Error: Something went critically wrong"
-          >
-            <pre style={{ margin: "0 0 12px", whiteSpace: "pre-wrap" }}>
-              {sampleStack}
-            </pre>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <TugPushButton
-                size="sm"
-                emphasis="outlined"
-                role="danger"
-                onClick={() => setErrorVisible(false)}
-              >
-                Dismiss (demo only)
-              </TugPushButton>
-            </div>
-          </TugBanner>
-        )}
+        <div style={errorMiniViewport}>
+          <MiniContent />
+          {errorVisible && (
+            <TugBanner
+              contained
+              visible={true}
+              variant="error"
+              tone="danger"
+              message="undefined is not an object (evaluating 'state.perRoute[state.currentRoute]')"
+              footer={
+                <TugPushButton
+                  size="sm"
+                  emphasis="outlined"
+                  role="danger"
+                  onClick={() => setErrorVisible(false)}
+                >
+                  Reload (demo only)
+                </TugPushButton>
+              }
+            >
+              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                {sampleStack}
+              </pre>
+            </TugBanner>
+          )}
+        </div>
       </div>
 
     </div>
