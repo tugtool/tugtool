@@ -43,7 +43,7 @@ test-rust:
 test-ts:
     cd tugdeck && bun test
 
-# Capture Claude Code fixtures + capabilities snapshot (~5-6 min real-claude run)
+# Capture Claude Code fixtures + capabilities snapshot (~2-3 min; real-claude)
 capture-capabilities:
     #!/usr/bin/env bash
     set -eo pipefail
@@ -54,8 +54,18 @@ capture-capabilities:
     echo "---- claude version ----"
     claude --version
     echo
-    echo "---- running capture (TUG_STABILITY=3, ~5-6 min) ----"
-    (cd tugrust && env -u ANTHROPIC_API_KEY TUG_STABILITY=3 TUG_REAL_CLAUDE=1 \
+    # Single stability run by default. Shape flakiness (e.g., optional
+    # thinking_text appearing on some runs) surfaces downstream via the
+    # drift regression, which canonicalizes sequences and already
+    # classifies findings per Benign/Semantic/Ambiguous. Running the
+    # capture 3× front-loaded detection that drift already does with
+    # one extra run — empirically (v2.1.104..v2.1.112, 3 captures × 35
+    # probes), the 3× caught only 2 flakes total, both Benign-class.
+    # Override with `TUG_STABILITY=N just capture-capabilities` if you
+    # specifically want to probe flapping at baseline time.
+    STABILITY="${TUG_STABILITY:-1}"
+    echo "---- running capture (TUG_STABILITY=$STABILITY, ~$((STABILITY * 2))-$((STABILITY * 3)) min) ----"
+    (cd tugrust && env -u ANTHROPIC_API_KEY TUG_STABILITY="$STABILITY" TUG_REAL_CLAUDE=1 \
         cargo nextest run -p tugcast --features real-claude-tests \
         --run-ignored only --no-capture capture_all_probes)
     VER="$(tr -d '[:space:]' < capabilities/LATEST)"
