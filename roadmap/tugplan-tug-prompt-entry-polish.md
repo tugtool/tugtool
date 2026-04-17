@@ -100,7 +100,154 @@ Two options:
 
 ---
 
-## Track C — Content-driven panel sizing in TugSplitPane {#track-c}
+## Track E — Content-driven panel sizing in TugSplitPane (supersedes Track C) {#track-e}
+
+**Status: current.** Track C shipped as an incomplete implementation that relied on a magic chrome offset, a `queueMicrotask` workaround for React effect ordering, a `setTimeout` for transition cleanup, and missed CSS-driven rewrap entirely. Rather than patch those individually — each one a symptom of wrong tool for wrong signal — this track replaces Track C with a design where the panel observes its own content directly, no consumer-side ceremony, and every signal converges on one imperative recompute.
+
+**Scope:** `tug-split-pane.tsx` + `tug-split-pane.css`. `TugPromptEntry` / `TugPromptInput` / gallery card all lose Track C's `measureRef` plumb-through and `autoSizeChromeOffset` prop — this track replaces both with zero consumer wiring beyond one boolean prop.
+
+### Goal (unchanged from Track C)
+
+Adding a line to the input expands its rendered height; that expansion propagates upward and grows the split panel toward `maxSize`, pushing the sash upward. On submit (content clears, natural height collapses), the sash **animates back to the user-set anchor**. The anchor is the last size the user dragged to; it's remembered for the panel's lifetime and persisted via `storageKey` through the existing library path.
+
+### Sizing formula (unchanged from Track C)
+
+```
+panel.currentSize = clamp( max(userSetSize, naturalContentSize), minSize, maxSize )
+```
+
+- `userSetSize` — last user-drag anchor. Captured from the library's `onResize` whenever `isAutoSizingRef === false`.
+- `naturalContentSize` — `wrapperEl.scrollHeight` where `wrapperEl` is the panel's inner content wrapper. **No chrome offset.** `scrollHeight` is the natural height of everything in the panel (editor + toolbar + status + padding) already.
+- Growth is instant; return-to-anchor is animated over `autoSizeReturnDuration`.
+
+### API (the whole contract)
+
+```tsx
+interface TugSplitPanelProps {
+  /**
+   * Observe own content; grow toward maxSize when content exceeds the
+   * user-set anchor; animate back to anchor when content shrinks.
+   * @default false
+   */
+  autoSize?: boolean;
+  /**
+   * Milliseconds for the shrink-back animation. Growth is instant.
+   * Honored via CSS custom property; `prefers-reduced-motion: reduce`
+   * disables the transition regardless of value.
+   * @default 200
+   */
+  autoSizeReturnDuration?: number;
+}
+```
+
+No ref prop. No chrome offset. No plumb-through on `TugPromptEntry` / `TugPromptInput`. No card-side imperative handle.
+
+### Why this works — signal-by-signal
+
+The panel needs to react to any change that alters the natural content height:
+
+| Signal                                  | Source                                | Mechanism                                                           |
+| --------------------------------------- | ------------------------------------- | ------------------------------------------------------------------- |
+| User typing / paste / clear             | DOM subtree mutation on the editor    | `MutationObserver` on wrapper, `childList + subtree + characterData` |
+| CSS-var-driven font / size change       | `style` attribute write on descendant | Same MO with `attributes: true, attributeFilter: ['style', 'class']` |
+| Window / card / pane width rewrap       | Container contentBox resize           | `ResizeObserver` on wrapper, filtered to `inlineSize` changes only  |
+| Initial sizing pass for mount content   | RO's spec-guaranteed first delivery   | Runs post-commit — Group is already registered with the library     |
+
+The panel wrapper is `panelEl.firstElementChild` — the library's inner div that our `className` already targets. All observations hang off one element; all three observer fires converge on one `recompute()`.
+
+### Why echo loops are structurally absent (no RAF)
+
+- **MO** fires on DOM mutations. `panel.resize()` mutates flex-grow on the panel's outer div, not the wrapper's subtree — MO doesn't fire from our own writes.
+- **RO** fires on contentBox changes. Our resize changes block-size, not inline-size; the inline-size filter bails. No echo.
+- `recompute` tracks `lastScrollHeight` in a ref and bails when it matches — a cheap guard for any stray fire that slips through (e.g., MO fire on a style change that doesn't affect layout).
+
+### Shrink-back animation — CSS, not `setTimeout`, not `transitionend`
+
+```css
+.tug-split-pane [data-panel][data-auto-size="true"] {
+  transition: flex-grow var(--auto-size-transition-duration, 0ms) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tug-split-pane [data-panel][data-auto-size="true"] {
+    transition: none;
+  }
+}
+```
+
+`useLayoutEffect` sets `panelEl.dataset.autoSize = 'true'` once at mount. The `--auto-size-transition-duration` custom property is set via `panelEl.style.setProperty('--auto-size-transition-duration', ...)`:
+
+- Growth branch: `'0ms'` → instant.
+- Shrink branch: `${autoSizeReturnDuration}ms` → animated.
+
+The variable is **always** a valid value; no unset/reset dance, no timer, no `transitionend` listener, no cleanup race. Reduced-motion is handled at the CSS layer.
+
+### `userSetSize` capture (unchanged from Track C's working bit)
+
+- Library `onResize` is wired; on fire, `size.inPixels` seeds `userSetSizeRef` when `isAutoSizingRef` is false.
+- Before each `panel.resize(target)` call: set `isAutoSizingRef = true`. After: clear synchronously (the library's `resize()` fires `onResize` synchronously; no microtask deferral needed).
+- First fire (library's own onResize at mount) seeds the anchor from the library's resolved `defaultSize` — in real browsers, this runs before our first RO/MO delivery.
+
+### What Track C leaves behind (must be reverted)
+
+- `measureRef` prop on `TugPromptInput` + composed-ref wiring
+- `measureRef` prop on `TugPromptEntry`
+- `editorRef` + `autoSizeFromRef` + `autoSizeChromeOffset={90}` in `cards/gallery-prompt-entry.tsx`
+- `autoSizeFromRef` / `autoSizeChromeOffset` props on `TugSplitPanel`
+- `queueMicrotask` initial-recompute deferral
+- Inline `style.transition` + `setTimeout` cleanup
+- `isAutoSizingRef` microtask clear (goes sync)
+
+Kept from Track C:
+- `userSetSizeRef` and `handleResize` path (the anchor-capture logic is sound)
+- `isAutoSizingRef` flag (gate still needed; just cleared synchronously)
+- `panelElementRef` composition with caller's `ref`
+
+### Acceptance
+
+- Typing in the gallery card grows the panel past its default until `maxSize="85%"`.
+- Submit clears the editor; panel animates back to the user-dragged anchor (or default if undragged).
+- Changing font size via the tools popover reflows the editor and the panel resizes to match — no explicit call.
+- Resizing the window or card so the editor rewraps triggers a resize.
+- No "ResizeObserver loop completed with undelivered notifications" warning in the browser.
+- No "Group not found" error.
+- No `requestAnimationFrame`, no `setTimeout` anywhere in the sizing path.
+- `prefers-reduced-motion: reduce` — no transition, snap to anchor.
+
+### Law alignment
+
+| Law    | How E complies                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------ |
+| L02    | No external state pulled through `useSyncExternalStore` on the sizing path; imperative end-to-end            |
+| L03    | Observer install in `useLayoutEffect`                                                                        |
+| L05    | No RAF, so no "RAF for state-commit-dependent ops" concern                                                   |
+| L06    | The `--auto-size-transition-duration` custom property is ephemeral appearance, written directly to the DOM   |
+| L07    | `userSetSizeRef`, `isAutoSizingRef`, `lastScrollHeightRef`, `panelElementRef`, `autoSizeReturnDurationRef` — all refs |
+| L13    | No RAF. CSS transition handles declarative motion; the JS side writes one custom-property value              |
+| L22    | DOM read → DOM write. No React state round-trip.                                                             |
+| L23    | `panel.resize()` preserves user-visible state (no DOM rebuild); the library handles the write imperatively   |
+
+### Delivery order and sizing
+
+| Step | Change                                                                      | Size | Risk |
+| ---- | --------------------------------------------------------------------------- | ---- | ---- |
+| E1   | Replace Track C's props/impl on `TugSplitPanel` with `autoSize` only        | S    | Low  |
+| E2   | MO + RO install on panel's inner wrapper; `recompute` unifies all fires     | M    | Med  |
+| E3   | CSS rule + `--auto-size-transition-duration` write path                     | XS   | Low  |
+| E4   | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card | XS   | Low  |
+
+One commit covers E1–E4; the change is one cohesive unit and splitting it would leave the repo in a broken intermediate state.
+
+### Out of scope (intentionally)
+
+- Panels other than horizontal-sash. Vertical-sash wiring reads `scrollWidth` and filters on `blockSize`; same shape but not needed now.
+- Multiple auto-sized panels in the same group. One anchor per group; revisit if it ever ships.
+- A callable `recomputeAutoSize()` imperative handle. The automatic signals cover every case we've identified; adding the escape hatch without a concrete caller invites speculative API.
+
+---
+
+## Track C — Content-driven panel sizing in TugSplitPane (superseded by Track E) {#track-c}
+
+> ⚠️ **Superseded by Track E.** This section is preserved for history. Track C shipped in a working tree but was reverted before commit — see Track E for the reasoning and the replacement design.
 
 **User directive (rev 2): the feature lives inside TugSplitPane. The card is a consumer that supplies inputs; it does not implement policy.** That flips my earlier recommendation. The card should be able to opt in with a prop or two and let the split pane do the work.
 
@@ -265,41 +412,41 @@ Whatever source the sister card uses (a mock file tree, a fixture subdirectory),
 
 ## Delivery order and rough sizing
 
-| # | Track | Change | Size | Risk |
-|---|------|--------|------|------|
-| 1 | A1 | `showHandle` prop on `TugSplitPane` | XS (~20 LOC + one CSS rule) | Low |
-| 2 | A2+A3 | Gallery card uses `maxSize="85%"` + `showHandle={false}` | XS (2 prop additions) | Low |
-| 3 | B1+B2+B3 | Entry fills + toolbar pinned + input `maximized` | S (flex tweaks) | Low |
-| 4 | B4 | Remove outer border + update pairings | S (CSS + pairings doc) | Low |
-| 5 | B5+B6 | Gallery wrapper as `TugBox inset={false}` | XS (+ verify/fix TugBox if needed) | Low |
-| 6 | D1 | Wire real `fileCompletionProvider` in gallery card | XS–S (reuse sister-card fixture) | Low |
-| 7 | D2b | Generalize entry's completion prop → `completionProviders` map | S | Low |
-| 8 | C1 | `TugSplitPanel.autoSizeFromRef` + sizing model | M (ResizeObserver + drag-anchor + clamp) | Med |
-| 9 | C3a | Thin `inputMeasureRef` plumb-through on entry + input | XS | Low |
-| 10 | C2 | Gallery card wires the ref + prop | XS | Low |
-| 11 | C4 | Shrink-back animation (CSS or TugAnimator, respects `prefers-reduced-motion`) | S | Med |
-| 12 | C5 | Drag-vs-content anchor persistence (storageKey writes only `userSetSize`) | S | Low |
+| #  | Track | Change                                                                          | Size | Risk | Status             |
+|----|-------|---------------------------------------------------------------------------------|------|------|--------------------|
+| 1  | A1    | `showHandle` prop on `TugSplitPane`                                             | XS   | Low  | Shipped            |
+| 2  | A2+A3 | Gallery card uses `maxSize="85%"` + `showHandle={false}`                        | XS   | Low  | Shipped            |
+| 3  | B1+B2+B3 | Entry fills + toolbar pinned + input `maximized`                             | S    | Low  | Shipped            |
+| 4  | B4    | Remove outer border + update pairings                                           | S    | Low  | Shipped            |
+| 5  | B5+B6 | Gallery wrapper as `TugBox inset={false}`                                       | XS   | Low  | Shipped            |
+| 6  | D1    | Wire real `fileCompletionProvider` in gallery card                              | XS–S | Low  | Shipped            |
+| 7  | D2b   | Generalize entry's completion prop → `completionProviders` map                  | S    | Low  | Shipped            |
+| 8  | E1    | Replace Track C's props/impl: `TugSplitPanel.autoSize` + `autoSizeReturnDuration` | S | Low | Next |
+| 9  | E2    | MO + RO install on panel's inner wrapper; `recompute` unifies all fires         | M    | Med  | Next               |
+| 10 | E3    | CSS rule + `--auto-size-transition-duration` write path                         | XS   | Low  | Next               |
+| 11 | E4    | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card     | XS   | Low  | Next               |
+| ~~C1–C5~~ | | ~~Track C variants~~ — **superseded by Track E.** See §Track E.                       |      |      | Reverted           |
 
-**Commit grouping (proposal):**
-- **Commit 1 — Polish:** items 1–7 (Track A + B + D). Pure layout, visibility, and wiring. No new machinery.
-- **Commit 2 — Content-driven sizing:** items 8–12 (Track C). Introduces ResizeObserver + the sizing model + animation. Separate so it can be reviewed in isolation and reverted independently if the ergonomics turn out wrong.
+**Commit grouping:**
+- **Commit 1 — Polish:** items 1–7 (Track A + B + D). Pure layout, visibility, and wiring. *Shipped in `652ed1d5`.*
+- **Commit 2 — Content-driven sizing:** items 8–11 (Track E). One cohesive unit; splitting it would leave a broken intermediate state.
 
 ## Tests
 
 - **Track A:** snapshot the gallery card; confirm `.tug-split-sash-handle` is not in the DOM (or is `display: none`). Unit: `showHandle={true}` default keeps the pill.
-- **Track B:** rendering test — entry root has no `border` computed style (when B4a lands); entry + toolbar both render; input's wrapper has `data-maximized`.
-- **Track C:** unit — mounting the input with a known `scrollHeight` fires `onDesiredHeightChange` with the matching value. Integration — simulate content growth and assert the bottom panel's `resize()` is called with a clamped value. The C5c rule: simulate a manual drag to a larger size, then content growth; assert no override.
+- **Track B:** rendering test — entry root has no `border` computed style; entry + toolbar both render; input's wrapper has `data-maximized`.
+- **Track E:** no automated tests. The sizing path is observer-driven and happy-dom's `MutationObserver` stores its callback in a `WeakRef` that bun's GC collects between mutations, breaking multi-step scenarios. Rather than ship tests that prove nothing, this track is validated in the running app against the gallery card's acceptance criteria (typing grows the panel, submit animates back, font-size change resizes, no browser warnings).
 
 ## Out of scope
 
 - **Transcript / message-list surface in the top pane.** That's T3.4.c's territory; this plan leaves the top panel empty.
-- **Re-wiring the existing `growDirection="up"` prop.** The prop stays untouched; Track C works independently of it (though it reads nicest with `growDirection="up"` so the input's top edge rises while the bottom stays anchored to the toolbar).
+- **Re-wiring the existing `growDirection="up"` prop.** The prop stays untouched; Track E works independently of it (though it reads nicest with `growDirection="up"` so the input's top edge rises while the bottom stays anchored to the toolbar).
 - **Sash persistence.** Whatever `storageKey` behavior the gallery card picks is its own choice; this plan does not add or remove it.
 
 ## Where to land
 
 - New work lives on `main` (no worktree needed per current workflow).
-- Commits are small-batched by track: one "polish" commit for Tracks A + B + D, one "content-driven sizing" commit for Track C.
+- Commits are small-batched by track: one "polish" commit for Tracks A + B + D (shipped), one "content-driven sizing" commit for Track E.
 - No migration / feature flag — the component's caller set is small enough (gallery card + forthcoming Tide card) that changes apply to all callers immediately.
 
 ---
