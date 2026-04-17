@@ -1002,6 +1002,11 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
             data-placeholder={placeholder}
             data-empty="true"
             data-tug-select="custom"
+            // Marks this element as the scroll-source for any enclosing
+            // TugSplitPanel with `autoSize` — the panel queries for this
+            // attribute and reads `scrollHeight` / `offsetHeight` on the
+            // tagged element to drive content-driven pane sizing.
+            data-tug-auto-size-scroll-source="true"
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"

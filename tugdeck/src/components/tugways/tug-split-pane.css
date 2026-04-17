@@ -319,21 +319,6 @@ body {
   display: none;
 }
 
-/* autoSize: TugSplitPanel writes `data-auto-size="true"` on its outer
-   `[data-panel]` div and toggles `--auto-size-transition-duration` between
-   '0ms' (grow / user drag) and the configured shrink duration. The library
-   drives panel size via inline `flex-grow`, so the transition applies to
-   that property. The custom-property fallback of `0ms` keeps the rule
-   inert for any render where the TS side hasn't written a value yet. */
-.tug-split-pane [data-panel][data-auto-size="true"] {
-  transition: flex-grow var(--auto-size-transition-duration, 0ms) ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tug-split-pane [data-panel][data-auto-size="true"] {
-    transition: none;
-  }
-}
 
 /* showHandle={false}: collapse the sash hit-area to equal the visible
    line thickness. With the grabber pill gone, the 13px of transparent
