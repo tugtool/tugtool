@@ -93,6 +93,18 @@ pub fn fixture_root() -> PathBuf {
         .join("stream-json-catalog")
 }
 
+/// Repo-root `capabilities/` directory: the product-facing home for the
+/// `system_metadata` snapshots consumed by Tug.app + tugdeck at build
+/// time. Layout is documented in `capabilities/README.md`. Computed as a
+/// sibling of `tugrust/` via `CARGO_MANIFEST_DIR` (= `<repo>/tugrust/crates/tugcast`).
+pub fn capabilities_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("capabilities")
+}
+
 // -----------------------------------------------------------------------
 // Normalization — leaf-only placeholder substitution per [D04]/[D14]
 // -----------------------------------------------------------------------
@@ -840,4 +852,82 @@ pub async fn capture_with_stability(
         results.push(capture);
     }
     results
+}
+
+// -----------------------------------------------------------------------
+// Capabilities snapshot extraction (D6.a)
+// -----------------------------------------------------------------------
+
+/// Name of the probe that carries the canonical `system_metadata` event
+/// we want to expose to Tug.app / tugdeck via the `capabilities/` tree.
+pub const CAPABILITIES_PROBE_NAME: &str = "test-28-system-metadata-deep-dive";
+
+/// Extract the single `system_metadata` line from the given probe JSONL
+/// and write it (verbatim, still normalized) to
+/// `capabilities_dir/<version>/system-metadata.jsonl`, then update
+/// `capabilities_dir/LATEST` to `<version>\n`.
+///
+/// Called from the real-claude capture binary after `write_fixtures` so
+/// the version-bump runbook is a single operation. Also callable
+/// directly with an existing catalog fixture dir to re-derive the
+/// artifact without re-running probes.
+///
+/// Fails fast if the source probe file is missing or contains no
+/// `system_metadata` event. The returned path points at the newly
+/// written snapshot file.
+pub fn extract_capabilities(
+    probe28_jsonl: &std::path::Path,
+    capabilities_dir: &std::path::Path,
+    version: &str,
+) -> std::io::Result<PathBuf> {
+    use std::io::{BufRead, Write};
+
+    let file = std::fs::File::open(probe28_jsonl).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "extract_capabilities: cannot open {}: {e}",
+                probe28_jsonl.display()
+            ),
+        )
+    })?;
+
+    let mut found: Option<String> = None;
+    for line in std::io::BufReader::new(file).lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parsed: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if event_type_of(&parsed) == Some("system_metadata") {
+            found = Some(trimmed.to_string());
+            break;
+        }
+    }
+
+    let payload = found.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "extract_capabilities: no system_metadata event in {}",
+                probe28_jsonl.display()
+            ),
+        )
+    })?;
+
+    let dest_dir = capabilities_dir.join(version);
+    std::fs::create_dir_all(&dest_dir)?;
+    let dest = dest_dir.join("system-metadata.jsonl");
+    let mut f = std::fs::File::create(&dest)?;
+    f.write_all(payload.as_bytes())?;
+    f.write_all(b"\n")?;
+
+    let latest = capabilities_dir.join("LATEST");
+    std::fs::write(&latest, format!("{version}\n"))?;
+
+    Ok(dest)
 }

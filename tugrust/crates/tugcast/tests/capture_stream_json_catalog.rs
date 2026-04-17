@@ -53,8 +53,8 @@ use serde_json::{Value, json};
 // status_tag / build_manifest) keep compiling and running in standard
 // `cargo nextest run` invocations.
 use common::catalog::{
-    CapturedProbe, canonical_sequence, derive_schema, extract_version, normalize_event,
-    schema_to_json, stability_outcome, stability_runs,
+    CapturedProbe, canonical_sequence, derive_schema, extract_capabilities, extract_version,
+    normalize_event, schema_to_json, stability_outcome, stability_runs,
 };
 use common::probes::ProbeStatus;
 
@@ -62,7 +62,7 @@ use common::probes::ProbeStatus;
 // `write_fixtures`. Gated so standard runs don't trigger
 // unused-import warnings when the feature is off.
 #[cfg(feature = "real-claude-tests")]
-use common::catalog::{self, Schema, capture_with_stability};
+use common::catalog::{self, CAPABILITIES_PROBE_NAME, Schema, capabilities_root, capture_with_stability};
 #[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
 #[cfg(feature = "real-claude-tests")]
@@ -222,6 +222,17 @@ async fn capture_all_probes() {
     let manifest = build_manifest(&version, stability, &captures);
     let path = write_fixtures(&captures, &schema, &manifest).expect("write_fixtures succeeded");
     eprintln!("wrote fixtures to {}", path.display());
+
+    // D6.a — extract the system_metadata snapshot into the repo-root
+    // `capabilities/` tree and update `capabilities/LATEST`. Tug.app and
+    // tugdeck consume the snapshot at build time via `capabilities/LATEST`;
+    // co-locating the extraction here keeps the version-bump runbook a
+    // single operation.
+    let probe28 = path.join(format!("{CAPABILITIES_PROBE_NAME}.jsonl"));
+    let caps_dir = capabilities_root();
+    let caps_out = extract_capabilities(&probe28, &caps_dir, &version)
+        .expect("extract_capabilities succeeded");
+    eprintln!("wrote capabilities snapshot to {}", caps_out.display());
     // `_tmp_guard` drops here and removes the per-probe bank files.
 }
 
@@ -757,6 +768,63 @@ mod tests {
         );
         assert!(stability_outcome(&first, &[second]).is_some());
     }
+
+    // ---- extract_capabilities (D6.a) ----
+
+    #[test]
+    fn extract_capabilities_writes_snapshot_and_latest() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let probe28 = tmp.path().join("test-28-system-metadata-deep-dive.jsonl");
+        // Build a synthetic probe-28 file: a couple non-metadata lines
+        // around the system_metadata payload the capabilities artifact
+        // should capture.
+        let lines = [
+            r#"{"type":"session_init","session_id":"{{uuid}}"}"#,
+            r#"{"type":"system_metadata","version":"2.1.105","slash_commands":["commit","plan"],"skills":["tugplug:plan"],"agents":["general-purpose","tugplug:coder-agent"],"plugins":[{"name":"tugplug"}]}"#,
+            r#"{"type":"turn_complete"}"#,
+        ];
+        std::fs::write(&probe28, lines.join("\n") + "\n").unwrap();
+
+        let caps_dir = tmp.path().join("capabilities");
+        let written = extract_capabilities(&probe28, &caps_dir, "2.1.105").expect("extract");
+
+        // Snapshot file landed at the versioned path.
+        assert_eq!(written, caps_dir.join("2.1.105").join("system-metadata.jsonl"));
+        let body = std::fs::read_to_string(&written).unwrap();
+        assert!(body.starts_with(r#"{"type":"system_metadata""#));
+        assert!(body.ends_with("\n"));
+        // The captured line is verbatim from the source (minus trailing newline).
+        assert_eq!(body.trim_end_matches('\n'), lines[1]);
+
+        // LATEST points at the version string (with trailing newline).
+        let latest = std::fs::read_to_string(caps_dir.join("LATEST")).unwrap();
+        assert_eq!(latest, "2.1.105\n");
+    }
+
+    #[test]
+    fn extract_capabilities_errors_when_no_system_metadata_present() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let probe28 = tmp.path().join("probe28.jsonl");
+        std::fs::write(
+            &probe28,
+            "{\"type\":\"session_init\"}\n{\"type\":\"turn_complete\"}\n",
+        )
+        .unwrap();
+        let caps_dir = tmp.path().join("capabilities");
+        let err = extract_capabilities(&probe28, &caps_dir, "2.1.105").expect_err("should fail");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn extract_capabilities_errors_on_missing_source_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.jsonl");
+        let caps_dir = tmp.path().join("capabilities");
+        let err = extract_capabilities(&missing, &caps_dir, "2.1.105").expect_err("should fail");
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    // ---- stability_runs ----
 
     #[test]
     fn stability_runs_reads_env_default_one() {

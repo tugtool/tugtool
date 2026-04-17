@@ -319,6 +319,87 @@ function themeSaveLoadPlugin(): VitePlugin {
 }
 
 // ---------------------------------------------------------------------------
+// Capabilities virtual module (D6.c).
+//
+// Resolves `import "virtual:capabilities/system-metadata"` to the raw JSONL
+// contents of `<repo-root>/capabilities/<LATEST>/system-metadata.jsonl`. The
+// artifact is produced by the tugcast capture binary (D6.a) and consumed by
+// tugdeck's SessionMetadata fixture (D5) as the source of truth for slash
+// commands / skills / agents available to the UI.
+//
+// HMR: watches the pointer + snapshot files so dev-server reloads pick up
+// a new version bump without a manual restart.
+// ---------------------------------------------------------------------------
+
+export const CAPABILITIES_VIRTUAL_ID = "virtual:capabilities/system-metadata";
+export const CAPABILITIES_RESOLVED_ID = "\0" + CAPABILITIES_VIRTUAL_ID;
+const CAPABILITIES_ROOT = path.resolve(__dirname, "..", "capabilities");
+
+export function loadCapabilitiesSnapshot(
+  root: string = CAPABILITIES_ROOT,
+): { content: string; snapshotPath: string; version: string } {
+  const latestPath = path.join(root, "LATEST");
+  if (!fs.existsSync(latestPath)) {
+    throw new Error(
+      `capabilities plugin: ${latestPath} not found — capabilities snapshot is missing`,
+    );
+  }
+  const version = fs.readFileSync(latestPath, "utf-8").trim();
+  if (!version) {
+    throw new Error(`capabilities plugin: ${latestPath} is empty`);
+  }
+  const snapshotPath = path.join(root, version, "system-metadata.jsonl");
+  if (!fs.existsSync(snapshotPath)) {
+    throw new Error(
+      `capabilities plugin: ${snapshotPath} not found — LATEST points at missing version ${version}`,
+    );
+  }
+  const content = fs.readFileSync(snapshotPath, "utf-8");
+  return { content, snapshotPath, version };
+}
+
+function capabilitiesVirtualModulePlugin(): VitePlugin {
+  let snapshotPath: string | null = null;
+  return {
+    name: "capabilities-virtual-module",
+    resolveId(id) {
+      if (id === CAPABILITIES_VIRTUAL_ID) return CAPABILITIES_RESOLVED_ID;
+    },
+    load(id) {
+      if (id === CAPABILITIES_RESOLVED_ID) {
+        const { content, snapshotPath: p } = loadCapabilitiesSnapshot();
+        snapshotPath = p;
+        return `export default ${JSON.stringify(content)};\n`;
+      }
+    },
+    configureServer(server) {
+      // The capabilities tree lives outside tugdeck's root, so Vite's watcher
+      // doesn't include it by default — add it explicitly.
+      const latestPath = path.join(CAPABILITIES_ROOT, "LATEST");
+      server.watcher.add(latestPath);
+      if (snapshotPath) server.watcher.add(snapshotPath);
+    },
+    handleHotUpdate({ file, server }) {
+      const latestPath = path.join(CAPABILITIES_ROOT, "LATEST");
+      if (file === latestPath || (snapshotPath && file === snapshotPath)) {
+        const mod = server.moduleGraph.getModuleById(CAPABILITIES_RESOLVED_ID);
+        if (mod) {
+          server.moduleGraph.invalidateModule(mod);
+          // Re-prime snapshotPath in case LATEST rolled to a different version.
+          try {
+            snapshotPath = loadCapabilitiesSnapshot().snapshotPath;
+            server.watcher.add(snapshotPath);
+          } catch {
+            // Surface at next request via load() error; don't crash HMR.
+          }
+          return [mod];
+        }
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Discover shipped theme CSS files for production build inputs.
 //
 // Each styles/themes/<name>.css file is added as a separate Rollup entry
@@ -355,7 +436,14 @@ export default (defineConfig as any)(() => {
   const themeInputs = discoverThemeCssInputs();
 
   return {
-    plugins: [react(), themeLoaderPlugin(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
+    plugins: [
+      react(),
+      themeLoaderPlugin(),
+      paletteHotReload(),
+      controlTokenHotReload(),
+      themeSaveLoadPlugin(),
+      capabilitiesVirtualModulePlugin(),
+    ],
     css: {
       postcss: {
         plugins: [postcssTugColor()],
