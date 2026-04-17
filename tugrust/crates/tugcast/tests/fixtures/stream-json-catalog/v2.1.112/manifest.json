@@ -27,7 +27,7 @@
       "status": "passed"
     },
     {
-      "event_count": 12,
+      "event_count": 11,
       "name": "test-05-tool-use-read",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -45,7 +45,7 @@
       "status": "passed"
     },
     {
-      "event_count": 12,
+      "event_count": 13,
       "name": "test-08-tool-error-nonexistent",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -57,13 +57,13 @@
       "status": "passed"
     },
     {
-      "event_count": 142,
+      "event_count": 85,
       "name": "test-10-long-streaming-300-words",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 12,
+      "event_count": 13,
       "name": "test-11-permission-deny-roundtrip",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -82,7 +82,7 @@
       "status": "skipped"
     },
     {
-      "event_count": 22,
+      "event_count": 23,
       "name": "test-14-message-during-turn",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -107,7 +107,7 @@
       "status": "skipped"
     },
     {
-      "event_count": 7,
+      "event_count": 8,
       "name": "test-18-message-during-turn-detailed",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -132,13 +132,13 @@
       "status": "passed"
     },
     {
-      "event_count": 15,
+      "event_count": 16,
       "name": "test-22-subagent-spawn",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 9,
+      "event_count": 10,
       "name": "test-23-image-attachment",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -163,7 +163,7 @@
       "status": "passed"
     },
     {
-      "event_count": 10,
+      "event_count": 9,
       "name": "test-27-at-file-references-variant",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -181,7 +181,7 @@
       "status": "passed"
     },
     {
-      "event_count": 13,
+      "event_count": 14,
       "name": "test-30-tugplug-dash-status",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -218,5 +218,5 @@
       "status": "skipped"
     }
   ],
-  "stability_runs": 3
+  "stability_runs": 1
 }
