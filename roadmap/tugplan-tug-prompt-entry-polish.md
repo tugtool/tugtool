@@ -509,24 +509,23 @@ Dedup note: the captured payload overlaps — every skill (e.g. `tugplug:plan`) 
 
 **This change is load-bearing for T3.4.c too** — without it the live session's slash popup will be empty. D5 pays for the fix as part of unblocking the gallery.
 
-##### D5.b — Ship the captured `system_metadata` as a fixture
+##### D5.b — Load the captured `system_metadata` via the capabilities pipeline (D6)
 
-Source: `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-28-system-metadata-deep-dive.jsonl` line 2 carries a single-line JSON `system_metadata` object (17 agents, 12 skills, 21 slash_commands, plugins=[{name:"tugplug"}]).
+D5 **does not** embed a test-catalog file path or a hand-copied JSON inside tugdeck. Instead it consumes the canonical `capabilities/LATEST/system-metadata.jsonl` artifact produced by **D6**. D6 owns the capture, the rename, the `LATEST` pointer, the bundle placement, and the runtime mismatch bulletin — read that section before implementing D5.
 
-Two ways to pull it into tugdeck:
-
-- **(F1) Vite raw import across the repo boundary.** `?raw` import of the .jsonl file, split and parse in JS. Requires `tugdeck/vite.config.*` `server.fs.allow` to include the Rust crate path, and a little runtime boilerplate. Always pulls the latest fixture text.
-- **(F2) Ship a verbatim copy inside tugdeck.** Copy the payload once into `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-v2-1-105.json` with a short README pointing at the source so future rotations know where to re-capture from.
-
-**Recommendation: F2** — self-contained build, pins the gallery to a known snapshot even if the catalog rev'd mid-development. Accept the tiny duplication; call out the re-capture procedure in the README.
-
-Fixture module outline:
+From D5's point of view the artifact is simply "a JSONL file at a stable build-time resolvable path whose single line is a `system_metadata` payload". The fixture module becomes a thin wrapper:
 
 ```ts
 // system-metadata-fixture.ts
-import fixturePayload from "./system-metadata-v2-1-105.json";
+// The import path resolves to `capabilities/<LATEST>/system-metadata.jsonl`
+// via the Vite virtual-module hook defined by D6. The underlying file is a
+// one-line JSONL produced by the capture runbook, so we take the first line,
+// JSON.parse it, and feed it to SessionMetadataStore.
+import capturedJsonl from "virtual:capabilities/system-metadata";
 import { FeedId, type FeedIdValue } from "@/protocol";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
+
+const fixturePayload = JSON.parse(capturedJsonl.split("\n")[0]);
 
 /**
  * Inert FeedStore that emits the captured system_metadata payload once on
@@ -619,8 +618,117 @@ The backend-backed `SessionMetadataStore` wiring in the card (currently live) is
 - Terminal-only commands (`/status`, `/model`, `/clear`, `/vim`, `/btw`, `/resume`). They're not in `system_metadata.slash_commands` per transport-exploration.md line 1194. Follow-on work in `tide.md` handles responding to those when the graphical UI reimplements them.
 - Category-aware styling (different badge for skill vs agent vs local). The popup stays name-only; `category` survives on the snapshot for a later pass.
 - Promoting the position-0 gate to the engine (P2). T3.4.c.
-- Regenerating the fixture from a later Claude Code (`v2.1.112+`). The gallery pins to v2.1.105; re-capture when the rev matters.
+- Re-capturing the artifact when Claude Code rolls (v2.1.112+, etc.). Lives in D6's runbook step, not here.
 - Auto-invoking agents through a real dispatcher — today they're completion-only; invocation remains a T3.4.c / tide.md concern.
+
+---
+
+## Track F — Capabilities artifact pipeline {#track-f}
+
+### D6 — Build-time capabilities discovery {#d6}
+
+**Directive (user, 2026-04-17):**
+- **Build-time only.** The extraction must not run on Tug.app's launch path. A developer / CI action produces a committed artifact; the app loads that artifact at startup.
+- **General, not test-named.** The captured payload lives under a product-facing name (`system-metadata.jsonl`) in a well-known location — not behind a `test-28-system-metadata-deep-dive.jsonl` path inside the tugcast test catalog.
+- **Well-known bundle path.** Both dev builds (`bun dev` against the tugdeck source tree) and production builds (Tug.app with tugdeck / tugcast bundled as resources) must be able to locate the artifact at a consistent path.
+- **`capabilities/LATEST` pointer.** The pointer is versioned alongside the payload so the build picks up whichever snapshot the pointer resolves to. Version bumps update the pointer as part of the rotation runbook.
+- **Mismatch handling at runtime.** The app uses the best-available baked snapshot. When the live `system_metadata.version` (observed on first session start) disagrees with the baked one, post a **tug-bulletin** to notify the user that the slash-command list may be stale.
+
+D6 is the load-bearing prerequisite for D5: D5 consumes the artifact D6 produces. Ship D6 first.
+
+#### D6.a — Capture pipeline extension
+
+The golden-catalog capture rig already drives Claude Code through the probe-28 "system-metadata deep dive" scenario and normalizes the output into `tests/fixtures/stream-json-catalog/v<ver>/test-28-system-metadata-deep-dive.jsonl`. That file is six lines — `session_init`, `system_metadata`, a user turn, and stream close — with the normalizer's `{{uuid}}` / `{{cwd}}` / `{{iso}}` placeholders applied.
+
+Add a new extraction step to the capture pipeline (runs as part of the same `cargo` / `bun` invocation the version-bump runbook already uses):
+
+1. Read the just-captured probe-28 file.
+2. Extract the single line whose parsed JSON has `type === "system_metadata"`.
+3. Write that line verbatim (still with placeholders — the UI's fields are `version`, `slash_commands`, `skills`, `agents`, `plugins`, none of which are templated) to:
+
+   ```
+   <repo-root>/capabilities/v<ver>/system-metadata.jsonl
+   ```
+
+4. Update `<repo-root>/capabilities/LATEST` to contain the single version string (e.g. `v2.1.105\n`).
+
+Implementation note: a Rust `extract_capabilities()` helper invoked after the probe writes its fixture keeps the change within the tugcast crate — no new binary, no new CI job. Alternatively a tiny `bun run scripts/extract-capabilities.ts` on the tugdeck side can read the jsonl and write the output. Recommend **Rust-side** because the rest of the capture path is there; colocation keeps the version-bump runbook a single operation.
+
+#### D6.b — Repository layout
+
+```
+<repo-root>/
+  capabilities/
+    LATEST                             # text file: "v2.1.105\n"
+    v2.1.104/
+      system-metadata.jsonl            # normalized single-event capture
+    v2.1.105/
+      system-metadata.jsonl
+```
+
+- **Versions retained.** Same policy as the stream-json catalog — cheap (one small JSONL per version), useful for reproducing historical UI behavior or bisecting slash-command regressions.
+- **`LATEST` is a text file, not a symlink.** Portable on every host OS; readable by both Vite's Node-side build and Xcode's resource-copy phase without shelling out.
+- **No JSONL→JSON trim.** The payload stays JSONL (one event per line, matching the catalog's native format) so downstream tooling can consume it with the same parsers.
+
+#### D6.c — Bundle placement
+
+Two build environments consume the artifact; both need a stable path:
+
+- **tugdeck (Vite / browser bundle).** A Vite plugin (or `define` substitution) resolves `import "virtual:capabilities/system-metadata"` at build time by reading `<repo-root>/capabilities/LATEST`, then the corresponding `v<ver>/system-metadata.jsonl`. Returns the file contents as a raw string that the consumer `JSON.parse`s on the first line. One import site, one virtual module — no loose asset paths.
+- **Tug.app (Xcode / Swift).** The `.xcodeproj` gains a pre-build phase that reads `<repo-root>/capabilities/LATEST` and copies the resolved file to `Tug.app/Contents/Resources/capabilities/system-metadata.jsonl`. The Swift host loads it at startup via `Bundle.main.url(forResource:withExtension:subdirectory:)`. The filename inside the bundle is the version-neutral `system-metadata.jsonl` — the specific version is embedded in the payload's `version` field.
+
+Both environments therefore converge on the same canonical filename (`system-metadata.jsonl`), while the repository keeps the versioned layout for history.
+
+#### D6.d — Runtime version mismatch → tug-bulletin
+
+The Swift host doesn't probe Claude Code on launch (per directive — no extra startup cost). Instead, it waits for the first real session to produce its own `system_metadata` frame, then compares:
+
+```
+let baked   = loadBakedSystemMetadata().version   // e.g. "2.1.105"
+let observed = firstSystemMetadataFrame.version   // e.g. "2.1.112"
+
+if baked != observed {
+  TugBulletin.post(
+    kind: .capabilitiesStale,
+    title: "Slash commands may be out of date",
+    body: "Baked capabilities snapshot is \(baked); Claude Code is \(observed). Rebuild Tug.app to refresh.",
+  )
+}
+```
+
+One bulletin per launch — deduped on the same `(baked, observed)` pair so session restarts within the same launch don't spam. This check is advisory; the baked snapshot keeps driving the UI regardless.
+
+**Open question (small):** does the project already have a `TugBulletin` surface exposed to Swift, or is this the first Swift-side poster? If no precedent exists, fall back to a console `os_log` in the D6 commit and note the bulletin wiring as a follow-up. (The directive implies bulletins exist; confirm at implementation time.)
+
+#### D6.e — Runbook tie-in
+
+The version-bump runbook in `roadmap/tugplan-golden-stream-json-catalog.md#deep-version-bump-runbook` gets two new steps appended after the existing probe-rerun step:
+
+1. Run the capabilities extraction (the new step from D6.a).
+2. Update `capabilities/LATEST` to point at the new version string.
+
+Both steps are mechanical; they belong in the runbook rather than as a standalone document.
+
+#### D6.f — What D5 needs from D6
+
+- Resolvable path: `virtual:capabilities/system-metadata` (tugdeck).
+- Single-line JSONL at that path whose parse-result is a `system_metadata` payload.
+- `version` field inside the payload (used for mismatch check in the Swift host; also handy for the fixture to log at dev time).
+
+Nothing else — no helper utilities, no re-export of `SessionMetadataStore`, no typed wrapper. D5 owns the parse-and-mount; D6 owns the capture-and-placement.
+
+**Acceptance (D6):**
+- Run the version-bump runbook's extraction step on a clean checkout. `capabilities/v2.1.105/system-metadata.jsonl` appears; `capabilities/LATEST` reads `v2.1.105`.
+- `bun run build` in tugdeck produces a bundle that contains the payload inlined (verify: grep the built output for `tugplug:plan` → present).
+- `xcodebuild -project Tug.xcodeproj` copies `system-metadata.jsonl` into `Tug.app/Contents/Resources/capabilities/`.
+- A first session under a matching Claude Code version produces no tug-bulletin.
+- A first session under a mismatching Claude Code version produces one tug-bulletin, with the baked + observed version strings.
+
+**Out of scope for D6:**
+- **Runtime probing on launch.** Directive explicitly excludes it.
+- **Live refresh of the baked snapshot.** Users rebuild Tug.app to pick up a new capabilities version; no in-app "update capabilities" flow.
+- **Anything beyond `system_metadata`.** Other `system_metadata`-adjacent feeds (cost updates, compact boundaries, etc.) stay in the live session path. D6 is specifically the capabilities surface the slash-popup needs.
+- **Dropping the test-catalog fixture.** The stream-json catalog keeps its probe-28 file for drift regression; the new `capabilities/` tree is a second output, not a replacement.
 
 ---
 
@@ -640,14 +748,19 @@ The backend-backed `SessionMetadataStore` wiring in the card (currently live) is
 | 10 | E3    | CSS rule + `--auto-size-transition-duration` write path                         | XS   | Low  | Next               |
 | 11 | E4    | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card     | XS   | Low  | Next               |
 | 12 | D4    | `@` file completion fixture for gallery (hard-coded tugtool tree)               | S    | Low  | Next               |
-| 13 | D5    | `/` slash-command fixture for gallery (tugplug skills + agents)                 | XS–S | Low  | Next               |
+| 13 | D6.a  | Capture pipeline extension: write `capabilities/v<ver>/system-metadata.jsonl`    | S    | Low  | Next               |
+| 14 | D6.b+c | `capabilities/` + `LATEST` layout; Vite virtual module; Xcode bundle copy      | S    | Med  | Next               |
+| 15 | D6.d  | Swift-side mismatch check + tug-bulletin on first `system_metadata` frame       | XS   | Low  | Next               |
+| 16 | D6.e  | Runbook tie-in — append extraction step to version-bump runbook                 | XS   | Low  | Next               |
+| 17 | D5    | `/` slash-command completion for gallery via capabilities artifact (+ parser fix + agents + position-0 gate) | S | Low | Next (blocked on 13–15) |
 | ~~C1–C5~~ | | ~~Track C variants~~ — **superseded by Track E.** See §Track E.                       |      |      | Reverted           |
 
 **Commit grouping:**
 - **Commit 1 — Polish:** items 1–7 (Track A + B + D rev 2). Pure layout, visibility, and wiring. *Shipped in `652ed1d5`.*
 - **Commit 2 — Content-driven sizing:** items 8–11 (Track E). One cohesive unit; splitting it would leave a broken intermediate state.
 - **Commit 3 — `@` fixture (D4):** item 12. File completion for the gallery against a hard-coded tugtool directory snapshot. Self-contained; does not touch `FileTreeStore` or the entry component.
-- **Commit 4 — `/` fixture (D5):** item 13. Slash-command completion for the gallery sourced from `tugplug/skills/` + `tugplug/agents/`. Self-contained; does not touch `SessionMetadataStore` or the entry component.
+- **Commit 4 — Capabilities pipeline (D6):** items 13–16. One cohesive unit — capture extraction, repo layout, Vite virtual module, Xcode bundle copy, Swift mismatch bulletin, runbook append. Shipping these piecemeal leaves half-wired build paths, so bundle them.
+- **Commit 5 — `/` slash completion (D5):** item 17. Depends on commit 4: consumes `virtual:capabilities/system-metadata`, fixes `SessionMetadataStore` parser + adds `agents[]`, adds position-0 gate, rewires the gallery card's `/` provider.
 
 ## Tests
 
