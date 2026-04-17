@@ -54,10 +54,10 @@ body {
 
   /* Visible sash line thickness. Shown via .tug-split-sash::before. */
   --tug-split-sash-thickness: 3px;
-  /* Interactive hit-target width (perpendicular to the sash line).
-     Wider than the visible thickness so the sash is easy to grab.
-     Step 11 may expand per size variant. */
-  --tug-split-sash-hit-area: 16px;
+  /* Interactive hit-target width. Same as the line thickness — the
+     library expands the hit region to a 10px minimum for pointer
+     events, so a 3px visible element is still comfortably draggable. */
+  --tug-split-sash-hit-area: 3px;
   /* Grip icon dimensions, along the long and short axes of the sash
      line. For a horizontal sash the long axis is horizontal, so
      `long` = width and `short` = height; for a vertical sash the two
@@ -312,21 +312,7 @@ body {
   opacity: var(--tugx-control-disabled-opacity, 0.5);
 }
 
-/* showHandle={false}: suppress the decorative pill + grip icon only. The
-   sash line (::before) stays visible and the full hit area remains draggable.
-   display: none removes the pill entirely so it reserves no space. */
+/* showHandle={false}: suppress the grip pill only. Sash line stays. */
 .tug-split-pane[data-show-handle="false"] .tug-split-sash-handle {
   display: none;
 }
-
-/* showHandle={false}: hit-area keeps the full `--tug-split-sash-hit-area`
-   width (~16px) so clicks near the visible line reliably target the sash
-   element. Collapsing the sash to 3px tall (as an earlier iteration did)
-   made the visible line hard to grab AND broke DOM-target-based drag
-   detection — react-resizable-panels' own hit detection expands to a
-   10px minimum, so the library would process drags that our own
-   `target.closest('.tug-split-sash')` check missed, leading to visible
-   resizes that never made it through to persistence. A faintly-visible
-   transparent band around the line is an acceptable trade for reliable
-   interaction; theme-matching the sash background can address any
-   residual color mismatch without shrinking the target. */
