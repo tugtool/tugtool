@@ -93,7 +93,8 @@ async fn test_single_session_end_to_end() {
     let card_id = "card-1";
     let tug_session_id = "sess-end-to-end";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -160,7 +161,8 @@ async fn test_subscription_auth_source() {
     let card_id = "card-auth";
     let tug_session_id = "sess-auth";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -240,7 +242,8 @@ async fn test_heartbeat_survives_long_turn() {
     let card_id = "card-hb";
     let tug_session_id = "sess-hb";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -298,8 +301,10 @@ async fn test_two_sessions_never_cross() {
     let sess_a = "sess-cross-a";
     let sess_b = "sess-cross-b";
 
-    ws.send_spawn_session("card-a", sess_a, &tc.project_dir).await;
-    ws.send_spawn_session("card-b", sess_b, &tc.project_dir).await;
+    ws.send_spawn_session("card-a", sess_a, &tc.project_dir)
+        .await;
+    ws.send_spawn_session("card-b", sess_b, &tc.project_dir)
+        .await;
     ws.await_session_state(sess_a, "pending", WIRE_TIMEOUT)
         .await
         .expect("A pending");
@@ -352,7 +357,8 @@ async fn test_lazy_spawn_no_subprocess_until_first_input() {
     let card_id = "card-lazy";
     let tug_session_id = "sess-lazy";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending after spawn_session");
@@ -415,7 +421,8 @@ async fn test_reset_session_reinitializes() {
     let card_id = "card-reset";
     let tug_session_id = "sess-reset";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -474,7 +481,8 @@ async fn test_supervisor_rebind_on_startup() {
     {
         let tc = TestTugcast::spawn(&project_dir, bank_path.clone()).await;
         let mut ws = TestWs::connect(tc.port).await;
-        ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+        ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+            .await;
         ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
             .await
             .expect("pending after initial spawn_session");
@@ -491,7 +499,8 @@ async fn test_supervisor_rebind_on_startup() {
     // subsequently produce a live session.
     let tc2 = TestTugcast::spawn(&project_dir, bank_path).await;
     let mut ws2 = TestWs::connect(tc2.port).await;
-    ws2.send_spawn_session(card_id, tug_session_id, &tc2.project_dir).await;
+    ws2.send_spawn_session(card_id, tug_session_id, &tc2.project_dir)
+        .await;
     ws2.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending after rebind");
@@ -517,8 +526,10 @@ async fn test_p5_cross_client_distinct_sessions() {
     let sess_a = "sess-p5-a";
     let sess_b = "sess-p5-b";
 
-    ws_a.send_spawn_session("card-p5-a", sess_a, &tc.project_dir).await;
-    ws_b.send_spawn_session("card-p5-b", sess_b, &tc.project_dir).await;
+    ws_a.send_spawn_session("card-p5-a", sess_a, &tc.project_dir)
+        .await;
+    ws_b.send_spawn_session("card-p5-b", sess_b, &tc.project_dir)
+        .await;
     ws_a.await_session_state(sess_a, "pending", WIRE_TIMEOUT)
         .await
         .expect("A pending");
@@ -571,7 +582,8 @@ async fn test_session_metadata_reaches_late_subscriber() {
     // chance to arrive and be cached in latest_metadata.
     {
         let mut ws1 = TestWs::connect(tc.port).await;
-        ws1.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+        ws1.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+            .await;
         ws1.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
             .await
             .expect("W1 pending");
@@ -594,7 +606,8 @@ async fn test_session_metadata_reaches_late_subscriber() {
     // the fresh client_id would have an empty client_sessions set
     // and no frame would arrive.
     let mut ws2 = TestWs::connect(tc.port).await;
-    ws2.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws2.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     let meta_count = ws2
         .count_session_metadata(tug_session_id, Duration::from_secs(3))
         .await;
@@ -618,8 +631,10 @@ async fn test_session_metadata_two_sessions_no_clobber_real_claude() {
     let sess_a = "sess-meta-a";
     let sess_b = "sess-meta-b";
 
-    ws.send_spawn_session("card-meta-a", sess_a, &tc.project_dir).await;
-    ws.send_spawn_session("card-meta-b", sess_b, &tc.project_dir).await;
+    ws.send_spawn_session("card-meta-a", sess_a, &tc.project_dir)
+        .await;
+    ws.send_spawn_session("card-meta-b", sess_b, &tc.project_dir)
+        .await;
     ws.await_session_state(sess_a, "pending", WIRE_TIMEOUT)
         .await
         .expect("A pending");
@@ -684,7 +699,8 @@ async fn test_send_interrupt_reaches_tugcode() {
     let card_id = "card-interrupt";
     let tug_session_id = "sess-interrupt";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -735,7 +751,8 @@ async fn test_send_tool_approval_roundtrip() {
     let card_id = "card-approval";
     let tug_session_id = "sess-approval";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -805,7 +822,8 @@ async fn test_send_session_command_new_respawns() {
     let card_id = "card-cmd-new";
     let tug_session_id = "sess-cmd-new";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");
@@ -874,7 +892,8 @@ async fn test_send_model_change_behavioral() {
     let card_id = "card-model";
     let tug_session_id = "sess-model";
 
-    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir).await;
+    ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
+        .await;
     ws.await_session_state(tug_session_id, "pending", WIRE_TIMEOUT)
         .await
         .expect("pending");

@@ -553,7 +553,8 @@ pub async fn execute_probe(
 
     let card_id = format!("probe-{}", probe.name);
     let tug_session_id = format!("sess-{}", probe.name);
-    ws.send_spawn_session(&card_id, &tug_session_id, project_dir).await;
+    ws.send_spawn_session(&card_id, &tug_session_id, project_dir)
+        .await;
 
     // Wait for the pending confirmation only. The router's state
     // machine is Pending → Spawning → Live, and the transition out of
@@ -986,10 +987,7 @@ fn names_of(payload: &Value, field: &str) -> BTreeSet<String> {
                     if let Some(s) = entry.as_str() {
                         Some(s.to_string())
                     } else {
-                        entry
-                            .get("name")
-                            .and_then(|n| n.as_str())
-                            .map(String::from)
+                        entry.get("name").and_then(|n| n.as_str()).map(String::from)
                     }
                 })
                 .collect()
@@ -1052,8 +1050,14 @@ pub fn diff_capabilities(old_line: &str, new_line: &str) -> String {
     let mut out = String::new();
 
     for field in ["version", "model", "permission_mode"] {
-        let o = old.get(field).and_then(|v| v.as_str()).unwrap_or("<absent>");
-        let n = new.get(field).and_then(|v| v.as_str()).unwrap_or("<absent>");
+        let o = old
+            .get(field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("<absent>");
+        let n = new
+            .get(field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("<absent>");
         if o != n {
             out.push_str(&format!("  {field}: {o} → {n}\n"));
         }

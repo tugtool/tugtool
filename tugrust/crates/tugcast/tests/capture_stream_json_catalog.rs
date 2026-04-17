@@ -63,7 +63,9 @@ use common::probes::ProbeStatus;
 // `write_fixtures`. Gated so standard runs don't trigger
 // unused-import warnings when the feature is off.
 #[cfg(feature = "real-claude-tests")]
-use common::catalog::{self, CAPABILITIES_PROBE_NAME, Schema, capabilities_root, capture_with_stability};
+use common::catalog::{
+    self, CAPABILITIES_PROBE_NAME, Schema, capabilities_root, capture_with_stability,
+};
 #[cfg(feature = "real-claude-tests")]
 use common::real_claude_enabled;
 #[cfg(feature = "real-claude-tests")]
@@ -821,7 +823,10 @@ mod tests {
         let written = extract_capabilities(&probe28, &caps_dir, "2.1.105").expect("extract");
 
         // Snapshot file landed at the versioned path.
-        assert_eq!(written, caps_dir.join("2.1.105").join("system-metadata.jsonl"));
+        assert_eq!(
+            written,
+            caps_dir.join("2.1.105").join("system-metadata.jsonl")
+        );
         let body = std::fs::read_to_string(&written).unwrap();
         assert!(body.starts_with(r#"{"type":"system_metadata""#));
         assert!(body.ends_with("\n"));
