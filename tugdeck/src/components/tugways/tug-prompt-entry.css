@@ -99,7 +99,9 @@ body {
   display: flex;
   flex: 0 0 auto;
   flex-direction: row;
-  align-items: center;
+  /* Bottom-align so the route indicator doesn't drift vertically when
+     the submit button grows taller than it. */
+  align-items: flex-end;
   gap: var(--tug-space-md);
   /* Breathing room: space above separates the toolbar from the input area;
      space below separates it from the component's bottom edge. Inline
@@ -107,6 +109,19 @@ body {
   margin-top: var(--tug-space-md);
   margin-bottom: var(--tug-space-md);
   padding: 0 var(--tug-space-md);
+}
+
+/* Empty-input submit-button gate [L06][L22].
+ *
+ * When the root is `data-empty="true"` and we're not in an interrupt-
+ * capable turn, the submit button is visually disabled and refuses
+ * pointer input. The functional gate lives in `performSubmit`
+ * (`isEffectivelyEmpty` check); this rule is the CSS half of the pair.
+ * A route atom on its own counts as empty — see `isEffectivelyEmpty`. */
+.tug-prompt-entry[data-empty="true"][data-can-interrupt="false"] .tug-prompt-entry-submit-button {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* Submit button anchors to the trailing edge; the route indicator +

@@ -90,6 +90,30 @@ const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
 const DEFAULT_ROUTE = ">";
 
 // ---------------------------------------------------------------------------
+// Effective-empty helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns `true` when the input has no meaningful user content — either
+ * literally empty, or carrying only a lone route atom (the prefix char
+ * with nothing past it). A route atom on its own is structural, not
+ * meaningful input: the user has typed a prefix but nothing to send, so
+ * submit should stay disabled and `data-empty` should read `"true"`.
+ *
+ * Any additional atom (e.g. a file atom) or any non-whitespace text past
+ * the prefix counts as content.
+ */
+function isEffectivelyEmpty(input: TugPromptInputDelegate | null): boolean {
+  if (!input || input.isEmpty()) return true;
+  const atoms = input.getAtoms();
+  if (atoms.length === 1 && atoms[0].type === "route") {
+    const text = input.getText();
+    return text.slice(1).trim().length === 0;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Props / delegate
 // ---------------------------------------------------------------------------
 
@@ -306,6 +330,10 @@ export const TugPromptEntry = React.forwardRef<
     // [D-T3-08] awaiting_approval / awaiting_question block the submit
     // path. `canSubmit` captures both.
     if (!snap.canSubmit) return;
+    // Empty-input guard — a bare route atom isn't meaningful content
+    // and shouldn't submit. Same helper that drives `data-empty`, read
+    // through the input ref at submit time [L07].
+    if (isEffectivelyEmpty(input)) return;
     const atoms = input.getAtoms();
     const text = input.getText();
     // [D06] localCommandHandler seam — called BEFORE the store send so
@@ -388,7 +416,12 @@ export const TugPromptEntry = React.forwardRef<
     const root = rootRef.current;
     const input = promptInputRef.current;
     if (!root) return;
-    const isEmpty = input?.isEmpty() ?? true;
+    // `data-empty` is the single source of truth for visual empty state.
+    // Written directly to the DOM [L06][L22] — keystrokes do not cause
+    // React re-renders. A route atom by itself does not count as
+    // meaningful content: the user has to have typed *something* past
+    // the prefix for the submit button to light up.
+    const isEmpty = isEffectivelyEmpty(input);
     root.setAttribute("data-empty", String(isEmpty));
     if (isEmpty || !input) return;
     const atoms = input.getAtoms();
@@ -524,6 +557,7 @@ export const TugPromptEntry = React.forwardRef<
             </span>
           )}
           <TugPushButton
+            className="tug-prompt-entry-submit-button"
             action={TUG_ACTIONS.SUBMIT}
             subtype="icon"
             size="lg"
