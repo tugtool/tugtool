@@ -6,12 +6,19 @@
  *
  *   • A `MockTugConnection`-backed `CodeSessionStore` (the entry's turn
  *     state surface — no real Claude backend is required in the gallery).
- *   • Real backend-backed file (`@`) and command (`/`) completion via
- *     `FileTreeStore` + `SessionMetadataStore`, mirroring the pattern in
- *     `gallery-prompt-input`. When no live connection is available
- *     (tests, first paint before `getConnection()` resolves), the
- *     respective provider is simply omitted from `completionProviders`
- *     and the trigger produces no suggestions — no throws, no warnings.
+ *   • Live `@` file completion via `FileTreeStore` against the real
+ *     connection-singleton, mirroring `gallery-prompt-input`. When no
+ *     live connection is available (tests, first paint before
+ *     `getConnection()` resolves), the `@` provider falls back to an
+ *     empty stable closure so the engine's typeahead trigger stays
+ *     wired regardless of timing.
+ *   • Offline `/` slash-command completion sourced from the captured
+ *     `capabilities/<LATEST>/system-metadata.jsonl` via the Vite virtual
+ *     module. The gallery card's `CodeSessionStore` runs against a mock
+ *     connection, so the live `SESSION_METADATA` frame never reaches the
+ *     card; the fixture keeps the `/` demo populated with real plugin
+ *     skills and agents. Wrapped in a position-0 gate so `/` mid-text
+ *     produces an empty popup (D5.c P1).
  *   • A local `PromptHistoryStore` for arrow-up/down recall.
  *   • A per-card `EditorSettingsStore` whose CSS variables cascade from
  *     the entry-pane TugBox down to the input editor. The tools panel
@@ -37,7 +44,6 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
 import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
-import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
@@ -47,6 +53,10 @@ import { presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
+import {
+  getFixtureSessionMetadataStore,
+  wrapPositionZero,
+} from "./completion-fixtures/system-metadata-fixture";
 
 import "./gallery-prompt-entry.css";
 
@@ -78,26 +88,6 @@ const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
-
-// ---------------------------------------------------------------------------
-// SessionMetadataStore shim
-// ---------------------------------------------------------------------------
-
-/**
- * Inert `FeedStore` stand-in for `SessionMetadataStore` when no live
- * connection is available. `SessionMetadataStore`'s constructor subscribes
- * once; the shim parks the listener and returns an empty snapshot. The
- * entry does not render metadata in T3.4.b — the prop is purely structural
- * until T3.4.c wires a real metadata feed.
- */
-class InertFeedStore {
-  subscribe(_listener: () => void): () => void {
-    return () => {};
-  }
-  getSnapshot(): Map<number, unknown> {
-    return new Map();
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -135,37 +125,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     return () => {
       mockSessionRef.current?.codeSessionStore.dispose();
       mockSessionRef.current = null;
-    };
-  }, []);
-
-  // --- SessionMetadataStore for command completions. ---
-  const metadataStackRef = useRef<{
-    feedStore: FeedStore | null;
-    store: SessionMetadataStore;
-  } | null>(null);
-  if (metadataStackRef.current === null) {
-    const connection = getConnection();
-    let built: { feedStore: FeedStore | null; store: SessionMetadataStore } | null = null;
-    if (connection) {
-      try {
-        const feedStore = new FeedStore(connection, [FeedId.SESSION_METADATA]);
-        const store = new SessionMetadataStore(feedStore, FeedId.SESSION_METADATA);
-        built = { feedStore, store };
-      } catch {
-        // Partial / invalid connection (tests). Fall through to inert shim.
-      }
-    }
-    if (!built) {
-      const inert = new InertFeedStore() as never;
-      const store = new SessionMetadataStore(inert, FeedId.SESSION_METADATA as never);
-      built = { feedStore: null, store };
-    }
-    metadataStackRef.current = built;
-  }
-  useEffect(() => {
-    return () => {
-      metadataStackRef.current?.feedStore?.dispose();
-      metadataStackRef.current = null;
     };
   }, []);
 
@@ -223,20 +182,31 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     historyStoreRef.current = new PromptHistoryStore();
   }
 
+  // --- Entry + panel handles (declared here so completionProviders' memo
+  // can read entryDelegateRef for the position-0 gate). Stable ref
+  // identities — the memo below uses [] deps correctly. ---
+  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
+
   // --- Compose completion providers. ---
-  // Stable — both provider identities are owned by refs and never change
-  // for the card's lifetime, so the memo's [] deps are correct. Mirrors
-  // gallery-prompt-input's pattern: `@` always present (falling back to
-  // an empty provider if `getConnection()` was null at first render) so
-  // the engine's typeahead trigger stays wired regardless of timing.
+  // Stable — provider identities are owned by refs and don't change for
+  // the card's lifetime, so the memo's [] deps are correct.
+  //
+  //   `@`: live `FileTreeStore` against the real connection, mirroring
+  //        gallery-prompt-input. Falls back to EMPTY_FILE_COMPLETION_PROVIDER
+  //        if `getConnection()` was null at first render so the trigger
+  //        stays wired regardless of timing.
+  //
+  //   `/`: fixture `SessionMetadataStore` sourced from the captured
+  //        `capabilities/<LATEST>/system-metadata.jsonl`, wrapped with the
+  //        position-0 gate so `/` mid-text yields an empty popup.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(() => {
-    const out: Record<string, CompletionProvider> = {
+    const innerSlash = getFixtureSessionMetadataStore().getCommandCompletionProvider();
+    return {
       "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "/": wrapPositionZero(entryDelegateRef, innerSlash),
     };
-    const commandProvider = metadataStackRef.current?.store.getCommandCompletionProvider();
-    if (commandProvider) out["/"] = commandProvider;
-    return out;
   }, []);
 
   // --- EditorSettingsStore for the tools-panel controls. ---
@@ -270,9 +240,9 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   // the editor's `data-empty="true"` signal. The source element is
   // derived from the entry delegate at call time via a stable
   // useMemo'd shim — identity-stable so the hook's effect doesn't
-  // re-install observers on every render.
-  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
-  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
+  // re-install observers on every render. (`entryPanelRef` and
+  // `entryDelegateRef` are declared earlier so `completionProviders`
+  // can read them for the position-0 gate.)
   const editorSourceRef = useMemo(
     () => ({
       get current(): HTMLElement | null {
@@ -360,7 +330,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
                 codeSessionStore={mockSessionRef.current!.codeSessionStore}
-                sessionMetadataStore={metadataStackRef.current!.store}
+                sessionMetadataStore={getFixtureSessionMetadataStore()}
                 historyStore={historyStoreRef.current}
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}

@@ -494,7 +494,7 @@ The backend-backed `SessionMetadataStore` wiring in the card (currently live) is
   - **23 slash_commands** — 13 of which upgrade to `category: "skill"` via the overlap merge (`batch`, `claude-api`, `commit`, `debug`, `less-permission-prompts`, `loop`, `schedule`, `simplify`, `tugplug:dash`, `tugplug:implement`, `tugplug:merge`, `tugplug:plan`, `update-config`), 10 remain `category: "local"` (`compact`, `context`, `cost`, `extra-usage`, `heapdump`, `init`, `insights`, `review`, `security-review`, `team-onboarding`).
   - **16 agents** — `Explore`, `Plan`, `general-purpose`, `statusline-setup`, plus 12 `tugplug:*-agent` entries (`architect`, `auditor`, `author`, `clarifier`, `coder`, `committer`, `conformance`, `critic`, `dash`, `integrator`, `overviewer`, `reviewer`).
 - Type `/tug`; narrows to the 16 `tugplug:`-prefixed entries (4 skills + 12 agents).
-- Type `/com`; narrows to `commit`, `compact`, `tugplug:committer-agent`, `tugplug:conformance-agent` (no `context` — substring `com` doesn't match it).
+- Type `/com`; narrows to `commit`, `compact`, `tugplug:committer-agent` (3 hits — `tugplug:conformance-agent` does NOT match because its second syllable is `con-f`, not `com`).
 - Accept a result; a command atom lands in the editor carrying the fully-qualified name.
 - Type a character **other than `/`** as the first character, then a `/` mid-text: popup does NOT open (or opens empty — P1 allows the trigger to fire; the wrapper returns `[]`).
 - Submit the editor; route stays on `>` (Prompt) — this card doesn't use the `:` Command route.
