@@ -83,9 +83,14 @@ pub async fn check_tmux_version() -> Result<String, TmuxError> {
 
 /// Ensure a tmux session exists (create if it doesn't)
 pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
-    // Check if session exists
+    // Check if session exists. `tmux has-session` prints "can't find session:
+    // NAME" to stderr and exits non-zero when the session doesn't exist —
+    // that's its normal "no" answer, not an error. Pipe its stderr to
+    // /dev/null so that noise doesn't surface to the parent (test harness,
+    // capture binary, or end-user process).
     let status = TokioCommand::new("tmux")
         .args(["has-session", "-t", session])
+        .stderr(std::process::Stdio::null())
         .status()
         .await
         .map_err(|e| TmuxError::CommandFailed(e.to_string()))?;

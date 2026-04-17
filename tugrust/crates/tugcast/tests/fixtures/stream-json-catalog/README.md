@@ -89,7 +89,8 @@ claude --version
 #    your Max/Pro subscription instead of per-token API billing.
 cd tugrust
 env -u ANTHROPIC_API_KEY TUG_STABILITY=3 TUG_REAL_CLAUDE=1 \
-  cargo nextest run -p tugcast --run-ignored only capture_all_probes
+  cargo nextest run -p tugcast --features real-claude-tests \
+  --run-ignored only capture_all_probes
 
 # 3. Review the run summary in the new v<new-version>/manifest.json.
 #    Every probe should be `passed`, `shape_unstable` (accepted variance,
@@ -122,7 +123,8 @@ git commit -m "test(tugcast): advance golden baseline to claude <new-version>"
 
 # 8. Verify the drift test now passes.
 env -u ANTHROPIC_API_KEY TUG_REAL_CLAUDE=1 \
-  cargo nextest run -p tugcast --run-ignored only stream_json_catalog_drift_regression
+  cargo nextest run -p tugcast --features real-claude-tests \
+  --run-ignored only stream_json_catalog_drift_regression
 # Expected: 1 passed, "stream_json_catalog_drift_regression: clean"
 # with any new-field or new-event-type findings downgraded to warnings.
 ```

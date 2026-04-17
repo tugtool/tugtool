@@ -499,7 +499,8 @@ claude --version
 #    consumed by Tug.app + tugdeck at build time.
 cd tugrust
 TUG_STABILITY=3 TUG_REAL_CLAUDE=1 \
-  cargo test --test capture_stream_json_catalog -- --ignored
+  cargo test --features real-claude-tests \
+  --test capture_stream_json_catalog -- --ignored
 
 # 3. Review the run summary in the new v<new-version>/manifest.json.
 #    Every probe should be `passed`, `skipped` with an explicit
@@ -530,7 +531,8 @@ git add ../capabilities/<new-version>/ ../capabilities/LATEST
 git commit -m "fixtures(stream-json-catalog): capture v<new-version> baseline"
 
 # 8. Verify the drift test now passes.
-TUG_REAL_CLAUDE=1 cargo test --test stream_json_catalog_drift -- --ignored
+TUG_REAL_CLAUDE=1 cargo test --features real-claude-tests \
+  --test stream_json_catalog_drift -- --ignored
 # Expected: 35/35 probes pass (minus any explicitly-skipped ones).
 ```
 

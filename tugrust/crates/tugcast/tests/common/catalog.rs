@@ -553,7 +553,7 @@ pub async fn execute_probe(
 
     let card_id = format!("probe-{}", probe.name);
     let tug_session_id = format!("sess-{}", probe.name);
-    ws.send_spawn_session(&card_id, &tug_session_id).await;
+    ws.send_spawn_session(&card_id, &tug_session_id, project_dir).await;
 
     // Wait for the pending confirmation only. The router's state
     // machine is Pending → Spawning → Live, and the transition out of
@@ -832,12 +832,41 @@ pub async fn capture_with_stability(
 ) -> Vec<CapturedProbe> {
     use crate::common::probes::PROBES;
 
-    let mut results: Vec<CapturedProbe> = Vec::with_capacity(PROBES.len());
+    let total_probes = PROBES.len();
+    println!(
+        "[capture] starting — {total_probes} probes × {n} stability run(s) = {} total invocations",
+        total_probes * n
+    );
+    let overall_start = std::time::Instant::now();
+
+    let mut results: Vec<CapturedProbe> = Vec::with_capacity(total_probes);
     for (i, probe) in PROBES.iter().enumerate() {
+        let probe_start = std::time::Instant::now();
+        println!(
+            "[capture] [{idx}/{total}] {name} — starting",
+            idx = i + 1,
+            total = total_probes,
+            name = probe.name,
+        );
         let mut runs: Vec<CapturedProbe> = Vec::with_capacity(n);
         for run_idx in 0..n {
             let bank = bank_dir.join(format!("probe-{i}-run-{run_idx}.db"));
-            runs.push(execute_probe(probe, bank, project_dir).await);
+            let run_start = std::time::Instant::now();
+            let captured = execute_probe(probe, bank, project_dir).await;
+            let tag = match &captured.status {
+                ProbeStatus::Passed => "ok",
+                ProbeStatus::Skipped(_) => "skip",
+                ProbeStatus::Failed(_) => "FAIL",
+                ProbeStatus::ShapeUnstable(_) => "unstable",
+            };
+            println!(
+                "[capture]   run {r}/{n}: {tag} ({ms} ms, {ev} events)",
+                r = run_idx + 1,
+                n = n,
+                ms = run_start.elapsed().as_millis(),
+                ev = captured.events.len(),
+            );
+            runs.push(captured);
         }
         let first = runs.remove(0);
         let capture = match stability_outcome(&first, &runs) {
@@ -849,8 +878,20 @@ pub async fn capture_with_stability(
             },
             None => first,
         };
+        println!(
+            "[capture] [{idx}/{total}] {name} — done in {ms} ms (elapsed {elapsed}s)",
+            idx = i + 1,
+            total = total_probes,
+            name = probe.name,
+            ms = probe_start.elapsed().as_millis(),
+            elapsed = overall_start.elapsed().as_secs(),
+        );
         results.push(capture);
     }
+    println!(
+        "[capture] done — {total_probes} probes in {elapsed}s",
+        elapsed = overall_start.elapsed().as_secs(),
+    );
     results
 }
 
@@ -930,4 +971,117 @@ pub fn extract_capabilities(
     std::fs::write(&latest, format!("{version}\n"))?;
 
     Ok(dest)
+}
+
+// Helper: pull a sorted BTreeSet of string names from a JSON array field,
+// accepting either bare strings or `{ "name": "..." }` objects (matches the
+// SessionMetadataStore parser's tolerance).
+fn names_of(payload: &Value, field: &str) -> BTreeSet<String> {
+    payload
+        .get(field)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|entry| {
+                    if let Some(s) = entry.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        entry
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .map(String::from)
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Human-readable summary of a one-line `system_metadata` payload: version,
+/// model, permission_mode, and sorted lists of slash_commands / skills /
+/// agents / plugins with counts. Used by the capture binary to report what
+/// it just wrote into `capabilities/<ver>/system-metadata.jsonl`.
+pub fn summarize_capabilities(snapshot_line: &str) -> String {
+    let payload: Value = match serde_json::from_str(snapshot_line.trim()) {
+        Ok(v) => v,
+        Err(e) => return format!("  <failed to parse capabilities snapshot: {e}>\n"),
+    };
+
+    let mut out = String::new();
+    let field_or = |field: &str| -> String {
+        payload
+            .get(field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("<absent>")
+            .to_string()
+    };
+    out.push_str(&format!("  version:         {}\n", field_or("version")));
+    out.push_str(&format!("  model:           {}\n", field_or("model")));
+    out.push_str(&format!(
+        "  permission_mode: {}\n",
+        field_or("permission_mode")
+    ));
+
+    for field in ["slash_commands", "skills", "agents", "plugins"] {
+        let names = names_of(&payload, field);
+        out.push_str(&format!("  {field} ({count})\n", count = names.len()));
+        for name in &names {
+            out.push_str(&format!("    - {name}\n"));
+        }
+    }
+    out
+}
+
+/// Structured diff between two `system_metadata` snapshots. Reports lost /
+/// gained entries for slash_commands, skills, agents, and plugins, plus
+/// version/model/permission_mode changes when they differ. Returns an empty
+/// string if the two payloads are byte-identical (no-op).
+pub fn diff_capabilities(old_line: &str, new_line: &str) -> String {
+    if old_line.trim() == new_line.trim() {
+        return String::new();
+    }
+    let old: Value = match serde_json::from_str(old_line.trim()) {
+        Ok(v) => v,
+        Err(e) => return format!("  <failed to parse previous capabilities snapshot: {e}>\n"),
+    };
+    let new: Value = match serde_json::from_str(new_line.trim()) {
+        Ok(v) => v,
+        Err(e) => return format!("  <failed to parse new capabilities snapshot: {e}>\n"),
+    };
+
+    let mut out = String::new();
+
+    for field in ["version", "model", "permission_mode"] {
+        let o = old.get(field).and_then(|v| v.as_str()).unwrap_or("<absent>");
+        let n = new.get(field).and_then(|v| v.as_str()).unwrap_or("<absent>");
+        if o != n {
+            out.push_str(&format!("  {field}: {o} → {n}\n"));
+        }
+    }
+
+    for field in ["slash_commands", "skills", "agents", "plugins"] {
+        let old_set = names_of(&old, field);
+        let new_set = names_of(&new, field);
+        let lost: Vec<&String> = old_set.difference(&new_set).collect();
+        let gained: Vec<&String> = new_set.difference(&old_set).collect();
+        if lost.is_empty() && gained.is_empty() {
+            continue;
+        }
+        out.push_str(&format!(
+            "  {field} (−{lost} +{gained})\n",
+            lost = lost.len(),
+            gained = gained.len(),
+        ));
+        for name in &lost {
+            out.push_str(&format!("    - {name}\n"));
+        }
+        for name in &gained {
+            out.push_str(&format!("    + {name}\n"));
+        }
+    }
+
+    if out.is_empty() {
+        out.push_str("  <no change in summarized fields>\n");
+    }
+    out
 }

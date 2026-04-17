@@ -1,0 +1,20 @@
+# Per-test slow-timeout overrides.
+#
+# Nextest's default slow threshold is 60s, with SLOW warnings repeating at
+# each multiple. A few deliberately long real-claude tests exceed that —
+# stretch their threshold so the warnings don't clutter the output and hide
+# signal.
+#
+# - `capture_all_probes` drives 35 probes × `TUG_STABILITY=3` runs against a
+#   real claude CLI (~5–6 min end-to-end). Already feature-gated off by
+#   default (`--features real-claude-tests`).
+# - `stream_json_catalog_drift_regression` replays the probe catalog against
+#   live claude (~2 min). Same feature gate.
+
+[[profile.default.overrides]]
+filter = 'test(capture_all_probes)'
+slow-timeout = "15m"
+
+[[profile.default.overrides]]
+filter = 'test(stream_json_catalog_drift_regression)'
+slow-timeout = "5m"

@@ -55,6 +55,7 @@ use std::time::Duration;
 
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex as AsyncMutex;
@@ -115,6 +116,10 @@ pub struct TestTugcast {
     pub child: Child,
     pub port: u16,
     pub bank_path: PathBuf,
+    /// Canonical project dir this tugcast was spawned with. Required field
+    /// on every `spawn_session` control frame since W2 Step 6 (commit
+    /// b1ba1a97); exposed here so callers don't have to re-derive it.
+    pub project_dir: PathBuf,
 }
 
 /// Runs exactly once per test process, on the first [`TestTugcast::spawn`]
@@ -215,17 +220,31 @@ impl TestTugcast {
             .arg(&bank_path)
             .env("TUGBANK_PATH", &bank_path)
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
+            // Pipe stderr (instead of inheriting) and forward it line-by-line
+            // to stdout below. Reason: macOS terminals render stderr in red,
+            // which paints every diagnostic line from tugcast/tugcode/claude
+            // as if it were an error. Rerouting through stdout keeps the
+            // content visible without the false-alarm coloring.
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         for var in catalog::AUTH_ENV_VARS {
             command.env_remove(var);
         }
-        let child = command.spawn().expect("failed to spawn tugcast");
+        let mut child = command.spawn().expect("failed to spawn tugcast");
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    println!("{line}");
+                }
+            });
+        }
         wait_for_port(port, Duration::from_secs(5)).await;
         Self {
             child,
             port,
             bank_path,
+            project_dir: project_dir.to_path_buf(),
         }
     }
 }
@@ -422,9 +441,32 @@ impl TestWs {
             .expect("send control frame");
     }
 
-    pub async fn send_spawn_session(&mut self, card_id: &str, tug_session_id: &str) {
-        self.send_control_action("spawn_session", card_id, tug_session_id)
-            .await;
+    pub async fn send_spawn_session(
+        &mut self,
+        card_id: &str,
+        tug_session_id: &str,
+        project_dir: &Path,
+    ) {
+        // W2 Step 6 (commit b1ba1a97): project_dir is now a required field on
+        // the spawn_session control payload. Without it, the supervisor
+        // rejects with `InvalidProjectDir { reason: "missing_project_dir" }`
+        // before emitting the `pending` SESSION_STATE transition — which
+        // manifests as a 10s `await_session_state("pending")` timeout
+        // downstream.
+        let payload = serde_json::json!({
+            "action": "spawn_session",
+            "card_id": card_id,
+            "tug_session_id": tug_session_id,
+            "project_dir": project_dir.to_string_lossy(),
+        });
+        let bytes = serde_json::to_vec(&payload).expect("control json");
+        let frame = Frame::new(FeedId::CONTROL, bytes);
+        self.sink
+            .lock()
+            .await
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send control frame");
     }
 
     pub async fn send_close_session(&mut self, card_id: &str, tug_session_id: &str) {

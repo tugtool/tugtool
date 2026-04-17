@@ -53,8 +53,9 @@ use serde_json::{Value, json};
 // status_tag / build_manifest) keep compiling and running in standard
 // `cargo nextest run` invocations.
 use common::catalog::{
-    CapturedProbe, canonical_sequence, derive_schema, extract_capabilities, extract_version,
-    normalize_event, schema_to_json, stability_outcome, stability_runs,
+    CapturedProbe, canonical_sequence, derive_schema, diff_capabilities, extract_capabilities,
+    extract_version, normalize_event, schema_to_json, stability_outcome, stability_runs,
+    summarize_capabilities,
 };
 use common::probes::ProbeStatus;
 
@@ -167,7 +168,7 @@ pub fn write_fixtures(
 #[ignore]
 async fn capture_all_probes() {
     if !real_claude_enabled() {
-        eprintln!("skipping capture_all_probes: TUG_REAL_CLAUDE not set");
+        println!("skipping capture_all_probes: TUG_REAL_CLAUDE not set");
         return;
     }
     // Pre-flight refusal — refuse to run if any subscription-overriding
@@ -195,7 +196,7 @@ async fn capture_all_probes() {
     // before doing anything else. If the version-extraction panics
     // below (e.g. claude crashed and no probe produced a
     // system_metadata), this is the only window into what happened.
-    eprintln!(
+    println!(
         "--- capture_all_probes status summary ({} probes) ---",
         captures.len()
     );
@@ -206,14 +207,14 @@ async fn capture_all_probes() {
             ProbeStatus::Failed(r) => ("FAILED ", r.clone()),
             ProbeStatus::ShapeUnstable(r) => ("UNSTBL ", r.clone()),
         };
-        eprintln!(
+        println!(
             "  [{tag}] {name:<48} events={count} runtime={rt}ms {reason}",
             name = probe.name,
             count = probe.events.len(),
             rt = probe.runtime_ms,
         );
     }
-    eprintln!("-----------------------------------------------------");
+    println!("-----------------------------------------------------");
 
     let version =
         extract_version(&captures).expect("no system_metadata version found — aborting per [D11]");
@@ -221,7 +222,7 @@ async fn capture_all_probes() {
     let schema = derive_schema(&version, &captures);
     let manifest = build_manifest(&version, stability, &captures);
     let path = write_fixtures(&captures, &schema, &manifest).expect("write_fixtures succeeded");
-    eprintln!("wrote fixtures to {}", path.display());
+    println!("wrote fixtures to {}", path.display());
 
     // D6.a — extract the system_metadata snapshot into the repo-root
     // `capabilities/` tree and update `capabilities/LATEST`. Tug.app and
@@ -230,9 +231,40 @@ async fn capture_all_probes() {
     // single operation.
     let probe28 = path.join(format!("{CAPABILITIES_PROBE_NAME}.jsonl"));
     let caps_dir = capabilities_root();
+
+    // Read the previous snapshot BEFORE extract_capabilities overwrites
+    // LATEST, so we can produce a lost/gained diff after the new one lands.
+    let prev_version = std::fs::read_to_string(caps_dir.join("LATEST"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let prev_snapshot_line = prev_version.as_ref().and_then(|v| {
+        let p = caps_dir.join(v).join("system-metadata.jsonl");
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|s| s.lines().next().map(String::from))
+    });
+
     let caps_out = extract_capabilities(&probe28, &caps_dir, &version)
         .expect("extract_capabilities succeeded");
-    eprintln!("wrote capabilities snapshot to {}", caps_out.display());
+    println!("wrote capabilities snapshot to {}", caps_out.display());
+
+    // Human-readable report of what just landed in capabilities/<ver>/.
+    let new_snapshot = std::fs::read_to_string(&caps_out).expect("read capabilities snapshot");
+    let new_snapshot_line = new_snapshot.lines().next().unwrap_or("");
+    println!("\n---- capabilities snapshot ({version}) ----");
+    print!("{}", summarize_capabilities(new_snapshot_line));
+
+    // Diff against the previous baked version if one existed and it differs.
+    if let (Some(prev_v), Some(prev_line)) = (prev_version.as_ref(), prev_snapshot_line.as_ref()) {
+        if prev_v != &version {
+            let diff = diff_capabilities(prev_line, new_snapshot_line);
+            if !diff.is_empty() {
+                println!("\n---- capabilities diff ({prev_v} → {version}) ----");
+                print!("{diff}");
+            }
+        }
+    }
     // `_tmp_guard` drops here and removes the per-probe bank files.
 }
 
@@ -822,6 +854,65 @@ mod tests {
         let caps_dir = tmp.path().join("capabilities");
         let err = extract_capabilities(&missing, &caps_dir, "2.1.105").expect_err("should fail");
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    // ---- summarize_capabilities + diff_capabilities ----
+
+    #[test]
+    fn summarize_capabilities_covers_arrays_and_scalars() {
+        let line = r#"{"type":"system_metadata","version":"2.1.105","model":"claude-opus-4-7","permission_mode":"acceptEdits","slash_commands":["commit","plan"],"skills":["tugplug:plan"],"agents":["general-purpose","tugplug:coder-agent"],"plugins":[{"name":"tugplug"}]}"#;
+        let out = summarize_capabilities(line);
+        assert!(out.contains("version:         2.1.105"));
+        assert!(out.contains("model:           claude-opus-4-7"));
+        assert!(out.contains("permission_mode: acceptEdits"));
+        assert!(out.contains("slash_commands (2)"));
+        assert!(out.contains("- commit"));
+        assert!(out.contains("- plan"));
+        assert!(out.contains("skills (1)"));
+        assert!(out.contains("- tugplug:plan"));
+        assert!(out.contains("agents (2)"));
+        assert!(out.contains("- tugplug:coder-agent"));
+        assert!(out.contains("plugins (1)"));
+        assert!(out.contains("- tugplug"));
+    }
+
+    #[test]
+    fn summarize_capabilities_handles_missing_fields() {
+        let line = r#"{"type":"system_metadata"}"#;
+        let out = summarize_capabilities(line);
+        assert!(out.contains("version:         <absent>"));
+        assert!(out.contains("slash_commands (0)"));
+    }
+
+    #[test]
+    fn summarize_capabilities_returns_error_on_bad_json() {
+        let out = summarize_capabilities("not json");
+        assert!(out.contains("failed to parse"));
+    }
+
+    #[test]
+    fn diff_capabilities_reports_lost_and_gained() {
+        let old = r#"{"type":"system_metadata","version":"2.1.105","slash_commands":["commit","plan","old-only"],"skills":["tugplug:plan"],"agents":["general-purpose"],"plugins":[{"name":"tugplug"}]}"#;
+        let new = r#"{"type":"system_metadata","version":"2.1.112","slash_commands":["commit","plan","new-only"],"skills":["tugplug:plan","tugplug:dash"],"agents":["general-purpose"],"plugins":[{"name":"tugplug"}]}"#;
+        let out = diff_capabilities(old, new);
+        assert!(out.contains("version: 2.1.105 → 2.1.112"));
+        // slash_commands: lost old-only, gained new-only
+        assert!(out.contains("slash_commands (−1 +1)"));
+        assert!(out.contains("- old-only"));
+        assert!(out.contains("+ new-only"));
+        // skills: gained tugplug:dash only
+        assert!(out.contains("skills (−0 +1)"));
+        assert!(out.contains("+ tugplug:dash"));
+        // agents unchanged → not listed
+        assert!(!out.contains("agents ("));
+        // plugins unchanged → not listed
+        assert!(!out.contains("plugins ("));
+    }
+
+    #[test]
+    fn diff_capabilities_empty_on_identical() {
+        let line = r#"{"type":"system_metadata","version":"2.1.105","slash_commands":["commit"]}"#;
+        assert_eq!(diff_capabilities(line, line), "");
     }
 
     // ---- stability_runs ----
