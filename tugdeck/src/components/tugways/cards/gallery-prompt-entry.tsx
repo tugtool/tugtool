@@ -76,6 +76,9 @@ const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
 ];
 
+/** Stable empty completion provider for the unbound / no-connection window. */
+const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
+
 // ---------------------------------------------------------------------------
 // SessionMetadataStore shim
 // ---------------------------------------------------------------------------
@@ -187,19 +190,17 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   if (fileTreeStackRef.current === null) {
     const connection = getConnection();
     if (connection) {
-      try {
-        const feedStore = new FeedStore(
-          connection,
-          [FeedId.FILETREE],
-          undefined,
-          workspaceFilter,
-        );
-        const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-        const provider = fileTreeStore.getFileCompletionProvider();
-        fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
-      } catch {
-        // Partial / invalid connection — skip file completion.
-      }
+      const feedStore = new FeedStore(
+        connection,
+        [FeedId.FILETREE],
+        undefined,
+        workspaceFilter,
+      );
+      const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+      const provider = fileTreeStore.getFileCompletionProvider();
+      fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
+    } else {
+      console.warn("GalleryPromptEntry: connection not available at render");
     }
   }
   useEffect(() => {
@@ -223,11 +224,16 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   }
 
   // --- Compose completion providers. ---
+  // Stable — both provider identities are owned by refs and never change
+  // for the card's lifetime, so the memo's [] deps are correct. Mirrors
+  // gallery-prompt-input's pattern: `@` always present (falling back to
+  // an empty provider if `getConnection()` was null at first render) so
+  // the engine's typeahead trigger stays wired regardless of timing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(() => {
-    const out: Record<string, CompletionProvider> = {};
-    const fileProvider = fileTreeStackRef.current?.provider;
-    if (fileProvider) out["@"] = fileProvider;
+    const out: Record<string, CompletionProvider> = {
+      "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+    };
     const commandProvider = metadataStackRef.current?.store.getCommandCompletionProvider();
     if (commandProvider) out["/"] = commandProvider;
     return out;
