@@ -336,43 +336,291 @@ The split panel needs a ref to the element it's observing — concretely, the in
 
 ---
 
-## Track D — File completion in the gallery card (rev 2) {#track-d}
+## Track D — File + command completion in the gallery card {#track-d}
 
-Scope: `gallery-prompt-entry.tsx` only. Adopt the provider wiring the `gallery-prompt-input` card already uses.
+### Rev 2 (shipped, history) {#track-d-rev2}
 
-**D1. Wire a real `fileCompletionProvider`.**
+D1–D3 from rev 2 landed as part of the polish commit. `gallery-prompt-entry.tsx` today:
 
-The existing gallery card mock services use `fileCompletionProvider: () => []`. The `gallery-prompt-input` card already sets up a `FileTreeStack`-backed provider; reuse that pattern in `buildMockServices()`:
+- Constructs a `FileTreeStore` (via `FeedStore` on `FeedId.FILETREE`) with a `workspaceKey` filter, exposing `@` completion via `fileTreeStore.getFileCompletionProvider()`.
+- Constructs a `SessionMetadataStore` (via `FeedStore` on `FeedId.SESSION_METADATA`), exposing `/` completion via `store.getCommandCompletionProvider()`.
+- Composes both into `completionProviders: Record<string, CompletionProvider>` — the generalized prop (D2b) is on the entry.
+- Falls back silently (provider omitted) when `getConnection()` returns null.
 
-```tsx
-const fileTreeStack = createFileTreeStack(/* test fixture or the same source as gallery-prompt-input */);
-return {
-  // ...
-  fileCompletionProvider: fileTreeStack.provider,
-};
+The wiring mirrors `gallery-prompt-input.tsx` line-for-line; both cards share the `FileTreeStore` / `SessionMetadataStore` pair. There is no duplicated completion logic in the card — the stores own the snapshot + match semantics.
+
+### Rev 3 (next — two commits) {#track-d-rev3}
+
+**Directive (user, 2026-04-17):** the gallery card must demo file + slash completion *reliably*, independent of backend feed state. Hard-coded tugtool project directory for `@`; tugplug skills + agents for `/`. Two separate commits.
+
+**Why rev 3.** The rev-2 wiring depends on tugcast seeding `FILETREE` and `SESSION_METADATA` frames. In a running dev environment those feeds may be empty, delayed, or scoped to a workspace the gallery card isn't bound to — the completion popup then opens blank, which reads as "completion is broken" even though the wiring is fine. Rev 3 swaps in offline fixtures so the demo shows completions synchronously on every mount.
+
+**Invariant:** we reuse the `CompletionProvider` contract and the engine's typeahead UI. Neither rev-3 commit touches `FileTreeStore`, `SessionMetadataStore`, the engine, or the entry component — only `gallery-prompt-entry.tsx` and two new fixture modules.
+
+#### D4 — `@` file completion from a hard-coded tugtool directory snapshot (commit 1 of 2)
+
+**Scope:** `tugdeck/src/components/tugways/cards/completion-fixtures/file-fixture.ts` (new) + one-line swap in `gallery-prompt-entry.tsx`'s `completionProviders` memo.
+
+**Data source.** Use Vite's `import.meta.glob` to enumerate repo paths at build time. The tugdeck Vite config's root is `tugdeck/`, so the glob needs a `../` escape to reach the rest of the repo:
+
+```ts
+const entries = import.meta.glob(
+  [
+    '../../../../../tugdeck/src/**/*.{ts,tsx,css,md}',
+    '../../../../../tugrust/**/*.{rs,toml,md}',
+    '../../../../../tugplug/**/*.md',
+    '../../../../../roadmap/**/*.md',
+    '../../../../../tuglaws/**/*.md',
+    '../../../../../docs/**/*.md',
+    '../../../../../*.md',
+    '!../../../../../**/target/**',
+    '!../../../../../**/node_modules/**',
+    '!../../../../../**/dist/**',
+  ],
+  { eager: true, as: 'url' },
+);
 ```
 
-**D2. Optional: command completion for `/` trigger.**
+Key choices:
+- Narrow globs by directory (not `**/*` at root) to keep the build-time enumeration fast and the bundle small.
+- `as: 'url'` only forces Vite to resolve the match — we throw away the URLs and keep the key paths.
+- Verify at implementation time whether the tugdeck Vite config watches the parent directories; if not, adjust the config's `server.fs.allow` list rather than giving up.
 
-`gallery-prompt-input` also wires a command completion provider for `/`. `TugPromptEntry` today accepts only a single `fileCompletionProvider`. Two choices:
+Normalize glob keys to repo-relative paths (strip the leading `../../../../../`), sort them, and cache in module scope so successive queries don't re-walk.
 
-- **(D2a) Keep the entry at file-only for now.** Command completion is T10 territory; the entry plan already left a `localCommandHandler` seam. Don't add `@`-family multi-trigger now.
-- **(D2b) Generalize the prop.** Rename `fileCompletionProvider` → `completionProviders: Record<string, CompletionProvider>` on `TugPromptEntry` to match what `TugPromptInput` already takes. The gallery card would pass both providers; future callers get symmetry with the underlying component.
+**Factory shape — mirrors `FileTreeStore.getFileCompletionProvider()`:**
 
-**Recommendation: D2b.** The entry's current `fileCompletionProvider` is already a narrowed version of the input's `completionProviders`; the narrowing was speculative (T3.4.b didn't exercise multi-trigger) and will be un-done by T10 anyway. One generalize-now beats a rename-later. Preserves the existing call site by accepting either shape during a deprecation window if that's cleaner.
+```ts
+export function createFileFixtureProvider(): CompletionProvider {
+  const paths = buildPaths(); // module-scope cache, sorted
+  return (query: string): CompletionItem[] => {
+    const lower = query.toLowerCase();
+    const hits: CompletionItem[] = [];
+    for (const path of paths) {
+      if (!lower || path.toLowerCase().includes(lower)) {
+        hits.push({
+          label: path,
+          atom: { kind: 'atom', type: 'file', label: path, value: path },
+        });
+        if (hits.length >= 50) break;
+      }
+    }
+    return hits;
+  };
+}
+```
 
-**D3. Gallery card's mock fixture matches the `gallery-prompt-input` card.**
+Case-insensitive substring, capped at 50 results (matches the engine's typeahead expectations — the user scrolls or types more to narrow). No subscribe method needed: the fixture is static, so the provider is a plain function, matching the sync branch of the `CompletionProvider` interface.
 
-Whatever source the sister card uses (a mock file tree, a fixture subdirectory), the entry card uses the same so both demo the same `@`-trigger experience.
+**Wiring.** Replace the card's `completionProviders["@"]` with the fixture provider. The backend-backed `FileTreeStore` stays constructed (T3.4.c will use it) but is no longer plumbed into the gallery entry:
 
-**Acceptance:**
-- Type `@` in the entry; completion menu opens with file results.
-- Type `/` (if D2b lands); command completion menu opens.
-- Keyboard navigation + accept/cancel match `gallery-prompt-input`'s behavior.
+```ts
+const completionProviders = useMemo(() => {
+  const out: Record<string, CompletionProvider> = {};
+  out["@"] = createFileFixtureProvider();
+  const commandProvider = metadataStackRef.current?.store.getCommandCompletionProvider();
+  if (commandProvider) out["/"] = commandProvider;
+  return out;
+}, []);
+```
 
-**Open questions:**
-- **D2a vs D2b**: ship-able either way; recommend D2b.
-- **Is there a shared helper for "build a mock file completion provider" both gallery cards can import?** If `gallery-prompt-input`'s `fileTreeStackRef` setup is self-contained, extract it into `cards/gallery-mock-completion.ts` (or similar) so both cards import the same factory. Mechanical refactor, easy to defer.
+**Acceptance (D4):**
+- Type `@` in the gallery entry; popup opens listing tugtool repo paths (sorted, case-insensitive substring).
+- Type `@roadmap`; suggestions narrow to paths containing "roadmap".
+- Accept a result; a file atom lands in the editor.
+- No backend round-trip; no empty-feed flash on first paint.
+- `gallery-prompt-input.tsx` is untouched and still uses the live `FileTreeStore` (smoke-test: it still works against a running tugcast).
+
+**Out of scope for D4:**
+- Sharing the fixture between `gallery-prompt-entry` and `gallery-prompt-input`. The input card has a specific L02 story with a workspace-filtered `FileTreeStore` that we're not going to regress.
+- Fuzzy scoring. Substring matches what `FileTreeStore` does today.
+- HMR on newly-added repo files. `import.meta.glob` resolves at build time; adding a file requires a dev-server reload.
+
+#### D5 — `/` slash commands from captured `system_metadata` (commit 2 of 2)
+
+**Directive (user, 2026-04-17):**
+- Plugin skills/agents must load through the same `system_metadata` path Claude Code uses, not via one-off repo globs.
+- Built-in commands must match the real Claude Code list (not a hand-imagined subset) — the v2.1.105 capture in the stream-json golden catalog is the authoritative source.
+- Tug.app always invokes Claude Code with an implicit `--plugin-dir tugplug` pointing at the bundle's resources, so the payload reflects tugplug's skills and agents.
+- Agents should be invocable as slash commands. They're in `system_metadata.agents[]` today but the UI parser drops them — close that gap.
+- Slash completion fires **only when `/` is the first character of the editor**. Anywhere else (mid-text, after whitespace) it stays a literal `/`.
+
+**Scope:** three coordinated changes, one commit:
+
+1. Small fix to `tugdeck/src/lib/session-metadata-store.ts` (parser + agents[]).
+2. New fixture module `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-fixture.ts` + companion captured JSON that spins up an inert-feed `SessionMetadataStore`.
+3. Rewire `gallery-prompt-entry.tsx`'s `completionProviders["/"]` onto the fixture's provider, wrapped with the position-0 gate.
+
+##### D5.a — Close the `SessionMetadataStore` parser gap
+
+Two current-as-of-today gaps in `session-metadata-store.ts`:
+
+- **`parseSlashCommand` requires objects** (`entry.name` as a string). The real v2.1.105 payload ships `slash_commands`, `skills`, and `agents` as **bare string arrays** (confirmed in `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-28-system-metadata-deep-dive.jsonl` line 2). Under today's parser every entry silently drops — `SessionMetadataSnapshot.slashCommands` is empty even when the payload is rich.
+- **`agents[]` is never read.** `parseMetadataPayload` merges `slash_commands[]` (category `"local"`) + `skills[]` (category `"skill"`). Agents are ignored.
+
+Change:
+
+```ts
+function parseEntry(raw: unknown, defaultCategory: SlashCommandInfo["category"]): SlashCommandInfo | null {
+  // Accept both shapes:
+  //   - Bare string (current Claude Code emits this for slash_commands/skills/agents).
+  //   - Object { name, description?, category? } (forward-compatible if the
+  //     emitter starts carrying metadata).
+  if (typeof raw === "string" && raw.length > 0) {
+    return { name: raw, category: defaultCategory };
+  }
+  if (raw && typeof raw === "object") {
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry.name !== "string" || !entry.name) return null;
+    return {
+      name: entry.name,
+      description: typeof entry.description === "string" ? entry.description : undefined,
+      category: typeof entry.category === "string" ? toCategory(entry.category) : defaultCategory,
+    };
+  }
+  return null;
+}
+```
+
+In `parseMetadataPayload`, add the agents branch and switch all three loops to the new helper:
+
+```ts
+if (Array.isArray(p.slash_commands)) {
+  for (const entry of p.slash_commands) {
+    const cmd = parseEntry(entry, "local");
+    if (cmd) slashCommands.push(cmd);
+  }
+}
+if (Array.isArray(p.skills)) {
+  for (const entry of p.skills) {
+    const skill = parseEntry(entry, "skill");
+    if (skill) slashCommands.push(skill);
+  }
+}
+if (Array.isArray(p.agents)) {
+  for (const entry of p.agents) {
+    const agent = parseEntry(entry, "agent");
+    if (agent) slashCommands.push(agent);
+  }
+}
+```
+
+Dedup note: the captured payload overlaps — every skill (e.g. `tugplug:plan`) is also in `slash_commands`. `getCommandCompletionProvider()` today does not dedupe. Add a post-merge dedup keyed on `name`, preferring the entry with the richer category (`skill` / `agent` over `local`). One pass, no ordering concerns because the popup is sorted client-side anyway.
+
+**This change is load-bearing for T3.4.c too** — without it the live session's slash popup will be empty. D5 pays for the fix as part of unblocking the gallery.
+
+##### D5.b — Ship the captured `system_metadata` as a fixture
+
+Source: `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-28-system-metadata-deep-dive.jsonl` line 2 carries a single-line JSON `system_metadata` object (17 agents, 12 skills, 21 slash_commands, plugins=[{name:"tugplug"}]).
+
+Two ways to pull it into tugdeck:
+
+- **(F1) Vite raw import across the repo boundary.** `?raw` import of the .jsonl file, split and parse in JS. Requires `tugdeck/vite.config.*` `server.fs.allow` to include the Rust crate path, and a little runtime boilerplate. Always pulls the latest fixture text.
+- **(F2) Ship a verbatim copy inside tugdeck.** Copy the payload once into `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-v2-1-105.json` with a short README pointing at the source so future rotations know where to re-capture from.
+
+**Recommendation: F2** — self-contained build, pins the gallery to a known snapshot even if the catalog rev'd mid-development. Accept the tiny duplication; call out the re-capture procedure in the README.
+
+Fixture module outline:
+
+```ts
+// system-metadata-fixture.ts
+import fixturePayload from "./system-metadata-v2-1-105.json";
+import { FeedId, type FeedIdValue } from "@/protocol";
+import { SessionMetadataStore } from "@/lib/session-metadata-store";
+
+/**
+ * Inert FeedStore that emits the captured system_metadata payload once on
+ * construction, then stays silent. Same shape as the InertFeedStore already
+ * present in gallery-prompt-entry.tsx — the ONE emission is what distinguishes
+ * this from the pure no-op.
+ */
+class FixtureFeedStore {
+  private map: Map<FeedIdValue, unknown>;
+  private listeners = new Set<() => void>();
+  constructor() {
+    this.map = new Map([[FeedId.SESSION_METADATA, fixturePayload]]);
+  }
+  subscribe = (l: () => void) => {
+    this.listeners.add(l);
+    // Trigger a synchronous delivery so SessionMetadataStore's constructor-time
+    // _onFeedUpdate picks up the payload immediately.
+    queueMicrotask(l);
+    return () => this.listeners.delete(l);
+  };
+  getSnapshot = () => this.map;
+}
+
+let _store: SessionMetadataStore | null = null;
+
+export function getFixtureSessionMetadataStore(): SessionMetadataStore {
+  if (!_store) {
+    const feed = new FixtureFeedStore() as never;
+    _store = new SessionMetadataStore(feed, FeedId.SESSION_METADATA);
+  }
+  return _store;
+}
+```
+
+Singleton scope is fine — the fixture is immutable and shared across mounts. Matches `gallery-prompt-input.tsx`'s `_cardServices` pattern.
+
+##### D5.c — Position-0 gate for the `/` trigger
+
+The engine's `detectTypeaheadTrigger` today activates on any trigger char after a whitespace boundary, so `/` mid-text would open an empty popup. The user's rule: **`/` is a slash command only at position 0.**
+
+Two places to enforce:
+
+- **(P1) Gate at the provider.** Wrap the fixture provider in a closure that reads the input's text via a delegate ref and returns `[]` unless the first character is `/`. Simple, self-contained, lives in the card. Engine still pops the menu when `/` is typed mid-text, but the menu is empty. Acceptable for D5 demo.
+- **(P2) Gate at the engine.** Extend `TugPromptInput`'s `completionProviders` contract with a per-trigger config (e.g. `{ positionZeroOnly: true }`) so the engine doesn't activate typeahead at all when the rule fails. Cleaner for production; bigger scope; touches the engine.
+
+**Recommendation: P1 for D5** (unblock the gallery now), then promote to P2 as part of T3.4.c when we wire the live session — the constraint has to hold in production, not just the gallery.
+
+Gate implementation:
+
+```ts
+function wrapPositionZero(
+  inputRef: React.RefObject<TugPromptEntryDelegate | null>,
+  inner: CompletionProvider,
+): CompletionProvider {
+  return (query: string) => {
+    const editor = inputRef.current?.getEditorElement();
+    const text = editor?.textContent ?? "";
+    if (text.length === 0 || text[0] !== "/") return [];
+    return inner(query);
+  };
+}
+```
+
+Use `entryDelegateRef` (already in the card for content-driven sizing) as the source — no new refs.
+
+##### D5.d — Wire into the gallery card
+
+```ts
+const completionProviders = useMemo(() => {
+  const out: Record<string, CompletionProvider> = {};
+  out["@"] = createFileFixtureProvider();
+  const innerSlash = getFixtureSessionMetadataStore().getCommandCompletionProvider();
+  out["/"] = wrapPositionZero(entryDelegateRef, innerSlash);
+  return out;
+}, []);
+```
+
+The backend-backed `SessionMetadataStore` wiring in the card (currently live) is no longer plumbed into `/`. Recommend **rip it out** during this commit — the fixture store is the only source the gallery should use, and dead code reads confusingly. T3.4.c re-adds the live wiring against the real session.
+
+**Acceptance (D5):**
+- Type `/` as the first character of the gallery entry; popup lists every entry in the captured `system_metadata`: 21 slash commands (built-ins + tugplug skills, deduped against the `skills[]` merge) and 17 agents (including fully-qualified `tugplug:overviewer-agent`, `tugplug:coder-agent`, etc.). tugplug skills display as `tugplug:plan`, `tugplug:implement`, `tugplug:merge`, `tugplug:dash`.
+- Type `/tug`; narrows to the tugplug-prefixed entries.
+- Type `/com`; narrows to `commit`, `compact`, `context`, `tugplug:committer-agent`, `tugplug:conformance-agent`, etc.
+- Accept a result; a command atom lands in the editor carrying the fully-qualified name.
+- Type a character **other than `/`** as the first character, then a `/` mid-text: popup does NOT open (or opens empty).
+- Submit the editor; route stays on `>` (Prompt) — this card doesn't use the `:` Command route.
+- No backend round-trip, no warning about missing `SESSION_METADATA` feed.
+
+**Out of scope for D5:**
+- Terminal-only commands (`/status`, `/model`, `/clear`, `/vim`, `/btw`, `/resume`). They're not in `system_metadata.slash_commands` per transport-exploration.md line 1194. Follow-on work in `tide.md` handles responding to those when the graphical UI reimplements them.
+- Category-aware styling (different badge for skill vs agent vs local). The popup stays name-only; `category` survives on the snapshot for a later pass.
+- Promoting the position-0 gate to the engine (P2). T3.4.c.
+- Regenerating the fixture from a later Claude Code (`v2.1.112+`). The gallery pins to v2.1.105; re-capture when the rev matters.
+- Auto-invoking agents through a real dispatcher — today they're completion-only; invocation remains a T3.4.c / tide.md concern.
 
 ---
 
@@ -391,11 +639,15 @@ Whatever source the sister card uses (a mock file tree, a fixture subdirectory),
 | 9  | E2    | MO + RO install on panel's inner wrapper; `recompute` unifies all fires         | M    | Med  | Next               |
 | 10 | E3    | CSS rule + `--auto-size-transition-duration` write path                         | XS   | Low  | Next               |
 | 11 | E4    | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card     | XS   | Low  | Next               |
+| 12 | D4    | `@` file completion fixture for gallery (hard-coded tugtool tree)               | S    | Low  | Next               |
+| 13 | D5    | `/` slash-command fixture for gallery (tugplug skills + agents)                 | XS–S | Low  | Next               |
 | ~~C1–C5~~ | | ~~Track C variants~~ — **superseded by Track E.** See §Track E.                       |      |      | Reverted           |
 
 **Commit grouping:**
-- **Commit 1 — Polish:** items 1–7 (Track A + B + D). Pure layout, visibility, and wiring. *Shipped in `652ed1d5`.*
+- **Commit 1 — Polish:** items 1–7 (Track A + B + D rev 2). Pure layout, visibility, and wiring. *Shipped in `652ed1d5`.*
 - **Commit 2 — Content-driven sizing:** items 8–11 (Track E). One cohesive unit; splitting it would leave a broken intermediate state.
+- **Commit 3 — `@` fixture (D4):** item 12. File completion for the gallery against a hard-coded tugtool directory snapshot. Self-contained; does not touch `FileTreeStore` or the entry component.
+- **Commit 4 — `/` fixture (D5):** item 13. Slash-command completion for the gallery sourced from `tugplug/skills/` + `tugplug/agents/`. Self-contained; does not touch `SessionMetadataStore` or the entry component.
 
 ## Tests
 
