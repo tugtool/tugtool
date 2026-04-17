@@ -75,6 +75,7 @@ import { cn } from "@/lib/utils";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { putSplitPaneLayout, readSplitPaneLayout } from "@/settings-api";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { animate as tugAnimate } from "./tug-animator";
 
 // ---- Persistence ----
 
@@ -349,6 +350,29 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
 // ---------------------------------------------------------------------------
 
 /**
+ * Options for size-change imperatives on `TugSplitPanelHandle`.
+ *
+ * `animated` is strictly opt-in. Defaults to `false`, meaning the size
+ * change applies instantly. Automatic callers (the content-driven hook)
+ * leave the option off; explicit user actions (e.g. a submit handler, a
+ * grow/shrink button) pass `{ animated: true }` to get a short WAAPI
+ * tween on flex-grow.
+ *
+ * Animation uses `tug-animator` with a per-panel keyed slot so a fresh
+ * animation cancels any previous one on the same panel (snap-to-end).
+ */
+export interface TugSplitPanelSizeChangeOptions {
+  /**
+   * When `true`, animate the size change via `tug-animator` / WAAPI.
+   * The animation is a visual overlay — the library's store and the
+   * DOM inline `flex-grow` are both set to the target synchronously,
+   * then WAAPI tweens from the previous visual value to the target.
+   * When `false` (default), the change applies instantly.
+   */
+  animated?: boolean;
+}
+
+/**
  * Imperative handle exposed by `TugSplitPanel` via `forwardRef`.
  *
  * All sizes are expressed as a percentage of the parent group (0..100).
@@ -361,14 +385,17 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
  *
  * The handle distinguishes TWO separate concerns:
  *
- * - `setTransientSize(pct)` — write a transient display size. Used for
- *   content-driven auto-resize. Never persisted. Never modifies the
- *   user's saved dimension.
- * - `restoreUserSize()` — snap back to the user's saved dimension (as
- *   last set by a drag, read from `TugSplitPane`'s userSize map).
+ * - `setTransientSize(pct, options?)` — write a transient display
+ *   size. Used for content-driven auto-resize. Never persisted. Never
+ *   modifies the user's saved dimension.
+ * - `restoreUserSize(options?)` — snap back to the user's saved
+ *   dimension (as last set by a drag, read from `TugSplitPane`'s
+ *   userSize map).
  *
- * User drags take a separate path entirely (via
- * `TugSplitPane`'s `onLayoutChanged`) and never go through this handle.
+ * Both methods accept `{ animated: true }` to opt into a short visual
+ * tween; default behavior is instant. User drags take a separate path
+ * entirely (via `TugSplitPane`'s `onLayoutChanged`) and never go
+ * through this handle.
  *
  * See `useContentDrivenPanelSize` (sibling file) for the common
  * scroll-source case.
@@ -389,7 +416,7 @@ export interface TugSplitPanelHandle {
    * to `putSplitPaneLayout` or to userSize-map updates. Returns the
    * clamped percentage the library actually applied.
    */
-  setTransientSize(pct: number): number;
+  setTransientSize(pct: number, options?: TugSplitPanelSizeChangeOptions): number;
   /**
    * Snap the panel back to the user's saved dimension — the value the
    * user last set by dragging (or the library's resolved default, if
@@ -400,7 +427,7 @@ export interface TugSplitPanelHandle {
    * cross-talk with the user-drag path is possible. Returns the
    * percentage actually applied (0 if no user size is available).
    */
-  restoreUserSize(): number;
+  restoreUserSize(options?: TugSplitPanelSizeChangeOptions): number;
 }
 
 /** TugSplitPanel props. */
@@ -507,22 +534,57 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
       return panel.getSize().asPercentage;
     }, [syncFlagRef]);
 
+    // Helper: run a short flex-grow tween via TugAnimator / WAAPI.
+    // The library store + inline style are already at the target
+    // (writeGated ran before this); WAAPI overlays the visual tween
+    // from the previous value to the target. `fill: "none"` means the
+    // animation leaves no residue — inline style (at target) shows
+    // through after the tween completes.
+    //
+    // Slot key is per-panel so a repeated animation on the same panel
+    // cancels the previous via snap-to-end; different panels animate
+    // independently.
+    const animateFlexGrow = React.useCallback(
+      (fromPct: number, toPct: number): void => {
+        const panelEl = panelElementRef.current;
+        if (!panelEl) return;
+        if (Math.abs(fromPct - toPct) < 0.5) return;
+        tugAnimate(
+          panelEl,
+          [{ flexGrow: String(fromPct) }, { flexGrow: String(toPct) }],
+          {
+            duration: "--tug-motion-duration-moderate",
+            easing: "cubic-bezier(0.2, 0, 0, 1)",
+            key: `tug-split-panel-resize-${resolvedId}`,
+            fill: "none",
+          },
+        );
+      },
+      [resolvedId],
+    );
+
     React.useImperativeHandle(
       ref,
       (): TugSplitPanelHandle => ({
         getSize() {
           return panelRef.current?.getSize().asPercentage ?? 0;
         },
-        setTransientSize(pct) {
-          return writeGated(pct);
+        setTransientSize(pct, options) {
+          const fromPct = panelRef.current?.getSize().asPercentage ?? 0;
+          const applied = writeGated(pct);
+          if (options?.animated) animateFlexGrow(fromPct, applied);
+          return applied;
         },
-        restoreUserSize() {
+        restoreUserSize(options) {
           const userPct = getUserSize(resolvedId);
           if (userPct <= 0) return panelRef.current?.getSize().asPercentage ?? 0;
-          return writeGated(userPct);
+          const fromPct = panelRef.current?.getSize().asPercentage ?? 0;
+          const applied = writeGated(userPct);
+          if (options?.animated) animateFlexGrow(fromPct, applied);
+          return applied;
         },
       }),
-      [writeGated, getUserSize, resolvedId],
+      [writeGated, animateFlexGrow, getUserSize, resolvedId],
     );
 
     return (

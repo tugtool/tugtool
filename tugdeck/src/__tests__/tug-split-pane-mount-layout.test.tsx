@@ -36,7 +36,7 @@ describe("react-resizable-panels mount-time onLayoutChanged", () => {
     render(
       <Group
         orientation="vertical"
-        onLayoutChanged={(layout) => fires.push({ ...layout })}
+        onLayoutChanged={(layout) => { fires.push({ ...layout }); }}
       >
         <Panel id="top" defaultSize="70%" />
         <Separator />
@@ -58,7 +58,7 @@ describe("react-resizable-panels mount-time onLayoutChanged", () => {
       <Group
         orientation="vertical"
         defaultLayout={{ top: 65, bottom: 35 }}
-        onLayoutChanged={(layout) => fires.push({ ...layout })}
+        onLayoutChanged={(layout) => { fires.push({ ...layout }); }}
       >
         <Panel id="top" defaultSize="50%" />
         <Separator />

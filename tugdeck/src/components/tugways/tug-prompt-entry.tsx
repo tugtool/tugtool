@@ -144,6 +144,22 @@ export interface TugPromptEntryProps {
     atoms: ReadonlyArray<AtomSegment>,
   ) => boolean;
   /**
+   * Fires synchronously just before the input is cleared on a successful
+   * submit (after `canSubmit` / `canInterrupt` / `localCommandHandler`
+   * checks, after `codeSessionStore.send`, before `input.clear()`).
+   *
+   * Distinguishes a genuine user submit from incidental empty states
+   * (manual delete, undo-to-empty). Hosts use this hook to drive
+   * effects that should happen ONLY on explicit submits — e.g.,
+   * animating a content-sized panel back to the user's dragged size
+   * via `TugSplitPanelHandle.restoreUserSize({ animated: true })`.
+   *
+   * Does not fire on the `canInterrupt` branch (no submit happens),
+   * nor on blocked submits, nor on the user clearing the input by
+   * other means.
+   */
+  onBeforeSubmit?: () => void;
+  /**
    * Optional content rendered in the status row above the input — e.g. the
    * current project path, session model name, or a live status indicator.
    * The row also hosts the tools-toggle button on the trailing edge when
@@ -203,6 +219,7 @@ export const TugPromptEntry = React.forwardRef<
     completionProviders,
     dropHandler,
     localCommandHandler,
+    onBeforeSubmit,
     statusContent,
     toolsContent,
     className,
@@ -257,6 +274,15 @@ export const TugPromptEntry = React.forwardRef<
     localCommandHandlerRef.current = localCommandHandler;
   }, [localCommandHandler]);
 
+  // Live ref for `onBeforeSubmit` (same rationale as above — the submit
+  // closure must read the latest callback without rebuilding on every
+  // render). Fires once per successful submit, between store.send and
+  // input.clear (see performSubmit).
+  const onBeforeSubmitRef = useRef(onBeforeSubmit);
+  useLayoutEffect(() => {
+    onBeforeSubmitRef.current = onBeforeSubmit;
+  }, [onBeforeSubmit]);
+
   // Shared submit logic. Invoked by both the SUBMIT chain-action handler
   // (button click, Cmd+Enter, etc.) and the Return/Shift+Return keyboard
   // path (via `onSubmit` on TugPromptInput). Keeping a single performSubmit
@@ -290,6 +316,11 @@ export const TugPromptEntry = React.forwardRef<
     if (!handled) {
       codeSessionStore.send(text, atoms);
     }
+    // Fire the pre-clear hook so hosts can drive submit-specific
+    // effects (e.g., animated snap-back of a content-sized panel)
+    // BEFORE `input.clear()` sets `data-empty="true"` and triggers
+    // the content-driven hook's automatic instant restoration.
+    onBeforeSubmitRef.current?.();
     input.clear();
     setRouteState(DEFAULT_ROUTE);
   }, [codeSessionStore]);

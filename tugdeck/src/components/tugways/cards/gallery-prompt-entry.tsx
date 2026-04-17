@@ -23,7 +23,7 @@
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
@@ -277,6 +277,16 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   );
   useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef });
 
+  // Animate the snap-back-to-userSize ONLY on explicit user submit —
+  // not on any other data-empty transition (manual delete, undo, etc.).
+  // Fires before `input.clear()` so the animated restore commits to
+  // the library store first; the content-driven hook's subsequent
+  // instant-restore is a no-op because the library store already
+  // matches the user size.
+  const handleBeforeSubmit = useCallback(() => {
+    entryPanelRef.current?.restoreUserSize({ animated: true });
+  }, []);
+
   // --- Responder scope for tools-panel popup buttons. ---
   const fontPopupId = useId();
   const fontSizePopupId = useId();
@@ -347,6 +357,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
                 sessionMetadataStore={metadataStackRef.current!.store}
                 historyStore={historyStoreRef.current}
                 completionProviders={completionProviders}
+                onBeforeSubmit={handleBeforeSubmit}
                 statusContent={statusContent}
                 toolsContent={toolsContent}
               />
