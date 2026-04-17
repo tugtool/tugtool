@@ -493,7 +493,10 @@ claude --version
 
 # 2. Capture with stability. --stability 3 runs each probe 3 times and
 #    asserts shape-identity across runs, so you don't commit a fixture
-#    built from one flaky capture.
+#    built from one flaky capture. As the final step, the binary also
+#    extracts the probe-28 system_metadata payload into the repo-root
+#    `capabilities/` tree and updates `capabilities/LATEST` — both are
+#    consumed by Tug.app + tugdeck at build time.
 cd tugrust
 TUG_STABILITY=3 TUG_REAL_CLAUDE=1 \
   cargo test --test capture_stream_json_catalog -- --ignored
@@ -510,16 +513,23 @@ git diff --no-index \
   crates/tugcast/tests/fixtures/stream-json-catalog/v<old-version>/ \
   crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
 
-# 5. Classify each change using the criteria in the next section.
+# 5. Confirm the capabilities artifact rolled. The capture binary wrote
+#    a single-line JSONL snapshot to `capabilities/<new-version>/` and
+#    updated `capabilities/LATEST` to the new version string.
+cat ../capabilities/LATEST
+ls ../capabilities/<new-version>/
+
+# 6. Classify each change using the criteria in the next section.
 #    Handle benign changes with a straight commit. Handle semantic
 #    changes by fixing the consumer first.
 
-# 6. Commit the new version dir (plus any consumer fixes) as one
-#    atomic version-bump change.
+# 7. Commit the new version dir, the capabilities snapshot, and any
+#    consumer fixes as one atomic version-bump change.
 git add crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
+git add ../capabilities/<new-version>/ ../capabilities/LATEST
 git commit -m "fixtures(stream-json-catalog): capture v<new-version> baseline"
 
-# 7. Verify the drift test now passes.
+# 8. Verify the drift test now passes.
 TUG_REAL_CLAUDE=1 cargo test --test stream_json_catalog_drift -- --ignored
 # Expected: 35/35 probes pass (minus any explicitly-skipped ones).
 ```

@@ -79,6 +79,11 @@ claude --version
 #    built from one flaky capture. Expect roughly 5-6 minutes end-to-end
 #    for the full 35-probe run.
 #
+#    As the final step, the capture binary also extracts the probe-28
+#    system_metadata payload into the repo-root `capabilities/` tree and
+#    updates `capabilities/LATEST` — Tug.app and tugdeck both consume
+#    that snapshot at build time.
+#
 #    Scrub ANTHROPIC_API_KEY from the environment (the capture binary's
 #    pre-flight will refuse to run otherwise) so claude authenticates via
 #    your Max/Pro subscription instead of per-token API billing.
@@ -99,16 +104,23 @@ git diff --no-index \
   crates/tugcast/tests/fixtures/stream-json-catalog/v<old-version>/ \
   crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
 
-# 5. Classify each change using the criteria in the next section.
+# 5. Confirm the capabilities artifact rolled. The capture binary wrote
+#    a single-line JSONL snapshot to `capabilities/<new-version>/` and
+#    updated `capabilities/LATEST` to the new version string.
+cat ../capabilities/LATEST
+ls ../capabilities/<new-version>/
+
+# 6. Classify each change using the criteria in the next section.
 #    Benign changes → straight commit. Semantic changes → fix the
 #    consumer first, commit alongside the new fixtures.
 
-# 6. Commit the new version dir (plus any consumer fixes) as one
-#    atomic version-bump change.
+# 7. Commit the new version dir, the capabilities snapshot, and any
+#    consumer fixes as one atomic version-bump change.
 git add crates/tugcast/tests/fixtures/stream-json-catalog/v<new-version>/
+git add ../capabilities/<new-version>/ ../capabilities/LATEST
 git commit -m "test(tugcast): advance golden baseline to claude <new-version>"
 
-# 7. Verify the drift test now passes.
+# 8. Verify the drift test now passes.
 env -u ANTHROPIC_API_KEY TUG_REAL_CLAUDE=1 \
   cargo nextest run -p tugcast --run-ignored only stream_json_catalog_drift_regression
 # Expected: 1 passed, "stream_json_catalog_drift_regression: clean"
