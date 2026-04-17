@@ -146,6 +146,15 @@ function subscribeSplitPaneDomain(notify: () => void): () => void {
  */
 const UserDragContext = React.createContext<{
   activeRef: React.MutableRefObject<boolean>;
+  /**
+   * Bumped by `TugSplitPane` whenever it applies a layout imperatively
+   * (via `groupRef.setLayout()`) in response to a post-mount storedLayout
+   * arrival. `TugSplitPanel.handleResize` compares this against its own
+   * `lastSeenEpochRef` and re-seeds the user-anchor when they differ —
+   * this is how tugbank-delivered layouts update the anchor even when
+   * the cache miss forced the library to start from `defaultSize`.
+   */
+  reseedEpochRef: React.MutableRefObject<number>;
 } | null>(null);
 
 // ---- Types ----
@@ -311,10 +320,37 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     // document-level pointer listeners below and read by descendant
     // TugSplitPanel instances through `UserDragContext`.
     const userDragActiveRef = React.useRef(false);
+    // `reseedEpochRef` bumps whenever we apply a post-mount stored
+    // layout imperatively; descendant TugSplitPanels use this to
+    // re-seed their user-anchor from the new layout.
+    const reseedEpochRef = React.useRef(0);
     const userDragContextValue = React.useMemo(
-      () => ({ activeRef: userDragActiveRef }),
+      () => ({ activeRef: userDragActiveRef, reseedEpochRef }),
       [],
     );
+
+    // Apply storedLayout imperatively when it arrives post-mount. The
+    // library's `defaultLayout` prop is a MOUNT-TIME input only — later
+    // changes are ignored. If tugbank's cache is empty at our mount
+    // (async WebSocket load), `storedLayout` starts null and the library
+    // falls back to `defaultSize`. When the cache fills, we imperatively
+    // apply via `groupRef.setLayout()` and bump the reseed epoch so
+    // descendant auto-size panels update their anchor to match.
+    //
+    // `prevStoredLayoutRef` is initialized to the current value so the
+    // first run of this effect (post-mount) is a no-op if the layout was
+    // already present at mount time (the library already applied it via
+    // `defaultLayout`).
+    const prevStoredLayoutRef = React.useRef<Layout | null>(storedLayout);
+    React.useEffect(() => {
+      if (storedLayout === prevStoredLayoutRef.current) return;
+      prevStoredLayoutRef.current = storedLayout;
+      if (!storedLayout) return;
+      const group = groupRef.current;
+      if (!group) return;
+      reseedEpochRef.current += 1;
+      group.setLayout(storedLayout);
+    }, [storedLayout]);
 
     // Pointer-event-based drag tracking. We listen at document/capture
     // so pointerup is never missed when the cursor strays off the group
@@ -332,7 +368,11 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     // pointerup) completely out of the persistence path.
     React.useEffect(() => {
       const onPointerDown = (e: PointerEvent) => {
-        if (e.defaultPrevented) return;
+        // Do NOT check e.defaultPrevented — the library's own capture-
+        // phase pointerdown handler calls `preventDefault()` whenever
+        // the click lands on a sash (to suppress native text selection
+        // during the drag), which would otherwise neuter this listener
+        // entirely and `userDragActiveRef` would never flip to true.
         if (e.pointerType === "mouse" && e.button > 0) return;
         const groupEl = groupElRef.current;
         if (!groupEl) return;
@@ -575,33 +615,40 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
     // appearance changes go through CSS / DOM, not React state [L06].
     const wasCollapsedRef = React.useRef(false);
 
-    // Shared "user is currently dragging a sash in this group" flag,
-    // sourced from the enclosing `TugSplitPane` via `UserDragContext`.
-    // A fallback local ref keeps the component usable outside a
+    // Shared state from the enclosing `TugSplitPane` via `UserDragContext`.
+    // Fallback local refs keep the component usable outside a
     // `TugSplitPane` (tests, isolated mounts); in that configuration
-    // no drag can originate so the flag stays false and auto-size
-    // behaves like a fresh-mount-only seeded panel.
+    // no drag can originate so the flag stays false, and no epoch
+    // bumps happen so the panel behaves like a fresh-mount-only
+    // seeded panel.
     const userDragContext = React.useContext(UserDragContext);
     const localUserDragActiveRef = React.useRef(false);
+    const localReseedEpochRef = React.useRef(0);
     const userDragActiveRef =
       userDragContext?.activeRef ?? localUserDragActiveRef;
+    const reseedEpochRef =
+      userDragContext?.reseedEpochRef ?? localReseedEpochRef;
 
     // --- Auto-size refs [L07] -----------------------------------------
     // `userSetPctRef`: user's anchored size as a percentage (0..100) of
     //     the group. Stored as a percentage so window rewraps do not
     //     invalidate it — the library itself already uses percentage
     //     as the stable layout unit. Converted to pixels on demand
-    //     inside `recompute` using the current `panel.getSize()`.
+    //     inside `recompute` using the current group offsetHeight.
     // `userSetSeededRef`: one-shot gate for the very first `onResize`
     //     fire at mount so we can seed `userSetPctRef` from the
-    //     library's resolved initial layout. After the first seed,
-    //     only true-during-drag fires update the anchor.
+    //     library's resolved initial layout.
+    // `lastSeenReseedEpochRef`: last epoch this panel consumed.
+    //     Diverges from the shared `reseedEpochRef` when the enclosing
+    //     `TugSplitPane` applies a post-mount stored layout; the next
+    //     `onResize` fire re-seeds the anchor from the new layout.
     // `lastWidthRef`: the outer `[data-panel]` div's block-size
     //     changes on every flex-grow write; the width filter drops
     //     those. A real inline-size change (group rewrap) still
     //     triggers recompute.
     const userSetPctRef = React.useRef<number>(0);
     const userSetSeededRef = React.useRef(false);
+    const lastSeenReseedEpochRef = React.useRef(0);
     const lastWidthRef = React.useRef(0);
 
     // Compose the caller's `ref` with our internal `panelElementRef`.
@@ -627,6 +674,8 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
     //  - First fire (seed): capture `asPercentage` as the initial
     //    anchor. This is the library's resolved default (or whatever
     //    layout it loaded from `defaultLayout`).
+    //  - Reseed (epoch diverged): TugSplitPane applied a post-mount
+    //    stored layout imperatively; capture the new percentage.
     //  - Subsequent fires while the user is dragging a sash in this
     //    group: update the anchor.
     //  - All other fires (auto-size echoes from our own panel.resize()
@@ -639,9 +688,12 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
     const handleResize = React.useCallback(
       (size: PanelSize, _id: string | number | undefined, _prev: PanelSize | undefined) => {
         if (autoSize) {
-          if (!userSetSeededRef.current) {
+          const epoch = reseedEpochRef.current;
+          const epochChanged = epoch !== lastSeenReseedEpochRef.current;
+          if (!userSetSeededRef.current || epochChanged) {
             userSetPctRef.current = size.asPercentage;
             userSetSeededRef.current = true;
+            lastSeenReseedEpochRef.current = epoch;
           } else if (userDragActiveRef.current) {
             userSetPctRef.current = size.asPercentage;
           }
@@ -654,7 +706,7 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
           onCollapsedChange(isCollapsed);
         }
       },
-      [autoSize, userDragActiveRef, onCollapsedChange],
+      [autoSize, userDragActiveRef, reseedEpochRef, onCollapsedChange],
     );
 
     // Auto-size: observe a scroll-source element inside the panel and
@@ -694,21 +746,25 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
         const sourceEl = findSource();
         if (!sourceEl) return;
 
+        // All measurements read from the DOM in the same pass so they
+        // are consistent with each other. Crucially, the user-anchor in
+        // pixels is derived from the *group element's* offsetHeight —
+        // not from `panel.getSize().asPercentage`. The library updates
+        // its store synchronously inside `panel.resize()` but React
+        // hasn't committed the new flex-grow to the DOM yet; mixing
+        // store-derived percentage with DOM-derived pixels produces
+        // bogus targets mid-commit (pane jumps). `groupEl.offsetHeight`
+        // stays stable across our resize calls because panel resizes
+        // redistribute space inside the group without changing the
+        // group's own dimensions.
         const overflow = sourceEl.scrollHeight > sourceEl.clientHeight;
         const empty = sourceEl.getAttribute("data-empty") === "true";
         const chrome = wrapperEl.clientHeight - sourceEl.offsetHeight;
-        const size = panel.getSize();
-        const currentPx = size.inPixels;
-        const currentPct = size.asPercentage;
-
-        // Convert the stored user-anchor percentage to pixels using the
-        // current layout as the reference. A percent-based anchor stays
-        // valid across window / card rewraps without any extra plumbing
-        // since the library itself preserves percentage on resize.
+        const currentPx = panelEl.offsetHeight;
+        const groupEl = panelEl.parentElement;
+        const groupSize = groupEl ? groupEl.offsetHeight : 0;
         const userSetPx =
-          currentPct > 0
-            ? (userSetPctRef.current / currentPct) * currentPx
-            : 0;
+          groupSize > 0 ? (userSetPctRef.current / 100) * groupSize : 0;
 
         let target: number;
         if (empty) {

@@ -295,11 +295,21 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
 
   return (
     <div className="gallery-prompt-entry-card" data-testid="gallery-prompt-entry">
-      <TugSplitPane orientation="horizontal" showHandle={false}>
-        <TugSplitPanel defaultSize="70%" minSize="20%">
+      <TugSplitPane
+        orientation="horizontal"
+        showHandle={false}
+        storageKey="gallery.prompt-entry"
+      >
+        <TugSplitPanel id="gallery-prompt-entry-top" defaultSize="70%" minSize="20%">
           <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
         </TugSplitPanel>
-        <TugSplitPanel defaultSize="30%" minSize="15%" maxSize="85%" autoSize>
+        <TugSplitPanel
+          id="gallery-prompt-entry-bottom"
+          defaultSize="30%"
+          minSize="15%"
+          maxSize="85%"
+          autoSize
+        >
           <ResponderScope>
             <TugBox
               ref={(el) => {

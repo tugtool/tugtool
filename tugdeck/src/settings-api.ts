@@ -232,6 +232,11 @@ export function readSplitPaneLayout(
  * PUT a split-pane layout to tugbank (fire-and-forget).
  *
  * Domain: `dev.tugtool.tugways.split-pane`, key: caller-provided `storageKey`.
+ *
+ * `keepalive: true` lets the request outlive the page. Callers fire this
+ * on sash pointerup, and users frequently reload immediately after
+ * dragging; without `keepalive`, the reload cancels the in-flight PUT
+ * before it reaches the server and the drag is silently lost.
  */
 export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout): void {
   const url = `/api/defaults/dev.tugtool.tugways.split-pane/${encodeURIComponent(storageKey)}`;
@@ -239,6 +244,7 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: layout }),
+    keepalive: true,
   }).catch((err) => {
     console.warn("[settings] PUT splitPaneLayout failed for key", storageKey, err);
   });
