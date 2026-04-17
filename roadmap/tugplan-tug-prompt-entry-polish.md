@@ -349,178 +349,60 @@ D1–D3 from rev 2 landed as part of the polish commit. `gallery-prompt-entry.ts
 
 The wiring mirrors `gallery-prompt-input.tsx` line-for-line; both cards share the `FileTreeStore` / `SessionMetadataStore` pair. There is no duplicated completion logic in the card — the stores own the snapshot + match semantics.
 
-### Rev 3 (next — two commits) {#track-d-rev3}
+### Rev 3 (next — slash completion via captured `system_metadata`) {#track-d-rev3}
 
-**Directive (user, 2026-04-17):** the gallery card must demo file + slash completion *reliably*, independent of backend feed state. Hard-coded tugtool project directory for `@`; tugplug skills + agents for `/`. Two separate commits.
+**What rev 3 actually is now.** An earlier draft of rev 3 proposed two commits: a hard-coded file fixture for `@` and a captured-metadata fixture for `/`. The `@` half was attempted and **rejected** (2026-04-17, see `bd5c48b1` "Align gallery-prompt-entry @ wiring with input card"). The gallery card already constructs a live `FileTreeStore` against the real connection-singleton, identical to `gallery-prompt-input.tsx`; replacing that with a Vite-enumerated path list was invented-complexity for a problem that didn't exist. The `@` story is done.
 
-**Why rev 3.** The rev-2 wiring depends on tugcast seeding `FILETREE` and `SESSION_METADATA` frames. In a running dev environment those feeds may be empty, delayed, or scoped to a workspace the gallery card isn't bound to — the completion popup then opens blank, which reads as "completion is broken" even though the wiring is fine. Rev 3 swaps in offline fixtures so the demo shows completions synchronously on every mount.
+Rev 3 is therefore **one commit, one fixture, one trigger**: drive the gallery's `/` popup off the captured `capabilities/<LATEST>/system-metadata.jsonl` artifact that D6 lays down, instead of the live `SESSION_METADATA` feed.
 
-**Invariant:** we reuse the `CompletionProvider` contract and the engine's typeahead UI. Neither rev-3 commit touches `FileTreeStore`, `SessionMetadataStore`, the engine, or the entry component — only `gallery-prompt-entry.tsx` and two new fixture modules.
-
-#### D4 — `@` file completion from a hard-coded tugtool directory snapshot (commit 1 of 2)
-
-**Scope:** `tugdeck/src/components/tugways/cards/completion-fixtures/file-fixture.ts` (new) + one-line swap in `gallery-prompt-entry.tsx`'s `completionProviders` memo.
-
-**Data source.** Use Vite's `import.meta.glob` to enumerate repo paths at build time. The tugdeck Vite config's root is `tugdeck/`, so the glob needs a `../` escape to reach the rest of the repo:
-
-```ts
-const entries = import.meta.glob(
-  [
-    '../../../../../tugdeck/src/**/*.{ts,tsx,css,md}',
-    '../../../../../tugrust/**/*.{rs,toml,md}',
-    '../../../../../tugplug/**/*.md',
-    '../../../../../roadmap/**/*.md',
-    '../../../../../tuglaws/**/*.md',
-    '../../../../../docs/**/*.md',
-    '../../../../../*.md',
-    '!../../../../../**/target/**',
-    '!../../../../../**/node_modules/**',
-    '!../../../../../**/dist/**',
-  ],
-  { eager: true, as: 'url' },
-);
-```
-
-Key choices:
-- Narrow globs by directory (not `**/*` at root) to keep the build-time enumeration fast and the bundle small.
-- `as: 'url'` only forces Vite to resolve the match — we throw away the URLs and keep the key paths.
-- Verify at implementation time whether the tugdeck Vite config watches the parent directories; if not, adjust the config's `server.fs.allow` list rather than giving up.
-
-Normalize glob keys to repo-relative paths (strip the leading `../../../../../`), sort them, and cache in module scope so successive queries don't re-walk.
-
-**Factory shape — mirrors `FileTreeStore.getFileCompletionProvider()`:**
-
-```ts
-export function createFileFixtureProvider(): CompletionProvider {
-  const paths = buildPaths(); // module-scope cache, sorted
-  return (query: string): CompletionItem[] => {
-    const lower = query.toLowerCase();
-    const hits: CompletionItem[] = [];
-    for (const path of paths) {
-      if (!lower || path.toLowerCase().includes(lower)) {
-        hits.push({
-          label: path,
-          atom: { kind: 'atom', type: 'file', label: path, value: path },
-        });
-        if (hits.length >= 50) break;
-      }
-    }
-    return hits;
-  };
-}
-```
-
-Case-insensitive substring, capped at 50 results (matches the engine's typeahead expectations — the user scrolls or types more to narrow). No subscribe method needed: the fixture is static, so the provider is a plain function, matching the sync branch of the `CompletionProvider` interface.
-
-**Wiring.** Replace the card's `completionProviders["@"]` with the fixture provider. The backend-backed `FileTreeStore` stays constructed (T3.4.c will use it) but is no longer plumbed into the gallery entry:
-
-```ts
-const completionProviders = useMemo(() => {
-  const out: Record<string, CompletionProvider> = {};
-  out["@"] = createFileFixtureProvider();
-  const commandProvider = metadataStackRef.current?.store.getCommandCompletionProvider();
-  if (commandProvider) out["/"] = commandProvider;
-  return out;
-}, []);
-```
-
-**Acceptance (D4):**
-- Type `@` in the gallery entry; popup opens listing tugtool repo paths (sorted, case-insensitive substring).
-- Type `@roadmap`; suggestions narrow to paths containing "roadmap".
-- Accept a result; a file atom lands in the editor.
-- No backend round-trip; no empty-feed flash on first paint.
-- `gallery-prompt-input.tsx` is untouched and still uses the live `FileTreeStore` (smoke-test: it still works against a running tugcast).
-
-**Out of scope for D4:**
-- Sharing the fixture between `gallery-prompt-entry` and `gallery-prompt-input`. The input card has a specific L02 story with a workspace-filtered `FileTreeStore` that we're not going to regress.
-- Fuzzy scoring. Substring matches what `FileTreeStore` does today.
-- HMR on newly-added repo files. `import.meta.glob` resolves at build time; adding a file requires a dev-server reload.
-
-#### D5 — `/` slash commands from captured `system_metadata` (commit 2 of 2)
+**Why the `/` fixture is justified (and `@` wasn't).** The gallery card runs `CodeSessionStore` against a `MockTugConnection` — there is no real Claude Code session. The `SESSION_METADATA` payload Claude Code would emit on session start therefore never reaches the card, so the real `SessionMetadataStore` stays at its empty snapshot and the `/` popup opens blank. `FILETREE` is different: it's produced by tugcast independent of any Claude session, and the card's `FileTreeStore` goes through the real connection, so `@` works today.
 
 **Directive (user, 2026-04-17):**
 - Plugin skills/agents must load through the same `system_metadata` path Claude Code uses, not via one-off repo globs.
-- Built-in commands must match the real Claude Code list (not a hand-imagined subset) — the v2.1.105 capture in the stream-json golden catalog is the authoritative source.
+- Built-in commands must match the real Claude Code list (not a hand-imagined subset) — the captured `system-metadata.jsonl` in `capabilities/<LATEST>/` is the authoritative source.
 - Tug.app always invokes Claude Code with an implicit `--plugin-dir tugplug` pointing at the bundle's resources, so the payload reflects tugplug's skills and agents.
-- Agents should be invocable as slash commands. They're in `system_metadata.agents[]` today but the UI parser drops them — close that gap.
+- Agents should be invocable as slash commands. They're in `system_metadata.agents[]` today but the original UI parser dropped them — that gap is already closed (D5.a, `51880500`).
 - Slash completion fires **only when `/` is the first character of the editor**. Anywhere else (mid-text, after whitespace) it stays a literal `/`.
 
-**Scope:** three coordinated changes, one commit:
+**Invariant:** reuse the `CompletionProvider` contract and the engine's typeahead UI. Rev 3 does not touch `FileTreeStore`, the engine, `tug-prompt-entry.tsx`, or the live `@` path — only `gallery-prompt-entry.tsx` and one new fixture module. `SessionMetadataStore` itself is reused (not replaced) — the fixture swaps its feed-store source, not its parser.
 
-1. Small fix to `tugdeck/src/lib/session-metadata-store.ts` (parser + agents[]).
-2. New fixture module `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-fixture.ts` + companion captured JSON that spins up an inert-feed `SessionMetadataStore`.
-3. Rewire `gallery-prompt-entry.tsx`'s `completionProviders["/"]` onto the fixture's provider, wrapped with the position-0 gate.
+#### D5 — `/` slash commands from captured `system_metadata`
 
-##### D5.a — Close the `SessionMetadataStore` parser gap
+**Scope:** two coordinated changes, one commit:
 
-Two current-as-of-today gaps in `session-metadata-store.ts`:
+1. New fixture module `tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-fixture.ts` that feeds `SessionMetadataStore` from the captured `virtual:capabilities/system-metadata` artifact.
+2. Rewire `gallery-prompt-entry.tsx`'s `completionProviders["/"]` onto the fixture store's provider, wrapped with the position-0 gate. Rip out the now-unused live `SessionMetadataStore` construction path in the gallery card.
 
-- **`parseSlashCommand` requires objects** (`entry.name` as a string). The real v2.1.105 payload ships `slash_commands`, `skills`, and `agents` as **bare string arrays** (confirmed in `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/test-28-system-metadata-deep-dive.jsonl` line 2). Under today's parser every entry silently drops — `SessionMetadataSnapshot.slashCommands` is empty even when the payload is rich.
-- **`agents[]` is never read.** `parseMetadataPayload` merges `slash_commands[]` (category `"local"`) + `skills[]` (category `"skill"`). Agents are ignored.
+Parser support for bare-string entries + `agents[]` + category-rank dedup already shipped (D5.a, see below).
 
-Change:
+##### D5.a — Close the `SessionMetadataStore` parser gap — SHIPPED
 
-```ts
-function parseEntry(raw: unknown, defaultCategory: SlashCommandInfo["category"]): SlashCommandInfo | null {
-  // Accept both shapes:
-  //   - Bare string (current Claude Code emits this for slash_commands/skills/agents).
-  //   - Object { name, description?, category? } (forward-compatible if the
-  //     emitter starts carrying metadata).
-  if (typeof raw === "string" && raw.length > 0) {
-    return { name: raw, category: defaultCategory };
-  }
-  if (raw && typeof raw === "object") {
-    const entry = raw as Record<string, unknown>;
-    if (typeof entry.name !== "string" || !entry.name) return null;
-    return {
-      name: entry.name,
-      description: typeof entry.description === "string" ? entry.description : undefined,
-      category: typeof entry.category === "string" ? toCategory(entry.category) : defaultCategory,
-    };
-  }
-  return null;
-}
-```
+Shipped in commit `51880500` ("Accept bare strings + agents[] in system_metadata"). `tugdeck/src/lib/session-metadata-store.ts` now:
 
-In `parseMetadataPayload`, add the agents branch and switch all three loops to the new helper:
+- Accepts both bare-string and `{ name, description?, category? }` entry shapes.
+- Merges `slash_commands[]` (category `"local"`) + `skills[]` (category `"skill"`) + `agents[]` (category `"agent"`).
+- Dedups by `name`, keeping the entry with the richer category via `CATEGORY_RANK = { local: 0, skill: 1, agent: 1 }` (first-writer-wins among equal-rank entries, which is fine — overlap is only local↔skill today).
+
+This is **load-bearing for T3.4.c too** — a live session's slash popup would be empty without it.
+
+##### D5.b — Load the captured `system_metadata` via the capabilities pipeline (D6 — SHIPPED)
+
+The capabilities pipeline is already live. As of today (`eaa97156`, `2cddd1fb`, `96c5c9b2`):
+
+- `capabilities/LATEST` contains `2.1.112` (no `v` prefix).
+- `capabilities/2.1.112/system-metadata.jsonl` holds a single-line JSONL payload captured from real Claude Code 2.1.112.
+- `virtual:capabilities/system-metadata` resolves at Vite build time to the raw JSONL string (see `capabilitiesVirtualModulePlugin` in `tugdeck/vite.config.ts`).
+- The Xcode bundle copy step lays `system-metadata.jsonl` into `Tug.app/Contents/Resources/capabilities/`.
+
+D5's fixture module is a thin wrapper over the virtual module:
 
 ```ts
-if (Array.isArray(p.slash_commands)) {
-  for (const entry of p.slash_commands) {
-    const cmd = parseEntry(entry, "local");
-    if (cmd) slashCommands.push(cmd);
-  }
-}
-if (Array.isArray(p.skills)) {
-  for (const entry of p.skills) {
-    const skill = parseEntry(entry, "skill");
-    if (skill) slashCommands.push(skill);
-  }
-}
-if (Array.isArray(p.agents)) {
-  for (const entry of p.agents) {
-    const agent = parseEntry(entry, "agent");
-    if (agent) slashCommands.push(agent);
-  }
-}
-```
-
-Dedup note: the captured payload overlaps — every skill (e.g. `tugplug:plan`) is also in `slash_commands`. `getCommandCompletionProvider()` today does not dedupe. Add a post-merge dedup keyed on `name`, preferring the entry with the richer category (`skill` / `agent` over `local`). One pass, no ordering concerns because the popup is sorted client-side anyway.
-
-**This change is load-bearing for T3.4.c too** — without it the live session's slash popup will be empty. D5 pays for the fix as part of unblocking the gallery.
-
-##### D5.b — Load the captured `system_metadata` via the capabilities pipeline (D6)
-
-D5 **does not** embed a test-catalog file path or a hand-copied JSON inside tugdeck. Instead it consumes the canonical `capabilities/LATEST/system-metadata.jsonl` artifact produced by **D6**. D6 owns the capture, the rename, the `LATEST` pointer, the bundle placement, and the runtime mismatch bulletin — read that section before implementing D5.
-
-From D5's point of view the artifact is simply "a JSONL file at a stable build-time resolvable path whose single line is a `system_metadata` payload". The fixture module becomes a thin wrapper:
-
-```ts
-// system-metadata-fixture.ts
-// The import path resolves to `capabilities/<LATEST>/system-metadata.jsonl`
-// via the Vite virtual-module hook defined by D6. The underlying file is a
-// one-line JSONL produced by the capture runbook, so we take the first line,
-// JSON.parse it, and feed it to SessionMetadataStore.
+// tugdeck/src/components/tugways/cards/completion-fixtures/system-metadata-fixture.ts
+//
+// The virtual module resolves to the raw JSONL contents of
+// `capabilities/<LATEST>/system-metadata.jsonl`. We take the first line,
+// JSON.parse it, and feed it to SessionMetadataStore via a stand-in
+// FeedStore that emits once and stays silent.
 import capturedJsonl from "virtual:capabilities/system-metadata";
 import { FeedId, type FeedIdValue } from "@/protocol";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -528,10 +410,10 @@ import { SessionMetadataStore } from "@/lib/session-metadata-store";
 const fixturePayload = JSON.parse(capturedJsonl.split("\n")[0]);
 
 /**
- * Inert FeedStore that emits the captured system_metadata payload once on
- * construction, then stays silent. Same shape as the InertFeedStore already
- * present in gallery-prompt-entry.tsx — the ONE emission is what distinguishes
- * this from the pure no-op.
+ * FeedStore stand-in that emits the captured system_metadata payload once on
+ * first subscription, then stays silent. Same shape as the InertFeedStore
+ * already present in gallery-prompt-entry.tsx; the one-shot emission is what
+ * distinguishes this from the pure no-op.
  */
 class FixtureFeedStore {
   private map: Map<FeedIdValue, unknown>;
@@ -541,7 +423,7 @@ class FixtureFeedStore {
   }
   subscribe = (l: () => void) => {
     this.listeners.add(l);
-    // Trigger a synchronous delivery so SessionMetadataStore's constructor-time
+    // Synchronous delivery so SessionMetadataStore's constructor-time
     // _onFeedUpdate picks up the payload immediately.
     queueMicrotask(l);
     return () => this.listeners.delete(l);
@@ -561,6 +443,8 @@ export function getFixtureSessionMetadataStore(): SessionMetadataStore {
 ```
 
 Singleton scope is fine — the fixture is immutable and shared across mounts. Matches `gallery-prompt-input.tsx`'s `_cardServices` pattern.
+
+**Tests to ship alongside:** a `system-metadata-fixture.test.ts` that reads the real `capabilities/<LATEST>/system-metadata.jsonl` (the virtual module has no bun-test shim — either mock it via `bun:test`'s `mock.module` or refactor the fixture into a pure `createFixtureStore(jsonl: string)` + thin wrapper). Counts to assert: 39 total slash commands, 16 of which are `category: "agent"`, 13 of which are `category: "skill"`, 10 of which are `category: "local"`.
 
 ##### D5.c — Position-0 gate for the `/` trigger
 
@@ -605,12 +489,14 @@ const completionProviders = useMemo(() => {
 
 The backend-backed `SessionMetadataStore` wiring in the card (currently live) is no longer plumbed into `/`. Recommend **rip it out** during this commit — the fixture store is the only source the gallery should use, and dead code reads confusingly. T3.4.c re-adds the live wiring against the real session.
 
-**Acceptance (D5):**
-- Type `/` as the first character of the gallery entry; popup lists every entry in the captured `system_metadata`: 21 slash commands (built-ins + tugplug skills, deduped against the `skills[]` merge) and 17 agents (including fully-qualified `tugplug:overviewer-agent`, `tugplug:coder-agent`, etc.). tugplug skills display as `tugplug:plan`, `tugplug:implement`, `tugplug:merge`, `tugplug:dash`.
-- Type `/tug`; narrows to the tugplug-prefixed entries.
-- Type `/com`; narrows to `commit`, `compact`, `context`, `tugplug:committer-agent`, `tugplug:conformance-agent`, etc.
+**Acceptance (D5, against the shipped v2.1.112 artifact):**
+- Type `/` as the first character of the gallery entry; popup lists **39 entries** deduped from the captured `system_metadata`:
+  - **23 slash_commands** — 13 of which upgrade to `category: "skill"` via the overlap merge (`batch`, `claude-api`, `commit`, `debug`, `less-permission-prompts`, `loop`, `schedule`, `simplify`, `tugplug:dash`, `tugplug:implement`, `tugplug:merge`, `tugplug:plan`, `update-config`), 10 remain `category: "local"` (`compact`, `context`, `cost`, `extra-usage`, `heapdump`, `init`, `insights`, `review`, `security-review`, `team-onboarding`).
+  - **16 agents** — `Explore`, `Plan`, `general-purpose`, `statusline-setup`, plus 12 `tugplug:*-agent` entries (`architect`, `auditor`, `author`, `clarifier`, `coder`, `committer`, `conformance`, `critic`, `dash`, `integrator`, `overviewer`, `reviewer`).
+- Type `/tug`; narrows to the 16 `tugplug:`-prefixed entries (4 skills + 12 agents).
+- Type `/com`; narrows to `commit`, `compact`, `tugplug:committer-agent`, `tugplug:conformance-agent` (no `context` — substring `com` doesn't match it).
 - Accept a result; a command atom lands in the editor carrying the fully-qualified name.
-- Type a character **other than `/`** as the first character, then a `/` mid-text: popup does NOT open (or opens empty).
+- Type a character **other than `/`** as the first character, then a `/` mid-text: popup does NOT open (or opens empty — P1 allows the trigger to fire; the wrapper returns `[]`).
 - Submit the editor; route stays on `>` (Prompt) — this card doesn't use the `:` Command route.
 - No backend round-trip, no warning about missing `SESSION_METADATA` feed.
 
@@ -618,7 +504,7 @@ The backend-backed `SessionMetadataStore` wiring in the card (currently live) is
 - Terminal-only commands (`/status`, `/model`, `/clear`, `/vim`, `/btw`, `/resume`). They're not in `system_metadata.slash_commands` per transport-exploration.md line 1194. Follow-on work in `tide.md` handles responding to those when the graphical UI reimplements them.
 - Category-aware styling (different badge for skill vs agent vs local). The popup stays name-only; `category` survives on the snapshot for a later pass.
 - Promoting the position-0 gate to the engine (P2). T3.4.c.
-- Re-capturing the artifact when Claude Code rolls (v2.1.112+, etc.). Lives in D6's runbook step, not here.
+- Re-capturing the artifact when Claude Code rolls (2.1.113+). Lives in D6's runbook, not here.
 - Auto-invoking agents through a real dispatcher — today they're completion-only; invocation remains a T3.4.c / tide.md concern.
 
 ---
@@ -626,6 +512,8 @@ The backend-backed `SessionMetadataStore` wiring in the card (currently live) is
 ## Track F — Capabilities artifact pipeline {#track-f}
 
 ### D6 — Build-time capabilities discovery {#d6}
+
+**Status (2026-04-17):** D6.a / D6.b / D6.c / D6.e shipped across `eaa97156`, `2cddd1fb`, `96c5c9b2`, `11091c6a`. D6.d (Swift-side mismatch bulletin) is the only piece still outstanding and is not a blocker for D5.
 
 **Directive (user, 2026-04-17):**
 - **Build-time only.** The extraction must not run on Tug.app's launch path. A developer / CI action produces a committed artifact; the app loads that artifact at startup.
@@ -659,15 +547,17 @@ Implementation note: a Rust `extract_capabilities()` helper invoked after the pr
 ```
 <repo-root>/
   capabilities/
-    LATEST                             # text file: "v2.1.105\n"
-    v2.1.104/
+    LATEST                             # text file: "2.1.112\n" (no "v" prefix)
+    README.md
+    2.1.105/
       system-metadata.jsonl            # normalized single-event capture
-    v2.1.105/
+    2.1.112/
       system-metadata.jsonl
 ```
 
 - **Versions retained.** Same policy as the stream-json catalog — cheap (one small JSONL per version), useful for reproducing historical UI behavior or bisecting slash-command regressions.
 - **`LATEST` is a text file, not a symlink.** Portable on every host OS; readable by both Vite's Node-side build and Xcode's resource-copy phase without shelling out.
+- **No `v` prefix on version strings.** Matches Claude Code's `--version` output verbatim. The shipped plugin + Xcode build-phase both read `LATEST` via `tr -d '[:space:]'` and concatenate `capabilities/<ver>/system-metadata.jsonl`.
 - **No JSONL→JSON trim.** The payload stays JSONL (one event per line, matching the catalog's native format) so downstream tooling can consume it with the same parsers.
 
 #### D6.c — Bundle placement
@@ -718,11 +608,11 @@ Both steps are mechanical; they belong in the runbook rather than as a standalon
 Nothing else — no helper utilities, no re-export of `SessionMetadataStore`, no typed wrapper. D5 owns the parse-and-mount; D6 owns the capture-and-placement.
 
 **Acceptance (D6):**
-- Run the version-bump runbook's extraction step on a clean checkout. `capabilities/v2.1.105/system-metadata.jsonl` appears; `capabilities/LATEST` reads `v2.1.105`.
-- `bun run build` in tugdeck produces a bundle that contains the payload inlined (verify: grep the built output for `tugplug:plan` → present).
-- `xcodebuild -project Tug.xcodeproj` copies `system-metadata.jsonl` into `Tug.app/Contents/Resources/capabilities/`.
-- A first session under a matching Claude Code version produces no tug-bulletin.
-- A first session under a mismatching Claude Code version produces one tug-bulletin, with the baked + observed version strings.
+- Run `just capture-capabilities`. `capabilities/<ver>/system-metadata.jsonl` appears; `capabilities/LATEST` reads `<ver>` (no `v` prefix). *(Shipped — validated against 2.1.112.)*
+- `bun run build` in tugdeck produces a bundle that contains the payload inlined (verify: grep the built output for `tugplug:plan` → present). *(Shipped.)*
+- `xcodebuild -project Tug.xcodeproj` copies `system-metadata.jsonl` into `Tug.app/Contents/Resources/capabilities/`. *(Shipped — see `tugapp/Tug.xcodeproj/project.pbxproj` copy phase.)*
+- A first session under a matching Claude Code version produces no tug-bulletin. *(Pending D6.d.)*
+- A first session under a mismatching Claude Code version produces one tug-bulletin, with the baked + observed version strings. *(Pending D6.d.)*
 
 **Out of scope for D6:**
 - **Runtime probing on launch.** Directive explicitly excludes it.
@@ -743,24 +633,27 @@ Nothing else — no helper utilities, no re-export of `SessionMetadataStore`, no
 | 5  | B5+B6 | Gallery wrapper as `TugBox inset={false}`                                       | XS   | Low  | Shipped            |
 | 6  | D1    | Wire real `fileCompletionProvider` in gallery card                              | XS–S | Low  | Shipped            |
 | 7  | D2b   | Generalize entry's completion prop → `completionProviders` map                  | S    | Low  | Shipped            |
-| 8  | E1    | Replace Track C's props/impl: `TugSplitPanel.autoSize` + `autoSizeReturnDuration` | S | Low | Next |
-| 9  | E2    | MO + RO install on panel's inner wrapper; `recompute` unifies all fires         | M    | Med  | Next               |
-| 10 | E3    | CSS rule + `--auto-size-transition-duration` write path                         | XS   | Low  | Next               |
-| 11 | E4    | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card     | XS   | Low  | Next               |
-| 12 | D4    | `@` file completion fixture for gallery (hard-coded tugtool tree)               | S    | Low  | Next               |
-| 13 | D6.a  | Capture pipeline extension: write `capabilities/v<ver>/system-metadata.jsonl`    | S    | Low  | Next               |
-| 14 | D6.b+c | `capabilities/` + `LATEST` layout; Vite virtual module; Xcode bundle copy      | S    | Med  | Next               |
-| 15 | D6.d  | Swift-side mismatch check + tug-bulletin on first `system_metadata` frame       | XS   | Low  | Next               |
-| 16 | D6.e  | Runbook tie-in — append extraction step to version-bump runbook                 | XS   | Low  | Next               |
-| 17 | D5    | `/` slash-command completion for gallery via capabilities artifact (+ parser fix + agents + position-0 gate) | S | Low | Next (blocked on 13–15) |
+| 8  | E1    | Replace Track C's props/impl: `TugSplitPanel.autoSize` + `autoSizeReturnDuration` | S | Low | Shipped (Track E) |
+| 9  | E2    | MO + RO install on panel's inner wrapper; `recompute` unifies all fires         | M    | Med  | Shipped (Track E)  |
+| 10 | E3    | CSS rule + `--auto-size-transition-duration` write path                         | XS   | Low  | Shipped (Track E)  |
+| 11 | E4    | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card     | XS   | Low  | Shipped (Track E)  |
+| 12 | D4    | ~~`@` file completion fixture for gallery~~                                     | —    | —    | Rejected (2026-04-17) |
+| 12.5 | D1b | Align `gallery-prompt-entry` `@` wiring with `gallery-prompt-input`             | XS   | Low  | Shipped (`bd5c48b1`) |
+| 13 | D6.a  | Capture pipeline extension: write `capabilities/<ver>/system-metadata.jsonl`    | S    | Low  | Shipped (`eaa97156`) |
+| 14 | D6.b+c | `capabilities/` + `LATEST` layout; Vite virtual module; Xcode bundle copy      | S    | Med  | Shipped (`2cddd1fb` + `eaa97156`) |
+| 15 | D6.d  | Swift-side mismatch check + tug-bulletin on first `system_metadata` frame       | XS   | Low  | Next (non-blocker) |
+| 16 | D6.e  | Runbook tie-in — append extraction step to version-bump runbook                 | XS   | Low  | Shipped (`11091c6a` + `96c5c9b2`) |
+| 17 | D5.a  | `SessionMetadataStore` parser: bare strings + `agents[]` + category-rank dedup  | XS   | Low  | Shipped (`51880500`) |
+| 18 | D5.b–d | `/` slash-command completion in gallery via capabilities artifact + position-0 gate | S | Low | **Next (unblocked)** |
 | ~~C1–C5~~ | | ~~Track C variants~~ — **superseded by Track E.** See §Track E.                       |      |      | Reverted           |
 
 **Commit grouping:**
 - **Commit 1 — Polish:** items 1–7 (Track A + B + D rev 2). Pure layout, visibility, and wiring. *Shipped in `652ed1d5`.*
-- **Commit 2 — Content-driven sizing:** items 8–11 (Track E). One cohesive unit; splitting it would leave a broken intermediate state.
-- **Commit 3 — `@` fixture (D4):** item 12. File completion for the gallery against a hard-coded tugtool directory snapshot. Self-contained; does not touch `FileTreeStore` or the entry component.
-- **Commit 4 — Capabilities pipeline (D6):** items 13–16. One cohesive unit — capture extraction, repo layout, Vite virtual module, Xcode bundle copy, Swift mismatch bulletin, runbook append. Shipping these piecemeal leaves half-wired build paths, so bundle them.
-- **Commit 5 — `/` slash completion (D5):** item 17. Depends on commit 4: consumes `virtual:capabilities/system-metadata`, fixes `SessionMetadataStore` parser + adds `agents[]`, adds position-0 gate, rewires the gallery card's `/` provider.
+- **Commit 2 — Content-driven sizing:** items 8–11 (Track E). *Shipped.*
+- ~~**Commit 3 — `@` fixture (D4):**~~ *Rejected 2026-04-17. D4 substituted the card's working live `FileTreeStore` for a static path-list; this was wrong. Item 12.5 (`bd5c48b1`) keeps the live watcher and aligns the entry card's wiring with the input card's.*
+- **Commit 4 — Capabilities pipeline (D6):** items 13, 14, 16. *Shipped across multiple commits listed above.*
+- **Commit 5 — `/` slash completion (D5):** item 18. Self-contained single commit — consumes the already-shipped `virtual:capabilities/system-metadata`, spins up the fixture `SessionMetadataStore` via a one-shot FeedStore, adds position-0 gate, rewires the gallery card's `/` provider, rips out the no-longer-needed `InertFeedStore` + live `SessionMetadataStore` construction in the card.
+- **Follow-up — D6.d:** item 15. Swift-side launch-time mismatch bulletin. Independent of D5.
 
 ## Tests
 
