@@ -46,7 +46,12 @@ import React, {
 import { ArrowUp, Settings, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { AtomSegment, CompletionProvider, DropHandler } from "@/lib/tug-text-engine";
+import type {
+  AtomSegment,
+  CompletionProvider,
+  DropHandler,
+  TugTextEditingState,
+} from "@/lib/tug-text-engine";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -58,6 +63,7 @@ import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover"
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useTugcardPersistence } from "./use-tugcard-persistence";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -99,6 +105,23 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
   "$": "submit",
   ":": "submit",
 };
+
+/**
+ * Persisted state payload for TugPromptEntry via `useTugcardPersistence`.
+ *
+ * - `currentRoute` is the active prefix at save time. On restore, the
+ *   indicator snaps back to this route and the input displays the
+ *   matching saved snapshot.
+ * - `perRoute` maps route → `TugTextEditingState`, giving each route
+ *   its own draft that survives route switches and card/tab reloads.
+ *
+ * JSON-serializable (no DOM, no functions) — round-trips through
+ * tugbank via the Tugcard persistence pipeline [L23].
+ */
+interface TugPromptEntryPersistedState {
+  currentRoute: string;
+  perRoute: Record<string, TugTextEditingState>;
+}
 
 /**
  * Default route when the input has no typed prefix. One of the three
@@ -292,6 +315,12 @@ export const TugPromptEntry = React.forwardRef<
   // narrow on `event.sender`.
   const routeIndicatorSenderId = `${id}-route-indicator`;
 
+  // Per-route input snapshots. When the user switches routes, the
+  // current route's editing state is captured here; switching back
+  // restores it. In-memory only (no persistence across reloads).
+  // Entries are created lazily on the first switch-away from a route.
+  const savedContentByRouteRef = useRef<Record<string, TugTextEditingState>>({});
+
   // [D04] the route value is React state — TugChoiceGroup is a controlled
   // component that derives its pill position from `value`. L06 explicitly
   // allows React state for "selected item in a list" — the route is data
@@ -395,21 +424,49 @@ export const TugPromptEntry = React.forwardRef<
         // or object. Drop anything that isn't the string the
         // indicator normally sends.
         if (typeof event.value !== "string") return;
+        const prevRoute = routeRef.current;
+        const nextRoute = event.value;
+        if (prevRoute === nextRoute) return;
+
+        const input = promptInputRef.current;
+        const root = rootRef.current;
+
+        // Save the outgoing route's content so we can restore it the
+        // next time the user switches back to that route.
+        if (input) {
+          savedContentByRouteRef.current[prevRoute] = input.captureState();
+        }
+
         // Update the controlled indicator's `value` prop source of
         // truth. [D04]
-        setRouteState(event.value);
-        // Sync the input's leading atom to match. setRoute fires the
-        // engine's route-detection path, which calls onRouteChange
-        // with the same char, which calls `handleRouteChange` below,
-        // which calls `setRouteState(event.value)` a second time.
-        // React bails on the second call via Object.is equality, so
-        // the dispatch produces exactly one commit. See the round-
-        // trip test for the guard.
-        promptInputRef.current?.setRoute(event.value);
+        setRouteState(nextRoute);
+
+        // Swap the input content to the incoming route: restore a
+        // previously-saved snapshot if one exists, otherwise install
+        // a fresh route atom via setRoute (which clears internally).
+        // The setRoute path fires onRouteChange → handleRouteChange,
+        // which no-ops since setRouteState above already has the
+        // target value (React bails on equal state).
+        if (input) {
+          const savedForNext = savedContentByRouteRef.current[nextRoute];
+          if (savedForNext) {
+            input.restoreState(savedForNext);
+          } else {
+            input.setRoute(nextRoute);
+          }
+        }
+
+        // Sync `data-empty` on the root: neither restoreState nor
+        // setRoute flow through handleInputChange, so the attribute
+        // would otherwise lag until the next keystroke.
+        if (root) {
+          root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
+        }
+
         // Move keyboard focus to the editor so the user can start
         // typing immediately — the route segment button had focus
         // from the click; this hands it back to the input.
-        promptInputRef.current?.focus();
+        input?.focus();
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         performSubmit();
@@ -478,6 +535,48 @@ export const TugPromptEntry = React.forwardRef<
     if (!root) return;
     root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
   }, []);
+
+  // Tugcard persistence [L23]. TugPromptEntry is the sole persister for
+  // this compound — the composed `TugPromptInput` is explicitly opted
+  // out via `persistState={false}` below so there's no competing
+  // registration. Payload carries the active route + a per-route
+  // editing-state map, so each route's draft survives route switches
+  // *and* card/tab deactivation *and* full reloads.
+  //
+  // onSave merges the live input state (for the active route) with the
+  // in-memory map of drafts for inactive routes. onRestore seeds the
+  // map, sets the route state, and rehydrates the input to whatever
+  // draft was last saved for the active route (or installs a fresh
+  // route atom if none). Tugcard's orchestration guarantees both refs
+  // (`promptInputRef`, `rootRef`) are populated by the time onRestore
+  // fires — parent effects run after child mounts.
+  useTugcardPersistence<TugPromptEntryPersistedState>({
+    onSave: () => {
+      const input = promptInputRef.current;
+      const perRoute = { ...savedContentByRouteRef.current };
+      if (input) {
+        perRoute[routeRef.current] = input.captureState();
+      }
+      return { currentRoute: routeRef.current, perRoute };
+    },
+    onRestore: (state) => {
+      savedContentByRouteRef.current = { ...state.perRoute };
+      setRouteState(state.currentRoute);
+      const input = promptInputRef.current;
+      if (input) {
+        const saved = state.perRoute[state.currentRoute];
+        if (saved) {
+          input.restoreState(saved);
+        } else {
+          input.setRoute(state.currentRoute);
+        }
+      }
+      const root = rootRef.current;
+      if (root) {
+        root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
+      }
+    },
+  });
 
   // Expose the imperative delegate. Pass-throughs to the underlying input
   // delegate — the entry does not own text state.
@@ -580,6 +679,10 @@ export const TugPromptEntry = React.forwardRef<
             onRouteChange={handleRouteChange}
             onChange={handleInputChange}
             onSubmit={performSubmit}
+            /* Persistence is owned by TugPromptEntry (per-route map).
+               Disable the child's registration so only one component
+               claims the single TugcardPersistenceContext slot. */
+            persistState={false}
           />
         </div>
         <div className="tug-prompt-entry-toolbar">
