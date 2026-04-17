@@ -34,6 +34,32 @@
  * overrides, scroll containers, grid-cell chrome) lives at the mount site,
  * never inside this component. See roadmap/tug-split-pane.md §13.
  *
+ * ## Persistence model
+ *
+ * Persistence is keyed off explicit user interaction with a sash, not off
+ * the library's layout-change notifications. A document-level pointerdown
+ * listener (capture phase) sets a "user drag active" ref when the target
+ * is a sash whose parent Group element is this pane's own root; the
+ * matching pointerup reads the current layout via the library's
+ * `GroupImperativeHandle.getLayout()` and writes it to tugbank under
+ * `storageKey`. The library's `onLayoutChanged` callback is intentionally
+ * NOT used for persistence: it also fires for imperative `panel.resize()`
+ * calls (e.g., the autoSize path in TugSplitPanel), and mixing the two
+ * sources makes transient auto-size values contaminate user-anchored
+ * storage. Sourcing from pointerup keeps the two paths cleanly separated.
+ *
+ * ## Auto-size coordination via `UserDragContext`
+ *
+ * A React context ref exposes the "user drag active" flag to descendant
+ * TugSplitPanel instances. Panels with `autoSize` consult this ref in
+ * their `onResize` handler: only fires that land inside a true
+ * user-drag window update the panel's userSet anchor; all other fires
+ * (the library's initial layout resolution, auto-size-resize echoes,
+ * window-size rewraps) are either seeded once or ignored. This is
+ * pointer-event-based rather than counter-based so there is no window
+ * in which a missed decrement could leak and permanently mask user
+ * drags.
+ *
  * ## [L11] is deliberately absent
  *
  * TugSplitPane is a layout primitive, not a control. Layout state lives
@@ -45,9 +71,10 @@
  * not cite [L11] and does not call `useControlDispatch`.
  *
  * Laws: [L02] external state enters React through useSyncExternalStore,
- *       [L06] appearance via CSS, [L15] token-driven states,
- *       [L16] pairings declared, [L19] component authoring guide,
- *       [L20] token sovereignty
+ *       [L06] appearance via CSS, [L07] event handlers read refs,
+ *       [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide, [L20] token sovereignty,
+ *       [L22] DOM observations drive DOM writes directly.
  */
 
 import "./tug-split-pane.css";
@@ -55,6 +82,7 @@ import "./tug-split-pane.css";
 import React from "react";
 import {
   Group,
+  type GroupImperativeHandle,
   type Layout,
   Panel,
   type PanelImperativeHandle,
@@ -95,27 +123,29 @@ function subscribeSplitPaneDomain(notify: () => void): () => void {
   });
 }
 
-// ---- Auto-size echo coordination ----
+// ---- User-drag coordination ----
 
 /**
- * React context shared between a `TugSplitPane` and its `TugSplitPanel`
- * children so that persistence (`onLayoutChanged` → `putSplitPaneLayout`)
- * can distinguish genuine user-drag layout changes from the transient
- * layout writes produced by `autoSize` panels.
+ * React context exposing a shared `userDragActiveRef` from `TugSplitPane`
+ * to descendant `TugSplitPanel` instances. The flag is `true` from the
+ * pointerdown that begins a sash drag through the matching pointerup;
+ * it is `false` during the library's own layout resolutions (initial
+ * mount, window rewrap) and during autoSize-induced `panel.resize()`
+ * echoes.
  *
- * The value is a single ref whose integer count reflects the number of
- * in-flight `panel.resize()` echoes across all auto-size panels in the
- * group. `TugSplitPanel` increments before each resize; its
- * `handleResize` decrements when the library's async `onResize` echo
- * arrives; `TugSplitPane.handleLayoutChanged` skips persistence while
- * the count is positive so auto-size transients never reach storage.
+ * TugSplitPanel's autoSize path uses this to decide when an `onResize`
+ * fire should update its user-anchor percentage: only true-during-drag
+ * fires update the anchor. The first non-drag fire seeds the initial
+ * anchor from the library's resolved default; subsequent non-drag fires
+ * (auto-size echoes, window resizes that preserve percentage) leave it
+ * alone.
  *
- * Why a ref instead of React state: persistence is checked in a
- * callback (`handleLayoutChanged`), not in a render; state would force
- * re-renders for a value consumed only by event handlers [L06][L07].
+ * Why a ref instead of React state: the flag is consumed by event
+ * handlers (`onResize`, pointerup), not by renders; state would force
+ * re-renders for a value no render reads [L06][L07].
  */
-const AutoSizeEchoContext = React.createContext<{
-  countRef: React.MutableRefObject<number>;
+const UserDragContext = React.createContext<{
+  activeRef: React.MutableRefObject<boolean>;
 } | null>(null);
 
 // ---- Types ----
@@ -258,31 +288,77 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       getSnapshot,
     );
 
-    // Shared counter for auto-size echo suppression. Each child
-    // `TugSplitPanel` with `autoSize` increments before calling
-    // `panel.resize()` and decrements in its `handleResize` when the
-    // library's async echo arrives. `handleLayoutChanged` checks the
-    // counter and skips persistence while the count is positive so
-    // transient auto-size layouts never reach tugbank.
-    const autoSizeEchoCountRef = React.useRef(0);
-    const autoSizeEchoContextValue = React.useMemo(
-      () => ({ countRef: autoSizeEchoCountRef }),
+    // Group's DOM element and imperative handle. The element ref is
+    // composed with any caller-supplied `ref` via `setGroupElement`;
+    // `groupRef` is only used internally here (to read the layout at
+    // pointerup) so it doesn't need composition.
+    const groupElRef = React.useRef<HTMLDivElement | null>(null);
+    const groupRef = React.useRef<GroupImperativeHandle | null>(null);
+    const setGroupElement = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        groupElRef.current = el;
+        if (typeof ref === "function") {
+          ref(el);
+        } else if (ref) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }
+      },
+      [ref],
+    );
+
+    // `userDragActiveRef` is the single source of truth for "is the user
+    // currently dragging a sash in THIS group?" — flipped from the
+    // document-level pointer listeners below and read by descendant
+    // TugSplitPanel instances through `UserDragContext`.
+    const userDragActiveRef = React.useRef(false);
+    const userDragContextValue = React.useMemo(
+      () => ({ activeRef: userDragActiveRef }),
       [],
     );
 
-    // Write path: `onLayoutChanged` fires after every layout change that
-    // isn't an in-flight drag. That includes our imperative auto-size
-    // `panel.resize()` calls, so we gate on the shared echo counter —
-    // auto-size transients never persist; only genuine user-drag layout
-    // changes reach tugbank.
-    const handleLayoutChanged = React.useCallback(
-      (layout: Layout) => {
-        if (!storageKey) return;
-        if (autoSizeEchoCountRef.current > 0) return;
-        putSplitPaneLayout(storageKey, layout);
-      },
-      [storageKey],
-    );
+    // Pointer-event-based drag tracking. We listen at document/capture
+    // so pointerup is never missed when the cursor strays off the group
+    // mid-drag, and so we see the events before the library's own
+    // handlers (also registered at capture). Drag-start is only
+    // attributed to this group if the sash's direct parent element is
+    // our root — nested TugSplitPane instances inside a panel have
+    // their own Group div, so their sashes aren't our direct children.
+    //
+    // Persistence lives here (not in `onLayoutChanged`): on pointerup,
+    // if this group owned the drag and `storageKey` is set, read the
+    // current layout via the group's imperative handle and PUT it to
+    // tugbank. This keeps auto-size transients (which mutate the layout
+    // via the library's imperative API but never pass through a
+    // pointerup) completely out of the persistence path.
+    React.useEffect(() => {
+      const onPointerDown = (e: PointerEvent) => {
+        if (e.defaultPrevented) return;
+        if (e.pointerType === "mouse" && e.button > 0) return;
+        const groupEl = groupElRef.current;
+        if (!groupEl) return;
+        const target = e.target as Element | null;
+        const sash = target?.closest?.(".tug-split-sash") ?? null;
+        if (sash && sash.parentElement === groupEl) {
+          userDragActiveRef.current = true;
+        }
+      };
+      const onPointerEnd = () => {
+        if (!userDragActiveRef.current) return;
+        userDragActiveRef.current = false;
+        if (storageKey && groupRef.current) {
+          const layout = groupRef.current.getLayout();
+          putSplitPaneLayout(storageKey, layout);
+        }
+      };
+      document.addEventListener("pointerdown", onPointerDown, true);
+      document.addEventListener("pointerup", onPointerEnd, true);
+      document.addEventListener("pointercancel", onPointerEnd, true);
+      return () => {
+        document.removeEventListener("pointerdown", onPointerDown, true);
+        document.removeEventListener("pointerup", onPointerEnd, true);
+        document.removeEventListener("pointercancel", onPointerEnd, true);
+      };
+    }, [storageKey]);
 
     // Pick the grip icon that reads visually along the sash direction.
     // A horizontal sash (horizontal dividing line) runs left-to-right,
@@ -333,12 +409,12 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     });
 
     return (
-      <AutoSizeEchoContext.Provider value={autoSizeEchoContextValue}>
+      <UserDragContext.Provider value={userDragContextValue}>
         <Group
           orientation={libraryOrientation}
           defaultLayout={storedLayout ?? undefined}
-          onLayoutChanged={storageKey ? handleLayoutChanged : undefined}
-          elementRef={ref as React.Ref<HTMLDivElement | null>}
+          elementRef={setGroupElement}
+          groupRef={groupRef}
           className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
           data-slot="tug-split-pane"
           data-disabled={effectiveDisabled || undefined}
@@ -347,7 +423,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
         >
           {interleaved}
         </Group>
-      </AutoSizeEchoContext.Provider>
+      </UserDragContext.Provider>
     );
   },
 );
@@ -418,26 +494,48 @@ export interface TugSplitPanelProps
    * `panelEl.firstElementChild`. If no source is tagged in the subtree,
    * `autoSize` is inert — no observers run, no sizing side-effects.
    *
-   * Sizing formula (applied in `recompute()`):
+   * ## Scroll-source contract
+   *
+   * Any descendant element marked with `data-tug-auto-size-scroll-source`
+   * is treated as the authoritative natural-content-height signal. The
+   * tagged element MUST use `overflow-y: auto` (or equivalent) so its
+   * `scrollHeight` reports content intrinsic height when overflowing and
+   * its `clientHeight` reports the allocated box. `TugPromptInput`'s
+   * maximized editor opts into this by default. The `data-empty="true"`
+   * attribute on the same element acts as the explicit snap-back signal
+   * — when present, the panel snaps to the user-anchor regardless of
+   * scrollHeight state.
+   *
+   * ## Sizing formula (applied in `recompute()`)
+   *
    *   overflow = source.scrollHeight > source.clientHeight
    *   chrome   = wrapperEl.clientHeight - source.offsetHeight
-   *   target   = empty    → userSetSize
-   *              overflow → max(userSetSize, source.scrollHeight + chrome)
-   *              else     → currentPx  (stable; no shrink mid-edit)
+   *   target   = empty    → userAnchor
+   *              overflow → max(userAnchor, source.scrollHeight + chrome)
+   *              else     → currentPx   (stable; no shrink mid-edit)
    *
-   * `userSetSize` is the last user-drag anchor, captured via the
-   * library's `onResize` whenever the call didn't originate from this
-   * panel's own auto-size path. There is no transition on the panel's
-   * size — every change (grow, user drag, snap-back) is applied instantly
-   * via the library's imperative `resize()`. Animation would have to
-   * couple to the library's internal RO-driven `onResize` sampling, which
-   * fights both drag responsiveness and the echo-detection we use to
-   * distinguish our own writes from user drags.
+   * The user anchor is stored as a percentage of the group and
+   * maintained by `handleResize` with a seed-on-first-fire policy:
+   * the initial library-resolved layout seeds the anchor; after that,
+   * only `onResize` fires that land inside a user-drag window (tracked
+   * via document-level pointer listeners in the parent `TugSplitPane`)
+   * update the anchor. AutoSize-induced resize echoes and window
+   * rewraps leave the anchor alone.
    *
-   * Currently supports the horizontal-sash orientation only (the natural
-   * signal is block-axis scrollHeight). The panel does not query its
-   * parent group's orientation — vertical-split auto-sizing would read
-   * `scrollWidth` and filter on `blockSize`; add when a caller needs it.
+   * ## No animation
+   *
+   * Every size change (grow, user drag, snap-back) is applied instantly
+   * via the library's imperative `resize()`. A CSS transition on
+   * `flex-grow` would fight the library's internal RO-driven `onResize`
+   * sampling (which measures `offsetHeight` on every frame while the
+   * transition interpolates) and make drag feel laggy; a programmatic
+   * animation (TugAnimator) would have the same coupling problem.
+   *
+   * Currently supports the horizontal-sash orientation only (the
+   * natural signal is block-axis scrollHeight). The panel does not
+   * query its parent group's orientation — vertical-split auto-sizing
+   * would read `scrollWidth` and filter on `blockSize`; add when a
+   * caller needs it.
    * @default false
    */
   autoSize?: boolean;
@@ -477,27 +575,33 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
     // appearance changes go through CSS / DOM, not React state [L06].
     const wasCollapsedRef = React.useRef(false);
 
-    // Shared auto-size echo counter from the enclosing `TugSplitPane`.
-    // Using the context ref means both this panel's `handleResize`
-    // gating and the pane's `handleLayoutChanged` persistence gate read
-    // from the same source — every increment/decrement is visible to
-    // both. A fallback local ref keeps the component usable outside a
+    // Shared "user is currently dragging a sash in this group" flag,
+    // sourced from the enclosing `TugSplitPane` via `UserDragContext`.
+    // A fallback local ref keeps the component usable outside a
     // `TugSplitPane` (tests, isolated mounts); in that configuration
-    // there is no persistence to gate so the duplication is harmless.
-    const autoSizeEchoContext = React.useContext(AutoSizeEchoContext);
-    const localAutoSizeEchoCountRef = React.useRef(0);
-    const autoSizeEchoCountRef =
-      autoSizeEchoContext?.countRef ?? localAutoSizeEchoCountRef;
+    // no drag can originate so the flag stays false and auto-size
+    // behaves like a fresh-mount-only seeded panel.
+    const userDragContext = React.useContext(UserDragContext);
+    const localUserDragActiveRef = React.useRef(false);
+    const userDragActiveRef =
+      userDragContext?.activeRef ?? localUserDragActiveRef;
 
     // --- Auto-size refs [L07] -----------------------------------------
-    // `userSetSizeRef`: last anchor size (px) the user dragged to, or
-    //     the library's resolved initial size. Updated in `handleResize`
-    //     whenever the fire is not the echo of our own `panel.resize()`.
-    // `lastWidthRef`: the outer `[data-panel]` div's block-size changes
-    //     on every flex-grow write; the width filter drops those.
-    //     A real inline-size change (group rewrap) still triggers
-    //     recompute.
-    const userSetSizeRef = React.useRef<number>(0);
+    // `userSetPctRef`: user's anchored size as a percentage (0..100) of
+    //     the group. Stored as a percentage so window rewraps do not
+    //     invalidate it — the library itself already uses percentage
+    //     as the stable layout unit. Converted to pixels on demand
+    //     inside `recompute` using the current `panel.getSize()`.
+    // `userSetSeededRef`: one-shot gate for the very first `onResize`
+    //     fire at mount so we can seed `userSetPctRef` from the
+    //     library's resolved initial layout. After the first seed,
+    //     only true-during-drag fires update the anchor.
+    // `lastWidthRef`: the outer `[data-panel]` div's block-size
+    //     changes on every flex-grow write; the width filter drops
+    //     those. A real inline-size change (group rewrap) still
+    //     triggers recompute.
+    const userSetPctRef = React.useRef<number>(0);
+    const userSetSeededRef = React.useRef(false);
     const lastWidthRef = React.useRef(0);
 
     // Compose the caller's `ref` with our internal `panelElementRef`.
@@ -516,30 +620,30 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
     );
 
     // Stable handler so identity only changes when the user's callback
-    // does. Reads `isCollapsed()` from the imperative handle, compares to
-    // the last observed value, and fires the change callback on flip.
-    // Also seeds the auto-size user-drag anchor: whenever onResize fires
-    // from outside our own `panel.resize()` call, we treat it as a user
-    // drag (or the library's initial layout resolution) and capture the
-    // new anchor in px. Setting `--auto-size-transition-duration` to 0ms
-    // here kills any stale shrink-transition so the library's own drag
-    // updates never chase an interpolation.
+    // does. Reads `isCollapsed()` from the imperative handle, compares
+    // to the last observed value, and fires the change callback on
+    // flip. Also drives the auto-size anchor:
+    //
+    //  - First fire (seed): capture `asPercentage` as the initial
+    //    anchor. This is the library's resolved default (or whatever
+    //    layout it loaded from `defaultLayout`).
+    //  - Subsequent fires while the user is dragging a sash in this
+    //    group: update the anchor.
+    //  - All other fires (auto-size echoes from our own panel.resize()
+    //    calls, window rewraps that preserve percentage): leave the
+    //    anchor alone.
+    //
+    // Using the live `userDragActiveRef` flag as the gate avoids the
+    // counter/expected-size schemes that break on library coalescing
+    // or React scheduler reorderings.
     const handleResize = React.useCallback(
       (size: PanelSize, _id: string | number | undefined, _prev: PanelSize | undefined) => {
         if (autoSize) {
-          if (autoSizeEchoCountRef.current > 0) {
-            // Echo of our own `panel.resize()`. Consume and skip.
-            // We cannot compare against an expected size because
-            // `panel.getSize()` reads DOM offsetHeight and React
-            // hasn't committed the new flex-grow by the time
-            // `panel.resize()` returns; the library's async onResize
-            // later fires with the real post-commit size. Instead we
-            // count outstanding echoes: one panel.resize() → one RO
-            // fire from the library → one consume.
-            autoSizeEchoCountRef.current -= 1;
-          } else {
-            // User drag, or the library's initial layout resolution.
-            userSetSizeRef.current = size.inPixels;
+          if (!userSetSeededRef.current) {
+            userSetPctRef.current = size.asPercentage;
+            userSetSeededRef.current = true;
+          } else if (userDragActiveRef.current) {
+            userSetPctRef.current = size.asPercentage;
           }
         }
         const panel = panelRef.current;
@@ -550,40 +654,14 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
           onCollapsedChange(isCollapsed);
         }
       },
-      [autoSize, autoSizeEchoCountRef, onCollapsedChange],
+      [autoSize, userDragActiveRef, onCollapsedChange],
     );
 
     // Auto-size: observe a scroll-source element inside the panel and
     // grow / snap-back the panel imperatively in response to natural-
-    // content-height changes. Every change is instant — no CSS
-    // transition, no TugAnimator, no RAF. Animation would have to couple
-    // to the library's internal RO-driven `onResize` sampling, which
-    // fights both drag responsiveness and the echo-detection used to
-    // distinguish our own writes from user drags.
-    //
-    // Contract: the panel looks up its scroll source via
-    // `[data-tug-auto-size-scroll-source]` inside its inner content
-    // wrapper (`panelEl.firstElementChild`). The match is the element
-    // whose `scrollHeight` / `offsetHeight` drive the formula below —
-    // typically an overflow:auto editor. If nothing is tagged, `autoSize`
-    // is inert (no observers installed, no sizing side-effects).
-    //
-    // Sizing formula:
-    //   overflow = source.scrollHeight > source.clientHeight
-    //   chrome   = wrapperEl.clientHeight - source.offsetHeight
-    //   target   = empty    → userSetSize   (snap back to anchor)
-    //              overflow → max(userSetSize, source.scrollHeight + chrome)
-    //              else     → currentPx     (stable; don't shrink mid-edit)
-    //
-    // Why the `else → currentPx` branch. `scrollHeight` on an
-    // `overflow:auto` element clamps to `clientHeight` when content
-    // fits, so we cannot directly distinguish "content exactly fills"
-    // from "content is smaller than allocation". Shrinking on the fit
-    // condition would ping-pong (grow-to-fit, fits → shrink-to-anchor,
-    // content overflows new smaller box → grow-to-fit, repeat). Instead
-    // we stay put while the user edits, and snap only on the explicit
-    // empty signal (`data-empty="true"` — the same attribute the editor
-    // engine already writes for its placeholder state).
+    // content-height changes. See the `autoSize` prop JSDoc for the
+    // full contract (scroll-source attribute, sizing formula,
+    // no-animation rationale).
     //
     // Why echo loops stay out. `panel.resize()` mutates `flex-grow` on
     // the outer `[data-panel]` div; the RO on that same element
@@ -612,34 +690,42 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
       const recompute = () => {
         const panel = panelRef.current;
         if (!panel) return;
+        if (!userSetSeededRef.current) return; // anchor not seeded yet
         const sourceEl = findSource();
         if (!sourceEl) return;
 
         const overflow = sourceEl.scrollHeight > sourceEl.clientHeight;
         const empty = sourceEl.getAttribute("data-empty") === "true";
         const chrome = wrapperEl.clientHeight - sourceEl.offsetHeight;
-        const currentPx = panel.getSize().inPixels;
-        const userSet = userSetSizeRef.current;
+        const size = panel.getSize();
+        const currentPx = size.inPixels;
+        const currentPct = size.asPercentage;
+
+        // Convert the stored user-anchor percentage to pixels using the
+        // current layout as the reference. A percent-based anchor stays
+        // valid across window / card rewraps without any extra plumbing
+        // since the library itself preserves percentage on resize.
+        const userSetPx =
+          currentPct > 0
+            ? (userSetPctRef.current / currentPct) * currentPx
+            : 0;
 
         let target: number;
         if (empty) {
-          target = userSet;
+          target = userSetPx;
         } else if (overflow) {
-          target = Math.max(userSet, sourceEl.scrollHeight + chrome);
+          target = Math.max(userSetPx, sourceEl.scrollHeight + chrome);
         } else {
           target = currentPx;
         }
 
         if (Math.abs(target - currentPx) < 1) return;
 
-        // Increment BEFORE the resize so the library's async `onResize`
-        // echo (and the pane's `onLayoutChanged` persistence hook) find
-        // the counter already positive, regardless of microtask
-        // ordering. One panel.resize() that actually changes the layout
-        // produces one library-RO fire; handleResize decrements.
-        // Persistence skips while the counter is positive so the
-        // transient auto-size size never reaches tugbank.
-        autoSizeEchoCountRef.current += 1;
+        // No echo-counter handshake needed: `handleResize` gates anchor
+        // updates on `userDragActiveRef`, which is false during this
+        // call (we're reacting to a content mutation, not a sash drag).
+        // The library's async onResize fire from this resize will land
+        // with the flag still false and be ignored by the anchor logic.
         panel.resize(target);
       };
 

@@ -102,146 +102,112 @@ Two options:
 
 ## Track E — Content-driven panel sizing in TugSplitPane (supersedes Track C) {#track-e}
 
-**Status: current.** Track C shipped as an incomplete implementation that relied on a magic chrome offset, a `queueMicrotask` workaround for React effect ordering, a `setTimeout` for transition cleanup, and missed CSS-driven rewrap entirely. Rather than patch those individually — each one a symptom of wrong tool for wrong signal — this track replaces Track C with a design where the panel observes its own content directly, no consumer-side ceremony, and every signal converges on one imperative recompute.
+**Status: shipped.** Initial commit `0b2eacbb` landed the observer skeleton but had two structural bugs (echo detection via pixel comparison, and CSS-transition-driven animation coupling to the library's RO-based `onResize` sampling). `04d04a02` reworked it against the live app. A follow-up commit replaces the echo counter with pointer-event-based drag tracking and sources `userSetSize` as a percentage so window rewraps do not invalidate the anchor. The design below is the final shape.
 
-**Scope:** `tug-split-pane.tsx` + `tug-split-pane.css`. `TugPromptEntry` / `TugPromptInput` / gallery card all lose Track C's `measureRef` plumb-through and `autoSizeChromeOffset` prop — this track replaces both with zero consumer wiring beyond one boolean prop.
+**Scope:** `tug-split-pane.tsx` + `tug-prompt-input.tsx`. `TugPromptEntry` / gallery card are unmodified — zero consumer wiring beyond one boolean prop on `TugSplitPanel`.
 
-### Goal (unchanged from Track C)
+### Goal
 
-Adding a line to the input expands its rendered height; that expansion propagates upward and grows the split panel toward `maxSize`, pushing the sash upward. On submit (content clears, natural height collapses), the sash **animates back to the user-set anchor**. The anchor is the last size the user dragged to; it's remembered for the panel's lifetime and persisted via `storageKey` through the existing library path.
+Adding a line to the input expands its rendered height; that expansion propagates upward and grows the split panel toward `maxSize`, pushing the sash upward. On submit (content clears, editor becomes `data-empty="true"`), the sash **snaps instantly back to the user-set anchor**. The anchor is the last size the user dragged to (tracked as a percentage of the group), or the library's resolved default if undragged. Persistence writes only happen on actual pointer release on a sash.
 
-### Sizing formula (unchanged from Track C)
+### Sizing formula
 
 ```
-panel.currentSize = clamp( max(userSetSize, naturalContentSize), minSize, maxSize )
+overflow = source.scrollHeight > source.clientHeight
+chrome   = wrapperEl.clientHeight - source.offsetHeight
+target   = empty    → userAnchor
+           overflow → max(userAnchor, source.scrollHeight + chrome)
+           else     → currentPx  (stable; no shrink mid-edit)
 ```
 
-- `userSetSize` — last user-drag anchor. Captured from the library's `onResize` whenever `isAutoSizingRef === false`.
-- `naturalContentSize` — `wrapperEl.scrollHeight` where `wrapperEl` is the panel's inner content wrapper. **No chrome offset.** `scrollHeight` is the natural height of everything in the panel (editor + toolbar + status + padding) already.
-- Growth is instant; return-to-anchor is animated over `autoSizeReturnDuration`.
+- `userAnchor` is stored as a percentage (0..100) of the group; converted to pixels on demand using the current `panel.getSize()` so window / card rewraps do not invalidate it.
+- `source` is the descendant element tagged with `data-tug-auto-size-scroll-source` (typically the editor). `chrome` is derived — no constants.
+- The `else → currentPx` branch exists because `scrollHeight` on an `overflow:auto` element clamps to `clientHeight` when content fits, so we cannot reliably distinguish "content exactly fills" from "content has room to spare". Shrinking on the fit condition would ping-pong. Only the explicit empty signal triggers snap-back; partial deletions stay at the grown size.
 
-### API (the whole contract)
+### API
 
 ```tsx
 interface TugSplitPanelProps {
   /**
-   * Observe own content; grow toward maxSize when content exceeds the
-   * user-set anchor; animate back to anchor when content shrinks.
+   * Observe own content (via a `[data-tug-auto-size-scroll-source]`
+   * descendant); grow toward maxSize when content exceeds the
+   * user-set anchor; snap instantly back to the anchor when the
+   * source is empty (`data-empty="true"`).
    * @default false
    */
   autoSize?: boolean;
-  /**
-   * Milliseconds for the shrink-back animation. Growth is instant.
-   * Honored via CSS custom property; `prefers-reduced-motion: reduce`
-   * disables the transition regardless of value.
-   * @default 200
-   */
-  autoSizeReturnDuration?: number;
 }
 ```
 
-No ref prop. No chrome offset. No plumb-through on `TugPromptEntry` / `TugPromptInput`. No card-side imperative handle.
+No ref prop. No chrome offset. No plumb-through on `TugPromptEntry`. No `autoSizeReturnDuration` (no animation; see below).
 
-### Why this works — signal-by-signal
+### Scroll-source contract
 
-The panel needs to react to any change that alters the natural content height:
+Any descendant element tagged with `data-tug-auto-size-scroll-source` is the natural-content-height signal. It MUST use `overflow-y: auto` (or equivalent) so its `scrollHeight` reports content intrinsic height on overflow. `data-empty="true"` on the same element is the explicit snap-back signal. `TugPromptInput`'s maximized editor opts in by default; other callers add the attribute to whatever element they want to be the source.
 
-| Signal                                  | Source                                | Mechanism                                                           |
-| --------------------------------------- | ------------------------------------- | ------------------------------------------------------------------- |
-| User typing / paste / clear             | DOM subtree mutation on the editor    | `MutationObserver` on wrapper, `childList + subtree + characterData` |
-| CSS-var-driven font / size change       | `style` attribute write on descendant | Same MO with `attributes: true, attributeFilter: ['style', 'class']` |
-| Window / card / pane width rewrap       | Container contentBox resize           | `ResizeObserver` on wrapper, filtered to `inlineSize` changes only  |
-| Initial sizing pass for mount content   | RO's spec-guaranteed first delivery   | Runs post-commit — Group is already registered with the library     |
+### User anchor capture
 
-The panel wrapper is `panelEl.firstElementChild` — the library's inner div that our `className` already targets. All observations hang off one element; all three observer fires converge on one `recompute()`.
+`TugSplitPane` attaches document-level capture-phase `pointerdown` / `pointerup` / `pointercancel` listeners. A `userDragActiveRef` is flipped on pointerdown when the target's closest `.tug-split-sash` is a direct child of this group's root, and cleared on pointerup. The ref is exposed to descendants via `UserDragContext`. `TugSplitPanel.onResize`:
 
-### Why echo loops are structurally absent (no RAF)
+- First fire: seed `userSetPctRef` from `size.asPercentage` (the library's resolved default).
+- Later fires while `userDragActiveRef` is true: update `userSetPctRef`.
+- All other fires (auto-size echoes, window rewraps that preserve percentage): leave the anchor alone.
 
-- **MO** fires on DOM mutations. `panel.resize()` mutates flex-grow on the panel's outer div, not the wrapper's subtree — MO doesn't fire from our own writes.
-- **RO** fires on contentBox changes. Our resize changes block-size, not inline-size; the inline-size filter bails. No echo.
-- `recompute` tracks `lastScrollHeight` in a ref and bails when it matches — a cheap guard for any stray fire that slips through (e.g., MO fire on a style change that doesn't affect layout).
+No counters, no expected-size comparisons. The source of truth is the user's pointer.
 
-### Shrink-back animation — CSS, not `setTimeout`, not `transitionend`
+### Persistence
 
-```css
-.tug-split-pane [data-panel][data-auto-size="true"] {
-  transition: flex-grow var(--auto-size-transition-duration, 0ms) ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tug-split-pane [data-panel][data-auto-size="true"] {
-    transition: none;
-  }
-}
-```
+Persistence is keyed off the pointer release event, not the library's `onLayoutChanged`. On pointerup after a user drag on a sash inside this group, `TugSplitPane` reads the group's layout via `GroupImperativeHandle.getLayout()` and PUTs it to tugbank under `storageKey`. Auto-size transients never reach storage because they never pass through a pointerup.
 
-`useLayoutEffect` sets `panelEl.dataset.autoSize = 'true'` once at mount. The `--auto-size-transition-duration` custom property is set via `panelEl.style.setProperty('--auto-size-transition-duration', ...)`:
+### Why echo loops stay out
 
-- Growth branch: `'0ms'` → instant.
-- Shrink branch: `${autoSizeReturnDuration}ms` → animated.
+- **MO** fires on subtree mutations. `panel.resize()` mutates `flex-grow` on the outer `[data-panel]` div — not in the MO subtree.
+- **RO** observes `[data-panel]`'s contentBox; inline-size filter bails on the block-size changes from our own writes.
+- `handleResize`'s anchor logic is gated on `userDragActiveRef`, which is false during our recompute — the library's async onResize echo lands with the flag false and is ignored.
 
-The variable is **always** a valid value; no unset/reset dance, no timer, no `transitionend` listener, no cleanup race. Reduced-motion is handled at the CSS layer.
+### No animation
 
-### `userSetSize` capture (unchanged from Track C's working bit)
+Every size change (grow, user drag, snap-back) is applied instantly via `panel.resize()`. A CSS transition on `flex-grow` would make drags laggy (the transition applies to the library's live drag updates too) and a programmatic animation would still have to fight the library's internal RO-based `onResize` sampling. The user explicitly preferred instant snap.
 
-- Library `onResize` is wired; on fire, `size.inPixels` seeds `userSetSizeRef` when `isAutoSizingRef` is false.
-- Before each `panel.resize(target)` call: set `isAutoSizingRef = true`. After: clear synchronously (the library's `resize()` fires `onResize` synchronously; no microtask deferral needed).
-- First fire (library's own onResize at mount) seeds the anchor from the library's resolved `defaultSize` — in real browsers, this runs before our first RO/MO delivery.
-
-### What Track C leaves behind (must be reverted)
-
-- `measureRef` prop on `TugPromptInput` + composed-ref wiring
-- `measureRef` prop on `TugPromptEntry`
-- `editorRef` + `autoSizeFromRef` + `autoSizeChromeOffset={90}` in `cards/gallery-prompt-entry.tsx`
-- `autoSizeFromRef` / `autoSizeChromeOffset` props on `TugSplitPanel`
-- `queueMicrotask` initial-recompute deferral
-- Inline `style.transition` + `setTimeout` cleanup
-- `isAutoSizingRef` microtask clear (goes sync)
-
-Kept from Track C:
-- `userSetSizeRef` and `handleResize` path (the anchor-capture logic is sound)
-- `isAutoSizingRef` flag (gate still needed; just cleared synchronously)
-- `panelElementRef` composition with caller's `ref`
-
-### Acceptance
+### Acceptance (validated in-app)
 
 - Typing in the gallery card grows the panel past its default until `maxSize="85%"`.
-- Submit clears the editor; panel animates back to the user-dragged anchor (or default if undragged).
+- Submit clears the editor; panel snaps back to the user-dragged anchor (or default if undragged).
 - Changing font size via the tools popover reflows the editor and the panel resizes to match — no explicit call.
-- Resizing the window or card so the editor rewraps triggers a resize.
-- No "ResizeObserver loop completed with undelivered notifications" warning in the browser.
+- Resizing the window or card so the editor rewraps does not corrupt the user anchor (percentage is preserved).
+- Dragging the sash is pixel-responsive — no lag from any transition or animation coupling.
+- Auto-size values do NOT persist to tugbank; reload with a `storageKey` restores the last user-drag position, not the last content-driven size.
+- No "ResizeObserver loop completed with undelivered notifications" warning.
 - No "Group not found" error.
-- No `requestAnimationFrame`, no `setTimeout` anywhere in the sizing path.
-- `prefers-reduced-motion: reduce` — no transition, snap to anchor.
+- No `requestAnimationFrame`, no `setTimeout`, no `queueMicrotask` in the sizing path.
 
 ### Law alignment
 
 | Law    | How E complies                                                                                               |
 | ------ | ------------------------------------------------------------------------------------------------------------ |
 | L02    | No external state pulled through `useSyncExternalStore` on the sizing path; imperative end-to-end            |
-| L03    | Observer install in `useLayoutEffect`                                                                        |
-| L05    | No RAF, so no "RAF for state-commit-dependent ops" concern                                                   |
-| L06    | The `--auto-size-transition-duration` custom property is ephemeral appearance, written directly to the DOM   |
-| L07    | `userSetSizeRef`, `isAutoSizingRef`, `lastScrollHeightRef`, `panelElementRef`, `autoSizeReturnDurationRef` — all refs |
-| L13    | No RAF. CSS transition handles declarative motion; the JS side writes one custom-property value              |
-| L22    | DOM read → DOM write. No React state round-trip.                                                             |
-| L23    | `panel.resize()` preserves user-visible state (no DOM rebuild); the library handles the write imperatively   |
+| L03    | Observer install in `useLayoutEffect`; pointer listeners in `useEffect` (they don't need pre-paint timing)   |
+| L05    | No RAF                                                                                                       |
+| L06    | No appearance state in React; every write goes through `panel.resize()` (imperative) or direct DOM           |
+| L07    | `userSetPctRef`, `userSetSeededRef`, `lastWidthRef`, `panelElementRef`, `userDragActiveRef` — all refs        |
+| L13    | No RAF, no CSS transition, no TugAnimator on the sizing path. Every change is instant.                       |
+| L22    | DOM read (scrollHeight/offsetHeight) → DOM write (library imperative `resize()`). No React state round-trip. |
+| L23    | `panel.resize()` preserves user-visible state (no DOM rebuild); library handles the write imperatively       |
 
-### Delivery order and sizing
+### Delivery
 
-| Step | Change                                                                      | Size | Risk |
-| ---- | --------------------------------------------------------------------------- | ---- | ---- |
-| E1   | Replace Track C's props/impl on `TugSplitPanel` with `autoSize` only        | S    | Low  |
-| E2   | MO + RO install on panel's inner wrapper; `recompute` unifies all fires     | M    | Med  |
-| E3   | CSS rule + `--auto-size-transition-duration` write path                     | XS   | Low  |
-| E4   | Remove `measureRef` from `TugPromptEntry` / `TugPromptInput`; simplify card | XS   | Low  |
+Shipped across three commits:
 
-One commit covers E1–E4; the change is one cohesive unit and splitting it would leave the repo in a broken intermediate state.
+- `0b2eacbb` — first pass at the observer skeleton. Had the echo-detection bug.
+- `04d04a02` — reworked observer: source-query via `data-tug-auto-size-scroll-source`, instant snap, echo counter shared via context.
+- Follow-up (below) — replaces the echo counter with pointer-event-based drag tracking; stores anchor as percentage; moves persistence to pointerup; documents the scroll-source contract in module docstrings.
 
 ### Out of scope (intentionally)
 
 - Panels other than horizontal-sash. Vertical-sash wiring reads `scrollWidth` and filters on `blockSize`; same shape but not needed now.
-- Multiple auto-sized panels in the same group. One anchor per group; revisit if it ever ships.
+- Multiple auto-sized panels in the same group. One anchor per panel; not coordinated across siblings.
 - A callable `recomputeAutoSize()` imperative handle. The automatic signals cover every case we've identified; adding the escape hatch without a concrete caller invites speculative API.
+- Shrink on partial delete. User-visible behavior: if you grow the pane by typing then delete most of the content, the pane stays grown until you submit (clearing the editor) or drag. This is by design; a future "size to fit" button or keyboard shortcut will be added as an explicit user action that is distinguishable from auto-resize.
 
 ---
 
