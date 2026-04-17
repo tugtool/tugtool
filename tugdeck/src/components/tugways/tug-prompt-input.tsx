@@ -5,17 +5,6 @@
  * div is internal — the consumer interacts via props and imperative handle.
  * Atoms are <img> elements with SVG data URIs (see lib/tug-atom-img.ts).
  *
- * ## TugSplitPanel autoSize contract
- *
- * The editor element is tagged with `data-tug-auto-size-scroll-source`
- * so any enclosing `TugSplitPanel` with `autoSize` can locate it as the
- * natural-content-height signal. The panel reads the tagged element's
- * `scrollHeight` / `offsetHeight` to drive content-driven pane growth,
- * and treats `data-empty="true"` (set by TugTextEngine.updateEmpty())
- * as the explicit snap-back-to-anchor signal. This coupling is a DOM
- * convention only — no ref threading, no prop plumb-through. See the
- * `autoSize` prop JSDoc in tug-split-pane.tsx for the full contract.
- *
  * Laws: [L01] single mount, [L03] useLayoutEffect for registrations,
  *        [L06] appearance via CSS, [L07] stable refs,
  *        [L15] token-driven states, [L16] pairings declared,
@@ -1013,11 +1002,6 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
             data-placeholder={placeholder}
             data-empty="true"
             data-tug-select="custom"
-            // Marks this element as the scroll-source for any enclosing
-            // TugSplitPanel with `autoSize` — the panel queries for this
-            // attribute and reads `scrollHeight` / `offsetHeight` on the
-            // tagged element to drive content-driven pane sizing.
-            data-tug-auto-size-scroll-source="true"
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"

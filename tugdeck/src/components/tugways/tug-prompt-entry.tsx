@@ -179,6 +179,12 @@ export interface TugPromptEntryDelegate {
   focus(): void;
   /** Clear the input's content. */
   clear(): void;
+  /**
+   * The underlying editor element (the contentEditable div inside the
+   * composed `TugPromptInput`). Used by `useContentDrivenPanelSize` as
+   * the scroll-source signal for content-driven panel growth.
+   */
+  getEditorElement(): HTMLElement | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +383,9 @@ export const TugPromptEntry = React.forwardRef<
       },
       clear() {
         promptInputRef.current?.clear();
+      },
+      getEditorElement() {
+        return promptInputRef.current?.getEditorElement() ?? null;
       },
     }),
     [],

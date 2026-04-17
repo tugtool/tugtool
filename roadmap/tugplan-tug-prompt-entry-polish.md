@@ -102,7 +102,7 @@ Two options:
 
 ## Track E — Content-driven panel sizing in TugSplitPane (supersedes Track C) {#track-e}
 
-**Status: shipped.** Initial commit `0b2eacbb` landed the observer skeleton but had two structural bugs (echo detection via pixel comparison, and CSS-transition-driven animation coupling to the library's RO-based `onResize` sampling). `04d04a02` reworked it against the live app. A follow-up commit replaces the echo counter with pointer-event-based drag tracking and sources `userSetSize` as a percentage so window rewraps do not invalidate the anchor. The design below is the final shape.
+**Status: superseded.** The `autoSize` prop approach below accumulated complexity across a dozen iterations and was ultimately replaced by the reset plan in [`tugplan-autosize-reset.md`](./tugplan-autosize-reset.md). The replacement strips `TugSplitPane` to the minimal primitive (single sync-flag context + `TugSplitPanelHandle` imperative API) and pushes content-driven sizing into a consumer hook (`useContentDrivenPanelSize`). The sections below are preserved as history; do not implement from them.
 
 **Scope:** `tug-split-pane.tsx` + `tug-prompt-input.tsx`. `TugPromptEntry` / gallery card are unmodified — zero consumer wiring beyond one boolean prop on `TugSplitPanel`.
 

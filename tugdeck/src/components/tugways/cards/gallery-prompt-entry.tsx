@@ -25,8 +25,9 @@
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
-import { TugPromptEntry } from "../tug-prompt-entry";
-import { TugSplitPane, TugSplitPanel } from "../tug-split-pane";
+import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
+import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
+import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugPopupButton } from "../tug-popup-button";
@@ -257,6 +258,25 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     return () => editorStore.unbind();
   }, [editorStore]);
 
+  // --- Content-driven panel growth for the entry pane. ---
+  // The bottom TugSplitPanel grows toward `maxSize` as the editor
+  // overflows and snaps back to the user's library-resolved size on
+  // the editor's `data-empty="true"` signal. The source element is
+  // derived from the entry delegate at call time via a stable
+  // useMemo'd shim — identity-stable so the hook's effect doesn't
+  // re-install observers on every render.
+  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
+  const editorSourceRef = useMemo(
+    () => ({
+      get current(): HTMLElement | null {
+        return entryDelegateRef.current?.getEditorElement() ?? null;
+      },
+    }),
+    [],
+  );
+  useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef });
+
   // --- Responder scope for tools-panel popup buttons. ---
   const fontPopupId = useId();
   const fontSizePopupId = useId();
@@ -304,11 +324,11 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
           <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
         </TugSplitPanel>
         <TugSplitPanel
+          ref={entryPanelRef}
           id="gallery-prompt-entry-bottom"
           defaultSize="30%"
           minSize="15%"
           maxSize="85%"
-          autoSize
         >
           <ResponderScope>
             <TugBox
@@ -321,6 +341,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
               className="gallery-prompt-entry-entry-pane"
             >
               <TugPromptEntry
+                ref={entryDelegateRef}
                 id={`${cardId}-entry`}
                 codeSessionStore={mockSessionRef.current!.codeSessionStore}
                 sessionMetadataStore={metadataStackRef.current!.store}
