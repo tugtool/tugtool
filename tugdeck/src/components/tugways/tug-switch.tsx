@@ -31,7 +31,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 // ---- Types ----
 
 /** Switch size names — matches TugCheckbox/TugInput/TugButton sizes */
-export type TugSwitchSize = "sm" | "md" | "lg";
+export type TugSwitchSize = "xs" | "sm" | "md" | "lg";
 
 /**
  * Semantic role for the switch on-state color.
@@ -93,7 +93,7 @@ export interface TugSwitchProps {
   label?: string;
   /**
    * Visual size variant.
-   * @selector .tug-switch-size-sm | .tug-switch-size-md | .tug-switch-size-lg
+   * @selector .tug-switch-size-xs | .tug-switch-size-sm | .tug-switch-size-md | .tug-switch-size-lg
    * @default "md"
    */
   size?: TugSwitchSize;

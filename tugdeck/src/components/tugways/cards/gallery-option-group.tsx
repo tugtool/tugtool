@@ -56,7 +56,8 @@ export function GalleryOptionGroup() {
   // Section 2: Icon + Label — alignment toolbar
   const [alignValue, setAlignValue] = useState<string[]>(["left"]);
 
-  // Section 3: Sizes — sm, md, lg each with List/LayoutGrid/Table
+  // Section 3: Sizes — xs, sm, md, lg each with List/LayoutGrid/Table
+  const [xsValue, setXsValue] = useState<string[]>(["list"]);
   const [smValue, setSmValue] = useState<string[]>(["list"]);
   const [mdValue, setMdValue] = useState<string[]>(["list"]);
   const [lgValue, setLgValue] = useState<string[]>(["list"]);
@@ -85,6 +86,7 @@ export function GalleryOptionGroup() {
   // flow through the chain unhandled, which is fine.
   const formatId = useId();
   const alignId = useId();
+  const xsId = useId();
   const smId = useId();
   const mdId = useId();
   const lgId = useId();
@@ -98,6 +100,7 @@ export function GalleryOptionGroup() {
   const setValueStringArrayBindings: Record<string, (v: string[]) => void> = {
     [formatId]: setFormatValue,
     [alignId]: setAlignValue,
+    [xsId]: setXsValue,
     [smId]: setSmValue,
     [mdId]: setMdValue,
     [lgId]: setLgValue,
@@ -182,6 +185,20 @@ export function GalleryOptionGroup() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>xs</div>
+            <TugOptionGroup
+              size="xs"
+              value={xsValue}
+              senderId={xsId}
+              aria-label="Extra-small option group"
+              items={[
+                { value: "list",   icon: <List />,       "aria-label": "List" },
+                { value: "grid",   icon: <LayoutGrid />, "aria-label": "Grid" },
+                { value: "table",  icon: <Table />,      "aria-label": "Table" },
+              ]}
+            />
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
             <TugOptionGroup

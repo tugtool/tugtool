@@ -38,6 +38,11 @@
 
 /* Size variants — border-radius, min-height */
 
+.tug-option-group-xs {
+  border-radius: var(--tug-radius-sm);  /* 4px */
+  min-height: 22px;
+}
+
 .tug-option-group-sm {
   border-radius: var(--tug-radius-md);  /* 6px */
   min-height: 26px;
@@ -88,6 +93,12 @@
 }
 
 /* Item size padding + font */
+
+.tug-option-group-xs .tug-option-group-item {
+  padding: 0 var(--tug-space-md);  /* 0 8px */
+  font-size: var(--tug-font-size-2xs);  /* 11px */
+  border-radius: calc(var(--tug-radius-sm) - 2px);
+}
 
 .tug-option-group-sm .tug-option-group-item {
   padding: 0 var(--tug-space-lg);  /* 0 12px */
@@ -156,6 +167,11 @@
    Icon Sizing — per size variant (base layout is in tug-group-utils.css)
    ========================================================================= */
 
+.tug-option-group-xs .tug-group-item-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
 .tug-option-group-sm .tug-group-item-icon svg {
   width: 14px;
   height: 14px;
@@ -178,6 +194,10 @@
 
 /* Icon-only items get symmetric horizontal padding matching their vertical
    space, keeping the item compact rather than bloated-square. */
+.tug-option-group-xs .tug-option-group-item-icon-only {
+  padding: 0 var(--tug-space-xs);  /* 4px */
+}
+
 .tug-option-group-sm .tug-option-group-item-icon-only {
   padding: 0 var(--tug-space-sm);  /* 4px */
 }

@@ -51,6 +51,7 @@ const ALL_ROLES: TugChoiceGroupRole[] = [
 
 export function GalleryChoiceGroup() {
   // Sizes section
+  const [xsValue, setXsValue] = useState("beta");
   const [smValue, setSmValue] = useState("beta");
   const [mdValue, setMdValue] = useState("beta");
   const [lgValue, setLgValue] = useState("beta");
@@ -83,6 +84,7 @@ export function GalleryChoiceGroup() {
   // with the role name at bind time. The base id is opaque; role names
   // are static constants, so the resulting keys are stable per mount
   // and guaranteed unique across cards.
+  const xsId = useId();
   const smId = useId();
   const mdId = useId();
   const lgId = useId();
@@ -99,6 +101,7 @@ export function GalleryChoiceGroup() {
   );
 
   const selectValueBindings: Record<string, (v: string) => void> = {
+    [xsId]: setXsValue,
     [smId]: setSmValue,
     [mdId]: setMdValue,
     [lgId]: setLgValue,
@@ -131,6 +134,20 @@ export function GalleryChoiceGroup() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Sizes</TugLabel>
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>xs</div>
+            <TugChoiceGroup
+              size="xs"
+              value={xsValue}
+              senderId={xsId}
+              aria-label="Extra-small choice group"
+              items={[
+                { value: "alpha", label: "Alpha" },
+                { value: "beta",  label: "Beta" },
+                { value: "gamma", label: "Gamma" },
+              ]}
+            />
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
             <TugChoiceGroup

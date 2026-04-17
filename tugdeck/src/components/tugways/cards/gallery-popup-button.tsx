@@ -41,6 +41,7 @@ const SAMPLE_ITEMS: TugPopupButtonItem<string>[] = [
 ];
 
 const SIZE_ITEMS: TugPopupButtonItem<string>[] = [
+  { action: TUG_ACTIONS.SET_VALUE, value: "xs", label: "Extra-small" },
   { action: TUG_ACTIONS.SET_VALUE, value: "sm", label: "Small" },
   { action: TUG_ACTIONS.SET_VALUE, value: "md", label: "Medium" },
   { action: TUG_ACTIONS.SET_VALUE, value: "lg", label: "Large" },
@@ -58,7 +59,7 @@ const ROLE_ITEMS: TugPopupButtonItem<string>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: "danger", label: "danger" },
 ];
 
-const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
+const ALL_SIZES: TugButtonSize[] = ["xs", "sm", "md", "lg"];
 
 // ---- Content ----
 
@@ -72,10 +73,12 @@ export function GalleryPopupButton() {
   // status line. ALL_SIZES is a known-length array (sm, md, lg) so we
   // call useId() three times at the top level to satisfy the Rules of
   // Hooks — no useId-in-loop.
+  const sampleXsPopupId = useId();
   const sampleSmPopupId = useId();
   const sampleMdPopupId = useId();
   const sampleLgPopupId = useId();
   const sampleSizePopupIds: Record<TugButtonSize, string> = {
+    xs: sampleXsPopupId,
     sm: sampleSmPopupId,
     md: sampleMdPopupId,
     lg: sampleLgPopupId,
@@ -89,6 +92,7 @@ export function GalleryPopupButton() {
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
+      [sampleXsPopupId]: setLastSelected,
       [sampleSmPopupId]: setLastSelected,
       [sampleMdPopupId]: setLastSelected,
       [sampleLgPopupId]: setLastSelected,

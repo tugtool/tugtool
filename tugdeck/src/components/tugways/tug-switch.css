@@ -46,6 +46,10 @@
 
 /* ---- Size variants (width only — height is thumb + 2*padding) ---- */
 
+.tug-switch-size-xs {
+  width: 1.5rem;    /* 24px */
+}
+
 .tug-switch-size-sm {
   width: 1.75rem;   /* 28px */
 }
@@ -109,6 +113,11 @@
 
 /* Thumb sizes — diameter = track height - 2*padding(2px) - visual margin */
 
+.tug-switch-size-xs .tug-switch-thumb {
+  width: 0.625rem;  /* 10px */
+  height: 0.625rem;
+}
+
 .tug-switch-size-sm .tug-switch-thumb {
   width: 0.75rem;   /* 12px */
   height: 0.75rem;
@@ -130,6 +139,10 @@
 }
 
 /* Thumb slide to the right when checked */
+
+.tug-switch-size-xs .tug-switch-thumb[data-state="checked"] {
+  transform: translateX(0.625rem); /* 10px = track width - thumb - 2*padding */
+}
 
 .tug-switch-size-sm .tug-switch-thumb[data-state="checked"] {
   transform: translateX(0.75rem);  /* 12px = track width - thumb - 2*padding */
@@ -182,6 +195,10 @@
 }
 
 /* Label size variants */
+.tug-switch-label-xs {
+  font-size: 0.6875rem;
+}
+
 .tug-switch-label-sm {
   font-size: 0.75rem;
 }

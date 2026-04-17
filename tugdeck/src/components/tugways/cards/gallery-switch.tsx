@@ -20,7 +20,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALL_SIZES: TugSwitchSize[] = ["sm", "md", "lg"];
+const ALL_SIZES: TugSwitchSize[] = ["xs", "sm", "md", "lg"];
 
 const ALL_ROLES: TugSwitchRole[] = [
   "option",

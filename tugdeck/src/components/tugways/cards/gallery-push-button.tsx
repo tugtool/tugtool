@@ -43,7 +43,7 @@ export const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRol
   { emphasis: "ghost",    role: "action"  },
   { emphasis: "ghost",    role: "danger"  },
 ];
-export const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
+export const ALL_SIZES: TugButtonSize[] = ["xs", "sm", "md", "lg"];
 export const ALL_SUBTYPES: TugButtonSubtype[] = ["text", "icon", "icon-text"];
 export const ALL_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger", "option"];
 export const ALL_ROUNDED = ["none", "sm", "md", "lg", "full"] as const;

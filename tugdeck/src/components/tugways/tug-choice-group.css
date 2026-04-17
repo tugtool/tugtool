@@ -38,6 +38,11 @@
 
 /* Size variants — border-radius, height, font-size */
 
+.tug-choice-group-xs {
+  border-radius: var(--tug-radius-sm);  /* 4px */
+  min-height: 22px;
+}
+
 .tug-choice-group-sm {
   border-radius: var(--tug-radius-md);  /* 6px — matching sm pill shape */
   min-height: 26px;
@@ -75,6 +80,10 @@
 .tug-choice-group-animated .tug-choice-group-indicator {
   transition: transform 160ms var(--tug-motion-easing-standard, ease),
               width 160ms var(--tug-motion-easing-standard, ease);
+}
+
+.tug-choice-group-xs .tug-choice-group-indicator {
+  border-radius: calc(var(--tug-radius-sm) - 2px);  /* 2px */
 }
 
 .tug-choice-group-sm .tug-choice-group-indicator {
@@ -129,6 +138,12 @@
 }
 
 /* Segment size padding + font */
+
+.tug-choice-group-xs .tug-choice-group-segment {
+  padding: 0 var(--tug-space-md);  /* 0 8px */
+  font-size: var(--tug-font-size-2xs);  /* 11px */
+  border-radius: calc(var(--tug-radius-sm) - 2px);
+}
 
 .tug-choice-group-sm .tug-choice-group-segment {
   padding: 0 var(--tug-space-lg);  /* 0 12px */
@@ -193,6 +208,11 @@
    ========================================================================= */
 
 
+.tug-choice-group-xs .tug-group-item-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
 .tug-choice-group-sm .tug-group-item-icon svg {
   width: 14px;
   height: 14px;
@@ -215,6 +235,10 @@
 
 /* Icon-only segments get symmetric horizontal padding matching their vertical
    space, keeping the segment compact rather than bloated-square. */
+.tug-choice-group-xs .tug-choice-group-segment-icon-only {
+  padding: 0 var(--tug-space-xs);  /* 4px */
+}
+
 .tug-choice-group-sm .tug-choice-group-segment-icon-only {
   padding: 0 var(--tug-space-sm);  /* 4px */
 }

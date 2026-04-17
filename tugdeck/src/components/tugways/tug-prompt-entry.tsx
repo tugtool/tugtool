@@ -512,7 +512,7 @@ export const TugPromptEntry = React.forwardRef<
             items={[...ROUTE_ITEMS]}
             value={route}
             senderId={routeIndicatorSenderId}
-            size="sm"
+            size="xs"
             aria-label="Command route"
           />
           {snap.queuedSends > 0 && (
@@ -526,7 +526,7 @@ export const TugPromptEntry = React.forwardRef<
           <TugPushButton
             action={TUG_ACTIONS.SUBMIT}
             subtype="icon"
-            size="sm"
+            size="lg"
             emphasis="filled"
             role={snap.canInterrupt ? "danger" : "action"}
             disabled={!snap.canSubmit && !snap.canInterrupt}

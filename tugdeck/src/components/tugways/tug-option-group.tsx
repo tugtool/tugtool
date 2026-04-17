@@ -47,7 +47,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 // ---- Types ----
 
 /** Option group size names. */
-export type TugOptionGroupSize = "sm" | "md" | "lg";
+export type TugOptionGroupSize = "xs" | "sm" | "md" | "lg";
 
 /**
  * Semantic role for the on-state indicator color.
@@ -97,7 +97,7 @@ export interface TugOptionGroupProps
   senderId?: string;
   /**
    * Visual size.
-   * @selector .tug-option-group-sm | .tug-option-group-md | .tug-option-group-lg
+   * @selector .tug-option-group-xs | .tug-option-group-sm | .tug-option-group-md | .tug-option-group-lg
    * @default "md"
    */
   size?: TugOptionGroupSize;

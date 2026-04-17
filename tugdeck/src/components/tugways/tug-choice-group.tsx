@@ -42,7 +42,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 // ---- Types ----
 
 /** Choice group size names. */
-export type TugChoiceGroupSize = "sm" | "md" | "lg";
+export type TugChoiceGroupSize = "xs" | "sm" | "md" | "lg";
 
 /**
  * Semantic role for the selected indicator color.
@@ -94,7 +94,7 @@ export interface TugChoiceGroupProps
   senderId?: string;
   /**
    * Visual size.
-   * @selector .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
+   * @selector .tug-choice-group-xs | .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
    * @default "md"
    */
   size?: TugChoiceGroupSize;
