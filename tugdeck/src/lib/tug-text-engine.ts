@@ -296,6 +296,50 @@ function offsetWithin(container: Node, node: Node, offset: number): number {
   return count;
 }
 
+/**
+ * Sanitize clipboard HTML containing our atoms before re-insertion.
+ *
+ * Browsers (notably WebKit) wrap clipboard `text/html` with `<meta>` and
+ * `<span style="font-family:...; font-size:...">` carrying the source's
+ * computed style. Inserting that raw via `insertHTML` puts the typed text
+ * inside a serif/default-styled span that overrides the editor font. So we
+ * walk the parsed DOM and rebuild a clean fragment containing only escaped
+ * text nodes and `<img data-atom-label>` elements.
+ */
+function sanitizeAtomHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out.push((node.textContent || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;"));
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      if (el.tagName === "IMG" && el.hasAttribute("data-atom-label")) {
+        // Rebuild the atom IMG from its data attributes so we shed
+        // WebKit-injected inline styles (caret-color, color, white-space)
+        // that ride along in clipboard HTML and bleed into the editor.
+        const type = el.dataset.atomType || "file";
+        const label = el.dataset.atomLabel || "";
+        const value = el.dataset.atomValue ?? label;
+        out.push(type === "route" ? routeAtomImgHTML(label) : atomImgHTML(type, label, value));
+        return;
+      }
+      if (el.tagName === "BR") {
+        out.push("<br>");
+        return;
+      }
+      for (const child of Array.from(el.childNodes)) walk(child);
+    }
+  };
+  for (const child of Array.from(doc.body.childNodes)) walk(child);
+  return out.join("");
+}
+
 // ===================================================================
 // TugTextEngine — DOM-based implementation
 // ===================================================================
@@ -542,10 +586,8 @@ export class TugTextEngine {
    */
   paste(html: string, plain: string): void {
     if (html.includes("data-atom-label")) {
-      const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      const content = match ? match[1] : html;
       this.root.focus();
-      document.execCommand("insertHTML", false, content);
+      document.execCommand("insertHTML", false, sanitizeAtomHtml(html));
       return;
     }
     if (plain) {
