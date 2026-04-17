@@ -50,16 +50,44 @@ function toCategory(raw: unknown): "local" | "agent" | "skill" {
   return "local";
 }
 
-/** Parse a raw slash_commands array entry into SlashCommandInfo, or null if invalid. */
-function parseSlashCommand(raw: unknown, defaultCategory: "local" | "agent" | "skill"): SlashCommandInfo | null {
-  if (!raw || typeof raw !== "object") return null;
-  const entry = raw as Record<string, unknown>;
-  if (typeof entry.name !== "string" || !entry.name) return null;
-  return {
-    name: entry.name,
-    description: typeof entry.description === "string" ? entry.description : undefined,
-    category: typeof entry.category === "string" ? toCategory(entry.category) : defaultCategory,
-  };
+/** Category priority for dedup: richer categories win over `local`. */
+const CATEGORY_RANK: Record<SlashCommandInfo["category"], number> = {
+  local: 0,
+  skill: 1,
+  agent: 1,
+};
+
+/**
+ * Parse a raw entry from a `system_metadata` command-ish array (slash_commands,
+ * skills, or agents) into a `SlashCommandInfo`, or null if malformed.
+ *
+ * Accepts two shapes because Claude Code's emitter has varied them:
+ *   - Bare string — the current v2.1.105 payload ships `slash_commands`,
+ *     `skills`, and `agents` as plain string arrays (e.g. `"tugplug:plan"`).
+ *   - Object — `{ name, description?, category? }`, a forward-compatible
+ *     shape if the emitter later adds metadata.
+ */
+function parseEntry(
+  raw: unknown,
+  defaultCategory: SlashCommandInfo["category"],
+): SlashCommandInfo | null {
+  if (typeof raw === "string" && raw.length > 0) {
+    return { name: raw, category: defaultCategory };
+  }
+  if (raw && typeof raw === "object") {
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry.name !== "string" || !entry.name) return null;
+    return {
+      name: entry.name,
+      description:
+        typeof entry.description === "string" ? entry.description : undefined,
+      category:
+        typeof entry.category === "string"
+          ? toCategory(entry.category)
+          : defaultCategory,
+    };
+  }
+  return null;
 }
 
 /** Parse a system_metadata payload into a snapshot. Returns null if not system_metadata. */
@@ -68,23 +96,39 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
   const p = payload as Record<string, unknown>;
   if (p.type !== "system_metadata") return null;
 
-  const slashCommands: SlashCommandInfo[] = [];
+  // Merge slash_commands, skills, and agents into one list. Real v2.1.105
+  // payloads overlap — every tugplug skill (e.g. `tugplug:plan`) is both
+  // in `skills[]` (category: skill) and in `slash_commands[]` (category:
+  // local). Dedup by name after merging, keeping the richer category.
+  const merged: SlashCommandInfo[] = [];
 
-  // Parse slash_commands
   if (Array.isArray(p.slash_commands)) {
     for (const entry of p.slash_commands) {
-      const cmd = parseSlashCommand(entry, "local");
-      if (cmd) slashCommands.push(cmd);
+      const cmd = parseEntry(entry, "local");
+      if (cmd) merged.push(cmd);
+    }
+  }
+  if (Array.isArray(p.skills)) {
+    for (const entry of p.skills) {
+      const skill = parseEntry(entry, "skill");
+      if (skill) merged.push(skill);
+    }
+  }
+  if (Array.isArray(p.agents)) {
+    for (const entry of p.agents) {
+      const agent = parseEntry(entry, "agent");
+      if (agent) merged.push(agent);
     }
   }
 
-  // Parse skills (same format, category = "skill")
-  if (Array.isArray(p.skills)) {
-    for (const entry of p.skills) {
-      const skill = parseSlashCommand(entry, "skill");
-      if (skill) slashCommands.push(skill);
+  const byName = new Map<string, SlashCommandInfo>();
+  for (const cmd of merged) {
+    const prev = byName.get(cmd.name);
+    if (!prev || CATEGORY_RANK[cmd.category] > CATEGORY_RANK[prev.category]) {
+      byName.set(cmd.name, cmd);
     }
   }
+  const slashCommands = Array.from(byName.values());
 
   return {
     sessionId: typeof p.session_id === "string" ? p.session_id : null,

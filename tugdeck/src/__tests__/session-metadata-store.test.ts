@@ -171,6 +171,122 @@ describe("SessionMetadataStore payload parsing", () => {
 
     store.dispose();
   });
+
+  // ── Bare string entries (real v2.1.105 payload shape) ──────────────────
+
+  test("accepts bare string entries in slash_commands, skills, agents", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: ["update-config", "commit"],
+      skills: ["tugplug:plan", "tugplug:implement"],
+      agents: ["tugplug:coder-agent", "statusline-setup"],
+    });
+
+    const snap = store.getSnapshot();
+    const names = snap.slashCommands.map((c) => c.name).sort();
+    expect(names).toEqual([
+      "commit",
+      "statusline-setup",
+      "tugplug:coder-agent",
+      "tugplug:implement",
+      "tugplug:plan",
+      "update-config",
+    ]);
+
+    store.dispose();
+  });
+
+  test("rejects empty-string entries", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: ["", "valid", ""],
+      skills: [],
+      agents: [],
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.slashCommands).toHaveLength(1);
+    expect(snap.slashCommands[0].name).toBe("valid");
+
+    store.dispose();
+  });
+
+  // ── Agents merge ───────────────────────────────────────────────────────
+
+  test("merges agents[] with category 'agent'", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: [],
+      skills: [],
+      agents: ["general-purpose", "tugplug:coder-agent"],
+    });
+
+    const snap = store.getSnapshot();
+    const byName = new Map(snap.slashCommands.map((c) => [c.name, c]));
+    expect(byName.get("general-purpose")?.category).toBe("agent");
+    expect(byName.get("tugplug:coder-agent")?.category).toBe("agent");
+
+    store.dispose();
+  });
+
+  // ── Dedup across slash_commands / skills / agents ──────────────────────
+
+  test("dedupes by name; skill/agent categories win over local", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    // Mirrors the real v2.1.105 overlap: every tugplug skill appears in
+    // both slash_commands (category "local") and skills (category "skill").
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: ["tugplug:plan", "commit"],
+      skills: ["tugplug:plan"],
+      agents: ["tugplug:coder-agent"],
+    });
+
+    const snap = store.getSnapshot();
+    const byName = new Map(snap.slashCommands.map((c) => [c.name, c]));
+    // Deduped — `tugplug:plan` appears exactly once.
+    expect(snap.slashCommands).toHaveLength(3);
+    // `tugplug:plan` inherits the skill category (richer than local).
+    expect(byName.get("tugplug:plan")?.category).toBe("skill");
+    // Entries that only appear once retain their source category.
+    expect(byName.get("commit")?.category).toBe("local");
+    expect(byName.get("tugplug:coder-agent")?.category).toBe("agent");
+
+    store.dispose();
+  });
+
+  test("dedup preserves the first richer-category entry on ties", () => {
+    // Skills and agents both rank above local; if both appear for the same
+    // name, whichever is encountered first wins (skills[] is parsed before
+    // agents[]). This is a defensive ordering note, not a product choice;
+    // real payloads don't collide skill/agent on the same name.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: [],
+      skills: ["thing"],
+      agents: ["thing"],
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.slashCommands).toHaveLength(1);
+    expect(snap.slashCommands[0].category).toBe("skill");
+
+    store.dispose();
+  });
 });
 
 // ---------------------------------------------------------------------------
