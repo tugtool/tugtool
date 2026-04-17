@@ -21,6 +21,7 @@
  *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
  *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
  *   --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | content
+ *   --tug7-element-global-text-normal-default-rest   | --tug7-surface-field-primary-normal-plain-focus   | content
  * } */
 
 /**
@@ -30,6 +31,8 @@
  * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)                 |
  * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
  * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text         |
+ * | --tug7-element-global-text-normal-muted-rest        | --tugx-prompt-entry-surface                           | content       | .tug-prompt-entry-gutter (color) — resting route indicator         |
+ * | --tug7-element-global-text-normal-default-rest      | --tug7-surface-field-primary-normal-plain-focus      | content       | .tug-prompt-entry:focus-within .tug-prompt-entry-gutter (color)    |
  */
 
 /* ----------------------------------------------------------------------------
@@ -73,17 +76,101 @@ body {
   background-color: var(--tug7-surface-field-primary-normal-plain-focus);
 }
 
-/* .tug-prompt-entry-input-area — thin wrapper around TugPromptInput.
+/* .tug-prompt-entry-input-area — two-column wrapper around the
+   route gutter + TugPromptInput.
    Exists so phase-sensitive selectors (e.g., awaiting_approval dim) can
    target the input region without reaching into the composed input's
-   own token slot [L20]. The input is stretched inside by its own
-   `.tug-prompt-input[data-maximized]` rule; this wrapper just passes
-   the flex-column constraints through. */
+   own token slot [L20]. Flex row so the fixed-width gutter sits to
+   the leading side of the editor; the editor takes the remaining
+   horizontal space and stretches vertically to fill the area. */
 .tug-prompt-entry-input-area {
   display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
   min-height: 0;
+}
+
+/* The prompt input sits to the right of the gutter and takes the
+   remaining horizontal space. `min-width: 0` prevents the editor's
+   intrinsic width from forcing the row wider than the column. */
+.tug-prompt-entry-input-area > .tug-prompt-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-prompt-entry-gutter — static route indicator next to the editor
+   ----------------------------------------------------------------------------
+   Renders the active route's lucide icon. Fixed-width column outside
+   the editor's text flow — the caret can never land in it, bulk edits
+   on the editor can never remove it, and switching routes never
+   requires re-inserting an atom. Vertically aligned with the first
+   visual line of the editor via `padding-top`, so the icon sits flush
+   with the first line of text regardless of wrap count.
+   ----------------------------------------------------------------------------- */
+
+/* @tug-renders-on: --tugx-prompt-entry-surface */
+.tug-prompt-entry-gutter {
+  display: flex;
+  flex: 0 0 auto;
+  /* Inherit the editor's font size so the icon tracks the text size
+     when `--tug-font-size-editor` is tuned — the SVG rule below sizes
+     the glyph relative to `1em`. */
+  font-size: var(--tug-font-size-editor, 13px);
+  line-height: 1.7;
+  /* Leading padding aligns the icon with the status-row content; a
+     tiny trailing gap keeps it a couple pixels off the caret. */
+  padding-left: var(--tug-space-md);
+  padding-right: 2px;
+  /* Mirror the editor's top padding (6px) so the icon sits on the
+     first visual line of text rather than drifting above it. */
+  padding-top: 6px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Scale the lucide SVG with the gutter's font-size — the icon tracks
+   the editor's line height as the font scales, rather than being
+   pinned to the `size` prop's pixel value. Per-route overrides tune
+   for each glyph's intrinsic density: `$` and the puzzle icon are
+   visually heavier than the chevron, so they shrink to match. */
+.tug-prompt-entry-gutter svg {
+  padding-bottom: 1px;
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.tug-prompt-entry-gutter[data-route="$"] svg {
+  padding-top: 1px;
+  padding-left: 1px;
+  width: 1em;
+  height: 1em;
+}
+
+.tug-prompt-entry-gutter[data-route=":"] svg {
+  padding-top: 2px;
+  width: 1.0em;
+  height: 1.0em;
+}
+
+/* Tighten the editor's leading padding inside the entry so the caret
+   sits a couple pixels past the gutter icon instead of the default
+   10px. Scoped to the compound — other TugPromptInput consumers keep
+   the standard padding. */
+.tug-prompt-entry-input-area .tug-prompt-input-editor {
+  padding-top: 2px;
+  padding-left: 2px;
+}
+
+/* When the compound is focus-within (editor carries focus), surface
+   the gutter as the active route accent so the gutter, choice-group
+   segment, and focused editor all read as one coherent control. */
+.tug-prompt-entry:focus-within .tug-prompt-entry-gutter {
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ----------------------------------------------------------------------------

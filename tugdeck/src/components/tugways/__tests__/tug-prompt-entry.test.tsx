@@ -426,18 +426,12 @@ describe("TugPromptEntry — Step 3 input delegate + data-empty", () => {
     expect(root.getAttribute("data-empty")).toBe("true");
   });
 
-  it("typing a character flips data-empty to \"false\" and auto-inserts the route atom", () => {
+  it("typing a character flips data-empty to \"false\" with no route atom in the text flow", () => {
     // handleInputChange uses setAttribute for data-empty (no setState on
-    // the hot path). Auto-insert of the route atom on first typed char
-    // fires prependRouteAtom, which notifies onRouteChange with the
-    // already-active default route — React bails on Object.is equality,
-    // so no additional commit results from the re-setState.
-    const phases: string[] = [];
-    const { container } = renderEntryWithRef({
-      onRender: (_id, phase) => {
-        phases.push(phase);
-      },
-    });
+    // the hot path). The route indicator lives in the gutter — not the
+    // text flow — so typing must never introduce a route atom into the
+    // editor's DOM.
+    const { container } = renderEntryWithRef();
     const root = container.querySelector<HTMLElement>(
       '[data-slot="tug-prompt-entry"]',
     )!;
@@ -452,21 +446,13 @@ describe("TugPromptEntry — Step 3 input delegate + data-empty", () => {
     });
 
     expect(root.getAttribute("data-empty")).toBe("false");
-    // Auto-insert prepended the route atom. The input's atoms now include
-    // a "route" atom at position 0, and the serialized text starts with
-    // the atom placeholder char.
-    const atoms =
-      (editor!.querySelectorAll('img[data-atom-type="route"]') as NodeListOf<HTMLImageElement>);
-    expect(atoms.length).toBe(1);
+    const atoms = editor!.querySelectorAll('img[data-atom-type="route"]');
+    expect(atoms.length).toBe(0);
   });
 
-  it("backspacing the typed text leaves the auto-inserted route atom in place", () => {
-    // Auto-insert prepends the current route atom whenever the user has
-    // typed text into an atomless input. Backspacing the typed text
-    // leaves the atom behind — the user sees the route indicator stay
-    // active until they explicitly delete the atom itself. This test
-    // asserts the atom survives a text backspace (the test harness's
-    // shim can't simulate an atom deletion).
+  it("deleting all typed text returns data-empty to \"true\" with no orphan atom", () => {
+    // With the gutter, there is no structural atom in the editor to
+    // leave behind. Emptying the editor must report an empty input.
     const { container } = renderEntryWithRef();
     const root = container.querySelector<HTMLElement>(
       '[data-slot="tug-prompt-entry"]',
@@ -485,10 +471,9 @@ describe("TugPromptEntry — Step 3 input delegate + data-empty", () => {
     act(() => {
       document.execCommand("delete", false);
     });
-    expect(root.getAttribute("data-empty")).toBe("false");
-    // The route atom is still in the DOM.
+    expect(root.getAttribute("data-empty")).toBe("true");
     const atoms = editor!.querySelectorAll('img[data-atom-type="route"]');
-    expect(atoms.length).toBe(1);
+    expect(atoms.length).toBe(0);
   });
 
   it("ref.current.focus() forwards to the underlying editor element", () => {
@@ -566,18 +551,25 @@ function renderEntryWithManager(opts: {
   return { ...utils, services, id, entryRef, managerRef };
 }
 
-function getSegment(container: HTMLElement, label: string): HTMLButtonElement {
-  // Each route segment renders the prefix character as an icon plus a
-  // descriptive word label, so textContent looks like ">Prompt" / "$Shell" /
-  // ":Command". Match by substring on the prefix char — each char is
-  // unique across the three labels so the match is unambiguous.
+// Segment icons are lucide SVGs (no text content), so the visible
+// textContent of each segment is the descriptive word. Map the prefix
+// char the tests pass to the textContent substring that identifies the
+// segment unambiguously.
+const SEGMENT_LABEL_FOR_PREFIX: Record<string, string> = {
+  ">": "Prompt",
+  "$": "Shell",
+  ":": "Command",
+};
+
+function getSegment(container: HTMLElement, prefix: string): HTMLButtonElement {
+  const label = SEGMENT_LABEL_FOR_PREFIX[prefix] ?? prefix;
   const segments = container.querySelectorAll<HTMLButtonElement>(
     'button[role="radio"]',
   );
   for (const seg of segments) {
     if (seg.textContent?.includes(label)) return seg;
   }
-  throw new Error(`no segment with prefix "${label}" found`);
+  throw new Error(`no segment matching "${label}" found`);
 }
 
 describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
@@ -592,147 +584,79 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     uninstallCanvas2DShim();
   });
 
-  it("typing '$' in the input updates route state and activates the '$' segment", () => {
-    const { container } = renderEntryWithManager();
-    // One segment is always active; ">" (Prompt) is the default until the
-    // user types a different prefix. The non-default segments are inactive.
+  it("dispatching SELECT_VALUE from the indicator updates the route state and leaves the editor text-only", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    // Default is ">" (Prompt). Dispatch to swap to Shell.
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SELECT_VALUE,
+        sender: `${id}-route-indicator`,
+        value: "$",
+        phase: "discrete",
+      });
+    });
+
+    // "$" segment flipped active; gutter no longer relies on any
+    // text-flow atom to represent the route.
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
+    const editor = findEditableRoot();
+    expect(editor).not.toBeNull();
+    const routeAtoms = editor!.querySelectorAll('img[data-atom-type="route"]');
+    expect(routeAtoms.length).toBe(0);
+  });
+
+  it("SELECT_VALUE from a different sender is a no-op (route state unchanged)", () => {
+    const { container, id, managerRef } = renderEntryWithManager();
+    expect(managerRef.current).not.toBeNull();
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SELECT_VALUE,
+        sender: "some-other-sender",
+        value: "$",
+        phase: "discrete",
+      });
+    });
+
+    // Route state untouched — default ">" still active.
     expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
     expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
     expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
-
-    const editor = findEditableRoot();
-    expect(editor).not.toBeNull();
-    placeCaretAtEnd(editor!);
-
-    act(() => {
-      document.execCommand("insertText", false, "$");
-    });
-
-    // The engine's route-detection path fires onRouteChange("$"),
-    // the entry's handleRouteChange calls setRouteState("$"),
-    // TugChoiceGroup re-renders and flips the "$" segment active.
-    expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
-    expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
-    expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
-  });
-
-  it("dispatching SELECT_VALUE from the indicator sets route state AND calls setRoute on the input", () => {
-    const { container, id, managerRef } = renderEntryWithManager();
-    expect(managerRef.current).not.toBeNull();
-
-    // Spy on the engine primitives setRoute delegates to. A call with
-    // "$" confirms `promptInputRef.current.setRoute("$")` ran; the
-    // clear + insertText pair is the documented delegation order.
-    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
-    const clearSpy = spyOn(TugTextEngine.prototype, "clear");
-
-    try {
-      act(() => {
-        managerRef.current!.sendToTarget(id, {
-          action: TUG_ACTIONS.SELECT_VALUE,
-          sender: `${id}-route-indicator`,
-          value: "$",
-          phase: "discrete",
-        });
-      });
-
-      // Route state updated — the "$" segment is now active.
-      expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
-      // setRoute("$") routed through the engine.
-      expect(insertSpy).toHaveBeenCalledWith("$");
-      // clear() ran before insertText (setRoute's documented order).
-      const clearOrders = clearSpy.mock.invocationCallOrder;
-      const insertOrders = insertSpy.mock.invocationCallOrder;
-      expect(clearOrders.length).toBeGreaterThan(0);
-      expect(insertOrders.length).toBeGreaterThan(0);
-      const clearOrder = clearOrders[clearOrders.length - 1];
-      const insertOrder = insertOrders[insertOrders.length - 1];
-      expect(clearOrder).toBeLessThan(insertOrder);
-    } finally {
-      insertSpy.mockRestore();
-      clearSpy.mockRestore();
-    }
-  });
-
-  it("SELECT_VALUE from a different sender is a no-op (state unchanged, setRoute not called)", () => {
-    const { container, id, managerRef } = renderEntryWithManager();
-    expect(managerRef.current).not.toBeNull();
-
-    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
-    try {
-      act(() => {
-        managerRef.current!.sendToTarget(id, {
-          action: TUG_ACTIONS.SELECT_VALUE,
-          sender: "some-other-sender",
-          value: "$",
-          phase: "discrete",
-        });
-      });
-
-      // Route state untouched — default ">" still active, no segment
-      // flipped by the cross-sender dispatch.
-      expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
-      expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
-      expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
-      // Defensive narrowing — setRoute was not called, so the engine's
-      // insertText did not run for a route character.
-      const called$ = insertSpy.mock.calls.some(([arg]) => arg === "$");
-      expect(called$).toBe(false);
-    } finally {
-      insertSpy.mockRestore();
-    }
   });
 
   it("SELECT_VALUE with a non-string value is a no-op (defensive value narrowing)", () => {
     const { container, id, managerRef } = renderEntryWithManager();
     expect(managerRef.current).not.toBeNull();
 
-    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
-    try {
-      act(() => {
-        managerRef.current!.sendToTarget(id, {
-          action: TUG_ACTIONS.SELECT_VALUE,
-          sender: `${id}-route-indicator`,
-          value: 42 as unknown,
-          phase: "discrete",
-        });
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SELECT_VALUE,
+        sender: `${id}-route-indicator`,
+        value: 42 as unknown,
+        phase: "discrete",
       });
+    });
 
-      // Route state untouched — default ">" still active, others inactive.
-      expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
-      expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
-      expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
-      // No engine insertText invocation took place.
-      expect(insertSpy.mock.calls.length).toBe(0);
-    } finally {
-      insertSpy.mockRestore();
-    }
+    expect(getSegment(container, ">").getAttribute("data-state")).toBe("active");
+    expect(getSegment(container, "$").getAttribute("data-state")).toBe("inactive");
+    expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
   });
 
-  it("clicking a segment dispatches SELECT_VALUE end-to-end through the indicator → entry → input", () => {
+  it("clicking a segment dispatches SELECT_VALUE end-to-end through the indicator → entry", () => {
     const { container } = renderEntryWithManager();
     const segment = getSegment(container, ":");
     expect(segment.getAttribute("data-state")).toBe("inactive");
 
-    const insertSpy = spyOn(TugTextEngine.prototype, "insertText");
-    try {
-      act(() => {
-        fireEvent.click(segment);
-      });
-      expect(getSegment(container, ":").getAttribute("data-state")).toBe("active");
-      expect(insertSpy).toHaveBeenCalledWith(":");
-    } finally {
-      insertSpy.mockRestore();
-    }
+    act(() => {
+      fireEvent.click(segment);
+    });
+    expect(getSegment(container, ":").getAttribute("data-state")).toBe("active");
   });
 
-  it("SELECT_VALUE round-trip (setRouteState → setRoute → onRouteChange → setRouteState) produces at most one entry commit — React bails on the equal value", () => {
-    // React batches synchronous setState inside an event handler into a
-    // single commit. The handler calls setRouteState("$") directly,
-    // then calls promptInputRef.current.setRoute("$"), which fires the
-    // engine's onRouteChange("$"), which calls setRouteState("$") a
-    // second time with the same value. React's Object.is check bails
-    // out on the redundant call; the dispatch produces one commit.
+  it("SELECT_VALUE produces exactly one entry commit (single setRouteState call, no round-trip re-entry)", () => {
     const phases: string[] = [];
     const { id, managerRef } = renderEntryWithManager({
       onRender: (_id, phase) => {
@@ -752,19 +676,17 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     });
 
     const updatesAfter = phases.filter((p) => p === "update").length;
-    // Exactly one additional commit — the state change "" → "$" is a
-    // real change so React must commit once; the *second* setRouteState
-    // call (from the onRouteChange round-trip with the same value)
-    // must bail out via Object.is. If a regression introduces a second
-    // setState with a different value, this bumps to 2 and fails.
+    // A single state change (">" → "$") yields exactly one commit.
+    // Without the legacy setRoute round-trip via onRouteChange, no
+    // redundant setRouteState call follows.
     expect(updatesAfter - updatesBefore).toBe(1);
   });
 
-  it("onRouteChange(null) leaves the pill on the last-selected route (sticky)", () => {
+  it("route state is sticky across an editor clear (gutter persists the selection)", () => {
     const { container, id, managerRef } = renderEntryWithManager();
     expect(managerRef.current).not.toBeNull();
 
-    // First, dispatch SELECT_VALUE "$" to put the pill on Shell.
+    // Switch to Shell.
     act(() => {
       managerRef.current!.sendToTarget(id, {
         action: TUG_ACTIONS.SELECT_VALUE,
@@ -775,11 +697,8 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
     });
     expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
 
-    // Simulate the "user backspaced past the leading atom" event: the
-    // engine fires onRouteChange(null) when no leading route atom is
-    // present. Route is a sticky user preference — the pill must stay
-    // on "$" rather than snapping back to the default. The next
-    // keystroke auto-inserts a "$" route atom via handleInputChange.
+    // Emptying the editor's DOM must not disturb the route state —
+    // the route lives in the gutter, not the text flow.
     const editor = findEditableRoot();
     expect(editor).not.toBeNull();
     act(() => {
@@ -792,7 +711,6 @@ describe("TugPromptEntry — Step 4 route indicator bidirectional sync", () => {
       editor!.dispatchEvent(ev);
     });
 
-    // Pill remains on "$" (sticky). The other two stay inactive.
     expect(getSegment(container, "$").getAttribute("data-state")).toBe("active");
     expect(getSegment(container, ">").getAttribute("data-state")).toBe("inactive");
     expect(getSegment(container, ":").getAttribute("data-state")).toBe("inactive");
@@ -941,16 +859,12 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
       });
 
       expect(store.sendCalls.length).toBe(1);
-      // The auto-insert feature prepends the current route's atom when
-      // the user resumes typing into a route-atomless input, so the
-      // submitted text now contains both the atom placeholder and the
-      // typed content. (The test shim's `insertHTML` appends rather than
-      // honoring selection position, so we verify both pieces are
-      // present without asserting their order — in a real browser the
-      // order is atom-then-text.)
+      // The route indicator lives in the gutter — not the text flow —
+      // so the sent text is exactly what the user typed, with no atom
+      // placeholder prefix.
       const sentText = store.sendCalls[0].text;
       expect(sentText).toContain("hello");
-      expect(sentText).toContain(TUG_ATOM_CHAR);
+      expect(sentText).not.toContain(TUG_ATOM_CHAR);
       // interrupt was NOT the branch taken.
       expect(store.interruptCalls.length).toBe(0);
       // Input was cleared after the send.
@@ -1054,16 +968,15 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
     });
 
     expect(store.sendCalls.length).toBe(1);
-    // Auto-insert prepends the current route's atom; the sent text
-    // carries both the atom placeholder and the typed content.
+    // Route lives in the gutter; sent text is exactly the user's input.
     const sentText = store.sendCalls[0].text;
     expect(sentText).toContain("hi");
-    expect(sentText).toContain(TUG_ATOM_CHAR);
+    expect(sentText).not.toContain(TUG_ATOM_CHAR);
     // Handler was called with a defined route/atoms shape. The entry's
-    // default route (Prompt) is active when no explicit prefix is typed,
-    // so the handler receives ">" rather than null. The null branch of
-    // the signature is still reachable by future callers that expose a
-    // "no route" state — the entry no longer takes that branch.
+    // default route (Prompt) is active, so the handler receives ">".
+    // The null branch of the signature is still reachable by future
+    // callers that expose a "no route" state — the entry no longer
+    // takes that branch.
     expect(received).not.toBeNull();
     expect(received!.route).toBe(">");
   });
@@ -1085,11 +998,9 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
     });
 
     expect(store.sendCalls.length).toBe(1);
-    // Auto-insert prepends the current route's atom; the sent text
-    // carries both the atom placeholder and the typed content.
     const sentText = store.sendCalls[0].text;
     expect(sentText).toContain("hi");
-    expect(sentText).toContain(TUG_ATOM_CHAR);
+    expect(sentText).not.toContain(TUG_ATOM_CHAR);
   });
 
   it("queuedSends=2 adds data-queued and renders the badge with text '2'", () => {

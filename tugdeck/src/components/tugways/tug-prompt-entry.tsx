@@ -44,7 +44,14 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Settings, Square } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronRight,
+  DollarSign,
+  Puzzle,
+  Settings,
+  Square,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -80,11 +87,41 @@ import { useTugcardPersistence } from "./use-tugcard-persistence";
  * leading icon so the control is both scannable and self-documenting.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: ">", label: "Prompt", icon: <span aria-hidden="true">&gt;</span> },
-  { value: "$", label: "Shell", icon: <span aria-hidden="true">$</span> },
-  { value: ":", label: "Command", icon: <span aria-hidden="true">:</span> },
+  {
+    value: ">",
+    label: "Prompt",
+    icon: <ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />,
+  },
+  {
+    value: "$",
+    label: "Shell",
+    icon: <DollarSign size={12} strokeWidth={2.5} aria-hidden="true" />,
+  },
+  {
+    value: ":",
+    label: "Command",
+    icon: <Puzzle size={12} strokeWidth={2.5} aria-hidden="true" />,
+  },
 ];
 
+/**
+ * Lucide icon element for the gutter, keyed by route prefix. Shares the
+ * source-of-truth with `ROUTE_ITEMS` — if either is edited, update both.
+ * Rendered by the `.tug-prompt-entry-gutter` element next to the editor.
+ */
+const ROUTE_GUTTER_ICONS: Readonly<Record<string, React.ReactNode>> = {
+  ">": <ChevronRight strokeWidth={2} aria-hidden="true" />,
+  "$": <DollarSign strokeWidth={2} aria-hidden="true" />,
+  ":": <Puzzle strokeWidth={2} aria-hidden="true" />,
+};
+
+/**
+ * Route prefix characters. When the user types one of these as the
+ * first character of an otherwise atomless editor, the character is
+ * consumed and the route flips to the matching value — mirrors the
+ * engine's legacy `detectRoutePrefix` path without inserting a
+ * route atom into the text flow.
+ */
 const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
 
 /**
@@ -130,10 +167,10 @@ interface TugPromptEntryPersistedState {
  * prior selection. One of the three segments must always be active —
  * there is no "no route" state in the indicator. Prompt (`>`) is the
  * sensible default: it's what the user most often wants (talking to
- * Claude). Route selection is sticky after mount: typing `$` or `:`
- * syncs the indicator; backspacing the prefix away leaves the
- * indicator on the last-selected route, and the next keystroke
- * auto-inserts a matching route atom.
+ * Claude). Route selection is sticky and is owned by the entry's
+ * `route` state — the gutter renders the current route's icon next
+ * to the editor, and only the choice group (or restore) ever changes
+ * it.
  */
 const DEFAULT_ROUTE = ">";
 
@@ -142,23 +179,79 @@ const DEFAULT_ROUTE = ">";
 // ---------------------------------------------------------------------------
 
 /**
- * Returns `true` when the input has no meaningful user content — either
- * literally empty, or carrying only a lone route atom (the prefix char
- * with nothing past it). A route atom on its own is structural, not
- * meaningful input: the user has typed a prefix but nothing to send, so
- * submit should stay disabled and `data-empty` should read `"true"`.
- *
- * Any additional atom (e.g. a file atom) or any non-whitespace text past
- * the prefix counts as content.
+ * Returns `true` when the input has no user content. Thin wrapper
+ * around the input's own `isEmpty()` — there are no structural atoms
+ * in the text flow to discount now that the route indicator lives in
+ * the gutter. Kept as a named helper so callers read symmetrically
+ * with the submit gate ("submit when not effectively empty").
  */
 function isEffectivelyEmpty(input: TugPromptInputDelegate | null): boolean {
-  if (!input || input.isEmpty()) return true;
-  const atoms = input.getAtoms();
-  if (atoms.length === 1 && atoms[0].type === "route") {
-    const text = input.getText();
-    return text.slice(1).trim().length === 0;
+  return input?.isEmpty() ?? true;
+}
+
+/**
+ * Persistence migration: strip legacy `type: "route"` atoms from a
+ * restored editing-state snapshot.
+ *
+ * Pre-gutter drafts stored the route indicator as an inline atom at
+ * position 0. The gutter refactor renders the route outside the text
+ * flow, so any persisted payload that still carries a route atom would
+ * render as an orphan `>`/`$`/`:` image inside the editor on reload.
+ *
+ * One forward pass: collect surviving atoms and the offset shifts
+ * introduced by removing each route-atom's `\uFFFC` placeholder from
+ * `text`. Atom positions and selection offsets past a removed char are
+ * shifted left by the number of route-atom placeholders that preceded
+ * them.
+ *
+ * Returns a fresh `TugTextEditingState`. Safe on inputs that contain no
+ * route atoms (identity-equivalent output up to object identity).
+ */
+function stripRouteAtoms(state: TugTextEditingState): TugTextEditingState {
+  // Positions of the `\uFFFC` placeholders to remove from `text`.
+  const removedPositions: number[] = [];
+  const survivingAtoms: TugTextEditingState["atoms"] = [];
+  for (const atom of state.atoms) {
+    if (atom.type === "route") {
+      removedPositions.push(atom.position);
+    } else {
+      survivingAtoms.push(atom);
+    }
   }
-  return false;
+  if (removedPositions.length === 0) {
+    return state;
+  }
+  // Build the stripped text by skipping the recorded positions.
+  const removeSet = new Set(removedPositions);
+  let stripped = "";
+  for (let i = 0; i < state.text.length; i++) {
+    if (!removeSet.has(i)) stripped += state.text[i];
+  }
+  // Count how many removed positions precede a given offset — the shift
+  // to apply to any atom position or selection offset at/past that point.
+  const sorted = [...removedPositions].sort((a, b) => a - b);
+  const shiftFor = (offset: number): number => {
+    // Number of sorted entries strictly less than `offset`.
+    let lo = 0;
+    let hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (sorted[mid] < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const shiftedAtoms = survivingAtoms.map((a) => ({
+    ...a,
+    position: a.position - shiftFor(a.position),
+  }));
+  const shiftedSelection = state.selection
+    ? {
+        start: state.selection.start - shiftFor(state.selection.start),
+        end: state.selection.end - shiftFor(state.selection.end),
+      }
+    : null;
+  return { text: stripped, atoms: shiftedAtoms, selection: shiftedSelection };
 }
 
 // ---------------------------------------------------------------------------
@@ -486,17 +579,16 @@ export const TugPromptEntry = React.forwardRef<
         setRouteState(nextRoute);
 
         // Swap the input content to the incoming route: restore a
-        // previously-saved snapshot if one exists, otherwise install
-        // a fresh route atom via setRoute (which clears internally).
-        // The setRoute path fires onRouteChange → handleRouteChange,
-        // which no-ops since setRouteState above already has the
-        // target value (React bails on equal state).
+        // previously-saved snapshot if one exists, otherwise clear
+        // the input. The route itself is rendered by the gutter, not
+        // the text flow, so there is nothing to install inside the
+        // editor on a fresh route switch.
         if (input) {
           const savedForNext = savedContentByRouteRef.current[nextRoute];
           if (savedForNext) {
             input.restoreState(savedForNext);
           } else {
-            input.setRoute(nextRoute);
+            input.clear();
           }
         }
 
@@ -518,53 +610,50 @@ export const TugPromptEntry = React.forwardRef<
     },
   });
 
-  // Input → indicator callback. The engine fires onRouteChange with
-  // the detected prefix char (or null when the leading route atom is
-  // removed). The route is a sticky user preference: when the engine
-  // reports a concrete prefix, sync the indicator to it; when it
-  // reports `null` (input cleared or route atom deleted), leave the
-  // indicator where the user last set it — the next keystroke will
-  // auto-insert the matching route atom via `handleInputChange`. [D04]
-  const handleRouteChange = useCallback((r: string | null) => {
-    if (r !== null) setRouteState(r);
-  }, []);
-
   // Input onChange callback. Writes `data-empty` to the root element
   // directly via `rootRef` — no React state update, no re-render of the
   // entry on every keystroke [L06][L22]. Reads freshness from
   // `promptInputRef.current?.isEmpty()`; refs are always current, so the
   // empty-deps `useCallback` is safe.
   //
-  // Also auto-inserts the current route's prefix atom when the user has
-  // started typing into an input that has no leading route atom — i.e.
-  // they backspaced the atom, then resumed typing. The current route is
-  // the entry's `route` state (always a valid prefix char per the
-  // always-one-selected invariant). We skip the insert when the first
-  // typed character is itself a prefix, since the engine's own
-  // `detectRoutePrefix` will convert it to an atom in the same tick.
+  // Also implements route-prefix eating: when the user types (or pastes)
+  // one of the route prefix characters as the first character of an
+  // otherwise atomless editor, the character is consumed and the route
+  // flips to that prefix. Mirrors the engine's legacy `detectRoutePrefix`
+  // behavior without inserting a route atom — the gutter renders the
+  // route. The caret and any trailing text survive the strip.
   const handleInputChange = useCallback(() => {
     const root = rootRef.current;
     const input = promptInputRef.current;
     if (!root) return;
-    // `data-empty` is the single source of truth for visual empty state.
-    // Written directly to the DOM [L06][L22] — keystrokes do not cause
-    // React re-renders. A route atom by itself does not count as
-    // meaningful content: the user has to have typed *something* past
-    // the prefix for the submit button to light up.
-    const isEmpty = isEffectivelyEmpty(input);
-    root.setAttribute("data-empty", String(isEmpty));
-    if (isEmpty || !input) return;
-    const atoms = input.getAtoms();
-    const hasRouteAtom = atoms.length > 0 && atoms[0].type === "route";
-    if (hasRouteAtom) return;
-    const text = input.getText();
-    const firstCharIsPrefix =
-      text.length > 0 && ROUTE_PREFIXES.includes(text[0]);
-    if (firstCharIsPrefix) return;
-    const currentRoute = routeRef.current;
-    if (currentRoute) {
-      input.prependRouteAtom(currentRoute);
+    if (input) {
+      const atoms = input.getAtoms();
+      if (atoms.length === 0) {
+        const text = input.getText();
+        if (text.length > 0 && ROUTE_PREFIXES.includes(text[0])) {
+          const prefix = text[0];
+          const state = input.captureState();
+          const sel = state.selection;
+          input.restoreState({
+            text: state.text.slice(1),
+            atoms: [],
+            selection: sel
+              ? {
+                  start: Math.max(0, sel.start - 1),
+                  end: Math.max(0, sel.end - 1),
+                }
+              : null,
+          });
+          if (prefix !== routeRef.current) {
+            setRouteState(prefix);
+          }
+        }
+      }
     }
+    root.setAttribute(
+      "data-empty",
+      String(isEffectivelyEmpty(promptInputRef.current)),
+    );
   }, []);
 
   // Seed `data-empty` from the actual input state once the input ref
@@ -612,7 +701,7 @@ export const TugPromptEntry = React.forwardRef<
       // crashes the mount. Treat any payload missing the expected
       // fields as a legacy value and fall back to defaults rather
       // than destructuring blindly.
-      const perRoute =
+      const rawPerRoute =
         state && typeof state === "object" && state.perRoute &&
         typeof state.perRoute === "object"
           ? state.perRoute
@@ -621,6 +710,15 @@ export const TugPromptEntry = React.forwardRef<
         state && typeof state === "object" && typeof state.currentRoute === "string"
           ? state.currentRoute
           : DEFAULT_ROUTE;
+      // Migrate legacy route atoms out of each per-route snapshot.
+      // Pre-gutter drafts stored the route as an inline atom at
+      // position 0; the gutter renders the route outside the text
+      // flow, so restoring such a payload verbatim would leave an
+      // orphan route atom in the editor.
+      const perRoute: Record<string, TugTextEditingState> = {};
+      for (const [key, snapshot] of Object.entries(rawPerRoute)) {
+        perRoute[key] = stripRouteAtoms(snapshot);
+      }
       savedContentByRouteRef.current = { ...perRoute };
       setRouteState(currentRoute);
       const input = promptInputRef.current;
@@ -629,7 +727,7 @@ export const TugPromptEntry = React.forwardRef<
         if (saved) {
           input.restoreState(saved);
         } else {
-          input.setRoute(currentRoute);
+          input.clear();
         }
       }
       const root = rootRef.current;
@@ -729,6 +827,13 @@ export const TugPromptEntry = React.forwardRef<
           </div>
         )}
         <div className="tug-prompt-entry-input-area">
+          <div
+            className="tug-prompt-entry-gutter"
+            aria-hidden="true"
+            data-route={route}
+          >
+            {ROUTE_GUTTER_ICONS[route]}
+          </div>
           <TugPromptInput
             ref={promptInputRef}
             borderless
@@ -737,8 +842,6 @@ export const TugPromptEntry = React.forwardRef<
             dropHandler={dropHandler}
             historyProvider={currentHistoryProvider ?? undefined}
             returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
-            routePrefixes={[...ROUTE_PREFIXES]}
-            onRouteChange={handleRouteChange}
             onChange={handleInputChange}
             onSubmit={performSubmit}
             /* Persistence is owned by TugPromptEntry (per-route map).
