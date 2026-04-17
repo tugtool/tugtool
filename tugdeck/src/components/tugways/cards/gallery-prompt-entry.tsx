@@ -337,7 +337,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
           ref={entryPanelRef}
           id="gallery-prompt-entry-bottom"
           defaultSize="30%"
-          minSize="15%"
+          minSize="180px"
           maxSize="85%"
         >
           <ResponderScope>
