@@ -299,7 +299,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
         <TugSplitPanel defaultSize="70%" minSize="20%">
           <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
         </TugSplitPanel>
-        <TugSplitPanel defaultSize="30%" minSize="15%" maxSize="85%">
+        <TugSplitPanel defaultSize="30%" minSize="15%" maxSize="85%" autoSize>
           <ResponderScope>
             <TugBox
               ref={(el) => {

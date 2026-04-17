@@ -367,6 +367,41 @@ export interface TugSplitPanelProps
    * deliberately absent" note in the module docstring.
    */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /**
+   * Observe the panel's own content and grow the panel toward `maxSize`
+   * when the natural content height exceeds the user-set anchor; animate
+   * back to the anchor when content shrinks. When `true`, the panel
+   * installs a `MutationObserver` + `ResizeObserver` on its inner content
+   * wrapper (`panelEl.firstElementChild`) and imperatively calls the
+   * library's `resize()` on any signal that changes natural content
+   * height (typing, paste, CSS-var-driven font changes, container
+   * rewraps).
+   *
+   * Sizing formula:
+   * `panel.currentSize = clamp( max(userSetSize, naturalContentSize), minSize, maxSize )`
+   *
+   * — where `userSetSize` is the last user-drag anchor (captured via the
+   * library's `onResize` whenever the call didn't originate from the
+   * auto-size path) and `naturalContentSize` is the wrapper's
+   * `scrollHeight`.
+   *
+   * Currently supports the horizontal-sash orientation only (the natural
+   * signal is block-axis scrollHeight). The panel does not query its
+   * parent group's orientation — vertical-split auto-sizing would read
+   * `scrollWidth` and filter on `blockSize`; add when a caller needs it.
+   * @default false
+   */
+  autoSize?: boolean;
+  /**
+   * Duration (ms) of the shrink-back animation when content shrinks below
+   * `userSetSize`. Growth is instant; only the return-to-anchor direction
+   * animates. Honored via the `--auto-size-transition-duration` custom
+   * property on the panel's outer div, which the CSS transition rule on
+   * `[data-panel][data-auto-size="true"]` picks up. `prefers-reduced-motion:
+   * reduce` disables the transition regardless of value.
+   * @default 200
+   */
+  autoSizeReturnDuration?: number;
   /** Panel content. */
   children?: React.ReactNode;
 }
@@ -380,27 +415,85 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
       collapsible,
       collapsedSize,
       onCollapsedChange,
+      autoSize = false,
+      autoSizeReturnDuration = 200,
       className,
       children,
       ...rest
     },
     ref,
   ) {
-    // Internal handle on the library's Panel imperative API. We use it to
-    // query `isCollapsed()` from inside `onResize` so we can synthesize
-    // `onCollapsedChange` — v4 does not expose a collapse-change callback
-    // of its own.
+    // Internal handle on the library's Panel imperative API. Used to
+    // query `isCollapsed()` from inside `onResize` (for
+    // `onCollapsedChange` synthesis — v4 does not expose a collapse-
+    // change callback of its own) and to call `resize()` from the
+    // auto-size observer path.
     const panelRef = React.useRef<PanelImperativeHandle | null>(null);
+    // Ref to the outer `[data-panel]` div the library renders. Composed
+    // with any caller-supplied `ref` via `setPanelElement` below. The
+    // auto-size path writes `data-auto-size` and the
+    // `--auto-size-transition-duration` custom property on this element.
+    const panelElementRef = React.useRef<HTMLDivElement | null>(null);
     // Last observed collapsed state. A ref (not useState) so reading and
     // writing it from the onResize callback never triggers a re-render:
     // appearance changes go through CSS / DOM, not React state [L06].
     const wasCollapsedRef = React.useRef(false);
 
+    // --- Auto-size refs [L07] -----------------------------------------
+    // `userSetSizeRef`: last anchor size (px) the user dragged to, or
+    //     the library's resolved initial size. Updated in `handleResize`
+    //     whenever `isAutoSizingRef` is false.
+    // `isAutoSizingRef`: gates onResize fires originating from our own
+    //     `panel.resize()` call so they don't clobber the anchor.
+    //     Cleared synchronously after resize returns (the library fires
+    //     onResize synchronously — no microtask deferral needed).
+    // `lastScrollHeightRef`: bails recompute on attribute mutations that
+    //     don't change the wrapper's natural content height.
+    // `lastWidthRef`: RO fires also on block-size changes caused by our
+    //     own resize writes; the width filter drops those. A width-only
+    //     change (rewrap) still triggers recompute.
+    // `autoSizeReturnDurationRef`: mirrors the prop so the useLayoutEffect
+    //     picks up updates without tearing down/rebuilding the observers.
+    const userSetSizeRef = React.useRef<number>(0);
+    const isAutoSizingRef = React.useRef(false);
+    const lastScrollHeightRef = React.useRef(0);
+    const lastWidthRef = React.useRef(0);
+    const autoSizeReturnDurationRef = React.useRef(autoSizeReturnDuration);
+    autoSizeReturnDurationRef.current = autoSizeReturnDuration;
+
+    // Compose the caller's `ref` with our internal `panelElementRef`.
+    // A single callback fans out to both; identity is stable unless the
+    // caller passes a new ref each render (rare).
+    const setPanelElement = React.useCallback(
+      (el: HTMLDivElement | null) => {
+        panelElementRef.current = el;
+        if (typeof ref === "function") {
+          ref(el);
+        } else if (ref) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }
+      },
+      [ref],
+    );
+
     // Stable handler so identity only changes when the user's callback
     // does. Reads `isCollapsed()` from the imperative handle, compares to
     // the last observed value, and fires the change callback on flip.
+    // Also seeds the auto-size user-drag anchor: whenever onResize fires
+    // from outside our own `panel.resize()` call, we treat it as a user
+    // drag (or the library's initial layout resolution) and capture the
+    // new anchor in px. Setting `--auto-size-transition-duration` to 0ms
+    // here kills any stale shrink-transition so the library's own drag
+    // updates never chase an interpolation.
     const handleResize = React.useCallback(
-      (_size: PanelSize, _id: string | number | undefined, _prev: PanelSize | undefined) => {
+      (size: PanelSize, _id: string | number | undefined, _prev: PanelSize | undefined) => {
+        if (autoSize && !isAutoSizingRef.current) {
+          userSetSizeRef.current = size.inPixels;
+          const panelEl = panelElementRef.current;
+          if (panelEl) {
+            panelEl.style.setProperty("--auto-size-transition-duration", "0ms");
+          }
+        }
         const panel = panelRef.current;
         if (!panel || !onCollapsedChange) return;
         const isCollapsed = panel.isCollapsed();
@@ -409,8 +502,98 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
           onCollapsedChange(isCollapsed);
         }
       },
-      [onCollapsedChange],
+      [autoSize, onCollapsedChange],
     );
+
+    // Auto-size: observe the panel's inner content wrapper and grow /
+    // shrink the panel imperatively in response to natural-content-height
+    // changes.
+    //
+    // `panelEl.firstElementChild` is the library's inner div (the one
+    // carrying our `className`, `flexGrow:1`, `overflow:auto`). All three
+    // signals in Track E (typing / paste, CSS-var-driven font changes,
+    // container rewrap) manifest as either a subtree mutation or a
+    // contentBox inline-size change on this element; both observers
+    // converge on one `recompute()`.
+    //
+    // Laws: [L03] install in useLayoutEffect, [L06] appearance written to
+    //       the DOM, [L07] state in refs, [L13] CSS transition owns the
+    //       motion — no RAF, [L22] DOM → DOM, no React round-trip.
+    React.useLayoutEffect(() => {
+      if (!autoSize) return;
+      const panelEl = panelElementRef.current;
+      if (!panelEl) return;
+      const wrapperEl = panelEl.firstElementChild as HTMLElement | null;
+      if (!wrapperEl) return;
+
+      panelEl.dataset.autoSize = "true";
+      panelEl.style.setProperty("--auto-size-transition-duration", "0ms");
+
+      const recompute = () => {
+        const panel = panelRef.current;
+        if (!panel) return;
+        const scrollHeight = wrapperEl.scrollHeight;
+        // Bail on mutations that don't change the natural content
+        // height — e.g., a style attribute write that re-resolves to
+        // the same layout, or our own resize echoes that ride through
+        // the MO subtree unaffected.
+        if (scrollHeight === lastScrollHeightRef.current) return;
+        lastScrollHeightRef.current = scrollHeight;
+
+        const target = Math.max(userSetSizeRef.current, scrollHeight);
+        const currentPx = panel.getSize().inPixels;
+        if (target === currentPx) return;
+
+        // Grow: instant. Shrink: animated over the configured duration.
+        // The CSS rule on `[data-panel][data-auto-size="true"]` reads the
+        // custom property and applies it to `flex-grow`; the library's
+        // resize writes flex-grow, which then transitions per the var.
+        const isShrink = target < currentPx;
+        panelEl.style.setProperty(
+          "--auto-size-transition-duration",
+          isShrink ? `${autoSizeReturnDurationRef.current}ms` : "0ms",
+        );
+
+        isAutoSizingRef.current = true;
+        panel.resize(target);
+        isAutoSizingRef.current = false;
+      };
+
+      // Subtree mutations: typing, paste, child appends, `style`/`class`
+      // writes that re-resolve layout (e.g., EditorSettingsStore writing
+      // --tug-font-size-editor on an ancestor).
+      const mo = new MutationObserver(recompute);
+      mo.observe(wrapperEl, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["style", "class"],
+      });
+
+      // ContentBox inline-size changes: container rewraps. Block-size
+      // changes from our own resize writes are filtered out by the width
+      // match so there is no echo loop. The spec-guaranteed initial
+      // delivery (post-commit, after the Group has registered) handles
+      // the initial sizing pass — no queueMicrotask needed.
+      const ro = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const inlineSize =
+          entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+        if (inlineSize === lastWidthRef.current) return;
+        lastWidthRef.current = inlineSize;
+        recompute();
+      });
+      ro.observe(wrapperEl);
+
+      return () => {
+        mo.disconnect();
+        ro.disconnect();
+        delete panelEl.dataset.autoSize;
+        panelEl.style.removeProperty("--auto-size-transition-duration");
+      };
+    }, [autoSize]);
 
     return (
       <Panel
@@ -420,8 +603,8 @@ export const TugSplitPanel = React.forwardRef<HTMLDivElement, TugSplitPanelProps
         collapsible={collapsible}
         collapsedSize={collapsedSize}
         panelRef={panelRef}
-        onResize={onCollapsedChange ? handleResize : undefined}
-        elementRef={ref as React.Ref<HTMLDivElement | null>}
+        onResize={autoSize || onCollapsedChange ? handleResize : undefined}
+        elementRef={setPanelElement}
         className={cn("tug-split-panel", className)}
         data-slot="tug-split-panel"
         {...rest}
