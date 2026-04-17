@@ -80,6 +80,27 @@ const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
 const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
 
 /**
+ * Return-key semantics per route.
+ *
+ * - `>` (Prompt): Return inserts a newline; Shift+Return submits. Prompts
+ *   are long-form, so naïve Return should stay a newline and submit is
+ *   a deliberate gesture.
+ * - `$` (Shell): Return submits; Shift+Return inserts a newline. Shell
+ *   invocations are typically a single line, so Return submits directly.
+ * - `:` (Command): Return submits; Shift+Return inserts a newline.
+ *   Commands are one-liners in practice.
+ *
+ * The engine's shift inversion (`shift ? (base === "submit" ? "newline"
+ * : "submit") : base`) means we only need to declare the *unshifted*
+ * action per route; Shift+Return is the opposite automatically.
+ */
+const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
+  ">": "newline",
+  "$": "submit",
+  ":": "submit",
+};
+
+/**
  * Default route when the input has no typed prefix. One of the three
  * segments must always be active — there is no "no route" state in the
  * indicator. Prompt (`>`) is the sensible default: it's what the user
@@ -350,7 +371,9 @@ export const TugPromptEntry = React.forwardRef<
     // the content-driven hook's automatic instant restoration.
     onBeforeSubmitRef.current?.();
     input.clear();
-    setRouteState(DEFAULT_ROUTE);
+    // Route is a sticky user preference. Do not reset it on submit —
+    // if the user switched to Shell, subsequent prompts stay on Shell
+    // until they choose otherwise.
   }, [codeSessionStore]);
 
   // [L07] Register the responder node. Both handler bodies are now
@@ -383,6 +406,10 @@ export const TugPromptEntry = React.forwardRef<
         // the dispatch produces exactly one commit. See the round-
         // trip test for the guard.
         promptInputRef.current?.setRoute(event.value);
+        // Move keyboard focus to the editor so the user can start
+        // typing immediately — the route segment button had focus
+        // from the click; this hands it back to the input.
+        promptInputRef.current?.focus();
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         performSubmit();
@@ -392,11 +419,13 @@ export const TugPromptEntry = React.forwardRef<
 
   // Input → indicator callback. The engine fires onRouteChange with
   // the detected prefix char (or null when the leading route atom is
-  // removed). Mirror that into the controlled indicator's value state;
-  // `null` (no leading prefix in the input) snaps the indicator back to
-  // `DEFAULT_ROUTE` so one segment is always active. [D04]
+  // removed). The route is a sticky user preference: when the engine
+  // reports a concrete prefix, sync the indicator to it; when it
+  // reports `null` (input cleared or route atom deleted), leave the
+  // indicator where the user last set it — the next keystroke will
+  // auto-insert the matching route atom via `handleInputChange`. [D04]
   const handleRouteChange = useCallback((r: string | null) => {
-    setRouteState(r ?? DEFAULT_ROUTE);
+    if (r !== null) setRouteState(r);
   }, []);
 
   // Input onChange callback. Writes `data-empty` to the root element
@@ -435,6 +464,19 @@ export const TugPromptEntry = React.forwardRef<
     if (currentRoute) {
       input.prependRouteAtom(currentRoute);
     }
+  }, []);
+
+  // Seed `data-empty` from the actual input state once the input ref
+  // is wired [L03]. The JSX defaults `data-empty="true"` at render, but
+  // on a browser reload / HMR refresh the editor may already carry
+  // preserved content — the submit button would then stay disabled
+  // until the user typed. Running the same effectively-empty check
+  // once at mount closes that gap.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const input = promptInputRef.current;
+    if (!root) return;
+    root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
   }, []);
 
   // Expose the imperative delegate. Pass-throughs to the underlying input
@@ -533,7 +575,7 @@ export const TugPromptEntry = React.forwardRef<
             maximized
             completionProviders={completionProviders}
             dropHandler={dropHandler}
-            returnAction="newline"
+            returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
             routePrefixes={[...ROUTE_PREFIXES]}
             onRouteChange={handleRouteChange}
             onChange={handleInputChange}
