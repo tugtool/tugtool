@@ -126,6 +126,30 @@ export interface TideCardContentProps {
 }
 
 // ---------------------------------------------------------------------------
+// Shared singletons
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-scoped `PromptHistoryStore`. Shared across every Tide card,
+ * constructed lazily on first access, never disposed — the singleton
+ * outlives any individual card so history survives close + reopen.
+ *
+ * The store is internally keyed by session id (see
+ * `lib/prompt-history-store.ts`); per-session persistence via
+ * `getPromptHistory` / `putPromptHistory` is already baked in and
+ * runs on every `push()`. Cross-card-reuse of history for the same
+ * project arrives once [4i](../../../../../roadmap/tugplan-tide-card.md#step-4i)
+ * gives us a stable session id per workspace.
+ */
+let _tidePromptHistoryStore: PromptHistoryStore | null = null;
+function getTidePromptHistoryStore(): PromptHistoryStore {
+  if (_tidePromptHistoryStore === null) {
+    _tidePromptHistoryStore = new PromptHistoryStore();
+  }
+  return _tidePromptHistoryStore;
+}
+
+// ---------------------------------------------------------------------------
 // useTideCardServices
 // ---------------------------------------------------------------------------
 
@@ -154,7 +178,6 @@ export interface TideCardServices {
 interface InternalServices {
   codeSessionStore: CodeSessionStore;
   editorStore: EditorSettingsStore;
-  historyStore: PromptHistoryStore;
   sessionMetadataStack: {
     feedStore: FeedStore;
     store: SessionMetadataStore;
@@ -210,8 +233,10 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   // Construct services when a binding appears; dispose when it clears
   // or the card unmounts. `CodeSessionStore` is backed by the live
   // `TugConnection`, bound to the session id the supervisor echoed in
-  // the `spawn_session_ok` ack. Sub-steps 4f–g swap the remaining
-  // fixture stores (`SessionMetadataStore`, `PromptHistoryStore`).
+  // the `spawn_session_ok` ack. `PromptHistoryStore` is the
+  // module-scoped singleton (`getTidePromptHistoryStore`), shared
+  // across cards; it is read in the services-return memo below, not
+  // constructed here.
   useLayoutEffect(() => {
     if (binding === null) {
       setServices(null);
@@ -227,7 +252,6 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
       tugSessionId: binding.tugSessionId,
     });
     const editorStore = new EditorSettingsStore();
-    const historyStore = new PromptHistoryStore();
     // No workspace filter on the SESSION_METADATA feed: the payload
     // is Claude's raw `system_metadata` event
     // (`{"type":"system_metadata","session_id":...,"slash_commands":...}`)
@@ -260,7 +284,6 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     const next: InternalServices = {
       codeSessionStore,
       editorStore,
-      historyStore,
       sessionMetadataStack,
       fileTreeStack,
     };
@@ -327,7 +350,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     return {
       codeSessionStore: services.codeSessionStore,
       sessionMetadataStore: services.sessionMetadataStack.store,
-      historyStore: services.historyStore,
+      historyStore: getTidePromptHistoryStore(),
       completionProviders,
       editorStore: services.editorStore,
       entryDelegateRef,
