@@ -20,6 +20,7 @@ import {
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerGitCard } from "./components/tugways/cards/git-card";
+import { registerTideCard } from "./components/tugways/cards/tide-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -98,6 +99,7 @@ if (!container) {
   // registered in Phase 9.
   registerHelloWorldCard();
   registerGitCard();
+  registerTideCard();
   registerGalleryCards();
 
   // Extract tab IDs from the loaded layout and read tab states from cache.

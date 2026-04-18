@@ -147,11 +147,11 @@ Each step is its own commit. Tests + checks pass at the end of every step.
 **Work:**
 - Add `registerTideCard()` per the snippet in [tide.md §T3.4.c](./tide.md#t3-4-c-tide-card): `componentId: "tide"`, default meta, `defaultFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`, size policy.
 - Wire `contentFactory: (cardId) => <TideCardContent cardId={cardId} />`.
-- Card opens in tugdeck with the mock-backed body (identical to gallery card minus the gallery split-pane wrapper).
+- Opening the card from the card menu mounts the copied body inside tugdeck's normal card chrome (title bar, close button, resize handles). The body itself is unchanged from Step 1 — same split pane, same mock-backed entry, same polish features — only the mount path differs from the gallery grid.
 
 **Verification:**
 - `bun run check` clean.
-- Manual: open the card from the card menu; the gallery-card body renders with all polish features.
+- Manual: open the card from the card menu; the body renders with all polish features (maximize toggle, settings popover, route gutter, content-driven sizing, atom fonts).
 - `rg 'registerTideCard\(\)' tugdeck/src/main.tsx` returns one match.
 
 #### Step 3 — Extract `useTideCardServices` skeleton (still mock-backed) {#step-3}

@@ -46,7 +46,7 @@ import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { getConnection } from "@/lib/connection-singleton";
-import { presentWorkspaceKey } from "@/card-registry";
+import { presentWorkspaceKey, registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
@@ -407,4 +407,32 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
       </TugSplitPane>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// registerTideCard
+// ---------------------------------------------------------------------------
+
+/**
+ * Register the Tide card in the global card registry.
+ *
+ * Must be called before `DeckManager.addCard("tide")` is invoked.
+ * Call from `main.tsx` alongside `registerGitCard()`.
+ */
+export function registerTideCard(): void {
+  registerCard({
+    componentId: "tide",
+    contentFactory: (cardId) => <TideCardContent cardId={cardId} />,
+    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true },
+    defaultFeedIds: [
+      FeedId.CODE_INPUT,
+      FeedId.CODE_OUTPUT,
+      FeedId.SESSION_METADATA,
+      FeedId.FILETREE,
+    ],
+    sizePolicy: {
+      min: { width: 320, height: 240 },
+      preferred: { width: 720, height: 540 },
+    },
+  });
 }
