@@ -1,0 +1,6 @@
+[test]
+# Redirect TugbankClient to a throw-away SQLite file before any test
+# module loads. Without this, tests that exercise SessionManager
+# persist mock session ids into the developer's real `~/.tugbank.db`
+# (see `src/__tests__/setup-tugbank.ts` for the full rationale).
+preload = ["./src/__tests__/setup-tugbank.ts"]
