@@ -27,7 +27,7 @@
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
@@ -45,6 +45,7 @@ import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
+import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { presentWorkspaceKey, registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
@@ -124,10 +125,34 @@ export interface TideCardContentProps {
 }
 
 // ---------------------------------------------------------------------------
-// TideCardContent
+// useTideCardServices
 // ---------------------------------------------------------------------------
 
-export function TideCardContent({ cardId }: TideCardContentProps) {
+/**
+ * Per-card services consumed by `TideCardContent`. Constructed and
+ * disposed with the card instance; stable identity across renders.
+ *
+ * Lifecycle hygiene note: the internals of this hook carry the
+ * render-body `if (ref.current === null)` pattern copied from
+ * `gallery-prompt-entry.tsx`. It is flagged for cleanup in the Step 4
+ * work under [tugplan-tide-card.md](../../../../../roadmap/tugplan-tide-card.md#step-4).
+ */
+export interface TideCardServices {
+  codeSessionStore: CodeSessionStore;
+  sessionMetadataStore: SessionMetadataStore;
+  historyStore: PromptHistoryStore;
+  completionProviders: Record<string, CompletionProvider>;
+  editorStore: EditorSettingsStore;
+  /**
+   * Delegate handle for the embedded `TugPromptEntry`. Owned by the
+   * hook because the `/` completion provider's position-0 gate reads
+   * `entryDelegateRef.current`; the component passes this same ref to
+   * `<TugPromptEntry ref={...}>` and to the atom-regenerate callback.
+   */
+  entryDelegateRef: RefObject<TugPromptEntryDelegate | null>;
+}
+
+export function useTideCardServices(cardId: string): TideCardServices {
   // --- Mock-backed CodeSessionStore (turn-state surface). ---
   const mockSessionRef = useRef<{
     connection: MockTugConnection;
@@ -179,7 +204,7 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
       const provider = fileTreeStore.getFileCompletionProvider();
       fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
     } else {
-      console.warn("TideCardContent: connection not available at render");
+      console.warn("useTideCardServices: connection not available at render");
     }
   }
   useEffect(() => {
@@ -202,15 +227,15 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
     historyStoreRef.current = new PromptHistoryStore();
   }
 
-  // --- Entry + panel handles (declared here so completionProviders' memo
-  // can read entryDelegateRef for the position-0 gate). Stable ref
-  // identities — the memo below uses [] deps correctly. ---
-  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  // --- Entry delegate ref (owned here so the `/` position-0 gate can
+  // read it). The component uses the same ref for `<TugPromptEntry ref>`
+  // and the atom-regenerate callback. ---
   const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
 
+  // --- Session metadata store (fixture; swapped in Step 4). ---
+  const sessionMetadataStore = getFixtureSessionMetadataStore();
+
   // --- Compose completion providers. ---
-  // Stable — provider identities are owned by refs and don't change for
-  // the card's lifetime, so the memo's [] deps are correct.
   //
   //   `@`: live `FileTreeStore` against the real connection. Falls back
   //        to EMPTY_FILE_COMPLETION_PROVIDER if `getConnection()` was
@@ -220,9 +245,12 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
   //   `/`: fixture `SessionMetadataStore` sourced from the captured
   //        `capabilities/<LATEST>/system-metadata.jsonl`, wrapped with the
   //        position-0 gate so `/` mid-text yields an empty popup.
+  //
+  // Provider identities are owned by refs and don't change for the
+  // card's lifetime, so the memo's [] deps are correct.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(() => {
-    const innerSlash = getFixtureSessionMetadataStore().getCommandCompletionProvider();
+    const innerSlash = sessionMetadataStore.getCommandCompletionProvider();
     return {
       "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
       "/": wrapPositionZero(entryDelegateRef, innerSlash),
@@ -230,19 +258,47 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
   }, []);
 
   // --- EditorSettingsStore for the tools-panel controls. ---
-  // Constructed once per card; binds via the paneRef below so the
-  // `--tug-font-family-editor` / `--tug-font-size-editor` / `--tug-letter-spacing-editor`
-  // custom properties cascade from the pane down to the embedded input.
   const editorStoreRef = useRef<EditorSettingsStore | null>(null);
   if (editorStoreRef.current === null) {
     editorStoreRef.current = new EditorSettingsStore();
   }
   const editorStore = editorStoreRef.current;
+
+  // Wrap in useMemo so the returned object identity is stable across
+  // renders; callers can safely put `services` in effect deps.
+  return useMemo<TideCardServices>(
+    () => ({
+      codeSessionStore: mockSessionRef.current!.codeSessionStore,
+      sessionMetadataStore,
+      historyStore: historyStoreRef.current!,
+      completionProviders,
+      editorStore,
+      entryDelegateRef,
+    }),
+    [sessionMetadataStore, completionProviders, editorStore],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TideCardContent
+// ---------------------------------------------------------------------------
+
+export function TideCardContent({ cardId }: TideCardContentProps) {
+  const services = useTideCardServices(cardId);
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
+
+  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
   );
 
+  // Bind the pane element for CSS variable cascade
+  // (`--tug-font-family-editor` / `--tug-font-size-editor` /
+  // `--tug-letter-spacing-editor` / `--tug-line-height-editor`). The
+  // `regenerateAtoms` callback re-renders SVG atom glyphs when the
+  // editor font changes, so atoms track the editor's chosen font.
   const paneRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const el = paneRef.current;
@@ -391,9 +447,9 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
               <TugPromptEntry
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
-                codeSessionStore={mockSessionRef.current!.codeSessionStore}
-                sessionMetadataStore={getFixtureSessionMetadataStore()}
-                historyStore={historyStoreRef.current}
+                codeSessionStore={codeSessionStore}
+                sessionMetadataStore={sessionMetadataStore}
+                historyStore={historyStore}
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
                 statusContent={statusContent}
