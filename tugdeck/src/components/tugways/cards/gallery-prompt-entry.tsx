@@ -53,10 +53,8 @@ import { presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
-import {
-  getFixtureSessionMetadataStore,
-  wrapPositionZero,
-} from "./completion-fixtures/system-metadata-fixture";
+import { getFixtureSessionMetadataStore } from "./completion-fixtures/system-metadata-fixture";
+import { wrapPositionZero } from "./completion-providers/position-zero";
 
 import "./gallery-prompt-entry.css";
 

@@ -19,7 +19,6 @@ import {
   putPromptHistory,
   getPromptHistory,
   readTideRecentProjects,
-  putTideRecentProjects,
   insertTideRecentProject,
   TIDE_RECENT_PROJECTS_MAX,
 } from "../settings-api";
@@ -381,26 +380,9 @@ describe("readTideRecentProjects", () => {
   });
 });
 
-describe("putTideRecentProjects", () => {
-  afterEach(() => {
-    mock.restore();
-  });
-
-  test("PUTs {paths} to /api/defaults/dev.tugtool.tide/recent-projects", async () => {
-    const calls: { url: string; init: RequestInit }[] = [];
-    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      calls.push({ url: url as string, init: init ?? {} });
-      return makeResponse(200, {});
-    }) as unknown as typeof fetch;
-
-    putTideRecentProjects(["/tmp", "/u/src/tugtool"]);
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(calls.length).toBe(1);
-    expect(calls[0].url).toBe("/api/defaults/dev.tugtool.tide/recent-projects");
-    expect(calls[0].init.method).toBe("PUT");
-    const body = JSON.parse(calls[0].init.body as string);
-    expect(body.kind).toBe("json");
-    expect(body.value.paths).toEqual(["/tmp", "/u/src/tugtool"]);
-  });
-});
+// PUT behavior for `putTideRecentProjects` is covered by T-TIDE-07 in
+// tide-card.test.tsx (which asserts the bind effect fires it with the
+// right payload). Duplicating it here would require an unmocked
+// `fetch`, but tide-card.test.tsx process-globally replaces the
+// exported `putTideRecentProjects` with a recorder to keep tide-card's
+// bind effect from racing with other test files' fetch stubs.

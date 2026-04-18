@@ -12,7 +12,7 @@
  */
 import "./setup-rtl";
 
-import { describe, it, expect, afterEach, afterAll, mock } from "bun:test";
+import { describe, it, expect, afterEach, mock } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 // Capture frames sent by the picker so T-TIDE-04 can assert on them.
@@ -62,6 +62,28 @@ const fakeTugbank = {
 mock.module("@/lib/tugbank-singleton", () => ({
   getTugbankClient: () => fakeTugbank,
   setTugbankClient: () => {},
+}));
+
+// Stub `putTideRecentProjects` alone from @/settings-api so the
+// tide-card tests record PUT calls in a local recorder without
+// triggering `fetch`. Leaving fetch unstubbed here is important: bun
+// runs test files in a single process and other test files
+// (settings-api.test.ts, deck-manager.test.ts) reassign
+// `globalThis.fetch` concurrently. Any stray fetch call from the
+// tide-card bind effect would race into whichever assignment is
+// currently installed. The remaining settings-api exports (readers,
+// the pure insert helper, other PUTs) are preserved from the real
+// module via the `actual` spread.
+import * as actualSettingsApi from "@/settings-api";
+interface RecentsPut {
+  paths: string[];
+}
+const recentsPuts: RecentsPut[] = [];
+mock.module("@/settings-api", () => ({
+  ...actualSettingsApi,
+  putTideRecentProjects: (paths: string[]) => {
+    recentsPuts.push({ paths });
+  },
 }));
 
 import { TideCardContent } from "@/components/tugways/cards/tide-card";
@@ -116,38 +138,17 @@ function renderTideCard(cardId: string) {
   };
 }
 
-// Capture fetch PUTs (recents persistence in step 4m). Swallow errors
-// so the tests never hit the real network. Reset per test.
-interface FetchCall {
-  url: string;
-  init?: RequestInit;
-}
-const fetchCalls: FetchCall[] = [];
-const originalFetch = globalThis.fetch;
-globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-  fetchCalls.push({ url: url as string, init });
-  return {
-    status: 200,
-    ok: true,
-    json: async () => ({}),
-  } as unknown as Response;
-}) as unknown as typeof fetch;
-
 afterEach(() => {
   cleanup();
   cardSessionBindingStore.clearBinding(CARD_ID);
   sentFrames.length = 0;
-  fetchCalls.length = 0;
+  recentsPuts.length = 0;
   for (const domain of Object.keys(tugbankStore)) {
     delete tugbankStore[domain];
   }
   document.querySelectorAll(".tugcard").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
-});
-
-afterAll(() => {
-  globalThis.fetch = originalFetch;
 });
 
 describe("TideCardContent – binding gate and project picker", () => {
@@ -245,7 +246,7 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.project_dir).toBe("/u/src/tugtool");
   });
 
-  it("T-TIDE-07: bind success persists the project path to recent-projects", async () => {
+  it("T-TIDE-07: bind success persists the project path to recent-projects", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/old/path"] } },
     };
@@ -259,19 +260,12 @@ describe("TideCardContent – binding gate and project picker", () => {
       );
     });
 
-    // putTideRecentProjects is fire-and-forget — give the microtask
-    // queue a turn so the fetch stub records the call.
-    await new Promise((r) => setTimeout(r, 0));
-
-    const recentsPut = fetchCalls.find(
-      (c) => c.url === "/api/defaults/dev.tugtool.tide/recent-projects",
-    );
-    expect(recentsPut).not.toBeUndefined();
-    expect(recentsPut!.init?.method).toBe("PUT");
-    const body = JSON.parse(recentsPut!.init!.body as string);
-    expect(body.kind).toBe("json");
+    // putTideRecentProjects is stubbed to push into `recentsPuts`; the
+    // services effect invokes it synchronously during the setBinding
+    // commit, so no async flush is required.
+    expect(recentsPuts.length).toBe(1);
     // New path first, old path retained (dedup, cap did not kick in).
-    expect(body.value.paths).toEqual(["/new/path", "/old/path"]);
+    expect(recentsPuts[0].paths).toEqual(["/new/path", "/old/path"]);
   });
 
   it("T-TIDE-04: Open button sends a spawn_session CONTROL frame", () => {

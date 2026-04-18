@@ -4,18 +4,16 @@
  * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane` (top 70% —
  * placeholder; bottom 30% — entry, clamped at 90%). The card wires:
  *
- *   • A `MockTugConnection`-backed `CodeSessionStore` (the entry's turn
- *     state surface).
+ *   • A live `CodeSessionStore` bound to the supervisor-issued
+ *     `tugSessionId` via the card-session binding store.
  *   • Live `@` file completion via `FileTreeStore` against the real
  *     connection-singleton. When no live connection is available (tests,
  *     first paint before `getConnection()` resolves), the `@` provider
  *     falls back to an empty stable closure so the engine's typeahead
  *     trigger stays wired regardless of timing.
- *   • Offline `/` slash-command completion sourced from the captured
- *     `capabilities/<LATEST>/system-metadata.jsonl` via the Vite virtual
- *     module. Wrapped in a position-0 gate so `/` mid-text produces an
- *     empty popup.
- *   • A local `PromptHistoryStore` for arrow-up/down recall.
+ *   • Live `/` slash-command completion via a per-card `SessionMetadataStore`,
+ *     wrapped in a position-0 gate so `/` mid-text produces an empty popup.
+ *   • A shared `PromptHistoryStore` singleton for arrow-up/down recall.
  *   • A per-card `EditorSettingsStore` whose CSS variables cascade from
  *     the entry-pane TugBox down to the input editor. The tools panel
  *     (toggled via the button on the status row) exposes font-family,
@@ -61,16 +59,13 @@ import {
   putTideRecentProjects,
   readTideRecentProjects,
 } from "@/settings-api";
-import { wrapPositionZero } from "./completion-fixtures/system-metadata-fixture";
+import { wrapPositionZero } from "./completion-providers/position-zero";
 
 import "./tide-card.css";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Stable identifier for the Tide card's mock `CodeSessionStore`. */
-export const TIDE_TUG_SESSION_ID = "tide-card-session";
 
 const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },

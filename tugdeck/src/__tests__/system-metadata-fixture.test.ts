@@ -13,10 +13,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type React from "react";
 
-import {
-  createFixtureSessionMetadataStore,
-  wrapPositionZero,
-} from "../components/tugways/cards/completion-fixtures/system-metadata-fixture";
+import { createFixtureSessionMetadataStore } from "../components/tugways/cards/completion-fixtures/system-metadata-fixture";
+import { wrapPositionZero } from "../components/tugways/cards/completion-providers/position-zero";
 import type { CompletionProvider } from "../lib/tug-text-engine";
 import type { TugPromptEntryDelegate } from "../components/tugways/tug-prompt-entry";
 

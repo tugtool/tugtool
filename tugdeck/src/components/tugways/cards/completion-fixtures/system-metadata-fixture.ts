@@ -20,9 +20,7 @@
 
 import type { FeedStore } from "@/lib/feed-store";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
-import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { FeedId } from "@/protocol";
-import type { TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-entry";
 
 // ---------------------------------------------------------------------------
 // Capabilities JSONL — resolved at Vite build time, absent in bun-test.
@@ -113,24 +111,3 @@ export function getFixtureSessionMetadataStore(): SessionMetadataStore {
   return _store;
 }
 
-// ---------------------------------------------------------------------------
-// Position-0 gate for the `/` trigger.
-// ---------------------------------------------------------------------------
-
-/**
- * Wrap a `CompletionProvider` so it only yields results when `/` is the
- * first character of the editor's text. Anywhere else in the text, the
- * wrapped provider returns `[]` (the engine still opens the popup on the
- * trigger, but it's empty — per D5.c recommendation P1).
- */
-export function wrapPositionZero(
-  entryRef: React.RefObject<TugPromptEntryDelegate | null>,
-  inner: CompletionProvider,
-): CompletionProvider {
-  return (query: string) => {
-    const editor = entryRef.current?.getEditorElement();
-    const text = editor?.textContent ?? "";
-    if (text.length === 0 || text[0] !== "/") return [];
-    return inner(query);
-  };
-}
