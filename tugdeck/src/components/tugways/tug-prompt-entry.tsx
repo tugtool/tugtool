@@ -91,8 +91,18 @@ const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
  * consumed and the route flips to the matching value — mirrors the
  * engine's legacy `detectRoutePrefix` path without inserting a
  * route atom into the text flow.
+ *
+ * `>` is an ASCII alias for the Prompt route's display character `❯`.
+ * The display surface (gutter, choice group) shows the chevron, but
+ * the typed greater-than is keyboard-friendly and routes to the same
+ * Prompt value.
  */
-const ROUTE_PREFIXES: ReadonlyArray<string> = ["❯", "$", ":"];
+const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
+  "❯": "❯",
+  ">": "❯",
+  "$": "$",
+  ":": ":",
+};
 
 /**
  * Return-key semantics per route.
@@ -655,8 +665,8 @@ export const TugPromptEntry = React.forwardRef<
       const atoms = input.getAtoms();
       if (atoms.length === 0) {
         const text = input.getText();
-        if (text.length > 0 && ROUTE_PREFIXES.includes(text[0])) {
-          const prefix = text[0];
+        const route = text.length > 0 ? ROUTE_PREFIX_ALIAS[text[0]] : undefined;
+        if (route !== undefined) {
           const state = input.captureState();
           const sel = state.selection;
           input.restoreState({
@@ -669,8 +679,8 @@ export const TugPromptEntry = React.forwardRef<
                 }
               : null,
           });
-          if (prefix !== routeRef.current) {
-            setRouteState(prefix);
+          if (route !== routeRef.current) {
+            setRouteState(route);
           }
         }
       }
