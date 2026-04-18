@@ -195,6 +195,50 @@ logs:
     fi
     tail -F "$LOG"
 
+# List any tugcode / claude processes reparented to PID 1 — these
+# are zombies left behind by an ungraceful Tug.app exit (roadmap
+# step 4j). Expected output: `(no zombies)`. A non-empty list means
+# processes leaked past the pgid SIGTERM cleanup and need to be
+# reaped manually — use `just zombie-cleanup`.
+zombies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PIDS="$(ps -eo pid,ppid,command \
+        | awk '$2 == 1 && ($3 ~ /tugcode/ || ($3 == "claude" && $0 ~ /stream-json/)) { print $0 }')"
+    if [ -z "$PIDS" ]; then
+        echo "(no zombies)"
+    else
+        COUNT="$(printf '%s\n' "$PIDS" | wc -l | tr -d ' ')"
+        echo "$COUNT zombie process(es) reparented to PID 1:"
+        printf '%s\n' "$PIDS"
+    fi
+
+# Kill any tugcode / claude processes reparented to PID 1. Sends
+# SIGTERM first, waits briefly, then SIGKILLs anything still alive.
+zombie-cleanup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PIDS="$(ps -eo pid,ppid,command \
+        | awk '$2 == 1 && ($3 ~ /tugcode/ || ($3 == "claude" && $0 ~ /stream-json/)) { print $1 }')"
+    if [ -z "$PIDS" ]; then
+        echo "(no zombies to clean up)"
+        exit 0
+    fi
+    COUNT="$(printf '%s\n' "$PIDS" | wc -l | tr -d ' ')"
+    echo "SIGTERM-ing $COUNT zombie process(es): $PIDS"
+    # shellcheck disable=SC2086
+    kill -TERM $PIDS 2>/dev/null || true
+    sleep 1
+    STRAGGLERS="$(printf '%s\n' $PIDS | while read -r pid; do
+        if kill -0 "$pid" 2>/dev/null; then echo "$pid"; fi
+    done)"
+    if [ -n "$STRAGGLERS" ]; then
+        echo "SIGKILL-ing stragglers: $STRAGGLERS"
+        # shellcheck disable=SC2086
+        kill -KILL $STRAGGLERS 2>/dev/null || true
+    fi
+    echo "done"
+
 # Build unsigned DMG
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
