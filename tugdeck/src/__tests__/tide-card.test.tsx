@@ -12,7 +12,7 @@
  */
 import "./setup-rtl";
 
-import { describe, it, expect, afterEach, mock } from "bun:test";
+import { describe, it, expect, afterEach, afterAll, mock } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 // Capture frames sent by the picker so T-TIDE-04 can assert on them.
@@ -39,6 +39,29 @@ const fakeConnection = {
 mock.module("@/lib/connection-singleton", () => ({
   getConnection: () => fakeConnection,
   setConnection: () => {},
+}));
+
+// Mock the tugbank singleton so the picker's recents list + the
+// post-bind recents persist run against test-controlled state. The
+// backing store is module-scoped so T-TIDE-06/07 can seed / read it.
+const tugbankStore: Record<string, Record<string, { kind: string; value: unknown }>> = {};
+const fakeTugbank = {
+  get(domain: string, key: string) {
+    return tugbankStore[domain]?.[key];
+  },
+  readDomain(domain: string) {
+    return tugbankStore[domain];
+  },
+  // EditorSettingsStore subscribes to domain-change notifications on
+  // construction; these tests never mutate tugbank from outside, so
+  // the unsubscribe stub is sufficient.
+  onDomainChanged(_cb: (domain: string) => void) {
+    return () => {};
+  },
+};
+mock.module("@/lib/tugbank-singleton", () => ({
+  getTugbankClient: () => fakeTugbank,
+  setTugbankClient: () => {},
 }));
 
 import { TideCardContent } from "@/components/tugways/cards/tide-card";
@@ -93,13 +116,38 @@ function renderTideCard(cardId: string) {
   };
 }
 
+// Capture fetch PUTs (recents persistence in step 4m). Swallow errors
+// so the tests never hit the real network. Reset per test.
+interface FetchCall {
+  url: string;
+  init?: RequestInit;
+}
+const fetchCalls: FetchCall[] = [];
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+  fetchCalls.push({ url: url as string, init });
+  return {
+    status: 200,
+    ok: true,
+    json: async () => ({}),
+  } as unknown as Response;
+}) as unknown as typeof fetch;
+
 afterEach(() => {
   cleanup();
   cardSessionBindingStore.clearBinding(CARD_ID);
   sentFrames.length = 0;
+  fetchCalls.length = 0;
+  for (const domain of Object.keys(tugbankStore)) {
+    delete tugbankStore[domain];
+  }
   document.querySelectorAll(".tugcard").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
 });
 
 describe("TideCardContent – binding gate and project picker", () => {
@@ -168,6 +216,62 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.card_id).toBe(CARD_ID);
     expect(payload.tug_session_id).toBe("sess-4b-1");
     expect(cardSessionBindingStore.getBinding(CARD_ID)).toBeUndefined();
+  });
+
+  it("T-TIDE-06: a recent-project quick-pick button sends spawn_session with that path in one click", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/u/src/tugtool", "/tmp"] } },
+    };
+
+    renderTideCard(CARD_ID);
+
+    const recentButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
+    ).find((b) => b.textContent?.trim() === "/u/src/tugtool");
+    expect(recentButton).not.toBeUndefined();
+
+    act(() => {
+      fireEvent.click(recentButton!);
+    });
+
+    expect(sentFrames.length).toBe(1);
+    const [frame] = sentFrames;
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = JSON.parse(new TextDecoder().decode(frame.payload)) as {
+      action: string;
+      project_dir: string;
+    };
+    expect(payload.action).toBe("spawn_session");
+    expect(payload.project_dir).toBe("/u/src/tugtool");
+  });
+
+  it("T-TIDE-07: bind success persists the project path to recent-projects", async () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/old/path"] } },
+    };
+
+    renderTideCard(CARD_ID);
+
+    act(() => {
+      cardSessionBindingStore.setBinding(
+        CARD_ID,
+        makeBinding({ projectDir: "/new/path" }),
+      );
+    });
+
+    // putTideRecentProjects is fire-and-forget — give the microtask
+    // queue a turn so the fetch stub records the call.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const recentsPut = fetchCalls.find(
+      (c) => c.url === "/api/defaults/dev.tugtool.tide/recent-projects",
+    );
+    expect(recentsPut).not.toBeUndefined();
+    expect(recentsPut!.init?.method).toBe("PUT");
+    const body = JSON.parse(recentsPut!.init!.body as string);
+    expect(body.kind).toBe("json");
+    // New path first, old path retained (dedup, cap did not kick in).
+    expect(body.value.paths).toEqual(["/new/path", "/old/path"]);
   });
 
   it("T-TIDE-04: Open button sends a spawn_session CONTROL frame", () => {

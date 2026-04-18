@@ -252,6 +252,54 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
   });
 }
 
+// ── Tide recent projects ────────────────────────────────────────────────────
+
+/** Maximum number of recent-project paths retained in the quick-pick list. */
+export const TIDE_RECENT_PROJECTS_MAX = 5;
+
+/**
+ * Read the tide-card recent-projects list from the TugbankClient cache.
+ *
+ * Domain: `dev.tugtool.tide`, key: `recent-projects`.
+ * Value shape: `{ paths: string[] }`. Returns `[]` if unset or malformed.
+ */
+export function readTideRecentProjects(client: TugbankClient): string[] {
+  const entry = client.get("dev.tugtool.tide", "recent-projects");
+  if (!entry || entry.kind !== "json" || entry.value === undefined) {
+    return [];
+  }
+  const raw = entry.value as { paths?: unknown } | null;
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.paths)) {
+    return [];
+  }
+  return raw.paths.filter((p): p is string => typeof p === "string" && p.length > 0);
+}
+
+/**
+ * PUT the tide-card recent-projects list to tugbank (fire-and-forget).
+ * Callers are responsible for dedup + capping; the helper writes the list
+ * verbatim.
+ */
+export function putTideRecentProjects(paths: string[]): void {
+  fetch("/api/defaults/dev.tugtool.tide/recent-projects", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: { paths } }),
+  }).catch((err) => {
+    console.warn("[settings] PUT recent-projects failed:", err);
+  });
+}
+
+/**
+ * Prepend `projectDir` onto `existing`, dedup case-sensitively, and cap at
+ * `TIDE_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
+ * list before handing it to `putTideRecentProjects`.
+ */
+export function insertTideRecentProject(existing: string[], projectDir: string): string[] {
+  const next = [projectDir, ...existing.filter((p) => p !== projectDir)];
+  return next.slice(0, TIDE_RECENT_PROJECTS_MAX);
+}
+
 /**
  * PUT prompt history for a session to tugbank (fire-and-forget).
  *

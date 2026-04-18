@@ -18,6 +18,10 @@ import {
   readTabStates,
   putPromptHistory,
   getPromptHistory,
+  readTideRecentProjects,
+  putTideRecentProjects,
+  insertTideRecentProject,
+  TIDE_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { TabStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
@@ -311,5 +315,92 @@ describe("getPromptHistory", () => {
 
     const result = await getPromptHistory("session-no-history");
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tide recent-projects (step 4m)
+// ---------------------------------------------------------------------------
+
+describe("insertTideRecentProject", () => {
+  test("prepends a new path to an empty list", () => {
+    expect(insertTideRecentProject([], "/tmp")).toEqual(["/tmp"]);
+  });
+
+  test("moves an existing path to the front (dedup)", () => {
+    expect(insertTideRecentProject(["/a", "/b", "/c"], "/b")).toEqual(["/b", "/a", "/c"]);
+  });
+
+  test("caps the list at TIDE_RECENT_PROJECTS_MAX", () => {
+    const over = ["/a", "/b", "/c", "/d", "/e"];
+    const next = insertTideRecentProject(over, "/f");
+    expect(next.length).toBe(TIDE_RECENT_PROJECTS_MAX);
+    expect(next[0]).toBe("/f");
+    // Oldest entry drops off.
+    expect(next).not.toContain("/e");
+  });
+});
+
+describe("readTideRecentProjects", () => {
+  test("returns [] when the key is unset", () => {
+    const client = makeMockClient({});
+    expect(readTideRecentProjects(client)).toEqual([]);
+  });
+
+  test("returns the paths array from a json-tagged value", () => {
+    const client = makeMockClient({
+      "dev.tugtool.tide": {
+        "recent-projects": {
+          kind: "json",
+          value: { paths: ["/a", "/b"] },
+        } as TaggedValue,
+      },
+    });
+    expect(readTideRecentProjects(client)).toEqual(["/a", "/b"]);
+  });
+
+  test("drops non-string entries defensively", () => {
+    const client = makeMockClient({
+      "dev.tugtool.tide": {
+        "recent-projects": {
+          kind: "json",
+          value: { paths: ["/a", 42, null, "", "/b"] },
+        } as TaggedValue,
+      },
+    });
+    expect(readTideRecentProjects(client)).toEqual(["/a", "/b"]);
+  });
+
+  test("returns [] when the value shape is wrong", () => {
+    const client = makeMockClient({
+      "dev.tugtool.tide": {
+        "recent-projects": { kind: "json", value: "not-an-object" } as TaggedValue,
+      },
+    });
+    expect(readTideRecentProjects(client)).toEqual([]);
+  });
+});
+
+describe("putTideRecentProjects", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("PUTs {paths} to /api/defaults/dev.tugtool.tide/recent-projects", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: url as string, init: init ?? {} });
+      return makeResponse(200, {});
+    }) as unknown as typeof fetch;
+
+    putTideRecentProjects(["/tmp", "/u/src/tugtool"]);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toBe("/api/defaults/dev.tugtool.tide/recent-projects");
+    expect(calls[0].init.method).toBe("PUT");
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body.kind).toBe("json");
+    expect(body.value.paths).toEqual(["/tmp", "/u/src/tugtool"]);
   });
 });

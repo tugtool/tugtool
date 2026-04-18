@@ -55,6 +55,12 @@ import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
+import { getTugbankClient } from "@/lib/tugbank-singleton";
+import {
+  insertTideRecentProject,
+  putTideRecentProjects,
+  readTideRecentProjects,
+} from "@/settings-api";
 import { wrapPositionZero } from "./completion-fixtures/system-metadata-fixture";
 
 import "./tide-card.css";
@@ -288,6 +294,20 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
       fileTreeStack,
     };
     setServices(next);
+
+    // Bind success → prepend this card's project path to the tide
+    // recent-projects list (dedup, cap). Persist via HTTP PUT; the
+    // TugbankClient cache refreshes via the DEFAULTS feed so the
+    // next picker mount reads the updated list (roadmap step 4m).
+    const tugbank = getTugbankClient();
+    if (tugbank) {
+      const current = readTideRecentProjects(tugbank);
+      const updated = insertTideRecentProject(current, binding.projectDir);
+      if (updated[0] !== current[0] || updated.length !== current.length) {
+        putTideRecentProjects(updated);
+      }
+    }
+
     return () => {
       // Close the supervisor-side session before disposing local
       // stores: server-side resource release first, subscription
@@ -457,6 +477,17 @@ interface TideProjectPickerFormProps {
 function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Recent projects are loaded once when the form mounts. The list is
+  // short-lived UI (the sheet disappears on submit/cancel), so a
+  // tugbank-cache read on mount is sufficient — no subscription
+  // needed. A stale list is OK: whoever bound most recently wrote it,
+  // and the worst case is that a path added between mount and first
+  // render is missing for this single picker session.
+  const [recents] = useState<string[]>(() => {
+    const client = getTugbankClient();
+    return client ? readTideRecentProjects(client) : [];
+  });
+
   const submit = useCallback(() => {
     const trimmed = inputRef.current?.value.trim() ?? "";
     if (!trimmed) return;
@@ -480,6 +511,23 @@ function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps)
           autoFocus
         />
       </label>
+      {recents.length > 0 && (
+        <div className="tide-card-picker-recents">
+          <span className="tide-card-picker-label">Recent</span>
+          <div className="tide-card-picker-recents-list">
+            {recents.map((path) => (
+              <TugPushButton
+                key={path}
+                emphasis="ghost"
+                role="action"
+                onClick={() => onOpen(path)}
+              >
+                {path}
+              </TugPushButton>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="tug-sheet-actions">
         <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
           Cancel
