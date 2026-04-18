@@ -413,6 +413,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("show-card", params: ["component": "git"])
     }
 
+    @objc private func showTideCard(_ sender: Any) {
+        sendControl("show-card", params: ["component": "tide"])
+    }
+
     @objc private func nextTheme(_ sender: Any) {
         sendControl("next-theme")
     }
@@ -708,9 +712,11 @@ extension AppDelegate: NSMenuDelegate {
         // Dev-mode items (moved from Developer menu)
         if devModeEnabled {
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Tide Card", action: #selector(showTideCard(_:)), keyEquivalent: "3", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         }
     }
 }
