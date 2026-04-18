@@ -158,7 +158,12 @@ pub struct SessionChild {
 /// storage before `await`-ing, since the returned `SpawnFuture` outlives
 /// the call frame.
 pub trait ChildSpawner: Send + Sync + 'static {
-    fn spawn_child(&self, project_dir: &Path) -> SpawnFuture;
+    /// `workspace_key` is the canonical identifier tugcast assigns to
+    /// the workspace (via `WorkspaceRegistry::get_or_create`). tugcode
+    /// keys its per-session tugbank entries by this value so sessions
+    /// opened against different projects don't collide on the same
+    /// `--resume <session-id>` (roadmap step 4i).
+    fn spawn_child(&self, project_dir: &Path, workspace_key: &str) -> SpawnFuture;
 }
 
 /// Production spawner: launches `tugcode --dir <project_dir>` (or the bun
@@ -184,11 +189,14 @@ impl TugcodeSpawner {
 /// - Paths ending in `.ts` are run via `bun run <path>` (dev fallback).
 /// - Anything else is invoked directly.
 ///
-/// In both cases the returned args vector ends with `["--dir", <project_dir>]`,
-/// which is what tugcode parses to locate the workspace.
+/// In both cases the returned args vector ends with
+/// `["--dir", <project_dir>, "--workspace-key", <workspace_key>]`, which is
+/// what tugcode parses to locate the workspace and key its per-workspace
+/// session-id persistence (roadmap step 4i).
 pub(crate) fn build_tugcode_command(
     tugcode_path: &Path,
     project_dir: &Path,
+    workspace_key: &str,
 ) -> (String, Vec<String>) {
     let (program, mut args): (String, Vec<String>) =
         if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
@@ -207,15 +215,18 @@ pub(crate) fn build_tugcode_command(
         };
     args.push("--dir".to_string());
     args.push(project_dir.display().to_string());
+    args.push("--workspace-key".to_string());
+    args.push(workspace_key.to_string());
     (program, args)
 }
 
 impl ChildSpawner for TugcodeSpawner {
-    fn spawn_child(&self, project_dir: &Path) -> SpawnFuture {
+    fn spawn_child(&self, project_dir: &Path, workspace_key: &str) -> SpawnFuture {
         let tugcode_path = self.tugcode_path.clone();
         let project_dir = project_dir.to_path_buf();
+        let workspace_key = workspace_key.to_string();
         Box::pin(async move {
-            let (cmd, args) = build_tugcode_command(&tugcode_path, &project_dir);
+            let (cmd, args) = build_tugcode_command(&tugcode_path, &project_dir, &workspace_key);
             info!(cmd, ?args, "Spawning tugcode");
             // Scrub Anthropic auth env vars so the downstream claude CLI
             // authenticates via `~/.claude.json` (the user's Max/Pro
@@ -328,6 +339,7 @@ pub async fn run_session_bridge(
     state_tx: broadcast::Sender<Frame>,
     spawner: Arc<dyn ChildSpawner>,
     project_dir: PathBuf,
+    workspace_key: Arc<str>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -362,7 +374,7 @@ pub async fn run_session_bridge(
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
         let spawn_result = tokio::select! {
-            result = spawner.spawn_child(project_dir.as_path()) => result,
+            result = spawner.spawn_child(project_dir.as_path(), workspace_key.as_ref()) => result,
             _ = cancel.cancelled() => return,
         };
         let child = match spawn_result {
@@ -626,10 +638,21 @@ mod tests {
 
     #[test]
     fn test_build_tugcode_command_binary_passes_project_dir() {
-        let (program, args) =
-            build_tugcode_command(Path::new("/opt/tugtool/tugcode"), Path::new("/work/alpha"));
+        let (program, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/alpha"),
+            "/canonical/alpha",
+        );
         assert_eq!(program, "/opt/tugtool/tugcode");
-        assert_eq!(args, vec!["--dir".to_string(), "/work/alpha".to_string()]);
+        assert_eq!(
+            args,
+            vec![
+                "--dir".to_string(),
+                "/work/alpha".to_string(),
+                "--workspace-key".to_string(),
+                "/canonical/alpha".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -637,6 +660,7 @@ mod tests {
         let (program, args) = build_tugcode_command(
             Path::new("/u/src/tugtool/tugcode/src/main.ts"),
             Path::new("/work/beta"),
+            "/canonical/beta",
         );
         assert_eq!(program, "bun");
         assert_eq!(
@@ -646,6 +670,8 @@ mod tests {
                 "/u/src/tugtool/tugcode/src/main.ts".to_string(),
                 "--dir".to_string(),
                 "/work/beta".to_string(),
+                "--workspace-key".to_string(),
+                "/canonical/beta".to_string(),
             ]
         );
     }
@@ -658,12 +684,37 @@ mod tests {
         // field-less on project_dir after W2 Step 4, this can only work if
         // the per-call argument actually flows through build_tugcode_command.
         let spawner = TugcodeSpawner::new(PathBuf::from("/opt/tugtool/tugcode"));
-        let (_p1, args1) = build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"));
-        let (_p2, args2) = build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"));
+        let (_p1, args1) = build_tugcode_command(
+            &spawner.tugcode_path,
+            Path::new("/work/a"),
+            "/canonical/a",
+        );
+        let (_p2, args2) = build_tugcode_command(
+            &spawner.tugcode_path,
+            Path::new("/work/b"),
+            "/canonical/b",
+        );
         assert!(args1.iter().any(|a| a == "/work/a"));
         assert!(!args1.iter().any(|a| a == "/work/b"));
         assert!(args2.iter().any(|a| a == "/work/b"));
         assert!(!args2.iter().any(|a| a == "/work/a"));
+        assert!(args1.iter().any(|a| a == "/canonical/a"));
+        assert!(args2.iter().any(|a| a == "/canonical/b"));
+    }
+
+    #[test]
+    fn test_build_tugcode_command_includes_workspace_key() {
+        // Explicit regression: --workspace-key is always emitted (roadmap 4i).
+        let (_, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/x"),
+            "/canonical/x",
+        );
+        let i = args.iter().position(|a| a == "--workspace-key").expect(
+            "--workspace-key flag must be present so tugcode can key per-workspace \
+             session-id persistence",
+        );
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("/canonical/x"));
     }
 
     #[test]

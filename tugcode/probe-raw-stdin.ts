@@ -12,17 +12,23 @@ import { TugbankClient } from "./src/tugbank-client.ts";
 const PROJECT_DIR = resolve(import.meta.dir, "..");
 const message = Bun.argv[2] || "/cost";
 
-// Read session ID from tugbank via direct bun:sqlite access.
+// Read session ID from tugbank via direct bun:sqlite access. Keyed by the
+// probe's project_dir per roadmap step 4i (previously a single global key
+// `dev.tugtool.app / session-id`).
 let sessionId: string | null = null;
 try {
   const client = new TugbankClient();
-  const value = client.get("dev.tugtool.app", "session-id");
+  const value = client.get("dev.tugtool.tide", "session-id-by-workspace");
   client.close();
-  sessionId = typeof value === "string" && value.length > 0 ? value : null;
+  if (typeof value === "string" && value.length > 0) {
+    const map = JSON.parse(value) as Record<string, string>;
+    const entry = map[PROJECT_DIR];
+    sessionId = typeof entry === "string" && entry.length > 0 ? entry : null;
+  }
   if (sessionId) {
     console.log(`Session ID: ${sessionId}`);
   } else {
-    console.log("No session ID in tugbank, using fresh session");
+    console.log("No session ID in tugbank for this workspace, using fresh session");
   }
 } catch {
   console.log("Failed to read session from tugbank, using fresh session");

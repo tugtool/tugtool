@@ -1408,7 +1408,12 @@ impl AgentSupervisor {
         let entry_arc_bridge = entry_arc.clone();
         // W2 Step 6: per-session workspace path. Read from the ledger
         // entry so each session's tugcode subprocess gets its own cwd.
-        let project_dir = entry_arc.lock().await.project_dir.clone();
+        // 4i: also thread the canonical `workspace_key` so tugcode can
+        // key per-workspace session-id persistence.
+        let (project_dir, workspace_key) = {
+            let entry = entry_arc.lock().await;
+            (entry.project_dir.clone(), entry.workspace_key.arc())
+        };
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1418,6 +1423,7 @@ impl AgentSupervisor {
                 state_tx,
                 spawner,
                 project_dir,
+                workspace_key,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -1610,7 +1616,11 @@ mod tests {
     /// its own spawner via [`make_supervisor_with_spawner`].
     struct StallSpawner;
     impl ChildSpawner for StallSpawner {
-        fn spawn_child(&self, _project_dir: &std::path::Path) -> SpawnFuture {
+        fn spawn_child(
+            &self,
+            _project_dir: &std::path::Path,
+            _workspace_key: &str,
+        ) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
     }
@@ -2828,6 +2838,7 @@ mod tests {
         let (_program, args) = build_tugcode_command(
             &config.tugcode_path,
             std::path::Path::new("/workspace-B-from-per-call"),
+            "/workspace-B-from-per-call",
         );
         assert!(
             args.iter().any(|a| a == "/workspace-B-from-per-call"),
@@ -2933,7 +2944,11 @@ mod tests {
     /// loop without spinning up a real subprocess.
     struct CrashingSpawner;
     impl ChildSpawner for CrashingSpawner {
-        fn spawn_child(&self, _project_dir: &std::path::Path) -> SpawnFuture {
+        fn spawn_child(
+            &self,
+            _project_dir: &std::path::Path,
+            _workspace_key: &str,
+        ) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
     }
@@ -3262,6 +3277,7 @@ mod tests {
             state_tx.clone(),
             Arc::new(CrashingSpawner) as Arc<dyn ChildSpawner>,
             PathBuf::from("/tmp/test-workspace-a"),
+            Arc::<str>::from("/tmp/test-workspace-a"),
             cancel_a,
             retry_delay,
         ));
@@ -3273,6 +3289,7 @@ mod tests {
             state_tx.clone(),
             Arc::new(StallSpawner) as Arc<dyn ChildSpawner>,
             PathBuf::from("/tmp/test-workspace-b"),
+            Arc::<str>::from("/tmp/test-workspace-b"),
             cancel_b.clone(),
             retry_delay,
         ));

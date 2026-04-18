@@ -666,9 +666,15 @@ export class SessionManager {
   private currentRev: number = 0;
   private sessionIdPersisted: boolean = false;
   private projectDir: string;
+  private workspaceKey: string;
 
-  constructor(projectDir: string) {
+  constructor(projectDir: string, workspaceKey?: string) {
     this.projectDir = projectDir;
+    // When tugcast spawns tugcode it passes the canonical `workspace_key`
+    // via `--workspace-key`. Standalone invocations (and most unit tests)
+    // don't canonicalize, so fall back to the raw project_dir — the
+    // persistence key just needs to be stable per workspace.
+    this.workspaceKey = workspaceKey ?? projectDir;
   }
 
   private nextSeq(): number {
@@ -1259,14 +1265,33 @@ export class SessionManager {
   }
 
   /**
-   * Persist session ID via direct bun:sqlite access.
-   * Writes to domain dev.tugtool.app, key session-id so the session ID
-   * is stored outside the project working tree and doesn't dirty the git index.
+   * Persist session ID keyed by `workspaceKey`. The tugbank entry at
+   * `dev.tugtool.tide / session-id-by-workspace` stores a JSON map
+   * `{ [workspaceKey: string]: string }`. Previous releases used a
+   * single global key `dev.tugtool.app / session-id`, which caused the
+   * second card opened against a different project to pass the first
+   * card's `--resume <id>` to Claude (see roadmap step 4i).
    */
   private persistSessionId(id: string): boolean {
     try {
-      getTugbankClient().set("dev.tugtool.app", "session-id", id);
-      console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
+      const tb = getTugbankClient();
+      const existing = tb.get("dev.tugtool.tide", "session-id-by-workspace");
+      let map: Record<string, string> = {};
+      if (typeof existing === "string" && existing.length > 0) {
+        try {
+          const parsed = JSON.parse(existing);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            map = parsed as Record<string, string>;
+          }
+        } catch {
+          // Corrupt value — start fresh rather than refuse to persist.
+        }
+      }
+      map[this.workspaceKey] = id;
+      tb.set("dev.tugtool.tide", "session-id-by-workspace", JSON.stringify(map));
+      console.log(
+        `Persisted session ID to tugbank (dev.tugtool.tide / session-id-by-workspace[${this.workspaceKey}])`,
+      );
       return true;
     } catch (err) {
       console.error(`Failed to persist session ID via tugbank: ${String(err)}`);
@@ -1275,16 +1300,24 @@ export class SessionManager {
   }
 
   /**
-   * Read session ID via direct bun:sqlite access.
-   * Reads from domain dev.tugtool.app, key session-id.
+   * Read session ID for the current `workspaceKey` from the JSON map at
+   * `dev.tugtool.tide / session-id-by-workspace`.
    */
   private readSessionId(): string | null {
     try {
-      const value = getTugbankClient().get("dev.tugtool.app", "session-id");
-      if (typeof value === "string" && value.length > 0) {
-        return value;
+      const value = getTugbankClient().get(
+        "dev.tugtool.tide",
+        "session-id-by-workspace",
+      );
+      if (typeof value !== "string" || value.length === 0) {
+        return null;
       }
-      return null;
+      const parsed = JSON.parse(value);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+      }
+      const entry = (parsed as Record<string, unknown>)[this.workspaceKey];
+      return typeof entry === "string" && entry.length > 0 ? entry : null;
     } catch {
       return null;
     }

@@ -32,15 +32,21 @@ console.error = (...args: unknown[]) => {
 
 // Parse CLI arguments
 let projectDir: string = process.cwd();
+let workspaceKey: string | undefined;
 const args = Bun.argv.slice(2); // Skip bun and script path
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dir" && i + 1 < args.length) {
     projectDir = args[i + 1];
     i++;
+  } else if (args[i] === "--workspace-key" && i + 1 < args.length) {
+    workspaceKey = args[i + 1];
+    i++;
   }
 }
 
-console.log(`Starting tugcode (projectDir: ${projectDir})`);
+console.log(
+  `Starting tugcode (projectDir: ${projectDir}, workspaceKey: ${workspaceKey ?? "<unset>"})`,
+);
 
 // Session manager (initialized after protocol handshake)
 let sessionManager: SessionManager | null = null;
@@ -75,7 +81,7 @@ async function main() {
       }
 
       // Create session manager and initialize claude process
-      sessionManager = new SessionManager(projectDir);
+      sessionManager = new SessionManager(projectDir, workspaceKey);
 
       // Send protocol_ack first (with placeholder session_id)
       writeLine({

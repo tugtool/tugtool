@@ -1431,6 +1431,38 @@ describe("SessionManager behavioral", () => {
     expect(readBack).toBe("round-trip-id");
   });
 
+  test("session ID persistence isolates workspaces (step 4i)", () => {
+    // Regression: pre-4i the persisted id was a single global key, so
+    // opening a second card on a different workspace inherited the
+    // first card's `--resume <session-id>`. Verify that each workspace
+    // key now owns its own entry in `session-id-by-workspace`.
+    const suffix = Date.now();
+    const managerA = new SessionManager(`/tmp/ws-a-${suffix}`, `ws-a-${suffix}`);
+    const managerB = new SessionManager(`/tmp/ws-b-${suffix}`, `ws-b-${suffix}`);
+
+    expect((managerA as any).persistSessionId("id-for-a")).toBe(true);
+    expect((managerB as any).persistSessionId("id-for-b")).toBe(true);
+
+    expect((managerA as any).readSessionId()).toBe("id-for-a");
+    expect((managerB as any).readSessionId()).toBe("id-for-b");
+
+    // Reading from a workspace that has never persisted anything returns null.
+    const managerC = new SessionManager(`/tmp/ws-c-${suffix}`, `ws-c-${suffix}`);
+    expect((managerC as any).readSessionId()).toBeNull();
+  });
+
+  test("session ID persistence falls back to projectDir when workspaceKey omitted", () => {
+    // Constructor compatibility: callers that don't pass a workspace key
+    // (standalone tugcode invocations, most unit tests) use projectDir
+    // as the persistence key.
+    const tmpDir = `/tmp/tugcode-no-ws-${Date.now()}`;
+    const manager = new SessionManager(tmpDir);
+    expect((manager as any).persistSessionId("id-x")).toBe(true);
+    // A fresh manager pointed at the same projectDir reads the same id.
+    const again = new SessionManager(tmpDir);
+    expect((again as any).readSessionId()).toBe("id-x");
+  });
+
   test("handlePermissionMode updates permissionManager state", () => {
     const manager = new SessionManager("/tmp/tugcode-perm-mode-" + Date.now());
     manager.handlePermissionMode({ type: "permission_mode", mode: "bypassPermissions" });
