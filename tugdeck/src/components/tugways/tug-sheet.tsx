@@ -761,11 +761,13 @@ export function useTugSheet(): {
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
   renderSheet: () => React.ReactNode;
 } {
-  const cardEl = useContext(TugcardPortalContext);
-
-  if (process.env.NODE_ENV !== "production" && !cardEl) {
-    console.warn("[useTugSheet] called outside a Tugcard — TugcardPortalContext is null. Sheet will not render.");
-  }
+  // TugcardPortalContext is consumed downstream by TugSheetContent,
+  // which returns null when the portal target isn't attached yet. A
+  // dev-time "you're outside a Tugcard" warning here fires on every
+  // first render of a card body (Tugcard populates `cardEl` via a
+  // `useState` ref callback that commits one render after mount), so
+  // we rely on the defensive null handling in TugSheetContent and
+  // skip the warning.
 
   // State tracks the current active sheet's options plus a monotonically
   // increasing callId. The callId is used as the React `key` on the
