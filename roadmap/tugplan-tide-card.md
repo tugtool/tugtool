@@ -47,10 +47,10 @@ This plan also lands [T3.0.W3.b](./tide.md#t3-workspace-registry-w3b) — deleti
 - **Substitution table is the contract.** The work is not "rewrite around real services"; it is to swap a finite, enumerated list of seams. Anything not on the substitution table carries over verbatim from the gallery copy.
 - **Project picker is genuinely new.** No existing tugdeck card has a project-path-picker affordance. The minimum viable picker is a single text input + button ("Open project") that takes a path string, validates it exists locally, and calls `spawn_session(cardId, tugSessionId, projectDir)`. File-picker UX (native dialog or drag-drop) is a polish item for T3.4.d.
 - **Spawn lifecycle owns the card mount.** On mount, the card encodes `spawn_session(cardId, tugSessionId, projectDir)`, awaits `spawn_session_ok`, calls `cardSessionBindingStore.setBinding(...)`, then constructs the `CodeSessionStore`. On unmount, it calls `sendCloseSession(...)`. The store does NOT send `close_session` itself per [tide.md line 2391](./tide.md#code-session-store). All of this plumbing — `encodeSpawnSession`, `cardSessionBindingStore`, `sendCloseSession` — already exists from W2 Step 7.
-- **Single-session mode pre-P2.** Until [Phase T0.5 P2](./tide.md#t0-5) lands, opening a second Tide card either (a) shares the default session with a visible "single-session mode" indicator, or (b) is blocked outright with a message. (a) is preferred for usability; (b) is acceptable if it's simpler to land. This decision belongs in the picker step (Step 4) — call it explicitly, don't drift.
+- **Every card gets its own fresh session.** Opening a second (or third) Tide card does not share or resume a prior session — each card's tugcode spawns claude fresh on mount, so concurrent cards can't collide on `--resume`. The pre-P2 "single-session shim" originally planned as [4l](#step-4l) was dropped in favor of this simpler default ([4k](#step-4k)); see 4l's tombstone for the decision trail. The resume-as-a-user-choice UX is scoped as [Step 4.5](#step-4-5), not as a pre-emptive picker disable.
 - **lastError affordance lands here.** Per tide.md line 2513, the `errored` UI affordance was deferred from T3.4.a to T3.4.c. Surface `lastError` in the card body — either as a banner above the entry, an inline message, or a status-row badge. Decide in Step 6.
 - **W3.b (bootstrap removal) rides in the same commit.** Per [tide.md §T3.0.W3.b](./tide.md#t3-workspace-registry-w3b), removing `--source-tree`, the `registry.get_or_create(&watch_dir, cancel.clone())` bootstrap call, the `server.rs::source_tree` parameter threading, and the `bootstrap.fs_watch_rx` plumbing happens *with* the card landing, not before or after. Tests that assumed the bootstrap workspace are rewritten to call `spawn_session` explicitly, or deleted if the card-mount tests cover the same surface.
-- **Manual A/B smoke from W2 Step 8 becomes the closing acceptance test.** [tide.md execution order line 697](./tide.md#execution-order-w2-to-tide) defers the W2 manual smoke to T3.4.c specifically because the card was the missing UI affordance. Closing the plan means: open a Tide card pointed at project A, open a second pointed at project B (single-session-mode permitting), verify distinct `workspace_key` filters end-to-end.
+- **Manual A/B smoke from W2 Step 8 becomes the closing acceptance test.** [tide.md execution order line 697](./tide.md#execution-order-w2-to-tide) defers the W2 manual smoke to T3.4.c specifically because the card was the missing UI affordance. Closing the plan means: open a Tide card pointed at project A, open a second pointed at project B (no shim gates this, per [4k](#step-4k)/[4l](#step-4l)), verify distinct `workspace_key` filters end-to-end.
 - **Warnings are errors. Tests stay green at every commit.** `bun run check`, `bun run test`, `cargo nextest`, and `bun run audit:tokens lint` all pass on every commit. No `any`, no `@ts-expect-error`, no descendant-selector reach-ins, no IndexedDB. The `gallery-prompt-entry-sandbox` card stays — it remains useful as a synthetic-frame harness even after the Tide card ships.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -82,11 +82,11 @@ This plan also lands [T3.0.W3.b](./tide.md#t3-workspace-registry-w3b) — deleti
 - Pre-existing integration tests that assumed the bootstrap workspace are rewritten to call `spawn_session` explicitly, or deleted. (verification: cargo nextest green)
 - Daily dev workflow (running tugdeck without flags) still works: opening a Tide card and choosing a project replaces the bootstrap as the source of workspace frames. (verification: manual smoke)
 
-**Single-session degradation pre-P2:**
-- Opening a second Tide card while a first is bound either (a) shares the default session with a visible single-session indicator OR (b) is blocked with a message. Decide and document. (verification: manual + test)
+**Concurrent Tide cards:**
+- Opening a second (or third) Tide card while a first is bound spawns its own fresh claude session. Each card has its own tugcode subprocess, its own session id, and writes to its own session JSONL. No shim, no picker disable, no "single-session" banner — the pre-P2 shim originally scoped as [4l](#step-4l) was dropped once [4k](#step-4k) made it moot. (verification: manual + test)
 
 **Manual A/B smoke (closes W2 Step 8):**
-- Open a Tide card pointed at project A; open a second card pointed at project B (assuming P2 has shipped or the single-session shim is bypassed for testing). Verify each card's FILETREE / FILESYSTEM / GIT feeds carry only its own workspace's frames. (verification: manual; record a session-trace before commit)
+- Open a Tide card pointed at project A; open a second card pointed at project B. Verify each card's FILETREE / FILESYSTEM / GIT feeds carry only its own workspace's frames. (verification: manual; record a session-trace before commit)
 
 **Repo hygiene:**
 - `bun run check` exits 0. `bun run test` exits 0 with all tests passing. `bun run audit:tokens lint` exits 0. `cargo nextest run` exits 0 across the workspace. (verification: each step's exit checkpoint)
@@ -109,14 +109,14 @@ This plan also lands [T3.0.W3.b](./tide.md#t3-workspace-registry-w3b) — deleti
 - `spawn_session` / `close_session` lifecycle wiring at card mount/unmount, including `cardSessionBindingStore.setBinding` / `clearBinding`.
 - `TugMarkdownView` binding to `services.codeSessionStore.streamingStore` / `streamingPath` for the top pane.
 - `lastError` UI affordance.
-- Single-session mode shim pre-P2.
+- ~~Single-session mode shim pre-P2~~ — dropped in favor of fresh-per-card spawn ([4k](#step-4k)); decision trail in [4l](#step-4l).
 - Bootstrap removal (W3.b) — `--source-tree` deletion, registry bootstrap call deletion, server.rs threading deletion, related test cleanup.
 - Manual A/B smoke as the closing acceptance test.
 
 **Out of scope (deferred):**
 - Native file-picker dialog or "Browse…" affordance for project paths — text input only per [D1](#resolved-decisions); native picker is T3.4.d polish.
 - In-card re-bind to a different `project_dir` — opening a new card is the gesture per [D4](#resolved-decisions).
-- Multi-session via P2 — single-session shim is sufficient for T3.4.c exit.
+- Multi-session via P2 — T3.4.c ships with fresh-per-card spawn ([4k](#step-4k)), which sidesteps the pre-P2 single-session constraint the original shim ([4l](#step-4l), dropped) was guarding against.
 - Claude `--resume` (P14) — UX informed by T3.4.c, lands separately.
 - stream-json version gate (P15) — gates on T3.4.c reducer hardening, lands separately.
 - `BuildStatusCollector` per-workspace ([tide.md line 2102](./tide.md#prefix-router-prompt-input)).
@@ -193,7 +193,7 @@ Sub-step ordering reflects dependencies:
 | [4i](#step-4i) | **Per-workspace session id in tugcode** (replace the global `dev.tugtool.app / session-id` key) |
 | [4j](#step-4j) | **Process lifecycle: kill claude + exit on tugcode stdin-EOF**; reap descendants on Tug.app quit |
 | [4k](#step-4k) | **Default every card to a fresh session** (stop silently auto-resuming per workspace) |
-| [4l](#step-4l) | Single-session shim pre-P2 |
+| [4l](#step-4l) | ~~Single-session shim pre-P2~~ — **dropped**, superseded by [4k](#step-4k) |
 | [4m](#step-4m) | Recent projects + opportunistic cleanup |
 | [4n](#step-4n) | **Mock/fixture scrub** — hard exit criterion: zero `Mock*` / fixture references in production code |
 
@@ -241,7 +241,7 @@ Sub-step ordering reflects dependencies:
 - Add an inline `TideProjectPicker({ cardId })` component in `tide-card.tsx`: single text input (label "Project path"), single "Open project" push button, inside the `tide-card` root flex column so it fills the card body per [D3](#resolved-decisions). Text input + button only — no native dialog, no Browse… per [D1](#resolved-decisions).
 - Submit handler: `const tugSessionId = crypto.randomUUID(); getConnection()?.sendFrame(encodeSpawnSession(cardId, tugSessionId, projectDir))`. The existing `spawn_session_ok` handler (`action-dispatch.ts:358–386`) calls `cardSessionBindingStore.setBinding(cardId, …)` on the ack; [4b](#step-4b)'s subscription causes `useTideCardServices` to construct services, which makes the picker disappear and the split pane appear.
 - Replace the 4b placeholder div with `<TideProjectPicker cardId={cardId} />` when `services === null`.
-- No close-on-unmount yet ([4d](#step-4d)). No recent projects ([4m](#step-4m)). No single-session shim ([4l](#step-4l)).
+- No close-on-unmount yet ([4d](#step-4d)). No recent projects ([4m](#step-4m)). No single-session shim — never will be; [4l](#step-4l) was dropped once [4k](#step-4k) made the shim moot.
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
@@ -327,7 +327,7 @@ Sub-step ordering reflects dependencies:
 
 ##### Sub-step 4i — Per-workspace session id in tugcode {#step-4i}
 
-**Purpose:** `tugcode/src/session.ts::persistSessionId` / `readSessionId` use a single global tugbank key `dev.tugtool.app / session-id`. Every tugcode instance — across every Tide card, sequentially or in parallel — reads/writes the same key. Scenario that breaks: open card A on `/u/src/tugtool` (Claude issues session id `X`, tugcode persists `X`), close card A, open card B on `/tmp`. tugcode for B reads `X`, passes `--resume X` to Claude. Claude either errors (session `X` wasn't for `/tmp`) or worse, resumes A's context while B's project_dir is active — transcript pollution. This is a *correctness* bug that strikes the second time any user opens a card against a different project, regardless of the single-session shim in [4l](#step-4l).
+**Purpose:** `tugcode/src/session.ts::persistSessionId` / `readSessionId` use a single global tugbank key `dev.tugtool.app / session-id`. Every tugcode instance — across every Tide card, sequentially or in parallel — reads/writes the same key. Scenario that breaks: open card A on `/u/src/tugtool` (Claude issues session id `X`, tugcode persists `X`), close card A, open card B on `/tmp`. tugcode for B reads `X`, passes `--resume X` to Claude. Claude either errors (session `X` wasn't for `/tmp`) or worse, resumes A's context while B's project_dir is active — transcript pollution. This is a *correctness* bug that strikes the second time any user opens a card against a different project, independent of anything a single-session shim could have addressed (the shim originally scoped as [4l](#step-4l) has since been dropped in favor of [4k](#step-4k)'s fresh-by-default spawn).
 
 **Files:**
 - `tugcode/src/session.ts` (`persistSessionId`, `readSessionId`, and their callers inside `initialize`, `handleNewSession`, `handleSessionContinue`, and the `routeTopLevelEvent` session-id-persist path).
@@ -384,10 +384,10 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
 
 **Purpose:** Even with [4i](#step-4i)'s per-workspace session-id map in place, tugcode still auto-resumes *silently* whenever a map entry exists for the card's workspace. That creates two bad outcomes the user never asked for:
 
-1. **Concurrent same-workspace cards collide on `--resume`.** If card A is live on `/u/src/tugtool` and card B opens the same workspace, card B's tugcode reads the map, finds card A's session id, and spawns claude with `--resume <A's-id>`. Two claude processes then race on the on-disk session JSONL — transcript corruption or outright rejection. [4l](#step-4l)'s single-session shim works around this by disabling the picker, not by fixing the root cause.
+1. **Concurrent same-workspace cards collide on `--resume`.** If card A is live on `/u/src/tugtool` and card B opens the same workspace, card B's tugcode reads the map, finds card A's session id, and spawns claude with `--resume <A's-id>`. Two claude processes then race on the on-disk session JSONL — transcript corruption or outright rejection. The single-session shim originally scoped as [4l](#step-4l) would have worked around this by disabling the picker on any second card; this sub-step fixes the root cause instead, and [4l](#step-4l) was then dropped.
 2. **Close-then-reopen silently resumes.** Close the last card on a workspace, open a fresh one, and the new card inherits the old conversation with no user affordance to opt out or even notice. The map grows unbounded, stale entries never expire, and the only escape hatch is the `new` session slash command after the fact.
 
-Defaulting to a fresh session on every card spawn turns both cases into the expected outcome. The full resume UX (picker radio, stale-id fallback, "Forget session" action) is scoped as [Step 4.5](#step-4-5) — this sub-step is just the safe default that unblocks [4l](#step-4l)'s scope reduction.
+Defaulting to a fresh session on every card spawn turns both cases into the expected outcome. The full resume UX (picker radio, stale-id fallback, "Forget session" action) is scoped as [Step 4.5](#step-4-5) — this sub-step is just the safe default. As a downstream consequence, the single-session shim originally scoped as [4l](#step-4l) was dropped: with every card starting fresh, there is no session collision for the shim to guard against.
 
 **Files:**
 - `tugcode/src/session.ts` (`initialize()` only).
@@ -397,7 +397,7 @@ Defaulting to a fresh session on every card spawn turns both cases into the expe
 - In `SessionManager.initialize()`, stop reading the persisted id. Pass `null` to `spawnClaude()` unconditionally. Keep the `writeLine({ type: "session_init", session_id: "pending", … })` pattern that fresh-spawn already uses.
 - Keep the `persistSessionId` write path on `system:init` so the workspace map still accumulates — [Step 4.5](#step-4-5) will read it back when the resume UX lands.
 - Update or add a unit test asserting that `initialize()` spawns claude without `--resume`, even when the tugbank map already contains an entry for the current workspace key.
-- Revisit [4l](#step-4l)'s scope after this lands: with every card starting fresh, two cards on the same workspace no longer collide on `--resume`, so the shim may be deletable or reducible to "prevent duplicate workspace bindings" rather than "prevent session collision." Record the decision inside 4l when you get there.
+- [4l](#step-4l) is dropped once this lands — see that sub-step's tombstone for the rationale. No further work against the shim; the picker stays enabled regardless of how many other cards are bound.
 
 **Verification:**
 - `bun test` green on tugcode.
@@ -405,21 +405,23 @@ Defaulting to a fresh session on every card spawn turns both cases into the expe
 - Manual: with a persisted map entry for `/u/src/tugtool` from the 4i smoke, open a new Tide card on that workspace; `tugcast.log` shows the claude-args line without `--resume`; the turn's `system_metadata` frame carries a *new* session id.
 - Manual: open two Tide cards on `/u/src/tugtool` concurrently; each spawns its own fresh claude; no transcript cross-talk.
 
-##### Sub-step 4l — Single-session shim {#step-4l}
+##### Sub-step 4l — Single-session shim (dropped) {#step-4l}
 
-**Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
-- `tugdeck/src/components/tugways/cards/tide-card.css`.
+**Status:** Dropped. No code change required. Retained in the plan as a decision-trail entry; renumbering the later sub-steps to close the gap would erase the history of why this shim was considered and then discarded.
 
-**Work:**
-- In `TideCardContent`, before rendering `<TideProjectPicker>`, derive `otherBindingExists = Array.from(cardSessionBindingStore.getSnapshot().keys()).some(id => id !== cardId)` from `useSyncExternalStore`.
-- If `otherBindingExists`: render the picker with the input `disabled` and the button `disabled`, plus a banner: "Single-session mode — close the other Tide card first." Per [R3](#risks), option (b).
-- When the other card unbinds (closes or its binding clears), the snapshot changes; the shim lifts; picker re-enables. No explicit reset needed.
+**Original intent:** Render `<TideProjectPicker>` disabled (input + button greyed, banner "Single-session mode — close the other Tide card first") whenever any other Tide card already held a binding in `cardSessionBindingStore`. The shim was written on the pre-[4i](#step-4i) assumption that two concurrent Tide cards would collide — either on a shared `--resume <id>` from the global tugbank key or on a presumed pre-P2 backend limit of one session at a time.
 
-**Verification:**
-- `bun x tsc --noEmit` + `bun test` green.
-- New test: `setBinding("a", ...)` → mount card `"b"` → assert disabled picker with message; `clearBinding("a")` → assert picker enables.
-- Manual: open two Tide cards; second one shows the shim; close the first; second card's picker enables.
+**Why dropped:**
+- [4i](#step-4i) replaced the global `dev.tugtool.app / session-id` key with a per-workspace map, so two cards on *different* workspaces no longer share a resume id.
+- [4k](#step-4k) defaults every card spawn to a fresh session (no auto-resume), so two cards on the *same* workspace no longer share a session id either. Each card gets its own tugcode subprocess, its own claude subprocess, its own JSONL. No collision to shim around.
+- The [4i](#step-4i) live smoke (see the cross-workspace A/B at 2026-04-18) demonstrated the backend handling two concurrent sessions with no cross-talk. The "pre-P2 single-session backend" premise the shim was guarding against does not appear to reflect the current system; P2 may be about multi-client, not multi-session.
+- The shim's scope ("block the existence of any second Tide card") was broader than any bug it actually prevented post-[4k](#step-4k). It would have blocked scenarios the user legitimately wants — e.g., two cards on the same project for parallel conversations, or two cards on different projects. That's a policy the user should decide, not the card.
+
+**What the future UX should still address** (folded into [Step 4.5](#step-4-5), not a revived 4l):
+- If two cards on the *same* workspace both opt into "resume last session," only one can win — the other must either be rejected, downgraded to a fresh session with a notice, or warn the user at pick time. That choice is a design question for the resume UX, not a pre-emptive shim.
+- If concurrent-same-workspace turns out to have subtle file-write or feed-subscription hazards in practice, the mitigation lives at the layer that observes the hazard (editor conflict UI, claude-side locking, etc.), not in a blanket picker disable.
+
+**Action:** None. Proceed from [4k](#step-4k) directly to [4m](#step-4m).
 
 ##### Sub-step 4m — Recent projects + opportunistic cleanup {#step-4m}
 
@@ -575,7 +577,7 @@ After all fourteen sub-steps land:
 #### Step 8 — Manual A/B smoke + closing checkpoints {#step-8}
 
 **Work:**
-- This is the deferred Step 8 from W2: open a Tide card pointed at project A, open a second pointed at project B (single-session-mode shim permitting), send a prompt in each, verify each card's FILETREE / FILESYSTEM / GIT feeds carry only that workspace's frames.
+- This is the deferred Step 8 from W2: open a Tide card pointed at project A, open a second pointed at project B, send a prompt in each, verify each card's FILETREE / FILESYSTEM / GIT feeds carry only that workspace's frames. (Nothing gates the second card — the pre-P2 shim originally scoped as [4l](#step-4l) was dropped.)
 - Capture a session trace (`tugcast` log + tugdeck console) showing distinct `workspace_key` filtering.
 - Close out [tugplan-workspace-registry-w2.md `#exit-criteria`](./archive/tugplan-workspace-registry-w2.md#exit-criteria) — the "deferred to T3.4.c" criterion is now satisfied.
 - Close out the [T3.4.c exit criteria](#success-criteria) above by spot-checking each gallery-card feature in the Tide card.
@@ -593,7 +595,7 @@ After all fourteen sub-steps land:
 
 **R2 — Bootstrap removal regression window.** If Step 7 lands but a developer opens tugdeck without ever opening a Tide card, the existing git/filetree cards display empty `Loading...` placeholders. Document this in the README change in Step 7 — "open a Tide card to populate workspace feeds" replaces "tugcast --source-tree=..." in setup docs. Acceptable because Tug.app shipping users always run via the Tide card path; the regression only touches dev tooling.
 
-**R3 — Single-session shim ambiguity.** Pre-P2, the second Tide card has no clean home. (a) "share the default session" is confusing if the user opens the second card hoping for a fresh session. (b) "block the second card" is restrictive but unambiguous. Pick (b) for T3.4.c — the indicator/UX for shared sessions can land with P2 itself, where it's actually meaningful. Re-evaluate after first manual smoke if (b) feels too restrictive.
+**R3 — ~~Single-session shim ambiguity~~ (resolved).** Originally this risk debated whether a second Tide card should (a) share the default session with a visible indicator or (b) be blocked outright. Resolved during [4k](#step-4k): each card gets its own fresh claude session, so neither branch applies — the second card is neither shared nor blocked, it simply stands on its own. The shim originally scoped as [4l](#step-4l) was dropped; see that sub-step's tombstone. The resume-vs-new UX question (how the user opts *into* resuming a prior session) is carried forward to [Step 4.5](#step-4-5).
 
 **R4 — `lastError` affordance design churn.** Banner vs badge vs inline message — easy to bikeshed. Pick the simplest (banner above entry, dismissable) and ship it; revisit in T3.4.d if the choice doesn't survive contact with real Claude error rates.
 
