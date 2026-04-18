@@ -729,4 +729,76 @@ mod tests {
         assert_eq!(parse_claude_session_id(line), None);
         assert_eq!(parse_claude_session_id(b"not json"), None);
     }
+
+    #[tokio::test]
+    async fn test_session_child_drop_kills_subprocess() {
+        // Roadmap step 4j regression: verify `kill_on_drop(true)` on the
+        // tokio `Child` wrapped inside `SessionChild` actually fires when
+        // the `SessionChild` is dropped. This is the mechanism the
+        // supervisor relies on to reap tugcode subprocesses when a session
+        // closes or its bridge task exits. Using `/bin/sleep` (POSIX,
+        // always present) avoids needing a built tugcode binary.
+        use tokio::process::Command;
+
+        let mut child = Command::new("/bin/sleep")
+            .arg("300")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn /bin/sleep");
+        let pid = child.id().expect("sleep should have a PID") as i32;
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let session_child = SessionChild {
+            stdin: Box::new(stdin),
+            stdout: Box::new(stdout),
+            _keepalive: Box::new(child),
+        };
+
+        // Confirm the process is alive before the drop.
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "sleep subprocess should be alive before drop"
+        );
+
+        drop(session_child);
+
+        // Subprocess teardown is asynchronous in the kernel: `kill_on_drop`
+        // queues SIGKILL on drop, the kernel schedules the death, tokio's
+        // driver reaps the zombie via SIGCHLD. We have no handle to block
+        // on (the `Child` was consumed by the drop above), so a poll is
+        // unavoidable here. Deterministic alternatives — `pidfd_open`,
+        // `signal-hook`-backed SIGCHLD channel — are heavier than a single
+        // kill_on_drop regression warrants.
+        //
+        // Constants chosen to make the test cheap on the happy path and
+        // slow-to-false-fail on the pathological one:
+        //   * `MAX_WAIT`: long enough that a real bug is the only way we
+        //     time out, even on a contended CI host.
+        //   * `POLL_INTERVAL`: short enough that the happy path returns
+        //     in essentially one scheduler tick.
+        const MAX_WAIT: Duration = Duration::from_secs(10);
+        const POLL_INTERVAL: Duration = Duration::from_millis(5);
+        let deadline = Instant::now() + MAX_WAIT;
+        let mut reaped = false;
+        while Instant::now() < deadline {
+            // `kill(pid, 0)` returns ESRCH once the kernel has reaped
+            // the process. Until then — including the zombie window —
+            // it returns 0.
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                reaped = true;
+                break;
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+
+        assert!(
+            reaped,
+            "SessionChild drop must terminate the underlying subprocess within {MAX_WAIT:?} \
+             (kill_on_drop(true) is load-bearing for tugcode cleanup)"
+        );
+    }
 }

@@ -51,21 +51,34 @@ console.log(
 // Session manager (initialized after protocol handshake)
 let sessionManager: SessionManager | null = null;
 
-// Graceful SIGTERM handler: close stdin and kill claude process.
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, shutting down");
+// Graceful signal handlers: close stdin and kill claude process. SIGTERM
+// and SIGHUP are both routed through the same path. SIGHUP covers the
+// Unix "controlling process died" signal that arrives when tugcast (our
+// parent) exits ungracefully — without handling it, tugcode would keep
+// running as an orphan reparented to PID 1, pinning the claude pipe open.
+function shutdownOnSignal(signal: string): void {
+  console.log(`${signal} received, shutting down`);
   if (sessionManager) {
-    sessionManager.shutdown().catch((err) => {
-      console.error("Shutdown error:", err);
-    }).finally(() => {
-      process.exit(0);
-    });
+    sessionManager
+      .shutdown()
+      .catch((err) => {
+        console.error("Shutdown error:", err);
+      })
+      .finally(() => {
+        process.exit(0);
+      });
   } else {
     process.exit(0);
   }
-});
+}
 
-// IPC loop
+process.on("SIGTERM", () => shutdownOnSignal("SIGTERM"));
+process.on("SIGHUP", () => shutdownOnSignal("SIGHUP"));
+
+// IPC loop. When stdin closes (parent hangup / pipe EOF), the for-await
+// loop exits naturally. We then run the same shutdown path as SIGTERM so
+// the live claude subprocess doesn't keep Bun's event loop alive and
+// leave tugcode running as an orphan (see roadmap step 4j).
 async function main() {
   for await (const msg of readLine()) {
     if (isProtocolInit(msg)) {
@@ -146,7 +159,24 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal error in main loop:", err);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    // stdin closed. Kill the claude subprocess (which would otherwise
+    // hold the event loop open on its stdout pipe) and exit.
+    console.log("stdin closed, shutting down");
+    try {
+      await sessionManager?.shutdown();
+    } catch (err) {
+      console.error("Shutdown error:", err);
+    }
+    process.exit(0);
+  })
+  .catch(async (err) => {
+    console.error("Fatal error in main loop:", err);
+    try {
+      await sessionManager?.shutdown();
+    } catch {
+      // best-effort
+    }
+    process.exit(1);
+  });

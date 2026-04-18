@@ -532,6 +532,8 @@ async fn main() {
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to register SIGTERM handler");
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+        .expect("failed to register SIGINT handler");
 
     // Watch for parent death (e.g. kill -9 on Tug.app). When our parent PID
     // changes to 1 (launchd/init), the parent is gone and we should exit.
@@ -567,6 +569,10 @@ async fn main() {
             info!("SIGTERM received, shutting down");
             0
         }
+        _ = sigint.recv() => {
+            info!("SIGINT received, shutting down");
+            0
+        }
         _ = parent_watch => {
             0
         }
@@ -591,9 +597,12 @@ async fn main() {
     cancel.cancel();
 
     // Kill our entire process group (tugcast + tugcode + children).
-    // std::process::exit doesn't run destructors, so kill_on_drop and
-    // async cancellation can't be relied upon. Sending SIGTERM to our
-    // own process group is the only reliable way to clean up children.
+    // `std::process::exit` doesn't run destructors, so `kill_on_drop`
+    // and async cancellation can't be relied upon — sending SIGTERM
+    // to our own pgid is the only mechanism that guarantees tugcode
+    // children are signalled regardless of how we got here (roadmap
+    // step 4j). tugcode's SIGTERM handler then shuts claude down and
+    // exits cleanly.
     info!("Killing process group before exit");
     unsafe {
         libc::kill(0, libc::SIGTERM);
