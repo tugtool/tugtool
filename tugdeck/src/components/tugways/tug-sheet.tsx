@@ -259,6 +259,20 @@ export interface TugSheetContentProps {
    */
   onOpenAutoFocus?: (event: Event) => void;
   /**
+   * Called exactly once, after the exit animation completes and the
+   * sheet's portaled DOM has been removed from the card. Use this
+   * hook to sequence follow-up work with the visual exit — for
+   * example, dismissing the host card or releasing focus to a
+   * follow-up responder only after the sheet has disappeared.
+   *
+   * Fires strictly after any close signal available at dispatch time
+   * (the `useTugSheet()` hook's Promise resolution, a Cancel button's
+   * onClick, etc.). Does not fire if the sheet is torn down before
+   * the exit animation completes (parent unmount, React key change
+   * forcing remount).
+   */
+  onClosed?: () => void;
+  /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-sheet
    * pages when observing dispatches by sender. [L11]
@@ -279,6 +293,7 @@ export function TugSheetContent({
   title,
   description,
   onOpenAutoFocus,
+  onClosed,
   senderId: senderIdProp,
   children,
 }: TugSheetContentProps) {
@@ -336,12 +351,34 @@ export function TugSheetContent({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
 
+  // Stable access to the consumer's `onClosed` callback from inside
+  // layout effects. Consumers may pass a fresh function identity each
+  // render; the ref decouples the transition firing from their
+  // memoization discipline. [L07]
+  const onClosedRef = useRef(onClosed);
+  useLayoutEffect(() => {
+    onClosedRef.current = onClosed;
+  });
+
   useLayoutEffect(() => {
     if (open) {
       setMounted(true);
     }
     // When open goes false, mounted stays true — exit animation will set it false.
   }, [open]);
+
+  // Fire the `onClosed` callback when `mounted` transitions from true
+  // to false — i.e., after the exit animation's `g.finished` handler
+  // has called `setMounted(false)` and React has committed the render
+  // where the portal returns null. By this point the sheet's DOM is
+  // gone from the card.
+  const prevMountedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (prevMountedRef.current && !mounted) {
+      onClosedRef.current?.();
+    }
+    prevMountedRef.current = mounted;
+  }, [mounted]);
 
   // Enter animation: runs after mount when open && mounted (DOM is present).
   useLayoutEffect(() => {
@@ -574,6 +611,22 @@ export interface ShowSheetOptions {
   content: (close: (result?: string) => void) => React.ReactNode;
   /** Override initial focus target. */
   onOpenAutoFocus?: (event: Event) => void;
+  /**
+   * Called after the sheet's exit animation completes and the portaled
+   * DOM has been removed. Receives the result passed to `close(result)`
+   * (or undefined for Escape / Cmd+. dismissals).
+   *
+   * Fires strictly after the `showSheet()` Promise resolves: the
+   * Promise resolves at close-dispatch time so callers can react
+   * immediately; this callback fires once the visual exit finishes so
+   * callers can sequence follow-up transitions without running them
+   * during the animation.
+   *
+   * Does not fire if the sheet is replaced by a rapid `showSheet()`
+   * call that remounts via a new React key (see the state-machine
+   * diagram on this hook's JSDoc).
+   */
+  onClosed?: (result: string | undefined) => void;
 }
 
 interface UseTugSheetState {
@@ -724,6 +777,14 @@ export function useTugSheet(): {
   const [state, setState] = useState<UseTugSheetState | null>(null);
   const callIdRef = useRef(0);
   const resolverRef = useRef<((result: string | undefined) => void) | null>(null);
+  // The last value passed to `close(result)` on the currently active
+  // sheet, captured so `options.onClosed` can receive it after the
+  // exit animation completes. Reset to undefined on every new
+  // `showSheet()` call; set explicitly by the `close` callback handed
+  // to the consumer's content render function. Escape / Cmd+. paths
+  // leave it at its reset value (undefined), matching the "no explicit
+  // result" semantics of a keyboard dismissal.
+  const lastResultRef = useRef<string | undefined>(undefined);
   const manager = useResponderChain();
 
   // Stable senderId scoped to this hook call. Passed down to the
@@ -775,6 +836,7 @@ export function useTugSheet(): {
   const showSheet = useCallback((options: ShowSheetOptions): Promise<string | undefined> => {
     return new Promise<string | undefined>((resolve) => {
       resolverRef.current = resolve;
+      lastResultRef.current = undefined;
       callIdRef.current += 1;
       setState({ options, resolve, callId: callIdRef.current });
     });
@@ -801,6 +863,7 @@ export function useTugSheet(): {
     // without an exit animation — acceptable for tests and isolated
     // previews that don't mount a ResponderChainProvider.
     const close = (result?: string) => {
+      lastResultRef.current = result;
       resolveHook(result);
       if (manager) {
         manager.sendToTarget(responderId, {
@@ -813,12 +876,20 @@ export function useTugSheet(): {
       }
     };
 
+    // Bridge TugSheetContent's post-animation `onClosed` to the
+    // consumer's option. Reads `lastResultRef` — set by `close` above
+    // or left at its showSheet-reset undefined for Escape dismissals.
+    const onClosedForContent = options.onClosed
+      ? () => options.onClosed?.(lastResultRef.current)
+      : undefined;
+
     return (
       <TugSheet key={callId} defaultOpen responderId={responderId}>
         <TugSheetContent
           title={options.title}
           description={options.description}
           onOpenAutoFocus={options.onOpenAutoFocus}
+          onClosed={onClosedForContent}
           senderId={senderId}
         >
           {options.content(close)}

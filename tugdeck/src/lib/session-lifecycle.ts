@@ -23,8 +23,28 @@
  */
 
 import type { TugConnection } from "../connection";
-import { encodeCloseSession } from "../protocol";
+import { encodeCloseSession, encodeSpawnSession } from "../protocol";
 import { cardSessionBindingStore } from "./card-session-binding-store";
+
+/**
+ * Send a `spawn_session` CONTROL frame for `(cardId, tugSessionId,
+ * projectDir)`.
+ *
+ * Spawn is asymmetric: the ack (`spawn_session_ok`) is what populates
+ * `cardSessionBindingStore`, because only the server knows the
+ * canonical `workspace_key` (macOS firmlink handling). Callers send
+ * the frame here and wait for the binding to appear via
+ * `cardSessionBindingStore.subscribe`.
+ */
+export function sendSpawnSession(
+  connection: TugConnection,
+  cardId: string,
+  tugSessionId: string,
+  projectDir: string,
+): void {
+  const frame = encodeSpawnSession(cardId, tugSessionId, projectDir);
+  connection.send(frame.feedId, frame.payload);
+}
 
 /**
  * Send a `close_session` CONTROL frame for `(cardId, tugSessionId)` and

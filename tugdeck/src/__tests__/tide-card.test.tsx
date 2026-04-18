@@ -1,25 +1,38 @@
 /**
- * TideCardContent unit tests — sub-step 4b coverage.
+ * TideCardContent unit tests — sub-steps 4b and 4c coverage.
  *
  * Tests cover:
- * - T-TIDE-01: unbound card renders the placeholder
+ * - T-TIDE-01: unbound card renders the picker backdrop + sheet
  * - T-TIDE-02: setBinding causes the split pane to render
- * - T-TIDE-03: clearBinding causes the placeholder to return
+ * - T-TIDE-03: clearBinding causes the picker to return
+ * - T-TIDE-04: picker "Open" button sends a spawn_session CONTROL frame
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
 import "./setup-rtl";
 
 import { describe, it, expect, afterEach, mock } from "bun:test";
-import { render, act, cleanup } from "@testing-library/react";
+import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-// Force `getConnection()` to return null so the services effect skips
-// FileTreeStore construction. 4b is testing the binding gate, not the
-// live-connection stack — 4e–g introduce those. Another test in the
-// suite may have installed a stub connection in the singleton; this
-// module mock isolates us from that cross-test state.
+// Capture frames sent by the picker so T-TIDE-04 can assert on them.
+// `onFrame` is stubbed because FeedStore's constructor calls it when
+// the post-bind services effect runs. Module mock insulates us from
+// any stub connection installed by another test in the suite.
+interface SentFrame {
+  feedId: number;
+  payload: Uint8Array;
+}
+const sentFrames: SentFrame[] = [];
+
+const fakeConnection = {
+  send: (feedId: number, payload: Uint8Array) => {
+    sentFrames.push({ feedId, payload });
+  },
+  onFrame: (_feedId: number, _cb: (payload: Uint8Array) => void) => () => {},
+};
+
 mock.module("@/lib/connection-singleton", () => ({
-  getConnection: () => null,
+  getConnection: () => fakeConnection,
   setConnection: () => {},
 }));
 
@@ -29,16 +42,10 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { TugcardPortalContext } from "@/components/tugways/tug-card";
+import { FeedId } from "@/protocol";
 
-function renderTideCard(cardId: string) {
-  return render(
-    <ResponderChainProvider>
-      <TideCardContent cardId={cardId} />
-    </ResponderChainProvider>,
-  );
-}
-
-const CARD_ID = "tide-4b-test";
+const CARD_ID = "tide-4bc-test";
 
 function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBinding {
   return {
@@ -49,33 +56,70 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
   };
 }
 
+/**
+ * Render TideCardContent inside a ResponderChainProvider and a mock
+ * TugcardPortalContext. The portal target is a detached `.tugcard`
+ * element with a `.tugcard-body` child (required by TugSheet's inert
+ * lifecycle effect). The element is attached to document.body so
+ * portaled content (the picker sheet) is queryable via the DOM.
+ */
+function renderTideCard(cardId: string) {
+  const cardEl = document.createElement("div");
+  cardEl.className = "tugcard";
+  const cardBody = document.createElement("div");
+  cardBody.className = "tugcard-body";
+  cardEl.appendChild(cardBody);
+  document.body.appendChild(cardEl);
+
+  const rtl = render(
+    <ResponderChainProvider>
+      <TugcardPortalContext value={cardEl}>
+        <TideCardContent cardId={cardId} />
+      </TugcardPortalContext>
+    </ResponderChainProvider>,
+  );
+
+  return {
+    ...rtl,
+    cardEl,
+    cleanupCard: () => {
+      if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+    },
+  };
+}
+
 afterEach(() => {
   cleanup();
-  // Best-effort teardown — individual tests may have cleared already.
   cardSessionBindingStore.clearBinding(CARD_ID);
+  sentFrames.length = 0;
+  document.querySelectorAll(".tugcard").forEach((el) => {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  });
 });
 
-describe("TideCardContent – sub-step 4b binding gate", () => {
-  it("T-TIDE-01: renders the pending placeholder when unbound", () => {
-    const { container, queryByTestId } = renderTideCard(CARD_ID);
-    expect(container.querySelector(".tide-card-picker-pending")).not.toBeNull();
+describe("TideCardContent – binding gate and project picker", () => {
+  it("T-TIDE-01: renders the picker backdrop and sheet when unbound", () => {
+    const { queryByTestId } = renderTideCard(CARD_ID);
+    expect(queryByTestId("tide-card-picker")).not.toBeNull();
     expect(queryByTestId("tide-card")).toBeNull();
+    // Sheet portal into the mock card.
+    expect(document.querySelector(".tug-sheet-content")).not.toBeNull();
   });
 
   it("T-TIDE-02: renders the split pane once a binding appears", () => {
-    const { container, queryByTestId } = renderTideCard(CARD_ID);
-    expect(container.querySelector(".tide-card-picker-pending")).not.toBeNull();
+    const { queryByTestId } = renderTideCard(CARD_ID);
+    expect(queryByTestId("tide-card-picker")).not.toBeNull();
 
     act(() => {
       cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
     });
 
-    expect(container.querySelector(".tide-card-picker-pending")).toBeNull();
+    expect(queryByTestId("tide-card-picker")).toBeNull();
     expect(queryByTestId("tide-card")).not.toBeNull();
   });
 
-  it("T-TIDE-03: reverts to the placeholder when the binding clears", () => {
-    const { container, queryByTestId } = renderTideCard(CARD_ID);
+  it("T-TIDE-03: reverts to the picker when the binding clears", () => {
+    const { queryByTestId } = renderTideCard(CARD_ID);
 
     act(() => {
       cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
@@ -86,7 +130,45 @@ describe("TideCardContent – sub-step 4b binding gate", () => {
       cardSessionBindingStore.clearBinding(CARD_ID);
     });
 
-    expect(container.querySelector(".tide-card-picker-pending")).not.toBeNull();
+    expect(queryByTestId("tide-card-picker")).not.toBeNull();
     expect(queryByTestId("tide-card")).toBeNull();
+  });
+
+  it("T-TIDE-04: Open button sends a spawn_session CONTROL frame", () => {
+    renderTideCard(CARD_ID);
+
+    const input = document.querySelector<HTMLInputElement>(
+      '.tug-sheet-content input[type="text"]',
+    );
+    expect(input).not.toBeNull();
+
+    act(() => {
+      fireEvent.change(input!, { target: { value: "/work/gamma" } });
+    });
+
+    // Sheet portals into document.body; find the Open button there.
+    const openButton = Array.from(document.querySelectorAll<HTMLButtonElement>(
+      ".tug-sheet-content button",
+    )).find((b) => b.textContent?.trim().toLowerCase() === "open");
+    expect(openButton).not.toBeUndefined();
+
+    act(() => {
+      fireEvent.click(openButton!);
+    });
+
+    expect(sentFrames.length).toBe(1);
+    const [frame] = sentFrames;
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = JSON.parse(new TextDecoder().decode(frame.payload)) as {
+      action: string;
+      card_id: string;
+      tug_session_id: string;
+      project_dir: string;
+    };
+    expect(payload.action).toBe("spawn_session");
+    expect(payload.card_id).toBe(CARD_ID);
+    expect(payload.project_dir).toBe("/work/gamma");
+    expect(typeof payload.tug_session_id).toBe("string");
+    expect(payload.tug_session_id.length).toBeGreaterThan(0);
   });
 });

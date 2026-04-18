@@ -26,7 +26,7 @@ import "./setup-rtl";
 
 import React from "react";
 import { describe, it, expect, afterEach } from "bun:test";
-import { render, cleanup, act, fireEvent } from "@testing-library/react";
+import { render, cleanup, act, fireEvent, waitFor } from "@testing-library/react";
 
 import {
   TugSheet,
@@ -521,6 +521,113 @@ describe("TugSheetTrigger – uncontrolled open path", () => {
     });
 
     expect(getSheetContent()).not.toBeNull();
+    cleanupCard();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N. onClosed fires after the exit animation completes
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve every captured WAAPI animation on the mock. happy-dom's
+ * `Element.prototype.animate` is stubbed in setup-rtl.ts — it does
+ * NOT auto-resolve `.finished`; tests must drive it manually.
+ */
+function resolveAllWaapiAnimations() {
+  const mock = (global as unknown as { __waapi_mock__: { calls: Array<{ resolve: () => void }>; reset: () => void } }).__waapi_mock__;
+  for (const call of mock.calls) {
+    call.resolve();
+  }
+}
+
+describe("TugSheet – onClosed callback", () => {
+  afterEach(() => {
+    const mock = (global as unknown as { __waapi_mock__: { reset: () => void } }).__waapi_mock__;
+    mock.reset();
+  });
+
+  it("TugSheetContent onClosed fires after the exit animation finishes", async () => {
+    let invocations = 0;
+    const onClosed = () => {
+      invocations += 1;
+    };
+
+    const { manager, cleanupCard } = renderWithChainAndCard(
+      <TugSheet defaultOpen>
+        <TugSheetContent title="Settings" senderId="onclosed-sender" onClosed={onClosed}>
+          <div>body</div>
+        </TugSheetContent>
+      </TugSheet>,
+    );
+    expect(getSheetContent()).not.toBeNull();
+    expect(invocations).toBe(0);
+
+    act(() => {
+      manager.sendToFirstResponder({
+        action: TUG_ACTIONS.CANCEL_DIALOG,
+        sender: "onclosed-sender",
+        phase: "discrete",
+      });
+    });
+
+    // The exit animation's `g.finished.then(() => setMounted(false))`
+    // only runs once the WAAPI mock promises resolve. Drive them
+    // manually to simulate animation completion, then let the React
+    // commit cycle fire the mounted-transition layout effect.
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(invocations).toBe(1);
+    });
+    expect(getSheetContent()).toBeNull();
+    cleanupCard();
+  });
+
+  it("useTugSheet onClosed receives the result passed to close()", async () => {
+    const results: Array<string | undefined> = [];
+    let closeFn: ((result?: string) => void) | null = null;
+
+    function Harness() {
+      const { showSheet, renderSheet } = useTugSheet();
+      React.useEffect(() => {
+        void showSheet({
+          title: "Rename",
+          content: (close) => {
+            closeFn = close;
+            return <div>body</div>;
+          },
+          onClosed: (result) => {
+            results.push(result);
+          },
+        });
+      }, [showSheet]);
+      return <>{renderSheet()}</>;
+    }
+
+    const { cleanupCard } = renderWithChainAndCard(<Harness />);
+
+    await waitFor(() => {
+      expect(closeFn).not.toBeNull();
+      expect(getSheetContent()).not.toBeNull();
+    });
+
+    act(() => {
+      closeFn!("save");
+    });
+
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(results).toEqual(["save"]);
+    });
+    expect(getSheetContent()).toBeNull();
     cleanupCard();
   });
 });

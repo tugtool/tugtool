@@ -34,8 +34,12 @@ import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-sp
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
+import { TugInput } from "../tug-input";
+import { TugPushButton } from "../tug-push-button";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
+import { useTugSheet } from "../tug-sheet";
+import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
@@ -52,6 +56,7 @@ import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
+import { sendSpawnSession } from "@/lib/session-lifecycle";
 import {
   getFixtureSessionMetadataStore,
   wrapPositionZero,
@@ -300,12 +305,131 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
 export function TideCardContent({ cardId }: TideCardContentProps) {
   const services = useTideCardServices(cardId);
   if (services === null) {
-    // Unbound: the project picker lands in sub-step 4c. For now this
-    // is a silent placeholder so the card has a renderable body while
-    // the binding subscription is in place.
-    return <div className="tide-card-picker-pending" aria-hidden="true" />;
+    return <TideProjectPicker cardId={cardId} />;
   }
   return <TideCardBody cardId={cardId} services={services} />;
+}
+
+// ---------------------------------------------------------------------------
+// TideProjectPicker
+// ---------------------------------------------------------------------------
+
+interface TideProjectPickerProps {
+  cardId: string;
+}
+
+/**
+ * Picker shown while the card is unbound. The project-path form lives
+ * inside a `TugSheet` that drops from the title bar on mount and
+ * disappears when the user picks a path or cancels.
+ *
+ * Sheet outcomes:
+ *   - Open  → `spawn_session` frame is sent; the sheet closes. When
+ *             `spawn_session_ok` arrives, `cardSessionBindingStore`
+ *             populates the binding for `cardId` and
+ *             `useTideCardServices` transitions from `null` to a ready
+ *             services bag, flipping the card into its split-pane body.
+ *   - Cancel → sheet closes; the card closes too (dispatch `close`
+ *             through the responder chain to the first card responder).
+ *   - Escape → same as Cancel.
+ *
+ * No "waiting" affordance in 4c. If `spawn_session_ok` never arrives,
+ * the card is simply empty (sheet already dismissed). The `lastError`
+ * banner arrives in Step 6.
+ */
+function TideProjectPicker({ cardId }: TideProjectPickerProps) {
+  const { showSheet, renderSheet } = useTugSheet();
+  const manager = useResponderChain();
+  const senderId = useId();
+  const shownRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (shownRef.current) return;
+    shownRef.current = true;
+    void showSheet({
+      title: "Open Project",
+      content: (close) => (
+        <TideProjectPickerForm
+          onOpen={(projectDir) => {
+            const connection = getConnection();
+            if (!connection) {
+              console.warn("TideProjectPicker: connection unavailable");
+              return;
+            }
+            sendSpawnSession(connection, cardId, crypto.randomUUID(), projectDir);
+            close("open");
+          }}
+          onCancel={() => close("cancel")}
+        />
+      ),
+      // Fire after the sheet's exit animation finishes so the card
+      // close chains visibly after the sheet has disappeared rather
+      // than unmounting underneath it. "open" leaves the card
+      // mounted; the binding subscription flips it into the
+      // split-pane body once `spawn_session_ok` arrives.
+      onClosed: (result) => {
+        if (result === "open") return;
+        manager?.sendToFirstResponder({
+          action: TUG_ACTIONS.CLOSE,
+          sender: senderId,
+          phase: "discrete",
+        });
+      },
+    });
+  }, [showSheet, cardId, manager, senderId]);
+
+  return (
+    <div
+      className="tide-card-picker-backdrop"
+      data-testid="tide-card-picker"
+      aria-hidden="true"
+    >
+      {renderSheet()}
+    </div>
+  );
+}
+
+interface TideProjectPickerFormProps {
+  onOpen: (projectDir: string) => void;
+  onCancel: () => void;
+}
+
+function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const submit = useCallback(() => {
+    const trimmed = inputRef.current?.value.trim() ?? "";
+    if (!trimmed) return;
+    onOpen(trimmed);
+  }, [onOpen]);
+
+  return (
+    <div className="tide-card-picker-form">
+      <label className="tide-card-picker-field">
+        <span className="tide-card-picker-label">Project path</span>
+        <TugInput
+          ref={inputRef}
+          type="text"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="/path/to/project"
+          autoFocus
+        />
+      </label>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
+          Cancel
+        </TugPushButton>
+        <TugPushButton emphasis="filled" role="action" onClick={submit}>
+          Open
+        </TugPushButton>
+      </div>
+    </div>
+  );
 }
 
 interface TideCardBodyProps {
