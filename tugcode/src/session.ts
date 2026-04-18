@@ -843,31 +843,25 @@ export class SessionManager {
   }
 
   /**
-   * Initialize session: try to resume from persisted ID, fall back to create new.
+   * Initialize session: spawn claude fresh. Roadmap step 4k defaults every
+   * card to a new session so same-workspace cards can't collide on
+   * `--resume <id>` and close-then-reopen never silently inherits a prior
+   * conversation. The real session id arrives on `system:init` and is
+   * persisted into `dev.tugtool.tide / session-id-by-workspace` so the
+   * future resume UX (Step 4.5) can offer it as a choice.
    */
   async initialize(): Promise<void> {
-    const existingId = this.readSessionId();
+    console.log("Spawning fresh claude session (step 4k default)");
 
-    if (existingId) {
-      console.log(`Attempting to resume session: ${existingId}`);
-    } else {
-      console.log("No existing session, creating new");
-    }
-
-    this.claudeProcess = this.spawnClaude(existingId);
+    this.claudeProcess = this.spawnClaude(null);
     this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
     this.stdoutBuffer = "";
 
-    const initId = existingId || "pending";
     writeLine({
       type: "session_init",
-      session_id: initId,
+      session_id: "pending",
       ipc_version: 2,
     });
-
-    if (existingId) {
-      this.sessionIdPersisted = this.persistSessionId(existingId);
-    }
   }
 
   /**

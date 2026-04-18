@@ -192,9 +192,10 @@ Sub-step ordering reflects dependencies:
 | [4h](#step-4h) | **Isolate the tugcode test suite from the real tugbank** |
 | [4i](#step-4i) | **Per-workspace session id in tugcode** (replace the global `dev.tugtool.app / session-id` key) |
 | [4j](#step-4j) | **Process lifecycle: kill claude + exit on tugcode stdin-EOF**; reap descendants on Tug.app quit |
-| [4k](#step-4k) | Single-session shim pre-P2 |
-| [4l](#step-4l) | Recent projects + opportunistic cleanup |
-| [4m](#step-4m) | **Mock/fixture scrub** — hard exit criterion: zero `Mock*` / fixture references in production code |
+| [4k](#step-4k) | **Default every card to a fresh session** (stop silently auto-resuming per workspace) |
+| [4l](#step-4l) | Single-session shim pre-P2 |
+| [4m](#step-4m) | Recent projects + opportunistic cleanup |
+| [4n](#step-4n) | **Mock/fixture scrub** — hard exit criterion: zero `Mock*` / fixture references in production code |
 
 ##### Sub-step 4a — Lifecycle hygiene in `useTideCardServices` {#step-4a}
 
@@ -240,7 +241,7 @@ Sub-step ordering reflects dependencies:
 - Add an inline `TideProjectPicker({ cardId })` component in `tide-card.tsx`: single text input (label "Project path"), single "Open project" push button, inside the `tide-card` root flex column so it fills the card body per [D3](#resolved-decisions). Text input + button only — no native dialog, no Browse… per [D1](#resolved-decisions).
 - Submit handler: `const tugSessionId = crypto.randomUUID(); getConnection()?.sendFrame(encodeSpawnSession(cardId, tugSessionId, projectDir))`. The existing `spawn_session_ok` handler (`action-dispatch.ts:358–386`) calls `cardSessionBindingStore.setBinding(cardId, …)` on the ack; [4b](#step-4b)'s subscription causes `useTideCardServices` to construct services, which makes the picker disappear and the split pane appear.
 - Replace the 4b placeholder div with `<TideProjectPicker cardId={cardId} />` when `services === null`.
-- No close-on-unmount yet ([4d](#step-4d)). No recent projects ([4l](#step-4l)). No single-session shim ([4k](#step-4k)).
+- No close-on-unmount yet ([4d](#step-4d)). No recent projects ([4m](#step-4m)). No single-session shim ([4l](#step-4l)).
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
@@ -267,7 +268,7 @@ Sub-step ordering reflects dependencies:
 
 **Work:**
 - Replace the mock construction (`new MockTugConnection()` + `new CodeSessionStore({ conn: mock as any, tugSessionId: TIDE_TUG_SESSION_ID })`) with `new CodeSessionStore({ conn: getConnection()!, tugSessionId: binding.tugSessionId })`.
-- Remove the `MockTugConnection` import. Keep `TIDE_TUG_SESSION_ID` constant for now — removed in [4m](#step-4m) once it is truly unreferenced.
+- Remove the `MockTugConnection` import. Keep `TIDE_TUG_SESSION_ID` constant for now — removed in [4n](#step-4n) once it is truly unreferenced.
 - This is the first sub-step where a live Claude turn can round-trip end-to-end: picker → spawn → bind → real `CodeSessionStore` → submit `> hi` → `assistant_text` deltas arrive.
 
 **Verification:**
@@ -326,7 +327,7 @@ Sub-step ordering reflects dependencies:
 
 ##### Sub-step 4i — Per-workspace session id in tugcode {#step-4i}
 
-**Purpose:** `tugcode/src/session.ts::persistSessionId` / `readSessionId` use a single global tugbank key `dev.tugtool.app / session-id`. Every tugcode instance — across every Tide card, sequentially or in parallel — reads/writes the same key. Scenario that breaks: open card A on `/u/src/tugtool` (Claude issues session id `X`, tugcode persists `X`), close card A, open card B on `/tmp`. tugcode for B reads `X`, passes `--resume X` to Claude. Claude either errors (session `X` wasn't for `/tmp`) or worse, resumes A's context while B's project_dir is active — transcript pollution. This is a *correctness* bug that strikes the second time any user opens a card against a different project, regardless of the single-session shim in [4k](#step-4k).
+**Purpose:** `tugcode/src/session.ts::persistSessionId` / `readSessionId` use a single global tugbank key `dev.tugtool.app / session-id`. Every tugcode instance — across every Tide card, sequentially or in parallel — reads/writes the same key. Scenario that breaks: open card A on `/u/src/tugtool` (Claude issues session id `X`, tugcode persists `X`), close card A, open card B on `/tmp`. tugcode for B reads `X`, passes `--resume X` to Claude. Claude either errors (session `X` wasn't for `/tmp`) or worse, resumes A's context while B's project_dir is active — transcript pollution. This is a *correctness* bug that strikes the second time any user opens a card against a different project, regardless of the single-session shim in [4l](#step-4l).
 
 **Files:**
 - `tugcode/src/session.ts` (`persistSessionId`, `readSessionId`, and their callers inside `initialize`, `handleNewSession`, `handleSessionContinue`, and the `routeTopLevelEvent` session-id-persist path).
@@ -379,7 +380,32 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
 - Same, but via `just app` relaunch (which uses `tugrelaunch`): zombies from the previous instance should be zero before the new tugcast spawns. Add an assertion script to the `just app` flow: after relaunch, warn-log if orphaned tugcode/claude PIDs linger.
 - Rust unit test: spawn a `TugcodeSpawner` child, drop the supervisor, assert the child process exits within a bounded timeout.
 
-##### Sub-step 4k — Single-session shim {#step-4k}
+##### Sub-step 4k — Default every card to a fresh session {#step-4k}
+
+**Purpose:** Even with [4i](#step-4i)'s per-workspace session-id map in place, tugcode still auto-resumes *silently* whenever a map entry exists for the card's workspace. That creates two bad outcomes the user never asked for:
+
+1. **Concurrent same-workspace cards collide on `--resume`.** If card A is live on `/u/src/tugtool` and card B opens the same workspace, card B's tugcode reads the map, finds card A's session id, and spawns claude with `--resume <A's-id>`. Two claude processes then race on the on-disk session JSONL — transcript corruption or outright rejection. [4l](#step-4l)'s single-session shim works around this by disabling the picker, not by fixing the root cause.
+2. **Close-then-reopen silently resumes.** Close the last card on a workspace, open a fresh one, and the new card inherits the old conversation with no user affordance to opt out or even notice. The map grows unbounded, stale entries never expire, and the only escape hatch is the `new` session slash command after the fact.
+
+Defaulting to a fresh session on every card spawn turns both cases into the expected outcome. The full resume UX (picker radio, stale-id fallback, "Forget session" action) is scoped as [Step 4.5](#step-4-5) — this sub-step is just the safe default that unblocks [4l](#step-4l)'s scope reduction.
+
+**Files:**
+- `tugcode/src/session.ts` (`initialize()` only).
+- `tugcode/src/__tests__/session.test.ts` (new test asserting spawn-with-`null`).
+
+**Work:**
+- In `SessionManager.initialize()`, stop reading the persisted id. Pass `null` to `spawnClaude()` unconditionally. Keep the `writeLine({ type: "session_init", session_id: "pending", … })` pattern that fresh-spawn already uses.
+- Keep the `persistSessionId` write path on `system:init` so the workspace map still accumulates — [Step 4.5](#step-4-5) will read it back when the resume UX lands.
+- Update or add a unit test asserting that `initialize()` spawns claude without `--resume`, even when the tugbank map already contains an entry for the current workspace key.
+- Revisit [4l](#step-4l)'s scope after this lands: with every card starting fresh, two cards on the same workspace no longer collide on `--resume`, so the shim may be deletable or reducible to "prevent duplicate workspace bindings" rather than "prevent session collision." Record the decision inside 4l when you get there.
+
+**Verification:**
+- `bun test` green on tugcode.
+- `cargo nextest run` green (no Rust surface touched, but run it to catch any incidental drift).
+- Manual: with a persisted map entry for `/u/src/tugtool` from the 4i smoke, open a new Tide card on that workspace; `tugcast.log` shows the claude-args line without `--resume`; the turn's `system_metadata` frame carries a *new* session id.
+- Manual: open two Tide cards on `/u/src/tugtool` concurrently; each spawns its own fresh claude; no transcript cross-talk.
+
+##### Sub-step 4l — Single-session shim {#step-4l}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx`.
@@ -395,7 +421,7 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
 - New test: `setBinding("a", ...)` → mount card `"b"` → assert disabled picker with message; `clearBinding("a")` → assert picker enables.
 - Manual: open two Tide cards; second one shows the shim; close the first; second card's picker enables.
 
-##### Sub-step 4l — Recent projects + opportunistic cleanup {#step-4l}
+##### Sub-step 4m — Recent projects + opportunistic cleanup {#step-4m}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (recent-projects UI).
@@ -406,15 +432,15 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
 - **Tugbank helpers** in `settings-api.ts`: `readTideRecentProjects(tugbank): string[]` and `putTideRecentProjects(tugbank, paths: string[]): void`. Tugbank domain `dev.tugtool.tide`, key `recent-projects`, value `{ paths: string[] }`. Cap 5, most-recent-first, de-duplicated.
 - **Picker UI:** below the text input, render up to 5 quick-pick buttons for recent paths. Click fills the input and submits in one gesture (single click = fill + spawn).
 - **Persist on bind success:** when a binding appears for this card (subscription fires), prepend `binding.projectDir` to the recents list (dedup; cap 5); call `putTideRecentProjects`.
-- **Opportunistic cleanup** (easy wins encountered while adding the recents UI): zero `// eslint-disable`, zero `any`, zero `@ts-expect-error`, zero descendant-selector reach-ins in `tide-card.tsx`/`tide-card.css`. The scorched-earth mock/fixture scrub is [4m](#step-4m), not here.
-- **Integration test:** end-to-end `bun test` that mounts the card against a fake connection seam → submits picker → simulates `spawn_session_ok` → asserts services construct + binding appears + recent-projects gets the path; then unmounts → asserts `encodeCloseSession` frame sent + binding cleared. The fake connection used in this test is a test-only double in `__tests__/`; production `tide-card.tsx` imports none of it ([4m](#step-4m) enforces this).
+- **Opportunistic cleanup** (easy wins encountered while adding the recents UI): zero `// eslint-disable`, zero `any`, zero `@ts-expect-error`, zero descendant-selector reach-ins in `tide-card.tsx`/`tide-card.css`. The scorched-earth mock/fixture scrub is [4n](#step-4n), not here.
+- **Integration test:** end-to-end `bun test` that mounts the card against a fake connection seam → submits picker → simulates `spawn_session_ok` → asserts services construct + binding appears + recent-projects gets the path; then unmounts → asserts `encodeCloseSession` frame sent + binding cleared. The fake connection used in this test is a test-only double in `__tests__/`; production `tide-card.tsx` imports none of it ([4n](#step-4n) enforces this).
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
 - `rg 'eslint-disable|@ts-expect-error|\bany\b' tugdeck/src/components/tugways/cards/tide-card.tsx` returns zero matches.
 - Manual: open Tide card, enter `/tmp` → submit → split pane renders; reload; open another Tide card → recents list shows `/tmp` as a quick-pick button; clicking it spawns in one click.
 
-##### Sub-step 4m — Mock/fixture scrub (hard exit criterion) {#step-4m}
+##### Sub-step 4n — Mock/fixture scrub (hard exit criterion) {#step-4n}
 
 **Purpose:** No "Mock" or fixture objects allowed to linger in the Tide card's production code path. Every mock seam introduced by the Step 1 copy or referenced through intermediate sub-steps must be out of production code by the time this sub-step commits. Test-only doubles remain, but scoped to `__tests__/` — never imported from production modules.
 
@@ -441,7 +467,7 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
   - `TIDE_TUG_SESSION_ID` constant (mock-only; removed here if still present).
   - `getFixtureSessionMetadataStore` / `wrapPositionZero` import if either is still there after 4f. `wrapPositionZero` is fine to keep if it lives in a non-fixture module; if it's still inside `completion-fixtures/system-metadata-fixture.ts`, move it to a production helper (e.g., `tugdeck/src/components/tugways/cards/completion-providers/position-zero.ts`) and update imports. After the move, the Tide card imports only from the new home.
   - Any inline `// mock-backed` / `// fixture` comments — turn them into factual descriptions or delete.
-- **Relocate test doubles.** The integration test introduced in [4l](#step-4l) uses a fake connection. Confirm it lives under `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` (or similar) and that its fake connection is constructed there, not reached through production imports.
+- **Relocate test doubles.** The integration test introduced in [4m](#step-4m) uses a fake connection. Confirm it lives under `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` (or similar) and that its fake connection is constructed there, not reached through production imports.
 - **Rename for clarity.** If any production identifier still contains `mock`, `fake`, `stub`, or `dummy` after the removals above, rename.
 - **Grep gate.** After the audit, these must pass:
   - `rg -i 'mock' tugdeck/src/components/tugways/cards/tide-card.tsx tugdeck/src/components/tugways/cards/tide-card.css` → **zero matches**.
@@ -459,10 +485,41 @@ Result: every ungraceful Tug.app exit leaves every session's tugcode + claude re
 
 ##### Step 4 rollup verification
 
-After all ten sub-steps land:
+After all fourteen sub-steps land:
 
-- `bun run check` exits 0. `bun test` exits 0 with at least the integration test from [4l](#step-4l). `bun run audit:tokens lint` exits 0. `cargo nextest run` exits 0 (no Rust regressions from the binding store usage).
+- `bun run check` exits 0. `bun test` exits 0 with at least the integration test from [4m](#step-4m). `bun run audit:tokens lint` exits 0. `cargo nextest run` exits 0 (no Rust regressions from the binding store usage).
 - Manual: type a path; picker disappears; entry renders; submit `> hi`; a real Claude response streams in via `TugMarkdownView` (arrives in [Step 5](#step-5) — in Step 4 the top pane is still the placeholder). Step 4's live-smoke is the `assistant_text` event arriving on the `CodeSessionStore`; visual rendering of the stream is Step 5's concern.
+
+#### Step 4.5 — Resume-vs-new session UX (placeholder; design before implementation) {#step-4-5}
+
+**Status:** Design sketch only. Do NOT start implementation from these notes — they capture intent, not a landable plan. Promote to a full step (files, work, verification) after [Step 4](#step-4) rolls up, so the shape of the live backend + fresh-by-default default ([4k](#step-4k)) is concrete before the UX is scoped.
+
+**Why this exists:** [4i](#step-4i) fixed cross-workspace `--resume` leakage; [4k](#step-4k) made fresh-on-every-card the safe default. Neither gave the user a way to opt *into* resuming a prior session for a workspace they recognize. The persisted map at `dev.tugtool.tide / session-id-by-workspace` accumulates ids that are currently write-only — this step reads them back and surfaces the choice.
+
+**Sketch of the UX:**
+- In `TideProjectPicker`, below the path input, expose a simple two-option selector — e.g., a radio or toggle:
+  - "Start fresh" (default; matches 4k behavior).
+  - "Resume last session (`<preview>`)" — enabled only when the map has an entry for the typed/selected workspace. Preview can be the first prompt snippet + timestamp, or just the timestamp to start; polish later.
+- Submit emits `spawn_session` with a new `sessionMode: "new" | "resume"` field on the CONTROL payload.
+
+**Sketch of the plumbing:**
+- `cardSessionBindingStore` binding carries `sessionMode` alongside `projectDir` / `tugSessionId` so downstream code (recent projects, metadata stores) can reflect the choice.
+- tugcast forwards the mode to tugcode via a new CLI flag — e.g., `--session-mode new|resume`. `build_tugcode_command` grows the flag; the supervisor passes it when it spawns the child.
+- tugcode respects the flag in `SessionManager.initialize()`:
+  - `new`: current [4k](#step-4k) behavior (skip `readSessionId`, pass `null`).
+  - `resume`: read the map, pass the id to `spawnClaude()`.
+- Stale-id fallback: if claude rejects `--resume <id>` (session file missing, wrong workspace, etc.), tugcode detects the failure, writes a user-visible notice to IPC (new `error` or a purpose-built `resume_failed` frame), falls back to a fresh spawn, and clears the stale map entry. Never hang or silently swallow.
+
+**Sketch of lifecycle policies still to decide:**
+- **Close semantics.** Does closing a card leave the workspace's map entry intact (default: yes, so the next card can offer resume) or clear it? Probably preserve by default; expose an explicit user action ("Forget session for this workspace") rather than piggybacking on close.
+- **Map eviction.** Cap the map size; decide the policy (LRU by last-spawn, age-based expiry, or both). Orphaned ids accumulate otherwise.
+- **Recent projects ↔ map coherence.** [4m](#step-4m) adds a recent-projects list. When an entry is evicted from recents, should its session-id map entry go with it? Probably yes, but confirm.
+- **Concurrent same-workspace cards.** Even with 4k landed, if two cards on the same workspace both pick "resume," they collide again. The UX should surface this (grey out "resume" for any workspace that currently has a live binding on another card), or the CONTROL handler should reject the second resume. Pick one.
+
+**Non-goals for the first cut:**
+- Multi-session branching per workspace ("resume which of three prior sessions?") — one resume target is enough until the UX tells us otherwise.
+- Session-history previews in the picker beyond the first-prompt snippet.
+- Server-side archival or search over prior sessions.
 
 #### Step 5 — Wire `TugMarkdownView` to streaming output {#step-5}
 

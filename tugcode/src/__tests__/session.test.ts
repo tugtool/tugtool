@@ -1451,6 +1451,46 @@ describe("SessionManager behavioral", () => {
     expect((managerC as any).readSessionId()).toBeNull();
   });
 
+  test("initialize() spawns claude without --resume even when workspace map has an entry (step 4k)", async () => {
+    // Regression: pre-4k, `initialize()` auto-resumed whenever a map
+    // entry existed for the current workspace. That silently re-entered
+    // the user's last conversation on every card open and made two
+    // concurrent cards on the same workspace race on the same --resume.
+    const suffix = Date.now();
+    const workspaceKey = `ws-4k-${suffix}`;
+    const seedManager = new SessionManager(`/tmp/seed-${suffix}`, workspaceKey);
+    // Seed the tugbank map so readSessionId() would return a value if
+    // anything still called it.
+    expect((seedManager as any).persistSessionId("stale-id")).toBe(true);
+    expect((seedManager as any).readSessionId()).toBe("stale-id");
+
+    // A fresh manager with the same workspace key: spawnClaude must be
+    // invoked with `null`, never "stale-id". Swap spawnClaude for a
+    // recorder before initialize() runs to avoid needing a real claude
+    // binary on PATH.
+    const manager = new SessionManager(`/tmp/init-${suffix}`, workspaceKey);
+    const calls: Array<string | null> = [];
+    (manager as any).spawnClaude = (sessionId: string | null) => {
+      calls.push(sessionId);
+      // Return a minimal fake process with a drained stdout so the
+      // rest of initialize() doesn't blow up.
+      return {
+        stdout: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        stdin: { write: () => {}, end: () => {}, flush: () => {} },
+        exited: Promise.resolve(0),
+        kill: () => {},
+      };
+    };
+
+    await manager.initialize();
+
+    expect(calls).toEqual([null]);
+  });
+
   test("session ID persistence falls back to projectDir when workspaceKey omitted", () => {
     // Constructor compatibility: callers that don't pass a workspace key
     // (standalone tugcode invocations, most unit tests) use projectDir
