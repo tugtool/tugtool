@@ -187,6 +187,21 @@ function lookupHandler(
   return node.actions[action as TugAction];
 }
 
+/**
+ * Whether the chain debug logs are enabled. Reads
+ * `window.__tugChainDebug` at call time so devtools toggles take
+ * effect immediately without a reload. Default: off.
+ *
+ * ```
+ * window.__tugChainDebug = true;   // enable
+ * window.__tugChainDebug = false;  // silence
+ * ```
+ */
+function isChainDebugEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return (window as unknown as { __tugChainDebug?: boolean }).__tugChainDebug === true;
+}
+
 export class ResponderChainManager {
   // Internal storage uses the default `ResponderNode` (i.e.
   // `ResponderNode<never>`) — the narrowest, production-only form.
@@ -696,17 +711,21 @@ export class ResponderChainManager {
    * can see what's flowing through the chain in real time. Includes
    * the action name, sender (if present), value (if present), whether
    * it was handled, and which responder handled it. Filter the console
-   * for `[responder-chain] dispatch` to see only chain traffic and
-   * mute the existing first-responder transition logs.
+   * for `[responder-chain] dispatch` to see only chain traffic.
    *
-   * Noise budget: one log per user-initiated action (click, key, menu
-   * selection). That's the same cadence as user interactions — not a
-   * firehose. If it ever becomes a problem we can gate it on a
-   * `window.__tugChainDebug` flag, but for now the signal is high
-   * enough to justify always-on.
+   * Gated on `window.__tugChainDebug === true`. Default: off. Toggle
+   * from devtools at any time:
+   *
+   *     window.__tugChainDebug = true;   // enable chain logs
+   *     window.__tugChainDebug = false;  // silence them again
+   *
+   * The opt-in default keeps the console clean when debugging things
+   * outside the responder chain. One-line opt-in from devtools turns
+   * the firehose back on whenever needed.
    */
   private logDispatch(event: ActionEvent, handled: boolean, handledBy: string | null): void {
     if (typeof console === "undefined") return;
+    if (!isChainDebugEnabled()) return;
     const senderPart = event.sender !== undefined ? ` sender=${JSON.stringify(event.sender)}` : "";
     const valuePart = event.value !== undefined ? ` value=${JSON.stringify(event.value)}` : "";
     const outcomePart = handled
@@ -761,8 +780,10 @@ export class ResponderChainManager {
       el.removeAttribute("data-first-responder");
     });
     if (this.firstResponderId === null) {
-      // eslint-disable-next-line no-console
-      console.log("%c[responder-chain] first responder cleared", "color:#888");
+      if (isChainDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.log("%c[responder-chain] first responder cleared", "color:#888");
+      }
       return;
     }
     const id = this.firstResponderId;
@@ -776,8 +797,10 @@ export class ResponderChainManager {
       // `[data-first-responder]` shows `data-first-responder="<id>"`
       // inline — no cross-referencing required.
       el.setAttribute("data-first-responder", id);
-      // eslint-disable-next-line no-console
-      console.log(`%c[responder-chain] first responder → %c${id}`, "color:#888", "color:inherit;font-weight:600", el);
+      if (isChainDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.log(`%c[responder-chain] first responder → %c${id}`, "color:#888", "color:inherit;font-weight:600", el);
+      }
     } else {
       // No DOM element matches the id. This can happen if the
       // responder registered via useResponder but forgot to attach
