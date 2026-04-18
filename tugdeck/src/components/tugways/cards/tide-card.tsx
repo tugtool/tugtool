@@ -27,7 +27,7 @@
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
@@ -129,13 +129,9 @@ export interface TideCardContentProps {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-card services consumed by `TideCardContent`. Constructed and
- * disposed with the card instance; stable identity across renders.
- *
- * Lifecycle hygiene note: the internals of this hook carry the
- * render-body `if (ref.current === null)` pattern copied from
- * `gallery-prompt-entry.tsx`. It is flagged for cleanup in the Step 4
- * work under [tugplan-tide-card.md](../../../../../roadmap/tugplan-tide-card.md#step-4).
+ * Per-card services consumed by `TideCardContent`. Constructed once at
+ * mount via a `useState` lazy initializer, disposed when the card
+ * unmounts; stable identity across renders.
  */
 export interface TideCardServices {
   codeSessionStore: CodeSessionStore;
@@ -152,28 +148,19 @@ export interface TideCardServices {
   entryDelegateRef: RefObject<TugPromptEntryDelegate | null>;
 }
 
-export function useTideCardServices(cardId: string): TideCardServices {
-  // --- Mock-backed CodeSessionStore (turn-state surface). ---
-  const mockSessionRef = useRef<{
-    connection: MockTugConnection;
-    codeSessionStore: CodeSessionStore;
-  } | null>(null);
-  if (mockSessionRef.current === null) {
-    const connection = new MockTugConnection();
-    const codeSessionStore = new CodeSessionStore({
-      conn: connection as unknown as TugConnection,
-      tugSessionId: TIDE_TUG_SESSION_ID,
-    });
-    mockSessionRef.current = { connection, codeSessionStore };
-  }
-  useEffect(() => {
-    return () => {
-      mockSessionRef.current?.codeSessionStore.dispose();
-      mockSessionRef.current = null;
-    };
-  }, []);
+interface InternalServices {
+  mockConnection: MockTugConnection;
+  codeSessionStore: CodeSessionStore;
+  editorStore: EditorSettingsStore;
+  historyStore: PromptHistoryStore;
+  fileTreeStack: {
+    feedStore: FeedStore;
+    fileTreeStore: FileTreeStore;
+    provider: CompletionProvider;
+  } | null;
+}
 
-  // --- File tree stack with workspace filter. ---
+export function useTideCardServices(cardId: string): TideCardServices {
   const workspaceKey = useCardWorkspaceKey(cardId);
   const workspaceFilter: FeedStoreFilter = useMemo(
     () =>
@@ -186,13 +173,38 @@ export function useTideCardServices(cardId: string): TideCardServices {
         : presentWorkspaceKey,
     [workspaceKey],
   );
-  const fileTreeStackRef = useRef<{
-    feedStore: FeedStore;
-    fileTreeStore: FileTreeStore;
-    provider: CompletionProvider;
-  } | null>(null);
-  if (fileTreeStackRef.current === null) {
+
+  // True ref: the delegate instance arrives after the child
+  // TugPromptEntry commits, so it cannot be initialized eagerly. Kept
+  // here so the `/` position-0 gate (in `completionProviders`) reads
+  // the same identity the component passes to `<TugPromptEntry ref>`.
+  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
+
+  // All per-card stores are constructed once via a `useState` lazy
+  // initializer. React invokes the initializer exactly once per
+  // mount; the returned identity is stable across renders because we
+  // never call setState.
+  //
+  // StrictMode caveat: in dev, React invokes this initializer twice
+  // and retains only one result. Every constructor below is
+  // resource-free in sub-step 4a — `MockTugConnection` holds no
+  // WebSocket, `EditorSettingsStore` and `PromptHistoryStore`
+  // register no external subscriptions, and `FeedStore` is only
+  // built when a live connection is present (rare at hook-init time
+  // pre-binding). The discarded instance becomes unreachable and GC
+  // collects it. Sub-step 4b replaces this pattern with binding-gated
+  // construction inside a `useLayoutEffect` where the live connection
+  // is actually in play and strict lifecycle symmetry matters.
+  const [services] = useState<InternalServices>(() => {
+    const mockConnection = new MockTugConnection();
+    const codeSessionStore = new CodeSessionStore({
+      conn: mockConnection as unknown as TugConnection,
+      tugSessionId: TIDE_TUG_SESSION_ID,
+    });
+    const editorStore = new EditorSettingsStore();
+    const historyStore = new PromptHistoryStore();
     const connection = getConnection();
+    let fileTreeStack: InternalServices["fileTreeStack"] = null;
     if (connection) {
       const feedStore = new FeedStore(
         connection,
@@ -201,81 +213,68 @@ export function useTideCardServices(cardId: string): TideCardServices {
         workspaceFilter,
       );
       const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-      const provider = fileTreeStore.getFileCompletionProvider();
-      fileTreeStackRef.current = { feedStore, fileTreeStore, provider };
+      fileTreeStack = {
+        feedStore,
+        fileTreeStore,
+        provider: fileTreeStore.getFileCompletionProvider(),
+      };
     } else {
       console.warn("useTideCardServices: connection not available at render");
     }
-  }
-  useEffect(() => {
-    fileTreeStackRef.current?.feedStore.setFilter(workspaceFilter);
-  }, [workspaceFilter]);
+    return { mockConnection, codeSessionStore, editorStore, historyStore, fileTreeStack };
+  });
+
+  // Dispose all per-card stores together when the card unmounts.
   useEffect(() => {
     return () => {
-      const stack = fileTreeStackRef.current;
-      if (stack) {
-        stack.fileTreeStore.dispose();
-        stack.feedStore.dispose();
-        fileTreeStackRef.current = null;
+      services.codeSessionStore.dispose();
+      if (services.fileTreeStack) {
+        services.fileTreeStack.fileTreeStore.dispose();
+        services.fileTreeStack.feedStore.dispose();
       }
     };
-  }, []);
+  }, [services]);
 
-  // --- Local PromptHistoryStore (no backend wiring). ---
-  const historyStoreRef = useRef<PromptHistoryStore | null>(null);
-  if (historyStoreRef.current === null) {
-    historyStoreRef.current = new PromptHistoryStore();
-  }
+  // Propagate workspace-filter changes to the feed store.
+  useEffect(() => {
+    services.fileTreeStack?.feedStore.setFilter(workspaceFilter);
+  }, [services, workspaceFilter]);
 
-  // --- Entry delegate ref (owned here so the `/` position-0 gate can
-  // read it). The component uses the same ref for `<TugPromptEntry ref>`
-  // and the atom-regenerate callback. ---
-  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
-
-  // --- Session metadata store (fixture; swapped in Step 4). ---
+  // Session metadata: module-scoped fixture singleton; swapped for a
+  // live per-card store in sub-step 4f.
   const sessionMetadataStore = getFixtureSessionMetadataStore();
 
-  // --- Compose completion providers. ---
+  // Completion providers.
   //
-  //   `@`: live `FileTreeStore` against the real connection. Falls back
-  //        to EMPTY_FILE_COMPLETION_PROVIDER if `getConnection()` was
-  //        null at first render so the trigger stays wired regardless
-  //        of timing.
+  //   `@`: live `FileTreeStore` against the real connection. Falls
+  //        back to `EMPTY_FILE_COMPLETION_PROVIDER` when the
+  //        connection was null at first render so the trigger stays
+  //        wired regardless of timing.
   //
   //   `/`: fixture `SessionMetadataStore` sourced from the captured
-  //        `capabilities/<LATEST>/system-metadata.jsonl`, wrapped with the
-  //        position-0 gate so `/` mid-text yields an empty popup.
-  //
-  // Provider identities are owned by refs and don't change for the
-  // card's lifetime, so the memo's [] deps are correct.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const completionProviders = useMemo(() => {
-    const innerSlash = sessionMetadataStore.getCommandCompletionProvider();
-    return {
-      "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
-      "/": wrapPositionZero(entryDelegateRef, innerSlash),
-    };
-  }, []);
+  //        `capabilities/<LATEST>/system-metadata.jsonl`, wrapped with
+  //        the position-0 gate so `/` mid-text yields an empty popup.
+  const completionProviders = useMemo<Record<string, CompletionProvider>>(
+    () => ({
+      "@": services.fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "/": wrapPositionZero(
+        entryDelegateRef,
+        sessionMetadataStore.getCommandCompletionProvider(),
+      ),
+    }),
+    [services, sessionMetadataStore],
+  );
 
-  // --- EditorSettingsStore for the tools-panel controls. ---
-  const editorStoreRef = useRef<EditorSettingsStore | null>(null);
-  if (editorStoreRef.current === null) {
-    editorStoreRef.current = new EditorSettingsStore();
-  }
-  const editorStore = editorStoreRef.current;
-
-  // Wrap in useMemo so the returned object identity is stable across
-  // renders; callers can safely put `services` in effect deps.
   return useMemo<TideCardServices>(
     () => ({
-      codeSessionStore: mockSessionRef.current!.codeSessionStore,
+      codeSessionStore: services.codeSessionStore,
       sessionMetadataStore,
-      historyStore: historyStoreRef.current!,
+      historyStore: services.historyStore,
       completionProviders,
-      editorStore,
+      editorStore: services.editorStore,
       entryDelegateRef,
     }),
-    [sessionMetadataStore, completionProviders, editorStore],
+    [services, sessionMetadataStore, completionProviders],
   );
 }
 
@@ -333,7 +332,7 @@ export function TideCardContent({ cardId }: TideCardContentProps) {
   // submit-time restore both stand down so nothing fights the peg.
   // When false, the pane behaves exactly as if the toggle never
   // existed: saved size persists, transient size accommodates content.
-  const [maximized, setMaximized] = React.useState(false);
+  const [maximized, setMaximized] = useState(false);
   useLayoutEffect(() => {
     const panel = entryPanelRef.current;
     if (!panel) return;
