@@ -2637,21 +2637,61 @@ Files: `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` (new).
 
 **Goal:** Register `tide` as a full card type in the card registry, alongside `git` and `hello`. This is the Tide card — the Unified Command Surface envisioned in the Vision section of this document — in its first shippable form.
 
+**Baseline contract (READ FIRST):**
+
+The Tide card is built by **copying `tugdeck/src/components/tugways/cards/gallery-prompt-entry.tsx` in total** as the starting baseline. The gallery card has been progressively hardened with features the production card *requires* and that *must not be re-implemented from scratch*:
+
+- Maximize toggle + persistence + size-writer gating (content sizer + submit-time restore stand down while maximized).
+- Editor settings popover (Font / Size / Tracking / Leading) with the `topLabel` caption pattern.
+- Atom rendering with `@font-face` embedding via `tug-atom-fonts`.
+- Route gutter (chevron `❯` display, `>` typed alias, per-route draft persistence).
+- Content-driven panel sizing via `useContentDrivenPanelSize`, gated on `!maximized`.
+- Submit-time animated snap-back via `handleBeforeSubmit`, gated on `!maximized`.
+- Status row layout: project badge on the leading edge, maximize toggle then settings gear on the trailing edge.
+- `ResponderScope` with all four popup bindings (font / size / tracking / leading) routed to `editorStore`.
+- Per-card `TugcardPersistence` wiring (route + per-route drafts + maximized state).
+- `TugSplitPane` + `TugSplitPanel` shape (split-pane structure unchanged).
+- Completion provider plumbing (file `@`, command `/`).
+
+**Anything in the snippets below that conflicts with the gallery card loses; the gallery card is the source of truth.** The work in T3.4.c is to replace gallery-only seams with real backend services, not to redesign the card body.
+
 **Work:**
 
 Files:
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (new).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (new — `cp` of `gallery-prompt-entry.tsx` with the substitutions enumerated below).
+- `tugdeck/src/components/tugways/cards/tide-card.css` (new — `cp` of `gallery-prompt-entry.css` if such a file exists; otherwise omit).
 - `tugdeck/src/main.tsx` (edit: call `registerTideCard()` alongside `registerGitCard()`).
-- `tugdeck/src/components/tugways/cards/tide-card.css` (new, if the card content needs layout tweaks above the component layer).
 
-Content factory:
+Substitutions to make on the copy:
+
+| Gallery seam | Tide replacement |
+|---|---|
+| `MockTugConnection`-backed `CodeSessionStore` (mock session provider) | Real per-card `CodeSessionStore` constructed by `useTideCardServices(cardId)`. |
+| Fixture `SessionMetadataStore` (`getFixtureSessionMetadataStore()`) | Shared lazy singleton `SessionMetadataStore`. |
+| Fixture `PromptHistoryStore` | Shared lazy singleton `PromptHistoryStore`. |
+| Fixture file completion provider | Real `FILETREE`-backed file completion provider. |
+| Fixture slash command provider | Real provider merging `SessionMetadataStore.slashCommands` and skills. |
+| `"Project path /gallery/demo"` `TugBadge` | `TugBadge` showing the card's actual `project_dir`. |
+| Card-frame placeholder split (gallery's top panel is an empty rectangle) | `TugMarkdownView` bound to the per-card streaming target. |
+| `storageKey="gallery.prompt-entry"` on `TugSplitPane` | `storageKey={\`tide.card.${cardId}\`}`. |
+| Gallery `data-testid="gallery-prompt-entry"` | Tide-appropriate test id (or remove). |
+
+Everything else in `gallery-prompt-entry.tsx` carries over **verbatim** — the maximize state + effect, the `useContentDrivenPanelSize` call gated on `!maximized`, `handleBeforeSubmit` gated on `!maximized`, the `useResponderForm` with all four popup slots, the `editorStore.bind` call, the `LETTER_SPACING_OPTIONS` / `LINE_HEIGHT_OPTIONS` / `EDITOR_FONT_OPTIONS` / `FONT_SIZE_OPTIONS` arrays, the entire `toolsContent` JSX with `topLabel` on every popup, the `statusContent` badge render, and all four wiring props on `<TugPromptEntry>` (`statusContent`, `toolsContent`, `maximized`, `onMaximizeChange`). If a feature is in the gallery card, it ships in the Tide card.
+
+Card content shape (after substitutions — illustrative, not authoritative):
 
 ```tsx
 export function TideCardContent({ cardId }: { cardId: string }) {
-  const services = useTideCardServices(cardId);   // builds stores once, memoized by cardId
+  const services = useTideCardServices(cardId);
+  // ... maximize state, useContentDrivenPanelSize({ enabled: !maximized }),
+  // handleBeforeSubmit (gated), useResponderForm with all four slots,
+  // editorStore.bind, status/tools content — all copied verbatim from
+  // gallery-prompt-entry.tsx.
   return (
     <TugSplitPane
       orientation="horizontal"
+      showHandle={false}
+      disabled={maximized}
       storageKey={`tide.card.${cardId}`}
     >
       <TugSplitPanel id="tide-output" defaultSize="70%" minSize="30%">
@@ -2660,14 +2700,30 @@ export function TideCardContent({ cardId }: { cardId: string }) {
           streamingPath={services.codeSessionStore.streamingPath}
         />
       </TugSplitPanel>
-      <TugSplitPanel id="tide-entry" defaultSize="30%" minSize="15%" collapsible>
-        <TugPromptEntry
-          codeSessionStore={services.codeSessionStore}
-          sessionMetadataStore={services.sessionMetadataStore}
-          historyStore={services.historyStore}
-          fileCompletionProvider={services.fileCompletionProvider}
-          sessionId={services.sessionId}
-        />
+      <TugSplitPanel
+        ref={entryPanelRef}
+        id="tide-entry"
+        defaultSize="30%"
+        minSize="180px"
+        maxSize="90%"
+      >
+        <ResponderScope>
+          <TugBox /* …gallery-card layout… */>
+            <TugPromptEntry
+              ref={entryDelegateRef}
+              id={`${cardId}-entry`}
+              codeSessionStore={services.codeSessionStore}
+              sessionMetadataStore={services.sessionMetadataStore}
+              historyStore={services.historyStore}
+              completionProviders={services.completionProviders}
+              onBeforeSubmit={handleBeforeSubmit}
+              statusContent={statusContent}
+              toolsContent={toolsContent}
+              maximized={maximized}
+              onMaximizeChange={setMaximized}
+            />
+          </TugBox>
+        </ResponderScope>
       </TugSplitPanel>
     </TugSplitPane>
   );
@@ -2699,13 +2755,14 @@ export function registerTideCard(): void {
 - `useTideCardServices(cardId)` is a local hook. It constructs **per-card** a `CodeSessionStore` (keyed by a per-card `sessionKey` — see below) and a per-card `PropertyStore` used as the streaming target for that card's `TugMarkdownView`. It reaches for **shared lazy singletons** for `SessionMetadataStore`, `PromptHistoryStore`, and `FileTreeStore`, following the existing `gallery-prompt-input.tsx` module-singleton pattern (`_cardServices`, `_fileTreeStore`). Per D-T3-11, the shared observers rehydrate from their snapshot feeds on (re)connect, so sharing them across cards is correct; only `CodeSessionStore` — which owns per-session turn state — is strictly per-card.
 - **Session keying per D-T3-09 and Phase T0.5 P2:** `sessionKey` comes from the first `session_init` frame the store sees after mount (watch-channel snapshot per ws-verification.md T8). Until P2 ships, the first Tide card opened takes the default session and stores its `sessionKey`; subsequent cards either share that default (single-session mode, visible indicator) or are blocked from opening. Post-P2, each card's `sessionKey` routes to a distinct tugtalk supervisor session via the session_id field in frame payloads, and the cards are fully independent.
 - The card inherits `tugcard-content`'s `flex: 1; overflow: auto; min-height: 0`. `TugSplitPane` already expects that shape.
-- Persistence: `TugSplitPane` already persists layout via tugbank, and `TugPromptInput` already persists editing state via tugbank `[L23]`. The Tide card itself adds no new persistence. Crucially, **none of the new stores introduced in T3.4 may depend on IndexedDB (D-T3-10).** All fresh persistence goes through tugbank.
+- Persistence: `TugSplitPane` already persists layout via tugbank, and `TugPromptInput` already persists editing state via tugbank `[L23]`; `TugPromptEntry` persists route + per-route drafts + maximized state via `useTugcardPersistence`. The Tide card itself adds no new persistence beyond what the copied gallery card already wires. Crucially, **none of the new stores introduced in T3.4 may depend on IndexedDB (D-T3-10).** All fresh persistence goes through tugbank.
 
 **Exit criteria:**
 - `registerTideCard()` called from `main.tsx`; opening the card in the running tugdeck shows the split pane with a markdown-view top pane and a prompt-entry bottom pane.
 - Default feeds `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]` are subscribed on card mount and released on close.
 - Split-pane layout persists across reload; bottom pane collapsible via snap-to-close.
 - Opening the card for the first time with no prior state shows the `preferred` size.
+- **Every gallery-card feature listed in the baseline contract above is present and working in the Tide card** — maximize toggle (with persistence), all four editor-settings popups with `topLabel`, atom font embedding, route gutter with `>`/`❯` alias, content-driven sizing gated on maximize, status-row layout. Reviewer must spot-check each item; missing any one is a failed exit.
 
 ---
 
