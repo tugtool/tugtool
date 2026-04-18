@@ -684,16 +684,10 @@ mod tests {
         // field-less on project_dir after W2 Step 4, this can only work if
         // the per-call argument actually flows through build_tugcode_command.
         let spawner = TugcodeSpawner::new(PathBuf::from("/opt/tugtool/tugcode"));
-        let (_p1, args1) = build_tugcode_command(
-            &spawner.tugcode_path,
-            Path::new("/work/a"),
-            "/canonical/a",
-        );
-        let (_p2, args2) = build_tugcode_command(
-            &spawner.tugcode_path,
-            Path::new("/work/b"),
-            "/canonical/b",
-        );
+        let (_p1, args1) =
+            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"), "/canonical/a");
+        let (_p2, args2) =
+            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"), "/canonical/b");
         assert!(args1.iter().any(|a| a == "/work/a"));
         assert!(!args1.iter().any(|a| a == "/work/b"));
         assert!(args2.iter().any(|a| a == "/work/b"));

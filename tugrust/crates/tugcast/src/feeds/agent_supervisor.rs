@@ -1616,11 +1616,7 @@ mod tests {
     /// its own spawner via [`make_supervisor_with_spawner`].
     struct StallSpawner;
     impl ChildSpawner for StallSpawner {
-        fn spawn_child(
-            &self,
-            _project_dir: &std::path::Path,
-            _workspace_key: &str,
-        ) -> SpawnFuture {
+        fn spawn_child(&self, _project_dir: &std::path::Path, _workspace_key: &str) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
     }
@@ -2944,11 +2940,7 @@ mod tests {
     /// loop without spinning up a real subprocess.
     struct CrashingSpawner;
     impl ChildSpawner for CrashingSpawner {
-        fn spawn_child(
-            &self,
-            _project_dir: &std::path::Path,
-            _workspace_key: &str,
-        ) -> SpawnFuture {
+        fn spawn_child(&self, _project_dir: &std::path::Path, _workspace_key: &str) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
     }
