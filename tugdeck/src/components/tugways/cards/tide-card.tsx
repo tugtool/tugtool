@@ -51,6 +51,7 @@ import { presentWorkspaceKey, registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
+import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
 import {
   getFixtureSessionMetadataStore,
   wrapPositionZero,
@@ -129,9 +130,11 @@ export interface TideCardContentProps {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-card services consumed by `TideCardContent`. Constructed once at
- * mount via a `useState` lazy initializer, disposed when the card
- * unmounts; stable identity across renders.
+ * Per-card services consumed by `TideCardContent`. Constructed once a
+ * binding for this card appears in `cardSessionBindingStore`, torn
+ * down when the binding clears or the card unmounts. The hook
+ * returns `null` while the card is unbound — the caller renders the
+ * project-picker (arriving in sub-step 4c) in that state.
  */
 export interface TideCardServices {
   codeSessionStore: CodeSessionStore;
@@ -160,7 +163,15 @@ interface InternalServices {
   } | null;
 }
 
-export function useTideCardServices(cardId: string): TideCardServices {
+export function useTideCardServices(cardId: string): TideCardServices | null {
+  // Subscribe to the per-card binding. `binding` drives the services
+  // lifecycle: services construct when a binding appears, tear down
+  // when it clears.
+  const binding = useSyncExternalStore<CardSessionBinding | null>(
+    cardSessionBindingStore.subscribe,
+    useCallback(() => cardSessionBindingStore.getBinding(cardId) ?? null, [cardId]),
+  );
+
   const workspaceKey = useCardWorkspaceKey(cardId);
   const workspaceFilter: FeedStoreFilter = useMemo(
     () =>
@@ -180,26 +191,31 @@ export function useTideCardServices(cardId: string): TideCardServices {
   // the same identity the component passes to `<TugPromptEntry ref>`.
   const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
 
-  // All per-card stores are constructed once via a `useState` lazy
-  // initializer. React invokes the initializer exactly once per
-  // mount; the returned identity is stable across renders because we
-  // never call setState.
-  //
-  // StrictMode caveat: in dev, React invokes this initializer twice
-  // and retains only one result. Every constructor below is
-  // resource-free in sub-step 4a — `MockTugConnection` holds no
-  // WebSocket, `EditorSettingsStore` and `PromptHistoryStore`
-  // register no external subscriptions, and `FeedStore` is only
-  // built when a live connection is present (rare at hook-init time
-  // pre-binding). The discarded instance becomes unreachable and GC
-  // collects it. Sub-step 4b replaces this pattern with binding-gated
-  // construction inside a `useLayoutEffect` where the live connection
-  // is actually in play and strict lifecycle symmetry matters.
-  const [services] = useState<InternalServices>(() => {
+  // Filter changes are captured via a ref so the construction effect
+  // below depends only on binding identity, not on filter identity —
+  // workspace-key flips must not tear services down. The ref is
+  // updated in a layout pass before the propagation effect reads it.
+  const workspaceFilterRef = useRef(workspaceFilter);
+  useLayoutEffect(() => {
+    workspaceFilterRef.current = workspaceFilter;
+  }, [workspaceFilter]);
+
+  // Services are held in React state so renders reflect lifecycle
+  // transitions (null → ready → null).
+  const [services, setServices] = useState<InternalServices | null>(null);
+
+  // Construct services when a binding appears; dispose when it clears
+  // or the card unmounts. Mock-backed throughout 4b — sub-steps 4e–g
+  // swap the individual stores one at a time.
+  useLayoutEffect(() => {
+    if (binding === null) {
+      setServices(null);
+      return;
+    }
     const mockConnection = new MockTugConnection();
     const codeSessionStore = new CodeSessionStore({
       conn: mockConnection as unknown as TugConnection,
-      tugSessionId: TIDE_TUG_SESSION_ID,
+      tugSessionId: binding.tugSessionId,
     });
     const editorStore = new EditorSettingsStore();
     const historyStore = new PromptHistoryStore();
@@ -210,7 +226,7 @@ export function useTideCardServices(cardId: string): TideCardServices {
         connection,
         [FeedId.FILETREE],
         undefined,
-        workspaceFilter,
+        workspaceFilterRef.current,
       );
       const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
       fileTreeStack = {
@@ -219,44 +235,43 @@ export function useTideCardServices(cardId: string): TideCardServices {
         provider: fileTreeStore.getFileCompletionProvider(),
       };
     } else {
-      console.warn("useTideCardServices: connection not available at render");
+      console.warn("useTideCardServices: connection not available when binding appeared");
     }
-    return { mockConnection, codeSessionStore, editorStore, historyStore, fileTreeStack };
-  });
-
-  // Dispose all per-card stores together when the card unmounts.
-  useEffect(() => {
-    return () => {
-      services.codeSessionStore.dispose();
-      if (services.fileTreeStack) {
-        services.fileTreeStack.fileTreeStore.dispose();
-        services.fileTreeStack.feedStore.dispose();
-      }
+    const next: InternalServices = {
+      mockConnection,
+      codeSessionStore,
+      editorStore,
+      historyStore,
+      fileTreeStack,
     };
-  }, [services]);
+    setServices(next);
+    return () => {
+      next.codeSessionStore.dispose();
+      if (next.fileTreeStack) {
+        next.fileTreeStack.fileTreeStore.dispose();
+        next.fileTreeStack.feedStore.dispose();
+      }
+      setServices(null);
+    };
+  }, [binding]);
 
-  // Propagate workspace-filter changes to the feed store.
-  useEffect(() => {
-    services.fileTreeStack?.feedStore.setFilter(workspaceFilter);
+  // Propagate workspace-filter changes to the live feed store. Runs
+  // only when `services` or `workspaceFilter` identity changes; never
+  // rebuilds the services bag.
+  useLayoutEffect(() => {
+    services?.fileTreeStack?.feedStore.setFilter(workspaceFilter);
   }, [services, workspaceFilter]);
 
   // Session metadata: module-scoped fixture singleton; swapped for a
   // live per-card store in sub-step 4f.
   const sessionMetadataStore = getFixtureSessionMetadataStore();
 
-  // Completion providers.
-  //
-  //   `@`: live `FileTreeStore` against the real connection. Falls
-  //        back to `EMPTY_FILE_COMPLETION_PROVIDER` when the
-  //        connection was null at first render so the trigger stays
-  //        wired regardless of timing.
-  //
-  //   `/`: fixture `SessionMetadataStore` sourced from the captured
-  //        `capabilities/<LATEST>/system-metadata.jsonl`, wrapped with
-  //        the position-0 gate so `/` mid-text yields an empty popup.
+  // Completion providers. Null-safe on `services` so this can be
+  // memoized unconditionally (rules of hooks); the caller only reads
+  // it when `services` is non-null.
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
-      "@": services.fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "@": services?.fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
       "/": wrapPositionZero(
         entryDelegateRef,
         sessionMetadataStore.getCommandCompletionProvider(),
@@ -265,17 +280,17 @@ export function useTideCardServices(cardId: string): TideCardServices {
     [services, sessionMetadataStore],
   );
 
-  return useMemo<TideCardServices>(
-    () => ({
+  return useMemo<TideCardServices | null>(() => {
+    if (services === null) return null;
+    return {
       codeSessionStore: services.codeSessionStore,
       sessionMetadataStore,
       historyStore: services.historyStore,
       completionProviders,
       editorStore: services.editorStore,
       entryDelegateRef,
-    }),
-    [services, sessionMetadataStore, completionProviders],
-  );
+    };
+  }, [services, sessionMetadataStore, completionProviders]);
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +299,21 @@ export function useTideCardServices(cardId: string): TideCardServices {
 
 export function TideCardContent({ cardId }: TideCardContentProps) {
   const services = useTideCardServices(cardId);
+  if (services === null) {
+    // Unbound: the project picker lands in sub-step 4c. For now this
+    // is a silent placeholder so the card has a renderable body while
+    // the binding subscription is in place.
+    return <div className="tide-card-picker-pending" aria-hidden="true" />;
+  }
+  return <TideCardBody cardId={cardId} services={services} />;
+}
+
+interface TideCardBodyProps {
+  cardId: string;
+  services: TideCardServices;
+}
+
+function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);

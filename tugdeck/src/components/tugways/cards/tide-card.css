@@ -36,3 +36,10 @@
   height: 100%;
   width: 100%;
 }
+
+/* Silent placeholder rendered while the card is unbound. Fills the
+   card body until the project picker arrives. */
+.tide-card-picker-pending {
+  height: 100%;
+  width: 100%;
+}
