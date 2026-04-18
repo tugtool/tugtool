@@ -108,7 +108,7 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-gutter — static route indicator next to the editor
    ----------------------------------------------------------------------------
-   Renders the active route's prefix character (`>`, `$`, `:`) as plain
+   Renders the active route's prefix character (`❯`, `$`, `:`) as plain
    text in the editor's own font and size. Because the gutter uses the
    same font-family, font-size, and line-height as the editor, the
    character shares the editor's baseline and line-box geometry — no
@@ -151,7 +151,7 @@ body {
   padding-left: 2px;
 }
 
-/* Nudge the route glyph (`>`, `$`, `:`) up a touch inside the choice-group
+/* Nudge the route glyph (`❯`, `$`, `:`) up a touch inside the choice-group
    buttons at the bottom of the entry. Text characters baseline-align to the
    label, which optically reads too low next to a cap-height word like
    `Prompt`. One scoped rule — the rest of the choice group is untouched. */
@@ -304,6 +304,14 @@ body {
    trigger for a TugPopover rendered inside the status row. The entry
    owns no CSS for the button's chrome — TugPushButton's tokens stay
    in its own slot [L20]. */
+
+/* Maximize toggle button — a TugPushButton subtype="icon" rendered on
+   the leading edge of the status row. Dispatches TOGGLE_MAXIMIZE
+   through the responder chain [L11]; the entry's `useResponder`
+   intercepts and re-emits via the `onMaximizeChange` controlled
+   callback. As with `.tug-prompt-entry-tools-toggle`, the entry owns no
+   CSS for the button's chrome — TugPushButton's tokens stay in its
+   own slot [L20]. */
 
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-tools-popover — content node of the tools popover

@@ -251,6 +251,13 @@ export const TUG_ACTIONS = {
   //                         searchable responder.
   // TOGGLE_MENU:            payload — none. Open the action menu for the
   //                         first card.
+  // TOGGLE_MAXIMIZE:        payload — none. Flip the first responder's
+  //                         maximize state. Emitted by an entry's leading
+  //                         status-row toggle (Maximize2 ↔ Minimize2).
+  //                         Used by composite controls whose pane is
+  //                         maximized in-place (e.g. TugPromptEntry),
+  //                         distinct from the bare MAXIMIZE action which
+  //                         targets a card's window.
   CLOSE:                  "close",
   MINIMIZE:               "minimize",
   MAXIMIZE:               "maximize",
@@ -260,6 +267,7 @@ export const TUG_ACTIONS = {
   ADD_TAB_TO_ACTIVE_CARD: "add-tab-to-active-card",
   FIND:                   "find",
   TOGGLE_MENU:            "toggle-menu",
+  TOGGLE_MAXIMIZE:        "toggle-maximize",
 
   // ---- Meta ----
   //

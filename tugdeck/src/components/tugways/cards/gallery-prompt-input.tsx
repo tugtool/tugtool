@@ -370,7 +370,7 @@ export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
               size="sm"
             />
             <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
-              Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-family-mono)" }}>&gt;</span>
+              Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-family-mono)" }}>❯</span>
             </span>
           </div>
           <div ref={editorWrapRef}>
@@ -385,7 +385,7 @@ export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
             completionProviders={completionProviders}
             historyProvider={getCardServices().historyProvider}
             dropHandler={galleryDropHandler}
-            routePrefixes={[">", "$", ":", "/"]}
+            routePrefixes={["❯", "$", ":", "/"]}
             onRouteChange={handleRouteChange}
           />
           </div>

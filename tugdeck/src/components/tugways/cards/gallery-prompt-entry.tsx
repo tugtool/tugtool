@@ -97,6 +97,10 @@ const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 0.10, label: "+0.10 px" },
 ];
 
+/** Percentage the entry panel pegs to when the user clicks Maximize.
+ *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
+const ENTRY_PANEL_MAX_PCT = 90;
+
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.1, label: "1.1" },
@@ -302,6 +306,18 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     },
   });
 
+  // --- Maximize toggle. ---
+  // Session-only; not persisted with the layout. When true, the entry
+  // panel is pegged to its declared max and the split-pane handle is
+  // disabled. Toggling false restores the user's saved/dragged size.
+  const [maximized, setMaximized] = React.useState(false);
+  useLayoutEffect(() => {
+    const panel = entryPanelRef.current;
+    if (!panel) return;
+    if (maximized) panel.setTransientSize(ENTRY_PANEL_MAX_PCT, { animated: true });
+    else panel.restoreUserSize({ animated: true });
+  }, [maximized]);
+
   // --- Status row + tools panel content. ---
   const statusContent = (
     <TugBadge size="sm" emphasis="tinted" role="data">
@@ -352,6 +368,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
       <TugSplitPane
         orientation="horizontal"
         showHandle={false}
+        disabled={maximized}
         storageKey="gallery.prompt-entry"
       >
         <TugSplitPanel id="gallery-prompt-entry-top" defaultSize="70%" minSize="10%">
@@ -384,6 +401,8 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
                 onBeforeSubmit={handleBeforeSubmit}
                 statusContent={statusContent}
                 toolsContent={toolsContent}
+                maximized={maximized}
+                onMaximizeChange={setMaximized}
               />
             </TugBox>
           </ResponderScope>

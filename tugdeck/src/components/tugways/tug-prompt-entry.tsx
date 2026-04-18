@@ -44,7 +44,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Settings, Square } from "lucide-react";
+import { ArrowUp, Maximize2, Minimize2, Settings, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -80,7 +80,7 @@ import { useTugcardPersistence } from "./use-tugcard-persistence";
  * leading icon so the control is both scannable and self-documenting.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: ">", label: "Prompt",  icon: ">" },
+  { value: "❯", label: "Prompt",  icon: "❯" },
   { value: "$", label: "Shell",   icon: "$" },
   { value: ":", label: "Command", icon: ":" },
 ];
@@ -92,12 +92,12 @@ const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
  * engine's legacy `detectRoutePrefix` path without inserting a
  * route atom into the text flow.
  */
-const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
+const ROUTE_PREFIXES: ReadonlyArray<string> = ["❯", "$", ":"];
 
 /**
  * Return-key semantics per route.
  *
- * - `>` (Prompt): Return inserts a newline; Shift+Return submits. Prompts
+ * - `❯` (Prompt): Return inserts a newline; Shift+Return submits. Prompts
  *   are long-form, so naïve Return should stay a newline and submit is
  *   a deliberate gesture.
  * - `$` (Shell): Return submits; Shift+Return inserts a newline. Shell
@@ -110,7 +110,7 @@ const ROUTE_PREFIXES: ReadonlyArray<string> = [">", "$", ":"];
  * action per route; Shift+Return is the opposite automatically.
  */
 const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
-  ">": "newline",
+  "❯": "newline",
   "$": "submit",
   ":": "submit",
 };
@@ -130,19 +130,28 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
 interface TugPromptEntryPersistedState {
   currentRoute: string;
   perRoute: Record<string, TugTextEditingState>;
+  /**
+   * Latest known maximize state of the entry's pane. Optional so older
+   * persisted snapshots (predating the maximize toggle) restore as
+   * "not maximized" without a migration. The entry doesn't own this
+   * state itself — it's a controlled-component prop — so on save it
+   * snapshots the current `maximized` prop and on restore it re-emits
+   * via `onMaximizeChange` so the parent's state matches the snapshot.
+   */
+  maximized?: boolean;
 }
 
 /**
  * Default route at initial mount when no persisted state restores a
  * prior selection. One of the three segments must always be active —
- * there is no "no route" state in the indicator. Prompt (`>`) is the
+ * there is no "no route" state in the indicator. Prompt (`❯`) is the
  * sensible default: it's what the user most often wants (talking to
  * Claude). Route selection is sticky and is owned by the entry's
  * `route` state — the gutter renders the current route's icon next
  * to the editor, and only the choice group (or restore) ever changes
  * it.
  */
-const DEFAULT_ROUTE = ">";
+const DEFAULT_ROUTE = "❯";
 
 // ---------------------------------------------------------------------------
 // Effective-empty helper
@@ -166,7 +175,7 @@ function isEffectivelyEmpty(input: TugPromptInputDelegate | null): boolean {
  * Pre-gutter drafts stored the route indicator as an inline atom at
  * position 0. The gutter refactor renders the route outside the text
  * flow, so any persisted payload that still carries a route atom would
- * render as an orphan `>`/`$`/`:` image inside the editor on reload.
+ * render as an orphan `❯`/`$`/`:` image inside the editor on reload.
  *
  * One forward pass: collect surviving atoms and the offset shifts
  * introduced by removing each route-atom's `\uFFFC` placeholder from
@@ -310,6 +319,18 @@ export interface TugPromptEntryProps {
    */
   toolsContent?: React.ReactNode;
   /**
+   * When defined, renders a maximize toggle on the leading edge of the
+   * status row (left of `statusContent`). The entry is a controlled
+   * component for this state — the parent owns `maximized` and reflects
+   * any size/handle adjustments on the surrounding `TugSplitPane`. The
+   * button itself is a single-icon toggle (Maximize2 ↔ Minimize2),
+   * mirroring the macOS Finder green-button affordance. When `maximized`
+   * is undefined, the toggle is not rendered.
+   */
+  maximized?: boolean;
+  /** Fires when the user clicks the maximize toggle. */
+  onMaximizeChange?: (next: boolean) => void;
+  /**
    * Caller-supplied className merged with the root.
    * @selector standard
    */
@@ -363,6 +384,8 @@ export const TugPromptEntry = React.forwardRef<
     onBeforeSubmit,
     statusContent,
     toolsContent,
+    maximized,
+    onMaximizeChange,
     className,
   } = props;
 
@@ -447,6 +470,20 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onBeforeSubmitRef.current = onBeforeSubmit;
   }, [onBeforeSubmit]);
+
+  // Live refs for the maximize controlled-pair so the chain-action
+  // handler (registered once at mount via `useResponder.actions`) sees
+  // the current values per [L07]. The handler can't close over `props`
+  // directly: `useResponder`'s actions map is captured at mount and
+  // would freeze whatever values the first render had.
+  const maximizedRef = useRef(props.maximized);
+  const onMaximizeChangeRef = useRef(props.onMaximizeChange);
+  useLayoutEffect(() => {
+    maximizedRef.current = props.maximized;
+  }, [props.maximized]);
+  useLayoutEffect(() => {
+    onMaximizeChangeRef.current = props.onMaximizeChange;
+  }, [props.onMaximizeChange]);
 
   // Shared submit logic. Invoked by both the SUBMIT chain-action handler
   // (button click, Cmd+Enter, etc.) and the Return/Shift+Return keyboard
@@ -583,6 +620,18 @@ export const TugPromptEntry = React.forwardRef<
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         performSubmit();
       },
+      [TUG_ACTIONS.TOGGLE_MAXIMIZE]: (_event: ActionEvent) => {
+        // Controlled-component routing per [L11]: the entry doesn't own
+        // `maximized` itself — the parent does — so the handler reads
+        // the current value through a ref [L07] and re-emits via the
+        // controlled callback. The button is the *control*; the parent
+        // is the *responder* whose state mutates. The intermediate hop
+        // through this handler is necessary because the button lives
+        // inside the entry's responder scope, so the chain dispatch
+        // hits this node first.
+        const next = !maximizedRef.current;
+        onMaximizeChangeRef.current?.(next);
+      },
     },
   });
 
@@ -666,7 +715,11 @@ export const TugPromptEntry = React.forwardRef<
       if (input) {
         perRoute[routeRef.current] = input.captureState();
       }
-      return { currentRoute: routeRef.current, perRoute };
+      return {
+        currentRoute: routeRef.current,
+        perRoute,
+        maximized: maximizedRef.current ?? false,
+      };
     },
     onRestore: (state) => {
       // Defensive shape check. Before commit 99809d06 the child
@@ -710,6 +763,14 @@ export const TugPromptEntry = React.forwardRef<
       if (root) {
         root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
       }
+      // Re-emit the persisted maximize state so the parent's controlled
+      // value matches the snapshot. Reading defensively because older
+      // payloads may not carry the field.
+      const persistedMaximized =
+        state && typeof state === "object" && typeof state.maximized === "boolean"
+          ? state.maximized
+          : false;
+      onMaximizeChangeRef.current?.(persistedMaximized);
     },
   });
 
@@ -748,7 +809,10 @@ export const TugPromptEntry = React.forwardRef<
   // Render the status row only when there is something to put in it.
   // Otherwise the row collapses to nothing and the input + toolbar stay
   // flush against the top of the entry, matching pre-polish behavior.
-  const hasStatusRow = statusContent !== undefined || toolsContent !== undefined;
+  const hasStatusRow =
+    statusContent !== undefined ||
+    toolsContent !== undefined ||
+    maximized !== undefined;
 
   // Tools popover open state. The entry is the single source of truth —
   // TugPopover runs in controlled mode via the `open` / `onOpenChange`
@@ -774,6 +838,23 @@ export const TugPromptEntry = React.forwardRef<
       >
         {hasStatusRow && (
           <div className="tug-prompt-entry-status">
+            {maximized !== undefined && (
+              <TugPushButton
+                className="tug-prompt-entry-maximize-toggle"
+                subtype="icon"
+                size="xs"
+                emphasis={maximized ? "filled" : "ghost"}
+                role={maximized ? "accent" : "action"}
+                aria-label={maximized ? "Restore size" : "Maximize"}
+                aria-pressed={maximized}
+                icon={
+                  maximized
+                    ? <Minimize2 strokeWidth={2} aria-hidden="true" />
+                    : <Maximize2 strokeWidth={2} aria-hidden="true" />
+                }
+                action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
+              />
+            )}
             <div className="tug-prompt-entry-status-content">
               {statusContent}
             </div>
@@ -787,11 +868,11 @@ export const TugPromptEntry = React.forwardRef<
                   <TugPushButton
                     className="tug-prompt-entry-tools-toggle"
                     subtype="icon"
-                    size="sm"
+                    size="xs"
                     emphasis={toolsOpen ? "filled" : "ghost"}
                     role={toolsOpen ? "accent" : "action"}
                     aria-label="Toggle tools"
-                    icon={<Settings size={14} strokeWidth={2} aria-hidden="true" />}
+                    icon={<Settings size={12} strokeWidth={2} aria-hidden="true" />}
                   />
                 </TugPopoverTrigger>
                 <TugPopoverContent

@@ -973,12 +973,12 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
     expect(sentText).toContain("hi");
     expect(sentText).not.toContain(TUG_ATOM_CHAR);
     // Handler was called with a defined route/atoms shape. The entry's
-    // default route (Prompt) is active, so the handler receives ">".
+    // default route (Prompt) is active, so the handler receives "❯".
     // The null branch of the signature is still reachable by future
     // callers that expose a "no route" state — the entry no longer
     // takes that branch.
     expect(received).not.toBeNull();
-    expect(received!.route).toBe(">");
+    expect(received!.route).toBe("❯");
   });
 
   it("omitting localCommandHandler is equivalent to returning false (send is called)", () => {

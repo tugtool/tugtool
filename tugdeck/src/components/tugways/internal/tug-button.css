@@ -798,6 +798,19 @@
   padding: 0;
 }
 
+/*
+ * Icon glyph size scales with the icon-button size. Without these rules
+ * the global `.tug-button svg` (16px) wins regardless of the button's
+ * size class, so an `xs` icon button renders the same icon as a `lg`
+ * one. The React-level `<Icon size={N}>` prop is also clobbered by the
+ * global rule. These per-size selectors give the size prop on the
+ * button real meaning for the icon subtype.
+ */
+.tug-button-icon-xs svg { width: 0.75rem;  height: 0.75rem;  } /* 12px */
+.tug-button-icon-sm svg { width: 0.875rem; height: 0.875rem; } /* 14px */
+.tug-button-icon-md svg { width: 1rem;     height: 1rem;     } /* 16px */
+.tug-button-icon-lg svg { width: 1.125rem; height: 1.125rem; } /* 18px */
+
 /* ============================================================================
    Loading State
    ========================================================================= */
