@@ -176,26 +176,218 @@ Each step is its own commit. Tests + checks pass at the end of every step.
 
 #### Step 4 — Wire real backend services + project picker {#step-4}
 
+This is the largest step in the plan. It replaces every mock seam with live wiring, introduces the project picker, lands the spawn/close lifecycle, enforces single-session discipline pre-P2, fixes the render-body lifecycle smell flagged in Step 3, and scrubs every mock / fixture reference out of the production code path. To stay reviewable and bisectable, the work is decomposed into ten sub-steps — **one commit per sub-step**. The system builds, typechecks, and tests pass at every commit. Live-Claude manual smoke becomes possible at [4e](#step-4e); before that, each sub-step is validated via unit/integration tests.
+
+Sub-step ordering reflects dependencies:
+
+| Sub-step | What it lands |
+|---|---|
+| [4a](#step-4a) | Lifecycle hygiene — fix the `if (ref.current === null) ref.current = new X()` pattern |
+| [4b](#step-4b) | Subscribe to `cardSessionBindingStore`; services become `TideCardServices | null` |
+| [4c](#step-4c) | Project picker + `spawn_session` submission |
+| [4d](#step-4d) | `sendCloseSession` on unmount |
+| [4e](#step-4e) | Swap `CodeSessionStore` to live connection (first real Claude smoke) |
+| [4f](#step-4f) | Swap `SessionMetadataStore` to live per-card |
+| [4g](#step-4g) | Swap `PromptHistoryStore` to live (shared, persisted) |
+| [4h](#step-4h) | Single-session shim pre-P2 |
+| [4i](#step-4i) | Recent projects + opportunistic cleanup |
+| [4j](#step-4j) | **Mock/fixture scrub** — hard exit criterion: zero `Mock*` / fixture references in production code |
+
+##### Sub-step 4a — Lifecycle hygiene in `useTideCardServices` {#step-4a}
+
 **Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace mock seams with real wiring).
-- `tugdeck/src/components/tugways/cards/tide-card.css` (picker styles, if any).
-- New files for the picker if its UI is non-trivial (probably inline for the MVP).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (refactor hook internals only).
 
 **Work:**
-- Replace `MockTugConnection`-backed `CodeSessionStore` with a real one bound to the live connection (as `gallery-prompt-input` does today via `getConnection()`).
-- Replace fixture `SessionMetadataStore` with a shared lazy singleton — module-scoped `_sessionMetadataStore` initialized from the real connection.
-- Replace fixture `PromptHistoryStore` similarly.
-- Replace fixture file completion provider with a real `FILETREE`-backed provider.
-- **Project picker:** when no `project_dir` is bound for this card, the **picker is the entire card body** (no split-pane behind it; no placeholder; the picker stands alone) per [D3](#resolved-decisions). Text input + "Open project" button only — no native dialog, no "Browse…" button per [D1](#resolved-decisions). On submit, send `encodeSpawnSession(cardId, tugSessionId, projectDir)`, await `spawn_session_ok`, call `cardSessionBindingStore.setBinding(cardId, { sessionKey, projectDir })`, then construct/expose the `CodeSessionStore`. Once bound the picker disappears entirely and the split pane (markdown view + entry) takes over. There is no in-card re-bind affordance — re-pointing requires a new card per [D4](#resolved-decisions).
-- **Recent projects (soft requirement, [D2](#resolved-decisions)):** persist the last ≈5 chosen project paths in tugbank under a card-type-scoped key (e.g., `tide.recent-projects`). Render them as quick-pick buttons under the text input. Choosing one populates the input *and* submits in one click. If time runs short, ship Step 4 without this and follow up before [Step 8](#step-8); don't gate the rest of the plan on it.
-- On unmount, send `sendCloseSession(cardId)`; clear the binding.
-- **Single-session shim:** if `cardSessionBindingStore` already holds a binding for a *different* card, the second card either (a) shares the same `sessionKey` with a visible "single-session mode" badge in the status row, or (b) shows a "Single-session mode — close the other Tide card first" message and a disabled picker. Pick one and document in the picker code.
-- **Lifecycle hygiene (follow-up from Step 3):** Step 3 extracts the existing per-card service construction into `useTideCardServices` verbatim — which inherits the "`if (ref.current === null) ref.current = new X()`" render-time construction + `useEffect` teardown pattern from `gallery-prompt-entry.tsx`. That pattern splits a single lifecycle across two React phases (render-body side effect, effect-body cleanup) in a way that is not sanctioned by L24 (structure-zone state belongs behind `useLayoutEffect` / `useSyncExternalStore`, not ad-hoc ref writes in render) and exposes a real StrictMode cleanup-then-no-reconstruct hazard. Because Step 4 is already touching every service's construction (mock → real `CodeSessionStore`, shared-singleton `SessionMetadataStore` / `PromptHistoryStore`, spawn-gated instantiation), fix the pattern *in the same step*: construct each service via an idiomatic lifecycle (e.g., `useState` lazy initializer backed by the spawn-bound path, construction inside `useLayoutEffect` where registration ordering is required, or a dedicated `useSingletonStore` helper) and confine teardown to the matching effect cleanup. No `if (ref.current === null) ref.current = new X()` writes in the render body anywhere in `tide-card.tsx` or `useTideCardServices` after this step. This bullet ties into the **Tuglaws adherence** exit criterion in [Success Criteria](#success-criteria) — Step 4 is where that bar starts being enforced.
+- Replace every `if (xxxRef.current === null) xxxRef.current = new X()` render-body write with an idiomatic lifecycle: construction runs inside a `useLayoutEffect` (empty deps for now; [4b](#step-4b) replaces the deps with a binding gate); services held in `useState`; cleanup disposes. Structure-zone state behind the mechanisms L24 names, with no render-body side effects.
+- Preserve the hook's external return shape (still `TideCardServices`, non-null). The binding gate arrives in [4b](#step-4b) — this sub-step is pure compliance refactor, no behavior change.
+- Accept a one-frame window where services are null after mount but before the effect commits: render a transient empty pane (no picker yet; that's [4c](#step-4c)). If the flash is visible in manual test, switch to `useState` lazy initializer (StrictMode double-invokes the initializer; `MockTugConnection` holds no external resources so the orphan is harmless — document the choice in a code comment).
+- Drop the `eslint-disable-next-line react-hooks/exhaustive-deps` above `completionProviders`. With refs constructed in the effect rather than render-body, the memo deps are correct.
 
 **Verification:**
-- `cargo nextest run` clean (no Rust regressions from the binding store usage).
-- `bun test` adds at least one integration-style test asserting the spawn → ack → bind → store-construction sequence on mount, and the close → clear-binding sequence on unmount.
-- Manual: type a path; the picker disappears; the entry renders; submit `> hi`; observe a real Claude response stream in via `TugMarkdownView`. (This is the live end-to-end smoke.)
+- `bun x tsc --noEmit` + `bun test` green.
+- `rg 'if \(.+Ref\.current === null\)' tugdeck/src/components/tugways/cards/tide-card.tsx` returns zero matches.
+- `rg 'eslint-disable' tugdeck/src/components/tugways/cards/tide-card.tsx` returns zero matches.
+- Manual: open a Tide card; all polish features still work (maximize toggle, settings popover Font/Size/Tracking/Leading, route gutter, content-driven sizing).
+
+##### Sub-step 4b — Binding subscription; services gated on binding {#step-4b}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+
+**Work:**
+- In `useTideCardServices`, subscribe to `cardSessionBindingStore` via `useSyncExternalStore`. Derive `binding = snapshot.get(cardId) ?? null`.
+- Change the services-construction effect's dep to `[binding?.tugSessionId]`. Construct services only when `binding !== null`; dispose on binding change or card unmount.
+- Change the hook return type to `TideCardServices | null`.
+- In `TideCardContent`, early-return a placeholder div (`<div className="tide-card-picker-pending" aria-hidden="true" />`, empty) when `services === null`. The actual picker lands in [4c](#step-4c).
+- Still mock-backed: the mock `CodeSessionStore` and fixture stores are constructed against `binding.tugSessionId` when a binding appears.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- New unit test: render `<TideCardContent cardId="t1" />` → assert placeholder div; `cardSessionBindingStore.setBinding("t1", {tugSessionId: "s1", workspaceKey: "w1", projectDir: "/x"})` → assert split pane renders; `cardSessionBindingStore.clearBinding("t1")` → assert placeholder returns.
+- Manual: open a Tide card → empty placeholder shows (expected; picker in [4c](#step-4c)).
+
+##### Sub-step 4c — Project picker + `spawn_session` submission {#step-4c}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (add inline `<TideProjectPicker />`).
+- `tugdeck/src/components/tugways/cards/tide-card.css` (picker styles).
+
+**Work:**
+- Add an inline `TideProjectPicker({ cardId })` component in `tide-card.tsx`: single text input (label "Project path"), single "Open project" push button, inside the `tide-card` root flex column so it fills the card body per [D3](#resolved-decisions). Text input + button only — no native dialog, no Browse… per [D1](#resolved-decisions).
+- Submit handler: `const tugSessionId = crypto.randomUUID(); getConnection()?.sendFrame(encodeSpawnSession(cardId, tugSessionId, projectDir))`. The existing `spawn_session_ok` handler (`action-dispatch.ts:358–386`) calls `cardSessionBindingStore.setBinding(cardId, …)` on the ack; [4b](#step-4b)'s subscription causes `useTideCardServices` to construct services, which makes the picker disappear and the split pane appear.
+- Replace the 4b placeholder div with `<TideProjectPicker cardId={cardId} />` when `services === null`.
+- No close-on-unmount yet ([4d](#step-4d)). No recent projects ([4i](#step-4i)). No single-session shim ([4h](#step-4h)).
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- New test: mount card → simulate picker submit with a fake connection that captures `sendFrame` → assert a control frame matching `encodeSpawnSession(cardId, <uuid>, projectDir)` was sent. Then simulate `cardSessionBindingStore.setBinding(...)` → assert split pane renders.
+- Manual: open Tide card → picker renders; type `/tmp` → click Open project → `encodeSpawnSession` observed in the `tugcast` logs. (Binding won't complete until live backend is wired in [4e](#step-4e); picker staying on screen is expected for now.)
+
+##### Sub-step 4d — `sendCloseSession` on card unmount {#step-4d}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+
+**Work:**
+- In the services-construction `useLayoutEffect` cleanup, when `binding !== null`, call `sendCloseSession(getConnection(), cardId, binding.tugSessionId)` *before* disposing local services. `sendCloseSession` clears the binding in the store and sends the close frame; local dispose tears down subscriptions.
+- Order: `sendCloseSession` → `services.codeSessionStore.dispose()` → feed-store dispose.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- New test: mount card → simulate `setBinding` → unmount → assert `encodeCloseSession(cardId, tugSessionId)` frame sent AND `cardSessionBindingStore.getBinding(cardId) === undefined`.
+
+##### Sub-step 4e — Swap `CodeSessionStore` to live connection {#step-4e}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+
+**Work:**
+- Replace the mock construction (`new MockTugConnection()` + `new CodeSessionStore({ conn: mock as any, tugSessionId: TIDE_TUG_SESSION_ID })`) with `new CodeSessionStore({ conn: getConnection()!, tugSessionId: binding.tugSessionId })`.
+- Remove the `MockTugConnection` import. Keep `TIDE_TUG_SESSION_ID` constant for now — removed in [4i](#step-4i) once it is truly unreferenced.
+- This is the first sub-step where a live Claude turn can round-trip end-to-end: picker → spawn → bind → real `CodeSessionStore` → submit `> hi` → `assistant_text` deltas arrive.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- Manual smoke: launch `tugcast`, open Tide card, enter a real local project path, click Open project, wait for picker to disappear, submit `> hi`, confirm Claude replies streaming through `assistant_text` deltas. **This is the first real end-to-end Claude round-trip in the plan.**
+
+##### Sub-step 4f — Swap `SessionMetadataStore` to live (per-card) {#step-4f}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+
+**Work:**
+- Inside the services-construction effect, construct `new FeedStore(getConnection(), [FeedId.SESSION_METADATA], undefined, workspaceFilter)` and wrap it in `new SessionMetadataStore(...)`. Dispose in cleanup alongside the file-tree feed store.
+- Replace `getFixtureSessionMetadataStore()` in the `completionProviders` memo and in the `<TugPromptEntry sessionMetadataStore={...}>` prop with the per-card live store.
+- Remove the `getFixtureSessionMetadataStore` import. `wrapPositionZero` import stays (still wraps the `/` provider).
+- **Decision record:** the plan originally said "shared singleton" in [Scope](#scope); the live feed is workspace-filtered, so the store is per-(card, binding), not shared. The singleton framing is wrong for a workspace-filtered feed. This sub-step records that and moves on.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- Manual: open Tide card pointed at a real project, type `/` → popup lists *actual* skills/agents from the live session (not the captured fixture).
+
+##### Sub-step 4g — Swap `PromptHistoryStore` to live (shared, persisted) {#step-4g}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+- `tugdeck/src/settings-api.ts` (if no changes needed to existing `getPromptHistory` / `putPromptHistory`, leave untouched).
+
+**Work:**
+- Introduce a module-scoped lazy singleton `getTidePromptHistoryStore(): PromptHistoryStore` in `tide-card.tsx`. First call:
+  1. Construct `new PromptHistoryStore()`.
+  2. Hydrate via `await getPromptHistory("tide")` (card-type-scoped shared key).
+  3. Subscribe `store.subscribe(...)` to call `putPromptHistory("tide", store.getEntries())` on every change (fire-and-forget).
+- `useTideCardServices` uses the singleton — no per-card construction.
+- No explicit dispose; the singleton outlives any card.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- Manual: submit `> hi`, submit `> hello`, press ArrowUp → shows `> hello`; reload the page; open a new Tide card; press ArrowUp → still shows `> hello` from persisted history.
+
+##### Sub-step 4h — Single-session shim {#step-4h}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+- `tugdeck/src/components/tugways/cards/tide-card.css`.
+
+**Work:**
+- In `TideCardContent`, before rendering `<TideProjectPicker>`, derive `otherBindingExists = Array.from(cardSessionBindingStore.getSnapshot().keys()).some(id => id !== cardId)` from `useSyncExternalStore`.
+- If `otherBindingExists`: render the picker with the input `disabled` and the button `disabled`, plus a banner: "Single-session mode — close the other Tide card first." Per [R3](#risks), option (b).
+- When the other card unbinds (closes or its binding clears), the snapshot changes; the shim lifts; picker re-enables. No explicit reset needed.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- New test: `setBinding("a", ...)` → mount card `"b"` → assert disabled picker with message; `clearBinding("a")` → assert picker enables.
+- Manual: open two Tide cards; second one shows the shim; close the first; second card's picker enables.
+
+##### Sub-step 4i — Recent projects + opportunistic cleanup {#step-4i}
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (recent-projects UI).
+- `tugdeck/src/components/tugways/cards/tide-card.css`.
+- `tugdeck/src/settings-api.ts` (new `readTideRecentProjects` + `putTideRecentProjects` helpers).
+
+**Work:**
+- **Tugbank helpers** in `settings-api.ts`: `readTideRecentProjects(tugbank): string[]` and `putTideRecentProjects(tugbank, paths: string[]): void`. Tugbank domain `dev.tugtool.tide`, key `recent-projects`, value `{ paths: string[] }`. Cap 5, most-recent-first, de-duplicated.
+- **Picker UI:** below the text input, render up to 5 quick-pick buttons for recent paths. Click fills the input and submits in one gesture (single click = fill + spawn).
+- **Persist on bind success:** when a binding appears for this card (subscription fires), prepend `binding.projectDir` to the recents list (dedup; cap 5); call `putTideRecentProjects`.
+- **Opportunistic cleanup** (easy wins encountered while adding the recents UI): zero `// eslint-disable`, zero `any`, zero `@ts-expect-error`, zero descendant-selector reach-ins in `tide-card.tsx`/`tide-card.css`. The scorched-earth mock/fixture scrub is [4j](#step-4j), not here.
+- **Integration test:** end-to-end `bun test` that mounts the card against a fake connection seam → submits picker → simulates `spawn_session_ok` → asserts services construct + binding appears + recent-projects gets the path; then unmounts → asserts `encodeCloseSession` frame sent + binding cleared. The fake connection used in this test is a test-only double in `__tests__/`; production `tide-card.tsx` imports none of it ([4j](#step-4j) enforces this).
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green.
+- `rg 'eslint-disable|@ts-expect-error|\bany\b' tugdeck/src/components/tugways/cards/tide-card.tsx` returns zero matches.
+- Manual: open Tide card, enter `/tmp` → submit → split pane renders; reload; open another Tide card → recents list shows `/tmp` as a quick-pick button; clicking it spawns in one click.
+
+##### Sub-step 4j — Mock/fixture scrub (hard exit criterion) {#step-4j}
+
+**Purpose:** No "Mock" or fixture objects allowed to linger in the Tide card's production code path. Every mock seam introduced by the Step 1 copy or referenced through intermediate sub-steps must be out of production code by the time this sub-step commits. Test-only doubles remain, but scoped to `__tests__/` — never imported from production modules.
+
+**Scope — the production code path for the Tide card:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`
+- `tugdeck/src/components/tugways/cards/tide-card.css`
+- any helper file introduced by sub-steps 4a–4i that `tide-card.tsx` imports (inline picker component, tugbank helpers, singleton factories)
+- any new helper files imported *transitively* by the above that exist only to serve the Tide card
+
+**Out of scope (left untouched):**
+- `gallery-prompt-entry.tsx` / `gallery-prompt-entry.css` (per [D6](#resolved-decisions)) — gallery still uses mocks, deliberately.
+- `gallery-prompt-entry-sandbox` — synthetic-frame harness, mocks expected.
+- `gallery-prompt-input.tsx` — also mock-backed; separate from this plan.
+- `MockTugConnection` module itself (`tugdeck/src/lib/code-session-store/testing/mock-feed-store.ts`) — stays, used by gallery and by Tide's own `__tests__/` doubles.
+- Test files (`__tests__/*.test.ts*`) — are allowed to import mocks for the connection seam.
+
+**Work:**
+- **Audit.** Run the following greps against the in-scope files and confirm every match either originates from a test-only import (which should already be absent from production imports) or represents a false positive that can be renamed / removed:
+  - `rg -i '\bmock' <scope>` — case-insensitive `mock` in identifiers, comments, string literals. Includes `MockTugConnection`, `mockSessionRef`, `getMock*`, `withMockBinding`, etc.
+  - `rg -i '\bfixture' <scope>` — `getFixture*`, `fixture-` filenames, comment references.
+  - `rg 'testing/' <scope>` — anything pulling from the test-double tree.
+- **Remove** every match that comes from production code. Expected removals, given the preceding sub-steps:
+  - `MockTugConnection` import (dropped in 4e, verify gone here).
+  - `TIDE_TUG_SESSION_ID` constant (mock-only; removed here if still present).
+  - `getFixtureSessionMetadataStore` / `wrapPositionZero` import if either is still there after 4f. `wrapPositionZero` is fine to keep if it lives in a non-fixture module; if it's still inside `completion-fixtures/system-metadata-fixture.ts`, move it to a production helper (e.g., `tugdeck/src/components/tugways/cards/completion-providers/position-zero.ts`) and update imports. After the move, the Tide card imports only from the new home.
+  - Any inline `// mock-backed` / `// fixture` comments — turn them into factual descriptions or delete.
+- **Relocate test doubles.** The integration test introduced in [4i](#step-4i) uses a fake connection. Confirm it lives under `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` (or similar) and that its fake connection is constructed there, not reached through production imports.
+- **Rename for clarity.** If any production identifier still contains `mock`, `fake`, `stub`, or `dummy` after the removals above, rename.
+- **Grep gate.** After the audit, these must pass:
+  - `rg -i 'mock' tugdeck/src/components/tugways/cards/tide-card.tsx tugdeck/src/components/tugways/cards/tide-card.css` → **zero matches**.
+  - `rg -i 'fixture' tugdeck/src/components/tugways/cards/tide-card.tsx tugdeck/src/components/tugways/cards/tide-card.css` → **zero matches**.
+  - `rg '/testing/' tugdeck/src/components/tugways/cards/tide-card.tsx` → **zero matches**.
+  - `rg 'TIDE_TUG_SESSION_ID' tugdeck/src/components/tugways/cards/tide-card.tsx` → **zero matches**.
+  - Same greps applied to any new helper module created by 4a–4i and imported from `tide-card.tsx` → **zero matches**.
+- **Follow the imports.** If `tide-card.tsx` imports a helper module (picker, singleton factory, tugbank helper, position-zero wrapper), the grep gate above applies transitively: run the same greps on each such module.
+- **Tuglaws re-check.** After the scrub, walk `tide-card.tsx` + all imported helpers once more against [tuglaws.md](../tuglaws/tuglaws.md). Every law either applies and is satisfied, or explicitly does not apply. This is the Step 4 contribution to the plan-level Tuglaws adherence exit criterion.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green (test file still compiles with its own fake connection; production never did import the mock tree after 4e).
+- All grep gates listed under **Work** return zero matches.
+- Manual smoke: open a Tide card against live `tugcast` + `claude`, enter a project path, submit `> hi`, confirm end-to-end Claude round-trip. Nothing behaves differently vs. 4i; 4j is a code-hygiene commit, not a behavior change.
+
+##### Step 4 rollup verification
+
+After all ten sub-steps land:
+
+- `bun run check` exits 0. `bun test` exits 0 with at least the integration test from [4i](#step-4i). `bun run audit:tokens lint` exits 0. `cargo nextest run` exits 0 (no Rust regressions from the binding store usage).
+- Manual: type a path; picker disappears; entry renders; submit `> hi`; a real Claude response streams in via `TugMarkdownView` (arrives in [Step 5](#step-5) — in Step 4 the top pane is still the placeholder). Step 4's live-smoke is the `assistant_text` event arriving on the `CodeSessionStore`; visual rendering of the stream is Step 5's concern.
 
 #### Step 5 — Wire `TugMarkdownView` to streaming output {#step-5}
 
