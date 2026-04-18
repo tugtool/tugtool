@@ -838,23 +838,6 @@ export const TugPromptEntry = React.forwardRef<
       >
         {hasStatusRow && (
           <div className="tug-prompt-entry-status">
-            {maximized !== undefined && (
-              <TugPushButton
-                className="tug-prompt-entry-maximize-toggle"
-                subtype="icon"
-                size="xs"
-                emphasis={maximized ? "filled" : "ghost"}
-                role={maximized ? "accent" : "action"}
-                aria-label={maximized ? "Restore size" : "Maximize"}
-                aria-pressed={maximized}
-                icon={
-                  maximized
-                    ? <Minimize2 strokeWidth={2} aria-hidden="true" />
-                    : <Maximize2 strokeWidth={2} aria-hidden="true" />
-                }
-                action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
-              />
-            )}
             <div className="tug-prompt-entry-status-content">
               {statusContent}
             </div>
@@ -883,6 +866,23 @@ export const TugPromptEntry = React.forwardRef<
                   {toolsContent}
                 </TugPopoverContent>
               </TugPopover>
+            )}
+            {maximized !== undefined && (
+              <TugPushButton
+                className="tug-prompt-entry-maximize-toggle"
+                subtype="icon"
+                size="xs"
+                emphasis={maximized ? "filled" : "ghost"}
+                role={maximized ? "accent" : "action"}
+                aria-label={maximized ? "Restore size" : "Maximize"}
+                aria-pressed={maximized}
+                icon={
+                  maximized
+                    ? <Minimize2 strokeWidth={2} aria-hidden="true" />
+                    : <Maximize2 strokeWidth={2} aria-hidden="true" />
+                }
+                action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
+              />
             )}
           </div>
         )}
