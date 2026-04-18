@@ -6,6 +6,7 @@
  * - T-TIDE-02: setBinding causes the split pane to render
  * - T-TIDE-03: clearBinding causes the picker to return
  * - T-TIDE-04: picker "Open" button sends a spawn_session CONTROL frame
+ * - T-TIDE-05: card unmount sends a close_session frame and clears the binding
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -132,6 +133,37 @@ describe("TideCardContent – binding gate and project picker", () => {
 
     expect(queryByTestId("tide-card-picker")).not.toBeNull();
     expect(queryByTestId("tide-card")).toBeNull();
+  });
+
+  it("T-TIDE-05: card unmount sends a close_session frame and clears the binding", () => {
+    const rtl = renderTideCard(CARD_ID);
+
+    act(() => {
+      cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
+    });
+    expect(rtl.queryByTestId("tide-card")).not.toBeNull();
+    expect(cardSessionBindingStore.getBinding(CARD_ID)).not.toBeUndefined();
+
+    // Reset sent-frame log — mount + bind don't send frames on their
+    // own, but any prior test residue should be ignored.
+    sentFrames.length = 0;
+
+    act(() => {
+      rtl.unmount();
+    });
+
+    expect(sentFrames.length).toBe(1);
+    const [frame] = sentFrames;
+    expect(frame.feedId).toBe(FeedId.CONTROL);
+    const payload = JSON.parse(new TextDecoder().decode(frame.payload)) as {
+      action: string;
+      card_id: string;
+      tug_session_id: string;
+    };
+    expect(payload.action).toBe("close_session");
+    expect(payload.card_id).toBe(CARD_ID);
+    expect(payload.tug_session_id).toBe("sess-4b-1");
+    expect(cardSessionBindingStore.getBinding(CARD_ID)).toBeUndefined();
   });
 
   it("T-TIDE-04: Open button sends a spawn_session CONTROL frame", () => {

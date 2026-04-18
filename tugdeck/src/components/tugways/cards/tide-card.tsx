@@ -56,7 +56,7 @@ import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
-import { sendSpawnSession } from "@/lib/session-lifecycle";
+import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
 import {
   getFixtureSessionMetadataStore,
   wrapPositionZero,
@@ -251,6 +251,18 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     };
     setServices(next);
     return () => {
+      // Close the supervisor-side session before disposing local
+      // stores: server-side resource release first, subscription
+      // teardown second. Skip when the binding was already cleared
+      // externally (e.g., another caller invoked `sendCloseSession`
+      // for this card) — that path already sent the frame and
+      // cleared the binding, so re-sending would leak a duplicate
+      // close to the supervisor.
+      const stillBound = cardSessionBindingStore.getBinding(cardId);
+      if (stillBound !== undefined) {
+        const conn = getConnection();
+        if (conn) sendCloseSession(conn, cardId, stillBound.tugSessionId);
+      }
       next.codeSessionStore.dispose();
       if (next.fileTreeStack) {
         next.fileTreeStack.fileTreeStore.dispose();
@@ -258,7 +270,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
       }
       setServices(null);
     };
-  }, [binding]);
+  }, [binding, cardId]);
 
   // Propagate workspace-filter changes to the live feed store. Runs
   // only when `services` or `workspaceFilter` identity changes; never
