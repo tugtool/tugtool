@@ -278,17 +278,33 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     }),
     [],
   );
-  useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef });
+  // --- Maximize toggle. ---
+  // When true, the entry panel is pegged to its declared max and the
+  // split-pane handle is disabled. The content-driven sizer and the
+  // submit-time restore both stand down so nothing fights the peg.
+  // When false, the pane behaves exactly as if the toggle never
+  // existed: saved size persists, transient size accommodates content.
+  const [maximized, setMaximized] = React.useState(false);
+  useLayoutEffect(() => {
+    const panel = entryPanelRef.current;
+    if (!panel) return;
+    if (maximized) panel.setTransientSize(ENTRY_PANEL_MAX_PCT, { animated: true });
+    else panel.restoreUserSize({ animated: true });
+  }, [maximized]);
+
+  useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
   // not on any other data-empty transition (manual delete, undo, etc.).
   // Fires before `input.clear()` so the animated restore commits to
   // the library store first; the content-driven hook's subsequent
   // instant-restore is a no-op because the library store already
-  // matches the user size.
+  // matches the user size. Skip while maximized — the maximize peg
+  // owns the size.
   const handleBeforeSubmit = useCallback(() => {
+    if (maximized) return;
     entryPanelRef.current?.restoreUserSize({ animated: true });
-  }, []);
+  }, [maximized]);
 
   // --- Responder scope for tools-panel popup buttons. ---
   const fontPopupId = useId();
@@ -305,18 +321,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
       [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
     },
   });
-
-  // --- Maximize toggle. ---
-  // Session-only; not persisted with the layout. When true, the entry
-  // panel is pegged to its declared max and the split-pane handle is
-  // disabled. Toggling false restores the user's saved/dragged size.
-  const [maximized, setMaximized] = React.useState(false);
-  useLayoutEffect(() => {
-    const panel = entryPanelRef.current;
-    if (!panel) return;
-    if (maximized) panel.setTransientSize(ENTRY_PANEL_MAX_PCT, { animated: true });
-    else panel.restoreUserSize({ animated: true });
-  }, [maximized]);
 
   // --- Status row + tools panel content. ---
   const statusContent = (

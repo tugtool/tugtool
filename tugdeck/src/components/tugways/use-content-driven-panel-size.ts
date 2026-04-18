@@ -66,13 +66,21 @@ export interface UseContentDrivenPanelSizeOptions {
    * signal.
    */
   sourceRef: RefObject<HTMLElement | null>;
+  /**
+   * When false, the hook installs no observers and never writes to the
+   * panel size. Used by consumers that want to suspend content-driven
+   * sizing while the panel is pegged elsewhere (e.g. a maximize toggle
+   * that owns the pane size while active). Defaults to true.
+   */
+  enabled?: boolean;
 }
 
 export function useContentDrivenPanelSize(
   opts: UseContentDrivenPanelSizeOptions,
 ): void {
-  const { panelRef, sourceRef } = opts;
+  const { panelRef, sourceRef, enabled = true } = opts;
   useLayoutEffect(() => {
+    if (!enabled) return;
     const panel = panelRef.current;
     const source = sourceRef.current;
     if (!panel || !source) return;
@@ -128,5 +136,5 @@ export function useContentDrivenPanelSize(
       mo.disconnect();
       ro.disconnect();
     };
-  }, [panelRef, sourceRef]);
+  }, [panelRef, sourceRef, enabled]);
 }
