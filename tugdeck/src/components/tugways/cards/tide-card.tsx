@@ -43,8 +43,6 @@ import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
-import type { TugConnection } from "@/connection";
-import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
@@ -157,7 +155,6 @@ export interface TideCardServices {
 }
 
 interface InternalServices {
-  mockConnection: MockTugConnection;
   codeSessionStore: CodeSessionStore;
   editorStore: EditorSettingsStore;
   historyStore: PromptHistoryStore;
@@ -210,40 +207,39 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   const [services, setServices] = useState<InternalServices | null>(null);
 
   // Construct services when a binding appears; dispose when it clears
-  // or the card unmounts. Mock-backed throughout 4b — sub-steps 4e–g
-  // swap the individual stores one at a time.
+  // or the card unmounts. `CodeSessionStore` is backed by the live
+  // `TugConnection`, bound to the session id the supervisor echoed in
+  // the `spawn_session_ok` ack. Sub-steps 4f–g swap the remaining
+  // fixture stores (`SessionMetadataStore`, `PromptHistoryStore`).
   useLayoutEffect(() => {
     if (binding === null) {
       setServices(null);
       return;
     }
-    const mockConnection = new MockTugConnection();
+    const connection = getConnection();
+    if (!connection) {
+      console.warn("useTideCardServices: connection not available when binding appeared");
+      return;
+    }
     const codeSessionStore = new CodeSessionStore({
-      conn: mockConnection as unknown as TugConnection,
+      conn: connection,
       tugSessionId: binding.tugSessionId,
     });
     const editorStore = new EditorSettingsStore();
     const historyStore = new PromptHistoryStore();
-    const connection = getConnection();
-    let fileTreeStack: InternalServices["fileTreeStack"] = null;
-    if (connection) {
-      const feedStore = new FeedStore(
-        connection,
-        [FeedId.FILETREE],
-        undefined,
-        workspaceFilterRef.current,
-      );
-      const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-      fileTreeStack = {
-        feedStore,
-        fileTreeStore,
-        provider: fileTreeStore.getFileCompletionProvider(),
-      };
-    } else {
-      console.warn("useTideCardServices: connection not available when binding appeared");
-    }
+    const feedStore = new FeedStore(
+      connection,
+      [FeedId.FILETREE],
+      undefined,
+      workspaceFilterRef.current,
+    );
+    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+    const fileTreeStack: InternalServices["fileTreeStack"] = {
+      feedStore,
+      fileTreeStore,
+      provider: fileTreeStore.getFileCompletionProvider(),
+    };
     const next: InternalServices = {
-      mockConnection,
       codeSessionStore,
       editorStore,
       historyStore,

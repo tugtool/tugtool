@@ -30,6 +30,10 @@ const fakeConnection = {
     sentFrames.push({ feedId, payload });
   },
   onFrame: (_feedId: number, _cb: (payload: Uint8Array) => void) => () => {},
+  // CodeSessionStore subscribes via `onClose` for transport-close
+  // routing; tests never trigger a close so the returned unsubscribe
+  // stub is sufficient.
+  onClose: (_cb: () => void) => () => {},
 };
 
 mock.module("@/lib/connection-singleton", () => ({
