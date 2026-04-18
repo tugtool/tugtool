@@ -342,9 +342,22 @@ export function animate(
   // Wire the WAAPI animation's .finished to our promise.
   // On natural completion: commit the final values into el.style so the element
   // *owns* them, then remove the animation. No lingering fill: forwards ghost.
+  //
+  // `commitStyles()` throws `InvalidStateError` if the target element is
+  // no longer being rendered (detached from the document or display:none
+  // by the time the animation's .finished promise resolves). When that
+  // happens there is nothing useful to commit — the element is on its
+  // way out — so swallow the error and proceed to cancel + resolve.
+  // Without this guard the throw escapes as an unhandled rejection of
+  // the `.then(...)` chain itself (the `(err) => rejectFinished(err)`
+  // arm only handles rejection of the *incoming* promise).
   wapiAnim.finished.then(
     () => {
-      wapiAnim.commitStyles();
+      try {
+        wapiAnim.commitStyles();
+      } catch {
+        /* target detached; nothing to commit */
+      }
       wapiAnim.cancel();
       resolveFinished();
     },
@@ -364,13 +377,21 @@ export function animate(
           break;
 
         case "hold-at-current":
-          wapiAnim.commitStyles();
+          try {
+            wapiAnim.commitStyles();
+          } catch {
+            /* target detached; nothing to commit */
+          }
           wapiAnim.cancel();
           break;
 
         case "reverse-from-current": {
           // Bake current interpolated values into inline styles.
-          wapiAnim.commitStyles();
+          try {
+            wapiAnim.commitStyles();
+          } catch {
+            /* target detached; nothing to commit */
+          }
           // Read current computed values for each animated property.
           const computed = getComputedStyle(el);
           const currentValues: Record<string, string> = {};
