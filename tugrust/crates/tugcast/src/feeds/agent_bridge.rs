@@ -234,7 +234,7 @@ impl ChildSpawner for TugcodeSpawner {
                 .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
+                .stderr(Stdio::piped())
                 .kill_on_drop(true)
                 .spawn()?;
             let stdin = child
@@ -245,6 +245,39 @@ impl ChildSpawner for TugcodeSpawner {
                 .stdout
                 .take()
                 .ok_or_else(|| io::Error::other("tugcode stdout not available"))?;
+            // Forward tugcode's stderr (which also carries Claude's
+            // stderr via the `stderr: "inherit"` chain in
+            // `tugcode/src/session.ts::spawnClaude`) into tugcast's
+            // tracing log. Without this the subprocess stderr pipe
+            // is lost to `launchd` when Tug.app is launched via
+            // `open` (`just app`), and real errors (Claude API
+            // failures, auth problems, missing configs) never reach
+            // the operator. Each line is forwarded verbatim under
+            // the `tugcast::tugcode_stderr` target so consumers can
+            // grep by that tag.
+            if let Some(stderr) = child.stderr.take() {
+                tokio::spawn(async move {
+                    let mut lines = BufReader::new(stderr).lines();
+                    loop {
+                        match lines.next_line().await {
+                            Ok(Some(line)) => {
+                                tracing::warn!(
+                                    target: "tugcast::tugcode_stderr",
+                                    "{line}",
+                                );
+                            }
+                            Ok(None) => break,
+                            Err(err) => {
+                                tracing::warn!(
+                                    target: "tugcast::tugcode_stderr",
+                                    "stderr read error: {err}",
+                                );
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
             Ok(SessionChild {
                 stdin: Box::new(stdin),
                 stdout: Box::new(stdout),

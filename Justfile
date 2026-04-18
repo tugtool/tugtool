@@ -179,6 +179,22 @@ app: build wasm
         open "$APP_DIR"
     fi
 
+# Tail today's tugcast log. Includes forwarded tugcode / Claude
+# stderr under the `tugcast::tugcode_stderr` target — that's where
+# Claude's real error messages land since Tug.app is launched via
+# `open` (see `just app`) and the raw stderr fd is otherwise lost
+# to launchd.
+logs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DATE="$(date +%Y-%m-%d)"
+    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
+    if [ ! -f "$LOG" ]; then
+        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        exit 1
+    fi
+    tail -F "$LOG"
+
 # Build unsigned DMG
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
