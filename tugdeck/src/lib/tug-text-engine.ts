@@ -8,7 +8,7 @@
  * [L07] Engine is a stable ref; handlers access current state via `this`
  */
 
-import { atomImgHTML, createAtomImgElement, createRouteAtomImgElement, routeAtomImgHTML, TUG_ATOM_CHAR } from "./tug-atom-img";
+import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
 import type { AtomSegment } from "./tug-atom-img";
 import { getTokenValue } from "@/theme-tokens";
 
@@ -82,12 +82,6 @@ export interface TugTextInputDelegate {
   // --- Mutation ---
   insertText(text: string): void;
   insertAtom(atom: AtomSegment): void;
-  /**
-   * Insert a route-prefix atom at position 0 without clearing existing
-   * content. No-op when a route atom is already present. Fires
-   * `onRouteChange(char)` as a side effect.
-   */
-  prependRouteAtom(char: string): void;
   paste(html: string, plain: string): void;
   deleteSelection(): void;
   deleteRange(start: number, end: number): number;
@@ -326,7 +320,7 @@ function sanitizeAtomHtml(html: string): string {
         const type = el.dataset.atomType || "file";
         const label = el.dataset.atomLabel || "";
         const value = el.dataset.atomValue ?? label;
-        out.push(type === "route" ? routeAtomImgHTML(label) : atomImgHTML(type, label, value));
+        out.push(atomImgHTML(type, label, value));
         return;
       }
       if (el.tagName === "BR") {
@@ -377,9 +371,6 @@ export class TugTextEngine {
 
   // Emptiness flag — tracked as state, updated on input events.
   private _empty = true;
-
-  // Route atom flag — true when a route atom occupies position 0.
-  private _hasRouteAtom = false;
 
   // Cached min-height for grow-up margin calculation (avoids getComputedStyle per input).
   private _cachedMinHeight = 0;
@@ -529,36 +520,6 @@ export class TugTextEngine {
   }
 
   /**
-   * Insert a route-prefix atom at position 0 of the editor without
-   * clearing existing content. Used by the entry-level auto-insert flow:
-   * when the user resumed typing after having backspaced the route
-   * atom away, the expected prefix is reinserted so the input reads as
-   * `[>] whatever I just typed`.
-   *
-   * No-op when a route atom is already at position 0. Fires
-   * `onRouteChange(char)` so subscribers can sync their state.
-   */
-  prependRouteAtom(char: string): void {
-    if (this._hasRouteAtom) return;
-    this.root.focus();
-    // Capture caret position (in text-offset space) so we can restore it
-    // after the insertion shifts every offset by +1.
-    const range = this.getSelectedRange();
-    const savedStart = range?.start ?? 0;
-    const savedEnd = range?.end ?? savedStart;
-
-    // Move the insertion point to position 0 and insert the atom there.
-    this.setSelectedRange(0, 0);
-    document.execCommand("insertHTML", false, routeAtomImgHTML(char));
-    this._hasRouteAtom = true;
-
-    // Restore the caret, shifted past the atom we just inserted.
-    this.setSelectedRange(savedStart + 1, savedEnd + 1);
-
-    this.onRouteChange?.(char);
-  }
-
-  /**
    * Delete the currently selected text range. No-op if the selection
    * is empty or collapsed. Used by the context-menu Cut path: we
    * write the selection to the clipboard first (inside the user
@@ -631,7 +592,6 @@ export class TugTextEngine {
     this.cancelTypeahead();
     this.root.innerHTML = "";
     this._empty = true;
-    this._hasRouteAtom = false;
     this.updateEmpty();
     this.onChange?.();
   }
@@ -675,7 +635,7 @@ export class TugTextEngine {
       const ch = state.text[i];
       if (ch === TUG_ATOM_CHAR && atomIdx < state.atoms.length) {
         const a = state.atoms[atomIdx];
-        parts.push(a.type === "route" ? routeAtomImgHTML(a.label) : atomImgHTML(a.type, a.label, a.value));
+        parts.push(atomImgHTML(a.type, a.label, a.value));
         atomIdx++;
       } else if (ch === "\n") {
         parts.push("<br>");
@@ -690,7 +650,6 @@ export class TugTextEngine {
     this.root.innerHTML = parts.join("");
     // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
     this._empty = state.text.length === 0 || state.text === "\n";
-    this._hasRouteAtom = this.hasRouteAtomAtStart();
     this.updateEmpty();
     this.autoResize();
     if (state.selection) {
@@ -711,9 +670,7 @@ export class TugTextEngine {
       const type = el.dataset.atomType ?? "file";
       const label = el.dataset.atomLabel ?? "";
       const value = el.dataset.atomValue ?? "";
-      const fresh = type === "route"
-        ? createRouteAtomImgElement(label)
-        : createAtomImgElement(type, label, value);
+      const fresh = createAtomImgElement(type, label, value);
       el.src = fresh.src;
       el.width = fresh.width;
       el.height = fresh.height;
@@ -728,12 +685,6 @@ export class TugTextEngine {
   /** Update the data-empty attribute for placeholder visibility. */
   private updateEmpty(): void {
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
-  }
-
-  /** Return true if a route atom occupies position 0 in the editor. */
-  private hasRouteAtomAtStart(): boolean {
-    const first = this.root.childNodes[0];
-    return first !== undefined && isAtomImg(first) && (first as HTMLImageElement).dataset.atomType === "route";
   }
 
   /**
@@ -856,32 +807,28 @@ export class TugTextEngine {
   // Route prefix detection
   // =================================================================
 
-  /** Detect and handle a route prefix as the first character of the document. */
+  /**
+   * Detect a route prefix as the first character of the document.
+   * Consumes the character and fires `onRouteChange(char)`. The route is
+   * rendered outside the editor (parent-owned gutter), not inline.
+   */
   private detectRoutePrefix(): void {
-    if (this._hasRouteAtom) return;
     const text = this.getText();
     if (text.length === 0) return;
     const firstChar = text[0];
     if (!this.routePrefixes.includes(firstChar)) return;
 
-    // Replace the typed character with a route atom
+    // Eat the typed prefix character — the gutter shows it instead.
     this.setSelectedRange(0, 1);
     document.execCommand("delete");
-    this.setSelectedRange(0, 0);
-    document.execCommand("insertHTML", false, routeAtomImgHTML(firstChar));
-    this._hasRouteAtom = true;
     this.onRouteChange?.(firstChar);
 
-    // If the prefix is also a completion trigger, activate typeahead manually
+    // If the prefix is also a completion trigger, activate typeahead.
+    // The caret now sits at offset 0; use the editor root's left edge
+    // as the anchor since there's no inline atom to measure against.
     const provider = this.completionProviders[firstChar];
     if (provider) {
-      this.activateTypeaheadAt(firstChar, provider, 1, "");
-      // Override: use the route atom's rect as the anchor — the caret rect
-      // is unreliable after multiple execCommands in the same handler.
-      const routeAtom = this.root.childNodes[0];
-      if (routeAtom && routeAtom.nodeType === Node.ELEMENT_NODE) {
-        this._typeahead.anchorRect = (routeAtom as HTMLElement).getBoundingClientRect();
-      }
+      this.activateTypeaheadAt(firstChar, provider, 0, "");
       this._typeahead.triggerConsumed = true;
     }
   }
@@ -1295,12 +1242,6 @@ export class TugTextEngine {
         sel.removeAllRanges();
         sel.addRange(range);
       }
-      if (this._hasRouteAtom) {
-        const range = this.getSelectedRange();
-        if (range && range.start === 0 && range.end === 0) {
-          this.setSelectedRange(1);
-        }
-      }
     });
 
     // 3. Option+Arrow — word boundary clamping at atoms
@@ -1554,10 +1495,7 @@ export class TugTextEngine {
         // Delete the atom, then insert at the adjusted offset
         this.deleteRange(atomOffset, atomOffset + 1);
         this.setSelectedRange(dropOffset);
-        const html = atomType === "route"
-          ? routeAtomImgHTML(atomLabel)
-          : atomImgHTML(atomType, atomLabel, atomValue);
-        document.execCommand("insertHTML", false, html);
+        document.execCommand("insertHTML", false, atomImgHTML(atomType, atomLabel, atomValue));
         return;
       }
 
@@ -1621,10 +1559,6 @@ export class TugTextEngine {
       if (inputType.startsWith("insert")) {
         this._empty = false;
       } else {
-        if (this._hasRouteAtom && !this.hasRouteAtomAtStart()) {
-          this._hasRouteAtom = false;
-          this.onRouteChange?.(null);
-        }
         const text = this.getText();
         this._empty = text.length === 0 || text === "\n";
       }

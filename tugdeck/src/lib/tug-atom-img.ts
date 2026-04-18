@@ -13,6 +13,7 @@
  */
 
 import { getTokenValue } from "@/theme-tokens";
+import { findEmbeddableFace } from "./tug-atom-fonts";
 
 // ---- Types ----
 
@@ -56,11 +57,10 @@ const ATOM_ICON_PATHS: Record<string, string> = {
 
 let _fontSize = 12;
 let _editorFontSize = 14;
-/** Font family for Canvas measurement (can include custom fonts). */
+/** Font family stack for Canvas measurement and SVG rendering (full stack
+ *  including custom @font-face fonts — resolved inside the SVG via inline
+ *  @font-face embedding; see tug-atom-fonts.ts). */
 let _measureFamily = "system-ui, sans-serif";
-/** Font family for SVG markup (must use generic families — custom fonts
- *  loaded via @font-face are not available inside data-URI SVGs). */
-let _svgFamily = "system-ui, sans-serif";
 /** Atom layout dimensions, scaled from the current _fontSize. */
 function atomHeight(): number { return Math.round(_fontSize * 1.75); }
 function iconSize(): number { return _fontSize; }
@@ -70,18 +70,10 @@ const GAP = 4;
 /**
  * Set the font used for atom label rendering and measurement.
  * `family` is the full CSS font-family stack (e.g. `"Hack", monospace`).
- * The SVG font is derived by stripping custom font names and keeping
- * only generic families that work inside data-URI SVGs.
  * Call this when the editor font changes, then regenerateAtoms().
  */
 export function setAtomFont(family: string, size?: number): void {
   _measureFamily = family;
-  // Keep only generic CSS font families for SVG rendering.
-  const generics = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded"]);
-  const svgParts = family.split(",")
-    .map(s => s.replace(/"/g, "").trim())
-    .filter(s => generics.has(s));
-  _svgFamily = svgParts.length > 0 ? svgParts.join(", ") : "sans-serif";
   // Atom label font matches the editor font size so atom and surrounding
   // text share the same x-height and baseline.
   if (size !== undefined) {
@@ -140,6 +132,36 @@ function truncateLabel(label: string, maxWidth: number): string {
 
 // ---- SVG generation ----
 
+/**
+ * Resolve the font-family to render inside the SVG and the @font-face
+ * block to inline so the SVG can use it. Picks the first family from the
+ * editor stack that has been loaded via @font-face + discovered by
+ * tug-atom-fonts. Falls back to a generic family name only — still
+ * inherits the generic keyword so the SVG's monospace/sans pick is
+ * preserved when a custom font hasn't loaded yet.
+ */
+function resolveSvgFont(weight: number): { fontFamily: string; fontFaceCSS: string } {
+  const face = findEmbeddableFace(_measureFamily, weight, "normal");
+  if (face) {
+    const generic = pickGenericFallback(_measureFamily);
+    return {
+      fontFamily: `&quot;${face.family}&quot;${generic ? `, ${generic}` : ""}`,
+      fontFaceCSS: face.css,
+    };
+  }
+  return { fontFamily: pickGenericFallback(_measureFamily) || "sans-serif", fontFaceCSS: "" };
+}
+
+/** Extract the last generic family keyword from a CSS font-family stack. */
+function pickGenericFallback(stack: string): string {
+  const generics = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded"]);
+  const parts = stack.split(",").map((s) => s.replace(/["']/g, "").trim());
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (generics.has(parts[i])) return parts[i];
+  }
+  return "";
+}
+
 /** Build the SVG data URI for an atom with a given icon path and display label. */
 function buildAtomSVG(
   iconPath: string,
@@ -153,11 +175,14 @@ function buildAtomSVG(
   const textWidth = measureTextWidth(displayLabel, font);
   const w = PADDING + iconSize() + GAP + Math.ceil(textWidth) + PADDING;
   const icon = `<g transform="translate(${PADDING},${(atomHeight() - iconSize()) / 2}) scale(${iconSize() / 24})" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
+  const { fontFamily, fontFaceCSS } = resolveSvgFont(400);
+  const defs = fontFaceCSS ? `<defs><style>${fontFaceCSS}</style></defs>` : "";
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${atomHeight()}" viewBox="0 0 ${w} ${atomHeight()}">`,
+    defs,
     `<rect x="0.5" y="0.5" width="${w - 1}" height="${atomHeight() - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
     icon,
-    `<text x="${PADDING + iconSize() + GAP}" y="${atomHeight() / 2 + _fontSize * 0.32}" font-size="${_fontSize}" font-family="${_svgFamily}" fill="${textColor}">${escapeSVG(displayLabel)}</text>`,
+    `<text x="${PADDING + iconSize() + GAP}" y="${atomHeight() / 2 + _fontSize * 0.32}" font-size="${_fontSize}" font-family="${fontFamily}" fill="${textColor}">${escapeSVG(displayLabel)}</text>`,
     `</svg>`,
   ].join("");
   return { svg, width: w };
@@ -203,48 +228,6 @@ export function createAtomImgElement(
 /** Create atom img as HTML string (for execCommand insertHTML). */
 export function atomImgHTML(type: string, label: string, value?: string): string {
   const el = createAtomImgElement(type, label, value ?? label);
-  const wrapper = document.createElement("div");
-  wrapper.appendChild(el);
-  return wrapper.innerHTML;
-}
-
-/** Create a route atom <img> element — a compact styled indicator for the active route. */
-export function createRouteAtomImgElement(char: string): HTMLImageElement {
-  const textWidth = measureTextWidth(char, atomFont());
-  const padding = 5;
-  const w = padding + Math.ceil(textWidth) + padding;
-
-  const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-route-rest");
-  const borderColor = getTokenValue("--tug7-element-atom-border-normal-route-rest");
-  const textColor = getTokenValue("--tug7-element-atom-text-normal-route-rest");
-
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${atomHeight()}" viewBox="0 0 ${w} ${atomHeight()}">`,
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${atomHeight() - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
-    `<text x="${w / 2}" y="${atomHeight() / 2 + _fontSize * 0.32}" font-size="${_fontSize}" font-weight="600" font-family="${_svgFamily}" fill="${textColor}" text-anchor="middle">${escapeSVG(char)}</text>`,
-    `</svg>`,
-  ].join("");
-
-  const img = document.createElement("img");
-  img.src = svgToDataURI(svg);
-  img.width = w;
-  img.height = atomHeight();
-  img.style.verticalAlign = `${atomBaselineOffset()}px`;
-  // Right-only margin. Route atoms always sit at text position 0, so a
-  // left margin just pushes them off the editor's padding edge — zero
-  // it. The right margin creates a small visual gap between the atom
-  // and the caret that naturally sits at position 1 next to it.
-  img.style.margin = "0 4px 0 0";
-  img.dataset.atomType = "route";
-  img.dataset.atomLabel = char;
-  img.dataset.atomValue = char;
-  img.title = char;
-  return img;
-}
-
-/** Create route atom as HTML string (for execCommand insertHTML). */
-export function routeAtomImgHTML(char: string): string {
-  const el = createRouteAtomImgElement(char);
   const wrapper = document.createElement("div");
   wrapper.appendChild(el);
   return wrapper.innerHTML;

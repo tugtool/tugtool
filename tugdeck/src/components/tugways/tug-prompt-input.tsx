@@ -414,7 +414,6 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) { engineRef.current?.insertAtom(atom); },
-      prependRouteAtom(char: string) { engineRef.current?.prependRouteAtom(char); },
       paste(html: string, plain: string) { engineRef.current?.paste(html, plain); },
       deleteSelection() { engineRef.current?.deleteSelection(); },
       deleteRange(start: number, end: number) { return engineRef.current?.deleteRange(start, end) ?? start; },
@@ -440,9 +439,9 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       // Composition-layer method widening TugTextInputDelegate [Q01].
       // Clears the input and inserts `char`; the engine's input-event
       // handler runs `detectRoutePrefix()`, which (when `char` is in
-      // `routePrefixes`) replaces the typed character with a route atom
-      // and fires `onRouteChange(char)` as a side effect. When `char`
-      // is not a configured prefix, the character is inserted but no
+      // `routePrefixes`) consumes the typed character and fires
+      // `onRouteChange(char)` as a side effect. When `char` is not a
+      // configured prefix, the character is inserted but no
       // `onRouteChange` fires — caller responsibility.
       setRoute(char: string) {
         const engine = engineRef.current;

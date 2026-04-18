@@ -23,6 +23,7 @@ import { getTugbankClient } from "./tugbank-singleton";
 import { putEditorSettings } from "@/settings-api";
 import type { EditorSettings } from "@/settings-api";
 import { setAtomFont } from "./tug-atom-img";
+import { ensureAtomFontsLoaded } from "./tug-atom-fonts";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -170,5 +171,11 @@ export class EditorSettingsStore {
     const stack = FONT_STACKS[fontId];
     if (stack) setAtomFont(stack, fontSize);
     this._regenerateAtoms?.();
+    // Atom SVGs embed the editor font as @font-face inside their data URI
+    // so the label renders in the real font (Hack/Inter/Plex) instead of
+    // a generic fallback. The fetch + base64 step is async; on first call
+    // the regenerate above paints with whatever's already cached, then
+    // this Promise resolves and we regenerate again with embedded fonts.
+    ensureAtomFontsLoaded().then(() => this._regenerateAtoms?.());
   }
 }
