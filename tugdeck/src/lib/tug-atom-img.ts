@@ -61,6 +61,13 @@ let _editorFontSize = 14;
  *  including custom @font-face fonts — resolved inside the SVG via inline
  *  @font-face embedding; see tug-atom-fonts.ts). */
 let _measureFamily = "system-ui, sans-serif";
+/**
+ * Atom label rendered as a fraction of the editor font size. SVG text
+ * rasterizes slightly heavier than hinted HTML text at the same nominal
+ * px, so 1.0 looks oversized against the surrounding text. Shave it to
+ * visually match.
+ */
+const ATOM_LABEL_SIZE_RATIO = 0.96;
 /** Atom layout dimensions, scaled from the current _fontSize. */
 function atomHeight(): number { return Math.round(_fontSize * 1.75); }
 function iconSize(): number { return _fontSize; }
@@ -78,7 +85,7 @@ export function setAtomFont(family: string, size?: number): void {
   // text share the same x-height and baseline.
   if (size !== undefined) {
     _editorFontSize = size;
-    _fontSize = size;
+    _fontSize = Math.round(size * ATOM_LABEL_SIZE_RATIO);
   }
 }
 
