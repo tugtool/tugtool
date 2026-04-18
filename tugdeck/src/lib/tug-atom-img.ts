@@ -82,11 +82,23 @@ export function setAtomFont(family: string, size?: number): void {
     .map(s => s.replace(/"/g, "").trim())
     .filter(s => generics.has(s));
   _svgFamily = svgParts.length > 0 ? svgParts.join(", ") : "sans-serif";
-  // Atom label font is ~85% of the editor font size (e.g. 12px for a 14px editor).
+  // Atom label font matches the editor font size so atom and surrounding
+  // text share the same x-height and baseline.
   if (size !== undefined) {
     _editorFontSize = size;
-    _fontSize = Math.round(size * 0.85);
+    _fontSize = size;
   }
+}
+
+/**
+ * vertical-align offset (px) so the atom's internal text baseline aligns
+ * with the surrounding text baseline. The SVG draws label text with its
+ * baseline at `atomHeight/2 + _fontSize * 0.32` from the top of the box,
+ * so the IMG's bottom must sit `atomHeight/2 - _fontSize * 0.32` below
+ * the parent baseline — i.e. a negative vertical-align of that magnitude.
+ */
+function atomBaselineOffset(): number {
+  return Math.round(_fontSize * 0.32 - atomHeight() / 2);
 }
 
 // ---- Text measurement ----
@@ -178,7 +190,7 @@ export function createAtomImgElement(
   img.src = svgToDataURI(svg);
   img.width = width;
   img.height = atomHeight();
-  img.style.verticalAlign = `${-Math.round(atomHeight() * 0.5 - _editorFontSize * 0.35)}px`;
+  img.style.verticalAlign = `${atomBaselineOffset()}px`;
   img.style.margin = "0 2px";
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
@@ -217,7 +229,7 @@ export function createRouteAtomImgElement(char: string): HTMLImageElement {
   img.src = svgToDataURI(svg);
   img.width = w;
   img.height = atomHeight();
-  img.style.verticalAlign = `${-Math.round(atomHeight() * 0.5 - _editorFontSize * 0.35)}px`;
+  img.style.verticalAlign = `${atomBaselineOffset()}px`;
   // Right-only margin. Route atoms always sit at text position 0, so a
   // left margin just pushes them off the editor's padding edge — zero
   // it. The right margin creates a small visual gap between the atom
