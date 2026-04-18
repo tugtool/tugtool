@@ -1,0 +1,25 @@
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                              | Role        | Context                                       |
+ * |--------------------------------------------------|------------------------------------------------------|-------------|-----------------------------------------------|
+ * | --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest    | content     | .tug-popup-button-top-label (color)           |
+ */
+
+/* Stack the label above the trigger when `topLabel` is set. The trigger
+   sizes itself to its content; centering the label horizontally over the
+   trigger reads as a caption rather than a left-aligned form-field name. */
+.tug-popup-button-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-popup-button-top-label {
+  display: block;
+  font-weight: 500;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-field-text-normal-label-rest);
+  text-align: center;
+}

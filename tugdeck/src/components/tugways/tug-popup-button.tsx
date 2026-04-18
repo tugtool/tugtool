@@ -45,12 +45,16 @@
  * dispatch themselves) rather than TugPopupButton.
  *
  * Styling delegated to TugButton (trigger appearance) and TugPopupMenu (dropdown).
- * No component CSS — this is a pure composition.
+ * The component owns a small CSS file only for the optional `topLabel` stack
+ * (label-above-control) — when `topLabel` is unset, no wrapping or styles
+ * are applied and the composition stays pure.
  *
  * Laws: [L11] controls emit actions, [L19] component authoring guide
  * Decisions: [D02] TugPopupMenu takes a single ReactNode trigger prop,
  *            [D04] TugPopupButton defaults are not configurable
  */
+
+import "./tug-popup-button.css";
 
 import React, { useCallback, useId } from "react";
 import { ChevronDown } from "lucide-react";
@@ -172,6 +176,12 @@ export interface TugPopupButtonItem<V extends TugPopupButtonPayload = never> {
 export interface TugPopupButtonProps<V extends TugPopupButtonPayload = never> {
   /** Label content rendered inside the trigger button. */
   label: React.ReactNode;
+  /**
+   * Optional heading rendered above the trigger button. When unset, no
+   * wrapping element is rendered. Mirrors `TugBox` `labelPosition="above"`
+   * styling so settings popups read as labelled form fields.
+   */
+  topLabel?: string;
   /** List of items to display in the popup menu. */
   items: TugPopupButtonItem<V>[];
   /**
@@ -213,6 +223,7 @@ export interface TugPopupButtonProps<V extends TugPopupButtonPayload = never> {
  */
 export function TugPopupButton<V extends TugPopupButtonPayload = never>({
   label,
+  topLabel,
   items,
   senderId,
   size = "md",
@@ -269,12 +280,21 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
     </TugButton>
   );
 
-  return (
+  const menu = (
     <TugPopupMenu
       trigger={trigger}
       items={internalItems}
       onSelect={handleSelect}
       data-testid={dataTestId}
     />
+  );
+
+  if (topLabel === undefined) return menu;
+
+  return (
+    <div className="tug-popup-button-stack">
+      <span className="tug-popup-button-top-label">{topLabel}</span>
+      {menu}
+    </div>
   );
 }

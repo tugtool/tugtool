@@ -34,6 +34,8 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   fontId: "hack",
   fontSize: 13,
   letterSpacing: 0,
+  // Matches the historical CSS default in tug-prompt-input.css.
+  lineHeight: 1.7,
 };
 
 /** Font stacks keyed by font ID. */
@@ -75,13 +77,16 @@ export class EditorSettingsStore {
     }
   }
 
-  /** Read settings from the TugbankClient cache. Returns null if not stored. */
+  /** Read settings from the TugbankClient cache. Returns null if not stored.
+   *  Persisted snapshots from earlier versions may be missing newer fields
+   *  (e.g. lineHeight added later); fill missing keys with defaults so the
+   *  store always sees a complete shape. */
   private _readFromCache(): EditorSettings | null {
     const client = getTugbankClient();
     if (!client) return null;
     const entry = client.get(DOMAIN, KEY);
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      return entry.value as EditorSettings;
+      return { ...DEFAULT_SETTINGS, ...(entry.value as Partial<EditorSettings>) };
     }
     return null;
   }
@@ -159,11 +164,12 @@ export class EditorSettingsStore {
   private _applyCSSProperties(): void {
     const el = this._targetEl;
     if (!el) return;
-    const { fontId, fontSize, letterSpacing } = this._settings;
+    const { fontId, fontSize, letterSpacing, lineHeight } = this._settings;
     const stack = FONT_STACKS[fontId];
     if (stack) el.style.setProperty("--tug-font-family-editor", stack);
     el.style.setProperty("--tug-font-size-editor", `${fontSize}px`);
     el.style.setProperty("--tug-letter-spacing-editor", letterSpacing === 0 ? "normal" : `${letterSpacing}px`);
+    el.style.setProperty("--tug-line-height-editor", String(lineHeight));
   }
 
   private _applyAtomFont(): void {

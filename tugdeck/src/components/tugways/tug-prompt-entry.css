@@ -128,7 +128,7 @@ body {
      font does the alignment work, not per-route padding. */
   font-family: var(--tug-font-family-editor, inherit);
   font-size: var(--tug-font-size-editor, 13px);
-  line-height: 1.7;
+  line-height: var(--tug-line-height-editor, 1.7);
   padding-top: var(--tugx-prompt-entry-route-inset-y);
   padding-left: var(--tug-space-md);
   padding-right: 2px;

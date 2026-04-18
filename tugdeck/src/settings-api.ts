@@ -160,6 +160,8 @@ export interface EditorSettings {
   fontId: string;
   fontSize: number;
   letterSpacing: number;
+  /** Unit-less line-height multiplier (e.g. 1.7). */
+  lineHeight: number;
 }
 
 /**
