@@ -47,7 +47,7 @@ import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { presentWorkspaceKey, registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
@@ -55,10 +55,7 @@ import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
-import {
-  getFixtureSessionMetadataStore,
-  wrapPositionZero,
-} from "./completion-fixtures/system-metadata-fixture";
+import { wrapPositionZero } from "./completion-fixtures/system-metadata-fixture";
 
 import "./tide-card.css";
 
@@ -158,6 +155,10 @@ interface InternalServices {
   codeSessionStore: CodeSessionStore;
   editorStore: EditorSettingsStore;
   historyStore: PromptHistoryStore;
+  sessionMetadataStack: {
+    feedStore: FeedStore;
+    store: SessionMetadataStore;
+  };
   fileTreeStack: {
     feedStore: FeedStore;
     fileTreeStore: FileTreeStore;
@@ -227,15 +228,32 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     });
     const editorStore = new EditorSettingsStore();
     const historyStore = new PromptHistoryStore();
-    const feedStore = new FeedStore(
+    // No workspace filter on the SESSION_METADATA feed: the payload
+    // is Claude's raw `system_metadata` event
+    // (`{"type":"system_metadata","session_id":...,"slash_commands":...}`)
+    // and carries neither `workspace_key` nor `tug_session_id`.
+    // Applying the workspace filter here drops every frame and leaves
+    // the completion popup empty. Single-session-mode (sub-step 4h)
+    // enforces one active Tide session at a time, so the unfiltered
+    // broadcast reaches only this card. Post-P2 multi-session will
+    // need per-session routing on the tugcast side.
+    const sessionMetadataFeedStore = new FeedStore(
+      connection,
+      [FeedId.SESSION_METADATA],
+    );
+    const sessionMetadataStack: InternalServices["sessionMetadataStack"] = {
+      feedStore: sessionMetadataFeedStore,
+      store: new SessionMetadataStore(sessionMetadataFeedStore, FeedId.SESSION_METADATA),
+    };
+    const fileTreeFeedStore = new FeedStore(
       connection,
       [FeedId.FILETREE],
       undefined,
       workspaceFilterRef.current,
     );
-    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+    const fileTreeStore = new FileTreeStore(fileTreeFeedStore, FeedId.FILETREE);
     const fileTreeStack: InternalServices["fileTreeStack"] = {
-      feedStore,
+      feedStore: fileTreeFeedStore,
       fileTreeStore,
       provider: fileTreeStore.getFileCompletionProvider(),
     };
@@ -243,6 +261,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
       codeSessionStore,
       editorStore,
       historyStore,
+      sessionMetadataStack,
       fileTreeStack,
     };
     setServices(next);
@@ -260,6 +279,8 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
         if (conn) sendCloseSession(conn, cardId, stillBound.tugSessionId);
       }
       next.codeSessionStore.dispose();
+      next.sessionMetadataStack.store.dispose();
+      next.sessionMetadataStack.feedStore.dispose();
       if (next.fileTreeStack) {
         next.fileTreeStack.fileTreeStore.dispose();
         next.fileTreeStack.feedStore.dispose();
@@ -268,42 +289,50 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     };
   }, [binding, cardId]);
 
-  // Propagate workspace-filter changes to the live feed store. Runs
-  // only when `services` or `workspaceFilter` identity changes; never
-  // rebuilds the services bag.
+  // Propagate workspace-filter changes to the FILETREE feed store.
+  // SESSION_METADATA does not carry `workspace_key` on the wire, so
+  // it is constructed unfiltered and stays unfiltered — see the
+  // construction effect above.
   useLayoutEffect(() => {
     services?.fileTreeStack?.feedStore.setFilter(workspaceFilter);
   }, [services, workspaceFilter]);
 
-  // Session metadata: module-scoped fixture singleton; swapped for a
-  // live per-card store in sub-step 4f.
-  const sessionMetadataStore = getFixtureSessionMetadataStore();
-
   // Completion providers. Null-safe on `services` so this can be
   // memoized unconditionally (rules of hooks); the caller only reads
   // it when `services` is non-null.
+  //
+  //   `@`: live `FileTreeStore` against the real connection. Falls
+  //        back to `EMPTY_FILE_COMPLETION_PROVIDER` when the
+  //        connection was null at first render so the trigger stays
+  //        wired regardless of timing.
+  //
+  //   `/`: per-card live `SessionMetadataStore` against
+  //        `FeedId.SESSION_METADATA`, wrapped with the position-0
+  //        gate so `/` mid-text yields an empty popup.
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
       "@": services?.fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
-      "/": wrapPositionZero(
-        entryDelegateRef,
-        sessionMetadataStore.getCommandCompletionProvider(),
-      ),
+      "/": services
+        ? wrapPositionZero(
+            entryDelegateRef,
+            services.sessionMetadataStack.store.getCommandCompletionProvider(),
+          )
+        : EMPTY_FILE_COMPLETION_PROVIDER,
     }),
-    [services, sessionMetadataStore],
+    [services],
   );
 
   return useMemo<TideCardServices | null>(() => {
     if (services === null) return null;
     return {
       codeSessionStore: services.codeSessionStore,
-      sessionMetadataStore,
+      sessionMetadataStore: services.sessionMetadataStack.store,
       historyStore: services.historyStore,
       completionProviders,
       editorStore: services.editorStore,
       entryDelegateRef,
     };
-  }, [services, sessionMetadataStore, completionProviders]);
+  }, [services, completionProviders]);
 }
 
 // ---------------------------------------------------------------------------
