@@ -54,6 +54,19 @@
   gap: var(--tug-space-md, 12px);
 }
 
+/* One-shot notice surfaced above the form when the picker is
+   re-presented after a failure (Step 4.5.5 Phase B — `resume_failed`).
+   @tug-renders-on: surface.global.attention.muted */
+.tide-card-picker-notice {
+  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
+  border-radius: var(--tug-radius-sm, 6px);
+  background: var(--tug7-element-global-surface-attention-muted-rest, rgba(255, 196, 0, 0.12));
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  font-family: var(--tug-font-family-sans);
+  line-height: var(--tug-line-height-tight, 1.35);
+}
+
 .tide-card-picker-field {
   display: flex;
   flex-direction: column;

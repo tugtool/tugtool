@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { ResumeFailedError, SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 
 // ---------------------------------------------------------------------------
@@ -1477,34 +1477,19 @@ describe("SessionManager behavioral", () => {
     expect(calls).toEqual([{ id, mode: "resume" }]);
   });
 
-  test("initialize() in 'resume' mode falls back to fresh-spawn + emits resume_failed when the subprocess exits before system:init", async () => {
+  test("initialize() in 'resume' mode emits resume_failed and throws ResumeFailedError when the subprocess exits before system:init (Phase B: no silent fallback)", async () => {
     const suffix = Date.now();
     const projectDir = `/tmp/init-stale-${suffix}`;
     const staleId = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, staleId, "resume");
     const calls: Array<{ id: string | null; mode: string }> = [];
-    let spawnIndex = 0;
     (manager as any).spawnClaude = (
       sid: string | null,
       mode: "session-id" | "resume",
     ) => {
       calls.push({ id: sid, mode });
-      const idx = spawnIndex++;
-      if (idx === 0) {
-        // Resume attempt: subprocess exits immediately with no system:init.
-        return {
-          stdout: new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.close();
-            },
-          }),
-          stdin: { write: () => {}, end: () => {}, flush: () => {} },
-          exited: Promise.resolve(1),
-          kill: () => {},
-        };
-      }
-      // Fresh fallback.
+      // Resume attempt: subprocess exits immediately with no system:init.
       return {
         stdout: new ReadableStream<Uint8Array>({
           start(controller) {
@@ -1512,19 +1497,27 @@ describe("SessionManager behavioral", () => {
           },
         }),
         stdin: { write: () => {}, end: () => {}, flush: () => {} },
-        exited: new Promise<number>(() => {}),
+        exited: Promise.resolve(1),
         kill: () => {},
       };
     };
 
-    await manager.initialize();
+    let caught: unknown = null;
+    try {
+      await manager.initialize();
+    } catch (err) {
+      caught = err;
+    }
 
-    // Two spawns: first resume, then fresh with a brand-new id.
-    expect(calls.length).toBe(2);
+    // Phase B: tugcode does NOT silently fresh-spawn. Exactly one spawn
+    // (the resume attempt), then `ResumeFailedError` is thrown so main
+    // can exit cleanly. The bridge promotes the subsequent EOF to
+    // `RelayOutcome::ResumeFailed` and surfaces the failure to the card.
+    expect(calls.length).toBe(1);
     expect(calls[0]).toEqual({ id: staleId, mode: "resume" });
-    expect(calls[1]!.mode).toBe("session-id");
-    expect(calls[1]!.id).not.toBe(staleId);
-    expect(calls[1]!.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(caught).toBeInstanceOf(ResumeFailedError);
+    expect((caught as ResumeFailedError).staleSessionId).toBe(staleId);
+    expect((caught as ResumeFailedError).reason.length).toBeGreaterThan(0);
   });
 
   test("handlePermissionMode updates permissionManager state", () => {

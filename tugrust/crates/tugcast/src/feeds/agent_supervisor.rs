@@ -3435,6 +3435,95 @@ mod tests {
         assert_eq!(state, "live");
     }
 
+    /// Step 4.5.5 Phase B: when tugcode emits `resume_failed` and then
+    /// exits (closes stdout), `relay_session_io` must promote the EOF
+    /// from `Crashed` (would retry) to `ResumeFailed { ... }` so the
+    /// outer `run_session_bridge` loop tears down terminally without
+    /// re-spawning under the same stale `--resume` id. Pins the
+    /// invariant so a future EOF-handling change can't quietly bring
+    /// the silent retry back.
+    #[tokio::test]
+    async fn test_resume_failed_promotes_eof_to_terminal() {
+        let store: Arc<dyn SessionKeysStore> = Arc::new(InMemoryStore::default());
+        let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
+            make_supervisor_with_spawner(store, stall_spawner_factory());
+
+        let tug_id = TugSessionId::new("sess-resume-fail");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+        }
+
+        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(4096);
+        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(4096);
+
+        // Fake child: handshake, then `resume_failed`, then EOF.
+        let stale_id = "stale-claude-id-7";
+        let child_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut child_stdin_read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert!(line.contains("protocol_init"));
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
+                .await
+                .unwrap();
+            let frame = format!(
+                "{{\"type\":\"resume_failed\",\"reason\":\"claude exited\",\"stale_session_id\":\"{stale_id}\"}}\n"
+            );
+            child_stdout_write.write_all(frame.as_bytes()).await.unwrap();
+            drop(child_stdout_write);
+        });
+
+        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
+        let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(4);
+        let state_tx = sup.session_state_tx.clone();
+        let cancel = CancellationToken::new();
+
+        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
+        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
+        let lines = BufReader::new(stdout_box).lines();
+
+        let recorder = NoopSessionsRecorder;
+        let outcome = relay_session_io(
+            &tug_id,
+            &entry_arc,
+            &mut input_rx_bridge,
+            &merger_tx,
+            &state_tx,
+            stdin_box,
+            lines,
+            "/tmp/test-relay-resume-fail",
+            &recorder,
+            &cancel,
+        )
+        .await;
+
+        child_task.await.unwrap();
+
+        match outcome {
+            RelayOutcome::ResumeFailed {
+                stale_session_id,
+                reason,
+            } => {
+                assert_eq!(stale_session_id, stale_id);
+                assert_eq!(reason, "claude exited");
+            }
+            other => panic!("expected ResumeFailed, got {other:?}"),
+        }
+
+        // The `resume_failed` frame must have been forwarded to the
+        // merger (so the card-side `lastError` populates).
+        let forwarded = merger_rx.try_recv().expect("resume_failed forwarded");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&forwarded.payload).unwrap();
+        assert_eq!(parsed["type"], "resume_failed");
+        assert_eq!(parsed["stale_session_id"], stale_id);
+        assert_eq!(parsed["tug_session_id"], "sess-resume-fail");
+    }
+
     #[tokio::test]
     async fn test_crash_budget_per_session() {
         // Two sessions spawn in parallel. A's spawner always errors; B's

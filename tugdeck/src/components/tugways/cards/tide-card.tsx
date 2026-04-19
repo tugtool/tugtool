@@ -59,6 +59,7 @@ import {
 } from "@/lib/card-session-binding-store";
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
+import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   insertTideRecentProject,
@@ -426,6 +427,14 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   const senderId = useId();
   const shownRef = useRef(false);
 
+  // One-shot notice from a prior session attempt for this card. Phase B
+  // stashes a `resume_failed` notice when it clears the binding so the
+  // re-presented picker can surface the reason. `consume` reads-and-clears,
+  // so a remount that's not preceded by a failure shows nothing. Captured
+  // once at picker construction; subsequent renders inside this picker
+  // session keep showing the same notice until the form is submitted.
+  const noticeRef = useRef(pickerNoticeStore.consume(cardId));
+
   useLayoutEffect(() => {
     if (shownRef.current) return;
     shownRef.current = true;
@@ -433,6 +442,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       title: "Open Project",
       content: (close) => (
         <TideProjectPickerForm
+          notice={noticeRef.current}
           onOpen={(projectDir, sessionMode, sessionId) => {
             const connection = getConnection();
             if (!connection) {
@@ -479,6 +489,13 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
 }
 
 interface TideProjectPickerFormProps {
+  /**
+   * Notice surfaced above the form. Phase B passes a `resume_failed`
+   * notice when the picker is re-presented after a failed resume so
+   * the user sees the reason in the same picker that lets them choose
+   * what to do next. `null` when the picker is opening fresh.
+   */
+  notice: PickerNotice | null;
   onOpen: (
     projectDir: string,
     sessionMode: CardSessionMode,
@@ -550,7 +567,7 @@ function readSessionsForProject(projectDir: string): SessionRecord[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps) {
+function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Recent projects are loaded once when the form mounts. The list is
@@ -631,6 +648,18 @@ function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps)
   return (
     <ResponderScope>
       <div className="tide-card-picker-form" ref={responderRef}>
+        {notice !== null && (
+          <div
+            className="tide-card-picker-notice"
+            role="status"
+            data-testid="tide-card-picker-notice"
+            data-notice-category={notice.category}
+          >
+            {notice.category === "resume_failed"
+              ? "Couldn’t resume the previous session — it may have been deleted or is in use elsewhere. Pick a different option below."
+              : notice.message}
+          </div>
+        )}
         <label className="tide-card-picker-field">
           <span className="tide-card-picker-label">Project path</span>
           <TugInput
@@ -729,6 +758,40 @@ interface TideCardBodyProps {
 
 function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
+
+  // Phase B (Step 4.5.5): when the bound session reports a `resume_failed`
+  // lastError, stash a one-shot notice keyed by this card and clear the
+  // binding. The cleared binding makes `useTideCardServices` return null
+  // → `TideCardContent` re-renders the picker, which reads the notice
+  // and surfaces it above the radio group. We deliberately do NOT call
+  // `sendCloseSession` here: the bridge has already torn down via the
+  // `RelayOutcome::ResumeFailed` path, so the supervisor side is clean.
+  // Track the `at` timestamp of the consumed error so we react exactly
+  // once per failure (lastError stays populated across renders).
+  const consumedLastErrorAtRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    return codeSessionStore.subscribe(() => {
+      const snap = codeSessionStore.getSnapshot();
+      const err = snap.lastError;
+      if (
+        err === null ||
+        err.cause !== "resume_failed" ||
+        consumedLastErrorAtRef.current === err.at
+      ) {
+        return;
+      }
+      consumedLastErrorAtRef.current = err.at;
+      logSessionLifecycle("card.unbind_on_resume_failed", {
+        card_id: cardId,
+        message: err.message,
+      });
+      pickerNoticeStore.set(cardId, {
+        category: "resume_failed",
+        message: err.message,
+      });
+      cardSessionBindingStore.clearBinding(cardId);
+    });
+  }, [cardId, codeSessionStore]);
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
 

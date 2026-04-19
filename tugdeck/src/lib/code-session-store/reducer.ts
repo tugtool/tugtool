@@ -705,10 +705,14 @@ function handleResumeFailed(
   state: CodeSessionState,
   event: { reason?: string; stale_session_id?: string },
 ): { state: CodeSessionState; effects: Effect[] } {
-  // tugcode has already fallen back to a fresh spawn, so the store is
-  // usable. Do NOT flip to `errored`; only set `lastError` so Step 6's
-  // affordance shows a notice. The next successful turn clears it per
-  // the existing reducer convention.
+  // Step 4.5.5 Phase B: tugcode no longer silently fresh-spawns on
+  // resume failure — it emits `resume_failed` and exits, the bridge
+  // promotes EOF to `RelayOutcome::ResumeFailed` and publishes
+  // `SESSION_STATE = errored { detail: "resume_failed" }`. Set
+  // `lastError` here so the card-side reaction (clear binding,
+  // re-present picker with notice) can read both the cause and the
+  // human-readable reason; the phase flip to `errored` arrives via
+  // the subsequent `session_state_errored` event.
   const parts: string[] = [];
   if (event.reason) parts.push(event.reason);
   if (event.stale_session_id) parts.push(`stale id ${event.stale_session_id}`);

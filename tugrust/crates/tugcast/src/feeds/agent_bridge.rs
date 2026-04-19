@@ -381,6 +381,15 @@ pub enum RelayOutcome {
     /// Subprocess died abnormally (or closed stdout) — bridge records a
     /// crash and may retry up to the per-session crash budget.
     Crashed,
+    /// Subprocess emitted `resume_failed` and then exited. The outer loop
+    /// must NOT retry — re-spawning would just hit the same stale
+    /// `--resume` id and loop until crash-budget exhausted. The bridge
+    /// publishes `SESSION_STATE = errored { detail: "resume_failed" }`
+    /// and tears down. Step 4.5.5 Phase B.
+    ResumeFailed {
+        stale_session_id: String,
+        reason: String,
+    },
 }
 
 /// Default retry backoff between crash-loop iterations.
@@ -500,6 +509,38 @@ pub async fn run_session_bridge(
                     _ = cancel.cancelled() => return,
                 }
             }
+            RelayOutcome::ResumeFailed {
+                stale_session_id,
+                reason,
+            } => {
+                // Phase B: tugcode emitted `resume_failed` and exited.
+                // Re-spawning would just hit the same stale id again, so
+                // mark the session errored and return without retrying.
+                // The bridge has already forwarded the `resume_failed`
+                // CODE_OUTPUT frame to the card, and `sessions_recorder`
+                // removed the stale record.
+                let mut entry = ledger_entry.lock().await;
+                let already_closed = entry.spawn_state == SpawnState::Closed;
+                if !already_closed {
+                    entry.spawn_state = SpawnState::Errored;
+                }
+                entry.input_tx = None;
+                drop(entry);
+                if !already_closed {
+                    info!(
+                        session = %tug_session_id,
+                        stale_session_id,
+                        reason,
+                        "resume failed terminally; not retrying"
+                    );
+                    let _ = state_tx.send(build_session_state_frame(
+                        &tug_session_id,
+                        "errored",
+                        Some("resume_failed"),
+                    ));
+                }
+                return;
+            }
         }
     }
 }
@@ -528,6 +569,11 @@ pub async fn relay_session_io(
     sessions_recorder: &dyn SessionsRecorder,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
+    // Captured when tugcode emits `resume_failed`. With Phase B's no-fallback
+    // tugcode, this is followed by an exit; we promote the subsequent EOF
+    // from `Crashed` (would retry) to `ResumeFailed` (terminal).
+    let mut resume_failed: Option<(String, String)> = None;
+
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
     if let Err(e) = stdin.write_all(protocol_init).await {
@@ -658,14 +704,18 @@ pub async fn relay_session_io(
                         // re-offer it. The frame still gets forwarded to
                         // the card so `lastError` surfaces a notice.
                         if line.contains("\"type\":\"resume_failed\"") {
+                            let reason = parse_resume_failed_reason(line.as_bytes())
+                                .unwrap_or_else(|| "resume failed".to_string());
                             if let Some(stale) = parse_resume_failed_id(line.as_bytes()) {
                                 tracing::info!(
                                     target: "tide::session-lifecycle",
                                     event = "bridge.resume_failed_recv",
                                     tug_session_id = %tug_session_id,
                                     stale_session_id = stale.as_str(),
+                                    reason = reason.as_str(),
                                 );
                                 sessions_recorder.remove(&stale);
+                                resume_failed = Some((stale, reason));
                             }
                         }
 
@@ -677,10 +727,33 @@ pub async fn relay_session_io(
                         }
                     }
                     Ok(None) => {
+                        if let Some((stale, reason)) = resume_failed.take() {
+                            info!(
+                                session = %tug_session_id,
+                                stale_session_id = stale,
+                                "tugcode exited after resume_failed; not retrying"
+                            );
+                            return RelayOutcome::ResumeFailed {
+                                stale_session_id: stale,
+                                reason,
+                            };
+                        }
                         warn!(session = %tug_session_id, "tugcode stdout closed");
                         return RelayOutcome::Crashed;
                     }
                     Err(e) => {
+                        if let Some((stale, reason)) = resume_failed.take() {
+                            info!(
+                                session = %tug_session_id,
+                                stale_session_id = stale,
+                                error = %e,
+                                "tugcode stdout error after resume_failed; not retrying"
+                            );
+                            return RelayOutcome::ResumeFailed {
+                                stale_session_id: stale,
+                                reason,
+                            };
+                        }
                         error!(session = %tug_session_id, error = %e, "stdout read error");
                         return RelayOutcome::Crashed;
                     }
@@ -720,11 +793,22 @@ fn parse_claude_session_id(line: &[u8]) -> Option<String> {
 
 /// Extract the `stale_session_id` field from a `resume_failed` IPC line.
 /// Used by the bridge to remove the stale sessions record after a
-/// failed `--resume` fallback.
+/// failed `--resume` attempt.
 fn parse_resume_failed_id(line: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(line).ok()?;
     value
         .get("stale_session_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Extract the `reason` field from a `resume_failed` IPC line.
+/// Used by the bridge to thread the human-readable reason into the
+/// `SESSION_STATE = errored { detail }` frame so the card surfaces it.
+fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    value
+        .get("reason")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }

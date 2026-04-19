@@ -33,6 +33,20 @@ interface PendingRequest<T> {
   reject: (err: Error) => void;
 }
 
+/**
+ * Thrown by `SessionManager.initialize()` when a `--resume` attempt
+ * fails. The `resume_failed` IPC line was already emitted to stdout
+ * before the throw, so the bridge has the frame in flight; main.ts
+ * catches this sentinel, logs, and exits cleanly without writing an
+ * additional `error` IPC line. Step 4.5.5 Phase B.
+ */
+export class ResumeFailedError extends Error {
+  constructor(public readonly staleSessionId: string, public readonly reason: string) {
+    super(`resume failed for ${staleSessionId}: ${reason}`);
+    this.name = "ResumeFailedError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Image attachment validation constants (per PN-12)
 // ---------------------------------------------------------------------------
@@ -681,6 +695,12 @@ export class SessionManager {
    * `initialize()`.
    */
   private sessionMode: "new" | "resume";
+  /**
+   * Captured by `attemptResumeSpawn` on failure so `initialize()` can
+   * thread the reason into `ResumeFailedError`. Cleared when not in
+   * use; reset on every fresh `attemptResumeSpawn` call.
+   */
+  private lastResumeFailureReason: string | null = null;
 
   constructor(
     projectDir: string,
@@ -880,9 +900,13 @@ export class SessionManager {
    * - `sessionMode === "resume"`: spawn claude with
    *   `--resume <this.sessionId>`. If the spawn fails (claude exits
    *   before we see `system:init`, e.g. because the session JSONL is
-   *   missing or rejected), emit a `resume_failed` IPC frame, remove
-   *   the stale record, and fall back to a fresh spawn so the card
-   *   still becomes usable. Never hang; never silently swallow.
+   *   missing or rejected), emit a `resume_failed` IPC frame and
+   *   throw `ResumeFailedError`. The bridge promotes the subsequent
+   *   stdout EOF from `Crashed` to `ResumeFailed` (no retry) and
+   *   surfaces the failure to the card; the user picks a different
+   *   option in the picker. Step 4.5.5 Phase B removed the previous
+   *   silent fresh-spawn fallback — silently rebranding the session
+   *   under a new claude id is what produced the divergence bug class.
    */
   async initialize(): Promise<void> {
     const inputSessionId = this.sessionId;
@@ -904,19 +928,23 @@ export class SessionManager {
         });
         return;
       }
-      // attemptResumeSpawn has already emitted resume_failed, removed
-      // the stale sessions record, and reset internal state. Fall
-      // through to the fresh-spawn path below.
-      console.log(
-        `Resume of ${this.sessionId} failed; falling back to fresh spawn`,
-      );
-      // On fallback, also generate a brand-new session id so we don't
-      // pass claude --session-id <id-that-may-already-exist-on-disk>.
-      this.sessionId = crypto.randomUUID();
-      logSessionLifecycle("tugcode.init.fallback", {
-        stale_session_id: inputSessionId,
-        new_session_id: this.sessionId,
+      // attemptResumeSpawn has emitted `resume_failed` (the bridge will
+      // forward it as a CODE_OUTPUT frame), removed the stale sessions
+      // record, and reset internal state. Throw so main.ts exits cleanly
+      // without minting a new uuid. The bridge's `RelayOutcome::ResumeFailed`
+      // path takes over from here.
+      const reason =
+        this.lastResumeFailureReason ??
+        "resume failed";
+      logSessionLifecycle("tugcode.init.end", {
+        session_mode: inputMode,
+        session_id_in: inputSessionId,
+        session_id_out: inputSessionId,
+        fallback_taken: false,
+        resume_failed: true,
+        reason,
       });
+      throw new ResumeFailedError(inputSessionId, reason);
     }
 
     console.log(`Spawning fresh claude session (--session-id ${this.sessionId})`);
@@ -934,7 +962,7 @@ export class SessionManager {
       session_mode: inputMode,
       session_id_in: inputSessionId,
       session_id_out: this.sessionId,
-      fallback_taken: inputMode === "resume",
+      fallback_taken: false,
     });
   }
 
@@ -953,6 +981,7 @@ export class SessionManager {
    * Either case triggers the fallback.
    */
   private async attemptResumeSpawn(resumeId: string): Promise<boolean> {
+    this.lastResumeFailureReason = null;
     const RESUME_INIT_TIMEOUT_MS = 10_000;
 
     const child = this.spawnClaude(resumeId, "resume");
@@ -1005,6 +1034,7 @@ export class SessionManager {
       outcome === "exit"
         ? "claude exited before session init (likely stale --resume id)"
         : "timed out waiting for session init on --resume";
+    this.lastResumeFailureReason = reason;
     console.log(`Resume attempt for ${resumeId} failed: ${reason}`);
     logSessionLifecycle("tugcode.resume_failed", {
       stale_session_id: resumeId,
