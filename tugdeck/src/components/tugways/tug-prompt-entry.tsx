@@ -502,13 +502,13 @@ export const TugPromptEntry = React.forwardRef<
     return fresh;
   }, [historyStore, route, snap.claudeSessionId]);
 
-  // Step 4.5.5 Phase D: per-card buffer of history pushes that arrived
-  // before `claudeSessionId` was known (the spawn-handshake window).
-  // Each buffered entry holds an unkeyed `Omit<HistoryEntry,"sessionId"|"id">`
-  // payload; on the transition to a non-null `claudeSessionId` we
-  // flush the buffer into `historyStore.push(...)` keyed under that id.
-  // Without the buffer, a fast user who submits before `session_init`
-  // would silently lose the entry (F5).
+  // Per-card buffer of history pushes that arrived before
+  // `claudeSessionId` was known (the spawn-handshake window). Each
+  // buffered entry holds an unkeyed payload; on the transition to a
+  // non-null `claudeSessionId` we flush the buffer into
+  // `historyStore.push(...)` keyed under that id. Without the buffer,
+  // a fast user who submits before `session_init` would silently lose
+  // the entry.
   type PendingPush = Omit<HistoryEntry, "id" | "sessionId">;
   const pendingHistoryPushesRef = useRef<PendingPush[]>([]);
   const flushedForClaudeIdRef = useRef<string | null>(null);
@@ -609,12 +609,11 @@ export const TugPromptEntry = React.forwardRef<
     // timeline. Captured before `input.clear()` so the live state is
     // still the submitted content.
     //
-    // Step 4.5.5 Phase D: if `claudeSessionId` is still null — user
-    // submitted before claude finished initializing — buffer the
-    // payload in the per-card `pendingHistoryPushesRef`. The effect
-    // above flushes the buffer (keyed under the freshly-arrived
-    // claude id) on the first transition to a non-null id. Closes
-    // F5: the entry is no longer silently dropped.
+    // If `claudeSessionId` is still null — user submitted before
+    // claude finished initializing — buffer the payload in the
+    // per-card `pendingHistoryPushesRef`. The effect above flushes
+    // the buffer (keyed under the freshly-arrived claude id) on the
+    // first transition to a non-null id, so the entry is not lost.
     const sessionId = snapRef.current.claudeSessionId;
     const state = input.captureState();
     const payload = {

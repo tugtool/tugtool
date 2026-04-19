@@ -1,5 +1,5 @@
 // session-lifecycle-log — single greppable trace stream for the Tide
-// session-id chain audit (Step 4.5.5 Phase A).
+// session-id chain.
 //
 // Mirrors `tugdeck/src/lib/session-lifecycle-log.ts` and the Rust
 // `target: "tide::session-lifecycle"` traces. tugcode redirects all

@@ -2,9 +2,9 @@
  * picker-notice-store — one-shot per-card notices that survive the
  * unbind→remount cycle when the Tide picker re-presents itself.
  *
- * Step 4.5.5 Phase B unbinds a card after `resume_failed` so the
- * picker re-presents instead of silently rebranding the session under
- * a fresh claude id. The reason lives here for the picker to read
+ * On resume-failed, the card observer unbinds so the picker
+ * re-presents instead of silently rebranding the session under a
+ * fresh claude id. The reason lives here for the picker to read
  * once and clear; nothing else persists across the remount.
  *
  * In-memory, module-scoped, single source of truth across the tab.
@@ -13,9 +13,8 @@
 
 export interface PickerNotice {
   /**
-   * What kind of notice this is. Currently only `resume_failed`; future
-   * variants (e.g. `session_live_elsewhere` from Phase C) extend this
-   * union.
+   * What kind of notice this is. Currently only `resume_failed`;
+   * future failure modes extend this union.
    */
   category: "resume_failed";
   /** Human-readable reason from the underlying cause. */

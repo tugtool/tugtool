@@ -266,10 +266,9 @@ export const TIDE_RECENT_PROJECTS_MAX = 5;
  *
  * The list is keyed by the user-typed project path — the same identifier
  * the picker displays, submits on `spawn_session`, and uses to key the
- * `session-id-by-workspace` map. Roadmap step 4.5 collapsed session
- * bookkeeping to a single identifier so every consumer (recents,
- * session-id map, bind payload, tugcode's persistence) reads and writes
- * the same string.
+ * `session-id-by-workspace` map. Session bookkeeping uses a single
+ * identifier so every consumer (recents, session-id map, bind
+ * payload, tugcode's persistence) reads and writes the same string.
  */
 export function readTideRecentProjects(client: TugbankClient): string[] {
   const entry = client.get("dev.tugtool.tide", "recent-projects");

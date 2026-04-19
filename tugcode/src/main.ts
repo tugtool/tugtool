@@ -96,7 +96,7 @@ process.on("SIGHUP", () => shutdownOnSignal("SIGHUP"));
 // IPC loop. When stdin closes (parent hangup / pipe EOF), the for-await
 // loop exits naturally. We then run the same shutdown path as SIGTERM so
 // the live claude subprocess doesn't keep Bun's event loop alive and
-// leave tugcode running as an orphan (see roadmap step 4j).
+// leave tugcode running as an orphan.
 async function main() {
   for await (const msg of readLine()) {
     if (isProtocolInit(msg)) {
@@ -128,9 +128,9 @@ async function main() {
       } catch (err) {
         if (err instanceof ResumeFailedError) {
           // attemptResumeSpawn already wrote the `resume_failed` IPC
-          // line. Phase B contract: tugcode does NOT silently fresh-spawn
-          // on resume failure; it exits cleanly so the bridge promotes
-          // the EOF to `RelayOutcome::ResumeFailed` and the card sees
+          // line. tugcode does NOT silently fresh-spawn on resume
+          // failure; it exits cleanly so the bridge promotes the EOF
+          // to a terminal `ResumeFailed` outcome and the card sees
           // the failure instead of a silent rebrand.
           console.error(
             `Resume failed for ${err.staleSessionId}: ${err.reason}; exiting`,

@@ -17,7 +17,8 @@
  * User's choice of session mode when the card was opened. Populated from
  * the `spawn_session_ok` CONTROL ack, which echoes the value tugdeck sent
  * on `spawn_session`. "new" matches the fresh-by-default behavior of
- * roadmap step 4k; "resume" carries the resume intent surfaced in 4.5.
+ * the fresh-by-default behavior; "resume" carries the explicit
+ * resume intent.
  */
 export type CardSessionMode = "new" | "resume";
 
@@ -32,13 +33,13 @@ export interface CardSessionBinding {
    * frame arrives — in the spawn-handshake window the binding exists
    * (set by `spawn_session_ok`) but Claude hasn't yet emitted its id.
    *
-   * Step 4.5.5 Phase D: persisted records (sessions, prompt history,
-   * future ledger rows) all key on `claudeSessionId`. `tugSessionId`
-   * is a tugcast-side routing key only; reads that surface a session
-   * to the user — picker, history, notices — consume `claudeSessionId`.
+   * Persisted records (sessions, prompt history, future ledger rows)
+   * all key on `claudeSessionId`. `tugSessionId` is a tugcast-side
+   * routing key only; reads that surface a session to the user —
+   * picker, history, notices — consume `claudeSessionId`.
    *
-   * Cleared along with the binding on `clearBinding` (close /
-   * `resume_failed` unbind path).
+   * Cleared along with the binding on `clearBinding` (close or
+   * resume-failed unbind path).
    */
   readonly claudeSessionId: string | null;
 }
@@ -79,7 +80,12 @@ export class CardSessionBindingStore {
    * Attach Claude's emitted session id to an existing binding. Called
    * once per session, when the bound `CodeSessionStore` first observes
    * `session_init`. No-op if the card has no binding (e.g. the close
-   * path raced with the `session_init` frame). Step 4.5.5 Phase D.
+   * path raced with the `session_init` frame).
+   *
+   * Replaces the binding's value in place and notifies subscribers.
+   * `useTideCardServices` deliberately keys its construction effect on
+   * `binding?.tugSessionId` (not the binding object), so this update
+   * does NOT tear down the bound services.
    */
   bindClaudeSessionId = (cardId: string, claudeSessionId: string): void => {
     const existing = this._bindings.get(cardId);

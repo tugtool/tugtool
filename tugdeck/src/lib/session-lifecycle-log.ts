@@ -1,6 +1,6 @@
 /**
  * session-lifecycle-log — single greppable trace stream for the Tide
- * session-id chain audit (Step 4.5.5 Phase A).
+ * session-id chain.
  *
  * Every handoff in the spawn / resume / history flow emits one line
  * tagged `[tide::session-lifecycle]` with `key=value` fields. Grepping

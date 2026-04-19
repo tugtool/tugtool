@@ -385,7 +385,7 @@ pub enum RelayOutcome {
     /// must NOT retry — re-spawning would just hit the same stale
     /// `--resume` id and loop until crash-budget exhausted. The bridge
     /// publishes `SESSION_STATE = errored { detail: "resume_failed" }`
-    /// and tears down. Step 4.5.5 Phase B.
+    /// and tears down.
     ResumeFailed {
         stale_session_id: String,
         reason: String,
@@ -438,8 +438,8 @@ pub async fn run_session_bridge(
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
-                // Phase C (Step 4.5.5): release the live-card binding so a
-                // future resume from any card is allowed.
+                // Release the live-card binding so a future resume
+                // from any card is allowed.
                 entry.card_id_live = None;
                 drop(entry);
                 live_sessions.set_live(tug_session_id.as_str(), false);
@@ -518,20 +518,20 @@ pub async fn run_session_bridge(
                 stale_session_id,
                 reason,
             } => {
-                // Phase B: tugcode emitted `resume_failed` and exited.
-                // Re-spawning would just hit the same stale id again, so
-                // mark the session errored and return without retrying.
-                // The bridge has already forwarded the `resume_failed`
-                // CODE_OUTPUT frame to the card, and `sessions_recorder`
-                // removed the stale record.
+                // tugcode emitted `resume_failed` and exited.
+                // Re-spawning would just hit the same stale id again,
+                // so mark the session errored and return without
+                // retrying. The bridge has already forwarded the
+                // `resume_failed` CODE_OUTPUT frame to the card, and
+                // `sessions_recorder` removed the stale record.
                 let mut entry = ledger_entry.lock().await;
                 let already_closed = entry.spawn_state == SpawnState::Closed;
                 if !already_closed {
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
-                // Phase C (Step 4.5.5): release the live-card binding so a
-                // future resume from any card is allowed.
+                // Release the live-card binding so a future resume
+                // from any card is allowed.
                 entry.card_id_live = None;
                 drop(entry);
                 live_sessions.set_live(tug_session_id.as_str(), false);
@@ -578,9 +578,10 @@ pub async fn relay_session_io(
     sessions_recorder: &dyn SessionsRecorder,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
-    // Captured when tugcode emits `resume_failed`. With Phase B's no-fallback
-    // tugcode, this is followed by an exit; we promote the subsequent EOF
-    // from `Crashed` (would retry) to `ResumeFailed` (terminal).
+    // Captured when tugcode emits `resume_failed`. tugcode then
+    // exits cleanly (no silent fresh-spawn fallback); we promote the
+    // subsequent EOF from `Crashed` (would retry) to `ResumeFailed`
+    // (terminal).
     let mut resume_failed: Option<(String, String)> = None;
 
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
@@ -994,8 +995,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_child_drop_kills_subprocess() {
-        // Roadmap step 4j regression: verify `kill_on_drop(true)` on the
-        // tokio `Child` wrapped inside `SessionChild` actually fires when
+        // Verify `kill_on_drop(true)` on the tokio `Child` wrapped
+        // inside `SessionChild` actually fires when
         // the `SessionChild` is dropped. This is the mechanism the
         // supervisor relies on to reap tugcode subprocesses when a session
         // closes or its bridge task exits. Using `/bin/sleep` (POSIX,

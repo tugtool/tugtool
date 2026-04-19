@@ -274,10 +274,11 @@ export interface ControlRequestCancel {
  * Emitted by `SessionManager.initialize()` when a `--session-mode resume`
  * spawn attempt fails (claude exits before `system:init`, JSONL missing,
  * stale id, etc.). Tugcast forwards the frame to the card as a CODE_OUTPUT
- * event and tugdeck surfaces it through `CodeSessionStore.lastError` so
- * Step 6's affordance renders it without new UI machinery. After emitting
- * this, tugcode falls back to a fresh spawn so the card still becomes
- * usable. Roadmap step 4.5.
+ * event and tugdeck surfaces it through `CodeSessionStore.lastError`,
+ * which the card observer reads to unbind and re-present the picker
+ * with the reason. tugcode then exits cleanly — the silent fresh-spawn
+ * fallback was removed because it caused the bound `claudeSessionId`
+ * to drift away from the id the user picked.
  */
 export interface ResumeFailed {
   type: "resume_failed";

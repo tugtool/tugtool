@@ -1448,9 +1448,9 @@ describe("SessionManager behavioral", () => {
     const id = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, id, "resume");
-    // Override Phase C's pre-flight stat so the test exercises the spawn
-    // path without needing a real jsonl on disk.
-    (manager as any).existsSyncFn = () => true;
+    // Override the resume pre-flight stat so the test exercises the
+    // spawn path without needing a real jsonl on disk.
+    manager.setExistsSyncForTest(() => true);
     const calls: Array<{ id: string | null; mode: string }> = [];
     (manager as any).spawnClaude = (
       sid: string | null,
@@ -1481,16 +1481,17 @@ describe("SessionManager behavioral", () => {
     expect(calls).toEqual([{ id, mode: "resume" }]);
   });
 
-  test("initialize() in 'resume' mode emits resume_failed and throws ResumeFailedError when the subprocess exits before system:init (Phase B: no silent fallback)", async () => {
+  test("initialize() in 'resume' mode emits resume_failed and throws ResumeFailedError when the subprocess exits before system:init (no silent fallback)", async () => {
     const suffix = Date.now();
     const projectDir = `/tmp/init-stale-${suffix}`;
     const staleId = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, staleId, "resume");
-    // Override Phase C's pre-flight stat so we exercise the spawn-then-fail
-    // path (claude exits before system:init) rather than the missing-jsonl
-    // shortcut. The pre-flight has its own dedicated test below.
-    (manager as any).existsSyncFn = () => true;
+    // Override the resume pre-flight stat so we exercise the
+    // spawn-then-fail path (claude exits before system:init) rather
+    // than the missing-jsonl shortcut. The pre-flight has its own
+    // dedicated test below.
+    manager.setExistsSyncForTest(() => true);
     const calls: Array<{ id: string | null; mode: string }> = [];
     (manager as any).spawnClaude = (
       sid: string | null,
@@ -1533,13 +1534,13 @@ describe("SessionManager behavioral", () => {
     expect(got).toBe(`${homedir()}/.claude/projects/-u-src-tugtool/abc-123.jsonl`);
   });
 
-  test("initialize() in 'resume' mode pre-flight rejects when claude session jsonl is missing (Phase C)", async () => {
+  test("initialize() in 'resume' mode pre-flight rejects when claude session jsonl is missing", async () => {
     const projectDir = `/tmp/init-missing-jsonl-${Date.now()}`;
     const staleId = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, staleId, "resume");
     // Pre-flight stub: file does NOT exist.
-    (manager as any).existsSyncFn = () => false;
+    manager.setExistsSyncForTest(() => false);
     const calls: Array<{ id: string | null; mode: string }> = [];
     (manager as any).spawnClaude = (sid: string | null, mode: string) => {
       calls.push({ id: sid, mode });

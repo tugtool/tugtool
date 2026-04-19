@@ -607,9 +607,8 @@ async fn main() {
     // `std::process::exit` doesn't run destructors, so `kill_on_drop`
     // and async cancellation can't be relied upon — sending SIGTERM
     // to our own pgid is the only mechanism that guarantees tugcode
-    // children are signalled regardless of how we got here (roadmap
-    // step 4j). tugcode's SIGTERM handler then shuts claude down and
-    // exits cleanly.
+    // children are signalled regardless of how we got here. tugcode's
+    // SIGTERM handler then shuts claude down and exits cleanly.
     info!("Killing process group before exit");
     unsafe {
         libc::kill(0, libc::SIGTERM);

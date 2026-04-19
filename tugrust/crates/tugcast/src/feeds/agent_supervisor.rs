@@ -224,7 +224,7 @@ pub struct LedgerEntry {
     /// Claude Code process's cwd, and retained for reset-session to
     /// respawn without losing the binding. (W2 Step 6.)
     pub project_dir: PathBuf,
-    /// User's spawn-time new-vs-resume choice (roadmap step 4.5).
+    /// User's spawn-time new-vs-resume choice.
     /// Forwarded as `--session-mode new|resume` to the tugcode subprocess.
     /// Reconnects reuse this value so the tugcode side of the session
     /// doesn't flip modes mid-life.
@@ -247,10 +247,10 @@ pub struct LedgerEntry {
     /// Card id currently holding this session in `Spawning` or `Live` state.
     /// `None` for a fresh `Idle` entry, after `close_session`, after the
     /// bridge transitions to `Errored`, or after the supervisor rehydrates
-    /// stored bindings on startup. Step 4.5.5 Phase C uses this to reject
-    /// a `spawn_session(mode=resume)` payload that would bind the same
-    /// session under a *different* card while the original card is still
-    /// holding it; same-card reconnects are allowed.
+    /// stored bindings on startup. Used to reject a
+    /// `spawn_session(mode=resume)` payload that would bind the same
+    /// session under a *different* card while the original card is
+    /// still holding it; same-card reconnects are allowed.
     pub card_id_live: Option<String>,
 }
 
@@ -427,10 +427,10 @@ pub const SESSIONS_DOMAIN: &str = "dev.tugtool.tide";
 /// Tugbank key (within `SESSIONS_DOMAIN`) for the sessions record.
 pub const SESSIONS_KEY: &str = "sessions";
 /// Tugbank key (within `SESSIONS_DOMAIN`) for the live-sessions list.
-/// Step 4.5.5 Phase C: tugcast publishes the set of session ids
-/// currently bound to a card (state in `Spawning` or `Live`) so the
-/// tugdeck picker can grey out a resume row that points at a session
-/// already held by another card. Cleared on tugcast startup.
+/// Tugcast publishes the set of session ids currently bound to a
+/// card (state in `Spawning` or `Live`) so the tugdeck picker can
+/// grey out a resume row that points at a session already held by
+/// another card. Cleared on tugcast startup.
 pub const LIVE_SESSIONS_KEY: &str = "live-sessions";
 
 /// Writer for the sessions record — one entry per session, keyed by
@@ -496,9 +496,9 @@ impl TugbankSessionsRecorder {
 }
 
 /// Writer for the live-sessions broadcast under `dev.tugtool.tide /
-/// live-sessions`. Step 4.5.5 Phase C: the tugdeck picker subscribes
-/// via the existing DEFAULTS pipe and disables the "Resume last"
-/// row when the candidate id is in the broadcast set.
+/// live-sessions`. The tugdeck picker subscribes via the existing
+/// DEFAULTS pipe and disables the "Resume last" row when the
+/// candidate id is in the broadcast set.
 ///
 /// The set is in-memory authoritative: tugcast updates it via
 /// `set_live(id, true|false)` from the supervisor on bind / close
@@ -743,7 +743,6 @@ pub struct AgentSupervisor {
     /// `set_live(true)` on `do_spawn_session` Phase 3 and `set_live(false)`
     /// on `do_close_session`; the bridge calls `set_live(false)` on
     /// terminal teardown paths (resume_failed, crash budget).
-    /// Step 4.5.5 Phase C.
     pub live_sessions: Arc<dyn LiveSessionsTracker>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
@@ -788,7 +787,7 @@ struct OwnedControlPayload {
     /// rejected with `InvalidProjectDir { reason: "missing_project_dir" }`
     /// if absent on the spawn path.
     project_dir: Option<String>,
-    /// Roadmap step 4.5: new-vs-resume choice. Absent values default to
+    /// New-vs-resume choice. Absent values default to
     /// `SessionMode::New` so pre-4.5 payloads keep the step-4k behavior.
     session_mode: SessionMode,
 }
@@ -944,9 +943,9 @@ impl AgentSupervisor {
         cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
-        // Step 4.5.5 Phase C: clear stale live-sessions on startup so a
-        // previous tugcast process's leftover ids don't make the picker
-        // grey out rows whose subprocesses no longer exist.
+        // Clear stale live-sessions on startup so a previous tugcast
+        // process's leftover ids don't make the picker grey out rows
+        // whose subprocesses no longer exist.
         live_sessions.clear();
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
@@ -1157,17 +1156,17 @@ impl AgentSupervisor {
                     "spawn_session: reconnect release returned error (ignored)"
                 );
             }
-            // Phase C (Step 4.5.5): reject a `resume` against a session
-            // already bound to a *different* card. `card_id_live` (set
-            // in Phase 3 below, cleared on close/errored) is the source
-            // of truth for "currently bound." Same-card reconnects
-            // (WS drop + reconnect) and `new` payloads are unaffected.
-            // The wire-side rejection complements the picker grey-out
-            // (C2): even with a stale picker view, the supervisor
-            // refuses to double-bind a live session. Note that we do
-            // NOT gate on `spawn_state` because a freshly-bound entry
-            // sits at `Idle` until the dispatcher's first CODE_INPUT
-            // promotes it to `Spawning`.
+            // Reject a `resume` against a session already bound to a
+            // *different* card. `card_id_live` (set in Phase 3 below,
+            // cleared on close / errored) is the source of truth for
+            // "currently bound." Same-card reconnects (WS drop +
+            // reconnect) and `new` payloads are unaffected. The
+            // wire-side rejection complements the picker grey-out:
+            // even with a stale picker view, the supervisor refuses
+            // to double-bind a live session. We do NOT gate on
+            // `spawn_state` because a freshly-bound entry sits at
+            // `Idle` until the dispatcher's first CODE_INPUT promotes
+            // it to `Spawning`.
             if session_mode == SessionMode::Resume {
                 let entry = entry_arc.lock().await;
                 if let Some(holder) = entry.card_id_live.as_deref() {
@@ -1231,16 +1230,16 @@ impl AgentSupervisor {
         // entry with `latest_metadata: None`.
         let replay_frame = {
             let mut entry = entry_arc.lock().await;
-            // Phase C (Step 4.5.5): record the binding card so a later
-            // resume from a different card can be detected and rejected.
-            // Same-card reconnects overwrite with the same value (no-op).
+            // Record the binding card so a later resume from a
+            // different card can be detected and rejected. Same-card
+            // reconnects overwrite with the same value (no-op).
             entry.card_id_live = Some(card_id.to_owned());
             entry.latest_metadata.clone()
         };
-        // Phase C (Step 4.5.5): broadcast that this session is live so
-        // any other tab's picker greys out a "Resume last" row that
-        // points at it. Done outside the per-entry lock so the tugbank
-        // write doesn't extend the critical section.
+        // Broadcast that this session is live so any other tab's
+        // picker greys out a "Resume last" row that points at it.
+        // Done outside the per-entry lock so the tugbank write
+        // doesn't extend the critical section.
         self.live_sessions
             .set_live(tug_session_id.as_str(), true);
 
@@ -1261,7 +1260,7 @@ impl AgentSupervisor {
         // SESSION_STATE transitions. Emitting the ack as an explicit CONTROL
         // frame here lets tugdeck's spawn-session handler populate the
         // binding store in the same round-trip.
-        // Roadmap step 4.5: the ack also echoes `session_mode` so tugdeck's
+        // The ack also echoes `session_mode` so tugdeck's
         // `cardSessionBindingStore` stamps the user's new-vs-resume choice
         // into the binding. Pre-4.5 clients ignore the extra field.
         //
@@ -1346,8 +1345,8 @@ impl AgentSupervisor {
             // about to be dropped; we only care that any Arc-clone holder
             // observes `Closed` on its next lock acquire.
             entry.spawn_state = SpawnState::Closed;
-            // Phase C (Step 4.5.5): release the live-card binding so a
-            // future resume from any card is allowed.
+            // Release the live-card binding so a future resume from
+            // any card is allowed.
             entry.card_id_live = None;
             entry.workspace_key.clone()
         };
@@ -1381,8 +1380,8 @@ impl AgentSupervisor {
         let _ =
             self.session_state_tx
                 .send(build_session_state_frame(tug_session_id, "closed", None));
-        // Phase C (Step 4.5.5): drop the session from the live broadcast
-        // so any picker waiting on this id can offer it for resume again.
+        // Drop the session from the live broadcast so any picker
+        // waiting on this id can offer it for resume again.
         self.live_sessions
             .set_live(tug_session_id.as_str(), false);
     }
@@ -2406,11 +2405,10 @@ mod tests {
         assert!(set.contains(&TugSessionId::new("sess-1")));
     }
 
-    /// Step 4.5.5 Phase C: a `resume` payload for a session already
-    /// bound to a different card must be rejected with
-    /// `session_live_elsewhere` and broadcast `SESSION_STATE = errored`,
-    /// while same-card reconnects (Phase B's WS-drop-and-reconnect path)
-    /// still succeed.
+    /// A `resume` payload for a session already bound to a different
+    /// card must be rejected with `session_live_elsewhere` and a
+    /// `SESSION_STATE = errored` broadcast, while same-card reconnects
+    /// (the WS-drop-and-reconnect path) still succeed.
     #[tokio::test]
     async fn test_spawn_session_rejects_resume_when_live_on_other_card() {
         let store = Arc::new(InMemoryStore::default());
@@ -3686,8 +3684,8 @@ mod tests {
         assert_eq!(state, "live");
     }
 
-    /// Step 4.5.5 Phase B: when tugcode emits `resume_failed` and then
-    /// exits (closes stdout), `relay_session_io` must promote the EOF
+    /// When tugcode emits `resume_failed` and then exits (closes
+    /// stdout), `relay_session_io` must promote the EOF
     /// from `Crashed` (would retry) to `ResumeFailed { ... }` so the
     /// outer `run_session_bridge` loop tears down terminally without
     /// re-spawning under the same stale `--resume` id. Pins the

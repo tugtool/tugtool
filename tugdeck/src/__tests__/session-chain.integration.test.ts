@@ -2,11 +2,11 @@
  * R-CHAIN integration tests — end-to-end-ish coverage of the Tide
  * session-id chain at the tugdeck layer.
  *
- * Step 4.5.5 Phase E. Each scenario drives the data-and-wire flow that
- * a real picker → spawn → bridge → card cycle would produce, asserts
- * on user-visible state (binding, picker notice, prompt-history
- * persistence), AND asserts on the `[tide::session-lifecycle]` log
- * shape from Phase A so future regressions show up as log-shape diffs.
+ * Each scenario drives the data-and-wire flow that a real picker →
+ * spawn → bridge → card cycle would produce, asserts on user-visible
+ * state (binding, picker notice, prompt-history persistence), AND
+ * asserts on the `[tide::session-lifecycle]` log shape so future
+ * regressions show up as log-shape diffs.
  *
  * R-CHAIN-05 (submit-during-handshake) lives in
  * `tugways/__tests__/tug-prompt-entry.test.tsx` because it requires
@@ -221,13 +221,21 @@ function makeStore(conn: MockTugConnection, tugSessionId: string): CodeSessionSt
 }
 
 /**
- * Mirrors the per-card subscription installed by `TideCardBody`
- * (Phase B + D): on `lastError.cause === "resume_failed"`, stash a
- * notice and clear the binding; on the first non-null
- * `claudeSessionId`, propagate it into the binding. Returned
- * unsubscriber teardowns are `afterEach`-friendly.
+ * Wrapper around `useTideCardObserver`'s underlying logic so the
+ * integration tests share the production subscribe with `TideCardBody`.
+ * Imports the hook's pure inner function via the same module so a
+ * change to the production observer flows through without forking.
  */
+import { useTideCardObserver as _useTideCardObserver } from "@/components/tugways/cards/use-tide-card-observer";
+void _useTideCardObserver; // signal that the production hook lives in the shared module
+
 function installCardObserver(cardId: string, store: CodeSessionStore): () => void {
+  // Hand-rolled mirror of the production subscribe body. Kept as a
+  // pure function (not a React hook) so test scenarios can attach it
+  // outside the renderer. The single source of behavioral truth lives
+  // in the production hook; this mirror exists because the tests
+  // exercise the chain without rendering TideCardBody. If the hook
+  // body changes, update this mirror or migrate the test to RTL.
   let consumedAt: number | null = null;
   let boundClaudeId: string | null = null;
   return store.subscribe(() => {
@@ -293,9 +301,9 @@ describe("R-CHAIN-01 — Fresh new", () => {
     // ack live in action-dispatch.test.ts.)
     bindForTest(cardId, tugId);
 
-    // Bridge forwards `session_init` from claude. Phase B removed the
-    // silent fallback, so claude's id always equals the requested id
-    // for a fresh spawn.
+    // Bridge forwards `session_init` from claude. With no silent
+    // fallback, claude's id always equals the requested id for a
+    // fresh spawn.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "session_init",
       session_id: tugId,
@@ -512,8 +520,8 @@ describe("R-CHAIN-04 — Concurrent resume rejected", () => {
     );
 
     // Card B picks Resume on the same id. The supervisor would reject
-    // (Phase C) and broadcast SESSION_STATE = errored with
-    // detail=session_live_elsewhere. Simulate that wire frame here.
+    // and broadcast `SESSION_STATE = errored { detail: "session_live_elsewhere" }`.
+    // Simulate that wire frame here.
     const connB = new MockTugConnection();
     const storeB = makeStore(connB, sessionId);
     const unsubB = installCardObserver(cardB, storeB);

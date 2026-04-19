@@ -44,16 +44,19 @@ import { logSessionLifecycle } from "./session-lifecycle-log.ts";
  * Pure helper so unit tests can assert the encoding without touching
  * the filesystem. Exported for tests.
  *
- * Step 4.5.5 Phase C: tugcode stats this path before invoking
- * `claude --resume <id>` so a missing jsonl fails the resume in a
- * millisecond instead of waiting ~5s for claude to give up. Defense
- * in depth — the supervisor's `session_live_elsewhere` check catches
- * the concurrent-binding case; this catches the deleted-jsonl case.
+ * tugcode stats this path before invoking `claude --resume <id>` so
+ * a missing jsonl fails the resume in a millisecond instead of
+ * waiting ~5s for claude to give up. Defense in depth — the
+ * supervisor's `session_live_elsewhere` check catches the
+ * concurrent-binding case; this catches the deleted-jsonl case.
  */
 export function expectedSessionJsonlPath(projectDir: string, sessionId: string): string {
-  const home = homedir();
+  // Honor `CLAUDE_CONFIG_DIR` so users with a non-default claude
+  // config don't false-positive the pre-flight as missing.
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
   const encoded = projectDir.replace(/\//g, "-");
-  return join(home, ".claude", "projects", encoded, `${sessionId}.jsonl`);
+  return join(configDir, "projects", encoded, `${sessionId}.jsonl`);
 }
 
 interface PendingRequest<T> {
@@ -66,7 +69,7 @@ interface PendingRequest<T> {
  * fails. The `resume_failed` IPC line was already emitted to stdout
  * before the throw, so the bridge has the frame in flight; main.ts
  * catches this sentinel, logs, and exits cleanly without writing an
- * additional `error` IPC line. Step 4.5.5 Phase B.
+ * additional `error` IPC line.
  */
 export class ResumeFailedError extends Error {
   constructor(public readonly staleSessionId: string, public readonly reason: string) {
@@ -730,6 +733,30 @@ export class SessionManager {
    */
   private lastResumeFailureReason: string | null = null;
 
+  /**
+   * Filesystem check used by the resume pre-flight to decide whether
+   * the expected claude session jsonl exists. Tests override via
+   * `setExistsSyncForTest` so they can exercise the spawn path
+   * without a real file on disk and the missing-file path without
+   * touching the filesystem at all.
+   */
+  private _existsSync: (path: string) => boolean = (p) => {
+    try {
+      return existsSync(p) && statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Test seam — install a deterministic file-existence check so
+   * resume pre-flight tests don't depend on the actual filesystem.
+   * @internal
+   */
+  setExistsSyncForTest(fn: (path: string) => boolean): void {
+    this._existsSync = fn;
+  }
+
   constructor(
     projectDir: string,
     sessionId: string,
@@ -932,9 +959,9 @@ export class SessionManager {
    *   throw `ResumeFailedError`. The bridge promotes the subsequent
    *   stdout EOF from `Crashed` to `ResumeFailed` (no retry) and
    *   surfaces the failure to the card; the user picks a different
-   *   option in the picker. Step 4.5.5 Phase B removed the previous
-   *   silent fresh-spawn fallback — silently rebranding the session
-   *   under a new claude id is what produced the divergence bug class.
+   *   option in the picker. Silently rebranding the session under a
+   *   new claude id is what produced an earlier divergence bug class
+   *   — we now surface the failure instead.
    */
   async initialize(): Promise<void> {
     const inputSessionId = this.sessionId;
@@ -1011,22 +1038,13 @@ export class SessionManager {
   private async attemptResumeSpawn(resumeId: string): Promise<boolean> {
     this.lastResumeFailureReason = null;
 
-    // Pre-flight (Step 4.5.5 Phase C): if the expected session jsonl is
-    // missing, fail the resume immediately rather than spending ~5s
-    // waiting for claude to exit. The bridge's `RelayOutcome::ResumeFailed`
-    // path takes over from here. Tests inject `(this as any).existsSyncFn`
-    // to override this check; production reads the real filesystem.
-    const exists =
-      (this as unknown as { existsSyncFn?: (p: string) => boolean }).existsSyncFn ??
-      ((p: string) => {
-        try {
-          return existsSync(p) && statSync(p).isFile();
-        } catch {
-          return false;
-        }
-      });
+    // Pre-flight: if the expected session jsonl is missing, fail the
+    // resume immediately rather than spending ~5s waiting for claude
+    // to exit. The bridge's terminal `ResumeFailed` outcome takes over
+    // from here. Tests install a stub file-existence check via
+    // `setExistsSyncForTest`; production reads the real filesystem.
     const jsonlPath = expectedSessionJsonlPath(this.projectDir, resumeId);
-    if (!exists(jsonlPath)) {
+    if (!this._existsSync(jsonlPath)) {
       const reason = "missing_jsonl";
       this.lastResumeFailureReason = reason;
       console.log(

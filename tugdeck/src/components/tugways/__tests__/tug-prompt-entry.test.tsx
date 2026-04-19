@@ -1203,11 +1203,10 @@ describe("TugPromptEntry — per-session prompt history keys on claudeSessionId"
     expect(entry.id.startsWith("claude-real-id-")).toBe(true);
   });
 
-  // R-CHAIN-05: submit during the spawn-handshake window (Step 4.5.5
-  // Phase D). Before D, a submit while `claudeSessionId === null` was
-  // silently dropped — F5 in the audit. After D, the entry is buffered
-  // and flushed under the freshly-arrived claude id on the first
-  // non-null transition.
+  // R-CHAIN-05: submit during the spawn-handshake window. Before
+  // the buffer was added, a submit while `claudeSessionId === null`
+  // was silently dropped. Now the entry is buffered and flushed under
+  // the freshly-arrived claude id on the first non-null transition.
   it("buffers a push when claudeSessionId is null and flushes it on the first session_init (R-CHAIN-05)", () => {
     const store = new ScriptedStore({
       tugSessionId: "tug-routing-id",

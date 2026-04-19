@@ -258,15 +258,13 @@ export function controlFrame(action: string, params?: Record<string, unknown>): 
  * Session-mode choice on spawn. Mirrors
  * `CardSessionBinding["sessionMode"]` — kept as a standalone type so the
  * wire encoder can import it without dragging the binding store in.
- * Roadmap step 4.5.
  */
 export type SpawnSessionMode = "new" | "resume";
 
 /**
  * Build a `spawn_session` CONTROL frame for the supervisor.
  *
- * Payload shape per Spec S03 (extended in roadmap step 4.5 with
- * `session_mode`):
+ * Payload shape per Spec S03 (extended with `session_mode`):
  * ```json
  * {
  *   "action": "spawn_session",
@@ -283,8 +281,8 @@ export type SpawnSessionMode = "new" | "resume";
  * `missing_project_dir` error details), so optional arguments on the client
  * side would only create silent failure modes.
  *
- * `sessionMode` defaults to `"new"` when omitted so pre-4.5 callers remain
- * on the fresh-by-default behavior from step 4k. On the server both sides
+ * `sessionMode` defaults to `"new"` when omitted so callers without an
+ * explicit choice get the fresh-by-default behavior. On the server both sides
  * also default to `"new"` when the wire field is absent.
  *
  * `projectDir` is the workspace path the tugcode subprocess will be given

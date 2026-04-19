@@ -380,9 +380,8 @@ export function initActionDispatch(
     // the filter uses `workspaceKey`.
     const projectDirResolved =
       typeof projectDir === "string" ? projectDir : workspaceKey;
-    // `session_mode` was added by roadmap step 4.5. Pre-4.5 server acks
-    // omit the field; default to "new" to match the fresh-by-default
-    // behavior from step 4k.
+    // Pre-`session_mode` server acks omit the field; default to
+    // "new" to match the fresh-by-default behavior elsewhere.
     const sessionModeResolved =
       sessionMode === "resume" ? "resume" : "new";
     logSessionLifecycle("spawn.ack", {
@@ -397,10 +396,10 @@ export function initActionDispatch(
       workspaceKey,
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
-      // Step 4.5.5 Phase D: claudeSessionId is populated by
-      // TideCardBody once the bound CodeSessionStore observes
-      // session_init. Until then the binding holds a usable
-      // tugSessionId (the routing key) but no canonical claude id.
+      // claudeSessionId is populated by the card observer once the
+      // bound CodeSessionStore sees session_init. Until then the
+      // binding has a usable tugSessionId for routing but no
+      // canonical claude id.
       claudeSessionId: null,
     });
   });

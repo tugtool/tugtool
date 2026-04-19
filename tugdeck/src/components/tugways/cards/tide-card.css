@@ -55,7 +55,7 @@
 }
 
 /* One-shot notice surfaced above the form when the picker is
-   re-presented after a failure (Step 4.5.5 Phase B — `resume_failed`).
+   re-presented after a session failure (e.g. resume failed).
    @tug-renders-on: surface.global.attention.muted */
 .tide-card-picker-notice {
   padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
@@ -80,10 +80,9 @@
   font-family: var(--tug-font-family-sans);
 }
 
-/* Recent-projects section below the path input. Roadmap step 4.5:
-   clicking a button now fills the input rather than spawning directly;
-   all spawns go through the session-mode radio group + Open confirm
-   below. */
+/* Recent-projects section below the path input. Clicking a button
+   fills the input rather than spawning directly; all spawns go
+   through the session-mode radio group + Open confirm below. */
 .tide-card-picker-recents {
   display: flex;
   flex-direction: column;
@@ -97,7 +96,7 @@
   gap: var(--tug-space-xs, 4px);
 }
 
-/* Session-option layout inside each TugRadioItem (roadmap step 4.5).
+/* Session-option layout inside each TugRadioItem.
    The radio circle is owned by TugRadioGroup; this block only shapes
    the per-row title + subtitle stack that we pass as the item's
    children. */

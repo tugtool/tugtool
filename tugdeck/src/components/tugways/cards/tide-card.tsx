@@ -60,6 +60,7 @@ import {
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
+import { useTideCardObserver } from "./use-tide-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   insertTideRecentProject,
@@ -201,10 +202,18 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   // Subscribe to the per-card binding. `binding` drives the services
   // lifecycle: services construct when a binding appears, tear down
   // when it clears.
+  //
+  // The construction effect below depends on `binding?.tugSessionId`,
+  // not on the binding *object*. Mutations to other binding fields
+  // (e.g. claudeSessionId arriving on session_init) replace the
+  // store's map by design — depending on the object identity would
+  // tear services down on every field update, send a close_session
+  // frame, and remount the picker mid-conversation.
   const binding = useSyncExternalStore<CardSessionBinding | null>(
     cardSessionBindingStore.subscribe,
     useCallback(() => cardSessionBindingStore.getBinding(cardId) ?? null, [cardId]),
   );
+  const bindingTugSessionId = binding?.tugSessionId ?? null;
 
   const workspaceKey = useCardWorkspaceKey(cardId);
   const workspaceFilter: FeedStoreFilter = useMemo(
@@ -246,7 +255,17 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   // across cards; it is read in the services-return memo below, not
   // constructed here.
   useLayoutEffect(() => {
-    if (binding === null) {
+    if (bindingTugSessionId === null) {
+      setServices(null);
+      return;
+    }
+    // Read the live binding inside the effect so we capture whatever
+    // shape the store currently holds. Subsequent in-place updates
+    // (claudeSessionId, etc.) flow through the store's listeners but
+    // do not re-run this effect; consumers that need those updates
+    // observe the store directly.
+    const liveBinding = cardSessionBindingStore.getBinding(cardId);
+    if (!liveBinding) {
       setServices(null);
       return;
     }
@@ -257,7 +276,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     }
     const codeSessionStore = new CodeSessionStore({
       conn: connection,
-      tugSessionId: binding.tugSessionId,
+      tugSessionId: liveBinding.tugSessionId,
     });
     const editorStore = new EditorSettingsStore();
     // No workspace filter on the SESSION_METADATA feed: the payload
@@ -302,11 +321,10 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     // identifier tugcode keys its session-id persistence by, so the
     // picker's next resume lookup can read `session-id-by-workspace`
     // with the typed path directly — no translation table, no drift.
-    // Roadmap step 4.5 + step 4m.
     const tugbank = getTugbankClient();
     if (tugbank) {
       const current = readTideRecentProjects(tugbank);
-      const updated = insertTideRecentProject(current, binding.projectDir);
+      const updated = insertTideRecentProject(current, liveBinding.projectDir);
       if (updated[0] !== current[0] || updated.length !== current.length) {
         putTideRecentProjects(updated);
       }
@@ -334,7 +352,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
       }
       setServices(null);
     };
-  }, [binding, cardId]);
+  }, [bindingTugSessionId, cardId]);
 
   // Propagate workspace-filter changes to the FILETREE feed store.
   // SESSION_METADATA does not carry `workspace_key` on the wire, so
@@ -427,13 +445,17 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   const senderId = useId();
   const shownRef = useRef(false);
 
-  // One-shot notice from a prior session attempt for this card. Phase B
-  // stashes a `resume_failed` notice when it clears the binding so the
-  // re-presented picker can surface the reason. `consume` reads-and-clears,
-  // so a remount that's not preceded by a failure shows nothing. Captured
-  // once at picker construction; subsequent renders inside this picker
-  // session keep showing the same notice until the form is submitted.
-  const noticeRef = useRef(pickerNoticeStore.consume(cardId));
+  // One-shot notice from a prior session attempt. The card observer
+  // stashes a notice when it clears the binding after a failure so
+  // the re-presented picker can surface the reason. `consume` reads-
+  // and-clears, so a remount that's not preceded by a failure shows
+  // nothing. Captured once at picker construction; subsequent renders
+  // inside this picker session keep showing the same notice until the
+  // form is submitted.
+  const noticeRef = useRef<PickerNotice | null>(null);
+  if (noticeRef.current === null) {
+    noticeRef.current = pickerNoticeStore.consume(cardId);
+  }
 
   useLayoutEffect(() => {
     if (shownRef.current) return;
@@ -490,10 +512,11 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
 
 interface TideProjectPickerFormProps {
   /**
-   * Notice surfaced above the form. Phase B passes a `resume_failed`
-   * notice when the picker is re-presented after a failed resume so
-   * the user sees the reason in the same picker that lets them choose
-   * what to do next. `null` when the picker is opening fresh.
+   * Notice surfaced above the form when the picker is re-presented
+   * after a session failure (e.g. a resume that didn't take). The
+   * notice carries the reason so the user sees it in the same picker
+   * that lets them choose what to do next. `null` when the picker is
+   * opening fresh.
    */
   notice: PickerNotice | null;
   onOpen: (
@@ -574,10 +597,10 @@ function readSessionsForProject(projectDir: string): SessionRecord[] {
  * in-memory and broadcasts it via the DEFAULTS feed; tugcast clears
  * it on startup so leftover ids from a prior process never leak.
  *
- * Step 4.5.5 Phase C: the picker uses this to grey out a "Resume last"
- * row whose candidate id is already in use by another card. The
- * supervisor-side `session_live_elsewhere` rejection is the safety
- * net for any race where the picker's view is stale.
+ * The picker uses this to grey out a "Resume last" row whose
+ * candidate id is already in use by another card. The supervisor's
+ * `session_live_elsewhere` rejection is the safety net for any
+ * race where the picker's view is stale.
  */
 function readLiveSessions(): Set<string> {
   const out = new Set<string>();
@@ -618,10 +641,10 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
     return client ? readTideRecentProjects(client) : [];
   });
 
-  // Live path state drives the resume-option visibility. The input is
-  // controlled; recents clicks call setPath. Roadmap step 4.5 — the
-  // recents click fills the input rather than spawning directly so
-  // every path flows through the Start-fresh / Resume-last choice.
+  // Live path state drives the resume-option visibility. The input
+  // is controlled; recents clicks call setPath so every path flows
+  // through the Start-fresh / Resume-last choice rather than
+  // spawning directly.
   const [path, setPath] = useState("");
   const [sessionMode, setSessionMode] = useState<CardSessionMode>("new");
 
@@ -650,12 +673,12 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
     return candidates[0] ?? null;
   }, [path]);
 
-  // Phase C (Step 4.5.5): the candidate is "live elsewhere" when its
-  // id appears in the live-sessions broadcast from tugcast. Captured
-  // once on form mount — the picker is a short-lived sheet, so a
-  // tugbank-cache read is sufficient (no subscription needed). The
-  // wire-side `session_live_elsewhere` rejection in the supervisor
-  // is the safety net if our read is stale.
+  // The candidate is "live elsewhere" when its id appears in the
+  // live-sessions broadcast from tugcast. Captured once on form
+  // mount — the picker is a short-lived sheet, so a tugbank-cache
+  // read is sufficient (no subscription needed). The wire-side
+  // `session_live_elsewhere` rejection in the supervisor is the
+  // safety net if our read is stale.
   const [liveSessions] = useState<Set<string>>(() => readLiveSessions());
   const candidateLiveElsewhere =
     resumeCandidate !== null && liveSessions.has(resumeCandidate.sessionId);
@@ -810,53 +833,7 @@ interface TideCardBodyProps {
 function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
 
-  // Phase B (Step 4.5.5): when the bound session reports a `resume_failed`
-  // lastError, stash a one-shot notice keyed by this card and clear the
-  // binding. The cleared binding makes `useTideCardServices` return null
-  // → `TideCardContent` re-renders the picker, which reads the notice
-  // and surfaces it above the radio group. We deliberately do NOT call
-  // `sendCloseSession` here: the bridge has already torn down via the
-  // `RelayOutcome::ResumeFailed` path, so the supervisor side is clean.
-  // Track the `at` timestamp of the consumed error so we react exactly
-  // once per failure (lastError stays populated across renders).
-  //
-  // Phase D (Step 4.5.5): the same subscription propagates the first
-  // `claudeSessionId` we observe into the card's binding so picker /
-  // history / future ledger reads can consume the canonical id. Done
-  // inside the same listener (rather than a second subscribe) so both
-  // reactions share one snapshot read per notification.
-  const consumedLastErrorAtRef = useRef<number | null>(null);
-  const boundClaudeSessionIdRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    return codeSessionStore.subscribe(() => {
-      const snap = codeSessionStore.getSnapshot();
-      // Phase D: propagate claudeSessionId to the binding once.
-      const claudeId = snap.claudeSessionId;
-      if (claudeId !== null && boundClaudeSessionIdRef.current !== claudeId) {
-        boundClaudeSessionIdRef.current = claudeId;
-        cardSessionBindingStore.bindClaudeSessionId(cardId, claudeId);
-      }
-      // Phase B: react to resume_failed exactly once.
-      const err = snap.lastError;
-      if (
-        err === null ||
-        err.cause !== "resume_failed" ||
-        consumedLastErrorAtRef.current === err.at
-      ) {
-        return;
-      }
-      consumedLastErrorAtRef.current = err.at;
-      logSessionLifecycle("card.unbind_on_resume_failed", {
-        card_id: cardId,
-        message: err.message,
-      });
-      pickerNoticeStore.set(cardId, {
-        category: "resume_failed",
-        message: err.message,
-      });
-      cardSessionBindingStore.clearBinding(cardId);
-    });
-  }, [cardId, codeSessionStore]);
+  useTideCardObserver(cardId, codeSessionStore);
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
 

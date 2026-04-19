@@ -705,11 +705,10 @@ function handleResumeFailed(
   state: CodeSessionState,
   event: { reason?: string; stale_session_id?: string },
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Step 4.5.5 Phase B: tugcode no longer silently fresh-spawns on
-  // resume failure — it emits `resume_failed` and exits, the bridge
-  // promotes EOF to `RelayOutcome::ResumeFailed` and publishes
+  // tugcode emits `resume_failed` and exits; the bridge promotes
+  // EOF to a terminal `ResumeFailed` outcome and broadcasts
   // `SESSION_STATE = errored { detail: "resume_failed" }`. Set
-  // `lastError` here so the card-side reaction (clear binding,
+  // `lastError` here so the card-side observer (clear binding,
   // re-present picker with notice) can read both the cause and the
   // human-readable reason; the phase flip to `errored` arrives via
   // the subsequent `session_state_errored` event.
