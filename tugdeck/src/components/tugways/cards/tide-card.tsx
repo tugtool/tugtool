@@ -825,11 +825,25 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   });
 
   // --- Status row + tools panel content. ---
-  const statusContent = (
-    <TugBadge size="sm" emphasis="tinted" role="data">
-      Project path /gallery/demo
-    </TugBadge>
+  // The status badge shows the card's bound `projectDir` — the cwd that
+  // Claude is running against. Subscribed via L02 so a rebind (when
+  // picker → spawn_session completes) repaints without an extra prop
+  // handoff. Fallback to null is defensive: `TideCardBody` only renders
+  // when services are non-null, which implies a binding, but during the
+  // narrow window between binding clear and services teardown we render
+  // nothing rather than a stale path.
+  const projectDir = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () => cardSessionBindingStore.getBinding(cardId)?.projectDir ?? null,
+      [cardId],
+    ),
   );
+  const statusContent = projectDir !== null ? (
+    <TugBadge size="sm" emphasis="tinted" role="data">
+      Project: {projectDir}
+    </TugBadge>
+  ) : null;
 
   const letterSpacingLabel =
     editorSettings.letterSpacing === 0
