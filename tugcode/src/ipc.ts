@@ -40,6 +40,30 @@ export function writeLine(msg: OutboundMessage): void {
 }
 
 /**
+ * Write a final outbound message and call `process.exit(code)` only
+ * after the bytes have been flushed to stdout. Used by the early-exit
+ * watcher in `SessionManager` so the bridge actually receives the
+ * `resume_failed` / `error` IPC line before tugcode dies — a plain
+ * `writeLine(...); process.exit(...)` races the async write against
+ * the exit and silently drops the frame.
+ *
+ * Awaits `Bun.write` (which only resolves once the bytes are in the
+ * stdout pipe) before exiting. Goes through the same `Bun.write`
+ * path as `writeLine` so test mocks see it identically.
+ */
+export async function writeLineAndExit(
+  msg: OutboundMessage,
+  code: number,
+): Promise<void> {
+  const json = JSON.stringify(msg) + "\n";
+  await Bun.write(Bun.stdout, json);
+  process.exit(code);
+  // process.exit normally never returns. In tests `process.exit` is
+  // stubbed to a no-op so the test process survives — let the function
+  // simply return in that case rather than throwing.
+}
+
+/**
  * Validate and parse a JSON line into an InboundMessage.
  * Returns null on failure, logs error to stderr.
  */

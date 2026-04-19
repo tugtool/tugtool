@@ -1,7 +1,7 @@
 // Session lifecycle management via direct claude CLI spawning
 
 import { PermissionManager } from "./permissions.ts";
-import { writeLine } from "./ipc.ts";
+import { writeLine, writeLineAndExit } from "./ipc.ts";
 import {
   sendControlRequest,
   sendControlResponse,
@@ -682,6 +682,35 @@ export class SessionManager {
    * watcher that surfaces resume failures via `resume_failed` IPC.
    */
   private sessionMode: "new" | "resume";
+  /**
+   * Set true the first time `handleUserMessage` successfully writes a
+   * user message to claude's stdin. After that, claude has been seen
+   * alive end-to-end and any subsequent exit is a runtime crash, not
+   * an init failure. The early-exit watcher gates its IPC emission on
+   * this flag — without it, indefinite watching would mis-classify
+   * mid-conversation crashes as init failures.
+   */
+  private claudeReceivedInput: boolean = false;
+  /**
+   * Set true when shutdown has begun (signal handler, stdin EOF,
+   * killAndCleanup). The early-exit watcher reads this before emitting
+   * to avoid surfacing a phantom resume_failed for a claude exit that
+   * was caused by us killing it.
+   */
+  private isShuttingDown: boolean = false;
+  /**
+   * Definitive failure classification harvested from claude's stderr
+   * stream by `startStderrReader`. Overrides the watcher's mode-based
+   * heuristic so a `--session-id` collision in fresh mode and a stale
+   * `--resume` id are always classified by their actual cause:
+   *   `"resume_failed"` ← stderr contained "No conversation found"
+   *   `"collision"`     ← stderr contained "is already in use"
+   *   `null`            ← nothing recognizable; fall back to mode default
+   */
+  private claudeStderrClassification:
+    | "resume_failed"
+    | "collision"
+    | null = null;
 
   constructor(
     projectDir: string,
@@ -760,7 +789,13 @@ export class SessionManager {
     return Bun.spawn([claudePath, ...args], {
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "inherit",
+      // Pipe stderr (rather than inherit) so we can pattern-match
+      // claude's diagnostic strings ("No conversation found", "already
+      // in use") for definitive early-exit classification. The reader
+      // forwards every line verbatim to process.stderr so tugcast's
+      // tugcode_stderr capture continues to see exactly what claude
+      // emitted — no observable behavior change for operators.
+      stderr: "pipe",
       cwd: this.projectDir,
       env: scrubbedEnv,
     });
@@ -772,6 +807,9 @@ export class SessionManager {
    * then force-kills if still running.
    */
   private async killAndCleanup(): Promise<void> {
+    // Mark shutdown so the early-exit watcher ignores the exit code
+    // from our kill rather than surfacing a phantom resume_failed.
+    this.isShuttingDown = true;
     if (this.claudeProcess) {
       try {
         // Close stdin to signal EOF (graceful shutdown).
@@ -912,6 +950,7 @@ export class SessionManager {
     this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
     this.stdoutBuffer = "";
 
+    this.startStderrReader();
     this.installEarlyExitWatcher();
 
     writeLine({
@@ -929,52 +968,123 @@ export class SessionManager {
   }
 
   /**
-   * Background watcher: race `claude.exited` against EARLY_EXIT_WINDOW_MS.
-   * If claude dies in the window, emit the appropriate IPC line and
-   * exit cleanly so the bridge's terminal outcome path takes over.
-   * Past the window, claude is healthy (waiting for stdin input) and
-   * the watcher resolves to no-op.
+   * Read claude's stderr line-by-line, forward each line verbatim to
+   * `process.stderr` (preserving the existing tugcast::tugcode_stderr
+   * capture), and pattern-match the first line carrying a known
+   * failure signature into `claudeStderrClassification`. Returns
+   * immediately if stderr is not available; runs as a detached task
+   * for the lifetime of the claude subprocess.
+   */
+  private startStderrReader(): void {
+    const stderr = this.claudeProcess?.stderr;
+    if (!stderr) return;
+    const stream = stderr as ReadableStream<Uint8Array>;
+    const reader = stream.getReader();
+    void (async () => {
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const result = await reader.read();
+          if (result.done) {
+            if (buffer.length > 0) process.stderr.write(buffer);
+            return;
+          }
+          buffer += decoder.decode(result.value, { stream: true });
+          let lineEnd = buffer.indexOf("\n");
+          while (lineEnd >= 0) {
+            const line = buffer.slice(0, lineEnd);
+            buffer = buffer.slice(lineEnd + 1);
+            // Forward verbatim so tugcast::tugcode_stderr keeps seeing
+            // exactly what claude wrote — operator visibility unchanged.
+            process.stderr.write(line + "\n");
+            // First-match-wins classification. Subsequent lines from
+            // the same stderr stream don't override; the failure cause
+            // is whatever claude reported first.
+            if (this.claudeStderrClassification === null) {
+              if (line.includes("No conversation found with session ID")) {
+                this.claudeStderrClassification = "resume_failed";
+              } else if (line.includes("is already in use")) {
+                this.claudeStderrClassification = "collision";
+              }
+            }
+            lineEnd = buffer.indexOf("\n");
+          }
+        }
+      } catch (err) {
+        process.stderr.write(`[tugcode] stderr reader error: ${err}\n`);
+      }
+    })();
+  }
+
+  /**
+   * Watch claude's exit indefinitely. The watcher only emits IPC if
+   * claude exits AND none of these guards apply:
    *
-   * Fixed window covers both observed failure signatures with margin.
+   *   - `isShuttingDown`: we initiated the kill (signal, stdin EOF,
+   *     close); a phantom resume_failed for a user-driven close would
+   *     reach the bridge after the card is already gone.
+   *   - `claudeReceivedInput`: claude has been seen alive end-to-end
+   *     (it accepted at least one user message). A subsequent exit
+   *     is a runtime crash, not an init failure — the existing
+   *     handleUserMessage stream-end path classifies it.
+   *
+   * When emitting, the failure mode is taken from
+   * `claudeStderrClassification` (definitive, harvested from stderr
+   * by `startStderrReader`) and falls back to the session mode only
+   * when stderr carried nothing recognizable.
    */
   private installEarlyExitWatcher(): void {
     if (!this.claudeProcess) return;
     const child = this.claudeProcess;
     const sessionId = this.sessionId;
     const sessionMode = this.sessionMode;
-    const EARLY_EXIT_WINDOW_MS = 3000;
 
-    Promise.race<{ kind: "exit"; code: number } | { kind: "timeout" }>([
-      child.exited.then((code) => ({ kind: "exit" as const, code })),
-      new Promise<{ kind: "timeout" }>((r) =>
-        setTimeout(() => r({ kind: "timeout" as const }), EARLY_EXIT_WINDOW_MS),
-      ),
-    ]).then((result) => {
-      if (result.kind !== "exit") return;
-      const code = result.code;
-      if (sessionMode === "resume") {
-        const reason = `claude exited with code ${code} during resume init (likely stale id)`;
+    void child.exited.then(async (code) => {
+      if (this.isShuttingDown) return;
+      if (this.claudeReceivedInput) return;
+
+      // Definitive classification wins; mode is the fallback.
+      const classification = this.claudeStderrClassification;
+      const isResumeFailure =
+        classification === "resume_failed" ||
+        (classification === null && sessionMode === "resume");
+      const isCollision = classification === "collision";
+
+      if (isResumeFailure) {
+        const reason =
+          classification === "resume_failed"
+            ? `claude reported "No conversation found" (stale --resume id)`
+            : `claude exited with code ${code} during resume init (likely stale id)`;
         logSessionLifecycle("tugcode.resume_failed", {
           stale_session_id: sessionId,
           reason,
           exit_code: code,
+          classification: classification ?? "mode_default",
         });
-        writeLine({
-          type: "resume_failed",
-          reason,
-          stale_session_id: sessionId,
-          ipc_version: 2,
-        });
+        await writeLineAndExit(
+          {
+            type: "resume_failed",
+            reason,
+            stale_session_id: sessionId,
+            ipc_version: 2,
+          },
+          0,
+        );
       } else {
-        const reason = `claude exited with code ${code} during fresh init`;
-        writeLine({
-          type: "error",
-          message: reason,
-          recoverable: false,
-          ipc_version: 2,
-        });
+        const reason = isCollision
+          ? `claude reported session id "${sessionId}" is already in use`
+          : `claude exited with code ${code} during fresh init`;
+        await writeLineAndExit(
+          {
+            type: "error",
+            message: reason,
+            recoverable: false,
+            ipc_version: 2,
+          },
+          0,
+        );
       }
-      process.exit(0);
     });
   }
 
@@ -1010,6 +1120,12 @@ export class SessionManager {
     const stdin = this.claudeProcess.stdin;
     stdin.write(userInput);
     stdin.flush();
+    // Claude has now received input from us, so it has been seen alive
+    // end-to-end. The early-exit watcher uses this flag to gate its
+    // init-failure classification: any exit from this point on is a
+    // runtime crash (handled by the stream-end branch below), not a
+    // resume_failed.
+    this.claudeReceivedInput = true;
 
     try {
       while (true) {

@@ -1493,100 +1493,264 @@ describe("SessionManager behavioral", () => {
     expect(failedLines.length).toBe(0);
   });
 
-  test("early-exit watcher emits resume_failed when claude exits during the window (resume mode)", async () => {
-    // Stale resume id: claude exits in ~1s with stderr "No conversation
-    // found". Watcher catches the exit and emits `resume_failed` IPC
-    // before calling process.exit. We stub process.exit so the test
-    // process survives.
-    const suffix = Date.now();
-    const projectDir = `/tmp/init-stale-${suffix}`;
-    const staleId = crypto.randomUUID();
-
-    const manager = new SessionManager(projectDir, staleId, "resume");
+  // Test helper: build a mock claude subprocess with controllable
+  // exit + optional stderr stream. Returns the controls so each test
+  // drives the lifecycle deterministically.
+  function makeWatcherMock(opts?: { stderrLines?: string[] }) {
     let exitResolve: ((code: number) => void) | null = null;
-    (manager as any).spawnClaude = () => ({
+    const stderr =
+      opts?.stderrLines && opts.stderrLines.length > 0
+        ? new ReadableStream<Uint8Array>({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const line of opts.stderrLines!) {
+                controller.enqueue(enc.encode(line + "\n"));
+              }
+              controller.close();
+            },
+          })
+        : new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.close();
+            },
+          });
+    const child = {
       stdout: new ReadableStream<Uint8Array>({
         start(controller) {
           controller.close();
         },
       }),
+      stderr,
       stdin: { write: () => {}, end: () => {}, flush: () => {} },
       exited: new Promise<number>((r) => {
         exitResolve = r;
       }),
       kill: () => {},
-    });
-
-    const originalExit = process.exit;
-    let exitCalled = false;
-    (process as any).exit = (_code?: number) => {
-      exitCalled = true;
-      // Don't actually exit; throw a sentinel the captureIpcOutput
-      // will swallow via finally so the test can observe state.
     };
+    return {
+      child,
+      exit: (code: number) => exitResolve!(code),
+    };
+  }
 
+  function stubProcessExit(): { restore: () => void; calledWith: () => number | undefined } {
+    const original = process.exit;
+    let called: number | undefined;
+    (process as any).exit = (code?: number) => {
+      called = code;
+    };
+    return {
+      restore: () => {
+        (process as any).exit = original;
+      },
+      calledWith: () => called,
+    };
+  }
+
+  test("watcher emits resume_failed when claude exits and mode is resume (no stderr signal)", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-stale-${Date.now()}`, id, "resume");
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
     let emitted: unknown[] = [];
     try {
       emitted = await captureIpcOutput(async () => {
         await manager.initialize();
-        // Trigger the watcher: claude exits with non-zero status now.
-        exitResolve!(1);
-        // Yield so the watcher's .then callback runs.
+        m.exit(1);
+        // Two ticks: one for child.exited, one for writeLineAndExit's await.
         await new Promise((r) => setTimeout(r, 10));
       });
     } finally {
-      process.exit = originalExit;
+      exitStub.restore();
     }
 
     const failed = emitted.filter((e: any) => e?.type === "resume_failed");
     expect(failed.length).toBe(1);
-    expect((failed[0] as any).stale_session_id).toBe(staleId);
+    expect((failed[0] as any).stale_session_id).toBe(id);
     expect((failed[0] as any).reason).toContain("code 1");
-    expect(exitCalled).toBe(true);
+    expect(exitStub.calledWith()).toBe(0);
   });
 
-  test("early-exit watcher emits error when claude exits during the window (fresh mode)", async () => {
-    // Session-id collision: claude exits in ~135ms with "Session ID
-    // already in use". Watcher emits `error` (not resume_failed) so the
-    // bridge propagates a generic init failure, not a resume one.
-    const suffix = Date.now();
-    const projectDir = `/tmp/init-fresh-collide-${suffix}`;
+  test("watcher emits error when claude exits and mode is fresh (no stderr signal)", async () => {
     const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-fresh-collide-${Date.now()}`, id);
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
 
-    const manager = new SessionManager(projectDir, id);
-    let exitResolve: ((code: number) => void) | null = null;
-    (manager as any).spawnClaude = () => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      stdin: { write: () => {}, end: () => {}, flush: () => {} },
-      exited: new Promise<number>((r) => {
-        exitResolve = r;
-      }),
-      kill: () => {},
-    });
-
-    const originalExit = process.exit;
-    (process as any).exit = (_code?: number) => {};
-
+    const exitStub = stubProcessExit();
     let emitted: unknown[] = [];
     try {
       emitted = await captureIpcOutput(async () => {
         await manager.initialize();
-        exitResolve!(1);
+        m.exit(1);
         await new Promise((r) => setTimeout(r, 10));
       });
     } finally {
-      process.exit = originalExit;
+      exitStub.restore();
     }
 
     const errors = emitted.filter((e: any) => e?.type === "error");
     expect(errors.length).toBe(1);
     expect((errors[0] as any).message).toContain("code 1");
-    // Fresh-mode failures must NOT emit resume_failed (different
-    // bridge classification path).
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(0);
+  });
+
+  // Fix #1: indefinite watch — the watcher fires no matter how late
+  // claude exits, as long as no input has been written yet.
+  test("watcher classifies init failure regardless of how long claude takes to exit", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-slow-${Date.now()}`, id, "resume");
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        // Wait WELL past the old 3s window before triggering exit.
+        // The point of fix #1 is that there is no window any more.
+        await new Promise((r) => setTimeout(r, 50));
+        m.exit(1);
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      exitStub.restore();
+    }
+
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(1);
+  });
+
+  // Fix #1: once claude has received input, a subsequent exit is a
+  // runtime crash, not an init failure. Watcher must NOT emit.
+  test("watcher does NOT emit when claude exits after first user input", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-after-input-${Date.now()}`, id, "resume");
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        // Simulate the side-effect of a successful first turn write.
+        (manager as any).claudeReceivedInput = true;
+        m.exit(137); // killed by SIGKILL mid-turn, for example
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      exitStub.restore();
+    }
+
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(0);
+    const errors = emitted.filter((e: any) => e?.type === "error");
+    expect(errors.length).toBe(0);
+    expect(exitStub.calledWith()).toBeUndefined();
+  });
+
+  // Fix #2: shutdown cancels the watcher's IPC emission.
+  test("watcher does NOT emit when shutdown is in progress", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-shutdown-${Date.now()}`, id, "resume");
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        // Mark shutdown (as killAndCleanup would).
+        (manager as any).isShuttingDown = true;
+        m.exit(0);
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      exitStub.restore();
+    }
+
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(0);
+    const errors = emitted.filter((e: any) => e?.type === "error");
+    expect(errors.length).toBe(0);
+    expect(exitStub.calledWith()).toBeUndefined();
+  });
+
+  test("killAndCleanup sets isShuttingDown so the watcher noops", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-killclean-${Date.now()}`, id, "resume");
+    const m = makeWatcherMock();
+    (manager as any).spawnClaude = () => m.child;
+
+    await manager.initialize();
+    expect((manager as any).isShuttingDown).toBe(false);
+    await (manager as any).killAndCleanup();
+    expect((manager as any).isShuttingDown).toBe(true);
+  });
+
+  // Fix #4: stderr "No conversation found" forces resume_failed even
+  // when the session mode is fresh (definitive classification wins
+  // over the mode-based default).
+  test("stderr 'No conversation found' classifies as resume_failed regardless of mode", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-stderr-rf-${Date.now()}`, id);
+    const m = makeWatcherMock({
+      stderrLines: ["No conversation found with session ID: " + id],
+    });
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        // Yield so the stderr reader picks up the line before exit fires.
+        await new Promise((r) => setTimeout(r, 10));
+        m.exit(1);
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      exitStub.restore();
+    }
+
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(1);
+    expect((failed[0] as any).reason).toContain("No conversation found");
+  });
+
+  // Fix #4: stderr "is already in use" classifies as collision in any
+  // mode — fresh-collision now surfaces a clean error frame instead
+  // of routing through the bridge's crash-budget retry path.
+  test("stderr 'is already in use' classifies as collision (fresh mode)", async () => {
+    const id = crypto.randomUUID();
+    const manager = new SessionManager(`/tmp/init-stderr-coll-${Date.now()}`, id);
+    const m = makeWatcherMock({
+      stderrLines: ["Error: Session ID " + id + " is already in use."],
+    });
+    (manager as any).spawnClaude = () => m.child;
+
+    const exitStub = stubProcessExit();
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        await new Promise((r) => setTimeout(r, 10));
+        m.exit(1);
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      exitStub.restore();
+    }
+
+    const errors = emitted.filter((e: any) => e?.type === "error");
+    expect(errors.length).toBe(1);
+    expect((errors[0] as any).message).toContain("already in use");
     const failed = emitted.filter((e: any) => e?.type === "resume_failed");
     expect(failed.length).toBe(0);
   });
