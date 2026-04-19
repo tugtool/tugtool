@@ -1203,7 +1203,12 @@ describe("TugPromptEntry — per-session prompt history keys on claudeSessionId"
     expect(entry.id.startsWith("claude-real-id-")).toBe(true);
   });
 
-  it("push skips silently when claudeSessionId is null (system_init not yet received)", () => {
+  // R-CHAIN-05: submit during the spawn-handshake window (Step 4.5.5
+  // Phase D). Before D, a submit while `claudeSessionId === null` was
+  // silently dropped — F5 in the audit. After D, the entry is buffered
+  // and flushed under the freshly-arrived claude id on the first
+  // non-null transition.
+  it("buffers a push when claudeSessionId is null and flushes it on the first session_init (R-CHAIN-05)", () => {
     const store = new ScriptedStore({
       tugSessionId: "tug-routing-id",
       claudeSessionId: null,
@@ -1224,9 +1229,22 @@ describe("TugPromptEntry — per-session prompt history keys on claudeSessionId"
       });
     });
 
-    // Better to lose one history entry than to silently mis-key it
-    // under a temporary id and orphan it from the on-disk session file.
+    // No push yet — claude hasn't emitted session_init.
     expect(pushSpy).not.toHaveBeenCalled();
+
+    // session_init arrives with claude's id. Buffered entry flushes
+    // under the freshly-arrived id.
+    act(() => {
+      store.setSnapshot({ claudeSessionId: "claude-arrived-late" });
+    });
+
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    const entry = pushSpy.mock.calls[0]![0] as {
+      sessionId: string;
+      text: string;
+    };
+    expect(entry.sessionId).toBe("claude-arrived-late");
+    expect(entry.text).toBe("hello");
   });
 
   it("provider cache invalidates when claudeSessionId changes (resume → silent fresh fallback)", () => {
