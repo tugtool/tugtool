@@ -146,7 +146,7 @@ body {
   /* Message inherits strip color */
 }
 
-/* ---- Detail panel — error variant only ---- */
+/* ---- Detail panel — error variant only (TugAlert-style layout) ---- */
 
 .tug-card-banner-detail-panel {
   margin: 24px auto 32px;
@@ -155,6 +155,7 @@ body {
   max-height: calc(100% - 80px);
   display: flex;
   flex-direction: column;
+  padding: 20px 24px;
   /* @tug-renders-on: --tugx-card-banner-detail-bg */
   background-color: var(--tugx-card-banner-detail-bg);
   color: var(--tugx-card-banner-detail-fg);
@@ -162,33 +163,73 @@ body {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
+  box-sizing: border-box;
   /* Base state: hidden. TugAnimator fades in on enter, out on exit. */
   opacity: 0;
 }
 
+/* Body: icon left, text right — classic Mac HIG alert shape */
 .tug-card-banner-detail-body {
   flex: 1 1 auto;
   overflow: auto;
-  padding: 20px 24px;
-  font-size: 0.875rem;
-  line-height: 1.5;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 20px;
 }
 
-.tug-card-banner-detail-body > :first-child {
-  margin-top: 0;
-}
-
-.tug-card-banner-detail-body > :last-child {
+.tug-card-banner-detail-body:last-child {
+  /* No actions row below — body owns the bottom spacing */
   margin-bottom: 0;
 }
 
-.tug-card-banner-detail-footer {
+.tug-card-banner-detail-icon {
   flex-shrink: 0;
-  padding: 12px 24px 16px;
-  border-top: 1px solid var(--tugx-card-banner-detail-border);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* @tug-renders-on: --tugx-card-banner-detail-bg */
+  color: var(--tugx-card-banner-detail-fg);
+  opacity: 0.8;
+}
+
+.tug-card-banner-detail-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tug-card-banner-detail-title {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.tug-card-banner-detail-message {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.tug-card-banner-detail-message > :first-child {
+  margin-top: 0;
+}
+
+.tug-card-banner-detail-message > :last-child {
+  margin-bottom: 0;
+}
+
+.tug-card-banner-detail-actions {
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.tug-card-banner-detail-actions .tug-button {
+  min-width: 5rem;
 }
 
 /* ---- Tone variants — override strip aliases per tone ---- */

@@ -732,6 +732,15 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         })
       : null;
 
+  // Once the session hits any non-recoverable error, disable the entry —
+  // the dismiss gesture only hides the banner, the underlying session is
+  // still dead. The user recovers by closing and reopening the card.
+  // `resume_failed` is excluded here because the card observer unmounts
+  // the bound body on that cause (the picker sheet re-renders instead).
+  const sessionErrored =
+    codeSnap.lastError !== null &&
+    codeSnap.lastError.cause !== "resume_failed";
+
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
@@ -889,6 +898,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
               }}
               variant="plain"
               inset={false}
+              disabled={sessionErrored}
               className="tide-card-entry-pane"
             >
               <TugPromptEntry
@@ -914,11 +924,13 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         tone="danger"
         label={bannerError ? CAUSE_LABELS[bannerError.cause] : undefined}
         message={bannerError?.message ?? ""}
+        detailIcon="unplug"
+        detailTitle={bannerError ? CAUSE_LABELS[bannerError.cause] : undefined}
         footer={
           bannerError !== null ? (
             <TugPushButton
               emphasis="outlined"
-              role="action"
+              role="danger"
               onClick={() => setDismissedAt(bannerError.at)}
             >
               Dismiss

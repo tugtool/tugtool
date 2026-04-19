@@ -71,6 +71,16 @@ export interface TugCardBannerProps {
   message: string;
   /** Optional Lucide icon name for the strip (most useful for status variant). */
   icon?: string;
+  /**
+   * Optional Lucide icon name rendered in the detail panel (error variant
+   * only). Rendered large (48px) on the left of the TugAlert-style layout.
+   */
+  detailIcon?: string;
+  /**
+   * Optional bold title rendered above the detail body (error variant only).
+   * Matches TugAlert's title shape.
+   */
+  detailTitle?: string;
   /** Detail panel body content (error variant only). */
   children?: React.ReactNode;
   /** Pinned footer content for the detail panel (error variant only). */
@@ -99,6 +109,8 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
       label,
       message,
       icon,
+      detailIcon,
+      detailTitle,
       children,
       footer,
       contained = false,
@@ -263,9 +275,23 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
           <div className="tug-card-banner-clip">
             {strip}
             <div ref={detailRef} className="tug-card-banner-detail-panel">
-              <div className="tug-card-banner-detail-body">{children}</div>
+              <div className="tug-card-banner-detail-body">
+                {detailIcon && (
+                  <div className="tug-card-banner-detail-icon" aria-hidden="true">
+                    <DetailIcon name={detailIcon} />
+                  </div>
+                )}
+                <div className="tug-card-banner-detail-text">
+                  {detailTitle && (
+                    <h2 className="tug-card-banner-detail-title">{detailTitle}</h2>
+                  )}
+                  {children !== undefined && (
+                    <div className="tug-card-banner-detail-message">{children}</div>
+                  )}
+                </div>
+              </div>
               {footer !== undefined && (
-                <div className="tug-card-banner-detail-footer">{footer}</div>
+                <div className="tug-card-banner-detail-actions">{footer}</div>
               )}
             </div>
           </div>
@@ -277,16 +303,30 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
 );
 
 /* ---------------------------------------------------------------------------
- * BannerIcon — internal helper, renders a Lucide icon by name
+ * Icon helpers — render a Lucide icon by kebab-case name
  * ---------------------------------------------------------------------------*/
 
-/** Internal helper that renders a Lucide icon by kebab-case name string. */
-function BannerIcon({ name }: { name: string }) {
+function resolveLucideIcon(name: string): React.ComponentType<{ size?: number }> | null {
   const pascalName = name
     .split("-")
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join("") as keyof typeof icons;
-  const IconComponent = icons[pascalName];
+  const IconComponent = icons[pascalName] as
+    | React.ComponentType<{ size?: number }>
+    | undefined;
+  return IconComponent ?? null;
+}
+
+/** Strip-sized (16px) icon shown in the attention strip. */
+function BannerIcon({ name }: { name: string }) {
+  const IconComponent = resolveLucideIcon(name);
   if (!IconComponent) return null;
   return <IconComponent size={16} />;
+}
+
+/** Detail-panel-sized (48px) icon shown in the TugAlert-style layout. */
+function DetailIcon({ name }: { name: string }) {
+  const IconComponent = resolveLucideIcon(name);
+  if (!IconComponent) return null;
+  return <IconComponent size={48} />;
 }

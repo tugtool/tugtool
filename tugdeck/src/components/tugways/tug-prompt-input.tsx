@@ -32,6 +32,7 @@ import type {
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { useResponder } from "@/components/tugways/use-responder";
+import { useTugBoxDisabled } from "@/components/tugways/internal/tug-box-context";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
@@ -390,13 +391,19 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     maximized = false,
     focusStyle = "background",
     borderless = false,
-    disabled = false,
+    disabled: disabledProp = false,
     persistState = true,
     routePrefixes,
     onRouteChange,
     className,
     ...rest
   }: TugPromptInputProps, ref) {
+    // Combine the explicit `disabled` prop with the TugBox cascade so a
+    // parent `<TugBox disabled>` disables the contentEditable editor and
+    // its focus/first-responder promotion.
+    const boxDisabled = useTugBoxDisabled();
+    const disabled = disabledProp || boxDisabled;
+
     const editorRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const completionRef = useRef<HTMLDivElement>(null);
