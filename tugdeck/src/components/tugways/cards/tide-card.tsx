@@ -822,6 +822,16 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     entryPanelRef.current?.restoreUserSize({ animated: true });
   }, [maximized]);
 
+  // Return focus to the editor after a successful submit so the user
+  // can type the next prompt immediately. `onAfterSubmit` fires from
+  // `performSubmit` only on the send/handled path — not on the Stop
+  // (canInterrupt) branch, not on blocked submits — so failures that
+  // surface later via `lastError` are inspectable without the caret
+  // yanking back mid-read.
+  const handleAfterSubmit = useCallback(() => {
+    entryDelegateRef.current?.focus();
+  }, [entryDelegateRef]);
+
   // --- Responder scope for tools-panel popup buttons. ---
   const fontPopupId = useId();
   const fontSizePopupId = useId();
@@ -938,6 +948,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
                 historyStore={historyStore}
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
+                onAfterSubmit={handleAfterSubmit}
                 statusContent={statusContent}
                 toolsContent={toolsContent}
                 maximized={maximized}

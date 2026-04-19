@@ -790,6 +790,7 @@ function renderEntryWithStore(opts: {
     route: string | null,
     atoms: ReadonlyArray<AtomSegment>,
   ) => boolean;
+  onAfterSubmit?: () => void;
   onRender?: React.ProfilerOnRenderCallback;
 } = {}) {
   const id = opts.id ?? "prompt-entry-step5";
@@ -810,6 +811,7 @@ function renderEntryWithStore(opts: {
         id={id}
         {...scripted}
         localCommandHandler={opts.localCommandHandler}
+        onAfterSubmit={opts.onAfterSubmit}
       />
     </ResponderChainProvider>
   );
@@ -891,6 +893,75 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
 
     expect(store.interruptCalls.length).toBe(1);
     expect(store.sendCalls.length).toBe(0);
+  });
+
+  it("onAfterSubmit fires after a successful send (post-clear)", () => {
+    const calls: number[] = [];
+    const { id, store, managerRef } = renderEntryWithStore({
+      onAfterSubmit: () => calls.push(Date.now()),
+    });
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hello");
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.sendCalls.length).toBe(1);
+    expect(calls.length).toBe(1);
+  });
+
+  it("onAfterSubmit does NOT fire on the canInterrupt (Stop) branch", () => {
+    const store = new ScriptedStore({
+      phase: "streaming",
+      canSubmit: false,
+      canInterrupt: true,
+    });
+    const calls: number[] = [];
+    const { id, managerRef } = renderEntryWithStore({
+      store,
+      onAfterSubmit: () => calls.push(Date.now()),
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.interruptCalls.length).toBe(1);
+    expect(calls.length).toBe(0);
+  });
+
+  it("onAfterSubmit does NOT fire when canSubmit=false blocks the send", () => {
+    const store = new ScriptedStore({
+      phase: "awaiting_approval",
+      canSubmit: false,
+      canInterrupt: false,
+    });
+    const calls: number[] = [];
+    const { id, managerRef } = renderEntryWithStore({
+      store,
+      onAfterSubmit: () => calls.push(Date.now()),
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(store.sendCalls.length).toBe(0);
+    expect(calls.length).toBe(0);
   });
 
   it("SUBMIT with canSubmit=false && canInterrupt=false is a no-op (awaiting_approval)", () => {

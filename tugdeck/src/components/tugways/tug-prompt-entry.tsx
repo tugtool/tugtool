@@ -316,6 +316,18 @@ export interface TugPromptEntryProps {
    */
   onBeforeSubmit?: () => void;
   /**
+   * Optional callback fired AFTER a successful submit has cleared the
+   * input. "Successful" means the submit path reached `input.clear()` —
+   * either the store's `send()` was invoked or `localCommandHandler`
+   * intercepted it. Does NOT fire on the `canInterrupt` Stop branch,
+   * on `canSubmit=false`, or on the empty-input guard.
+   *
+   * Host use case: re-focus the editor so the user can type the next
+   * prompt without clicking. The entry clears the content, the host
+   * returns the caret.
+   */
+  onAfterSubmit?: () => void;
+  /**
    * Optional content rendered in the status row above the input — e.g. the
    * current project path, session model name, or a live status indicator.
    * The row also hosts the tools-toggle button on the trailing edge when
@@ -394,6 +406,7 @@ export const TugPromptEntry = React.forwardRef<
     dropHandler,
     localCommandHandler,
     onBeforeSubmit,
+    onAfterSubmit,
     statusContent,
     toolsContent,
     maximized,
@@ -507,6 +520,13 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onBeforeSubmitRef.current = onBeforeSubmit;
   }, [onBeforeSubmit]);
+  // Live ref for the optional `onAfterSubmit` host hook. Kept out of
+  // `performSubmit`'s deps so its stable identity isn't invalidated
+  // when callers pass an inline closure. [L07]
+  const onAfterSubmitRef = useRef(onAfterSubmit);
+  useLayoutEffect(() => {
+    onAfterSubmitRef.current = onAfterSubmit;
+  }, [onAfterSubmit]);
 
   // Live refs for the maximize controlled-pair so the chain-action
   // handler (registered once at mount via `useResponder.actions`) sees
@@ -588,6 +608,9 @@ export const TugPromptEntry = React.forwardRef<
     // the content-driven hook's automatic instant restoration.
     onBeforeSubmitRef.current?.();
     input.clear();
+    // Fire AFTER clear so host hooks (e.g., refocus) act on the
+    // already-empty editor, not on the mid-submit snapshot.
+    onAfterSubmitRef.current?.();
     // Route is a sticky user preference. Do not reset it on submit —
     // if the user switched to Shell, subsequent prompts stay on Shell
     // until they choose otherwise.
