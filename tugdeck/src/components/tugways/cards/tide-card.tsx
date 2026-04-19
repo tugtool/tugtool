@@ -58,6 +58,7 @@ import {
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
+import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   insertTideRecentProject,
@@ -618,6 +619,12 @@ function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps)
       effectiveMode === "resume" && resumeCandidate !== null
         ? resumeCandidate.sessionId
         : crypto.randomUUID();
+    logSessionLifecycle("picker.submit", {
+      project_dir: trimmed,
+      session_mode: effectiveMode,
+      session_id: effectiveSessionId,
+      resume_candidate_id: resumeCandidate?.sessionId ?? null,
+    });
     onOpen(trimmed, effectiveMode, effectiveSessionId);
   }, [onOpen, resumeCandidate, sessionMode]);
 

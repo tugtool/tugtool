@@ -36,6 +36,7 @@ import {
   reduce,
   type CodeSessionState,
 } from "./code-session-store/reducer";
+import { logSessionLifecycle } from "./session-lifecycle-log";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
 import type {
@@ -343,6 +344,22 @@ export class CodeSessionStore {
       const ev = decoded as { type?: string } & Record<string, unknown>;
       if (typeof ev.type !== "string") return null;
       if (!KNOWN_CODE_OUTPUT_TYPES.has(ev.type)) return null;
+      if (ev.type === "session_init") {
+        logSessionLifecycle("code_store.session_init_recv", {
+          tug_session_id: this.tugSessionId,
+          claude_session_id: typeof ev.session_id === "string"
+            ? ev.session_id
+            : null,
+        });
+      } else if (ev.type === "resume_failed") {
+        logSessionLifecycle("code_store.resume_failed_recv", {
+          tug_session_id: this.tugSessionId,
+          stale_session_id: typeof ev.stale_session_id === "string"
+            ? ev.stale_session_id
+            : null,
+          reason: typeof ev.reason === "string" ? ev.reason : null,
+        });
+      }
       return ev as unknown as CodeSessionEvent;
     }
     if (feedId === FeedId.SESSION_STATE) {

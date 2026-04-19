@@ -443,6 +443,13 @@ pub async fn run_session_bridge(
 
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "spawn.child_invoke",
+            tug_session_id = %tug_session_id,
+            session_mode = session_mode.as_wire_str(),
+            project_dir = %project_dir_str,
+        );
         let spawn_result = tokio::select! {
             result = spawner.spawn_child(
                 project_dir.as_path(),
@@ -584,6 +591,12 @@ pub async fn relay_session_io(
                         // already promoted, both short-circuit cleanly.
                         if line.contains("\"type\":\"session_init\"") {
                             let claude_id = parse_claude_session_id(line.as_bytes());
+                            tracing::info!(
+                                target: "tide::session-lifecycle",
+                                event = "session_init.parse",
+                                tug_session_id = %tug_session_id,
+                                claude_session_id = claude_id.as_deref().unwrap_or(""),
+                            );
                             let mut entry = ledger_entry.lock().await;
                             if let Some(id) = &claude_id {
                                 entry.claude_session_id = Some(id.clone());
@@ -646,6 +659,12 @@ pub async fn relay_session_io(
                         // the card so `lastError` surfaces a notice.
                         if line.contains("\"type\":\"resume_failed\"") {
                             if let Some(stale) = parse_resume_failed_id(line.as_bytes()) {
+                                tracing::info!(
+                                    target: "tide::session-lifecycle",
+                                    event = "bridge.resume_failed_recv",
+                                    tug_session_id = %tug_session_id,
+                                    stale_session_id = stale.as_str(),
+                                );
                                 sessions_recorder.remove(&stale);
                             }
                         }

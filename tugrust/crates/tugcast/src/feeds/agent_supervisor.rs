@@ -500,12 +500,24 @@ impl SessionsRecorder for TugbankSessionsRecorder {
             }),
         );
         self.write_map(map);
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "sessions.record",
+            session_id = session_id,
+            project_dir = project_dir,
+            created_at = created_at,
+        );
     }
 
     fn remove(&self, session_id: &str) {
         let mut map = self.read_map();
         if map.remove(session_id).is_some() {
             self.write_map(map);
+            tracing::info!(
+                target: "tide::session-lifecycle",
+                event = "sessions.remove",
+                session_id = session_id,
+            );
         }
     }
 }
@@ -904,6 +916,14 @@ impl AgentSupervisor {
         client_id: ClientId,
     ) -> Result<(), ControlError> {
         let project_dir = PathBuf::from(&project_dir_str);
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "spawn.supervisor_recv",
+            card_id = card_id,
+            tug_session_id = %tug_session_id,
+            project_dir = %project_dir_str,
+            session_mode = session_mode.as_wire_str(),
+        );
 
         // Phase 0 (W2 Step 6): validate + canonicalize + acquire workspace.
         // This must happen before we touch the ledger so validation errors

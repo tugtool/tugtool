@@ -43,6 +43,7 @@ import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 
 /**
  * Ordered list of all shipped themes.
@@ -384,6 +385,13 @@ export function initActionDispatch(
     // behavior from step 4k.
     const sessionModeResolved =
       sessionMode === "resume" ? "resume" : "new";
+    logSessionLifecycle("spawn.ack", {
+      card_id: cardId,
+      tug_session_id: tugSessionId,
+      workspace_key: workspaceKey,
+      project_dir: projectDirResolved,
+      session_mode: sessionModeResolved,
+    });
     cardSessionBindingStore.setBinding(cardId, {
       tugSessionId,
       workspaceKey,

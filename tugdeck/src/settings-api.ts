@@ -17,6 +17,7 @@
 import type { TabStateBag } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
+import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 
 // ── Read functions (TugbankClient cache) ─────────────────────────────────────
 
@@ -315,6 +316,11 @@ export function insertTideRecentProject(existing: string[], projectDir: string):
  */
 export function putPromptHistory(sessionId: string, entries: HistoryEntry[]): void {
   const url = `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`;
+  logSessionLifecycle("history.put", {
+    session_id: sessionId,
+    url,
+    entry_count: entries.length,
+  });
   fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -341,12 +347,31 @@ export async function getPromptHistory(sessionId: string): Promise<HistoryEntry[
     // tugdeck process / card has already pushed new entries.
     const response = await fetch(url, { cache: "no-store" });
     if (response.status === 404) {
+      logSessionLifecycle("history.get", {
+        session_id: sessionId,
+        url,
+        status: 404,
+        entry_count: 0,
+      });
       return [];
     }
     const tagged = await response.json() as { kind: string; value: unknown };
     if (tagged.kind === "json" && Array.isArray(tagged.value)) {
-      return tagged.value as HistoryEntry[];
+      const entries = tagged.value as HistoryEntry[];
+      logSessionLifecycle("history.get", {
+        session_id: sessionId,
+        url,
+        status: response.status,
+        entry_count: entries.length,
+      });
+      return entries;
     }
+    logSessionLifecycle("history.get", {
+      session_id: sessionId,
+      url,
+      status: response.status,
+      entry_count: 0,
+    });
     return [];
   } catch (err) {
     console.warn("[settings] GET promptHistory failed for session", sessionId, err);

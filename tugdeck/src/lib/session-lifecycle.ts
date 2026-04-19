@@ -29,6 +29,7 @@ import {
   type SpawnSessionMode,
 } from "../protocol";
 import { cardSessionBindingStore } from "./card-session-binding-store";
+import { logSessionLifecycle } from "./session-lifecycle-log";
 
 /**
  * Send a `spawn_session` CONTROL frame for `(cardId, tugSessionId,
@@ -53,6 +54,12 @@ export function sendSpawnSession(
     projectDir,
     sessionMode,
   );
+  logSessionLifecycle("spawn.frame_send", {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+    project_dir: projectDir,
+    session_mode: sessionMode,
+  });
   connection.send(frame.feedId, frame.payload);
 }
 
@@ -71,6 +78,10 @@ export function sendCloseSession(
   cardId: string,
   tugSessionId: string,
 ): void {
+  logSessionLifecycle("close.frame_send", {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+  });
   cardSessionBindingStore.clearBinding(cardId);
   const frame = encodeCloseSession(cardId, tugSessionId);
   connection.send(frame.feedId, frame.payload);

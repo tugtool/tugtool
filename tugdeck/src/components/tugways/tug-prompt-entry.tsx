@@ -66,6 +66,7 @@ import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useTugcardPersistence } from "./use-tugcard-persistence";
+import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -493,6 +494,10 @@ export const TugPromptEntry = React.forwardRef<
     if (cached) return cached;
     const fresh = historyStore.createRouteProvider(sessionId, route);
     historyProvidersRef.current[cacheKey] = fresh;
+    logSessionLifecycle("history.provider_create", {
+      claude_session_id: sessionId,
+      route,
+    });
     return fresh;
   }, [historyStore, route, snap.claudeSessionId]);
 

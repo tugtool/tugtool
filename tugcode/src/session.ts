@@ -26,6 +26,7 @@ import type {
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
+import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -884,10 +885,23 @@ export class SessionManager {
    *   still becomes usable. Never hang; never silently swallow.
    */
   async initialize(): Promise<void> {
+    const inputSessionId = this.sessionId;
+    const inputMode = this.sessionMode;
+    logSessionLifecycle("tugcode.init.start", {
+      session_id: inputSessionId,
+      session_mode: inputMode,
+    });
+
     if (this.sessionMode === "resume") {
       console.log(`Attempting to resume claude session ${this.sessionId}`);
       const ok = await this.attemptResumeSpawn(this.sessionId);
       if (ok) {
+        logSessionLifecycle("tugcode.init.end", {
+          session_mode: inputMode,
+          session_id_in: inputSessionId,
+          session_id_out: this.sessionId,
+          fallback_taken: false,
+        });
         return;
       }
       // attemptResumeSpawn has already emitted resume_failed, removed
@@ -899,6 +913,10 @@ export class SessionManager {
       // On fallback, also generate a brand-new session id so we don't
       // pass claude --session-id <id-that-may-already-exist-on-disk>.
       this.sessionId = crypto.randomUUID();
+      logSessionLifecycle("tugcode.init.fallback", {
+        stale_session_id: inputSessionId,
+        new_session_id: this.sessionId,
+      });
     }
 
     console.log(`Spawning fresh claude session (--session-id ${this.sessionId})`);
@@ -911,6 +929,12 @@ export class SessionManager {
       type: "session_init",
       session_id: this.sessionId,
       ipc_version: 2,
+    });
+    logSessionLifecycle("tugcode.init.end", {
+      session_mode: inputMode,
+      session_id_in: inputSessionId,
+      session_id_out: this.sessionId,
+      fallback_taken: inputMode === "resume",
     });
   }
 
@@ -982,6 +1006,10 @@ export class SessionManager {
         ? "claude exited before session init (likely stale --resume id)"
         : "timed out waiting for session init on --resume";
     console.log(`Resume attempt for ${resumeId} failed: ${reason}`);
+    logSessionLifecycle("tugcode.resume_failed", {
+      stale_session_id: resumeId,
+      reason,
+    });
     writeLine({
       type: "resume_failed",
       reason,
