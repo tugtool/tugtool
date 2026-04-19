@@ -39,9 +39,10 @@ test: test-rust test-ts
 test-rust:
     cd tugrust && cargo nextest run --workspace
 
-# Run TypeScript tests
+# Run TypeScript tests (tugdeck frontend + tugcode bridge)
 test-ts:
     cd tugdeck && bun test
+    cd tugcode && bun test
 
 # Capture Claude Code fixtures + capabilities snapshot (~2-3 min; real-claude)
 capture-capabilities:

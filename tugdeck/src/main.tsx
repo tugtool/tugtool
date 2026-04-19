@@ -10,6 +10,7 @@ import { TugbankClient } from "./lib/tugbank-client";
 import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
+import { cardServicesStore } from "./lib/card-services-store";
 import { readLayout, readTheme, readTabStates, readDeckState } from "./settings-api";
 import { getThemeSetter } from "./action-dispatch";
 import {
@@ -135,7 +136,6 @@ if (!container) {
   // bindings. Per [L10] this keeps the deck-canvas card-type-agnostic:
   // user-close gestures flow through deck-manager.removeCard, and the
   // services store reacts on its own.
-  const { cardServicesStore } = await import("./lib/card-services-store");
   cardServicesStore.attachDeckManager(deck);
 
   // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
