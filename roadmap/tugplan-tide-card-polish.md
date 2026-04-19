@@ -119,7 +119,7 @@ The bigger items deferred from T3.4.c — session ledger + full resume UX, multi
 **In scope:**
 - Status badge `projectDir` wiring (replaces the `tide-card.tsx:830` gallery string).
 - Route label rename: `Prompt` → `Code` in `tug-prompt-entry.tsx:85`.
-- Auto-focus on card mount; auto-refocus after submit.
+- Auto-focus the prompt editor whenever the tide card becomes the key card (mount, click, Ctrl+` cycle); auto-refocus after submit.
 - Card-level keybindings: Cmd+K → focus prompt; Cmd+J → jump transcript.
 - Completion popup overflow / clipping fix.
 - Atom rendering at tighter line-heights.
@@ -195,21 +195,25 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - `rg '"Prompt"' tugdeck/src/components/tugways/tug-prompt-entry.tsx` returns zero matches.
 - Manual: open a Tide card; the route indicator reads `Code`; typing `>` at position zero still flips to it; typing `❯` still flips to it; `$` and `:` still flip to Shell / Command.
 
-#### Step 3 — Auto-focus the prompt input on card mount {#step-3}
+#### Step 3 — Auto-focus the prompt input whenever the tide card becomes key {#step-3}
 
 **Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (post-mount focus effect).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (key-card observer).
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (confirm `TugPromptEntryDelegate` exposes a `focus()` method; add if missing).
 
 **Work:**
 - Confirm `TugPromptEntryDelegate` has a `focus(): void` method that places the caret in the editor. If absent, add it — its body delegates to the underlying `TugPromptInput`'s focus path.
-- In `TideCardContent`, add a `useLayoutEffect` (after `services` is non-null and `entryDelegateRef.current` is bound) that calls `entryDelegateRef.current?.focus()` once. The effect's deps gate it on the binding becoming non-null, so the focus fires when the picker disappears and the entry first mounts.
-- One-frame caveat: if the delegate is not yet bound on the first commit, the effect re-runs on the next commit when the ref attaches. Document the gate.
+- In `TideCardBody`, add a `useLayoutEffect` that subscribes to `manager.observeKeyResponder("card", ...)`:
+  - On subscribe, synchronously check `manager.getKeyCard() === cardId`; if so, call `entryDelegateRef.current?.focus()` (covers the "body first mounts and was already the key card" case — observer callbacks don't fire on subscribe).
+  - On each observed transition, if the next key card id is this card's id, focus the editor.
+  - Return the observer's unsubscribe for cleanup.
+- This unified mechanism handles every path that makes the tide card active: initial bind / picker-dismiss, click on any card element (pointerdown promotion flips the key card), Ctrl+` cycle, and any future programmatic key-card change. No bespoke mount-only effect.
+- [L07]: handler reads the delegate via the ref, never a closed-over value.
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
-- New test: render `<TideCardContent cardId="t1" />` against a fake binding → assert the prompt input receives focus (e.g., `document.activeElement === <textarea-or-equivalent>`).
-- Manual: open a Tide card with a chosen project path; observe the caret blinking in the prompt input without a click; type immediately.
+- Manual: open a tide card — caret blinks in the editor without a click. Click a sibling card, then click back — caret returns to the editor. Ctrl+` cycles through cards; when the tide card rotates to the front, caret is in the editor immediately.
+- **No automated focus assertion.** happy-dom's `document.activeElement` diverges from browser behavior enough that asserting it in these tests produces megabyte-scale failure dumps without catching real regressions; focus is verified manually and by the lower-level tests that target the delegate directly.
 
 #### Step 4 — Re-focus the prompt input after submit {#step-4}
 
@@ -240,7 +244,129 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - New test: render a Tide card → focus an arbitrary element in the card chrome (e.g., the maximize button) → simulate Cmd+K keydown → assert prompt input gains focus.
 - Manual: open a Tide card, click into the maximize button (focus chrome), press Cmd+K → caret in prompt input.
 
-#### Step 6 — Cmd+J jumps the transcript {#step-6}
+#### Step 5.5 — Unified card-activation lifecycle {#step-5-5}
+
+**Why this exists.** Step 3 landed an observer-based auto-focus that watches `manager.observeKeyResponder("card", ...)`, and Step 5 wired Cmd+K through the `scope: "key-card"` keybinding path. Both depend on the responder chain's key card transitioning when the user activates a card. During manual testing a class of activations was found to NOT transition the key card: clicks on `data-tug-focus="refuse"` elements (title bar, chrome buttons). `handleFramePointerDown` updates the deck store's focused card; the capture-phase `promoteOnPointerDown` skips focus-refuse targets and does not touch the responder chain. Result: the user activates a tide card by clicking its title bar, the store's focused card updates, z-order flips, `data-focused` flips — but `manager.getKeyCard()` still points at the previously-active card, no observer fires, the editor doesn't receive focus, the next keystroke beeps.
+
+The underlying problem is architectural, not local to tide card: "activate a card" is three state updates (store z-order, responder chain first responder, selection guard) across three systems kept in sync by convention. Each trigger path (pointerdown non-refuse, pointerdown refuse, Ctrl+\`, initial load, show-component-gallery) touches a different subset. Consumers then subscribe to whichever subset they happen to need and silently miss activations on paths that skipped their system.
+
+This step consolidates card activation into a single first-class lifecycle operation with a single event, so future cards and shortcuts can subscribe once and trust the signal.
+
+**The investigation artifact.** Three independent notions of "active card" exist today:
+
+| State system | What it is | Drives |
+|---|---|---|
+| `store.focusedCardId` | last entry in store.cards array | z-index, `card-frame[data-focused]` |
+| `manager.firstResponderId` (+ `getKeyCard()`) | responder chain's first-responder, walked up to the nearest `kind: "card"` | keyboard shortcut routing, `scope: "key-card"` dispatch |
+| `selectionGuard.activeCardId` | the card whose inactive-selection highlight is suppressed | inactive-card dimming |
+
+Each activation path hits a different subset:
+
+| Path | store | responder chain | selection guard |
+|---|---|---|---|
+| pointerdown on non-focus-refuse target | ✓ | ✓ (descendant) | effect |
+| pointerdown on focus-refuse target (title bar, chrome) | ✓ | ✗ | effect |
+| Ctrl+\` (CYCLE_CARD) | ✓ | ✓ (card) | effect |
+| Initial load | ✓ | ✓ (card) | effect |
+| SHOW_COMPONENT_GALLERY | ✓ | ✓ (card) | effect |
+
+Consumers accordingly read from different sources: z-index watchers read `store.focusedCardId`; keyboard routing reads `getKeyCard()`; tide card's auto-focus observer reads key-card transitions. The focus-refuse path's divergence between store and responder chain is the root cause of the beep-on-title-bar-click.
+
+**Proposed shape.**
+
+1. A single activation function emits one signal, synchronously:
+   ```ts
+   deck.activateCard(cardId: string): void
+   ```
+   In order:
+   a. `store.handleCardFocused(cardId)` — z-order update.
+   b. If `manager.getKeyCard() !== cardId` → `manager.makeFirstResponder(cardId)`. (Preserves in-card descendant focus when the chain is already inside this card.)
+   c. Notify `CardActivationObserver`s registered for this cardId and for the wildcard (`null`).
+
+2. A subscription API:
+   ```ts
+   deck.observeCardActivation(
+     cardId: string | null,   // null = any card
+     callback: (cardId: string) => void,
+   ): () => void
+   ```
+   Fires on transitions. Fires synchronously on subscribe for the currently-active card so mount-time activation isn't a special case.
+
+3. A React convenience hook:
+   ```ts
+   useOnCardActivated(cardId: string, callback: () => void): void
+   ```
+
+4. Post-`activateCard(cardId)` invariant (synchronously observable):
+   - `store.focusedCardId === cardId`
+   - `manager.getKeyCard() === cardId`
+   - `selectionGuard.activeCardId === cardId` (via subscription — see 5(d) below)
+   - all observers for `cardId` have been notified
+
+This invariant is the property the current system lacks and the reason consumers can't trust a single signal today.
+
+**Resolved design decisions (user, 2026-04-19 plan-review):**
+
+- **D7 — Placement.** New `card-lifecycle.ts` module that both `DeckManager` and `DeckCanvas` use. Keeps the activation vocabulary separable from either consumer.
+- **D8 — `handleCardFocused` visibility.** Delete. After migration, no external caller remains; the store-internal z-order method stays under a different name or stays private to the store.
+- **D9 — Observer model.** Plain pub/sub on the deck lifecycle, not an extension of `observeKeyResponder`. Responder-chain concerns stay separate.
+- **D10 — Selection guard integration.** `selectionGuard` subscribes to `observeCardActivation(null, ...)`. No direct call from inside `activateCard`. Keeps activation's side-effect surface at one call.
+- **D11 — Descendant promotion on pointerdown.** Keep `promoteOnPointerDown` exactly as-is. It promotes responders *below* the card (editor, popover, inner button), never the card itself. Card-level promotion lives solely in `activateCard`.
+
+**Files:**
+- `tugdeck/src/lib/card-lifecycle.ts` (new — exports `activateCard`, `observeCardActivation`, and the observer/store types).
+- `tugdeck/src/lib/card-lifecycle.tsx` or equivalent (new — `useOnCardActivated` React hook; or colocate in the `.ts` if React dependencies are already there).
+- `tugdeck/src/deck-manager.ts` (expose an `activateCard` entry that delegates to `card-lifecycle`; remove `handleCardFocused` public surface per [D8](#step-5-5)).
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (delete the local `handleCardFocused`; replace call sites in `CYCLE_CARD`, `SHOW_COMPONENT_GALLERY`, initial-load effect with `activateCard`).
+- `tugdeck/src/components/chrome/card-frame.tsx` (`handleFramePointerDown` calls `activateCard` instead of `onCardFocused`; the `onCardFocused` prop becomes `onActivate` or is removed if the function can be imported directly).
+- `tugdeck/src/components/tugways/selection-guard.ts` (subscribe to `observeCardActivation` on install; drop the `useLayoutEffect` wiring in `deck-canvas`).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace the current `observeKeyResponder` effect in `TideCardBody` with `useOnCardActivated(cardId, () => entryDelegateRef.current?.focus())`).
+
+**Work:**
+
+a. **Create `card-lifecycle.ts`.** Export:
+   - `CardActivationObserver = (cardId: string) => void`.
+   - A `CardLifecycle` construct (plain class or module-scoped singleton accepting `store` + `manager` at construction / registration time) with:
+     - `activateCard(cardId: string): void` — runs the four steps above, synchronously.
+     - `observeCardActivation(cardId: string | null, cb): () => void` — stores the observer, fires initial-sync for the currently-active card if `cardId === null || cardId === store.focusedCardId`, returns unsubscribe.
+     - `getActiveCardId(): string | null` — mirrors `store.focusedCardId` post-activation; reads directly from the store.
+   - `useOnCardActivated` React hook that takes `cardId` + `callback`, resolves the lifecycle instance via existing context (likely a new `CardLifecycleContext` or export from `deck-manager`), and wires `observeCardActivation` through `useLayoutEffect` with stable deps.
+
+b. **Wire activateCard into DeckManager.** `DeckManager` constructs / holds the lifecycle instance. `deck.activateCard` becomes a thin pass-through. `handleCardFocused`'s public export is removed (per [D8](#step-5-5)).
+
+c. **Replace all call sites.**
+   - `card-frame.handleFramePointerDown` → `deck.activateCard(id)` (or the imported `activateCard` directly; decision during step b).
+   - `deck-canvas.CYCLE_CARD` — replace the three-line sequence (`handleCardFocused` + `setDeselected(false)` + `makeFirstResponder`) with `activateCard(nextId)`. `setDeselected(false)` either moves into `activateCard` or onto a separate observer.
+   - `deck-canvas.SHOW_COMPONENT_GALLERY` — same three-line replacement.
+   - `deck-canvas` initial-load effect — replace with `activateCard(focusedCardId)` when `initialFocusedCardId` is set.
+
+d. **Migrate `selectionGuard`.** Replace its `useLayoutEffect`-driven activation (currently keyed on `focusedCardId` via `selectionGuard.activateCard`) with a subscription to `observeCardActivation(null, ...)`. Attach on `selectionGuard.attach()`, detach on cleanup.
+
+e. **Replace tide card's observer effect.** In `TideCardBody`:
+   ```tsx
+   useOnCardActivated(cardId, () => {
+     entryDelegateRef.current?.focus();
+   });
+   ```
+   Delete the `observeKeyResponder` useLayoutEffect and the `useResponderChain()` call used solely for it.
+
+f. **Test pass.** Units for `card-lifecycle` exercising the invariant (post-`activateCard`, all three state systems match), for `observeCardActivation` (fires on transition, initial-sync for current active card on subscribe, unsubscribe stops future calls), and for the wildcard form. Regression test that keyboard shortcut routing (existing Cmd+W, Ctrl+\`) still targets the active card post-migration.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` green.
+- Unit test: after `activateCard("A")`, `store.focusedCardId === "A"`, `manager.getKeyCard() === "A"`, `selectionGuard.activeCardId === "A"`, observer registered for `"A"` has fired once with `"A"`, wildcard observer has fired with `"A"`.
+- Unit test: subscribing after activation fires the callback synchronously on subscribe.
+- Unit test: `activateCard("A")` twice in a row fires observers only on the first call (no-op on unchanged active card).
+- Manual smoke: open tide card + gallery card. Click tide title bar → editor caret blinks. Click gallery title bar → focus leaves editor. Click tide title bar again → editor caret returns. Press Ctrl+\` to cycle → same behavior. Press Cmd+K from any chrome → caret lands in editor. Press Ctrl+K inside the editor → macOS deleteToEndOfLine runs (not swallowed).
+- Manual smoke: typing into the editor works immediately after any activation path; no beeps.
+
+**Risks:**
+- **Subscription ordering.** If `selectionGuard` and `tide-card` both subscribe, their callbacks run in subscription order. If one throws, later subscribers may miss the event. Mitigation: wrap each callback dispatch in a try/catch that logs but keeps iterating.
+- **Initial-sync firing for inactive cards.** `useOnCardActivated("card-A", ...)` on a card that isn't active at mount should NOT fire the callback. The `observeCardActivation` initial-sync rule: fire only if `cardId === null || cardId === store.focusedCardId`. Tests lock this.
+- **Selection guard install timing.** `selectionGuard.attach()` runs inside `ResponderChainProvider`'s mount effect. If `card-lifecycle` is accessed there before its instance is constructed, we risk a null-ref. Mitigation: construct the lifecycle at the same time as the manager (or earlier), and document the install order.
+- **Breadth of touch.** Six files change. No single file is large, but the cross-cutting nature raises review surface. Mitigation: land in a single atomic commit (or tight sequence) so no intermediate state has two call sites disagreeing on the activation contract.
+
+
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (Cmd+J handler).

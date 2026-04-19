@@ -179,12 +179,27 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   // Bring card to front (z-order via store) and clear deselect flag.
   // Dependency is `store` -- a stable singleton from context.
+  //
+  // Also kick the responder chain when this click changed the deck's
+  // focused card but the capture-phase pointerdown promoter didn't
+  // advance the key card. That happens on `data-tug-focus="refuse"`
+  // targets — title bar, maximize, chrome buttons — which are refused
+  // promotion so clicks on intra-card chrome don't steal caret from
+  // the card's own editor. Same-card click: getKeyCard() already
+  // points at `id` (either because the editor's responder is first
+  // or because a descendant of this card is) → no-op. Cross-card
+  // title-bar click: getKeyCard() still points at the previous card
+  // → promote this card so downstream observers
+  // (tide-card focus-on-key, etc.) fire.
   const handleCardFocused = useCallback(
     (id: string) => {
       store.handleCardFocused(id);
       setDeselected(false);
+      if (manager.getKeyCard() !== id) {
+        manager.makeFirstResponder(id);
+      }
     },
-    [store],
+    [store, manager],
   );
 
   // ---------------------------------------------------------------------------

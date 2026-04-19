@@ -711,6 +711,8 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useTideCardObserver(cardId, codeSessionStore);
 
+  const manager = useResponderChain();
+
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
 
   const codeSnap = useSyncExternalStore(
@@ -798,19 +800,35 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
-  // --- Auto-focus the prompt input on card bind. ---
-  // TideCardBody only mounts when `services` is non-null (a binding
-  // exists) — so a single-shot effect here fires exactly once per
-  // "card first bound" event. React attaches child refs during the
-  // commit phase before useLayoutEffect runs bottom-up, so
-  // `entryDelegateRef.current` is the TugPromptEntry delegate by the
-  // time this effect executes. The delegate's `focus()` forwards to
-  // the composed TugPromptInput's engine root, placing a blinking
-  // caret in the editor so the user can type immediately.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // --- Focus the prompt editor whenever this card becomes key. ---
+  // One unified mechanism for every path that makes the tide card
+  // the active card:
+  //   • body first mounts (picker dismissed, this card was already
+  //     the key card via the tug-card responder);
+  //   • user clicks a card's chrome or body (pointerdown promotion
+  //     flips the key card);
+  //   • user cycles with Ctrl+` (the Cmd-family shortcuts walk the
+  //     deck's focus order);
+  //   • any future programmatic key-card change.
+  //
+  // Subscribes to `observeKeyResponder("card", ...)`, which fires
+  // only on transitions — so re-renders within a single active
+  // session don't stomp on the caret. The initial sync check at
+  // mount covers the first-bind case (subscriptions don't fire on
+  // subscribe). [L07]: the callback reads the delegate via the ref,
+  // never a closed-over value.
   useLayoutEffect(() => {
-    entryDelegateRef.current?.focus();
-  }, []);
+    if (manager === null) return;
+    if (manager.getKeyCard() === cardId) {
+      entryDelegateRef.current?.focus();
+    }
+    const unsubscribe = manager.observeKeyResponder("card", (nextKeyCardId) => {
+      if (nextKeyCardId === cardId) {
+        entryDelegateRef.current?.focus();
+      }
+    });
+    return unsubscribe;
+  }, [cardId, manager, entryDelegateRef]);
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
   // not on any other data-empty transition (manual delete, undo, etc.).
