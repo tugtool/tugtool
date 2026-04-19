@@ -1,0 +1,215 @@
+/* @tug-pairings {
+  --tugx-card-banner-strip-fg     | --tugx-card-banner-strip-bg  | content
+  --tugx-card-banner-strip-border | --tugx-card-banner-strip-bg  | informational
+  --tugx-card-banner-detail-fg    | --tugx-card-banner-detail-bg | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                          | Surface                         | Role          | Context                                          |
+ * |----------------------------------|---------------------------------|---------------|--------------------------------------------------|
+ * | --tugx-card-banner-strip-fg      | --tugx-card-banner-strip-bg     | content       | .tug-card-banner-strip (color)                   |
+ * | --tugx-card-banner-strip-border  | --tugx-card-banner-strip-bg     | informational | .tug-card-banner-strip (border-color)            |
+ * | --tugx-card-banner-detail-fg     | --tugx-card-banner-detail-bg    | content       | .tug-card-banner-detail-panel (color)            |
+ */
+
+/**
+ * tug-card-banner.css — styles for TugCardBanner.
+ *
+ * Card-scoped modal banner. Positioned absolutely inside `.tugcard`, clipped
+ * below the title bar via `top: var(--tug-chrome-height)` — same technique
+ * as .tug-sheet-clip so chrome height stays consistent across card-modal
+ * surfaces.
+ *
+ * Component-tier aliases point to the same base `--tug7-*` tokens TugBanner
+ * uses so the two components share the same visual grammar. Token sovereignty
+ * [L20] is preserved because each component owns its own alias namespace.
+ *
+ * Laws:
+ * - [L06] appearance changes through CSS/DOM
+ * - [L13] TugAnimator drives motion; CSS owns static properties
+ * - [L16] every color-setting rule declares its rendering surface
+ * - [L17] aliases resolve to base tokens in one hop
+ * - [L19] component authoring guide
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Strip — bold filled danger surface, shared with TugBanner base tokens */
+  --tugx-card-banner-strip-bg:      var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-card-banner-strip-fg:      var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-card-banner-strip-border:  var(--tug7-element-control-border-filled-danger-rest);
+
+  /* Detail panel — overlay surface for the error diagnostic area */
+  --tugx-card-banner-detail-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-card-banner-detail-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-card-banner-detail-border: var(--tug7-element-global-border-normal-default-rest);
+
+  /* Dim backdrop behind the detail panel (error variant only) */
+  --tugx-card-banner-backdrop-bg:   var(--tug7-surface-overlay-primary-normal-dim-rest);
+}
+
+/* ---- Banner root — absolute within .tugcard, below title bar ---- */
+
+.tug-card-banner {
+  position: absolute;
+  inset: 0;
+  /* Sit below the card title bar; strip and detail panel both clip at this line */
+  top: var(--tug-chrome-height, 36px);
+  /* Above card content, below any app-modal surfaces */
+  z-index: 20;
+  /* Base state: pointer events enabled so the dim backdrop (error variant)
+     swallows clicks even with the body inert. Status variant has no backdrop;
+     pointer events on the strip itself are sufficient. */
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+
+/* Error variant root: dim backdrop fills the body area behind the detail panel */
+.tug-card-banner[data-variant="error"] {
+  /* @tug-renders-on: --tugx-card-banner-backdrop-bg */
+  background-color: var(--tugx-card-banner-backdrop-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Status variant root: transparent — only the strip is visible */
+.tug-card-banner[data-variant="status"] {
+  background-color: transparent;
+  /* Strip extends full width at the top; below the strip, no backdrop covers
+     the card body, so pointer events should pass through. */
+  pointer-events: none;
+}
+.tug-card-banner[data-variant="status"] .tug-card-banner-strip {
+  pointer-events: auto;
+}
+
+/* Contained (gallery) — absolute positioning stays the same; inert is skipped
+   in TSX. Nothing CSS-specific is required, but reserve the attribute for
+   future gallery-only overrides. */
+
+/* ---- Clip container — hides strip above the top edge during slide ---- */
+
+.tug-card-banner-clip {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+/* Children of the clip opt back in so interactive content stays clickable. */
+.tug-card-banner-clip > * {
+  pointer-events: auto;
+}
+
+/* ---- Strip — shared by both variants ---- */
+
+.tug-card-banner-strip {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  /* @tug-renders-on: --tugx-card-banner-strip-bg */
+  background-color: var(--tugx-card-banner-strip-bg);
+  color: var(--tugx-card-banner-strip-fg);
+  border-bottom: 1px solid var(--tugx-card-banner-strip-border);
+  /* Base state: off-screen above clip. TugAnimator's fill:forwards holds the
+     final transform after enter/exit animations. */
+  transform: translateY(-100%);
+}
+
+.tug-card-banner-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tug-card-banner-label {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tug-card-banner-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  /* Message inherits strip color */
+}
+
+/* ---- Detail panel — error variant only ---- */
+
+.tug-card-banner-detail-panel {
+  margin: 24px auto 32px;
+  width: calc(100% - 48px);
+  max-width: 560px;
+  max-height: calc(100% - 80px);
+  display: flex;
+  flex-direction: column;
+  /* @tug-renders-on: --tugx-card-banner-detail-bg */
+  background-color: var(--tugx-card-banner-detail-bg);
+  color: var(--tugx-card-banner-detail-fg);
+  border: 1px solid var(--tugx-card-banner-detail-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
+  /* Base state: hidden. TugAnimator fades in on enter, out on exit. */
+  opacity: 0;
+}
+
+.tug-card-banner-detail-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 20px 24px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.tug-card-banner-detail-body > :first-child {
+  margin-top: 0;
+}
+
+.tug-card-banner-detail-body > :last-child {
+  margin-bottom: 0;
+}
+
+.tug-card-banner-detail-footer {
+  flex-shrink: 0;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--tugx-card-banner-detail-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---- Tone variants — override strip aliases per tone ---- */
+
+/* danger (default, already set on body) */
+.tug-card-banner[data-tone="danger"] .tug-card-banner-strip {
+  --tugx-card-banner-strip-bg:     var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-card-banner-strip-fg:     var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-card-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
+}
+
+/* caution — dark text for contrast against the caution fill */
+.tug-card-banner[data-tone="caution"] .tug-card-banner-strip {
+  --tugx-card-banner-strip-bg:     var(--tug7-surface-control-primary-filled-caution-rest);
+  --tugx-card-banner-strip-fg:     var(--tug7-element-global-text-normal-onCaution-rest);
+  --tugx-card-banner-strip-border: var(--tug7-element-control-border-filled-caution-rest);
+}
+
+/* default — neutral filled overlay */
+.tug-card-banner[data-tone="default"] .tug-card-banner-strip {
+  --tugx-card-banner-strip-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-card-banner-strip-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-card-banner-strip-border: var(--tug7-element-global-border-normal-default-rest);
+}

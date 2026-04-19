@@ -277,7 +277,7 @@ The existing 3 test cases retarget:
 
 **Verification:** matches [Success Criteria](#success-criteria).
 
-### Step 6 — Gallery demo (deferred / optional)
+### Step 6 — Gallery demo (not deferred / not optional)
 
 **File:** `tugdeck/src/components/tugways/cards/gallery-registrations.tsx` (probably) + a new `gallery-card-banner.tsx` mock-up card.
 
