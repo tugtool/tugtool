@@ -25,7 +25,7 @@
 
 import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
 import { ResponderChainContext, ResponderParentContext } from "./responder-chain";
-import type { ActionHandler, ResponderNode, TugAction } from "./responder-chain";
+import type { ActionHandler, ResponderKind, ResponderNode, TugAction } from "./responder-chain";
 
 // Re-export for backward compatibility — existing consumers import from here.
 export { ResponderParentContext } from "./responder-chain";
@@ -76,6 +76,17 @@ export interface UseResponderOptions<Extra extends string = never> {
   canHandle?: (action: TugAction<Extra>) => boolean;
   /** Per-action enabled-state query. Defaults to true if omitted. */
   validateAction?: (action: TugAction<Extra>) => boolean;
+  /**
+   * Optional tier tag for `getKeyResponderOfKind` walks. Most
+   * responders leave this unset; tier-defining nodes opt in (e.g.,
+   * `TugCard` passes `kind: "card"`). Captured at mount and stored on
+   * the registered node — changing it later would require
+   * re-registration, which is fine because the tier of a responder is
+   * a structural property of its identity, not a per-render toggle.
+   *
+   * See `roadmap/key-card.md` for the design.
+   */
+  kind?: ResponderKind;
 }
 
 // ---- useResponder ----
@@ -235,6 +246,11 @@ export function useOptionalResponder<Extra extends string = never>(
   // structural shape changes, which are not expected to happen.
   const hasCanHandleAtMount = useRef(options.canHandle !== undefined);
   const hasValidateActionAtMount = useRef(options.validateAction !== undefined);
+  // The tier tag is a structural property of the responder, captured
+  // at mount. Changing it later does not re-register; that matches
+  // canHandle / validateAction and is the right behavior because a
+  // responder's tier is its identity, not a per-render toggle.
+  const kindAtMount = useRef(options.kind);
 
   // Tracks the DOM element the responderRef callback was most
   // recently called with. Declared up here (rather than alongside
@@ -321,6 +337,9 @@ export function useOptionalResponder<Extra extends string = never>(
     if (hasValidateActionAtMount.current) {
       node.validateAction = (action: TugAction<Extra>) =>
         optionsRef.current.validateAction?.(action) ?? true;
+    }
+    if (kindAtMount.current !== undefined) {
+      node.kind = kindAtMount.current;
     }
     manager.register(node);
 

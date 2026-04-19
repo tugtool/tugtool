@@ -872,6 +872,7 @@ export function Tugcard({
 
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
+    kind: "card",
     actions: {
       [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => handleClose(),
       [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => handlePreviousTab(),

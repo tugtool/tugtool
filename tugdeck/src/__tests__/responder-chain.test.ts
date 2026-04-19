@@ -527,3 +527,161 @@ describe("edge cases", () => {
     expect(calls).toEqual(["a"]);
   });
 });
+
+// ---- getKeyResponderOfKind / getKeyCard ----
+
+describe("getKeyResponderOfKind", () => {
+  it("returns null when no first responder is set", () => {
+    const mgr = makeManager();
+    expect(mgr.getKeyResponderOfKind("card")).toBe(null);
+    expect(mgr.getKeyCard()).toBe(null);
+  });
+
+  it("returns the first responder's id when it is itself of the requested kind", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "card-1", parentId: null, actions: {}, kind: "card" });
+    expect(mgr.getKeyCard()).toBe("card-1");
+  });
+
+  it("walks up parentId past untagged ancestors to find the nearest tagged one", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "card-1", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.register({ id: "editor", parentId: "card-1", actions: {} });
+    mgr.makeFirstResponder("editor");
+    expect(mgr.getKeyCard()).toBe("card-1");
+  });
+
+  it("returns null when no ancestor matches the requested kind", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "child", parentId: "canvas", actions: {} });
+    mgr.makeFirstResponder("child");
+    expect(mgr.getKeyCard()).toBe(null);
+  });
+
+  it("returns the innermost tagged ancestor when nested cards exist", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "outer-card", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.register({ id: "inner-card", parentId: "outer-card", actions: {}, kind: "card" });
+    mgr.register({ id: "editor", parentId: "inner-card", actions: {} });
+    mgr.makeFirstResponder("editor");
+    expect(mgr.getKeyCard()).toBe("inner-card");
+  });
+
+  it("updates as first responder moves between cards", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "card-a", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.register({ id: "card-b", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.register({ id: "editor-a", parentId: "card-a", actions: {} });
+    mgr.register({ id: "editor-b", parentId: "card-b", actions: {} });
+
+    mgr.makeFirstResponder("editor-a");
+    expect(mgr.getKeyCard()).toBe("card-a");
+
+    mgr.makeFirstResponder("editor-b");
+    expect(mgr.getKeyCard()).toBe("card-b");
+  });
+});
+
+// ---- observeKeyResponder ----
+
+describe("observeKeyResponder", () => {
+  it("does not fire on initial subscription", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "card-1", parentId: null, actions: {}, kind: "card" });
+
+    const calls: Array<string | null> = [];
+    mgr.observeKeyResponder("card", (id) => { calls.push(id); });
+
+    expect(calls).toEqual([]);
+  });
+
+  it("fires when the derived value transitions from null to a card id", () => {
+    const mgr = makeManager();
+    const calls: Array<string | null> = [];
+    mgr.observeKeyResponder("card", (id) => { calls.push(id); });
+
+    mgr.register({ id: "card-1", parentId: null, actions: {}, kind: "card" });
+
+    expect(calls).toEqual(["card-1"]);
+  });
+
+  it("fires only when the derived value changes, not on every chain change", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "card-1", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.register({ id: "editor-1", parentId: "card-1", actions: {} });
+    mgr.makeFirstResponder("editor-1");
+
+    const calls: Array<string | null> = [];
+    mgr.observeKeyResponder("card", (id) => { calls.push(id); });
+
+    // Move first responder within the same card. Derived value does
+    // not change, so observer must not fire.
+    mgr.register({ id: "editor-2", parentId: "card-1", actions: {} });
+    mgr.makeFirstResponder("editor-2");
+    expect(calls).toEqual([]);
+
+    // Move first responder to a different card. Derived value
+    // changes, observer fires.
+    mgr.register({ id: "card-2", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.makeFirstResponder("card-2");
+    expect(calls).toEqual(["card-2"]);
+  });
+
+  it("fires with null when the derived value transitions from a card id to null", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "card-1", parentId: "canvas", actions: {}, kind: "card" });
+    mgr.makeFirstResponder("card-1");
+
+    const calls: Array<string | null> = [];
+    mgr.observeKeyResponder("card", (id) => { calls.push(id); });
+
+    mgr.makeFirstResponder("canvas");
+    expect(calls).toEqual([null]);
+  });
+
+  it("unsubscribe stops further notifications", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "card-1", parentId: null, actions: {}, kind: "card" });
+    mgr.makeFirstResponder("card-1");
+
+    const calls: Array<string | null> = [];
+    const unsub = mgr.observeKeyResponder("card", (id) => { calls.push(id); });
+    unsub();
+
+    mgr.register({ id: "card-2", parentId: null, actions: {}, kind: "card" });
+    mgr.makeFirstResponder("card-2");
+
+    expect(calls).toEqual([]);
+  });
+
+  it("supports unsubscribe during notification without disrupting other observers", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "canvas", parentId: null, actions: {} });
+    mgr.register({ id: "card-1", parentId: "canvas", actions: {}, kind: "card" });
+
+    const calls: string[] = [];
+    let unsubA: (() => void) | null = null;
+    unsubA = mgr.observeKeyResponder("card", () => {
+      calls.push("a");
+      unsubA?.();
+    });
+    mgr.observeKeyResponder("card", () => { calls.push("b"); });
+
+    mgr.makeFirstResponder("card-1");
+
+    // Both observers fire on the transition; A unsubscribes itself
+    // mid-notification, B still fires for the same change.
+    expect(calls).toEqual(["a", "b"]);
+
+    // A second transition: A is gone, only B fires.
+    calls.length = 0;
+    mgr.makeFirstResponder("canvas");
+    expect(calls).toEqual(["b"]);
+  });
+});

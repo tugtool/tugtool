@@ -34,6 +34,28 @@ export type { TugAction, GalleryAction } from "./action-vocabulary";
  */
 export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
 
+// ---- ResponderKind ----
+
+/**
+ * Tier tag for responder nodes. A typed string-union enum so misspellings
+ * are compile errors and adding a new tier (e.g. `"panel"`) is reviewed
+ * at one location.
+ *
+ * Used by `getKeyResponderOfKind` to walk up the chain looking for the
+ * nearest ancestor of a given tier — the mechanism that gives us a
+ * stable "active card" identity without storing one. See
+ * `roadmap/key-card.md` for the design.
+ *
+ * Initial members:
+ * - `"card"` — top-level card responders (TugCard).
+ *
+ * New members are added here and consumed by `useResponder` callers
+ * that pass `kind`. The default `kind === undefined` is the "untagged"
+ * case — most responders are untagged (text inputs, sliders, popups);
+ * only tier-defining nodes opt in.
+ */
+export type ResponderKind = "card";
+
 /**
  * Typed action event -- the sole dispatch currency.
  *
@@ -127,6 +149,13 @@ export interface ResponderNode<Extra extends string = never> {
    */
   canHandle?: (action: TugAction<Extra>) => boolean;
   validateAction?: (action: TugAction<Extra>) => boolean;
+  /**
+   * Optional tier tag. Consumed by `getKeyResponderOfKind` to find the
+   * nearest ancestor of a given tier from the current first responder.
+   * Untagged responders are skipped during the walk. Most responders
+   * are untagged; only tier-defining nodes (cards) opt in.
+   */
+  kind?: ResponderKind;
 }
 
 // ---- ResponderChainManager ----
@@ -164,6 +193,28 @@ export interface DispatchResult {
  * any external action).
  */
 export type DispatchObserver = (event: ActionEvent, handled: boolean) => void;
+
+/**
+ * Signature of a key-responder observer. Fires after any chain change
+ * (register, unregister, first-responder change) when, *and only when*,
+ * the derived `getKeyResponderOfKind(kind)` value differs from the
+ * value seen at the previous notification. Initial subscription does
+ * not fire — callers read the current value via
+ * `getKeyResponderOfKind` synchronously after subscribing.
+ */
+export type KeyResponderObserver = (responderId: string | null) => void;
+
+/**
+ * Internal subscription record for `observeKeyResponder`. Stores the
+ * tier the observer is interested in, the callback to invoke, and the
+ * last value the observer was notified about so we can dedupe to
+ * "fires only when the derived value changes."
+ */
+interface KeyResponderSubscription {
+  kind: ResponderKind;
+  callback: KeyResponderObserver;
+  lastValue: string | null;
+}
 
 /**
  * Internal helper: look up an action handler on a stored responder
@@ -226,6 +277,7 @@ export class ResponderChainManager {
   private validationVersion = 0;
   private subscribers: Set<() => void> = new Set();
   private dispatchObservers: Set<DispatchObserver> = new Set();
+  private keyResponderSubscriptions: Set<KeyResponderSubscription> = new Set();
   private defaultButtonStack: HTMLButtonElement[] = [];
 
   // ---- Registration ----
@@ -338,6 +390,82 @@ export class ResponderChainManager {
   /** Returns the current firstResponderId (or null if none). */
   getFirstResponder(): string | null {
     return this.firstResponderId;
+  }
+
+  // ---- Key responder of kind (derived) ----
+
+  /**
+   * Walk up `parentId` from the current first responder and return the
+   * id of the nearest registered node whose `kind` matches. Returns
+   * null if the first responder is unset, no ancestor matches, or the
+   * walk falls off the root.
+   *
+   * The walk is inclusive of the first responder: if the first
+   * responder itself was registered with the requested kind, its id is
+   * returned without further walking.
+   *
+   * Untagged ancestors (`kind === undefined`) are skipped — they do
+   * not terminate the walk. This is the property that lets a tier tag
+   * mean "I am the nearest of my kind to whatever the user is doing"
+   * regardless of how many untagged responders sit between the first
+   * responder and the next tagged ancestor.
+   *
+   * No state is stored — the value is recomputed on every call. See
+   * `roadmap/key-card.md` Phase 1 for the design and the rationale for
+   * keeping this derived rather than stored.
+   */
+  getKeyResponderOfKind(kind: ResponderKind): string | null {
+    let currentId: string | null = this.firstResponderId;
+    while (currentId !== null) {
+      const node = this.nodes.get(currentId);
+      if (!node) break;
+      if (node.kind === kind) return currentId;
+      currentId = node.parentId;
+    }
+    return null;
+  }
+
+  /**
+   * Convenience wrapper over `getKeyResponderOfKind("card")`. The vast
+   * majority of consumers want the active card; the
+   * `getKeyResponderOfKind` form is the escape hatch for future tiers.
+   */
+  getKeyCard(): string | null {
+    return this.getKeyResponderOfKind("card");
+  }
+
+  /**
+   * Subscribe to changes in the derived key-responder-of-kind value.
+   *
+   * The callback fires *only when* the derived value differs from the
+   * value seen at the previous notification — not on every chain
+   * change. Initial subscription does not fire; callers read the
+   * current value synchronously via `getKeyResponderOfKind(kind)` after
+   * subscribing if they need it.
+   *
+   * Recomputation runs in `incrementAndNotify`, so the same code path
+   * that drives `useSyncExternalStore` re-renders also drives this
+   * observer. Returns an unsubscribe function.
+   *
+   * Most React consumers will use the higher-level
+   * `useKeyCardId`/`useIsKeyCard` hooks (which use
+   * `useSyncExternalStore` over the existing `subscribe` API). This
+   * observer is for non-React consumers and for components that want
+   * to react to transitions imperatively without re-rendering.
+   */
+  observeKeyResponder(
+    kind: ResponderKind,
+    callback: KeyResponderObserver,
+  ): () => void {
+    const subscription: KeyResponderSubscription = {
+      kind,
+      callback,
+      lastValue: this.getKeyResponderOfKind(kind),
+    };
+    this.keyResponderSubscriptions.add(subscription);
+    return () => {
+      this.keyResponderSubscriptions.delete(subscription);
+    };
   }
 
   // ---- Action dispatch ----
@@ -694,6 +822,29 @@ export class ResponderChainManager {
     this.validationVersion += 1;
     for (const cb of this.subscribers) {
       cb();
+    }
+    this.notifyKeyResponderObservers();
+  }
+
+  /**
+   * Recompute the derived key-responder-of-kind value for every
+   * subscription and fire the callback only if it differs from the
+   * value the subscription was last notified about.
+   *
+   * Snapshotted to a local array first so a callback that
+   * unsubscribes itself during notification doesn't mutate the set
+   * mid-iteration — same defensive pattern as
+   * `notifyDispatchObservers`.
+   */
+  private notifyKeyResponderObservers(): void {
+    if (this.keyResponderSubscriptions.size === 0) return;
+    const subs = Array.from(this.keyResponderSubscriptions);
+    for (const sub of subs) {
+      const current = this.getKeyResponderOfKind(sub.kind);
+      if (current !== sub.lastValue) {
+        sub.lastValue = current;
+        sub.callback(current);
+      }
     }
   }
 
