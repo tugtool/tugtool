@@ -223,7 +223,11 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
         });
     }, [visible, mounted]);
 
-    if (!mounted || !cardEl) return null;
+    if (!mounted) return null;
+    // Contained mode (gallery demos) renders inline inside the caller's
+    // positioned parent; no portal, no .tugcard-body lookup. Real usage
+    // requires a portal target from TugcardPortalContext.
+    if (!contained && !cardEl) return null;
 
     // Shared strip markup used by both variants.
     const strip = (
@@ -238,28 +242,23 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
       </div>
     );
 
-    if (variant === "status") {
-      return createPortal(
-        <div
-          ref={setRef}
-          data-slot="tug-card-banner"
-          data-variant="status"
-          data-visible={String(visible)}
-          data-tone={tone}
-          data-contained={contained ? "true" : undefined}
-          role="status"
-          aria-live="polite"
-          className={cn("tug-card-banner", className)}
-        >
-          <div className="tug-card-banner-clip">{strip}</div>
-        </div>,
-        cardEl,
-      );
-    }
+    const statusContent = (
+      <div
+        ref={setRef}
+        data-slot="tug-card-banner"
+        data-variant="status"
+        data-visible={String(visible)}
+        data-tone={tone}
+        data-contained={contained ? "true" : undefined}
+        role="status"
+        aria-live="polite"
+        className={cn("tug-card-banner", className)}
+      >
+        <div className="tug-card-banner-clip">{strip}</div>
+      </div>
+    );
 
-    // Error variant: strip + detail panel (body + optional footer), inside a
-    // focus-trapped region so Tab cycles through banner content while open.
-    return createPortal(
+    const errorContent = (
       <FocusScopeRadix.FocusScope trapped={visible} loop>
         <div
           ref={setRef}
@@ -296,9 +295,12 @@ export const TugCardBanner = React.forwardRef<HTMLDivElement, TugCardBannerProps
             </div>
           </div>
         </div>
-      </FocusScopeRadix.FocusScope>,
-      cardEl,
+      </FocusScopeRadix.FocusScope>
     );
+
+    const content = variant === "status" ? statusContent : errorContent;
+    if (contained) return content;
+    return createPortal(content, cardEl!);
   },
 );
 

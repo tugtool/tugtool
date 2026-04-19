@@ -86,9 +86,13 @@ body {
   pointer-events: auto;
 }
 
-/* Contained (gallery) — absolute positioning stays the same; inert is skipped
-   in TSX. Nothing CSS-specific is required, but reserve the attribute for
-   future gallery-only overrides. */
+/* Contained (gallery demos). Inert is skipped in TSX; the banner renders
+   inline inside the caller's positioned parent rather than through the
+   card portal. Drop the title-bar offset so the strip sits at the top of
+   the gallery viewport instead of leaving a 36px empty band. */
+.tug-card-banner[data-contained="true"] {
+  top: 0;
+}
 
 /* ---- Clip container — hides strip above the top edge during slide ---- */
 

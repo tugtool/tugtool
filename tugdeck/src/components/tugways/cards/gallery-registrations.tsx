@@ -59,6 +59,7 @@ import { GalleryProgress } from "./gallery-progress";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
+import { GalleryCardBanner } from "./gallery-card-banner";
 import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
@@ -534,6 +535,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-banner",
     contentFactory: (_cardId) => <GalleryBanner />,
     defaultMeta: { title: "TugBanner", icon: "TriangleAlert", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-card-banner",
+    contentFactory: (_cardId) => <GalleryCardBanner />,
+    defaultMeta: { title: "TugCardBanner", icon: "CircleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
