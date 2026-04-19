@@ -26,7 +26,35 @@ import type {
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
+
+// ---------------------------------------------------------------------------
+// Pre-flight: expected claude session jsonl path
+// ---------------------------------------------------------------------------
+
+/**
+ * Expected on-disk path of claude's session jsonl for `(projectDir,
+ * sessionId)`. claude writes sessions to
+ * `~/.claude/projects/<encoded-cwd>/<id>.jsonl` where the encoding
+ * replaces every `/` in the absolute cwd with `-` (e.g. `/u/src/tugtool`
+ * → `-u-src-tugtool`).
+ *
+ * Pure helper so unit tests can assert the encoding without touching
+ * the filesystem. Exported for tests.
+ *
+ * Step 4.5.5 Phase C: tugcode stats this path before invoking
+ * `claude --resume <id>` so a missing jsonl fails the resume in a
+ * millisecond instead of waiting ~5s for claude to give up. Defense
+ * in depth — the supervisor's `session_live_elsewhere` check catches
+ * the concurrent-binding case; this catches the deleted-jsonl case.
+ */
+export function expectedSessionJsonlPath(projectDir: string, sessionId: string): string {
+  const home = homedir();
+  const encoded = projectDir.replace(/\//g, "-");
+  return join(home, ".claude", "projects", encoded, `${sessionId}.jsonl`);
+}
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -982,6 +1010,42 @@ export class SessionManager {
    */
   private async attemptResumeSpawn(resumeId: string): Promise<boolean> {
     this.lastResumeFailureReason = null;
+
+    // Pre-flight (Step 4.5.5 Phase C): if the expected session jsonl is
+    // missing, fail the resume immediately rather than spending ~5s
+    // waiting for claude to exit. The bridge's `RelayOutcome::ResumeFailed`
+    // path takes over from here. Tests inject `(this as any).existsSyncFn`
+    // to override this check; production reads the real filesystem.
+    const exists =
+      (this as unknown as { existsSyncFn?: (p: string) => boolean }).existsSyncFn ??
+      ((p: string) => {
+        try {
+          return existsSync(p) && statSync(p).isFile();
+        } catch {
+          return false;
+        }
+      });
+    const jsonlPath = expectedSessionJsonlPath(this.projectDir, resumeId);
+    if (!exists(jsonlPath)) {
+      const reason = "missing_jsonl";
+      this.lastResumeFailureReason = reason;
+      console.log(
+        `Pre-flight: claude session jsonl missing at ${jsonlPath}; failing resume`,
+      );
+      logSessionLifecycle("tugcode.resume_failed", {
+        stale_session_id: resumeId,
+        reason,
+        jsonl_path: jsonlPath,
+      });
+      writeLine({
+        type: "resume_failed",
+        reason,
+        stale_session_id: resumeId,
+        ipc_version: 2,
+      });
+      return false;
+    }
+
     const RESUME_INIT_TIMEOUT_MS = 10_000;
 
     const child = this.spawnClaude(resumeId, "resume");

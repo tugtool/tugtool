@@ -244,6 +244,14 @@ pub struct LedgerEntry {
     pub input_tx: Option<mpsc::Sender<Frame>>,
     /// Cancels the per-session worker on `close_session`.
     pub cancel: CancellationToken,
+    /// Card id currently holding this session in `Spawning` or `Live` state.
+    /// `None` for a fresh `Idle` entry, after `close_session`, after the
+    /// bridge transitions to `Errored`, or after the supervisor rehydrates
+    /// stored bindings on startup. Step 4.5.5 Phase C uses this to reject
+    /// a `spawn_session(mode=resume)` payload that would bind the same
+    /// session under a *different* card while the original card is still
+    /// holding it; same-card reconnects are allowed.
+    pub card_id_live: Option<String>,
 }
 
 impl LedgerEntry {
@@ -268,6 +276,7 @@ impl LedgerEntry {
             child: None,
             input_tx: None,
             cancel: CancellationToken::new(),
+            card_id_live: None,
         }
     }
 }
@@ -417,6 +426,12 @@ impl SessionKeysStore for TugbankClient {
 pub const SESSIONS_DOMAIN: &str = "dev.tugtool.tide";
 /// Tugbank key (within `SESSIONS_DOMAIN`) for the sessions record.
 pub const SESSIONS_KEY: &str = "sessions";
+/// Tugbank key (within `SESSIONS_DOMAIN`) for the live-sessions list.
+/// Step 4.5.5 Phase C: tugcast publishes the set of session ids
+/// currently bound to a card (state in `Spawning` or `Live`) so the
+/// tugdeck picker can grey out a resume row that points at a session
+/// already held by another card. Cleared on tugcast startup.
+pub const LIVE_SESSIONS_KEY: &str = "live-sessions";
 
 /// Writer for the sessions record — one entry per session, keyed by
 /// the session id (which is also claude's own id and the id the feed
@@ -477,6 +492,93 @@ impl TugbankSessionsRecorder {
         ) {
             warn!(error = %err, "failed to write sessions record");
         }
+    }
+}
+
+/// Writer for the live-sessions broadcast under `dev.tugtool.tide /
+/// live-sessions`. Step 4.5.5 Phase C: the tugdeck picker subscribes
+/// via the existing DEFAULTS pipe and disables the "Resume last"
+/// row when the candidate id is in the broadcast set.
+///
+/// The set is in-memory authoritative: tugcast updates it via
+/// `set_live(id, true|false)` from the supervisor on bind / close
+/// and from the bridge on errored / crash. On tugcast startup the
+/// implementor calls `clear()` to wipe stale ids that don't reflect
+/// any actual live subprocess.
+pub trait LiveSessionsTracker: Send + Sync {
+    /// Mark `session_id` as live (`true`) or inactive (`false`). Idempotent.
+    fn set_live(&self, session_id: &str, is_live: bool);
+    /// Clear the entire set. Called on tugcast startup so a previous
+    /// run's stale entries never leak into a fresh process.
+    fn clear(&self);
+}
+
+/// Production [`LiveSessionsTracker`] backed by a shared
+/// [`TugbankClient`]. Maintains an in-memory `HashSet` and writes
+/// the JSON list to tugbank on every change.
+pub struct TugbankLiveSessionsTracker {
+    pub client: Arc<TugbankClient>,
+    live: StdMutex<HashSet<String>>,
+}
+
+impl TugbankLiveSessionsTracker {
+    pub fn new(client: Arc<TugbankClient>) -> Self {
+        Self {
+            client,
+            live: StdMutex::new(HashSet::new()),
+        }
+    }
+
+    fn write(&self, set: &HashSet<String>) {
+        let mut ids: Vec<String> = set.iter().cloned().collect();
+        ids.sort();
+        let json = serde_json::Value::Array(
+            ids.into_iter().map(serde_json::Value::String).collect(),
+        );
+        if let Err(err) =
+            self.client
+                .set(SESSIONS_DOMAIN, LIVE_SESSIONS_KEY, Value::Json(json))
+        {
+            warn!(error = %err, "failed to write live-sessions record");
+        }
+    }
+}
+
+impl LiveSessionsTracker for TugbankLiveSessionsTracker {
+    fn set_live(&self, session_id: &str, is_live: bool) {
+        let mut set = self.live.lock().expect("live-sessions mutex");
+        let changed = if is_live {
+            set.insert(session_id.to_owned())
+        } else {
+            set.remove(session_id)
+        };
+        if !changed {
+            return;
+        }
+        let snap = set.clone();
+        drop(set);
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = if is_live { "live_sessions.add" } else { "live_sessions.remove" },
+            session_id = session_id,
+            count = snap.len(),
+        );
+        self.write(&snap);
+    }
+
+    fn clear(&self) {
+        let mut set = self.live.lock().expect("live-sessions mutex");
+        if set.is_empty() {
+            // Always write on startup so a previous run's stale array
+            // is overwritten with `[]` even if the in-memory set was
+            // already empty.
+            drop(set);
+            self.write(&HashSet::new());
+            return;
+        }
+        set.clear();
+        drop(set);
+        self.write(&HashSet::new());
     }
 }
 
@@ -636,6 +738,13 @@ pub struct AgentSupervisor {
     /// `session_init` and `remove` on `resume_failed`. Tugcode has no
     /// direct tugbank access for this domain.
     pub sessions_recorder: Arc<dyn SessionsRecorder>,
+    /// Writer for the live-sessions broadcast under
+    /// `dev.tugtool.tide / live-sessions`. The supervisor calls
+    /// `set_live(true)` on `do_spawn_session` Phase 3 and `set_live(false)`
+    /// on `do_close_session`; the bridge calls `set_live(false)` on
+    /// terminal teardown paths (resume_failed, crash budget).
+    /// Step 4.5.5 Phase C.
+    pub live_sessions: Arc<dyn LiveSessionsTracker>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -828,12 +937,17 @@ impl AgentSupervisor {
         control_tx: broadcast::Sender<Frame>,
         store: Arc<dyn SessionKeysStore>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
+        live_sessions: Arc<dyn LiveSessionsTracker>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
         registry: Arc<WorkspaceRegistry>,
         cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
+        // Step 4.5.5 Phase C: clear stale live-sessions on startup so a
+        // previous tugcast process's leftover ids don't make the picker
+        // grey out rows whose subprocesses no longer exist.
+        live_sessions.clear();
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
             session_state_tx,
@@ -843,6 +957,7 @@ impl AgentSupervisor {
             control_tx,
             store,
             sessions_recorder,
+            live_sessions,
             spawner_factory,
             merger_register_tx,
             config,
@@ -1042,6 +1157,48 @@ impl AgentSupervisor {
                     "spawn_session: reconnect release returned error (ignored)"
                 );
             }
+            // Phase C (Step 4.5.5): reject a `resume` against a session
+            // already bound to a *different* card. `card_id_live` (set
+            // in Phase 3 below, cleared on close/errored) is the source
+            // of truth for "currently bound." Same-card reconnects
+            // (WS drop + reconnect) and `new` payloads are unaffected.
+            // The wire-side rejection complements the picker grey-out
+            // (C2): even with a stale picker view, the supervisor
+            // refuses to double-bind a live session. Note that we do
+            // NOT gate on `spawn_state` because a freshly-bound entry
+            // sits at `Idle` until the dispatcher's first CODE_INPUT
+            // promotes it to `Spawning`.
+            if session_mode == SessionMode::Resume {
+                let entry = entry_arc.lock().await;
+                if let Some(holder) = entry.card_id_live.as_deref() {
+                    if holder != card_id {
+                        let holder_owned = holder.to_owned();
+                        drop(entry);
+                        // Drop the per-client affinity row we just
+                        // inserted above so the rejected card doesn't
+                        // appear bound.
+                        let mut cs = self.client_sessions.lock().await;
+                        if let Some(set) = cs.get_mut(&client_id) {
+                            set.remove(&tug_session_id);
+                        }
+                        drop(cs);
+                        warn!(
+                            card_id,
+                            session = %tug_session_id,
+                            holder = %holder_owned,
+                            "spawn_session: resume rejected — session live on another card"
+                        );
+                        let _ = self.session_state_tx.send(build_session_state_frame(
+                            &tug_session_id,
+                            "errored",
+                            Some("session_live_elsewhere"),
+                        ));
+                        return Err(ControlError::CapExceeded {
+                            reason: "session_live_elsewhere",
+                        });
+                    }
+                }
+            }
         }
 
         // Phase 2: strict tugbank write per [D12]. Partial ledger/
@@ -1073,9 +1230,19 @@ impl AgentSupervisor {
         // its `latest_metadata`; fresh flows observe a just-minted Idle
         // entry with `latest_metadata: None`.
         let replay_frame = {
-            let entry = entry_arc.lock().await;
+            let mut entry = entry_arc.lock().await;
+            // Phase C (Step 4.5.5): record the binding card so a later
+            // resume from a different card can be detected and rejected.
+            // Same-card reconnects overwrite with the same value (no-op).
+            entry.card_id_live = Some(card_id.to_owned());
             entry.latest_metadata.clone()
         };
+        // Phase C (Step 4.5.5): broadcast that this session is live so
+        // any other tab's picker greys out a "Resume last" row that
+        // points at it. Done outside the per-entry lock so the tugbank
+        // write doesn't extend the critical section.
+        self.live_sessions
+            .set_live(tug_session_id.as_str(), true);
 
         let _ =
             self.session_state_tx
@@ -1179,6 +1346,9 @@ impl AgentSupervisor {
             // about to be dropped; we only care that any Arc-clone holder
             // observes `Closed` on its next lock acquire.
             entry.spawn_state = SpawnState::Closed;
+            // Phase C (Step 4.5.5): release the live-card binding so a
+            // future resume from any card is allowed.
+            entry.card_id_live = None;
             entry.workspace_key.clone()
         };
 
@@ -1211,6 +1381,10 @@ impl AgentSupervisor {
         let _ =
             self.session_state_tx
                 .send(build_session_state_frame(tug_session_id, "closed", None));
+        // Phase C (Step 4.5.5): drop the session from the live broadcast
+        // so any picker waiting on this id can offer it for resume again.
+        self.live_sessions
+            .set_live(tug_session_id.as_str(), false);
     }
 
     /// Handle a `reset_session` CONTROL action.
@@ -1576,6 +1750,7 @@ impl AgentSupervisor {
             (entry.project_dir.clone(), entry.session_mode)
         };
         let sessions_recorder = self.sessions_recorder.clone();
+        let live_sessions = self.live_sessions.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1587,6 +1762,7 @@ impl AgentSupervisor {
                 project_dir,
                 session_mode,
                 sessions_recorder,
+                live_sessions,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -1721,6 +1897,17 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn remove(&self, _session_id: &str) {}
 }
 
+/// Minimal no-op [`LiveSessionsTracker`] for tests that don't care about
+/// the live broadcast. Production uses [`TugbankLiveSessionsTracker`].
+#[cfg(test)]
+pub(crate) struct NoopLiveSessionsTracker;
+
+#[cfg(test)]
+impl LiveSessionsTracker for NoopLiveSessionsTracker {
+    fn set_live(&self, _session_id: &str, _is_live: bool) {}
+    fn clear(&self) {}
+}
+
 /// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
 /// Gated on `#[cfg(test)]` so it is not compiled into production builds.
 #[cfg(test)]
@@ -1763,6 +1950,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         Arc::new(|| unreachable!("test_minimal_supervisor has no spawner"));
     let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
     let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
+    let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
     let registry = Arc::new(WorkspaceRegistry::new());
     let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
@@ -1772,6 +1960,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         control_tx,
         store,
         recorder,
+        live,
         factory,
         AgentSupervisorConfig::default(),
         registry,
@@ -2019,6 +2208,7 @@ mod tests {
         let registry = Arc::new(WorkspaceRegistry::new());
         let cancel = CancellationToken::new();
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
+        let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
@@ -2026,6 +2216,7 @@ mod tests {
             control_tx,
             store,
             recorder,
+            live,
             spawner_factory,
             config,
             registry,
@@ -2044,6 +2235,17 @@ mod tests {
             "card_id": card_id,
             "tug_session_id": tug_session_id,
             "project_dir": project_dir,
+        }))
+        .unwrap()
+    }
+
+    fn resume_payload(card_id: &str, tug_session_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "spawn_session",
+            "card_id": card_id,
+            "tug_session_id": tug_session_id,
+            "project_dir": test_project_dir(),
+            "session_mode": "resume",
         }))
         .unwrap()
     }
@@ -2202,6 +2404,55 @@ mod tests {
         let cs = sup.client_sessions.lock().await;
         let set = cs.get(&10).expect("client 10 has a session set");
         assert!(set.contains(&TugSessionId::new("sess-1")));
+    }
+
+    /// Step 4.5.5 Phase C: a `resume` payload for a session already
+    /// bound to a different card must be rejected with
+    /// `session_live_elsewhere` and broadcast `SESSION_STATE = errored`,
+    /// while same-card reconnects (Phase B's WS-drop-and-reconnect path)
+    /// still succeed.
+    #[tokio::test]
+    async fn test_spawn_session_rejects_resume_when_live_on_other_card() {
+        let store = Arc::new(InMemoryStore::default());
+        let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
+
+        // First spawn binds sess-1 to card-A. Drain the `pending` frame.
+        sup.handle_control("spawn_session", &spawn_payload("card-A", "sess-1"), 10)
+            .await
+            .unwrap();
+        let _pending = state_rx.try_recv().expect("pending state for first spawn");
+
+        // Second spawn from card-B with mode=resume on the same session
+        // id must be rejected, with an `errored{session_live_elsewhere}`
+        // SESSION_STATE broadcast.
+        let err = sup
+            .handle_control("spawn_session", &resume_payload("card-B", "sess-1"), 11)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "session_live_elsewhere"
+            }
+        );
+        let frame = state_rx.try_recv().expect("errored state for rejection");
+        let (id, state) = session_state_of(&frame);
+        assert_eq!(id, "sess-1");
+        assert_eq!(state, "errored");
+
+        // card-B's per-client affinity must NOT carry sess-1 (the
+        // rejection rolled back the insert). card-A's still does.
+        {
+            let cs = sup.client_sessions.lock().await;
+            assert!(cs.get(&11).map_or(true, |s| s.is_empty()));
+            assert!(cs.get(&10).unwrap().contains(&TugSessionId::new("sess-1")));
+        }
+
+        // Same-card reconnect (card-A again) must still succeed — Phase
+        // B's WS-drop-then-reconnect contract requires this.
+        sup.handle_control("spawn_session", &resume_payload("card-A", "sess-1"), 10)
+            .await
+            .expect("same-card reconnect must succeed");
     }
 
     #[tokio::test]
@@ -3555,6 +3806,7 @@ mod tests {
         let retry_delay = Duration::from_micros(100);
 
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
+        let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
         let a_handle = tokio::spawn(run_session_bridge(
             id_a.clone(),
             entry_a.clone(),
@@ -3565,6 +3817,7 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-a"),
             SessionMode::New,
             recorder.clone(),
+            live.clone(),
             cancel_a,
             retry_delay,
         ));
@@ -3578,6 +3831,7 @@ mod tests {
             PathBuf::from("/tmp/test-workspace-b"),
             SessionMode::New,
             recorder,
+            live,
             cancel_b.clone(),
             retry_delay,
         ));

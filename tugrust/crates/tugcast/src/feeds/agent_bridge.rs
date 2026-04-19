@@ -27,7 +27,7 @@ use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_supervisor::{
-    LedgerEntry, SessionsRecorder, SpawnState, build_session_state_frame,
+    LedgerEntry, LiveSessionsTracker, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 
@@ -415,6 +415,7 @@ pub async fn run_session_bridge(
     project_dir: PathBuf,
     session_mode: SessionMode,
     sessions_recorder: Arc<dyn SessionsRecorder>,
+    live_sessions: Arc<dyn LiveSessionsTracker>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -437,7 +438,11 @@ pub async fn run_session_bridge(
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
+                // Phase C (Step 4.5.5): release the live-card binding so a
+                // future resume from any card is allowed.
+                entry.card_id_live = None;
                 drop(entry);
+                live_sessions.set_live(tug_session_id.as_str(), false);
                 if !already_closed {
                     error!(session = %tug_session_id, "crash budget exhausted");
                     let _ = state_tx.send(build_session_state_frame(
@@ -525,7 +530,11 @@ pub async fn run_session_bridge(
                     entry.spawn_state = SpawnState::Errored;
                 }
                 entry.input_tx = None;
+                // Phase C (Step 4.5.5): release the live-card binding so a
+                // future resume from any card is allowed.
+                entry.card_id_live = None;
                 drop(entry);
+                live_sessions.set_live(tug_session_id.as_str(), false);
                 if !already_closed {
                     info!(
                         session = %tug_session_id,

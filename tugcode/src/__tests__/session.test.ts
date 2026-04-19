@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { ResumeFailedError, SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { ResumeFailedError, SessionManager, buildClaudeArgs, buildContentBlocks, expectedSessionJsonlPath, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { homedir } from "node:os";
 import type { EventMappingContext } from "../session.ts";
 
 // ---------------------------------------------------------------------------
@@ -1447,6 +1448,9 @@ describe("SessionManager behavioral", () => {
     const id = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, id, "resume");
+    // Override Phase C's pre-flight stat so the test exercises the spawn
+    // path without needing a real jsonl on disk.
+    (manager as any).existsSyncFn = () => true;
     const calls: Array<{ id: string | null; mode: string }> = [];
     (manager as any).spawnClaude = (
       sid: string | null,
@@ -1483,6 +1487,10 @@ describe("SessionManager behavioral", () => {
     const staleId = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, staleId, "resume");
+    // Override Phase C's pre-flight stat so we exercise the spawn-then-fail
+    // path (claude exits before system:init) rather than the missing-jsonl
+    // shortcut. The pre-flight has its own dedicated test below.
+    (manager as any).existsSyncFn = () => true;
     const calls: Array<{ id: string | null; mode: string }> = [];
     (manager as any).spawnClaude = (
       sid: string | null,
@@ -1518,6 +1526,38 @@ describe("SessionManager behavioral", () => {
     expect(caught).toBeInstanceOf(ResumeFailedError);
     expect((caught as ResumeFailedError).staleSessionId).toBe(staleId);
     expect((caught as ResumeFailedError).reason.length).toBeGreaterThan(0);
+  });
+
+  test("expectedSessionJsonlPath encodes the cwd by replacing '/' with '-'", () => {
+    const got = expectedSessionJsonlPath("/u/src/tugtool", "abc-123");
+    expect(got).toBe(`${homedir()}/.claude/projects/-u-src-tugtool/abc-123.jsonl`);
+  });
+
+  test("initialize() in 'resume' mode pre-flight rejects when claude session jsonl is missing (Phase C)", async () => {
+    const projectDir = `/tmp/init-missing-jsonl-${Date.now()}`;
+    const staleId = crypto.randomUUID();
+
+    const manager = new SessionManager(projectDir, staleId, "resume");
+    // Pre-flight stub: file does NOT exist.
+    (manager as any).existsSyncFn = () => false;
+    const calls: Array<{ id: string | null; mode: string }> = [];
+    (manager as any).spawnClaude = (sid: string | null, mode: string) => {
+      calls.push({ id: sid, mode });
+      throw new Error("spawnClaude must not run when pre-flight rejects");
+    };
+
+    let caught: unknown = null;
+    try {
+      await manager.initialize();
+    } catch (err) {
+      caught = err;
+    }
+
+    // Phase C: zero spawns; pre-flight short-circuited the resume.
+    expect(calls.length).toBe(0);
+    expect(caught).toBeInstanceOf(ResumeFailedError);
+    expect((caught as ResumeFailedError).staleSessionId).toBe(staleId);
+    expect((caught as ResumeFailedError).reason).toBe("missing_jsonl");
   });
 
   test("handlePermissionMode updates permissionManager state", () => {

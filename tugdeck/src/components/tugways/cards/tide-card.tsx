@@ -567,6 +567,43 @@ function readSessionsForProject(projectDir: string): SessionRecord[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * Read the `dev.tugtool.tide / live-sessions` set from the tugbank
+ * cache. Returns the set of session ids currently bound to a card on
+ * any tab/process talking to this tugcast. Tugcast maintains the set
+ * in-memory and broadcasts it via the DEFAULTS feed; tugcast clears
+ * it on startup so leftover ids from a prior process never leak.
+ *
+ * Step 4.5.5 Phase C: the picker uses this to grey out a "Resume last"
+ * row whose candidate id is already in use by another card. The
+ * supervisor-side `session_live_elsewhere` rejection is the safety
+ * net for any race where the picker's view is stale.
+ */
+function readLiveSessions(): Set<string> {
+  const out = new Set<string>();
+  const client = getTugbankClient();
+  if (!client) return out;
+  const entry = client.get("dev.tugtool.tide", "live-sessions");
+  if (!entry) return out;
+  let raw: unknown;
+  if (entry.kind === "json" && entry.value !== undefined) {
+    raw = entry.value;
+  } else if (entry.kind === "string" && typeof entry.value === "string") {
+    try {
+      raw = JSON.parse(entry.value);
+    } catch {
+      return out;
+    }
+  } else {
+    return out;
+  }
+  if (!Array.isArray(raw)) return out;
+  for (const id of raw) {
+    if (typeof id === "string" && id.length > 0) out.add(id);
+  }
+  return out;
+}
+
 function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -613,14 +650,26 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
     return candidates[0] ?? null;
   }, [path]);
 
+  // Phase C (Step 4.5.5): the candidate is "live elsewhere" when its
+  // id appears in the live-sessions broadcast from tugcast. Captured
+  // once on form mount — the picker is a short-lived sheet, so a
+  // tugbank-cache read is sufficient (no subscription needed). The
+  // wire-side `session_live_elsewhere` rejection in the supervisor
+  // is the safety net if our read is stale.
+  const [liveSessions] = useState<Set<string>>(() => readLiveSessions());
+  const candidateLiveElsewhere =
+    resumeCandidate !== null && liveSessions.has(resumeCandidate.sessionId);
+  const resumeDisabled = resumeCandidate === null || candidateLiveElsewhere;
+
   // Revert the selection to "new" if the user edits the path into a
-  // workspace with no resume candidate. Prevents a hidden radio from
-  // silently being the active choice on submit.
+  // workspace with no resume candidate (or where the candidate is
+  // live elsewhere). Prevents a hidden radio from silently being the
+  // active choice on submit.
   useLayoutEffect(() => {
-    if (resumeCandidate === null && sessionMode === "resume") {
+    if (resumeDisabled && sessionMode === "resume") {
       setSessionMode("new");
     }
-  }, [resumeCandidate, sessionMode]);
+  }, [resumeDisabled, sessionMode]);
 
   const submit = useCallback(() => {
     const trimmed = inputRef.current?.value.trim() ?? "";
@@ -722,7 +771,7 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
               </span>
             </span>
           </TugRadioItem>
-          <TugRadioItem value="resume" disabled={resumeCandidate === null}>
+          <TugRadioItem value="resume" disabled={resumeDisabled}>
             <span className="tide-card-picker-session-option">
               <span className="tide-card-picker-session-option-title">
                 Resume last session
@@ -733,7 +782,9 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
               >
                 {resumeCandidate === null
                   ? "No prior session for this path"
-                  : `Session ${resumeCandidate.sessionId.slice(0, 8)}…`}
+                  : candidateLiveElsewhere
+                    ? `Session ${resumeCandidate.sessionId.slice(0, 8)}… is open in another card`
+                    : `Session ${resumeCandidate.sessionId.slice(0, 8)}…`}
               </span>
             </span>
           </TugRadioItem>
