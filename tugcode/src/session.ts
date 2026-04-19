@@ -26,38 +26,7 @@ import type {
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
-import { existsSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
-
-// ---------------------------------------------------------------------------
-// Pre-flight: expected claude session jsonl path
-// ---------------------------------------------------------------------------
-
-/**
- * Expected on-disk path of claude's session jsonl for `(projectDir,
- * sessionId)`. claude writes sessions to
- * `~/.claude/projects/<encoded-cwd>/<id>.jsonl` where the encoding
- * replaces every `/` in the absolute cwd with `-` (e.g. `/u/src/tugtool`
- * → `-u-src-tugtool`).
- *
- * Pure helper so unit tests can assert the encoding without touching
- * the filesystem. Exported for tests.
- *
- * tugcode stats this path before invoking `claude --resume <id>` so
- * a missing jsonl fails the resume in a millisecond instead of
- * waiting ~5s for claude to give up. Defense in depth — the
- * supervisor's `session_live_elsewhere` check catches the
- * concurrent-binding case; this catches the deleted-jsonl case.
- */
-export function expectedSessionJsonlPath(projectDir: string, sessionId: string): string {
-  // Honor `CLAUDE_CONFIG_DIR` so users with a non-default claude
-  // config don't false-positive the pre-flight as missing.
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
-  const encoded = projectDir.replace(/\//g, "-");
-  return join(configDir, "projects", encoded, `${sessionId}.jsonl`);
-}
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -733,30 +702,6 @@ export class SessionManager {
    */
   private lastResumeFailureReason: string | null = null;
 
-  /**
-   * Filesystem check used by the resume pre-flight to decide whether
-   * the expected claude session jsonl exists. Tests override via
-   * `setExistsSyncForTest` so they can exercise the spawn path
-   * without a real file on disk and the missing-file path without
-   * touching the filesystem at all.
-   */
-  private _existsSync: (path: string) => boolean = (p) => {
-    try {
-      return existsSync(p) && statSync(p).isFile();
-    } catch {
-      return false;
-    }
-  };
-
-  /**
-   * Test seam — install a deterministic file-existence check so
-   * resume pre-flight tests don't depend on the actual filesystem.
-   * @internal
-   */
-  setExistsSyncForTest(fn: (path: string) => boolean): void {
-    this._existsSync = fn;
-  }
-
   constructor(
     projectDir: string,
     sessionId: string,
@@ -1038,31 +983,15 @@ export class SessionManager {
   private async attemptResumeSpawn(resumeId: string): Promise<boolean> {
     this.lastResumeFailureReason = null;
 
-    // Pre-flight: if the expected session jsonl is missing, fail the
-    // resume immediately rather than spending ~5s waiting for claude
-    // to exit. The bridge's terminal `ResumeFailed` outcome takes over
-    // from here. Tests install a stub file-existence check via
-    // `setExistsSyncForTest`; production reads the real filesystem.
-    const jsonlPath = expectedSessionJsonlPath(this.projectDir, resumeId);
-    if (!this._existsSync(jsonlPath)) {
-      const reason = "missing_jsonl";
-      this.lastResumeFailureReason = reason;
-      console.log(
-        `Pre-flight: claude session jsonl missing at ${jsonlPath}; failing resume`,
-      );
-      logSessionLifecycle("tugcode.resume_failed", {
-        stale_session_id: resumeId,
-        reason,
-        jsonl_path: jsonlPath,
-      });
-      writeLine({
-        type: "resume_failed",
-        reason,
-        stale_session_id: resumeId,
-        ipc_version: 2,
-      });
-      return false;
-    }
+    // No pre-flight stat. An earlier version checked
+    // `~/.claude/projects/<encoded-cwd>/<id>.jsonl` to fail fast on a
+    // missing jsonl, but the encoding has to match claude's exact
+    // canonicalization rules (it resolves cwd via the OS, including
+    // macOS firmlinks like /u → /Users/.../Mounts/u). Mismatching the
+    // encoding silently turned every successful resume into a
+    // false-positive `missing_jsonl` failure. Letting claude do its
+    // own check is the simple correct thing — the bridge's terminal
+    // `ResumeFailed` outcome cleanly handles whatever claude reports.
 
     const RESUME_INIT_TIMEOUT_MS = 10_000;
 

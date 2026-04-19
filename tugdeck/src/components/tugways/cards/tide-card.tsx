@@ -41,32 +41,26 @@ import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
-import { CodeSessionStore } from "@/lib/code-session-store";
+import type { CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
-import { FileTreeStore } from "@/lib/filetree-store";
-import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
-import { EditorSettingsStore } from "@/lib/editor-settings-store";
-import { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { EditorSettingsStore } from "@/lib/editor-settings-store";
+import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
-import { presentWorkspaceKey, registerCard } from "@/card-registry";
+import { registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
-import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
 import {
   cardSessionBindingStore,
-  type CardSessionBinding,
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
-import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
+import { sendSpawnSession } from "@/lib/session-lifecycle";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
+import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { useTideCardObserver } from "./use-tide-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
-import {
-  insertTideRecentProject,
-  putTideRecentProjects,
-  readTideRecentProjects,
-} from "@/settings-api";
+import { useTugbankValue } from "@/lib/use-tugbank-value";
+import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 
 import "./tide-card.css";
@@ -184,48 +178,22 @@ export interface TideCardServices {
   entryDelegateRef: RefObject<TugPromptEntryDelegate | null>;
 }
 
-interface InternalServices {
-  codeSessionStore: CodeSessionStore;
-  editorStore: EditorSettingsStore;
-  sessionMetadataStack: {
-    feedStore: FeedStore;
-    store: SessionMetadataStore;
-  };
-  fileTreeStack: {
-    feedStore: FeedStore;
-    fileTreeStore: FileTreeStore;
-    provider: CompletionProvider;
-  } | null;
-}
-
 export function useTideCardServices(cardId: string): TideCardServices | null {
-  // Subscribe to the per-card binding. `binding` drives the services
-  // lifecycle: services construct when a binding appears, tear down
-  // when it clears.
+  // Read services from the module-scope `cardServicesStore` via
+  // `useSyncExternalStore` ([L02]). The store handles all lifecycle:
+  // it subscribes to `cardSessionBindingStore` and constructs/disposes
+  // services in response to binding events. React only reads.
   //
-  // The construction effect below depends on `binding?.tugSessionId`,
-  // not on the binding *object*. Mutations to other binding fields
-  // (e.g. claudeSessionId arriving on session_init) replace the
-  // store's map by design — depending on the object identity would
-  // tear services down on every field update, send a close_session
-  // frame, and remount the picker mid-conversation.
-  const binding = useSyncExternalStore<CardSessionBinding | null>(
-    cardSessionBindingStore.subscribe,
-    useCallback(() => cardSessionBindingStore.getBinding(cardId) ?? null, [cardId]),
-  );
-  const bindingTugSessionId = binding?.tugSessionId ?? null;
-
-  const workspaceKey = useCardWorkspaceKey(cardId);
-  const workspaceFilter: FeedStoreFilter = useMemo(
-    () =>
-      workspaceKey
-        ? (_feedId, decoded) =>
-            typeof decoded === "object" &&
-            decoded !== null &&
-            "workspace_key" in decoded &&
-            (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
-        : presentWorkspaceKey,
-    [workspaceKey],
+  // Earlier this hook stored services in `useState` and populated them
+  // via `useLayoutEffect` keyed on the binding. That violated [L02]
+  // and produced a class of bugs where any React-side dep change tore
+  // services down, sent a stray `close_session` frame, and remounted
+  // the picker mid-conversation. The wire close is now sent only by
+  // explicit `cardServicesStore.closeCard(cardId)` calls from the
+  // deck-canvas's user-close handler.
+  const services = useSyncExternalStore<CardServices | null>(
+    cardServicesStore.subscribe,
+    useCallback(() => cardServicesStore.getServices(cardId), [cardId]),
   );
 
   // True ref: the delegate instance arrives after the child
@@ -234,153 +202,20 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
   // the same identity the component passes to `<TugPromptEntry ref>`.
   const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
 
-  // Filter changes are captured via a ref so the construction effect
-  // below depends only on binding identity, not on filter identity —
-  // workspace-key flips must not tear services down. The ref is
-  // updated in a layout pass before the propagation effect reads it.
-  const workspaceFilterRef = useRef(workspaceFilter);
-  useLayoutEffect(() => {
-    workspaceFilterRef.current = workspaceFilter;
-  }, [workspaceFilter]);
-
-  // Services are held in React state so renders reflect lifecycle
-  // transitions (null → ready → null).
-  const [services, setServices] = useState<InternalServices | null>(null);
-
-  // Construct services when a binding appears; dispose when it clears
-  // or the card unmounts. `CodeSessionStore` is backed by the live
-  // `TugConnection`, bound to the session id the supervisor echoed in
-  // the `spawn_session_ok` ack. `PromptHistoryStore` is the
-  // module-scoped singleton (`getTidePromptHistoryStore`), shared
-  // across cards; it is read in the services-return memo below, not
-  // constructed here.
-  useLayoutEffect(() => {
-    if (bindingTugSessionId === null) {
-      setServices(null);
-      return;
-    }
-    // Read the live binding inside the effect so we capture whatever
-    // shape the store currently holds. Subsequent in-place updates
-    // (claudeSessionId, etc.) flow through the store's listeners but
-    // do not re-run this effect; consumers that need those updates
-    // observe the store directly.
-    const liveBinding = cardSessionBindingStore.getBinding(cardId);
-    if (!liveBinding) {
-      setServices(null);
-      return;
-    }
-    const connection = getConnection();
-    if (!connection) {
-      console.warn("useTideCardServices: connection not available when binding appeared");
-      return;
-    }
-    const codeSessionStore = new CodeSessionStore({
-      conn: connection,
-      tugSessionId: liveBinding.tugSessionId,
-    });
-    const editorStore = new EditorSettingsStore();
-    // No workspace filter on the SESSION_METADATA feed: the payload
-    // is Claude's raw `system_metadata` event
-    // (`{"type":"system_metadata","session_id":...,"slash_commands":...}`)
-    // and carries neither `workspace_key` nor `tug_session_id`.
-    // Applying the workspace filter here drops every frame and leaves
-    // the completion popup empty. Single-session-mode (sub-step 4h)
-    // enforces one active Tide session at a time, so the unfiltered
-    // broadcast reaches only this card. Post-P2 multi-session will
-    // need per-session routing on the tugcast side.
-    const sessionMetadataFeedStore = new FeedStore(
-      connection,
-      [FeedId.SESSION_METADATA],
-    );
-    const sessionMetadataStack: InternalServices["sessionMetadataStack"] = {
-      feedStore: sessionMetadataFeedStore,
-      store: new SessionMetadataStore(sessionMetadataFeedStore, FeedId.SESSION_METADATA),
-    };
-    const fileTreeFeedStore = new FeedStore(
-      connection,
-      [FeedId.FILETREE],
-      undefined,
-      workspaceFilterRef.current,
-    );
-    const fileTreeStore = new FileTreeStore(fileTreeFeedStore, FeedId.FILETREE);
-    const fileTreeStack: InternalServices["fileTreeStack"] = {
-      feedStore: fileTreeFeedStore,
-      fileTreeStore,
-      provider: fileTreeStore.getFileCompletionProvider(),
-    };
-    const next: InternalServices = {
-      codeSessionStore,
-      editorStore,
-      sessionMetadataStack,
-      fileTreeStack,
-    };
-    setServices(next);
-
-    // Bind success → prepend this card's project path to the tide
-    // recent-projects list (dedup, cap). The path is the *same*
-    // identifier tugcode keys its session-id persistence by, so the
-    // picker's next resume lookup can read `session-id-by-workspace`
-    // with the typed path directly — no translation table, no drift.
-    const tugbank = getTugbankClient();
-    if (tugbank) {
-      const current = readTideRecentProjects(tugbank);
-      const updated = insertTideRecentProject(current, liveBinding.projectDir);
-      if (updated[0] !== current[0] || updated.length !== current.length) {
-        putTideRecentProjects(updated);
-      }
-    }
-
-    return () => {
-      // Close the supervisor-side session before disposing local
-      // stores: server-side resource release first, subscription
-      // teardown second. Skip when the binding was already cleared
-      // externally (e.g., another caller invoked `sendCloseSession`
-      // for this card) — that path already sent the frame and
-      // cleared the binding, so re-sending would leak a duplicate
-      // close to the supervisor.
-      const stillBound = cardSessionBindingStore.getBinding(cardId);
-      if (stillBound !== undefined) {
-        const conn = getConnection();
-        if (conn) sendCloseSession(conn, cardId, stillBound.tugSessionId);
-      }
-      next.codeSessionStore.dispose();
-      next.sessionMetadataStack.store.dispose();
-      next.sessionMetadataStack.feedStore.dispose();
-      if (next.fileTreeStack) {
-        next.fileTreeStack.fileTreeStore.dispose();
-        next.fileTreeStack.feedStore.dispose();
-      }
-      setServices(null);
-    };
-  }, [bindingTugSessionId, cardId]);
-
-  // Propagate workspace-filter changes to the FILETREE feed store.
-  // SESSION_METADATA does not carry `workspace_key` on the wire, so
-  // it is constructed unfiltered and stays unfiltered — see the
-  // construction effect above.
-  useLayoutEffect(() => {
-    services?.fileTreeStack?.feedStore.setFilter(workspaceFilter);
-  }, [services, workspaceFilter]);
-
   // Completion providers. Null-safe on `services` so this can be
   // memoized unconditionally (rules of hooks); the caller only reads
-  // it when `services` is non-null.
-  //
-  //   `@`: live `FileTreeStore` against the real connection. Falls
-  //        back to `EMPTY_FILE_COMPLETION_PROVIDER` when the
-  //        connection was null at first render so the trigger stays
-  //        wired regardless of timing.
-  //
-  //   `/`: per-card live `SessionMetadataStore` against
-  //        `FeedId.SESSION_METADATA`, wrapped with the position-0
-  //        gate so `/` mid-text yields an empty popup.
+  // it when `services` is non-null. The `@` provider falls back to
+  // an empty stable closure when services aren't ready, so the
+  // trigger stays wired regardless of timing. The `/` provider is
+  // wrapped with the position-0 gate so `/` mid-text yields an empty
+  // popup.
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
-      "@": services?.fileTreeStack?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      "@": services?.fileCompletionProvider ?? EMPTY_FILE_COMPLETION_PROVIDER,
       "/": services
         ? wrapPositionZero(
             entryDelegateRef,
-            services.sessionMetadataStack.store.getCommandCompletionProvider(),
+            services.sessionMetadataStore.getCommandCompletionProvider(),
           )
         : EMPTY_FILE_COMPLETION_PROVIDER,
     }),
@@ -391,7 +226,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     if (services === null) return null;
     return {
       codeSessionStore: services.codeSessionStore,
-      sessionMetadataStore: services.sessionMetadataStack.store,
+      sessionMetadataStore: services.sessionMetadataStore,
       historyStore: getTidePromptHistoryStore(),
       completionProviders,
       editorStore: services.editorStore,
@@ -535,22 +370,17 @@ interface SessionRecord {
 }
 
 /**
- * Read the `dev.tugtool.tide / sessions` map synchronously from the
- * tugbank cache. Each entry is `{projectDir, createdAt}` keyed by the
- * session id (the single identifier claude uses as its own session id
- * and tugcast uses for feed routing).
+ * Pure parser for the `dev.tugtool.tide / sessions` tagged-value entry.
+ * Each entry is `{projectDir, createdAt}` keyed by the session id (the
+ * single identifier claude uses as its own session id and tugcast
+ * uses for feed routing). Returns `[]` for unset / malformed records.
  *
- * Returns `[]` for unset / malformed records. Parsing failures degrade
- * gracefully to "no known sessions" rather than blocking the picker.
+ * tugcode historically persisted the map as a JSON-stringified value
+ * under `kind: "string"`; current writes go through tugbank as
+ * `kind: "json"`. Both shapes are accepted.
  */
-function readAllSessions(): SessionRecord[] {
-  const client = getTugbankClient();
-  if (!client) return [];
-  const entry = client.get("dev.tugtool.tide", "sessions");
+function parseAllSessions(entry: TaggedValue | undefined): SessionRecord[] {
   if (!entry) return [];
-  // tugcode persists the map as a JSON *string* via `tb.set(domain, key,
-  // JSON.stringify(map))` — tugbank writes those through as `kind: "json"`
-  // with the parsed value, or (for older / raw writes) `kind: "string"`.
   let map: unknown;
   if (entry.kind === "json" && entry.value !== undefined) {
     map = entry.value;
@@ -580,19 +410,8 @@ function readAllSessions(): SessionRecord[] {
 }
 
 /**
- * Resume candidates for `projectDir`, newest first. The picker's
- * "Resume last session" row points at the head of this list; future
- * multi-session UX can surface the whole list.
- */
-function readSessionsForProject(projectDir: string): SessionRecord[] {
-  return readAllSessions()
-    .filter((r) => r.projectDir === projectDir)
-    .sort((a, b) => b.createdAt - a.createdAt);
-}
-
-/**
- * Read the `dev.tugtool.tide / live-sessions` set from the tugbank
- * cache. Returns the set of session ids currently bound to a card on
+ * Pure parser for the `dev.tugtool.tide / live-sessions` tagged-value
+ * entry. Returns the set of session ids currently bound to a card on
  * any tab/process talking to this tugcast. Tugcast maintains the set
  * in-memory and broadcasts it via the DEFAULTS feed; tugcast clears
  * it on startup so leftover ids from a prior process never leak.
@@ -602,11 +421,8 @@ function readSessionsForProject(projectDir: string): SessionRecord[] {
  * `session_live_elsewhere` rejection is the safety net for any
  * race where the picker's view is stale.
  */
-function readLiveSessions(): Set<string> {
+function parseLiveSessions(entry: TaggedValue | undefined): Set<string> {
   const out = new Set<string>();
-  const client = getTugbankClient();
-  if (!client) return out;
-  const entry = client.get("dev.tugtool.tide", "live-sessions");
   if (!entry) return out;
   let raw: unknown;
   if (entry.kind === "json" && entry.value !== undefined) {
@@ -627,19 +443,53 @@ function readLiveSessions(): Set<string> {
   return out;
 }
 
+/**
+ * Pure parser for the `dev.tugtool.tide / recent-projects` tagged-value
+ * entry. Mirrors `readTideRecentProjects` in shape — split out so the
+ * picker can subscribe to live updates via `useTugbankValue` instead of
+ * reading once into `useState` (an L02 violation when external state
+ * is copied into React state, even via a lazy initial value).
+ */
+function parseRecents(entry: TaggedValue | undefined): string[] {
+  if (!entry || entry.kind !== "json" || entry.value === undefined) return [];
+  const raw = entry.value as { paths?: unknown } | null;
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.paths)) return [];
+  return raw.paths.filter((p): p is string => typeof p === "string" && p.length > 0);
+}
+
+/** Stable `[]` reference — useTugbankValue's `fallback` must be reference-stable. */
+const EMPTY_STRING_ARRAY: ReadonlyArray<string> = [];
+/** Stable empty `Set<string>` — same rationale. */
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
+/** Stable empty `SessionRecord[]` reference. */
+const EMPTY_SESSION_RECORDS: ReadonlyArray<SessionRecord> = [];
+
 function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Recent projects are loaded once when the form mounts. The list is
-  // short-lived UI (the sheet disappears on submit/cancel), so a
-  // tugbank-cache read on mount is sufficient — no subscription
-  // needed. A stale list is OK: whoever bound most recently wrote it,
-  // and the worst case is that a path added between mount and first
-  // render is missing for this single picker session.
-  const [recents] = useState<string[]>(() => {
-    const client = getTugbankClient();
-    return client ? readTideRecentProjects(client) : [];
-  });
+  // External state from tugbank reaches React via `useSyncExternalStore`
+  // (per [L02]). The hooks below subscribe to the matching domain and
+  // re-render on update. The picker is a short-lived sheet so live
+  // updates rarely matter in practice, but a one-shot `useState` read
+  // would copy external state into React state and violate L02.
+  const recents = useTugbankValue(
+    "dev.tugtool.tide",
+    "recent-projects",
+    parseRecents,
+    EMPTY_STRING_ARRAY as string[],
+  );
+  const allSessions = useTugbankValue(
+    "dev.tugtool.tide",
+    "sessions",
+    parseAllSessions,
+    EMPTY_SESSION_RECORDS as SessionRecord[],
+  );
+  const liveSessions = useTugbankValue(
+    "dev.tugtool.tide",
+    "live-sessions",
+    parseLiveSessions,
+    EMPTY_STRING_SET as Set<string>,
+  );
 
   // Live path state drives the resume-option visibility. The input
   // is controlled; recents clicks call setPath so every path flows
@@ -666,20 +516,22 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
   // the sessions map. The picker presents the newest session's id on
   // the "Resume last session" row; the picker's Open handler forwards
   // it as-is on `spawn_session`. No per-card identifier translation.
+  // Derives from `allSessions` (which is itself a `useSyncExternalStore`
+  // value) so a fresh sessions write while the picker is open updates
+  // the resume row without re-reading the tugbank cache here.
   const resumeCandidate = useMemo<SessionRecord | null>(() => {
     const trimmed = path.trim();
     if (trimmed.length === 0) return null;
-    const candidates = readSessionsForProject(trimmed);
+    const candidates = allSessions
+      .filter((r) => r.projectDir === trimmed)
+      .sort((a, b) => b.createdAt - a.createdAt);
     return candidates[0] ?? null;
-  }, [path]);
+  }, [path, allSessions]);
 
   // The candidate is "live elsewhere" when its id appears in the
-  // live-sessions broadcast from tugcast. Captured once on form
-  // mount — the picker is a short-lived sheet, so a tugbank-cache
-  // read is sufficient (no subscription needed). The wire-side
+  // live-sessions broadcast from tugcast. The wire-side
   // `session_live_elsewhere` rejection in the supervisor is the
   // safety net if our read is stale.
-  const [liveSessions] = useState<Set<string>>(() => readLiveSessions());
   const candidateLiveElsewhere =
     resumeCandidate !== null && liveSessions.has(resumeCandidate.sessionId);
   const resumeDisabled = resumeCandidate === null || candidateLiveElsewhere;

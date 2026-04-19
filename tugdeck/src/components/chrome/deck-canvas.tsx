@@ -431,6 +431,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           if (galleryCardIdRef.current === cardState.id) {
             galleryCardIdRef.current = null;
           }
+          // Card-type-agnostic per [L10]: tell the deck to remove the
+          // card. Per-card-type cleanup (e.g. tide's `close_session`
+          // wire frame) is wired at module scope in `main.tsx` —
+          // CardServicesStore subscribes to deck-manager and reacts
+          // to card-removal transitions on its own.
           store.handleCardClosed(cardState.id);
         };
 

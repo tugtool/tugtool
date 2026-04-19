@@ -190,7 +190,8 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(queryByTestId("tide-card")).toBeNull();
   });
 
-  it("T-TIDE-05: card unmount sends a close_session frame and clears the binding", () => {
+  it("T-TIDE-05: card-removal triggers close_session via the cardServicesStore deck-manager subscription", async () => {
+    const { cardServicesStore } = await import("../lib/card-services-store");
     const rtl = renderTideCard(CARD_ID);
 
     act(() => {
@@ -199,12 +200,16 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(rtl.queryByTestId("tide-card")).not.toBeNull();
     expect(cardSessionBindingStore.getBinding(CARD_ID)).not.toBeUndefined();
 
-    // Reset sent-frame log — mount + bind don't send frames on their
-    // own, but any prior test residue should be ignored.
+    // Mount + bind don't send frames on their own. The wire close
+    // fires when the deck removes the card. In production
+    // `cardServicesStore.attachDeckManager(deck)` (in main.tsx) wires
+    // the deck-manager subscription that triggers close on
+    // present→absent transitions; here we exercise the underlying
+    // close path directly via the test seam.
     sentFrames.length = 0;
 
     act(() => {
-      rtl.unmount();
+      cardServicesStore.closeCardForTest(CARD_ID);
     });
 
     expect(sentFrames.length).toBe(1);
@@ -219,6 +224,28 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(payload.card_id).toBe(CARD_ID);
     expect(payload.tug_session_id).toBe("sess-4b-1");
     expect(cardSessionBindingStore.getBinding(CARD_ID)).toBeUndefined();
+
+    rtl.unmount();
+  });
+
+  it("T-TIDE-05b: bare unmount does NOT send a close_session frame", () => {
+    const rtl = renderTideCard(CARD_ID);
+
+    act(() => {
+      cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
+    });
+    expect(rtl.queryByTestId("tide-card")).not.toBeNull();
+
+    sentFrames.length = 0;
+
+    act(() => {
+      rtl.unmount();
+    });
+
+    // No frame on bare unmount. The binding remains in the store
+    // (cleanup is the deck-canvas user-close path's responsibility).
+    expect(sentFrames.length).toBe(0);
+    cardSessionBindingStore.clearBinding(CARD_ID);
   });
 
   it("T-TIDE-RESUME-06: a recent-project button fills the path input without sending a frame (4.5 regression from 4m)", () => {

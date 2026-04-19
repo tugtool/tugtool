@@ -45,10 +45,17 @@ export interface HistoryEntry {
 
 /**
  * Lightweight snapshot of PromptHistoryStore state for useSyncExternalStore.
+ *
+ * Only `totalEntries` is exposed. An earlier shape included `sessionEntries`
+ * (count for `_lastActiveSessionId`), but that field's semantic meaning could
+ * change without bumping `_version` (because `createRouteProvider` /
+ * `createProvider` mutated `_lastActiveSessionId` without bumping). Snapshot
+ * reference must change when observed state changes; keeping the field
+ * created a stale-snapshot footgun. The `_lastActiveSessionId` field still
+ * exists internally for non-snapshot paths.
  */
 export interface PromptHistorySnapshot {
   totalEntries: number;
-  sessionEntries: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -233,11 +240,7 @@ export class PromptHistoryStore {
     for (const entries of this._sessions.values()) {
       total += entries.length;
     }
-    const sessionEntries =
-      this._lastActiveSessionId !== null
-        ? (this._sessions.get(this._lastActiveSessionId)?.length ?? 0)
-        : 0;
-    const snap: PromptHistorySnapshot = { totalEntries: total, sessionEntries };
+    const snap: PromptHistorySnapshot = { totalEntries: total };
     this._cachedSnapshot = snap;
     this._cachedSnapshotVersion = this._version;
     return snap;
@@ -324,10 +327,10 @@ export class PromptHistoryStore {
           this._sessions.set(sessionId, capped);
         }
         this._loadedSessions.add(sessionId);
-        if (entries.length > 0) {
-          this._version++;
-          this._notifyListeners();
-        }
+        // Bump on every successful load completion so observers can
+        // see "loaded but empty" as a real transition, not a no-op.
+        this._version++;
+        this._notifyListeners();
       } catch {
         // Don't mark loaded on error — a future createProvider call
         // will try again. The in-memory state survives.

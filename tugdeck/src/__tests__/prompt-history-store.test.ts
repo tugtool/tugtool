@@ -75,7 +75,6 @@ describe("PromptHistoryStore.push", () => {
 
     expect(notifications).toBe(1);
     expect(store.getSnapshot().totalEntries).toBe(1);
-    expect(store.getSnapshot().sessionEntries).toBe(1);
 
     unsub();
   });
@@ -91,16 +90,19 @@ describe("PromptHistoryStore.push", () => {
     expect(store.getSnapshot().totalEntries).toBe(3);
   });
 
-  test("getSnapshot().sessionEntries tracks most recently active session", async () => {
+  test("getSnapshot returns a reference-stable value until state changes", async () => {
     globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-1", "a"));
-    store.push(makeEntry("sess-1", "b"));
-    store.push(makeEntry("sess-2", "c"));
+    const snap1 = store.getSnapshot();
+    const snap2 = store.getSnapshot();
+    expect(snap2).toBe(snap1);
 
-    // After pushing to sess-2, sessionEntries reflects sess-2.
-    expect(store.getSnapshot().sessionEntries).toBe(1);
+    store.push(makeEntry("sess-1", "b"));
+    const snap3 = store.getSnapshot();
+    expect(snap3).not.toBe(snap1);
+    expect(snap3.totalEntries).toBe(2);
   });
 });
 
@@ -126,7 +128,6 @@ describe("PromptHistoryStore capacity cap", () => {
     }
 
     // Only 200 entries should remain.
-    expect(store.getSnapshot().sessionEntries).toBe(200);
     expect(store.getSnapshot().totalEntries).toBe(200);
 
     // The provider should return the most recent 200 (last pushed = entry-200).

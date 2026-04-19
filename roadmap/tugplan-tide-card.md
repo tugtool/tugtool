@@ -17,7 +17,7 @@ This plan also rides with [T3.0.W3.b](./tide.md#t3-workspace-registry-w3b): boot
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-04-18 |
+| Last updated | 2026-04-19 |
 | Roadmap anchor | [tide.md §T3.4.c](./tide.md#t3-4-c-tide-card) |
 
 ---
@@ -669,6 +669,138 @@ The plumbing on the tugcast and tugdeck sides is correct after 4.5; the failure 
 **Tradeoff (the redirectable one):**
 
 The largest design call is **B vs. keep silent fallback**. B is correct: the user's intent is honored or the failure is surfaced. The current silent fallback "always succeeds" but loses intent and produces the bug class this step exists to address. **B is the chosen direction** (decided 2026-04-18); record any reversal here with the rationale.
+
+#### Step 4.5.6 — Post-implementation audit: pre-flight removal, services-store refactor, and tuglaws compliance {#step-4-5-6}
+
+**Purpose:** [4.5.5](#step-4-5-5) shipped Phases A–E and was audited at the end. The audit caught real issues; the fixup commit addressed most. Manual retesting then exposed a bug class I had introduced and missed: the picker reappeared mid-conversation after a successful submit, and resume of a saved session never restored history. This step documents the root causes, the architectural fix, the surviving smaller items, and what to verify before declaring 4.5.5 truly closed.
+
+**Root causes (in the order they were found):**
+
+1. **L02 violation in `useTideCardServices`.** The hook stored `services` in `useState<services>` and populated it via a `useLayoutEffect` keyed on the binding. Per [L02] (External state enters React through `useSyncExternalStore` only — no `useEffect` copying external values into React state), this is a direct violation. The symptom was a class of bugs where any binding-field update (Phase D's `bindClaudeSessionId` was the immediate trigger, but anything that mutated the binding object would do it) would tear services down, send a stray `close_session` frame to the supervisor, and remount the picker mid-conversation. Every workaround I tried — depending on `bindingTugSessionId` instead of the binding object, reading `liveBinding` inside the effect, narrowing dependency arrays — was a patch around the same broken architecture.
+
+2. **Wrong path encoding in tugcode's resume pre-flight.** The pre-flight stat in `attemptResumeSpawn` checked `~/.claude/projects/<encoded-projectDir>/<sessionId>.jsonl` where `encoded` replaced `/` with `-`. claude itself uses the *resolved* canonical cwd (which on macOS resolves firmlinks like `/u → /Users/kocienda/Mounts/u`), so the actual file lives at `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/<id>.jsonl` while the pre-flight stats `~/.claude/projects/-u-src-tugtool/<id>.jsonl`. Every resume on this machine silently failed with `missing_jsonl` before claude was ever invoked, and the bridge promoted the EOF to `RelayOutcome::ResumeFailed`. The "defense in depth" optimization defended against nothing and broke the only thing that mattered.
+
+3. **`PromptHistoryStore._lastActiveSessionId` written without a `_version` bump (mild).** `createRouteProvider` writes `_lastActiveSessionId` but does not bump `_version`. The cached snapshot's `sessionEntries` field can read stale. No consumer reads `sessionEntries` today, so this is a footgun rather than a live bug. Fix or document.
+
+4. **`PromptHistoryStore.loadSession` only notifies on non-empty entries (mild).** A 404 result marks `_loadedSessions.add(X)` but does not bump `_version` or notify. Anyone relying on "load completed" as a notification is silently missed. No consumer cares today; the route providers read `_sessions` directly.
+
+5. **Integration tests' hand-mirror of `useTideCardObserver` (smell).** `session-chain.integration.test.ts::installCardObserver` duplicates the production observer body. Now that `use-tide-card-observer.ts` exists as a standalone module, the mirror should be replaced with the real hook (or the test pattern reshaped to drive through React Testing Library).
+
+**Architectural fix (the real one):**
+
+- **`CardServicesStore`** (new, `tugdeck/src/lib/card-services-store.ts`): module-scope owner of per-card service bags. Subscribes to `cardSessionBindingStore` *once* at module init. On `_reconcile`, constructs services for new bindings and disposes services for vanished bindings. React reads the resulting map via `useSyncExternalStore` ([L02]) — services have a stable identity across React re-renders for the lifetime of the binding.
+- **`useTideCardServices`** is now a thin reader: `useSyncExternalStore(cardServicesStore.subscribe, () => cardServicesStore.getServices(cardId))`. No `useState`, no `useLayoutEffect` copying external state. L02-compliant.
+- **Wire `close_session` is now explicit.** The cleanup in `useTideCardServices` no longer sends close. The wire frame is sent only by `cardServicesStore.closeCard(cardId)`, called from the deck-canvas's user-close handler before `store.handleCardClosed(cardId)`. Bare React unmount (parent re-render, dep change, reconcile) does NOT send close. The session lives until the user explicitly closes the card or the bridge tears down via `resume_failed`.
+- **Reference stability is structural.** When `bindClaudeSessionId` mutates the binding (creating a new map entry), `cardSessionBindingStore` notifies, `_reconcile` runs, but the `cardId` is still in both `bindings` and `_services` → no construct, no dispose, no React notification. Services keep their identity across binding-field updates. The cleanup that was sending the spurious close on every binding mutation is gone — there is no React-effect cleanup for services anymore.
+
+**Pre-flight removal:**
+
+- `expectedSessionJsonlPath`, `_existsSync`, and `setExistsSyncForTest` removed from `tugcode/src/session.ts`. `attemptResumeSpawn` now goes straight to `spawnClaude(resumeId, "resume")` without a stat check. Claude does its own check — a missing or unreadable jsonl makes claude exit before `system:init`, the bridge captures the resume failure, and the existing `RelayOutcome::ResumeFailed` path takes it terminally. Same end-to-end behavior, no false positives.
+- The two tugcode tests that exercised the pre-flight (`expectedSessionJsonlPath encodes the cwd by replacing '/' with '-'` and `initialize() in 'resume' mode pre-flight rejects when claude session jsonl is missing`) are deleted. The two tests that opted out of the pre-flight via `setExistsSyncForTest(() => true)` no longer need to.
+
+**Files touched (for reference):**
+
+- `tugdeck/src/lib/card-services-store.ts` (new)
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (gut `useTideCardServices`; remove unused imports)
+- `tugdeck/src/components/tugways/cards/use-tide-card-observer.ts` (extracted in fixup commit; unchanged here)
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (wire `cardServicesStore.closeCard(cardId)` before `store.handleCardClosed(cardId)`)
+- `tugdeck/src/__tests__/tide-card.test.tsx` (rewrite `T-TIDE-05` for explicit close; add `T-TIDE-05b` pinning that bare unmount does NOT send close)
+- `tugcode/src/session.ts` (remove pre-flight + helpers)
+- `tugcode/src/__tests__/session.test.ts` (drop pre-flight tests; remove `setExistsSyncForTest` calls)
+
+**Tradeoffs and explicit decisions:**
+
+- **No pre-flight = ~5s wait on a genuinely-missing jsonl** (claude has to exit). Acceptable: the case is rare (user manually deleted `~/.claude/projects/...`), and the bridge's `RelayOutcome::ResumeFailed` cleanly handles it. Optimizing this back later requires either (a) passing the supervisor's canonical `workspace_key` into tugcode so the encoding matches claude's, or (b) calling `realpath` inside tugcode. (a) is cleaner; defer until a user actually complains about the wait.
+
+**Compliance fixes (mandatory — strict tuglaws adherence per the law preamble):**
+
+The post-implementation audit found drift in three places. The tuglaws preamble forbids silent divergence: *"Violating any law requires updating the design first — never silently diverge."* "We'll fix it later" is divergence. Each item below is a fix specification, not a deferral. If a law genuinely doesn't apply to a given site, the design (the law itself or its scope) must be updated to say so explicitly.
+
+**CF1 — `useSyncExternalStore` for picker's tugbank-cache reads (L02).**
+
+`TideProjectPickerForm` reads external state into React state via `useState`'s lazy-initial-value form:
+
+```ts
+const [recents] = useState<string[]>(() => {
+  const client = getTugbankClient();
+  return client ? readTideRecentProjects(client) : [];
+});
+// ... and similarly for liveSessions ...
+```
+
+L02's first sentence is unconditional: *"External state enters React through `useSyncExternalStore` only."* Lazy initial values don't carve out an exception — they're still external state being copied into React's `useState` cell.
+
+Fix: introduce a `useTugbankValue<T>(domain, key, parse)` hook in `tugdeck/src/lib/tugbank-singleton.ts` (or a new `use-tugbank-value.ts` next to it):
+
+- `subscribe`: registers a `client.onDomainChanged` callback, returning a cleanup that unregisters. Filtered to the matching domain so unrelated tugbank updates don't fire React re-renders.
+- `getSnapshot`: reads `client.get(domain, key)` and runs `parse` on the result. Returns a reference-stable value when the underlying TaggedValue hasn't changed since the previous call (cached in a module-scope `WeakMap<TaggedValue, T>` or via a per-hook ref).
+
+Replace both `useState` calls in `TideProjectPickerForm` with this hook. The picker is then strict-L02-compliant; if a future feature ever needs live updates while the picker is open, no rewrite is required.
+
+**CF2 — `PromptHistoryStore` snapshot reference stability (L02).**
+
+`createRouteProvider` and `createProvider` write `_lastActiveSessionId` without bumping `_version`. `loadSession` only bumps `_version` when `entries.length > 0`. Both break the `useSyncExternalStore` contract: snapshot reference must change when observed state changes, full stop.
+
+Fix: **drop `_lastActiveSessionId` from the public snapshot entirely.** Verify by grep that no consumer reads `snap.sessionEntries`; if confirmed, the snapshot becomes `{ totalEntries }` only. The store may keep `_lastActiveSessionId` as an internal field if needed for non-snapshot paths, but it is no longer part of React-visible state. `_version` then needs to bump only on actual `_sessions` content changes, which `push` and `loadSession` already do — and `loadSession` should bump on EVERY successful load completion, not only when entries arrived, so a "loaded but empty" transition is observable.
+
+If a consumer of `sessionEntries` is found, the alternative is to bump `_version` in `createRouteProvider` / `createProvider` when `_lastActiveSessionId` actually changes. Pick one strategy; do not leave the inconsistency in place.
+
+**CF3 — Move wire `close_session` out of deck-canvas (L10).**
+
+`deck-canvas.tsx::handleClose` calls `cardServicesStore.closeCard(cardId)` before `store.handleCardClosed(cardId)`. The deck-canvas is card-type-agnostic per L10 (*one responsibility per layer* — DeckCanvas maps state to components; card content owns domain logic). The current code makes the deck know about a tide-specific store. The smell is contained today (Tide is the only service-bearing card) but L10 is a forcing function for clean layering, not a guideline for "when convenient."
+
+Fix: `CardServicesStore` subscribes to `DeckManager` at init time. The store maintains a snapshot of the current card-id set and runs a reconcile pass on every deck-state change. When a `cardId` transitions from "present in deck" to "absent from deck" AND a binding exists for that `cardId`, the store sends `close_session` (which clears the binding, which triggers the existing binding-reconcile path that disposes services). Remove the `cardServicesStore.closeCard` call and its import from `deck-canvas.tsx`; restore `handleClose` to the card-type-agnostic shape (`store.handleCardClosed(cardState.id)` only).
+
+This wires the close lifecycle entirely inside the structure zone (per L24): `DeckManager` owns the layout tree, `CardServicesStore` observes layout changes that affect its own state, and acts. No cross-layer reach-in. `cardServicesStore.closeCard(cardId)` becomes an internal method of the store, not a public API the deck calls.
+
+**CF4 — L23 enumeration of state preserved across unbind.**
+
+L23 (*"Internal implementation operations must never lose, destroy, or cease to apply user-visible state"*) applies whenever services are disposed. The current plan does not explicitly enumerate what survives and what doesn't. Make it explicit, with rationale per item:
+
+*Survives unbind:*
+
+- Per-route prompt drafts — preserved via `useTugcardPersistence` → tugbank.
+- Persisted prompt history for the disposed `claudeSessionId` — in tugbank under `dev.tugtool.prompt.history`.
+- Recent-projects list — in tugbank under `dev.tugtool.tide / recent-projects`.
+- Sessions record entry for the disposed session id — preserved on user-close so future Resume picks can still surface the session; explicitly removed only on the `resume_failed` path (which is the documented contract).
+
+*Lost on unbind (and rationale per L23):*
+
+- In-flight transcript in `CodeSessionStore`. **Acceptable** because every unbind path is one of: (a) user-initiated card close (transcript loss is the expected consequence of the user's gesture); (b) `resume_failed` (no transcript existed — `session_init` never arrived); (c) deck-removal of the card (semantically identical to (a)). No internal bookkeeping operation silently destroys an in-flight transcript.
+- In-flight streaming text in `streamingDocument`. Same rationale.
+- `TugPromptEntry.pendingHistoryPushesRef` (per-card buffer of pre-`session_init` pushes). **Acceptable** because the only unbind path that hits a non-empty buffer is `resume_failed`, where no successful `session_init` ever happened; the buffer's purpose is to flush on `session_init`, and a failed bind means the buffer's contents would have no valid session id to flush under. The user-close path always succeeds the buffer flush first (close happens after submit, which has already put the entry into the persisted history PUT path).
+
+L23 contract going forward: any future code path that introduces a service unbind for a reason NOT in the above list must add an entry with explicit rationale, OR introduce a state-preservation mechanism for the affected user-visible state.
+
+**Verification of compliance fixes:**
+
+- `bun x tsc --noEmit` clean. `bun test` green. `cargo nextest run -p tugcast` green.
+- New unit tests:
+  - `useTugbankValue` hook test: subscribe + snapshot stability + reference change on update.
+  - `PromptHistoryStore` snapshot test: pin that snapshot reference is stable until `_version` bumps, and that every state change bumps `_version`.
+  - `CardServicesStore` test: simulate deck-manager card removal, assert `close_session` frame sent.
+- Existing tests stay green; the deck-canvas `handleClose` test (or its equivalent) is updated to reflect the layered close.
+
+**Verification:**
+
+- `bun x tsc --noEmit` clean. `bun test` green (tugdeck 2128, tugcode 187 after pre-flight tests removed). `cargo nextest run -p tugcast` green (445).
+- Manual smoke (the load-bearing test):
+  1. Open a Tide card on `/u/src/tugtool` (or any project accessed via a symlink). Pick Start fresh. Type and submit `> remember my favorite color is purple.`. Wait for the response.
+  2. Close the card. Open a new Tide card on the same path. The picker should offer Resume last session. Pick it. Click Open.
+  3. The card should bind under the same `claude_session_id`. The picker should NOT reappear.
+  4. Press arrow-up in the prompt entry. The previous prompt (`remember my favorite color is purple.`) should be restored into the editor.
+  5. Submit `> what did I tell you to remember?`. Claude should respond with "purple" — confirming the resume actually reattached to the on-disk session.
+- Session-lifecycle log scan: between `spawn.ack` and any later events, there should be NO `close.frame_send` for that card unless the user explicitly closes it.
+
+**Out of scope:**
+
+- The mild `PromptHistoryStore` gaps (5.6 §3 and §4 above). Document only; address in a future hygiene pass.
+- Replacing the integration test mirror with the real hook (smell §5). Defer or address in [4.6](#step-4-6) when the test surface grows anyway.
+- Any larger redesign of how the deck-manager and per-card stores coordinate lifecycle. The `CardServicesStore` model works; if a future card type needs different services semantics, generalize at that point.
+
+**Tradeoff (the redirectable one):**
+
+The decision to send `close_session` explicitly from the deck-canvas user-close handler (instead of from React's effect cleanup) is what makes the L02-compliant architecture work. The cost: any future code path that wants the card to close cleanly must call `cardServicesStore.closeCard(cardId)` before whatever else it does — there is no React-side fallback. If a future card-removal mechanism forgets, the supervisor will leak the session until the bridge crashes or the connection drops. The alternative (a cleanup that sends close on unmount) is what this step deletes; resurrecting it would re-introduce the bug class. Document the contract; don't reverse it.
 
 #### Step 4.6 — Tugcast-side session ledger + full resume UX (placeholder; design before implementation) {#step-4-6}
 

@@ -130,6 +130,14 @@ if (!container) {
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
 
+  // Wire the per-card services store to the deck-manager so it can
+  // detect card removals and send `close_session` for any held
+  // bindings. Per [L10] this keeps the deck-canvas card-type-agnostic:
+  // user-close gestures flow through deck-manager.removeCard, and the
+  // services store reacts on its own.
+  const { cardServicesStore } = await import("./lib/card-services-store");
+  cardServicesStore.attachDeckManager(deck);
+
   // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
   // When an external process writes to tugbank (e.g., `tugbank write ... theme harmony`),
   // the TugbankClient cache updates and this callback fires.
