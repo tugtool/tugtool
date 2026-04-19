@@ -30,9 +30,10 @@
   min-width: 0;
 }
 
-/* Placeholder filler for the top pane. Keeps the split visible until
-   the streaming markdown surface replaces it. */
-.tide-card-placeholder {
+/* Streaming markdown surface fills the top pane. TugMarkdownView's
+   scroll container needs a parent-supplied height; this class is
+   passed via its `className` prop. */
+.tide-card-stream {
   height: 100%;
   width: 100%;
 }

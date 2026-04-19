@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
+import { TugMarkdownView } from "../tug-markdown-view";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
@@ -689,6 +690,11 @@ function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
 
+  const codeSnap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
@@ -825,7 +831,11 @@ function TideCardBody({ cardId, services }: TideCardBodyProps) {
         storageKey="tide.prompt-entry"
       >
         <TugSplitPanel id="tide-card-top" defaultSize="70%" minSize="10%">
-          <div className="tide-card-placeholder" aria-hidden="true" />
+          <TugMarkdownView
+            className="tide-card-stream"
+            streamingStore={codeSessionStore.streamingDocument}
+            streamingPath={codeSnap.streamingPaths.assistant}
+          />
         </TugSplitPanel>
         <TugSplitPanel
           ref={entryPanelRef}

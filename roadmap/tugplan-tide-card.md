@@ -893,14 +893,68 @@ The decision to send `close_session` explicitly from the deck-canvas user-close 
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx`.
+- `tugdeck/src/components/tugways/cards/tide-card.css`.
+
+**The single seam:**
+
+In `TideCardBody` (`tide-card.tsx:827-829`), the top split-panel currently holds an empty placeholder:
+
+```jsx
+<TugSplitPanel id="tide-card-top" defaultSize="70%" minSize="10%">
+  <div className="tide-card-placeholder" aria-hidden="true" />
+</TugSplitPanel>
+```
+
+Replace the placeholder `<div>` with `<TugMarkdownView>` bound to the `CodeSessionStore`'s `streamingDocument` + the `inflight.assistant` path.
+
+**Resolved: which store, which path?**
+
+- **Instance**: `codeSessionStore.streamingDocument` (a `PropertyStore`, exposed as a public class property — *not* on the snapshot). See [tide.md line 2406](./tide.md#code-session-store).
+- **Path strings**: on the snapshot as `snap.streamingPaths.{assistant|thinking|tools}` (stable constant `STREAMING_PATHS` from `tugdeck/src/lib/code-session-store/types.ts`).
+- For Step 5's top pane, use `streamingPaths.assistant` (→ `"inflight.assistant"`). Thinking and tools are separate concerns; the spec names only assistant text.
+
+(The prior inline snippet in this step referenced a `streamingStore` string on the snapshot — an imprecision. The authoritative shape is tide.md's: `PropertyStore` instance + path string.)
 
 **Work:**
-- The gallery card's top split-panel is an empty placeholder rectangle. Replace it with `<TugMarkdownView streamingStore={services.codeSessionStore.streamingStore} streamingPath={services.codeSessionStore.streamingPath} />` per [tide.md line 2406](./tide.md#code-session-store).
-- The PropertyStore instance is exposed as `store.streamingDocument`; the snapshot exposes `streamingStore` + `streamingPath` strings. Pass the strings only — no instance coupling.
+
+- `tide-card.tsx`:
+  - Add import: `import { TugMarkdownView } from "../tug-markdown-view";`
+  - In `TideCardBody`, read the snapshot via `useSyncExternalStore(codeSessionStore.subscribe, codeSessionStore.getSnapshot)` to get `streamingPaths`.
+  - Replace the placeholder JSX with:
+    ```jsx
+    <TugMarkdownView
+      className="tide-card-stream"
+      streamingStore={codeSessionStore.streamingDocument}
+      streamingPath={codeSnap.streamingPaths.assistant}
+    />
+    ```
+- `tide-card.css`:
+  - Rename `.tide-card-placeholder` → `.tide-card-stream` (same `height:100%; width:100%`). `TugMarkdownView`'s root is a scroll container that requires a parent-supplied height (per `tug-markdown-view.css` comment: "Height must be set by the parent or via a className override."). The existing `100%/100%` rule is exactly what we need.
+
+**Behavioral notes (for verification):**
+
+- **Streaming accumulates**: the store writes `inflight.assistant` on every `assistant_text` delta via `processEffects`/`write-inflight` in `code-session-store.ts`. The observer in `tug-markdown-view.tsx` fires on each write and calls `doSetRegion('stream', text)`.
+- **Turn complete (success)**: `clear-inflight` writes empty strings. The observer's `if (!text) return` short-circuits empty — **the view keeps showing the last turn's final text** until the next turn replaces it. Acceptable for Step 5; transcript display is out of scope.
+- **Turn complete (error/interrupted)**: same clear path; last partial stays visible.
+- **Cross-turn**: a new `assistant_text` delta replaces the `stream` region text (via `setRegion` with the same key). Users see the new turn immediately on first token.
+
+**Tests (risk surface):**
+
+- Existing `tugdeck/src/__tests__/tide-card.test.tsx` (T-TIDE-02/03/05/06/07) mounts the bound body; that path will now mount `TugMarkdownView`.
+- `TugMarkdownView`'s module import doesn't call wasm. Its mount effects (ResizeObserver, SmartScroll, streaming `observe`) don't call `lex_blocks` until a non-empty string is written to the observed path — which these tests never do. Existing tests should keep passing with no wasm-init changes.
+- **Fallback**: if a test fails on import or mount, add a module mock for `@/components/tugways/tug-markdown-view` in the test file returning a stub component.
 
 **Verification:**
 - Manual: a streaming `assistant_text` turn renders as live deltas in the top pane; `turn_complete(success)` finalizes the rendered text.
 - `bun run audit:tokens lint` clean.
+- `bun test tide-card` passes unchanged.
+
+**Out of scope (to stay focused):**
+- Transcript rendering in the top pane.
+- Thinking / tool surfaces.
+- Styling the rendered markdown to look good (polish phasing in tide.md).
+- Clearing the view on `turn_complete`. The "sticky last turn" behavior is a feature for this step.
+- The stale `"Project path /gallery/demo"` literal in `statusContent`.
 
 #### Step 6 — `lastError` affordance {#step-6}
 
