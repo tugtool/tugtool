@@ -42,7 +42,7 @@ import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
-import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { EditorSettingsStore } from "@/lib/editor-settings-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -114,6 +114,25 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
+
+/**
+ * Human-readable labels for the `lastError` causes the card surfaces as
+ * an inline banner above the entry. `resume_failed` is intentionally
+ * absent — that cause is intercepted by `useTideCardObserver`, which
+ * clears the binding and routes the notice through the picker-sheet
+ * instead.
+ */
+type BannerErrorCause = Exclude<
+  NonNullable<CodeSessionSnapshot["lastError"]>["cause"],
+  "resume_failed"
+>;
+const CAUSE_LABELS: Record<BannerErrorCause, string> = {
+  session_state_errored: "Session errored",
+  transport_closed: "Connection lost",
+  wire_error: "Protocol error",
+  session_unknown: "Session unknown",
+  session_not_owned: "Session not owned",
+};
 
 // ---------------------------------------------------------------------------
 // Props
@@ -683,7 +702,7 @@ interface TideCardBodyProps {
   services: TideCardServices;
 }
 
-function TideCardBody({ cardId, services }: TideCardBodyProps) {
+export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, entryDelegateRef } = services;
 
   useTideCardObserver(cardId, codeSessionStore);
@@ -694,6 +713,23 @@ function TideCardBody({ cardId, services }: TideCardBodyProps) {
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
+
+  // --- lastError banner state. ---
+  // UI-only dismiss: track the `at` timestamp of the last-dismissed error.
+  // A new error (different `at`) naturally reappears. The store owns the
+  // clear semantics — on retry submit or turn_complete(success) the snapshot
+  // transitions to `lastError: null` and the derivation drops the banner.
+  // `resume_failed` is filtered out here because `useTideCardObserver` is
+  // about to clear the binding and route that cause through the picker.
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const bannerError =
+    codeSnap.lastError !== null &&
+    codeSnap.lastError.cause !== "resume_failed" &&
+    codeSnap.lastError.at !== dismissedAt
+      ? (codeSnap.lastError as NonNullable<CodeSessionSnapshot["lastError"]> & {
+          cause: BannerErrorCause;
+        })
+      : null;
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
@@ -844,33 +880,85 @@ function TideCardBody({ cardId, services }: TideCardBodyProps) {
           minSize="180px"
           maxSize="90%"
         >
-          <ResponderScope>
-            <TugBox
-              ref={(el) => {
-                paneRef.current = el as HTMLDivElement | null;
-                (responderRef as (node: Element | null) => void)(el as Element | null);
-              }}
-              variant="plain"
-              inset={false}
-              className="tide-card-entry-pane"
-            >
-              <TugPromptEntry
-                ref={entryDelegateRef}
-                id={`${cardId}-entry`}
-                codeSessionStore={codeSessionStore}
-                sessionMetadataStore={sessionMetadataStore}
-                historyStore={historyStore}
-                completionProviders={completionProviders}
-                onBeforeSubmit={handleBeforeSubmit}
-                statusContent={statusContent}
-                toolsContent={toolsContent}
-                maximized={maximized}
-                onMaximizeChange={setMaximized}
+          <div className="tide-card-bottom">
+            {bannerError !== null && (
+              <TideLastErrorBanner
+                error={bannerError}
+                onDismiss={() => setDismissedAt(bannerError.at)}
               />
-            </TugBox>
-          </ResponderScope>
+            )}
+            <ResponderScope>
+              <TugBox
+                ref={(el) => {
+                  paneRef.current = el as HTMLDivElement | null;
+                  (responderRef as (node: Element | null) => void)(el as Element | null);
+                }}
+                variant="plain"
+                inset={false}
+                className="tide-card-entry-pane"
+              >
+                <TugPromptEntry
+                  ref={entryDelegateRef}
+                  id={`${cardId}-entry`}
+                  codeSessionStore={codeSessionStore}
+                  sessionMetadataStore={sessionMetadataStore}
+                  historyStore={historyStore}
+                  completionProviders={completionProviders}
+                  onBeforeSubmit={handleBeforeSubmit}
+                  statusContent={statusContent}
+                  toolsContent={toolsContent}
+                  maximized={maximized}
+                  onMaximizeChange={setMaximized}
+                />
+              </TugBox>
+            </ResponderScope>
+          </div>
         </TugSplitPanel>
       </TugSplitPane>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TideLastErrorBanner
+// ---------------------------------------------------------------------------
+
+interface TideLastErrorBannerProps {
+  error: NonNullable<CodeSessionSnapshot["lastError"]> & {
+    cause: BannerErrorCause;
+  };
+  onDismiss: () => void;
+}
+
+/**
+ * Inline banner that surfaces `CodeSessionStore.lastError` above the
+ * entry. Rendered as a thin full-width strip; dismiss is UI-only (the
+ * store owns clear semantics — next successful turn or retry send
+ * clears `lastError` and the banner disappears automatically).
+ *
+ * `resume_failed` never reaches this component; it's filtered in the
+ * caller because `useTideCardObserver` routes that cause through the
+ * picker-sheet instead.
+ */
+function TideLastErrorBanner({ error, onDismiss }: TideLastErrorBannerProps) {
+  return (
+    <div
+      className="tide-card-error-banner"
+      role="status"
+      aria-live="polite"
+      data-testid="tide-card-error-banner"
+      data-cause={error.cause}
+    >
+      <span className="tide-card-error-banner-label">{CAUSE_LABELS[error.cause]}</span>
+      <span className="tide-card-error-banner-message">{error.message}</span>
+      <button
+        type="button"
+        className="tide-card-error-banner-dismiss"
+        aria-label="Dismiss error"
+        onClick={onDismiss}
+      >
+        ×
+      </button>
     </div>
   );
 }

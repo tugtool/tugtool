@@ -15,6 +15,15 @@
   height: 100%;
 }
 
+/* Bottom-pane wrapper — vertical flex so the error banner (natural
+   height) sits above the entry pane (flex:1). */
+.tide-card-bottom {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 /* Entry pane wrapper — a TugBox rendered plain + inset={false}.
    TugBox's default width:fit-content would collapse the box to content
    width; we need it to fill the pane. Using flex + 100% + min-height:0
@@ -117,4 +126,46 @@
 .tide-card-picker-session-option-subtitle {
   font-size: var(--tug-font-size-xs, 0.75rem);
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Inline error banner shown above the entry when CodeSessionStore's
+   lastError is non-null (and not resume_failed, which is intercepted
+   by the card observer and routed through the picker). Dismiss is
+   UI-only; the store owns the clear semantics.
+   @tug-renders-on: surface.global.attention.muted */
+.tide-card-error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm, 8px);
+  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
+  border-radius: var(--tug-radius-sm, 6px);
+  background: var(--tug7-element-global-surface-attention-muted-rest, rgba(255, 196, 0, 0.12));
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  font-family: var(--tug-font-family-sans);
+  line-height: var(--tug-line-height-tight, 1.35);
+}
+
+.tide-card-error-banner-label {
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.tide-card-error-banner-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tide-card-error-banner-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  padding: 0 var(--tug-space-xs, 4px);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
 }
