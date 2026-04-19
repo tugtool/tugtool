@@ -532,12 +532,11 @@ impl TugbankLiveSessionsTracker {
     fn write(&self, set: &HashSet<String>) {
         let mut ids: Vec<String> = set.iter().cloned().collect();
         ids.sort();
-        let json = serde_json::Value::Array(
-            ids.into_iter().map(serde_json::Value::String).collect(),
-        );
-        if let Err(err) =
-            self.client
-                .set(SESSIONS_DOMAIN, LIVE_SESSIONS_KEY, Value::Json(json))
+        let json =
+            serde_json::Value::Array(ids.into_iter().map(serde_json::Value::String).collect());
+        if let Err(err) = self
+            .client
+            .set(SESSIONS_DOMAIN, LIVE_SESSIONS_KEY, Value::Json(json))
         {
             warn!(error = %err, "failed to write live-sessions record");
         }
@@ -1240,8 +1239,7 @@ impl AgentSupervisor {
         // picker greys out a "Resume last" row that points at it.
         // Done outside the per-entry lock so the tugbank write
         // doesn't extend the critical section.
-        self.live_sessions
-            .set_live(tug_session_id.as_str(), true);
+        self.live_sessions.set_live(tug_session_id.as_str(), true);
 
         let _ =
             self.session_state_tx
@@ -1411,8 +1409,7 @@ impl AgentSupervisor {
                 .send(build_session_state_frame(tug_session_id, "closed", None));
         // Drop the session from the live broadcast so any picker
         // waiting on this id can offer it for resume again.
-        self.live_sessions
-            .set_live(tug_session_id.as_str(), false);
+        self.live_sessions.set_live(tug_session_id.as_str(), false);
     }
 
     /// Handle a `reset_session` CONTROL action.
@@ -2508,7 +2505,7 @@ mod tests {
         // rejection rolled back the insert). card-A's still does.
         {
             let cs = sup.client_sessions.lock().await;
-            assert!(cs.get(&11).map_or(true, |s| s.is_empty()));
+            assert!(cs.get(&11).is_none_or(|s| s.is_empty()));
             assert!(cs.get(&10).unwrap().contains(&TugSessionId::new("sess-1")));
         }
 
@@ -3798,7 +3795,10 @@ mod tests {
             let frame = format!(
                 "{{\"type\":\"resume_failed\",\"reason\":\"claude exited\",\"stale_session_id\":\"{stale_id}\"}}\n"
             );
-            child_stdout_write.write_all(frame.as_bytes()).await.unwrap();
+            child_stdout_write
+                .write_all(frame.as_bytes())
+                .await
+                .unwrap();
             drop(child_stdout_write);
         });
 
@@ -3842,8 +3842,7 @@ mod tests {
         // The `resume_failed` frame must have been forwarded to the
         // merger (so the card-side `lastError` populates).
         let forwarded = merger_rx.try_recv().expect("resume_failed forwarded");
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&forwarded.payload).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&forwarded.payload).unwrap();
         assert_eq!(parsed["type"], "resume_failed");
         assert_eq!(parsed["stale_session_id"], stale_id);
         assert_eq!(parsed["tug_session_id"], "sess-resume-fail");
