@@ -29,6 +29,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugMarkdownView } from "../tug-markdown-view";
+import { TugCardBanner } from "../tug-card-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
@@ -880,85 +881,53 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
           minSize="180px"
           maxSize="90%"
         >
-          <div className="tide-card-bottom">
-            {bannerError !== null && (
-              <TideLastErrorBanner
-                error={bannerError}
-                onDismiss={() => setDismissedAt(bannerError.at)}
+          <ResponderScope>
+            <TugBox
+              ref={(el) => {
+                paneRef.current = el as HTMLDivElement | null;
+                (responderRef as (node: Element | null) => void)(el as Element | null);
+              }}
+              variant="plain"
+              inset={false}
+              className="tide-card-entry-pane"
+            >
+              <TugPromptEntry
+                ref={entryDelegateRef}
+                id={`${cardId}-entry`}
+                codeSessionStore={codeSessionStore}
+                sessionMetadataStore={sessionMetadataStore}
+                historyStore={historyStore}
+                completionProviders={completionProviders}
+                onBeforeSubmit={handleBeforeSubmit}
+                statusContent={statusContent}
+                toolsContent={toolsContent}
+                maximized={maximized}
+                onMaximizeChange={setMaximized}
               />
-            )}
-            <ResponderScope>
-              <TugBox
-                ref={(el) => {
-                  paneRef.current = el as HTMLDivElement | null;
-                  (responderRef as (node: Element | null) => void)(el as Element | null);
-                }}
-                variant="plain"
-                inset={false}
-                className="tide-card-entry-pane"
-              >
-                <TugPromptEntry
-                  ref={entryDelegateRef}
-                  id={`${cardId}-entry`}
-                  codeSessionStore={codeSessionStore}
-                  sessionMetadataStore={sessionMetadataStore}
-                  historyStore={historyStore}
-                  completionProviders={completionProviders}
-                  onBeforeSubmit={handleBeforeSubmit}
-                  statusContent={statusContent}
-                  toolsContent={toolsContent}
-                  maximized={maximized}
-                  onMaximizeChange={setMaximized}
-                />
-              </TugBox>
-            </ResponderScope>
-          </div>
+            </TugBox>
+          </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// TideLastErrorBanner
-// ---------------------------------------------------------------------------
-
-interface TideLastErrorBannerProps {
-  error: NonNullable<CodeSessionSnapshot["lastError"]> & {
-    cause: BannerErrorCause;
-  };
-  onDismiss: () => void;
-}
-
-/**
- * Inline banner that surfaces `CodeSessionStore.lastError` above the
- * entry. Rendered as a thin full-width strip; dismiss is UI-only (the
- * store owns clear semantics — next successful turn or retry send
- * clears `lastError` and the banner disappears automatically).
- *
- * `resume_failed` never reaches this component; it's filtered in the
- * caller because `useTideCardObserver` routes that cause through the
- * picker-sheet instead.
- */
-function TideLastErrorBanner({ error, onDismiss }: TideLastErrorBannerProps) {
-  return (
-    <div
-      className="tide-card-error-banner"
-      role="status"
-      aria-live="polite"
-      data-testid="tide-card-error-banner"
-      data-cause={error.cause}
-    >
-      <span className="tide-card-error-banner-label">{CAUSE_LABELS[error.cause]}</span>
-      <span className="tide-card-error-banner-message">{error.message}</span>
-      <button
-        type="button"
-        className="tide-card-error-banner-dismiss"
-        aria-label="Dismiss error"
-        onClick={onDismiss}
+      <TugCardBanner
+        visible={bannerError !== null}
+        variant="error"
+        tone="danger"
+        label={bannerError ? CAUSE_LABELS[bannerError.cause] : undefined}
+        message={bannerError?.message ?? ""}
+        footer={
+          bannerError !== null ? (
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              onClick={() => setDismissedAt(bannerError.at)}
+            >
+              Dismiss
+            </TugPushButton>
+          ) : undefined
+        }
       >
-        ×
-      </button>
+        <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
+      </TugCardBanner>
     </div>
   );
 }
