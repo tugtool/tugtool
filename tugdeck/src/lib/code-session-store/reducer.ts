@@ -66,7 +66,6 @@ export interface CodeSessionState {
     at: number;
   } | null;
   lastCost: CostSnapshot | null;
-  claudeSessionId: string | null;
 }
 
 /** Build the initial state for a freshly constructed store. */
@@ -88,7 +87,6 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
-    claudeSessionId: null,
   };
 }
 
@@ -169,15 +167,16 @@ function handleInterrupt(
 
 function handleSessionInit(
   state: CodeSessionState,
-  event: SessionInitEvent,
+  _event: SessionInitEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  const sessionId = event.session_id;
-  if (typeof sessionId !== "string") return { state, effects: [] };
-  if (state.claudeSessionId === sessionId) return { state, effects: [] };
-  return {
-    state: { ...state, claudeSessionId: sessionId },
-    effects: [],
-  };
+  // No state mutation. Tugdeck uses a single session id (`tugSessionId`,
+  // chosen by the picker and known from CodeSessionStore construction)
+  // for everything user-facing — history keys, picker matching, the
+  // sessions record. Claude's `session_init.session_id` is verified to
+  // equal `tugSessionId` by the lifecycle log on the wire side; if they
+  // ever diverge it's a tugcast/tugcode bug, not something React state
+  // has to mirror. Frame is consumed for its lifecycle log only.
+  return { state, effects: [] };
 }
 
 /**

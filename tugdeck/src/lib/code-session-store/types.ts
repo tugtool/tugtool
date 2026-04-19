@@ -100,7 +100,6 @@ export interface CodeSessionSnapshot {
   phase: CodeSessionPhase;
 
   tugSessionId: string;
-  claudeSessionId: string | null;
   displayLabel: string;
 
   activeMsgId: string | null;

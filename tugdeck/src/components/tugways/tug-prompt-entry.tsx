@@ -465,73 +465,30 @@ export const TugPromptEntry = React.forwardRef<
     historyStore.getSnapshot,
   );
 
-  // History keys on `claudeSessionId` — claude's own session id, the
-  // unforgeable identity of the conversation. Any other id (the
-  // tug_session_id used for feed routing, for example) can drift from
-  // claude's id when a resume fails and tugcode silently fresh-spawns
-  // under a new claude id; keying history on the tug id orphans the
-  // record from the actual session file. `claudeSessionId` is captured
-  // by `CodeSessionStore` from the `session_init` payload and updates
-  // any time claude assigns a new id (e.g., the post-resume-failure
-  // fresh fallback), so the history follows the live conversation.
+  // History keys on the session's id, which the picker decided at
+  // bind time and which is the same id everywhere in the system —
+  // tugcast's routing key, claude's `--session-id` / `--resume`
+  // argument, the sessions-record key, and the prompt-history key.
+  // Available immediately on mount via `snap.tugSessionId`; no waiting
+  // on a separate `session_init` confirmation.
   //
-  // Until `session_init` arrives, `claudeSessionId` is null and the
-  // provider is null too — submit's history-push then short-circuits.
-  // In practice claude emits `session_init` within a second of card
-  // mount, well before the user submits a first prompt; if a user is
-  // somehow fast enough to submit first, that single entry is lost
-  // rather than silently mis-keyed.
-  //
-  // The provider cache is keyed by `${sessionId}-${route}` so a
-  // claudeSessionId change (e.g. resume → silent fresh fallback)
-  // produces a fresh provider instead of returning a stale one whose
-  // `_sessionId` still points at the old session.
+  // The provider cache is keyed by `${sessionId}\u0000${route}` so a
+  // route change for the same session reuses the cached provider
+  // (preserving its cursor + draft state).
   const historyProvidersRef = useRef<Record<string, HistoryProvider>>({});
-  const currentHistoryProvider = useMemo<HistoryProvider | null>(() => {
-    const sessionId = snap.claudeSessionId;
-    if (!sessionId) return null;
+  const currentHistoryProvider = useMemo<HistoryProvider>(() => {
+    const sessionId = snap.tugSessionId;
     const cacheKey = `${sessionId}\u0000${route}`;
     const cached = historyProvidersRef.current[cacheKey];
     if (cached) return cached;
     const fresh = historyStore.createRouteProvider(sessionId, route);
     historyProvidersRef.current[cacheKey] = fresh;
     logSessionLifecycle("history.provider_create", {
-      claude_session_id: sessionId,
+      session_id: sessionId,
       route,
     });
     return fresh;
-  }, [historyStore, route, snap.claudeSessionId]);
-
-  // Per-card buffer of history pushes that arrived before
-  // `claudeSessionId` was known (the spawn-handshake window). Each
-  // buffered entry holds an unkeyed payload; on the transition to a
-  // non-null `claudeSessionId` we flush the buffer into
-  // `historyStore.push(...)` keyed under that id. Without the buffer,
-  // a fast user who submits before `session_init` would silently lose
-  // the entry.
-  type PendingPush = Omit<HistoryEntry, "id" | "sessionId">;
-  const pendingHistoryPushesRef = useRef<PendingPush[]>([]);
-  const flushedForClaudeIdRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    const claudeId = snap.claudeSessionId;
-    if (claudeId === null) return;
-    if (flushedForClaudeIdRef.current === claudeId) return;
-    flushedForClaudeIdRef.current = claudeId;
-    const pending = pendingHistoryPushesRef.current;
-    if (pending.length === 0) return;
-    pendingHistoryPushesRef.current = [];
-    logSessionLifecycle("history.buffer_flush", {
-      claude_session_id: claudeId,
-      count: pending.length,
-    });
-    for (const p of pending) {
-      historyStore.push({
-        id: `${claudeId}-${p.timestamp}`,
-        sessionId: claudeId,
-        ...p,
-      });
-    }
-  }, [snap.claudeSessionId, historyStore]);
+  }, [historyStore, route, snap.tugSessionId]);
 
   // Live ref for the optional localCommandHandler so `performSubmit` (the
   // shared submit closure) can read the latest callback without rebuilding
@@ -602,21 +559,18 @@ export const TugPromptEntry = React.forwardRef<
     if (!handled) {
       codeSessionStore.send(text, atoms);
     }
-    // Record the submission in per-session history, keyed by claude's
-    // session id (the conversation's unforgeable identity, captured
-    // from `session_init`). The route field is what lets
-    // `RouteHistoryProvider` filter this entry into the current route's
-    // timeline. Captured before `input.clear()` so the live state is
-    // still the submitted content.
-    //
-    // If `claudeSessionId` is still null — user submitted before
-    // claude finished initializing — buffer the payload in the
-    // per-card `pendingHistoryPushesRef`. The effect above flushes
-    // the buffer (keyed under the freshly-arrived claude id) on the
-    // first transition to a non-null id, so the entry is not lost.
-    const sessionId = snapRef.current.claudeSessionId;
+    // Record the submission in per-session history, keyed by the
+    // session's id (the same id the picker chose — set on the
+    // CodeSessionStore at construction time, available from the
+    // first render of the entry). The route field is what lets
+    // `RouteHistoryProvider` filter this entry into the current
+    // route's timeline. Captured before `input.clear()` so the live
+    // state is still the submitted content.
+    const sessionId = snapRef.current.tugSessionId;
     const state = input.captureState();
-    const payload = {
+    historyStore.push({
+      id: `${sessionId}-${Date.now()}`,
+      sessionId,
       projectPath: "",
       route: currentRoute ?? "",
       text: state.text,
@@ -627,19 +581,7 @@ export const TugPromptEntry = React.forwardRef<
         value: a.value,
       })),
       timestamp: Date.now(),
-    };
-    if (sessionId) {
-      historyStore.push({
-        id: `${sessionId}-${payload.timestamp}`,
-        sessionId,
-        ...payload,
-      });
-    } else {
-      pendingHistoryPushesRef.current.push(payload);
-      logSessionLifecycle("history.buffer_push", {
-        count: pendingHistoryPushesRef.current.length,
-      });
-    }
+    });
     // Fire the pre-clear hook so hosts can drive submit-specific
     // effects (e.g., animated snap-back of a content-sized panel)
     // BEFORE `input.clear()` sets `data-empty="true"` and triggers
@@ -996,7 +938,7 @@ export const TugPromptEntry = React.forwardRef<
             maximized
             completionProviders={completionProviders}
             dropHandler={dropHandler}
-            historyProvider={currentHistoryProvider ?? undefined}
+            historyProvider={currentHistoryProvider}
             returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
             onChange={handleInputChange}
             onSubmit={performSubmit}

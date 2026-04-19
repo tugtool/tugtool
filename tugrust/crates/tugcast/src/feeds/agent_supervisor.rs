@@ -1251,6 +1251,35 @@ impl AgentSupervisor {
             let _ = self.session_metadata_tx.send(frame);
         }
 
+        // Eager spawn: transition Idle→Spawning and launch the tugcode
+        // subprocess now, before the ack goes out. Resume failures
+        // surface within ~1s of card open (claude exits fast on a
+        // stale id), not 8+s after the user types and submits.
+        //
+        // The dispatcher's lazy Idle→Spawn branch stays in place as a
+        // defense-in-depth path for ledger entries rebound from
+        // tugbank at startup; in normal client flow it is unreachable
+        // because do_spawn_session promotes Idle→Spawning before any
+        // CODE_INPUT frame can arrive.
+        let should_spawn = {
+            let mut entry = entry_arc.lock().await;
+            if entry.spawn_state == SpawnState::Idle {
+                entry.spawn_state.try_transition(SpawnState::Spawning).ok();
+                true
+            } else {
+                false
+            }
+        };
+        if should_spawn {
+            tracing::info!(
+                target: "tide::session-lifecycle",
+                event = "supervisor.eager_spawn",
+                tug_session_id = %tug_session_id,
+                card_id = card_id,
+            );
+            self.spawn_session_worker(&tug_session_id).await;
+        }
+
         // Spec S03: the CONTROL success ack echoes the canonical
         // `workspace_key` so tugdeck can stamp it into the per-card binding
         // store without attempting client-side canonicalization (which
@@ -1538,6 +1567,18 @@ impl AgentSupervisor {
             }
         };
 
+        let decision_label = match &decision {
+            Decision::Drop => "drop",
+            Decision::Spawn => "spawn",
+            Decision::Forward(_, _) => "forward",
+            Decision::Backpressure => "backpressure",
+        };
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "supervisor.dispatch_decision",
+            tug_session_id = %tug_session_id,
+            decision = decision_label,
+        );
         match decision {
             Decision::Drop => {}
             Decision::Spawn => self.spawn_session_worker(&tug_session_id).await,
@@ -1666,6 +1707,11 @@ impl AgentSupervisor {
     /// by nothing. Registering first means a dead merger is detected
     /// before any visible ledger state is mutated.
     pub async fn spawn_session_worker(&self, tug_session_id: &TugSessionId) {
+        tracing::info!(
+            target: "tide::session-lifecycle",
+            event = "supervisor.spawn_worker_start",
+            tug_session_id = %tug_session_id,
+        );
         let entry_arc = {
             let map = self.ledger.lock().await;
             match map.get(tug_session_id) {
@@ -1945,8 +1991,26 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     let (meta_tx, _) = broadcast::channel(16);
     let (code_tx, _) = broadcast::channel(16);
     let (control_tx, _) = broadcast::channel(16);
+    // Eager spawn (do_spawn_session) calls the factory whenever a fresh
+    // entry is inserted. Hand back a never-resolving stall spawner so
+    // `spawn_session_worker` installs the per-session plumbing without
+    // the bridge ever emitting a real frame — matches the StallSpawner
+    // used by tests in this file.
+    struct MinimalStallSpawner;
+    impl ChildSpawner for MinimalStallSpawner {
+        fn spawn_child(
+            &self,
+            _project_dir: &std::path::Path,
+            _session_id: &str,
+            _session_mode: SessionMode,
+        ) -> super::agent_bridge::SpawnFuture {
+            Box::pin(async {
+                std::future::pending::<std::io::Result<super::agent_bridge::SessionChild>>().await
+            })
+        }
+    }
     let factory: SpawnerFactory =
-        Arc::new(|| unreachable!("test_minimal_supervisor has no spawner"));
+        Arc::new(|| Arc::new(MinimalStallSpawner) as Arc<dyn ChildSpawner>);
     let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
     let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
     let live: Arc<dyn LiveSessionsTracker> = Arc::new(NoopLiveSessionsTracker);
@@ -2414,11 +2478,13 @@ mod tests {
         let store = Arc::new(InMemoryStore::default());
         let (sup, mut state_rx, _meta_rx, _control_rx) = make_supervisor_with_store(store);
 
-        // First spawn binds sess-1 to card-A. Drain the `pending` frame.
+        // First spawn binds sess-1 to card-A. Eager spawn publishes
+        // `pending` then `spawning`; drain both so the rejection
+        // assertion isolates the `errored` frame.
         sup.handle_control("spawn_session", &spawn_payload("card-A", "sess-1"), 10)
             .await
             .unwrap();
-        let _pending = state_rx.try_recv().expect("pending state for first spawn");
+        while state_rx.try_recv().is_ok() {}
 
         // Second spawn from card-B with mode=resume on the same session
         // id must be rejected, with an `errored{session_live_elsewhere}`
@@ -2594,8 +2660,10 @@ mod tests {
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
-        // Drain the pending frame.
-        let _ = state_rx.try_recv().unwrap();
+        // Eager spawn publishes both `pending` and `spawning` before
+        // close. Drain whatever the spawn produced so the close
+        // assertion isolates the close-time `closed` frame.
+        while state_rx.try_recv().is_ok() {}
 
         sup.handle_control("close_session", &close_payload("card-1", "sess-1"), 10)
             .await
@@ -2702,14 +2770,18 @@ mod tests {
         sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
-        // Drain initial pending.
-        let _ = state_rx.try_recv().unwrap();
+        // Drain everything the first spawn produced (eager spawn fires
+        // both `pending` and `spawning`).
+        while state_rx.try_recv().is_ok() {}
 
         sup.handle_control("reset_session", &reset_payload("card-1", "sess-1"), 10)
             .await
             .unwrap();
 
-        // Expect closed then pending in that order.
+        // Reset publishes `closed` then re-spawns. The re-spawn fires
+        // `pending` then (because eager spawn promotes Idle→Spawning)
+        // `spawning`. Assert the first two are `closed` then `pending`
+        // and tolerate the trailing `spawning` frame.
         let first = session_state_of(&state_rx.try_recv().unwrap());
         let second = session_state_of(&state_rx.try_recv().unwrap());
         assert_eq!(first, ("sess-1".into(), "closed".into()));
@@ -2870,17 +2942,21 @@ mod tests {
             }
         );
 
-        // Drain the two successful `pending` frames, then find the
-        // rate-limited errored frame. The broadcast order is: pending-1,
-        // pending-2, errored-3.
-        let f1 = session_state_of(&state_rx.try_recv().unwrap());
-        assert_eq!(f1, ("sess-1".into(), "pending".into()));
-        let f2 = session_state_of(&state_rx.try_recv().unwrap());
-        assert_eq!(f2, ("sess-2".into(), "pending".into()));
-        let f3 = state_rx.try_recv().unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&f3.payload).unwrap();
-        assert_eq!(v["tug_session_id"].as_str(), Some("sess-3"));
-        assert_eq!(v["state"].as_str(), Some("errored"));
+        // Eager spawn produces `pending` then `spawning` per successful
+        // spawn; the third spawn (rejected by rate limit) emits exactly
+        // one `errored` frame. Drain everything until we find the
+        // rate-limited errored frame (anchored by tsid + detail).
+        let mut errored: Option<serde_json::Value> = None;
+        while let Ok(f) = state_rx.try_recv() {
+            let v: serde_json::Value = serde_json::from_slice(&f.payload).unwrap();
+            if v["state"].as_str() == Some("errored")
+                && v["tug_session_id"].as_str() == Some("sess-3")
+            {
+                errored = Some(v);
+                break;
+            }
+        }
+        let v = errored.expect("rate-limited errored frame published");
         assert_eq!(v["detail"].as_str(), Some("spawn_rate_limited"));
     }
 

@@ -51,6 +51,7 @@ import {
   putTideRecentProjects,
 } from "../settings-api";
 import type { DeckManager } from "../deck-manager";
+import { logSessionLifecycle } from "./session-lifecycle-log";
 
 export interface CardServices {
   readonly codeSessionStore: CodeSessionStore;
@@ -127,6 +128,9 @@ class CardServicesStore {
       // triggers `_reconcile`'s dispose path.
       for (const id of this._knownCardIds) {
         if (!current.has(id)) {
+          logSessionLifecycle("services_store.deck_removed_card", {
+            card_id: id,
+          });
           this._closeCardInternal(id);
         }
       }
@@ -225,6 +229,10 @@ class CardServicesStore {
       }
     }
 
+    logSessionLifecycle("services_store.construct", {
+      card_id: cardId,
+      tug_session_id: binding.tugSessionId,
+    });
     return {
       codeSessionStore,
       editorStore,
@@ -239,6 +247,7 @@ class CardServicesStore {
   private _dispose(cardId: string): void {
     const services = this._services.get(cardId);
     if (!services) return;
+    logSessionLifecycle("services_store.dispose", { card_id: cardId });
     this._services.delete(cardId);
     services.codeSessionStore.dispose();
     services.sessionMetadataStore.dispose();

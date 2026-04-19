@@ -38,38 +38,36 @@ function constructStore(
 }
 
 describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => {
-  it("routes a session_init to the matching store only", () => {
+  it("routes a resume_failed frame to the matching store only", () => {
     const conn = new MockTugConnection();
     const storeA = constructStore(conn, TUG_A);
     const storeB = constructStore(conn, TUG_B);
 
-    expect(storeA.getSnapshot().claudeSessionId).toBeNull();
-    expect(storeB.getSnapshot().claudeSessionId).toBeNull();
+    expect(storeA.getSnapshot().lastError).toBeNull();
+    expect(storeB.getSnapshot().lastError).toBeNull();
 
-    // A session_init for storeA's session should be visible only to A.
+    // A resume_failed for storeA's session should be visible only to A.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
+      type: "resume_failed",
+      reason: "missing_jsonl",
+      stale_session_id: TUG_A,
       tug_session_id: TUG_A,
     });
 
-    expect(storeA.getSnapshot().claudeSessionId).toBe(
-      FIXTURE_IDS.CLAUDE_SESSION_ID,
-    );
-    expect(storeB.getSnapshot().claudeSessionId).toBeNull();
+    expect(storeA.getSnapshot().lastError?.cause).toBe("resume_failed");
+    expect(storeB.getSnapshot().lastError).toBeNull();
 
-    // And vice versa: a session_init for B leaves A untouched.
-    const CLAUDE_B = "cla00000-0000-4000-8000-0000000000bb";
+    // And vice versa: a resume_failed for B leaves A's lastError
+    // unchanged (already populated above).
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: CLAUDE_B,
+      type: "resume_failed",
+      reason: "missing_jsonl",
+      stale_session_id: TUG_B,
       tug_session_id: TUG_B,
     });
 
-    expect(storeA.getSnapshot().claudeSessionId).toBe(
-      FIXTURE_IDS.CLAUDE_SESSION_ID,
-    );
-    expect(storeB.getSnapshot().claudeSessionId).toBe(CLAUDE_B);
+    expect(storeA.getSnapshot().lastError?.cause).toBe("resume_failed");
+    expect(storeB.getSnapshot().lastError?.cause).toBe("resume_failed");
   });
 
   it("drives independent turn state machines for each store", () => {

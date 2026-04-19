@@ -56,7 +56,6 @@ function bind(cardId: string, tugSessionId: string): CardSessionBinding {
     workspaceKey: "/work/csstore-test",
     projectDir: "/work/csstore-test",
     sessionMode: "new",
-    claudeSessionId: null,
   };
   cardSessionBindingStore.setBinding(cardId, binding);
   return binding;

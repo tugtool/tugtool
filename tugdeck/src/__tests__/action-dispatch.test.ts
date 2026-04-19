@@ -661,7 +661,6 @@ describe("initActionDispatch: spawn_session_ok", () => {
       workspaceKey: "/work/canonical",
       projectDir: "/work/original",
       sessionMode: "new",
-      claudeSessionId: null,
     });
 
     cardSessionBindingStore.clearBinding("card-ack-ok");

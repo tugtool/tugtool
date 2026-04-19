@@ -131,26 +131,15 @@ describe("reduce — send", () => {
 // ---------------------------------------------------------------------------
 
 describe("reduce — session_init", () => {
-  it("captures a new claude session_id", () => {
-    const { state, effects } = reduce(fresh(), {
+  it("returns the same state reference (no mutation; tugdeck operates on tugSessionId only)", () => {
+    const seeded = fresh();
+    const { state, effects } = reduce(seeded, {
       type: "session_init",
       session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
     });
-    expect(state.claudeSessionId).toBe(FIXTURE_IDS.CLAUDE_SESSION_ID);
-    expect(effects.length).toBe(0);
-  });
-
-  it("returns identity when session_id is unchanged", () => {
-    const seeded: CodeSessionState = {
-      ...fresh(),
-      claudeSessionId: FIXTURE_IDS.CLAUDE_SESSION_ID,
-    };
-    const { state } = reduce(seeded, {
-      type: "session_init",
-      session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
-    });
     expect(state).toBe(seeded);
+    expect(effects.length).toBe(0);
   });
 });
 

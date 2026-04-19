@@ -9,6 +9,7 @@
 
 import type { HistoryProvider, TugTextEditingState } from "./tug-text-engine";
 import { putPromptHistory, getPromptHistory } from "../settings-api";
+import { logSessionLifecycle } from "./session-lifecycle-log";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,14 @@ class RouteHistoryProvider implements HistoryProvider {
 
   back(current: TugTextEditingState): TugTextEditingState | null {
     const entries = this._entries();
+    const allForSession = this._store._getSessionEntries(this._sessionId);
+    logSessionLifecycle("history.provider_back", {
+      session_id: this._sessionId,
+      route: this._route,
+      entries_for_session: allForSession.length,
+      entries_for_route: entries.length,
+      cursor_in: this._cursor,
+    });
     if (entries.length === 0) return null;
 
     if (this._cursor === -1) {
@@ -302,9 +311,21 @@ export class PromptHistoryStore {
    *   duplicates for entries that were pushed during the load window.
    */
   async loadSession(sessionId: string): Promise<void> {
-    if (this._loadedSessions.has(sessionId)) return;
+    if (this._loadedSessions.has(sessionId)) {
+      logSessionLifecycle("history.load_skipped_already_loaded", {
+        session_id: sessionId,
+        in_memory_count: (this._sessions.get(sessionId) ?? []).length,
+      });
+      return;
+    }
     const inFlight = this._loadPromises.get(sessionId);
-    if (inFlight) return inFlight;
+    if (inFlight) {
+      logSessionLifecycle("history.load_skipped_in_flight", {
+        session_id: sessionId,
+      });
+      return inFlight;
+    }
+    logSessionLifecycle("history.load_start", { session_id: sessionId });
 
     const promise = (async () => {
       try {
@@ -327,11 +348,21 @@ export class PromptHistoryStore {
           this._sessions.set(sessionId, capped);
         }
         this._loadedSessions.add(sessionId);
+        logSessionLifecycle("history.load_complete", {
+          session_id: sessionId,
+          fetched_count: entries.length,
+          merged_count: capped.length,
+          in_memory_after: (this._sessions.get(sessionId) ?? []).length,
+        });
         // Bump on every successful load completion so observers can
         // see "loaded but empty" as a real transition, not a no-op.
         this._version++;
         this._notifyListeners();
-      } catch {
+      } catch (err) {
+        logSessionLifecycle("history.load_error", {
+          session_id: sessionId,
+          error: String(err),
+        });
         // Don't mark loaded on error — a future createProvider call
         // will try again. The in-memory state survives.
       } finally {

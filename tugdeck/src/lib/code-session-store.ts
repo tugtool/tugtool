@@ -169,8 +169,8 @@ export class CodeSessionStore {
 
   /**
    * L02 snapshot contract. Returns a stable reference between dispatches
-   * that produce no state, transcript, or claudeSessionId change — required
-   * for `useSyncExternalStore` to avoid tearing ([D11]).
+   * that produce no state or transcript change — required for
+   * `useSyncExternalStore` to avoid tearing ([D11]).
    */
   getSnapshot = (): CodeSessionSnapshot => {
     if (this._cachedSnapshot !== null) {
@@ -179,7 +179,6 @@ export class CodeSessionStore {
     const snap: CodeSessionSnapshot = {
       phase: this.state.phase,
       tugSessionId: this.tugSessionId,
-      claudeSessionId: this.state.claudeSessionId,
       displayLabel: this.displayLabel,
       activeMsgId: this.state.activeMsgId,
       canSubmit: this.state.phase === "idle" || this.state.phase === "errored",
@@ -345,11 +344,17 @@ export class CodeSessionStore {
       if (typeof ev.type !== "string") return null;
       if (!KNOWN_CODE_OUTPUT_TYPES.has(ev.type)) return null;
       if (ev.type === "session_init") {
+        // Divergence check: log loudly if claude's session_id differs
+        // from our tugSessionId. Tugdeck operates on a single id
+        // (tugSessionId, decided by the picker); a divergence here
+        // would be a tugcast/tugcode bug that broke the post-Phase-B
+        // invariant. The store does not consume claude's id for any
+        // user-facing purpose — see reducer.handleSessionInit.
+        const claudeSid = typeof ev.session_id === "string" ? ev.session_id : null;
         logSessionLifecycle("code_store.session_init_recv", {
           tug_session_id: this.tugSessionId,
-          claude_session_id: typeof ev.session_id === "string"
-            ? ev.session_id
-            : null,
+          claude_session_id: claudeSid,
+          divergent: claudeSid !== null && claudeSid !== this.tugSessionId,
         });
       } else if (ev.type === "resume_failed") {
         logSessionLifecycle("code_store.resume_failed_recv", {

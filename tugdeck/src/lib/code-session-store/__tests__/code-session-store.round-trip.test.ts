@@ -72,7 +72,6 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
     expect(final.transcript[0].result).toBe("success");
     expect(final.transcript[0].msgId).toBe(FIXTURE_IDS.MSG_ID);
     expect(final.transcript[0].userMessage.text).toBe("hello");
-    expect(final.claudeSessionId).toBe(FIXTURE_IDS.CLAUDE_SESSION_ID);
     expect(final.activeMsgId).toBeNull();
 
     // 5. In-flight streaming document cleared on turn_complete.
@@ -109,15 +108,24 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
 
     store.send("hello", []);
 
-    // A session_init for some OTHER tug_session_id must be filtered by
-    // FeedStore before reaching the reducer.
+    // A frame for some OTHER tug_session_id must be filtered by
+    // FeedStore before reaching the reducer. Use `assistant_text`
+    // since session_init no longer mutates state and would be
+    // indistinguishable from a filtered frame on the snapshot side.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: "cla00000-0000-4000-8000-999999999999",
+      type: "assistant_text",
+      msg_id: "msg-other",
+      seq: 0,
+      rev: 0,
+      text: "wrong session text",
+      is_partial: true,
+      status: "partial",
       tug_session_id: "tug00000-0000-4000-8000-999999999999",
     });
 
-    expect(store.getSnapshot().claudeSessionId).toBeNull();
+    // The other-session frame must not affect this store: still
+    // `submitting`, no scratch text accumulated.
     expect(store.getSnapshot().phase).toBe("submitting");
+    expect(store.streamingDocument.get("inflight.assistant")).toBe("");
   });
 });

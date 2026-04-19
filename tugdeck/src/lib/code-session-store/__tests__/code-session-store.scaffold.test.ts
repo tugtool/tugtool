@@ -29,7 +29,6 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
 
     expect(snap.phase).toBe("idle");
     expect(snap.tugSessionId).toBe(TUG_SESSION_ID);
-    expect(snap.claudeSessionId).toBeNull();
     expect(snap.displayLabel).toBe(TUG_SESSION_ID.slice(0, 8));
     expect(snap.activeMsgId).toBeNull();
     expect(snap.canSubmit).toBe(true);

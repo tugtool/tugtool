@@ -396,11 +396,6 @@ export function initActionDispatch(
       workspaceKey,
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
-      // claudeSessionId is populated by the card observer once the
-      // bound CodeSessionStore sees session_init. Until then the
-      // binding has a usable tugSessionId for routing but no
-      // canonical claude id.
-      claudeSessionId: null,
     });
   });
 }

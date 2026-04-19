@@ -27,21 +27,6 @@ export interface CardSessionBinding {
   readonly workspaceKey: string;
   readonly projectDir: string;
   readonly sessionMode: CardSessionMode;
-  /**
-   * Claude's own session id, captured from the first `session_init`
-   * frame the bound `CodeSessionStore` observes. `null` until that
-   * frame arrives — in the spawn-handshake window the binding exists
-   * (set by `spawn_session_ok`) but Claude hasn't yet emitted its id.
-   *
-   * Persisted records (sessions, prompt history, future ledger rows)
-   * all key on `claudeSessionId`. `tugSessionId` is a tugcast-side
-   * routing key only; reads that surface a session to the user —
-   * picker, history, notices — consume `claudeSessionId`.
-   *
-   * Cleared along with the binding on `clearBinding` (close or
-   * resume-failed unbind path).
-   */
-  readonly claudeSessionId: string | null;
 }
 
 export class CardSessionBindingStore {
@@ -72,27 +57,6 @@ export class CardSessionBindingStore {
     if (!this._bindings.has(cardId)) return;
     const next = new Map(this._bindings);
     next.delete(cardId);
-    this._bindings = next;
-    for (const listener of this._listeners) listener();
-  };
-
-  /**
-   * Attach Claude's emitted session id to an existing binding. Called
-   * once per session, when the bound `CodeSessionStore` first observes
-   * `session_init`. No-op if the card has no binding (e.g. the close
-   * path raced with the `session_init` frame).
-   *
-   * Replaces the binding's value in place and notifies subscribers.
-   * `useTideCardServices` deliberately keys its construction effect on
-   * `binding?.tugSessionId` (not the binding object), so this update
-   * does NOT tear down the bound services.
-   */
-  bindClaudeSessionId = (cardId: string, claudeSessionId: string): void => {
-    const existing = this._bindings.get(cardId);
-    if (!existing) return;
-    if (existing.claudeSessionId === claudeSessionId) return;
-    const next = new Map(this._bindings);
-    next.set(cardId, { ...existing, claudeSessionId });
     this._bindings = next;
     for (const listener of this._listeners) listener();
   };

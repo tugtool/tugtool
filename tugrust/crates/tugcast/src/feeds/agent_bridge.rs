@@ -292,7 +292,15 @@ impl ChildSpawner for TugcodeSpawner {
         Box::pin(async move {
             let (cmd, args) =
                 build_tugcode_command(&tugcode_path, &project_dir, &session_id, session_mode);
-            info!(cmd, ?args, "Spawning tugcode");
+            tracing::info!(
+                target: "tide::session-lifecycle",
+                event = "bridge.tugcode_spawn",
+                tug_session_id = %session_id,
+                session_mode = session_mode.as_wire_str(),
+                cmd = %cmd,
+                args = ?args,
+                cwd = %project_dir.display(),
+            );
             // Scrub Anthropic auth env vars so the downstream claude CLI
             // authenticates via `~/.claude.json` (the user's Max/Pro
             // subscription) rather than per-token API billing. If the
@@ -505,8 +513,22 @@ pub async fn run_session_bridge(
         drop(child._keepalive);
 
         match outcome {
-            RelayOutcome::Cancelled => return,
+            RelayOutcome::Cancelled => {
+                tracing::info!(
+                    target: "tide::session-lifecycle",
+                    event = "bridge.relay_outcome",
+                    tug_session_id = %tug_session_id,
+                    outcome = "cancelled",
+                );
+                return;
+            }
             RelayOutcome::Crashed => {
+                tracing::info!(
+                    target: "tide::session-lifecycle",
+                    event = "bridge.relay_outcome",
+                    tug_session_id = %tug_session_id,
+                    outcome = "crashed",
+                );
                 ledger_entry.lock().await.crash_budget.record_crash();
                 info!(session = %tug_session_id, "tugcode crashed; retrying");
                 tokio::select! {
@@ -518,6 +540,14 @@ pub async fn run_session_bridge(
                 stale_session_id,
                 reason,
             } => {
+                tracing::info!(
+                    target: "tide::session-lifecycle",
+                    event = "bridge.relay_outcome",
+                    tug_session_id = %tug_session_id,
+                    outcome = "resume_failed",
+                    stale_session_id = stale_session_id.as_str(),
+                    reason = reason.as_str(),
+                );
                 // tugcode emitted `resume_failed` and exited.
                 // Re-spawning would just hit the same stale id again,
                 // so mark the session errored and return without

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { ResumeFailedError, SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 
 // ---------------------------------------------------------------------------
@@ -1408,11 +1408,12 @@ describe("SessionManager behavioral", () => {
     expect(() => new SessionManager("/tmp/test-constructor", crypto.randomUUID())).not.toThrow();
   });
 
-  test("initialize() in 'new' mode spawns claude with --session-id <our-uuid>", async () => {
-    // Fresh spawn claims the tugdeck-generated id as claude's own
-    // session id. Tugcast records the per-session entry on `session_init`
-    // (out of scope for this test); SessionManager only verifies the
-    // spawn argument shape.
+  test("initialize() in 'new' mode spawns claude with --session-id and emits synthetic session_init", async () => {
+    // Both modes share a single codepath: spawn claude with the
+    // appropriate flag, emit a synthetic `session_init` IPC line
+    // (claude in stream-json mode never emits `system:init` until it
+    // receives input), and let the early-exit watcher run in the
+    // background.
     const suffix = Date.now();
     const projectDir = `/tmp/init-new-${suffix}`;
     const id = crypto.randomUUID();
@@ -1431,17 +1432,26 @@ describe("SessionManager behavioral", () => {
           },
         }),
         stdin: { write: () => {}, end: () => {}, flush: () => {} },
-        exited: Promise.resolve(0),
+        // Never resolves: simulates a healthy claude waiting for input.
+        // The watcher's timeout would resolve `kind: "timeout"` and noop.
+        exited: new Promise<number>(() => {}),
         kill: () => {},
       };
     };
 
-    await manager.initialize();
+    const emitted = await captureIpcOutput(async () => {
+      await manager.initialize();
+    });
 
     expect(calls).toEqual([{ id, mode: "session-id" }]);
+    const initLines = emitted.filter(
+      (e: any) => e?.type === "session_init",
+    );
+    expect(initLines.length).toBe(1);
+    expect((initLines[0] as any).session_id).toBe(id);
   });
 
-  test("initialize() in 'resume' mode spawns claude with --resume <id>", async () => {
+  test("initialize() in 'resume' mode spawns claude with --resume and emits synthetic session_init", async () => {
     const suffix = Date.now();
     const projectDir = `/tmp/init-resume-${suffix}`;
     const id = crypto.randomUUID();
@@ -1453,71 +1463,132 @@ describe("SessionManager behavioral", () => {
       mode: "session-id" | "resume",
     ) => {
       calls.push({ id: sid, mode });
-      // Emit `system:init` so attemptResumeSpawn succeeds.
       return {
         stdout: new ReadableStream<Uint8Array>({
           start(controller) {
-            const init = JSON.stringify({
-              type: "system",
-              subtype: "init",
-              session_id: id,
-            });
-            controller.enqueue(new TextEncoder().encode(init + "\n"));
             controller.close();
           },
         }),
         stdin: { write: () => {}, end: () => {}, flush: () => {} },
-        exited: new Promise<number>(() => {}), // never resolves during init
+        // Healthy claude — never exits during the watcher window.
+        exited: new Promise<number>(() => {}),
         kill: () => {},
       };
     };
 
-    await manager.initialize();
+    const emitted = await captureIpcOutput(async () => {
+      await manager.initialize();
+    });
 
     expect(calls).toEqual([{ id, mode: "resume" }]);
+    const initLines = emitted.filter(
+      (e: any) => e?.type === "session_init",
+    );
+    expect(initLines.length).toBe(1);
+    expect((initLines[0] as any).session_id).toBe(id);
+    // No `resume_failed` should fire on the happy path.
+    const failedLines = emitted.filter(
+      (e: any) => e?.type === "resume_failed",
+    );
+    expect(failedLines.length).toBe(0);
   });
 
-  test("initialize() in 'resume' mode emits resume_failed and throws ResumeFailedError when the subprocess exits before system:init (no silent fallback)", async () => {
+  test("early-exit watcher emits resume_failed when claude exits during the window (resume mode)", async () => {
+    // Stale resume id: claude exits in ~1s with stderr "No conversation
+    // found". Watcher catches the exit and emits `resume_failed` IPC
+    // before calling process.exit. We stub process.exit so the test
+    // process survives.
     const suffix = Date.now();
     const projectDir = `/tmp/init-stale-${suffix}`;
     const staleId = crypto.randomUUID();
 
     const manager = new SessionManager(projectDir, staleId, "resume");
-    const calls: Array<{ id: string | null; mode: string }> = [];
-    (manager as any).spawnClaude = (
-      sid: string | null,
-      mode: "session-id" | "resume",
-    ) => {
-      calls.push({ id: sid, mode });
-      // Resume attempt: subprocess exits immediately with no system:init.
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.close();
-          },
-        }),
-        stdin: { write: () => {}, end: () => {}, flush: () => {} },
-        exited: Promise.resolve(1),
-        kill: () => {},
-      };
+    let exitResolve: ((code: number) => void) | null = null;
+    (manager as any).spawnClaude = () => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stdin: { write: () => {}, end: () => {}, flush: () => {} },
+      exited: new Promise<number>((r) => {
+        exitResolve = r;
+      }),
+      kill: () => {},
+    });
+
+    const originalExit = process.exit;
+    let exitCalled = false;
+    (process as any).exit = (_code?: number) => {
+      exitCalled = true;
+      // Don't actually exit; throw a sentinel the captureIpcOutput
+      // will swallow via finally so the test can observe state.
     };
 
-    let caught: unknown = null;
+    let emitted: unknown[] = [];
     try {
-      await manager.initialize();
-    } catch (err) {
-      caught = err;
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        // Trigger the watcher: claude exits with non-zero status now.
+        exitResolve!(1);
+        // Yield so the watcher's .then callback runs.
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      process.exit = originalExit;
     }
 
-    // Phase B: tugcode does NOT silently fresh-spawn. Exactly one spawn
-    // (the resume attempt), then `ResumeFailedError` is thrown so main
-    // can exit cleanly. The bridge promotes the subsequent EOF to
-    // `RelayOutcome::ResumeFailed` and surfaces the failure to the card.
-    expect(calls.length).toBe(1);
-    expect(calls[0]).toEqual({ id: staleId, mode: "resume" });
-    expect(caught).toBeInstanceOf(ResumeFailedError);
-    expect((caught as ResumeFailedError).staleSessionId).toBe(staleId);
-    expect((caught as ResumeFailedError).reason.length).toBeGreaterThan(0);
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(1);
+    expect((failed[0] as any).stale_session_id).toBe(staleId);
+    expect((failed[0] as any).reason).toContain("code 1");
+    expect(exitCalled).toBe(true);
+  });
+
+  test("early-exit watcher emits error when claude exits during the window (fresh mode)", async () => {
+    // Session-id collision: claude exits in ~135ms with "Session ID
+    // already in use". Watcher emits `error` (not resume_failed) so the
+    // bridge propagates a generic init failure, not a resume one.
+    const suffix = Date.now();
+    const projectDir = `/tmp/init-fresh-collide-${suffix}`;
+    const id = crypto.randomUUID();
+
+    const manager = new SessionManager(projectDir, id);
+    let exitResolve: ((code: number) => void) | null = null;
+    (manager as any).spawnClaude = () => ({
+      stdout: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stdin: { write: () => {}, end: () => {}, flush: () => {} },
+      exited: new Promise<number>((r) => {
+        exitResolve = r;
+      }),
+      kill: () => {},
+    });
+
+    const originalExit = process.exit;
+    (process as any).exit = (_code?: number) => {};
+
+    let emitted: unknown[] = [];
+    try {
+      emitted = await captureIpcOutput(async () => {
+        await manager.initialize();
+        exitResolve!(1);
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    } finally {
+      process.exit = originalExit;
+    }
+
+    const errors = emitted.filter((e: any) => e?.type === "error");
+    expect(errors.length).toBe(1);
+    expect((errors[0] as any).message).toContain("code 1");
+    // Fresh-mode failures must NOT emit resume_failed (different
+    // bridge classification path).
+    const failed = emitted.filter((e: any) => e?.type === "resume_failed");
+    expect(failed.length).toBe(0);
   });
 
   test("handlePermissionMode updates permissionManager state", () => {

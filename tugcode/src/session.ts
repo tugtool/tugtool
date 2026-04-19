@@ -33,20 +33,6 @@ interface PendingRequest<T> {
   reject: (err: Error) => void;
 }
 
-/**
- * Thrown by `SessionManager.initialize()` when a `--resume` attempt
- * fails. The `resume_failed` IPC line was already emitted to stdout
- * before the throw, so the bridge has the frame in flight; main.ts
- * catches this sentinel, logs, and exits cleanly without writing an
- * additional `error` IPC line.
- */
-export class ResumeFailedError extends Error {
-  constructor(public readonly staleSessionId: string, public readonly reason: string) {
-    super(`resume failed for ${staleSessionId}: ${reason}`);
-    this.name = "ResumeFailedError";
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Image attachment validation constants (per PN-12)
 // ---------------------------------------------------------------------------
@@ -689,18 +675,13 @@ export class SessionManager {
    */
   private sessionId: string;
   /**
-   * `"new"` (default) spawns a fresh claude session; `"resume"` passes
-   * `--resume <sessionId>` to claude. Resume failure falls back to a
-   * fresh spawn after emitting a `resume_failed` IPC frame — see
-   * `initialize()`.
+   * `"new"` spawns claude with `--session-id <id>` (claiming the id);
+   * `"resume"` spawns claude with `--resume <id>` (loading an existing
+   * conversation). Both modes share the same `initialize()` path; the
+   * only mode-specific thing is the claude flag, plus a background
+   * watcher that surfaces resume failures via `resume_failed` IPC.
    */
   private sessionMode: "new" | "resume";
-  /**
-   * Captured by `attemptResumeSpawn` on failure so `initialize()` can
-   * thread the reason into `ResumeFailedError`. Cleared when not in
-   * use; reset on every fresh `attemptResumeSpawn` call.
-   */
-  private lastResumeFailureReason: string | null = null;
 
   constructor(
     projectDir: string,
@@ -750,6 +731,12 @@ export class SessionManager {
     });
 
     console.log(`Spawning claude with args: ${args.join(" ")}`);
+    logSessionLifecycle("tugcode.claude_spawn", {
+      session_id: this.sessionId,
+      mode,
+      cwd: this.projectDir,
+      args: args.join(" "),
+    });
 
     // Scrub Anthropic auth env vars so the claude CLI authenticates via
     // `~/.claude.json` (the user's Max/Pro subscription) rather than
@@ -890,23 +877,27 @@ export class SessionManager {
   }
 
   /**
-   * Initialize session.
+   * Initialize session — single codepath for fresh and resume.
    *
-   * - `sessionMode === "new"`: spawn claude with
-   *   `--session-id <this.sessionId>` so the tugdeck-generated UUID
-   *   becomes claude's own session id. On `system:init` the record is
-   *   upserted into `dev.tugtool.tide / sessions` with `{projectDir,
-   *   createdAt}`.
-   * - `sessionMode === "resume"`: spawn claude with
-   *   `--resume <this.sessionId>`. If the spawn fails (claude exits
-   *   before we see `system:init`, e.g. because the session JSONL is
-   *   missing or rejected), emit a `resume_failed` IPC frame and
-   *   throw `ResumeFailedError`. The bridge promotes the subsequent
-   *   stdout EOF from `Crashed` to `ResumeFailed` (no retry) and
-   *   surfaces the failure to the card; the user picks a different
-   *   option in the picker. Silently rebranding the session under a
-   *   new claude id is what produced an earlier divergence bug class
-   *   — we now surface the failure instead.
+   * Both modes spawn claude with stream-json IPC; the only mode-specific
+   * thing is the claude flag (`--session-id` vs `--resume`). Empirically
+   * verified: claude in stream-json mode does NOT emit `system:init`
+   * until it receives input, regardless of mode. Waiting for one would
+   * deadlock — both modes would hang for the full timeout. Instead we
+   * synthesize the `session_init` IPC line immediately (we already know
+   * the session id; it's the same one we just spawned claude with) and
+   * install a background watcher that surfaces fast claude failures:
+   *
+   *   - resume with stale id: claude exits in ~1s with stderr
+   *     `No conversation found with session ID: <id>`.
+   *   - fresh with id collision: claude exits in ~135ms with stderr
+   *     `Session ID <id> is already in use`.
+   *
+   * The watcher catches those signatures and emits `resume_failed`
+   * (resume) or `error` (fresh). The bridge then promotes the
+   * subsequent stdout EOF to a terminal outcome and surfaces it to
+   * the card. Past the watcher window claude is alive and waiting
+   * for input — the happy path.
    */
   async initialize(): Promise<void> {
     const inputSessionId = this.sessionId;
@@ -916,48 +907,19 @@ export class SessionManager {
       session_mode: inputMode,
     });
 
-    if (this.sessionMode === "resume") {
-      console.log(`Attempting to resume claude session ${this.sessionId}`);
-      const ok = await this.attemptResumeSpawn(this.sessionId);
-      if (ok) {
-        logSessionLifecycle("tugcode.init.end", {
-          session_mode: inputMode,
-          session_id_in: inputSessionId,
-          session_id_out: this.sessionId,
-          fallback_taken: false,
-        });
-        return;
-      }
-      // attemptResumeSpawn has emitted `resume_failed` (the bridge will
-      // forward it as a CODE_OUTPUT frame), removed the stale sessions
-      // record, and reset internal state. Throw so main.ts exits cleanly
-      // without minting a new uuid. The bridge's `RelayOutcome::ResumeFailed`
-      // path takes over from here.
-      const reason =
-        this.lastResumeFailureReason ??
-        "resume failed";
-      logSessionLifecycle("tugcode.init.end", {
-        session_mode: inputMode,
-        session_id_in: inputSessionId,
-        session_id_out: inputSessionId,
-        fallback_taken: false,
-        resume_failed: true,
-        reason,
-      });
-      throw new ResumeFailedError(inputSessionId, reason);
-    }
-
-    console.log(`Spawning fresh claude session (--session-id ${this.sessionId})`);
-
-    this.claudeProcess = this.spawnClaude(this.sessionId, "session-id");
+    const claudeFlag = this.sessionMode === "resume" ? "resume" : "session-id";
+    this.claudeProcess = this.spawnClaude(this.sessionId, claudeFlag);
     this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
     this.stdoutBuffer = "";
+
+    this.installEarlyExitWatcher();
 
     writeLine({
       type: "session_init",
       session_id: this.sessionId,
       ipc_version: 2,
     });
+
     logSessionLifecycle("tugcode.init.end", {
       session_mode: inputMode,
       session_id_in: inputSessionId,
@@ -967,107 +929,53 @@ export class SessionManager {
   }
 
   /**
-   * Attempt to spawn claude with `--resume <resumeId>` and wait for the
-   * `system:init` event within a 10s window. Returns `true` on success
-   * (internal state set up, `session_init` IPC emitted); `false` on
-   * failure (stale-id fallback executed: `resume_failed` emitted, the
-   * sessions record removed, internal state reset to null).
+   * Background watcher: race `claude.exited` against EARLY_EXIT_WINDOW_MS.
+   * If claude dies in the window, emit the appropriate IPC line and
+   * exit cleanly so the bridge's terminal outcome path takes over.
+   * Past the window, claude is healthy (waiting for stdin input) and
+   * the watcher resolves to no-op.
    *
-   * Claude's failure signal on a bad `--resume` id is the process
-   * exiting quickly (usually within a second) with a non-zero status.
-   * We detect failure two ways:
-   *   - `claudeProcess.exited` resolves before `system:init` arrives.
-   *   - No `system:init` appears within `RESUME_INIT_TIMEOUT_MS`.
-   * Either case triggers the fallback.
+   * Fixed window covers both observed failure signatures with margin.
    */
-  private async attemptResumeSpawn(resumeId: string): Promise<boolean> {
-    this.lastResumeFailureReason = null;
+  private installEarlyExitWatcher(): void {
+    if (!this.claudeProcess) return;
+    const child = this.claudeProcess;
+    const sessionId = this.sessionId;
+    const sessionMode = this.sessionMode;
+    const EARLY_EXIT_WINDOW_MS = 3000;
 
-    // No pre-flight stat. An earlier version checked
-    // `~/.claude/projects/<encoded-cwd>/<id>.jsonl` to fail fast on a
-    // missing jsonl, but the encoding has to match claude's exact
-    // canonicalization rules (it resolves cwd via the OS, including
-    // macOS firmlinks like /u → /Users/.../Mounts/u). Mismatching the
-    // encoding silently turned every successful resume into a
-    // false-positive `missing_jsonl` failure. Letting claude do its
-    // own check is the simple correct thing — the bridge's terminal
-    // `ResumeFailed` outcome cleanly handles whatever claude reports.
-
-    const RESUME_INIT_TIMEOUT_MS = 10_000;
-
-    const child = this.spawnClaude(resumeId, "resume");
-    this.claudeProcess = child;
-    this.stdoutReader = (child.stdout as ReadableStream<Uint8Array>).getReader();
-    this.stdoutBuffer = "";
-
-    // Race three outcomes: `system:init` arrives → success; child exits
-    // → failure; timeout → failure.
-    const initPromise: Promise<
-      "init" | "exit" | "timeout"
-    > = (async () => {
-      const start = Date.now();
-      while (Date.now() - start < RESUME_INIT_TIMEOUT_MS) {
-        const line = await this.readNextLine();
-        if (line === null) return "exit";
-        try {
-          const event = JSON.parse(line);
-          if (event.type === "system" && event.subtype === "init") {
-            const sid = event.session_id || resumeId;
-            writeLine({ type: "session_init", session_id: sid, ipc_version: 2 });
-            return "init";
-          }
-        } catch {
-          // Ignore non-JSON lines during the handshake window.
-        }
+    Promise.race<{ kind: "exit"; code: number } | { kind: "timeout" }>([
+      child.exited.then((code) => ({ kind: "exit" as const, code })),
+      new Promise<{ kind: "timeout" }>((r) =>
+        setTimeout(() => r({ kind: "timeout" as const }), EARLY_EXIT_WINDOW_MS),
+      ),
+    ]).then((result) => {
+      if (result.kind !== "exit") return;
+      const code = result.code;
+      if (sessionMode === "resume") {
+        const reason = `claude exited with code ${code} during resume init (likely stale id)`;
+        logSessionLifecycle("tugcode.resume_failed", {
+          stale_session_id: sessionId,
+          reason,
+          exit_code: code,
+        });
+        writeLine({
+          type: "resume_failed",
+          reason,
+          stale_session_id: sessionId,
+          ipc_version: 2,
+        });
+      } else {
+        const reason = `claude exited with code ${code} during fresh init`;
+        writeLine({
+          type: "error",
+          message: reason,
+          recoverable: false,
+          ipc_version: 2,
+        });
       }
-      return "timeout";
-    })();
-
-    const exitPromise: Promise<"exit"> = child.exited.then(() => "exit" as const);
-    const timeoutPromise: Promise<"timeout"> = new Promise((r) =>
-      setTimeout(() => r("timeout"), RESUME_INIT_TIMEOUT_MS),
-    );
-
-    const outcome = await Promise.race([
-      initPromise,
-      exitPromise,
-      timeoutPromise,
-    ]);
-
-    if (outcome === "init") {
-      return true;
-    }
-
-    // Failure path: emit `resume_failed` so tugcast removes the stale
-    // sessions record and routes the notice to the card. Then kill the
-    // child if it is still around and reset internal state.
-    const reason =
-      outcome === "exit"
-        ? "claude exited before session init (likely stale --resume id)"
-        : "timed out waiting for session init on --resume";
-    this.lastResumeFailureReason = reason;
-    console.log(`Resume attempt for ${resumeId} failed: ${reason}`);
-    logSessionLifecycle("tugcode.resume_failed", {
-      stale_session_id: resumeId,
-      reason,
+      process.exit(0);
     });
-    writeLine({
-      type: "resume_failed",
-      reason,
-      stale_session_id: resumeId,
-      ipc_version: 2,
-    });
-
-    try {
-      child.kill();
-    } catch {
-      // Process may already be gone.
-    }
-    this.claudeProcess = null;
-    this.stdoutReader = null;
-    this.stdoutBuffer = "";
-
-    return false;
   }
 
   /**

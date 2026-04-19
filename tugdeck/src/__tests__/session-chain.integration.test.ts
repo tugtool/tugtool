@@ -8,18 +8,20 @@
  * asserts on the `[tide::session-lifecycle]` log shape so future
  * regressions show up as log-shape diffs.
  *
- * R-CHAIN-05 (submit-during-handshake) lives in
- * `tugways/__tests__/tug-prompt-entry.test.tsx` because it requires
- * rendering the entry component to exercise the per-card buffer.
+ * The contract these tests pin: tugdeck operates on a single session
+ * id (`tugSessionId`, decided by the picker, set on
+ * `CodeSessionStore` at construction time, used as the prompt-history
+ * key from the first render of the entry). No waiting on `session_init`.
  *
- * R-CHAIN-06 (close mid-stream then resume) is transitively covered by
- * R-CHAIN-01's push-then-fetch round trip plus the existing close
- * tests in `code-session-store.scaffold.test.ts`; the marginal coverage
- * a separate test would add did not justify a third fetch-mocked
- * scenario in this suite.
+ * R-CHAIN-05 (submit-during-handshake) is no longer relevant: the
+ * single-id model means the id is available immediately on bind, so
+ * there is no handshake window in which a push could be lost.
+ *
+ * R-CHAIN-06 (close mid-stream then resume) is transitively covered
+ * by R-CHAIN-01's PUT round-trip plus the existing close tests.
  */
 
-import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
 import type { TugConnection } from "@/connection";
@@ -36,11 +38,6 @@ import { PromptHistoryStore } from "@/lib/prompt-history-store";
 // Lifecycle-log capture
 // ---------------------------------------------------------------------------
 
-/**
- * Captured `[tide::session-lifecycle]` line, parsed into structured
- * fields. Tests assert on the `event` and selected fields rather than
- * on the human-readable prose so a copy edit doesn't break the suite.
- */
 interface LifecycleLine {
   event: string;
   fields: Record<string, string>;
@@ -53,8 +50,6 @@ function parseLifecycleLine(raw: string): LifecycleLine | null {
   if (!raw.startsWith(LIFECYCLE_PREFIX)) return null;
   const body = raw.slice(LIFECYCLE_PREFIX.length);
   const fields: Record<string, string> = {};
-  // Split on space, but respect JSON-quoted values (the helper uses
-  // JSON.stringify on values containing whitespace).
   const tokens: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -89,9 +84,7 @@ function parseLifecycleLine(raw: string): LifecycleLine | null {
 interface CapturedLogs {
   lines: LifecycleLine[];
   restore: () => void;
-  /** Find the first matching event; throws if absent. */
   expectEvent: (event: string) => LifecycleLine;
-  /** All lines for a given event name. */
   allEvents: (event: string) => LifecycleLine[];
 }
 
@@ -139,12 +132,12 @@ interface FetchRecord {
 
 interface FetchHarness {
   records: FetchRecord[];
-  /** Pre-populate a GET response for a URL containing this substring. */
   seedGet: (urlContains: string, body: unknown) => void;
   restore: () => void;
 }
 
-const _noopFetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+const _noopFetch = (async () =>
+  new Response(null, { status: 404 })) as unknown as typeof fetch;
 
 function installFetchMock(): FetchHarness {
   const records: FetchRecord[] = [];
@@ -199,7 +192,7 @@ function installFetchMock(): FetchHarness {
 const PROJECT_DIR = "/work/r-chain-test";
 
 function makeBinding(
-  cardId: string,
+  _cardId: string,
   tugSessionId: string,
   overrides: Partial<CardSessionBinding> = {},
 ): CardSessionBinding {
@@ -208,12 +201,14 @@ function makeBinding(
     workspaceKey: PROJECT_DIR,
     projectDir: PROJECT_DIR,
     sessionMode: "new",
-    claudeSessionId: null,
     ...overrides,
   };
 }
 
-function makeStore(conn: MockTugConnection, tugSessionId: string): CodeSessionStore {
+function makeStore(
+  conn: MockTugConnection,
+  tugSessionId: string,
+): CodeSessionStore {
   return new CodeSessionStore({
     conn: conn as unknown as TugConnection,
     tugSessionId,
@@ -221,32 +216,26 @@ function makeStore(conn: MockTugConnection, tugSessionId: string): CodeSessionSt
 }
 
 /**
- * Wrapper around `useTideCardObserver`'s underlying logic so the
- * integration tests share the production subscribe with `TideCardBody`.
- * Imports the hook's pure inner function via the same module so a
- * change to the production observer flows through without forking.
+ * Hand-rolled mirror of `useTideCardObserver` (the React hook) so
+ * scenario tests can attach the resume-failed unbind logic outside
+ * the renderer. The single source of behavioral truth lives in the
+ * production hook; this mirror exists because the tests exercise the
+ * chain without rendering TideCardBody. If the hook body changes,
+ * update this mirror or migrate the test to RTL.
  */
-import { useTideCardObserver as _useTideCardObserver } from "@/components/tugways/cards/use-tide-card-observer";
-void _useTideCardObserver; // signal that the production hook lives in the shared module
-
-function installCardObserver(cardId: string, store: CodeSessionStore): () => void {
-  // Hand-rolled mirror of the production subscribe body. Kept as a
-  // pure function (not a React hook) so test scenarios can attach it
-  // outside the renderer. The single source of behavioral truth lives
-  // in the production hook; this mirror exists because the tests
-  // exercise the chain without rendering TideCardBody. If the hook
-  // body changes, update this mirror or migrate the test to RTL.
+function installCardObserver(
+  cardId: string,
+  store: CodeSessionStore,
+): () => void {
   let consumedAt: number | null = null;
-  let boundClaudeId: string | null = null;
   return store.subscribe(() => {
     const snap = store.getSnapshot();
-    const claudeId = snap.claudeSessionId;
-    if (claudeId !== null && boundClaudeId !== claudeId) {
-      boundClaudeId = claudeId;
-      cardSessionBindingStore.bindClaudeSessionId(cardId, claudeId);
-    }
     const err = snap.lastError;
-    if (err === null || err.cause !== "resume_failed" || consumedAt === err.at) {
+    if (
+      err === null ||
+      err.cause !== "resume_failed" ||
+      consumedAt === err.at
+    ) {
       return;
     }
     consumedAt = err.at;
@@ -289,42 +278,21 @@ describe("R-CHAIN-01 — Fresh new", () => {
     fetchH.restore();
   });
 
-  it("spawn → session_init → claudeSessionId on binding → history.push lands under that id", async () => {
+  it("history.push lands under the picker-chosen session id without waiting on session_init", async () => {
     const cardId = "card-rchain-01";
-    const tugId = "tug-rchain-01";
+    const sessionId = "tug-rchain-01";
     const conn = new MockTugConnection();
-    const store = makeStore(conn, tugId);
-    const unsubscribe = installCardObserver(cardId, store);
+    const store = makeStore(conn, sessionId);
+    bindForTest(cardId, sessionId);
 
-    // Picker minted `tugId` and the spawn_session frame went out.
-    // (We seed the binding directly here — wire-side tests for the
-    // ack live in action-dispatch.test.ts.)
-    bindForTest(cardId, tugId);
+    // No `session_init` is dispatched here. The picker chose the id;
+    // the entry can push history immediately, without confirmation
+    // from claude.
 
-    // Bridge forwards `session_init` from claude. With no silent
-    // fallback, claude's id always equals the requested id for a
-    // fresh spawn.
-    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: tugId,
-      tug_session_id: tugId,
-    });
-
-    // Lifecycle: code_store.session_init_recv carries both ids.
-    const initEvt = logs.expectEvent("code_store.session_init_recv");
-    expect(initEvt.fields.tug_session_id).toBe(tugId);
-    expect(initEvt.fields.claude_session_id).toBe(tugId);
-
-    // Binding's claudeSessionId now reflects the canonical id.
-    expect(cardSessionBindingStore.getBinding(cardId)?.claudeSessionId).toBe(
-      tugId,
-    );
-
-    // Push a history entry under the freshly-arrived claude id.
     const history = new PromptHistoryStore();
     history.push({
-      id: `${tugId}-1`,
-      sessionId: tugId,
+      id: `${sessionId}-1`,
+      sessionId,
       projectPath: PROJECT_DIR,
       route: "❯",
       text: "hello world",
@@ -332,15 +300,34 @@ describe("R-CHAIN-01 — Fresh new", () => {
       timestamp: 1,
     });
 
-    // PUT URL contains the claude id (history keys on it).
     const put = fetchH.records.find(
       (r) => r.method === "PUT" && r.url.includes("prompt.history"),
     );
     expect(put).toBeDefined();
-    expect(put!.url).toContain(encodeURIComponent(tugId));
-    expect(logs.expectEvent("history.put").fields.session_id).toBe(tugId);
+    expect(put!.url).toContain(encodeURIComponent(sessionId));
+    expect(logs.expectEvent("history.put").fields.session_id).toBe(sessionId);
 
-    unsubscribe();
+    store.dispose();
+  });
+
+  it("session_init logs with divergent=false when claude's id matches the picker's", async () => {
+    const cardId = "card-rchain-01b";
+    const sessionId = "tug-rchain-01b";
+    const conn = new MockTugConnection();
+    const store = makeStore(conn, sessionId);
+    bindForTest(cardId, sessionId);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "session_init",
+      session_id: sessionId,
+      tug_session_id: sessionId,
+    });
+
+    const initEvt = logs.expectEvent("code_store.session_init_recv");
+    expect(initEvt.fields.tug_session_id).toBe(sessionId);
+    expect(initEvt.fields.claude_session_id).toBe(sessionId);
+    expect(initEvt.fields.divergent).toBe("false");
+
     store.dispose();
   });
 });
@@ -361,11 +348,10 @@ describe("R-CHAIN-02 — Resume success", () => {
     fetchH.restore();
   });
 
-  it("history pre-seeded for X, session_init({X}), loadSession returns the persisted entries", async () => {
+  it("loadSession returns persisted entries and the route provider restores them", async () => {
     const cardId = "card-rchain-02";
-    const sessionId = "claude-rchain-02";
+    const sessionId = "rchain-02-session";
 
-    // Pre-seed the persisted history for this session.
     fetchH.seedGet(`prompt.history/${encodeURIComponent(sessionId)}`, {
       kind: "json",
       value: [
@@ -383,21 +369,8 @@ describe("R-CHAIN-02 — Resume success", () => {
 
     const conn = new MockTugConnection();
     const store = makeStore(conn, sessionId);
-    const unsubscribe = installCardObserver(cardId, store);
     bindForTest(cardId, sessionId);
 
-    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: sessionId,
-      tug_session_id: sessionId,
-    });
-
-    // Binding picks up the canonical id.
-    expect(cardSessionBindingStore.getBinding(cardId)?.claudeSessionId).toBe(
-      sessionId,
-    );
-
-    // Load the persisted history.
     const history = new PromptHistoryStore();
     await history.loadSession(sessionId);
 
@@ -410,12 +383,10 @@ describe("R-CHAIN-02 — Resume success", () => {
     expect(getEvt.fields.session_id).toBe(sessionId);
     expect(getEvt.fields.entry_count).toBe("1");
 
-    // Entry is reachable via the route provider.
     const provider = history.createRouteProvider(sessionId, "❯");
     const restored = provider.back({ text: "", atoms: [], selection: null });
     expect(restored?.text).toBe("remember my favorite color is green");
 
-    unsubscribe();
     store.dispose();
   });
 });
@@ -436,15 +407,14 @@ describe("R-CHAIN-03 — Resume failure", () => {
     fetchH.restore();
   });
 
-  it("resume_failed → lastError populated, binding cleared, picker notice stashed, claudeSessionId never bound", () => {
+  it("resume_failed → lastError populated, binding cleared, picker notice stashed", () => {
     const cardId = "card-rchain-03";
-    const staleId = "claude-stale-id";
+    const staleId = "stale-session";
     const conn = new MockTugConnection();
     const store = makeStore(conn, staleId);
     const unsubscribe = installCardObserver(cardId, store);
     bindForTest(cardId, staleId);
 
-    // Bridge forwards tugcode's `resume_failed` IPC frame.
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "resume_failed",
       reason: "missing_jsonl",
@@ -457,22 +427,13 @@ describe("R-CHAIN-03 — Resume failure", () => {
     expect(recvEvt.fields.stale_session_id).toBe(staleId);
     expect(recvEvt.fields.reason).toBe("missing_jsonl");
 
-    // lastError populated with cause=resume_failed.
     const snap = store.getSnapshot();
     expect(snap.lastError?.cause).toBe("resume_failed");
 
-    // claudeSessionId never took a value (the resume never reached
-    // session_init).
-    expect(snap.claudeSessionId).toBeNull();
-
-    // Card observer (mirroring TideCardBody) cleared the binding and
-    // stashed a notice.
     expect(cardSessionBindingStore.getBinding(cardId)).toBeUndefined();
     const notice = pickerNoticeStore.consume(cardId);
     expect(notice?.category).toBe("resume_failed");
 
-    // No history.put for this attempt — the entry never bound long
-    // enough to push.
     expect(
       fetchH.records.some(
         (r) => r.method === "PUT" && r.url.includes("prompt.history"),
@@ -500,33 +461,24 @@ describe("R-CHAIN-04 — Concurrent resume rejected", () => {
     fetchH.restore();
   });
 
-  it("Card B's CodeSessionStore receives errored{session_live_elsewhere} and never binds claudeSessionId", () => {
-    const sessionId = "claude-rchain-04";
+  it("Card B receives errored{session_live_elsewhere} while Card A's binding survives", () => {
+    const sessionId = "rchain-04-session";
     const cardA = "card-rchain-04-a";
     const cardB = "card-rchain-04-b";
 
-    // Card A binds successfully under sessionId.
     const connA = new MockTugConnection();
     const storeA = makeStore(connA, sessionId);
     const unsubA = installCardObserver(cardA, storeA);
     bindForTest(cardA, sessionId);
-    connA.dispatchDecoded(FeedId.CODE_OUTPUT, {
-      type: "session_init",
-      session_id: sessionId,
-      tug_session_id: sessionId,
-    });
-    expect(cardSessionBindingStore.getBinding(cardA)?.claudeSessionId).toBe(
-      sessionId,
-    );
 
-    // Card B picks Resume on the same id. The supervisor would reject
-    // and broadcast `SESSION_STATE = errored { detail: "session_live_elsewhere" }`.
-    // Simulate that wire frame here.
     const connB = new MockTugConnection();
     const storeB = makeStore(connB, sessionId);
     const unsubB = installCardObserver(cardB, storeB);
     bindForTest(cardB, sessionId);
 
+    // The supervisor would reject Card B's spawn and broadcast
+    // `SESSION_STATE = errored { detail: "session_live_elsewhere" }`.
+    // Simulate that wire frame here.
     connB.dispatchDecoded(FeedId.SESSION_STATE, {
       tug_session_id: sessionId,
       state: "errored",
@@ -537,13 +489,11 @@ describe("R-CHAIN-04 — Concurrent resume rejected", () => {
     expect(snapB.phase).toBe("errored");
     expect(snapB.lastError?.cause).toBe("session_state_errored");
     expect(snapB.lastError?.message).toContain("session_live_elsewhere");
-    // Card B never observed session_init → claudeSessionId stays null.
-    expect(snapB.claudeSessionId).toBeNull();
 
-    // Card A is unaffected.
-    expect(cardSessionBindingStore.getBinding(cardA)?.claudeSessionId).toBe(
-      sessionId,
-    );
+    // Card A's binding survives.
+    expect(
+      cardSessionBindingStore.getBinding(cardA)?.tugSessionId,
+    ).toBe(sessionId);
 
     unsubA();
     unsubB();

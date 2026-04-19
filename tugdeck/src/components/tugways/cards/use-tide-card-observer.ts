@@ -1,26 +1,17 @@
 /**
  * useTideCardObserver — bridges per-card session events to the
- * card-binding and picker-notice stores.
+ * picker-notice store.
  *
- * Two reactions, both keyed off the bound `CodeSessionStore`:
+ * Single responsibility: when `lastError.cause === "resume_failed"`,
+ * stash a one-shot notice keyed by this card and clear the binding.
+ * The cleared binding makes `useTideCardServices` return null →
+ * `TideCardContent` re-renders the picker, which reads the notice
+ * and surfaces it above the radio group. We deliberately do NOT
+ * call `sendCloseSession` here: the bridge has already torn down
+ * on the supervisor side, so a close would leak a duplicate frame.
  *
- * 1. **claudeSessionId propagation.** When the store first observes
- *    `session_init` and snapshot.claudeSessionId becomes non-null,
- *    propagate that id into the card's binding so any future ledger
- *    consumer can read the canonical session id from the binding
- *    instead of reaching into the store.
- *
- * 2. **resume_failed unbind.** When `lastError.cause === "resume_failed"`,
- *    stash a one-shot notice keyed by this card and clear the binding.
- *    The cleared binding makes `useTideCardServices` return null →
- *    `TideCardContent` re-renders the picker, which reads the notice
- *    and surfaces it above the radio group. We deliberately do NOT
- *    call `sendCloseSession` here: the bridge has already torn down
- *    on the supervisor side, so a close would leak a duplicate frame.
- *
- * Both reactions share one subscribe so each notification triggers one
- * snapshot read. Per-error dedup uses the `at` timestamp; per-id dedup
- * uses the captured `boundClaudeSessionId` ref.
+ * Per-error dedup uses the `lastError.at` timestamp so each unique
+ * failure triggers exactly one unbind.
  */
 
 import { useLayoutEffect, useRef } from "react";
@@ -35,15 +26,9 @@ export function useTideCardObserver(
   codeSessionStore: CodeSessionStore,
 ): void {
   const consumedLastErrorAtRef = useRef<number | null>(null);
-  const boundClaudeSessionIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     return codeSessionStore.subscribe(() => {
       const snap = codeSessionStore.getSnapshot();
-      const claudeId = snap.claudeSessionId;
-      if (claudeId !== null && boundClaudeSessionIdRef.current !== claudeId) {
-        boundClaudeSessionIdRef.current = claudeId;
-        cardSessionBindingStore.bindClaudeSessionId(cardId, claudeId);
-      }
       const err = snap.lastError;
       if (
         err === null ||

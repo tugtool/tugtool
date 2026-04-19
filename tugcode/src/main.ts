@@ -13,7 +13,7 @@ import {
   isSessionCommand,
   isStopTask,
 } from "./types.ts";
-import { ResumeFailedError, SessionManager } from "./session.ts";
+import { SessionManager } from "./session.ts";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -122,21 +122,14 @@ async function main() {
         ipc_version: 2,
       });
 
-      // Initialize session (blocks loop until ready, emits session_init)
+      // Initialize session. Synchronous in both modes: spawns claude,
+      // installs the early-exit watcher, and emits the synthetic
+      // session_init IPC line. Any subsequent claude startup failure
+      // surfaces via the watcher's IPC emit + process.exit, not via a
+      // throw here.
       try {
         await sessionManager.initialize();
       } catch (err) {
-        if (err instanceof ResumeFailedError) {
-          // attemptResumeSpawn already wrote the `resume_failed` IPC
-          // line. tugcode does NOT silently fresh-spawn on resume
-          // failure; it exits cleanly so the bridge promotes the EOF
-          // to a terminal `ResumeFailed` outcome and the card sees
-          // the failure instead of a silent rebrand.
-          console.error(
-            `Resume failed for ${err.staleSessionId}: ${err.reason}; exiting`,
-          );
-          process.exit(0);
-        }
         console.error("Session initialization failed:", err);
         writeLine({
           type: "error",

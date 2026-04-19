@@ -735,7 +735,6 @@ function defaultSnapshot(): CodeSessionSnapshot {
   return {
     phase: "idle",
     tugSessionId: "tug-session-id",
-    claudeSessionId: null,
     displayLabel: "test",
     activeMsgId: null,
     canSubmit: true,
@@ -1145,24 +1144,15 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Per-session prompt history keys on `claudeSessionId`, not on the routing
-// `tugSessionId`. Two regressions live here:
-//
-// 1. Cache poisoning. The provider cache used to key on `route` only;
-//    when `claudeSessionId` changed (e.g. resume → silent fresh fallback)
-//    the cached provider returned the old session's entries even though
-//    `snap.claudeSessionId` had moved on. Verified by changing the
-//    snapshot's `claudeSessionId` mid-session and asserting `push()`
-//    targets the new id (proving a fresh provider was created).
-//
-// 2. Push key. `performSubmit` previously pushed under
-//    `snap.tugSessionId`; that orphaned the entry from the on-disk
-//    claude session file (which is named after the claude id, the
-//    only string `--resume` can find). Verified by inspecting the
-//    `sessionId` field on the pushed entry.
+// Per-session prompt history keys on the picker-chosen session id, which
+// is set on `CodeSessionStore` at construction time and exposed via
+// `snap.tugSessionId`. Available immediately on bind — no waiting on a
+// separate `session_init` confirmation. Tugdeck operates on a single
+// session id end-to-end; the picker's choice is the only id that
+// matters for user-facing keying.
 // ---------------------------------------------------------------------------
 
-describe("TugPromptEntry — per-session prompt history keys on claudeSessionId", () => {
+describe("TugPromptEntry — per-session prompt history", () => {
   beforeEach(() => {
     installExecCommandShim();
     installCanvas2DShim();
@@ -1174,10 +1164,9 @@ describe("TugPromptEntry — per-session prompt history keys on claudeSessionId"
     uninstallCanvas2DShim();
   });
 
-  it("push uses claudeSessionId (not tugSessionId) as the entry's session id", () => {
+  it("push uses tugSessionId (the picker-chosen id) as the entry's session id", () => {
     const store = new ScriptedStore({
-      tugSessionId: "tug-routing-id",
-      claudeSessionId: "claude-real-id",
+      tugSessionId: "session-id-from-picker",
     });
     const { id, managerRef, services } = renderEntryWithStore({ store });
     const pushSpy = spyOn(services.historyStore, "push");
@@ -1193,105 +1182,14 @@ describe("TugPromptEntry — per-session prompt history keys on claudeSessionId"
         action: TUG_ACTIONS.SUBMIT,
         phase: "discrete",
       });
-    });
-
-    expect(pushSpy).toHaveBeenCalledTimes(1);
-    const entry = pushSpy.mock.calls[0]![0] as { sessionId: string; id: string };
-    expect(entry.sessionId).toBe("claude-real-id");
-    // The composite entry id should be derived from claudeSessionId too,
-    // not tugSessionId — otherwise dedup on re-load mis-matches.
-    expect(entry.id.startsWith("claude-real-id-")).toBe(true);
-  });
-
-  // R-CHAIN-05: submit during the spawn-handshake window. Before
-  // the buffer was added, a submit while `claudeSessionId === null`
-  // was silently dropped. Now the entry is buffered and flushed under
-  // the freshly-arrived claude id on the first non-null transition.
-  it("buffers a push when claudeSessionId is null and flushes it on the first session_init (R-CHAIN-05)", () => {
-    const store = new ScriptedStore({
-      tugSessionId: "tug-routing-id",
-      claudeSessionId: null,
-    });
-    const { id, managerRef, services } = renderEntryWithStore({ store });
-    const pushSpy = spyOn(services.historyStore, "push");
-
-    const editor = findEditableRoot();
-    placeCaretAtEnd(editor!);
-    act(() => {
-      document.execCommand("insertText", false, "hello");
-    });
-
-    act(() => {
-      managerRef.current!.sendToTarget(id, {
-        action: TUG_ACTIONS.SUBMIT,
-        phase: "discrete",
-      });
-    });
-
-    // No push yet — claude hasn't emitted session_init.
-    expect(pushSpy).not.toHaveBeenCalled();
-
-    // session_init arrives with claude's id. Buffered entry flushes
-    // under the freshly-arrived id.
-    act(() => {
-      store.setSnapshot({ claudeSessionId: "claude-arrived-late" });
     });
 
     expect(pushSpy).toHaveBeenCalledTimes(1);
     const entry = pushSpy.mock.calls[0]![0] as {
       sessionId: string;
-      text: string;
+      id: string;
     };
-    expect(entry.sessionId).toBe("claude-arrived-late");
-    expect(entry.text).toBe("hello");
-  });
-
-  it("provider cache invalidates when claudeSessionId changes (resume → silent fresh fallback)", () => {
-    const store = new ScriptedStore({
-      tugSessionId: "tug-routing-id",
-      claudeSessionId: "claude-old-id",
-    });
-    const { id, managerRef, services } = renderEntryWithStore({ store });
-    const pushSpy = spyOn(services.historyStore, "push");
-
-    // First submit: pushes under the old id.
-    const editor = findEditableRoot();
-    placeCaretAtEnd(editor!);
-    act(() => {
-      document.execCommand("insertText", false, "first");
-    });
-    act(() => {
-      managerRef.current!.sendToTarget(id, {
-        action: TUG_ACTIONS.SUBMIT,
-        phase: "discrete",
-      });
-    });
-    expect(pushSpy).toHaveBeenCalledTimes(1);
-    expect((pushSpy.mock.calls[0]![0] as { sessionId: string }).sessionId).toBe(
-      "claude-old-id",
-    );
-
-    // Simulate a resume_failed → fresh fallback: claude assigns a new id,
-    // CodeSessionStore's snapshot updates. The provider cache must NOT
-    // hand back the stale provider; the next push must target the new id.
-    act(() => {
-      store.setSnapshot({ claudeSessionId: "claude-new-id" });
-    });
-
-    placeCaretAtEnd(editor!);
-    act(() => {
-      document.execCommand("insertText", false, "second");
-    });
-    act(() => {
-      managerRef.current!.sendToTarget(id, {
-        action: TUG_ACTIONS.SUBMIT,
-        phase: "discrete",
-      });
-    });
-
-    expect(pushSpy).toHaveBeenCalledTimes(2);
-    expect((pushSpy.mock.calls[1]![0] as { sessionId: string }).sessionId).toBe(
-      "claude-new-id",
-    );
+    expect(entry.sessionId).toBe("session-id-from-picker");
+    expect(entry.id.startsWith("session-id-from-picker-")).toBe(true);
   });
 });
