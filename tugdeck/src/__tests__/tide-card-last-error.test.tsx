@@ -1,19 +1,23 @@
 /**
- * TideCardContent — lastError banner (T3.4.c Step 6).
+ * TideCardContent — lastError banner integration (TugCardBanner adoption).
  *
- * Drives `CodeSessionStore` through real error transitions by
- * dispatching SESSION_STATE frames on a MockTugConnection, then
- * asserts the inline banner renders / hides / dismisses.
+ * Drives `CodeSessionStore` through real error transitions by dispatching
+ * SESSION_STATE frames on a MockTugConnection, then asserts the rendered
+ * TugCardBanner appears, dismisses, and re-raises on new errors.
  *
- * Mirrors the harness structure in `tide-card.test.tsx` — setup-rtl
- * first, connection-singleton mocked to return a MockTugConnection so
- * the module-scope `cardServicesStore` constructs a real store against
- * a test-controllable wire.
+ * Banner unmount is deferred to the exit animation's `.finished` — tests
+ * drive the WAAPI mock to completion to deterministically observe the
+ * post-animation DOM.
+ *
+ * Mirrors the harness structure in `tide-card.test.tsx` — setup-rtl first,
+ * connection-singleton mocked to return a MockTugConnection so the
+ * module-scope `cardServicesStore` constructs a real store against a
+ * test-controllable wire.
  */
 import "./setup-rtl";
 
 import { describe, it, expect, afterEach, mock } from "bun:test";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { render, act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 
 import { MockTugConnection } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FeedId } from "@/protocol";
@@ -103,65 +107,104 @@ function dispatchSessionErrored(detail: string): void {
   });
 }
 
+/** Locate the portaled TugCardBanner via its `data-slot` anchor. */
+function queryBannerEl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-slot=\"tug-card-banner\"]");
+}
+function getBannerEl(): HTMLElement {
+  const el = queryBannerEl();
+  if (el === null) throw new Error("tug-card-banner not in the DOM");
+  return el;
+}
+
+/** Resolve every pending WAAPI mock animation so `.finished` promises settle. */
+function resolveAllWaapiAnimations() {
+  const mock = (global as unknown as {
+    __waapi_mock__: { calls: Array<{ resolve: () => void }>; reset: () => void };
+  }).__waapi_mock__;
+  for (const call of mock.calls) call.resolve();
+}
+
 afterEach(() => {
   cleanup();
   cardSessionBindingStore.clearBinding(CARD_ID);
   document.querySelectorAll(".tugcard").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
+  const mock = (global as unknown as {
+    __waapi_mock__: { reset: () => void };
+  }).__waapi_mock__;
+  mock.reset();
 });
 
-describe("TideCardContent — lastError banner (Step 6)", () => {
+describe("TideCardContent — lastError TugCardBanner", () => {
   it("T-TIDE-LASTERR-01: renders the banner when lastError becomes non-null", () => {
-    const { queryByTestId, getByTestId } = renderTideCard(CARD_ID);
+    const { queryByTestId } = renderTideCard(CARD_ID);
 
     act(() => {
       cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
     });
     expect(queryByTestId("tide-card")).not.toBeNull();
-    expect(queryByTestId("tide-card-error-banner")).toBeNull();
+    expect(queryBannerEl()).toBeNull();
 
     act(() => {
       dispatchSessionErrored("crash_budget_exhausted");
     });
 
-    const banner = getByTestId("tide-card-error-banner");
+    const banner = getBannerEl();
     expect(banner).not.toBeNull();
-    expect(banner.getAttribute("data-cause")).toBe("session_state_errored");
+    expect(banner.getAttribute("data-variant")).toBe("error");
+    expect(banner.getAttribute("data-tone")).toBe("danger");
     expect(banner.textContent ?? "").toContain("Session errored");
     expect(banner.textContent ?? "").toContain("crash_budget_exhausted");
   });
 
-  it("T-TIDE-LASTERR-02: hides the banner when the dismiss button is clicked", () => {
-    const { queryByTestId, getByTestId, getByLabelText } = renderTideCard(CARD_ID);
+  it("T-TIDE-LASTERR-02: hides the banner when the Dismiss button is clicked", async () => {
+    const { getByRole } = renderTideCard(CARD_ID);
 
     act(() => {
       cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
       dispatchSessionErrored("crash_budget_exhausted");
     });
-    expect(getByTestId("tide-card-error-banner")).not.toBeNull();
+    expect(getBannerEl()).not.toBeNull();
 
     act(() => {
-      fireEvent.click(getByLabelText("Dismiss error"));
+      fireEvent.click(getByRole("button", { name: "Dismiss" }));
     });
 
-    expect(queryByTestId("tide-card-error-banner")).toBeNull();
+    // Exit animation runs; banner stays mounted until `.finished` resolves.
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(queryBannerEl()).toBeNull();
+    });
   });
 
-  it("T-TIDE-LASTERR-03: a dismissed error stays hidden, but a later error re-raises the banner", () => {
-    const { queryByTestId, getByTestId, getByLabelText } = renderTideCard(CARD_ID);
+  it("T-TIDE-LASTERR-03: a dismissed error stays hidden, but a later error re-raises the banner", async () => {
+    const { getByRole } = renderTideCard(CARD_ID);
 
     act(() => {
       cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
       dispatchSessionErrored("crash_budget_exhausted");
     });
-    const firstBanner = getByTestId("tide-card-error-banner");
-    const firstMessage = firstBanner.textContent;
+    const firstBanner = getBannerEl();
+    const firstText = firstBanner.textContent;
 
     act(() => {
-      fireEvent.click(getByLabelText("Dismiss error"));
+      fireEvent.click(getByRole("button", { name: "Dismiss" }));
     });
-    expect(queryByTestId("tide-card-error-banner")).toBeNull();
+
+    // Complete the exit animation so the banner fully unmounts before the
+    // second error fires.
+    await act(async () => {
+      resolveAllWaapiAnimations();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(queryBannerEl()).toBeNull();
+    });
 
     // A second errored event (distinct `at` timestamp from the reducer's
     // Date.now()) must pull the banner back into view.
@@ -169,9 +212,9 @@ describe("TideCardContent — lastError banner (Step 6)", () => {
       dispatchSessionErrored("second_failure");
     });
 
-    const secondBanner = getByTestId("tide-card-error-banner");
+    const secondBanner = getBannerEl();
     expect(secondBanner).not.toBeNull();
-    expect(secondBanner.textContent).not.toBe(firstMessage);
+    expect(secondBanner.textContent).not.toBe(firstText);
     expect(secondBanner.textContent ?? "").toContain("second_failure");
   });
 });
