@@ -17,7 +17,7 @@ This plan also rides with [T3.0.W3.b](./tide.md#t3-workspace-registry-w3b): boot
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-04-17 |
+| Last updated | 2026-04-18 |
 | Roadmap anchor | [tide.md §T3.4.c](./tide.md#t3-4-c-tide-card) |
 
 ---
@@ -566,6 +566,109 @@ After all fourteen sub-steps land:
 - Concurrent-resume collision handling. If two cards on the same workspace both pick Resume in 4.5, behavior is undefined beyond "last writer wins on `persistSessionId`". [4.6](#step-4-6) introduces live-binding awareness in the ledger and greys out the row.
 - Eviction, explicit Forget actions, recents↔ledger coherence, cross-card live updates. All deferred to [4.6](#step-4-6).
 - Migrating session bookkeeping off tugbank. [4.6](#step-4-6) moves it to a purpose-built ledger.
+
+#### Step 4.5.5 — Audit and harden the session-id / prompt-history chain {#step-4-5-5}
+
+**Purpose:** [4.5](#step-4-5) shipped the resume-vs-new picker and rerouted prompt history off the divergent `tug_session_id`. Manual testing then surfaced a class of bugs that share one root cause: when a `--resume` attempt fails, tugcode silently mints a fresh uuid and respawns under it, so the live `claude_session_id` quietly drifts away from the id the user picked, the id the binding holds, and the id the prompt-history is keyed under. From the user's seat this looks like "history randomly disappears" and "I can resume the same session twice." 4.5.5 is the audit + remediation that makes that drift impossible (or, where impossible is too strong, loud and recoverable).
+
+**Why before 4.6:** [4.6](#step-4-6) replaces tugbank-as-session-store with a purpose-built tugcast-side ledger and a richer picker. Building that ledger on top of a flow that silently rebrands sessions would carry the bug forward in a much richer surface. Fix the chain first; then move it.
+
+**Audit findings (the chain, end-to-end):**
+
+The two identifiers in birth order:
+1. **`tug_session_id`** — picker mints (`crypto.randomUUID()` for new, or picks the most recent record for resume). Travels: picker → `spawn_session` CONTROL frame → supervisor `LedgerEntry` key → `--session-id` to tugcode → claude's `--session-id` (new) or `--resume` (resume). Used as the tugcast feed routing key for the lifetime of the session.
+2. **`claude_session_id`** — claude emits in `system:init`. Captured by tugcode → relayed as `session_init` IPC → parsed by tugcast bridge → written into `LedgerEntry.claude_session_id`, used as the key for the `dev.tugtool.tide / sessions` record, and (after 4.5) used as the prompt-history key.
+
+For "new" with `--session-id <id>`, claude is supposed to adopt that id, so the two should be equal. For "resume", claude reuses the existing id, so they're equal. **Divergence happens only when tugcode silently fresh-spawns after a failed resume** (`tugcode/src/session.ts::initialize` post-4.5: on `attemptResumeSpawn` returning false, `this.sessionId = crypto.randomUUID()` and a fresh spawn). When that path fires:
+- `tug_session_id` (LedgerEntry key, feed routing key, binding) = the original (failed-resume) id
+- `claude_session_id` (sessions record key, history key) = a brand-new uuid
+- The card looks bound and usable; the user thinks they resumed; they did not. Any history under the failed id is orphaned.
+
+Fragility map (with severity):
+
+- **F1 — Silent resume fallback (the smoking gun, severity: critical).** `tugcode/src/session.ts::initialize` mints a new uuid and respawns when `--resume` fails. The card never closes; `claudeSessionId` quietly switches to the new id; the user's intent is silently lost. Every other "history disappeared" report traces back here.
+- **F2 — Sessions record write is async after `session_init` (severity: medium).** Bridge calls `sessions_recorder.record(claude_id, project_dir)` only after parsing `session_init`. Between picker-submit and the first `session_init`, no record exists. If a second card opens the same project in that window, the picker shows "no resume."
+- **F3 — Tugbank cache propagation lag (severity: medium).** Tugcast `TugbankClient.set()` writes sqlite + auto-broadcasts `domain-changed`. Tugdeck receives via DEFAULTS feed and updates its local cache. Picker reads from that cache synchronously. There is a non-zero window where a just-closed session's record (or a just-removed stale record) has not reached the picker yet.
+- **F4 — Concurrent resume of the same session (severity: high).** Picker offers "Resume last" without checking liveness. Two cards on the same project both pick Resume → both pass the same `--resume <id>`. Claude rejects (or undefined-behavior's) the second → second card falls into F1's silent fallback. The "I can resume the same session twice" report is exactly this.
+- **F5 — History push race against `claudeSessionId === null` (severity: low).** TugPromptEntry's submit short-circuits when `snap.claudeSessionId === null`. If a user submits in the spawn-handshake window, the push is silently dropped. Rare in practice.
+- **F6 — Picker has no pre-flight validation (severity: low).** `resumeCandidate` picks `readSessionsForProject(path)[0]` and submits it as-is. If the underlying jsonl is missing (user cleaned `~/.claude/projects/`, claude config changed), spawn fails → F1 fires. There's no "resume target unavailable" affordance before the spawn.
+
+The plumbing on the tugcast and tugdeck sides is correct after 4.5; the failure mode is `--resume` quietly becoming `--session-id`. **Closing F1 makes F4 surfaceable, makes F6 worth fixing, and makes F2/F3 contained instead of compounding.**
+
+**Strategy:** Five phases, smallest-blast-radius first. Phase A is read-only observability. Phase B is the headline behavior change (kill the silent fallback). Phases C–E address the remaining fragilities and lock down regressions with end-to-end tests.
+
+**Phase A — Make the chain observable (no behavior change):**
+
+- Add a structured trace tag (e.g. `tide::session-lifecycle`) that fires at every handoff: picker decision (`tug_session_id`, mode), `spawn_session` frame send/receive, supervisor `do_spawn_session` entry, bridge `spawn_child` call (`session_id`, mode), tugcode `initialize()` start/end (mode in, mode out, fallback taken or not), `session_init` parse (`tug_session_id`, `claude_session_id`), `sessions_recorder.record` / `.remove`, tugdeck CodeSessionStore reception of `session_init`, TugPromptEntry provider creation, PromptHistoryStore PUT/GET URLs.
+- One scan of the log answers "which id won, and where?" for any session run.
+- No behavior change; tests still green.
+
+**Phase B — Kill the silent resume fallback (the headline fix):**
+
+- **Remove the silent fresh-spawn fallback from `tugcode/src/session.ts::initialize`.** On `--resume` failure, tugcode emits `resume_failed { reason, stale_session_id }`, runs `shutdown()`, exits cleanly. No new uuid, no fresh spawn from inside tugcode.
+- **Tugcast supervisor sees the bridge end before `session_init`.** It already publishes `SESSION_STATE = errored { detail }` on bridge crash; the `resume_failed` IPC line is parsed first and forwarded to the card so `lastError` carries the user-facing reason. The stale sessions record removal (already in 4.5) stays.
+- **Tugdeck reacts to the bridge ending:** the existing `lastError` channel fires, the card stays unbound (or unbinds if it had bound), and the picker re-presents itself with:
+  - The failed session id removed from the resume list (already removed from the sessions record by tugcast).
+  - A short notice — "Couldn't resume `<id>` — it may have been deleted or is in use elsewhere. Pick a different option below." — rendered above the radio group, dismissible.
+  - Default radio selection: "Start fresh".
+- **No silent state change, ever.** The user sees the failure and chooses what to do next. This is the design B from the audit memo; the silent path is what got us here.
+
+**Phase C — Eliminate concurrent-resume races (F4):**
+
+- **Live-session set lives in tugcast** (in-memory; rebuilt on tugcast restart from the live ledger entries). `LedgerEntry::Live` is the source of truth for "this session is currently bound to a card." On `do_spawn_session` for a `session_mode="resume"` payload whose `session_id` matches a `Live` entry on a different `card_id`, the supervisor rejects with `ControlError::CapExceeded { reason: "session_live_elsewhere" }` and broadcasts `SESSION_STATE = errored { detail: "session_live_elsewhere" }`. The router maps both to a CONTROL error frame on the in-scope socket.
+- **Picker greys out resume rows that point at a session live on another card.** Tugdeck does not have the supervisor's live set on the wire today; the simplest path is to broadcast a `live-sessions` set on the DEFAULTS feed (tugcast-owned domain `dev.tugtool.tide`, key `live-sessions`, value: `[session_id, ...]` JSON). Picker subscribes via the existing DEFAULTS pipe and disables the resume row when the candidate is in the set.
+- **Pre-flight validation in tugcode** (defense in depth, before the wire-side check): before spawning `--resume <id>`, tugcode `stat`s the expected jsonl path (`~/.claude/projects/<workspace-encoded>/<id>.jsonl` per claude's convention). If it's missing, emit `resume_failed { reason: "missing_jsonl" }` immediately rather than letting claude fail. Cheap and removes a slow failure mode.
+
+**Phase D — Tighten the identifier model (F2, F5, plus general hygiene):**
+
+- **Persisted records key on `claude_session_id` only** (already true after 4.5 for prompt history; verify the sessions record and any future ledger row obey the same rule). `tug_session_id` keeps its single job: routing key during the spawn-handshake window before claude has assigned an id.
+- **`CardSessionBinding` carries both ids.** The binding store grows `claudeSessionId: string | null` alongside `tugSessionId`. `claudeSessionId` is populated when `session_init` arrives (via a new `bindClaudeSessionId` action) and is cleared on close. Picker, prompt-history, and any future ledger reads consume `claudeSessionId` exclusively; `tugSessionId` is a tugcast-side concern not surfaced in user-facing UI.
+- **Buffer history pushes during `claudeSessionId === null` (F5).** TugPromptEntry holds a small per-card buffer (e.g. `pendingHistoryPushes: HistoryEntry[]`); on `session_init` reception (the same effect that switches the provider) the buffer flushes into `historyStore.push(...)` keyed under the freshly-arrived `claudeSessionId`. Submit during the handshake window no longer drops the entry.
+- **`tug_session_id` is internal vocabulary.** Audit user-facing strings (notices, error messages, anything rendered to the user) for `tug_session_id` references and replace with `claude_session_id` (or "session"). Keep `tug_session_id` in tugcast/router/wire-protocol code and developer logs.
+
+**Phase E — End-to-end tests that mirror reality:**
+
+- Use the existing `tugcast` + `tugcode` integration test harness (the "fake claude" fixture catalog) to drive scenarios end-to-end:
+  - **R-CHAIN-01 — Fresh new.** Picker mints id `X`; spawn succeeds; claude emits `session_init { session_id: X }`; sessions record contains `X`; prompt push lands under `X`; subsequent fetch returns the entry.
+  - **R-CHAIN-02 — Resume success.** Sessions record pre-seeded with `X`; picker offers Resume; spawn succeeds; `session_init { session_id: X }`; binding's `claudeSessionId === X`; history loaded under `X` survives the round trip.
+  - **R-CHAIN-03 — Resume failure → no silent fallback.** Sessions record contains `X`; jsonl is absent; picker offers Resume; tugcode emits `resume_failed`, exits; sessions record `X` is removed; card stays unbound; `lastError` is populated with the reason; picker is re-presented with notice. **No `claudeSessionId` ever takes a value other than `X` for this attempt.**
+  - **R-CHAIN-04 — Two cards same project, both Resume.** Card A picks Resume, binds successfully under `X`; Card B picks Resume on the same project; supervisor rejects with `session_live_elsewhere`; Card B's picker disables the resume row and surfaces the reason.
+  - **R-CHAIN-05 — Submit during handshake (F5).** Spawn frame sent; user submits before `session_init` arrives; `session_init` arrives; the submit is included in the prompt history under the freshly-arrived `claudeSessionId`.
+  - **R-CHAIN-06 — Close mid-stream then resume.** Send a turn; close mid-stream; reopen via Resume; history under that `claudeSessionId` is intact (round-trips through tugbank).
+- Each scenario asserts on the **session-lifecycle log shape** (Phase A) in addition to user-visible state, so future regressions show up as log-shape diffs. Keep asserts on log lines tight to the structured fields, not the human prose.
+- Existing `tide-card.test.tsx` and `tug-prompt-entry.test.tsx` tests stay green; new `R-CHAIN` tests live in a dedicated file (e.g. `tugdeck/src/__tests__/session-chain.integration.test.ts`) so the unit tier and the chain tier remain visually separate.
+
+**Files (anticipated; promotion pass refines):**
+
+- `tugcode/src/session.ts` — remove silent fallback in `initialize()`; tighten `attemptResumeSpawn` to bubble failure cleanly. Add the `stat` pre-flight for `--resume`.
+- `tugcode/src/main.ts` — exit non-zero on `resume_failed` so the supervisor sees a clean signal.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — `do_spawn_session` checks the live set for `session_mode="resume"`; rejects with `session_live_elsewhere` when the id is bound elsewhere. Maintains the live-sessions set; broadcasts on change to the DEFAULTS feed.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — wire the `tide::session-lifecycle` traces around the existing handoff points.
+- `tugdeck/src/lib/card-session-binding-store.ts` — add `claudeSessionId: string | null`; populate from `session_init`; clear on close.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — picker subscribes to `live-sessions` from DEFAULTS; greys out resume rows accordingly. On `lastError.category === "resume_failed"` the picker re-presents itself with the notice.
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` — buffer push entries until `claudeSessionId` is non-null; flush on first `session_init` reception.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — `session_init` reduces to `bindClaudeSessionId` action that populates the binding store.
+- `tugdeck/src/lib/prompt-history-store.ts` — no behavior change expected; verify the pending-load coalescing still holds with buffered pushes.
+
+**Verification:**
+
+- `bun x tsc --noEmit` + `bun test` green; `cargo nextest run` green; `bun run audit:tokens lint` green.
+- New `R-CHAIN-01..06` tests pass (Phase E).
+- Manual smoke (the tests should make this redundant, but run it once to confirm):
+  1. Open a card on `/u/src/tugtool`; submit a prompt; close; reopen; pick Resume; verify the conversation is restored and the prompt history (arrow-up) returns the previous entries.
+  2. Move the relevant `~/.claude/projects/.../<id>.jsonl` aside; open a card; pick Resume; verify the card does **not** silently bind to a fresh session — instead, the picker re-presents with the resume-failed notice.
+  3. Open card A on `/u/src/tugtool`, pick Resume successfully; open card B on the same project; verify card B's Resume row is greyed with the "session is live in another card" reason.
+- Session-lifecycle log scan: for each scenario above, walk the log and confirm the id flow matches the expected shape (no surprise new uuids; no silent rebranding).
+
+**Out of scope (deferred to [4.6](#step-4-6)):**
+
+- Multiple historical sessions per workspace beyond the most-recent-one shape that 4.5 already exposes. 4.5.5 makes the existing single-session-per-workspace flow correct; 4.6 introduces the ledger that lets the picker show N sessions with metadata.
+- Forget actions, eviction policies, recents↔ledger coherence. All ledger-shaped, all 4.6.
+- Migrating the sessions record off tugbank into the tugcast-side ledger. 4.5.5 keeps the same storage; 4.6 moves it.
+
+**Tradeoff (the redirectable one):**
+
+The largest design call is **B vs. keep silent fallback**. B is correct: the user's intent is honored or the failure is surfaced. The current silent fallback "always succeeds" but loses intent and produces the bug class this step exists to address. **B is the chosen direction** (decided 2026-04-18); record any reversal here with the rationale.
 
 #### Step 4.6 — Tugcast-side session ledger + full resume UX (placeholder; design before implementation) {#step-4-6}
 
