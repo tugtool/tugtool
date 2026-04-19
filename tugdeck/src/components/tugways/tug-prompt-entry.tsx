@@ -82,7 +82,7 @@ import type { HistoryEntry } from "@/lib/prompt-history-store";
  * leading icon so the control is both scannable and self-documenting.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: "❯", label: "Prompt",  icon: "❯" },
+  { value: "❯", label: "Code",    icon: "❯" },
   { value: "$", label: "Shell",   icon: "$" },
   { value: ":", label: "Command", icon: ":" },
 ];

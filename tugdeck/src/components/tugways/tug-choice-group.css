@@ -26,7 +26,16 @@
 
 .tug-choice-group {
   position: relative;
-  display: inline-flex;
+  /* Grid with `grid-auto-columns: 1fr` gives every segment the same width —
+   * equal to the widest segment's max-content. In an auto-sized grid
+   * container with indefinite free space, the fr resolution picks the
+   * max(max-content / flex-factor) across tracks, so each 1fr track
+   * resolves to the max-content width of the widest segment. The
+   * indicator positions via `offsetLeft` / `offsetWidth`, which work
+   * identically under grid. */
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: stretch;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
@@ -226,6 +235,33 @@
 .tug-choice-group-lg .tug-group-item-icon svg {
   width: 18px;
   height: 18px;
+}
+
+
+/* ============================================================================
+   Pipe dividers between adjacent unselected segments
+   Pipe pseudo-element on every segment after the first. Hidden when either
+   neighbor is active — the sliding indicator covers the seam in that case,
+   so a divider there would read as a dark line on top of the tinted fill.
+   Mirrors the tug-option-group pipe pattern. The segments sit contiguously
+   (no grid gap), so the pipe is painted at the segment's own left edge.
+   ========================================================================= */
+
+.tug-choice-group-segment + .tug-choice-group-segment::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12.5%;
+  bottom: 12.5%;
+  width: 1px;
+  background-color: var(--tug7-element-segment-border-normal-plain-rest);
+  pointer-events: none;
+}
+
+/* Hide pipe when either neighbor is active */
+.tug-choice-group-segment[data-state="active"] + .tug-choice-group-segment::before,
+.tug-choice-group-segment + .tug-choice-group-segment[data-state="active"]::before {
+  background-color: transparent;
 }
 
 

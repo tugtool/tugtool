@@ -25,7 +25,12 @@
    ========================================================================= */
 
 .tug-option-group {
-  display: inline-flex;
+  /* Grid with `grid-auto-columns: 1fr` gives every item the same width —
+   * equal to the widest item's max-content. Matches the behavior in
+   * `tug-choice-group`; see that file for the fr-resolution rationale. */
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: stretch;
   gap: 2px;
   width: fit-content;
@@ -222,8 +227,8 @@
   content: "";
   position: absolute;
   left: -2px; /* centered in the 2px gap */
-  top: 20%;
-  bottom: 20%;
+  top: 12.5%;
+  bottom: 12.5%;
   width: 1px;
   background-color: var(--tug7-element-segment-border-normal-plain-rest);
   pointer-events: none;

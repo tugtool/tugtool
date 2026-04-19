@@ -556,7 +556,7 @@ function renderEntryWithManager(opts: {
 // char the tests pass to the textContent substring that identifies the
 // segment unambiguously.
 const SEGMENT_LABEL_FOR_PREFIX: Record<string, string> = {
-  ">": "Prompt",
+  ">": "Code",
   "$": "Shell",
   ":": "Command",
 };
