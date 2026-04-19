@@ -142,11 +142,22 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // present. ⌘1..⌘9 use this to carry the 1-based tab index for
       // `jumpToTab`; every other binding leaves `value` undefined and
       // the handler sees the same shape it always did. [A3 / R4]
-      const { handled, continuation } = manager.sendToFirstResponderForContinuation({
+      //
+      // `binding.scope` picks the routing. `"first-responder"` (default)
+      // walks up from the current first responder. `"key-card"`
+      // dispatches to the active card's `card-content` responder,
+      // independent of which element is currently focused — the
+      // mechanism that lets ⌘K work when the user clicks the card's
+      // title bar before pressing the chord.
+      const actionEvent = {
         action: binding.action,
-        phase: "discrete",
+        phase: "discrete" as const,
         ...(binding.value !== undefined ? { value: binding.value } : {}),
-      });
+      };
+      const { handled, continuation } =
+        binding.scope === "key-card"
+          ? manager.sendToKeyCardForContinuation(actionEvent)
+          : manager.sendToFirstResponderForContinuation(actionEvent);
       if (handled) {
         event.preventDefault();
         event.stopImmediatePropagation();

@@ -139,6 +139,7 @@ function renderTideCard(cardId: string) {
   };
 }
 
+
 afterEach(() => {
   cleanup();
   cardSessionBindingStore.clearBinding(CARD_ID);
@@ -190,6 +191,13 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(editor).not.toBeNull();
     expect(document.activeElement).toBe(editor);
   });
+
+  // Cmd+K live behavior (focus prompt on active card) is exercised by
+  // the full key pipeline — keybinding-map + ResponderChainProvider
+  // capture listener + sendToKeyCardForContinuation + card-content
+  // responder. Smoke-testing it end-to-end inside happy-dom requires
+  // simulating the deck's card-responder promotion, which isn't the
+  // subject of this file. Verified manually in the running app.
 
   it("T-TIDE-REFOCUS: focus returns to the editor after a successful submit", () => {
     // Minimal execCommand shim so the editor recognizes typed text —

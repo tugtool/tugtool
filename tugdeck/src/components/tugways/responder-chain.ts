@@ -54,7 +54,7 @@ export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
  * case — most responders are untagged (text inputs, sliders, popups);
  * only tier-defining nodes opt in.
  */
-export type ResponderKind = "card";
+export type ResponderKind = "card" | "card-content";
 
 /**
  * Typed action event -- the sole dispatch currency.
@@ -673,6 +673,88 @@ export class ResponderChainManager {
     this.notifyDispatchObservers(event as ActionEvent, handled);
     this.logDispatch(event as ActionEvent, handled, handledBy);
     return { handled, continuation };
+  }
+
+  // ---- Key-card dispatch ----
+
+  /**
+   * Dispatch an action to the key card's content-scope responder — the
+   * `kind: "card-content"` node that lives inside the key card's DOM
+   * subtree. This is the routing used by keybindings with
+   * `scope: "key-card"`: shortcuts scoped to "whichever card the user
+   * is currently in" that each card type's body declares handlers for.
+   *
+   * The walk starts at the card-content responder and goes up via
+   * parentId, so content-scope handlers win; unhandled actions fall
+   * through to the card-level responder, the canvas, and up. Returns
+   * `{ handled: false }` if there is no key card, or if the key card
+   * has no descendant `card-content` responder.
+   *
+   * The card-content node is located by walking the DOM subtree under
+   * the card's `data-responder-id` element; the first descendant whose
+   * `data-responder-id` resolves to a node of `kind === "card-content"`
+   * wins. Zero per-card registration is required — any `useResponder`
+   * call that passes `kind: "card-content"` and whose element is
+   * rendered inside the card's DOM makes this route work.
+   */
+  sendToKeyCardForContinuation<Extra extends string = never>(
+    event: ActionEvent<Extra>,
+  ): DispatchResult {
+    const contentId = this.findKeyCardContentId();
+    if (contentId === null) {
+      this.notifyDispatchObservers(event as ActionEvent, false);
+      this.logDispatch(event as ActionEvent, false, null);
+      return { handled: false };
+    }
+    const { handled, continuation, handledBy } = this.walkFromNode(
+      contentId,
+      event as ActionEvent,
+    );
+    this.notifyDispatchObservers(event as ActionEvent, handled);
+    this.logDispatch(event as ActionEvent, handled, handledBy);
+    return { handled, continuation };
+  }
+
+  /**
+   * Boolean-return wrapper over `sendToKeyCardForContinuation` for
+   * callers that don't need the continuation.
+   */
+  sendToKeyCard<Extra extends string = never>(event: ActionEvent<Extra>): boolean {
+    return this.sendToKeyCardForContinuation(event).handled;
+  }
+
+  /**
+   * Locate the key card's `card-content` responder id, if any.
+   * Algorithm:
+   *   1. `getKeyCard()` to identify the active card.
+   *   2. Look up the card's DOM element via its `data-responder-id`.
+   *   3. Walk its descendants; for each `[data-responder-id]`, check
+   *      whether the node's kind is `"card-content"`.
+   *   4. Return the first match, or null.
+   *
+   * No document / no key card / no content-scope descendant → null.
+   */
+  private findKeyCardContentId(): string | null {
+    const cardId = this.getKeyCard();
+    if (cardId === null || typeof document === "undefined") return null;
+    const escapedId =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(cardId)
+        : cardId;
+    const cardEl = document.querySelector(
+      `[data-responder-id="${escapedId}"]`,
+    );
+    if (cardEl === null) return null;
+    const descendants = cardEl.querySelectorAll<HTMLElement>(
+      "[data-responder-id]",
+    );
+    for (const el of descendants) {
+      const id = el.getAttribute("data-responder-id");
+      if (id === null) continue;
+      const node = this.nodes.get(id);
+      if (node && node.kind === "card-content") return id;
+    }
+    return null;
   }
 
   // ---- Target-based first-responder resolution ----

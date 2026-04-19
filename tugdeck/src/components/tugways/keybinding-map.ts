@@ -54,6 +54,26 @@ export interface KeyBinding {
    * via `typeof` or structural guards, same as any other action.
    */
   value?: unknown;
+  /**
+   * Routing for this binding's dispatch.
+   *
+   *   - `"first-responder"` (default) — existing semantics; the
+   *     capture-phase listener calls
+   *     `sendToFirstResponderForContinuation`, which walks up from the
+   *     current first responder. Use for shortcuts whose target
+   *     depends on which specific element the user is inside (clipboard,
+   *     undo, tab navigation, etc.).
+   *
+   *   - `"key-card"` — dispatches to the `kind: "card-content"`
+   *     responder inside the *active card* (regardless of which
+   *     element inside the card is focused). Use for shortcuts that
+   *     belong to "whichever card the user is currently in" — e.g.
+   *     ⌘K focus-prompt. Each card type declares its own handlers by
+   *     registering a `card-content` responder in its body; the chain
+   *     walks UP from there, so unhandled actions fall through to the
+   *     card-level responder and above as usual.
+   */
+  scope?: "first-responder" | "key-card";
 }
 
 // ---- Keybindings ----
@@ -123,6 +143,19 @@ export const KEYBINDINGS: KeyBinding[] = [
   // without a browser UI to collide with).
   { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
   { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD },
+  // Focus the key card's prompt input. `scope: "key-card"` routes the
+  // dispatch to the `card-content` responder inside the active card;
+  // each card type that has a prompt (tide, future) registers a
+  // FOCUS_PROMPT handler there. Non-prompt cards (gallery, git) don't
+  // register; the dispatch is a silent no-op and
+  // `preventDefaultOnMatch` suppresses the macOS beep regardless.
+  {
+    key: "KeyK",
+    meta: true,
+    action: TUG_ACTIONS.FOCUS_PROMPT,
+    scope: "key-card",
+    preventDefaultOnMatch: true,
+  },
   { key: "Comma", meta: true, action: TUG_ACTIONS.SHOW_SETTINGS },
   { key: "Period", meta: true, action: TUG_ACTIONS.CANCEL_DIALOG },
   { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },

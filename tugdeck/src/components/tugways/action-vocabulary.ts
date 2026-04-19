@@ -157,6 +157,12 @@ export const TUG_ACTIONS = {
   // FOCUS_PREVIOUS: payload — none. Move keyboard focus to the previous
   //                 focusable responder. NOTE: no handler yet — see
   //                 FOCUS_NEXT.
+  // FOCUS_PROMPT:   payload — none. Move keyboard focus into the key
+  //                 card's prompt input. Used by ⌘K, scoped to
+  //                 `scope: "key-card"`. Non-prompt cards (gallery,
+  //                 git) don't register a handler; the dispatch is a
+  //                 no-op and `preventDefaultOnMatch` suppresses the
+  //                 native beep.
   // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
   CYCLE_CARD:     "cycle-card",
@@ -164,6 +170,7 @@ export const TUG_ACTIONS = {
   NEXT_TAB:       "next-tab",
   FOCUS_NEXT:     "focus-next",
   FOCUS_PREVIOUS: "focus-previous",
+  FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
 
   // ---- Dialog / menu ----

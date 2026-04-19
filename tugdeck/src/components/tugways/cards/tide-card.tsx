@@ -42,6 +42,8 @@ import type { TugPopupButtonItem } from "../tug-popup-button";
 import { useTugSheet } from "../tug-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
+import { useResponder } from "../use-responder";
+import type { ActionEvent } from "../responder-chain";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -832,6 +834,31 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
     entryDelegateRef.current?.focus();
   }, [entryDelegateRef]);
 
+  // Card-content responder scope for key-card-routed keyboard
+  // shortcuts. Registers a `kind: "card-content"` node under the
+  // tide card's body element; any keybinding with `scope: "key-card"`
+  // (declared in keybinding-map.ts) is dispatched here when this is
+  // the active card. The chain walks UP from this node, so
+  // unhandled actions fall through to the card-level responder,
+  // canvas, and root — same semantics as any other chain walk.
+  //
+  // Handlers:
+  //   - FOCUS_PROMPT (⌘K): move keyboard focus to the prompt editor.
+  //     Reads the delegate via the ref [L07] so the handler closure
+  //     registered at mount never goes stale.
+  const {
+    ResponderScope: CardContentResponderScope,
+    responderRef: cardContentResponderRef,
+  } = useResponder({
+    id: `${cardId}-card-content`,
+    kind: "card-content",
+    actions: {
+      [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
+        entryDelegateRef.current?.focus();
+      },
+    },
+  });
+
   // --- Responder scope for tools-panel popup buttons. ---
   const fontPopupId = useId();
   const fontSizePopupId = useId();
@@ -908,7 +935,15 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   );
 
   return (
-    <div className="tide-card" data-slot="tide-card" data-testid="tide-card">
+    <CardContentResponderScope>
+      <div
+        ref={(el) => {
+          (cardContentResponderRef as (node: Element | null) => void)(el);
+        }}
+        className="tide-card"
+        data-slot="tide-card"
+        data-testid="tide-card"
+      >
       <TugSplitPane
         orientation="horizontal"
         showHandle={false}
@@ -980,7 +1015,8 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
       >
         <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
       </TugCardBanner>
-    </div>
+      </div>
+    </CardContentResponderScope>
   );
 }
 

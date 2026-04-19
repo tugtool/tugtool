@@ -61,7 +61,7 @@ The bigger items deferred from T3.4.c — session ledger + full resume UX, multi
 **Ergonomics:**
 - Opening a Tide card focuses the prompt input directly; the user can type immediately. (verification: manual + test)
 - After submitting a turn, focus returns to the prompt input. (verification: manual + test)
-- With a Tide card active and the prompt input not focused, pressing Tab or Cmd+K places a blinking caret in the prompt input. (verification: manual + test)
+- With a Tide card active, pressing Cmd+K places a blinking caret in the prompt input regardless of where focus sits inside the card. (verification: manual + test)
 - Cmd+J jumps the transcript view to the currently-selected history entry; with no history selection, Cmd+J scrolls the transcript to the bottom. (verification: manual + test)
 - The status row shows the card's bound `projectDir` (or a shortened form), not the gallery placeholder. (verification: `rg 'Project path /gallery/demo' tugdeck/src/components/tugways/cards/tide-card.tsx` returns zero matches)
 
@@ -120,7 +120,7 @@ The bigger items deferred from T3.4.c — session ledger + full resume UX, multi
 - Status badge `projectDir` wiring (replaces the `tide-card.tsx:830` gallery string).
 - Route label rename: `Prompt` → `Code` in `tug-prompt-entry.tsx:85`.
 - Auto-focus on card mount; auto-refocus after submit.
-- Card-level keybindings: Tab and Cmd+K → focus prompt; Cmd+J → jump transcript.
+- Card-level keybindings: Cmd+K → focus prompt; Cmd+J → jump transcript.
 - Completion popup overflow / clipping fix.
 - Atom rendering at tighter line-heights.
 - Participant model + `TugTranscriptEntry` primitive (Slack-like layout, no chat bubbles), with gallery demo.
@@ -150,7 +150,7 @@ The bigger items deferred from T3.4.c — session ledger + full resume UX, multi
 
 - **D1 — Route label.** `Code`. Decided by the user in this plan's authoring conversation. Rationale: "Prompt" describes the input control, not what the route *is*; "Code" reflects the assistant's purpose and keeps "Claude" out of the chrome. `>` and `❯` continue to route to it.
 - **D2 — Cwd presentation.** Replace the gallery string with the bound `projectDir` rendered into the existing `TugBadge`. Shortening / icon variants are a follow-up (Step 1 ships the literal string; later cosmetic refinement is not blocked here).
-- **D3 — Tab vs Cmd+K.** Both focus the prompt input. Cmd+K is the canonical "focus the prompt" gesture; Tab is the keyboard-first user's shortcut from card chrome into the entry. The card swallows Tab only when the prompt is *not* already focused; once focused, Tab returns to the editor's normal Tab-handling.
+- **D3 — Cmd+K only; Tab dropped.** Cmd+K is the canonical "focus the prompt" gesture and the only card-level focus chord. Tab was considered as a second gesture (hop from chrome into the editor) but dropped during Step 5 implementation: Tab has too much established meaning in card chrome (focus-ring movement, tab stops in popovers, accepting a completion) for a card-level claim to be unambiguous.
 - **D4 — Cmd+J semantics.** With a history entry navigated to in the prompt-entry, Cmd+J scrolls the transcript to that entry's location. With no history selection, Cmd+J behaves like End / Cmd+Down: scroll to bottom.
 - **D5 — Atom line-height target.** Tighter than 1.7 must work without baseline jump. Concrete minimum decided in [Step 7](#step-7) once the engine work surfaces the constraint.
 - **D6 — Participant model is Slack-like, *not* chat bubbles.** Decided by the user during plan authoring. Rationale: chat bubbles are wrong for a developer surface that mixes human, AI, shell, and command output — alternating sides and rounded backgrounds make a transcript hard to scan. Layout: left-aligned icon column (~32–40px), then a content column with a header row (bold identifier + small timestamp), then the body, then an optional controls/badges/icons strip beneath the body. Initial participants: `user`, `code` (Claude Code), `shell` (post-T4), `command` (post-T10). The model is open for extension via a token registration, not a code rewrite. No avatar photos; participant icons are glyphs/marks.
@@ -225,20 +225,20 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - New test: simulate submit of `> hi` → on completion, assert the prompt input regains focus.
 - Manual: open a Tide card, submit a prompt, watch focus return to the input as the assistant streams; start typing the follow-up immediately without clicking.
 
-#### Step 5 — Tab and Cmd+K focus the prompt input from card chrome {#step-5}
+#### Step 5 — Cmd+K focuses the prompt input from card chrome {#step-5}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (card-level key handler).
 
 **Work:**
-- Add a card-level `keydown` handler (on the `tide-card` root or via the existing `ResponderScope`) that intercepts Tab and Cmd+K when the prompt input is *not* the active element, calling `entryDelegateRef.current?.focus()` and `event.preventDefault()`. When the prompt input *is* already focused, the handler is a no-op so the editor's normal Tab handling runs.
-- Determine "prompt is focused" via the editor's existing focused-state ref or `document.activeElement` check — pick whichever is already canonical in the codebase.
-- Cmd+K: also call `event.preventDefault()` to avoid any browser default (Safari focuses the address bar; we are inside the app so this is mostly defensive).
+- Add a card-level `keydown` handler on the `tide-card` root that intercepts Cmd+K (or Ctrl+K on non-Mac), calls `entryDelegateRef.current?.focus()`, and `event.preventDefault()`. Idempotent when the prompt is already focused. `event.defaultPrevented` short-circuits so any child (completion menu, dialog) that already consumed the key wins — the card is a fallback, not a top-level claim.
+- `event.preventDefault()` is defensive against browser hotkeys that might otherwise claim the chord.
+- Tab is NOT handled per [D3](#resolved-decisions) — the ambiguity with card-chrome focus-ring movement, popover tab stops, and completion acceptance makes a card-level claim unsafe.
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
-- New test: render a Tide card → focus an arbitrary element in the card chrome (e.g., the maximize button) → simulate Tab keydown → assert prompt input gains focus. Repeat with Cmd+K.
-- Manual: open a Tide card, click into the maximize button (focus chrome), press Tab → caret in prompt input. Click chrome again, press Cmd+K → same.
+- New test: render a Tide card → focus an arbitrary element in the card chrome (e.g., the maximize button) → simulate Cmd+K keydown → assert prompt input gains focus.
+- Manual: open a Tide card, click into the maximize button (focus chrome), press Cmd+K → caret in prompt input.
 
 #### Step 6 — Cmd+J jumps the transcript {#step-6}
 
