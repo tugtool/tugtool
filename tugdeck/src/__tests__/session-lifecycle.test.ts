@@ -29,6 +29,7 @@ describe("sendCloseSession", () => {
       workspaceKey: "/work/lc",
       projectDir: "/work/lc",
       sessionMode: "new",
+      claudeSessionId: null,
     });
     expect(cardSessionBindingStore.getBinding("card-lc")).toBeDefined();
 

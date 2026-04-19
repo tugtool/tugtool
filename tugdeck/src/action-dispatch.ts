@@ -397,6 +397,11 @@ export function initActionDispatch(
       workspaceKey,
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
+      // Step 4.5.5 Phase D: claudeSessionId is populated by
+      // TideCardBody once the bound CodeSessionStore observes
+      // session_init. Until then the binding holds a usable
+      // tugSessionId (the routing key) but no canonical claude id.
+      claudeSessionId: null,
     });
   });
 }

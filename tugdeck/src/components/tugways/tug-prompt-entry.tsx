@@ -67,6 +67,7 @@ import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useTugcardPersistence } from "./use-tugcard-persistence";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
+import type { HistoryEntry } from "@/lib/prompt-history-store";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -501,6 +502,37 @@ export const TugPromptEntry = React.forwardRef<
     return fresh;
   }, [historyStore, route, snap.claudeSessionId]);
 
+  // Step 4.5.5 Phase D: per-card buffer of history pushes that arrived
+  // before `claudeSessionId` was known (the spawn-handshake window).
+  // Each buffered entry holds an unkeyed `Omit<HistoryEntry,"sessionId"|"id">`
+  // payload; on the transition to a non-null `claudeSessionId` we
+  // flush the buffer into `historyStore.push(...)` keyed under that id.
+  // Without the buffer, a fast user who submits before `session_init`
+  // would silently lose the entry (F5).
+  type PendingPush = Omit<HistoryEntry, "id" | "sessionId">;
+  const pendingHistoryPushesRef = useRef<PendingPush[]>([]);
+  const flushedForClaudeIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const claudeId = snap.claudeSessionId;
+    if (claudeId === null) return;
+    if (flushedForClaudeIdRef.current === claudeId) return;
+    flushedForClaudeIdRef.current = claudeId;
+    const pending = pendingHistoryPushesRef.current;
+    if (pending.length === 0) return;
+    pendingHistoryPushesRef.current = [];
+    logSessionLifecycle("history.buffer_flush", {
+      claude_session_id: claudeId,
+      count: pending.length,
+    });
+    for (const p of pending) {
+      historyStore.push({
+        id: `${claudeId}-${p.timestamp}`,
+        sessionId: claudeId,
+        ...p,
+      });
+    }
+  }, [snap.claudeSessionId, historyStore]);
+
   // Live ref for the optional localCommandHandler so `performSubmit` (the
   // shared submit closure) can read the latest callback without rebuilding
   // on every render. The chain-action handler registered via `useResponder`
@@ -572,29 +604,41 @@ export const TugPromptEntry = React.forwardRef<
     }
     // Record the submission in per-session history, keyed by claude's
     // session id (the conversation's unforgeable identity, captured
-    // from `session_init`). If `claudeSessionId` is still null —
-    // user submitted before claude finished initializing — skip the
-    // push rather than write under a temporary id and orphan the
-    // entry. The route field is what lets `RouteHistoryProvider`
-    // filter this entry into the current route's timeline. Captured
-    // before `input.clear()` so the live state is still the submitted
-    // content.
+    // from `session_init`). The route field is what lets
+    // `RouteHistoryProvider` filter this entry into the current route's
+    // timeline. Captured before `input.clear()` so the live state is
+    // still the submitted content.
+    //
+    // Step 4.5.5 Phase D: if `claudeSessionId` is still null — user
+    // submitted before claude finished initializing — buffer the
+    // payload in the per-card `pendingHistoryPushesRef`. The effect
+    // above flushes the buffer (keyed under the freshly-arrived
+    // claude id) on the first transition to a non-null id. Closes
+    // F5: the entry is no longer silently dropped.
     const sessionId = snapRef.current.claudeSessionId;
+    const state = input.captureState();
+    const payload = {
+      projectPath: "",
+      route: currentRoute ?? "",
+      text: state.text,
+      atoms: state.atoms.map((a) => ({
+        position: a.position,
+        type: a.type,
+        label: a.label,
+        value: a.value,
+      })),
+      timestamp: Date.now(),
+    };
     if (sessionId) {
-      const state = input.captureState();
       historyStore.push({
-        id: `${sessionId}-${Date.now()}`,
+        id: `${sessionId}-${payload.timestamp}`,
         sessionId,
-        projectPath: "",
-        route: currentRoute ?? "",
-        text: state.text,
-        atoms: state.atoms.map((a) => ({
-          position: a.position,
-          type: a.type,
-          label: a.label,
-          value: a.value,
-        })),
-        timestamp: Date.now(),
+        ...payload,
+      });
+    } else {
+      pendingHistoryPushesRef.current.push(payload);
+      logSessionLifecycle("history.buffer_push", {
+        count: pendingHistoryPushesRef.current.length,
       });
     }
     // Fire the pre-clear hook so hosts can drive submit-specific

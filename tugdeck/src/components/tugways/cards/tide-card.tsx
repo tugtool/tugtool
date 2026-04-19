@@ -819,10 +819,24 @@ function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // `RelayOutcome::ResumeFailed` path, so the supervisor side is clean.
   // Track the `at` timestamp of the consumed error so we react exactly
   // once per failure (lastError stays populated across renders).
+  //
+  // Phase D (Step 4.5.5): the same subscription propagates the first
+  // `claudeSessionId` we observe into the card's binding so picker /
+  // history / future ledger reads can consume the canonical id. Done
+  // inside the same listener (rather than a second subscribe) so both
+  // reactions share one snapshot read per notification.
   const consumedLastErrorAtRef = useRef<number | null>(null);
+  const boundClaudeSessionIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     return codeSessionStore.subscribe(() => {
       const snap = codeSessionStore.getSnapshot();
+      // Phase D: propagate claudeSessionId to the binding once.
+      const claudeId = snap.claudeSessionId;
+      if (claudeId !== null && boundClaudeSessionIdRef.current !== claudeId) {
+        boundClaudeSessionIdRef.current = claudeId;
+        cardSessionBindingStore.bindClaudeSessionId(cardId, claudeId);
+      }
+      // Phase B: react to resume_failed exactly once.
       const err = snap.lastError;
       if (
         err === null ||

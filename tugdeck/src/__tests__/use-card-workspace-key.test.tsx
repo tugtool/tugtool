@@ -25,6 +25,7 @@ function bind(cardId: string, workspaceKey: string): void {
     workspaceKey,
     projectDir: workspaceKey,
     sessionMode: "new",
+    claudeSessionId: null,
   });
 }
 

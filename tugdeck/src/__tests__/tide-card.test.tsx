@@ -103,6 +103,7 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
     workspaceKey: "/work/4b",
     projectDir: "/work/4b",
     sessionMode: "new",
+    claudeSessionId: null,
     ...overrides,
   };
 }
