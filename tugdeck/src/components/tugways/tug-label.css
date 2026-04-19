@@ -165,6 +165,7 @@
    Disabled State
    ========================================================================= */
 
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-label-disabled {
   color: var(--tug7-element-field-text-normal-plain-disabled);
   cursor: not-allowed;

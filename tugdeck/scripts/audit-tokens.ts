@@ -39,9 +39,9 @@ const GENERATED_CSS = path.join(TUGDECK, "styles/themes/brio.css");
 const TUGWAYS = path.join(TUGDECK, "src/components/tugways");
 const PAIRING_MAP_PATH = path.join(TUGWAYS, "theme-pairings.ts");
 
-/** All 23 component CSS files in scope for audit. */
+/** Component CSS files in scope for the contrast audit. */
 const COMPONENT_CSS_FILES = [
-  "tug-button.css",
+  "internal/tug-button.css",
   "tug-card.css",
   "tug-tab-bar.css",
   "tug-menu.css",
@@ -57,11 +57,10 @@ const COMPONENT_CSS_FILES = [
   "tug-dock.css",
   "tug-hue-strip.css",
   "tug-skeleton.css",
-  "cards/gallery-card.css",
-  "cards/gallery-badge-mockup.css",
+  "cards/gallery-badge.css",
   "cards/gallery-popup-button.css",
-  "cards/gallery-palette-content.css",
-  "cards/gallery-theme-generator-content.css",
+  "cards/gallery-palette.css",
+  "cards/gallery-theme-generator.css",
 ].map((f) => path.join(TUGWAYS, f));
 
 // ---------------------------------------------------------------------------

@@ -286,6 +286,7 @@ body {
   text-overflow: ellipsis;
 }
 
+/* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
 .tug-menu-item-shortcut {
   margin-left: auto;
   font-size: var(--tug-font-size-xs);

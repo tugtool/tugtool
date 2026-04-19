@@ -116,6 +116,7 @@
   cursor: not-allowed;
 }
 
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-disabled */
 .tug-input:disabled::placeholder {
   color: var(--tug7-element-field-text-normal-plain-disabled);
 }
