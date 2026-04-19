@@ -2772,6 +2772,13 @@ export function registerTideCard(): void {
 
 **Work & exit criteria (T3 overall):**
 
+Tide card polish (deferred from T3.4.c Step 5 — `TugMarkdownView` wire-up):
+- **Transcript rendering in the top pane.** Step 5 wires `inflight.assistant` only; once `turn_complete(success)` clears the streaming path, the final text of the *last* turn stays visible because the observer skips empty writes, but prior turns in `snap.transcript` do not render. Add a transcript-rendering path so multi-turn conversations accumulate in the top pane (likely a region-per-`TurnEntry` through `TugMarkdownView`'s imperative `setRegion` handle, with `stream` reserved for the in-flight turn).
+- **Thinking and tool surfaces.** `streamingPaths.thinking` and `streamingPaths.tools` are unwired in Step 5. Decide the visual placement (inline in the transcript, collapsible alongside assistant text, or a dedicated subpane) and wire them. Aligns with [Phase T1](#content-block-types)'s thinking-block (U6) and tool-use-display (U7) work — pick a surface that won't need to be thrown away when T1 lands.
+- **Styling the rendered markdown to look good.** The Step 5 wire-up renders through `TugMarkdownView` with default `--tugx-md-*` styling. Tuning typography, spacing, code-block chrome, and overall rhythm for Claude Code output is a dedicated pass. Shares work with [Phase T1](#content-block-types) — coordinate so T1's GFM/TugCodeBlock polish lands in sync rather than relitigating the same tokens twice.
+- **Clearing the view on `turn_complete`.** Step 5's behavior is "sticky last turn" — after a successful turn, the final text remains visible until the next turn replaces it. This was the deliberate simplification in Step 5; revisit once transcript rendering lands, because the sticky behavior becomes redundant (and possibly confusing) when the finalized turn is in the transcript.
+- **Status-row label.** The placeholder `statusContent` in `tide-card.tsx` hard-codes `"Project path /gallery/demo"` — a gallery-copy artifact. Replace with the bound `projectDir` (or a shortened form) from the card's binding / snapshot.
+
 End-to-end round-trip:
 - Type `> hello` → `CodeSessionStore.send` writes `user_message` on `CODE_INPUT` → `assistant_text` deltas arrive on `CODE_OUTPUT` → `TugMarkdownView` renders streaming output in the top pane → `turn_complete(success)` → entry returns to idle.
 - Mid-stream Stop → `interrupt` frame on `CODE_INPUT` → `turn_complete(error)` → phase `interrupted → idle`, accumulated text preserved (Test 6).
