@@ -796,6 +796,20 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
+  // --- Auto-focus the prompt input on card bind. ---
+  // TideCardBody only mounts when `services` is non-null (a binding
+  // exists) — so a single-shot effect here fires exactly once per
+  // "card first bound" event. React attaches child refs during the
+  // commit phase before useLayoutEffect runs bottom-up, so
+  // `entryDelegateRef.current` is the TugPromptEntry delegate by the
+  // time this effect executes. The delegate's `focus()` forwards to
+  // the composed TugPromptInput's engine root, placing a blinking
+  // caret in the editor so the user can type immediately.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    entryDelegateRef.current?.focus();
+  }, []);
+
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
   // not on any other data-empty transition (manual delete, undo, etc.).
   // Fires before `input.clear()` so the animated restore commits to

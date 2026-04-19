@@ -173,6 +173,24 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(queryByTestId("tide-card")).not.toBeNull();
   });
 
+  it("T-TIDE-AUTOFOCUS: binding mount places focus in the prompt editor", () => {
+    const { queryByTestId, container } = renderTideCard(CARD_ID);
+
+    act(() => {
+      cardSessionBindingStore.setBinding(CARD_ID, makeBinding());
+    });
+
+    // TideCardBody just committed; its auto-focus useLayoutEffect has
+    // run. The composed TugPromptInput's engine root is the
+    // contenteditable — `.focus()` on it makes it the active element.
+    const editor = container.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(queryByTestId("tide-card")).not.toBeNull();
+    expect(editor).not.toBeNull();
+    expect(document.activeElement).toBe(editor);
+  });
+
   it("T-TIDE-03: reverts to the picker when the binding clears", () => {
     const { queryByTestId } = renderTideCard(CARD_ID);
 
