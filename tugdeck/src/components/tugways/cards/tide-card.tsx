@@ -358,6 +358,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   return (
     <div
       className="tide-card-picker-backdrop"
+      data-slot="tide-card-picker"
       data-testid="tide-card-picker"
       aria-hidden="true"
     >
@@ -869,7 +870,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   );
 
   return (
-    <div className="tide-card" data-testid="tide-card">
+    <div className="tide-card" data-slot="tide-card" data-testid="tide-card">
       <TugSplitPane
         orientation="horizontal"
         showHandle={false}

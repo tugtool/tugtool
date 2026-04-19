@@ -1007,6 +1007,57 @@ Replace the placeholder `<div>` with `<TugMarkdownView>` bound to the `CodeSessi
 - A session trace recorded showing two cards, two `workspace_key`s, two distinct frame streams.
 - `roadmap/tugplan-workspace-registry-w2.md` updated (move from `roadmap/archive/` if needed and check off the deferred criterion).
 
+##### Tuglaws walkthrough (closing record) {#tuglaws-walkthrough}
+
+**Walked:** `tide-card.tsx` (HEAD), `tide-card.css`, `useTideCardObserver`, `useTideCardServices` (co-located in `tide-card.tsx`), `card-services-store.ts`, `card-session-binding-store.ts`, `picker-notice-store.ts`, `completion-providers/position-zero.ts`.
+
+**Scope:** 24 laws walked. Each is tagged *satisfied*, *N/A*, or *satisfied with follow-up*. No material violations.
+
+**Rendering Discipline**
+- **L01 — One `root.render()`, at mount, ever.** N/A. Card body composed by TugCard; no render-root calls.
+- **L02 — External state via `useSyncExternalStore` only.** Satisfied. Every external source (`cardServicesStore`, `codeSessionStore`, `editorStore`, tugbank-backed recents/sessions/live-sessions) enters via `useSyncExternalStore` or `useTugbankValue`. The earlier `useState + useLayoutEffect(binding → services)` violation pre-filed by the plan is resolved — services now live in `cardServicesStore` and React only reads. See `useTideCardServices` (tide-card.tsx:202) and `CardServicesStore._construct` / `_dispose`.
+- **L03 — `useLayoutEffect` for event-dependent registrations.** Satisfied. Every registration-flavored effect uses `useLayoutEffect`: picker sheet show (tide-card.tsx:316), picker session-mode cleanup (tide-card.tsx:564), editor bind (tide-card.tsx:755), maximize panel sizing (tide-card.tsx:789), observer subscribe (use-tide-card-observer.ts:29).
+- **L04 — No inline child-DOM measurement after parent-triggered child setState.** Satisfied. No such pattern in walked files. `useContentDrivenPanelSize` delegates to a separate hook that (by name and prior review) follows the ready-callback pattern.
+- **L05 — No `requestAnimationFrame` for operations depending on React commits.** N/A. No `requestAnimationFrame` usage in the walked files.
+
+**State and Mutation Zones**
+- **L24 — Zones: appearance / local data / structure.** Satisfied. Structure zone → `cardServicesStore`, `cardSessionBindingStore`, `pickerNoticeStore`, `codeSessionStore`, `editorStore`, `sessionMetadataStore`. Local data → `path`, `sessionMode`, `maximized`, `dismissedAt`. Appearance-only → none required; all visual state derives from data. `maximized` and `dismissedAt` are borderline (each gates UI visibility) but both represent user gestures with semantic meaning, so data-zone is correct.
+- **L06 — Appearance state via CSS/DOM.** Satisfied. Banner visibility, `sessionErrored`-driven `disabled`, and `maximized`-driven behavior all derive from data (lastError, user gesture), not stored as separate appearance state. Motion owned by TugCardBanner / TugSheet / TugSplitPane internals.
+- **L07 — Action handlers read via refs or stable singletons.** Satisfied. Responder-chain handlers (`useResponderForm` in picker and body) read through stable singletons — `setSessionMode` (React setter, stable), `editorStore.set(...)` (stable singleton from services). `submit` in picker form is a React `onClick` handler, not a chain-registered action, so L07 does not bind.
+- **L22 — Store observers drive DOM directly.** Satisfied. `useTideCardObserver` subscribes inside `useLayoutEffect` and performs non-rendering side effects (picker-notice set + binding clear) without round-tripping through React state. `editorStore.bind(el, regenerateAtoms)` drives CSS variable updates on the pane element directly.
+- **L08 — Live-preview mutation transactions.** N/A. No draft/commit/cancel UX in this card; font/size/tracking/leading popups, path input, session-mode radio, and split-pane resize are all continuous-commit interactions.
+- **L23 — Preserve user-visible state.** Satisfied. Scroll (markdown pane), selection (editor), and per-route drafts (prompt entry) are each owned by their respective child components and untouched by tide-card logic. Maximize restore goes through `panel.restoreUserSize` so the user-resolved size is preserved across toggle. The 4i-era bug where services tearing down sent a stray `close_session` mid-conversation is fixed by the `cardServicesStore` refactor.
+
+**Component Architecture**
+- **L19 — Component authoring guide.** *Satisfied with follow-up.* Module docstring ✓, props JSDoc ✓, CSS `@tug-renders-on` coverage ✓ (audit:tokens lint green). **Gap:** `TideCardBody`'s root (`.tide-card` div at tide-card.tsx:872) and `TideProjectPicker`'s root lack a `data-slot` attribute. `git-card` uses `data-slot="git-card"` on its roots; tide inherited the gallery-prompt-entry omission verbatim. See follow-up #2 below.
+- **L09 — Tugcard composes chrome; CardFrame owns geometry.** Satisfied. No position/size/z-index set on the card body.
+- **L10 — One responsibility per layer.** Satisfied. `cardServicesStore.attachDeckManager` is the one cross-layer seam and is explicitly justified in its own JSDoc as preserving layer separation.
+- **L11 — Controls emit actions; responders own state.** Satisfied. TugRadioGroup / TugPopupButton / TugPushButton dispatch actions; responders (picker form, body) register handlers via `useResponderForm` and own the state those actions mutate.
+- **L12 — Selection stays inside card boundaries.** N/A. Selection-boundary registration is the TugCard layer's concern, not card-content.
+
+**Motion**
+- **L13 — CSS / TugAnimator / RAF boundaries.** Satisfied. TugSplitPanel's animated resize uses its own WAAPI layer; TugSheet uses Radix + CSS keyframes; TugCardBanner uses TugAnimator. No bespoke RAF animation in the card. TugSplitPane's internal RAF (if any) is gesture-driven drag — the L13-sanctioned use.
+- **L14 — Radix Presence vs TugAnimator boundary.** Satisfied. Radix Presence owns the sheet's enter/exit; TugAnimator owns the banner's. The card body does not cross between.
+
+**Token System**
+- **L15 — Token-driven control states.** Satisfied. The card composes token-driven controls (TugInput, TugRadioGroup, TugPushButton, TugPopupButton, TugBadge, TugBox); `tide-card.css` defines no interactive control styles of its own.
+- **L16 — `@tug-renders-on` on color-setting rules.** Satisfied. Every color-setting rule without a paired background carries `@tug-renders-on`. `bun run audit:tokens lint` is green.
+- **L17 — Alias tokens resolve in one hop.** N/A. `tide-card.css` declares no `--tugx-*` component aliases.
+- **L18 — Element / surface vocabulary.** Satisfied. Element tokens (`--tug7-element-global-text-*`) used for color; one `--tug7-element-global-surface-attention-muted-rest` used for the picker-notice background — accepted by `audit:tokens lint`.
+
+**Composition**
+- **L20 — Tokens scoped to own component slot.** Satisfied. Card-level CSS references only global design tokens and global-scope element tokens; no reach into composed-child component slots.
+
+**Licensing**
+- **L21 — Third-party licensing.** N/A. No third-party code in the walked files.
+
+**Outstanding follow-ups (non-blocking)**
+
+1. **Render-time `pickerNoticeStore.consume` in `TideProjectPicker`** (tide-card.tsx:311–314). The picker primes `noticeRef.current = pickerNoticeStore.consume(cardId)` inside the render body — a side-effectful read during render. It works in practice under React 18 StrictMode (the ref is stable across the discard-then-commit pair), but violates the "render must be pure" principle. Cleaner as `useMemo(() => pickerNoticeStore.consume(cardId), [cardId])` or a `useLayoutEffect`-gated consumption stored in a small useState. This is the direct descendant of the `if (ref.current === null) ref.current = new X()` pattern the plan pre-filed for cleanup. Low-priority.
+2. ~~**Missing `data-slot` attributes.** Add `data-slot="tide-card"` on `TideCardBody`'s root div (tide-card.tsx:872) and `data-slot="tide-card-picker"` on `TideProjectPicker`'s root div (tide-card.tsx:359–366) to match the `git-card` convention. One-line fix each.~~ **Done** — `data-slot="tide-card"` and `data-slot="tide-card-picker"` added; typecheck + tests green.
+
+**Summary.** 24 laws walked. 17 satisfied, 5 N/A, 2 satisfied with minor follow-ups (L19 `data-slot`, L02/L24-adjacent `noticeRef` render-time read). No material violations. The plan's pre-filed concerns about services lifecycle have been resolved by the `cardServicesStore` refactor.
+
 ---
 
 ### Risks {#risks}
