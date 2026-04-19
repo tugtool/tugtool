@@ -289,3 +289,45 @@ describe("CodeSessionStore — multi-card routing of unrouted CONTROL errors (T3
     expect(store.getSnapshot().lastError).toBeNull();
   });
 });
+
+describe("CodeSessionStore — resume_failed CODE_OUTPUT event (roadmap 4.5)", () => {
+  it("populates lastError with cause=resume_failed without flipping phase to errored", () => {
+    // tugcode emits this after a failed `--resume` spawn falls back to
+    // fresh. The fallback produced a usable session, so the store stays
+    // in `idle`; `lastError` carries the notice for Step 6's affordance.
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    expect(store.getSnapshot().phase).toBe("idle");
+    expect(store.getSnapshot().lastError).toBeNull();
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "resume_failed",
+      reason: "claude exited before session init (likely stale --resume id)",
+      stale_session_id: "sess-old-abc",
+      tug_session_id: TUG_A,
+      ipc_version: 2,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("idle");
+    expect(snap.lastError?.cause).toBe("resume_failed");
+    expect(snap.lastError?.message).toContain("claude exited");
+    expect(snap.lastError?.message).toContain("sess-old-abc");
+  });
+
+  it("drops resume_failed frames whose tug_session_id does not match this store", () => {
+    const conn = new MockTugConnection();
+    const store = constructStore(conn);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "resume_failed",
+      reason: "timed out",
+      stale_session_id: "sess-other",
+      tug_session_id: TUG_B,
+      ipc_version: 2,
+    });
+
+    expect(store.getSnapshot().lastError).toBeNull();
+  });
+});

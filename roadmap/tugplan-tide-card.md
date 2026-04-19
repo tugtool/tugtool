@@ -492,36 +492,167 @@ After all fourteen sub-steps land:
 - `bun run check` exits 0. `bun test` exits 0 with at least the integration test from [4m](#step-4m). `bun run audit:tokens lint` exits 0. `cargo nextest run` exits 0 (no Rust regressions from the binding store usage).
 - Manual: type a path; picker disappears; entry renders; submit `> hi`; a real Claude response streams in via `TugMarkdownView` (arrives in [Step 5](#step-5) — in Step 4 the top pane is still the placeholder). Step 4's live-smoke is the `assistant_text` event arriving on the `CodeSessionStore`; visual rendering of the stream is Step 5's concern.
 
-#### Step 4.5 — Resume-vs-new session UX (placeholder; design before implementation) {#step-4-5}
+#### Step 4.5 — Resume-vs-new session UX (minimum viable) {#step-4-5}
 
-**Status:** Design sketch only. Do NOT start implementation from these notes — they capture intent, not a landable plan. Promote to a full step (files, work, verification) after [Step 4](#step-4) rolls up, so the shape of the live backend + fresh-by-default default ([4k](#step-4k)) is concrete before the UX is scoped.
+**Purpose:** Give the user an explicit choice between starting a fresh Claude session and resuming a prior one for the same workspace, replacing the fresh-by-default behavior of [4k](#step-4k) with a user-controlled default. 4.5 ships the smallest plumbing that surfaces the choice: one resume target per workspace (the most recent, already persisted in the `session-id-by-workspace` map), a list-shaped picker with a confirmation button, and a stale-id fallback that is loud, not silent. Everything richer — multiple historical sessions per workspace, ledger-backed previews with first-prompt snippets and turn counts, concurrent-resume collision handling, eviction policies, explicit forget — is [Step 4.6](#step-4-6).
 
-**Why this exists:** [4i](#step-4i) fixed cross-workspace `--resume` leakage; [4k](#step-4k) made fresh-on-every-card the safe default. Neither gave the user a way to opt *into* resuming a prior session for a workspace they recognize. The persisted map at `dev.tugtool.tide / session-id-by-workspace` accumulates ids that are currently write-only — this step reads them back and surfaces the choice.
+**Why this ships as a small first cut:** The map at `dev.tugtool.tide / session-id-by-workspace` already stores a single id per workspace (as of [4i](#step-4i)). 4.5 exposes that one id as a resume option and wires `sessionMode` through tugdeck → tugcast → tugcode. No schema migration, no new storage, no new component primitives beyond a styled radio group. A proper table / session-history component is not built here; it arrives with [4.6](#step-4-6) once the tugcast-side ledger is behind it.
+
+**UX shape:**
+- The picker keeps its path input and recents list from [4m](#step-4m). The recents buttons change gesture: a click *fills the path input*; it no longer auto-submits with fresh-spawn. Confirmation is always via the Open button. (Code comment references 4.5 so future readers understand the 4m regression.)
+- Below the path input, a vertical list of **session options** for the typed/selected workspace, rendered as an ARIA `role="radiogroup"` of rows, each row a `<button role="radio" aria-checked="…">`:
+  - **Row 1 — "Start fresh".** Always present, selected by default. Subtitle: "New conversation".
+  - **Row 2 — "Resume last session".** Rendered only when the map has an entry for the typed path. Subtitle: the relative timestamp of the last spawn for that id (derived from tugbank write time; no first-prompt snippet yet — that is [4.6](#step-4-6)).
+- Keyboard: arrow keys move selection within the radio group; Enter submits (same as clicking Open).
+- No table component. A styled `<div role="radiogroup">` with token-driven selection state is sufficient for 0–1 resume rows. The real session-history surface arrives with [4.6](#step-4-6).
+
+**Plumbing:**
+- `CardSessionBinding` grows `sessionMode: "new" | "resume"` alongside `projectDir` / `workspaceKey` / `tugSessionId`.
+- `spawn_session` CONTROL payload grows a `session_mode: "new" | "resume"` field. `encodeSpawnSession(cardId, tugSessionId, projectDir, sessionMode)` — absent mode defaults to `"new"` on the decode side so pre-4.5 frames remain valid.
+- tugcast's supervisor parses `session_mode` from the CONTROL payload and forwards it through `run_session_bridge` / `ChildSpawner::spawn_child`. `build_tugcode_command` emits `--session-mode new|resume`.
+- tugcode's `main.ts` parses `--session-mode`, defaults to `"new"`; `SessionManager.initialize()` branches:
+  - `"new"`: current [4k](#step-4k) behavior — skip `readSessionId()`, call `spawnClaude(null)`.
+  - `"resume"`: read the per-workspace map via `readSessionId()`, pass the id to `spawnClaude(id)`.
+- Stale-id fallback in tugcode: if `spawnClaude(id)` fails in `"resume"` mode (claude exits non-zero, session JSONL missing, "not a UUID", etc.), tugcode:
+  1. Emits a new IPC frame `resume_failed { card_id, tug_session_id, reason }` on the supervisor's control feed.
+  2. Clears the stale entry from the `session-id-by-workspace` map for `this.workspaceKey` only.
+  3. Calls `spawnClaude(null)` — a fresh spawn — so the card still becomes usable.
+- `resume_failed` routing: tugcast surfaces the frame as a CONTROL ack to the card; `action-dispatch.ts` converts it into `codeSessionStore.setLastError({ category: "resume_failed", reason })`. [Step 6](#step-6)'s `lastError` affordance renders it with no new banner machinery.
+
+**Files:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — picker UI change; `sessionMode` state; submit encodes the mode; recents gesture change.
+- `tugdeck/src/components/tugways/cards/tide-card.css` — radio-group rows; selected-state tokens.
+- `tugdeck/src/lib/card-session-binding-store.ts` — add `sessionMode` to `CardSessionBinding`.
+- `tugdeck/src/protocol.ts` + `tugdeck/src/lib/session-lifecycle.ts` — extend `encodeSpawnSession` with `session_mode`.
+- `tugdeck/src/action-dispatch.ts` — propagate `session_mode` from `spawn_session_ok` into the binding; route `resume_failed` into `lastError`.
+- `tugrust/crates/tugcast/src/actions.rs` — add `session_mode` to the `SpawnSession` CONTROL struct; add `ResumeFailed` variant on the supervisor-emitted CONTROL enum.
+- `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` — parse `session_mode`; forward through `run_session_bridge`; route tugcode-emitted `resume_failed` to the card's control feed.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — thread `session_mode` through `ChildSpawner`; `build_tugcode_command` emits `--session-mode`.
+- `tugcode/src/main.ts` — parse `--session-mode`; default `"new"`.
+- `tugcode/src/session.ts` — `SessionManager` constructor takes mode; `initialize()` branches; stale-id fallback emits `resume_failed`, clears the map entry, fresh-spawns.
+
+**Work:**
+- **Binding + payload shape.** Add the `sessionMode` field to `CardSessionBinding` and the CONTROL `spawn_session` payload (both sides). Default to `"new"` on every decode path so pre-4.5 frames don't break.
+- **Picker UI.** Reshape `TideProjectPickerForm`: input at top, recents list below (now *path-filler* buttons, not spawners), then the session-mode radio group, then the Open button. The radio group re-reads the tugbank map for the typed path whenever the path changes (via `getTugbankClient()` as in 4m).
+- **Submit.** On Open, read the selected `sessionMode` and include it in `encodeSpawnSession`. The `spawn_session_ok` handler propagates `session_mode` into the binding.
+- **Supervisor plumbing.** `SpawnSession` parsing learns `session_mode`; `run_session_bridge` grows a `session_mode: SessionMode` parameter; `build_tugcode_command` emits the flag for each variant.
+- **tugcode flag + branch.** Parse `--session-mode`. `SessionManager` constructor takes the mode; `initialize()` branches. `persistSessionId` on `system:init` stays unchanged so both modes write back the latest id (resume writes the same id; fresh writes the new one).
+- **Stale-id fallback.** In `SessionManager.initialize()`'s `"resume"` branch, wrap `spawnClaude(id)` with a recovery block: on failure, emit a `resume_failed` IPC frame, clear the map entry for `this.workspaceKey`, call `spawnClaude(null)`. Log the failure mode to the tugcast tracing log.
+- **`resume_failed` routing.** Supervisor wraps the frame as a CONTROL ack to the card; `action-dispatch.ts` converts it into `codeSessionStore.setLastError({ category: "resume_failed", reason })`. No new UI component — Step 6's affordance renders it.
+- **Recents gesture change.** Clicking a recent path fills the input; it does not spawn. Brief code comment pointing to 4.5 explains the regression from 4m's single-click behavior.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` green. New tests in `tide-card.test.tsx`:
+  - T-TIDE-RESUME-01: picker with no map entry renders only the "Start fresh" row.
+  - T-TIDE-RESUME-02: picker with a map entry for the typed path renders both rows; "Start fresh" is selected by default.
+  - T-TIDE-RESUME-03: selecting "Resume last" + clicking Open sends `encodeSpawnSession(..., sessionMode: "resume")`.
+  - T-TIDE-RESUME-04: changing the path input re-reads the map and updates the resume row's visibility.
+  - T-TIDE-RESUME-05: a `resume_failed` frame arriving on the bound session populates `CodeSessionStore.lastError` and does not unbind the card.
+  - T-TIDE-RESUME-06: clicking a recent fills the input and does not send a CONTROL frame.
+- New tests in `tugcode/src/__tests__/session.test.ts`:
+  - `"new"` mode skips `readSessionId`, passes `null` to the (mocked) `spawnClaude`.
+  - `"resume"` mode reads the seeded map and passes the id.
+  - `"resume"` mode with a failing `spawnClaude` emits `resume_failed`, clears the map entry, re-spawns with `null` and succeeds.
+- New Rust tests: `build_tugcode_command` with each `SessionMode` variant emits the expected flag.
+- `cargo nextest run` green. `bun run audit:tokens lint` green.
+- Manual smoke (three scenarios):
+  1. Open a card on `/u/src/tugtool`; pick Start fresh; send `> remember that my favorite color is green.`; observe the acknowledgment; close the card.
+  2. Open a new card on `/u/src/tugtool`; observe both rows; pick Resume last; click Open; send `> what did I tell you to remember?`; verify claude responds with "green".
+  3. Move `~/.claude/projects/<workspace>/<session>.jsonl` aside to simulate a stale id; open a card; pick Resume last; observe the card bind (via the fresh-spawn fallback), `lastError` affordance shows a resume-failed notice, submit `> hi` succeeds; verify the map entry now points to the new id, not the moved one.
+
+**Out of scope (see [Step 4.6](#step-4-6)):**
+- Multiple historical sessions per workspace. The tugbank map holds one id; 4.5 exposes one resume row. [4.6](#step-4-6) introduces a tugcast-side ledger that stores N sessions per workspace.
+- Session previews beyond a timestamp (no first-prompt snippet, no turn count, no state indicator).
+- Concurrent-resume collision handling. If two cards on the same workspace both pick Resume in 4.5, behavior is undefined beyond "last writer wins on `persistSessionId`". [4.6](#step-4-6) introduces live-binding awareness in the ledger and greys out the row.
+- Eviction, explicit Forget actions, recents↔ledger coherence, cross-card live updates. All deferred to [4.6](#step-4-6).
+- Migrating session bookkeeping off tugbank. [4.6](#step-4-6) moves it to a purpose-built ledger.
+
+#### Step 4.6 — Tugcast-side session ledger + full resume UX (placeholder; design before implementation) {#step-4-6}
+
+**Status:** Design sketch only. Do NOT start implementation from these notes — they capture intent, not a landable plan. Promote to a full step (files, work, verification) after [Step 4.5](#step-4-5) ships, so the plumbing already in place (`sessionMode`, `resume_failed`, the picker list shape) is concrete before the richer UX and storage redesign are scoped.
+
+**Why this exists:** [4.5](#step-4-5) wires the user-facing choice but keeps storage inside the tugbank map — one id per workspace, no metadata, no branching. That is enough to make resume *work*; it is not enough to make it *right*. Users will hit every one of these the moment 4.5 lands:
+
+- "I have three sessions going in this repo — which one am I resuming?"
+- "I closed a card; did that throw away my session?"
+- "Two cards both resumed the same session — now the JSONL is corrupt."
+- "I want to forget one specific session without forgetting all of them."
+- "The resume timestamp is opaque; I want to see what the conversation was about."
+
+4.6 addresses all of these by moving session bookkeeping out of tugbank and into a purpose-built tugcast-side ledger, and by reshaping the picker around the richer data the ledger exposes.
+
+**Why a tugcast-side ledger (not tugbank):**
+- Row-level queries with ordering: N sessions per workspace, sorted by `last_used_at`, filtered by state, keyed on `workspace_key`. Tugbank is a KV store; modelling this as JSON blobs would push all the logic into the reader and re-parse on every picker paint.
+- Write volume: the ledger updates on every `turn_complete` frame (to tick `turn_count` and `last_used_at`), plus on every `spawn_session_ok` / `close_session` / `resume_failed`. Tugbank is not built for that cadence and the churn would pollute its change-notification stream.
+- Ownership: the ledger is tugcast-process-local state about tugcast-managed child processes. It has no meaning outside tugcast; routing it through tugbank spreads responsibility across a boundary that doesn't carry its weight.
+- Lifecycle: migration from 4.5's tugbank map is one-shot (read once, synthesize rows, delete the tugbank key). After migration, tugbank has no role in session bookkeeping.
+
+**Sketch of the ledger:**
+- Location: `tugrust/crates/tugcast/src/session_ledger.rs`, owned by the tugcast process. A single `SessionLedger` instance lives on the server, shared by the supervisor and the CONTROL handler.
+- Storage backing: preferred **`rusqlite` with a single-file database** under the user's data dir (`~/Library/Application Support/Tug/sessions.db` on macOS, `$XDG_DATA_HOME/tugcast/sessions.db` on Linux). Sqlite carries its weight because row-level queries with `ORDER BY last_used_at DESC` and concurrent reads while the supervisor writes are exactly what it's for. Alternative considered: JSONL per workspace. Cheaper to introduce, O(N) to query, no index, worse eviction. The promotion pass picks one; sqlite is the starting preference.
+- Schema (sqlite sketch):
+  ```sql
+  CREATE TABLE sessions (
+    session_id        TEXT PRIMARY KEY,
+    workspace_key     TEXT NOT NULL,
+    project_dir       TEXT NOT NULL,
+    created_at        INTEGER NOT NULL,  -- unix millis
+    last_used_at      INTEGER NOT NULL,
+    turn_count        INTEGER NOT NULL DEFAULT 0,
+    first_user_prompt TEXT,              -- first user_message, truncated to 256 chars
+    state             TEXT NOT NULL,     -- "live" | "closed" | "failed"
+    card_id_live      TEXT               -- set while a card is bound; NULL otherwise
+  );
+  CREATE INDEX sessions_workspace ON sessions(workspace_key, last_used_at DESC);
+  ```
+- Ledger writes (driven by tugcast's supervisor, not tugcode):
+  - On `spawn_session_ok`: `INSERT OR IGNORE`; set `state="live"`, `card_id_live=<card_id>`, `created_at=now`, `last_used_at=now`.
+  - On first `user_message` of a session: `UPDATE first_user_prompt` (only if NULL) with the trimmed body.
+  - On every `turn_complete`: `UPDATE turn_count = turn_count + 1, last_used_at = now`.
+  - On `close_session` / tugcode exit: `UPDATE state="closed", card_id_live=NULL`.
+  - On `resume_failed`: `UPDATE state="failed"` (ledger retains the crumb for diagnostics; Forget is the only path to full deletion).
+
+**CONTROL protocol additions:**
+- `list_sessions { workspace_key }` → `{ sessions: [{ session_id, created_at, last_used_at, turn_count, first_user_prompt, state, card_id_live }, ...] }`. Picker calls on mount and on path change.
+- `forget_session { session_id }` → deletes the row; kills the tugcode child if any; moves the underlying `~/.claude/projects/.../<id>.jsonl` to a trash subdir (recoverable for a week).
+- `forget_workspace_sessions { workspace_key }` → batch Forget for the picker's "Forget all sessions for this workspace" button.
+- `session_updated { session_id, fields... }` → broadcast on every write above; tugdeck's picker subscribes while open so turn counts tick and state indicators stay current without polling.
+
+**Migration from 4.5:**
+- On tugcast startup (one-time): read `dev.tugtool.tide / session-id-by-workspace` from tugbank, synthesize ledger rows (`state="closed"`, metadata defaulted), delete the tugbank key. Guard against partial failures with a single transaction.
+- tugcode stops reading/writing the tugbank map. The preferred shape: tugcast resolves the session id *before* spawning tugcode and passes it as a `--resume-session-id <id>` flag, so tugcode is entirely free of session bookkeeping. The alternative — tugcode calls out to tugcast over CONTROL for the id — keeps tugcode closer to its current shape but adds a round-trip on every spawn. Promotion picks one.
 
 **Sketch of the UX:**
-- In `TideProjectPicker`, below the path input, expose a simple two-option selector — e.g., a radio or toggle:
-  - "Start fresh" (default; matches 4k behavior).
-  - "Resume last session (`<preview>`)" — enabled only when the map has an entry for the typed/selected workspace. Preview can be the first prompt snippet + timestamp, or just the timestamp to start; polish later.
-- Submit emits `spawn_session` with a new `sessionMode: "new" | "resume"` field on the CONTROL payload.
+- Picker reshaped around the ledger's richer rows:
+  - Path input (unchanged).
+  - "Start fresh" row, always first.
+  - N "Resume session" rows, one per ledger entry for the typed workspace, ordered by `last_used_at DESC`. Each row shows: first_user_prompt snippet (or "No prompts yet" for empty sessions), turn count, relative timestamp ("2h ago"), and a state indicator. Rows with `state="failed"` render greyed with a diagnostic subtitle.
+  - Per-row "Forget" action (disabled when `card_id_live` is set). A confirmation sheet warns before deletion — this is destructive and user-visible.
+  - A footer "Forget all sessions for this workspace" button.
+- Live updates: picker subscribes to `session_updated` broadcasts while open. Turn counts and state change in place; no flash, no re-mount.
+- Keyboard: arrow keys navigate the whole list (Start fresh + all resume rows); Enter submits; Backspace on a row triggers Forget (with confirmation sheet).
+- Still no proper table component. The row shape is richer than 4.5's radio group; if a table primitive lands in tugdeck between 4.5 and 4.6, reshape accordingly, but do **not** detour to build one inside this step. The list-with-rich-rows shape is sufficient for the session counts we expect (tens, not hundreds).
 
-**Sketch of the plumbing:**
-- `cardSessionBindingStore` binding carries `sessionMode` alongside `projectDir` / `tugSessionId` so downstream code (recent projects, metadata stores) can reflect the choice.
-- tugcast forwards the mode to tugcode via a new CLI flag — e.g., `--session-mode new|resume`. `build_tugcode_command` grows the flag; the supervisor passes it when it spawns the child.
-- tugcode respects the flag in `SessionManager.initialize()`:
-  - `new`: current [4k](#step-4k) behavior (skip `readSessionId`, pass `null`).
-  - `resume`: read the map, pass the id to `spawnClaude()`.
-- Stale-id fallback: if claude rejects `--resume <id>` (session file missing, wrong workspace, etc.), tugcode detects the failure, writes a user-visible notice to IPC (new `error` or a purpose-built `resume_failed` frame), falls back to a fresh spawn, and clears the stale map entry. Never hang or silently swallow.
+**Lifecycle policies (decidable with ledger in hand):**
+- **Close semantics.** Closing a card sets `state="closed"`, `card_id_live=NULL`. Metadata preserved. Next card can resume. Explicit Forget is the only path to deletion.
+- **Concurrent-resume collision.** Picker greys out resume rows with `card_id_live != null && card_id_live != this.cardId`. Defense in depth: the CONTROL `spawn_session` handler in tugcast rejects `session_mode="resume"` with `session_id` already live on another card, returning `spawn_session_err { reason: "session_live_elsewhere" }`.
+- **Eviction.** Ledger cap: named constant `TIDE_LEDGER_MAX_PER_WORKSPACE` (initial: 20). On spawn, if the workspace has ≥ cap rows, evict the oldest `state="closed"` row by `last_used_at`. Age-based expiry: rows older than a named `TIDE_LEDGER_MAX_AGE` (initial: 90 days) with `state != "live"` evicted on startup. Both thresholds are named constants, not magic numbers. `state="live"` rows are never evicted.
+- **Recents↔ledger coherence.** When a recent-projects entry is evicted (per [4m](#step-4m)'s cap), evict all ledger rows for that workspace in the same transaction. The reverse — ledger eviction triggering recents eviction — is **not** automatic; a workspace with no stored sessions can still be a recent project.
+- **Explicit Forget.** Per-row Forget + per-workspace Forget-all, each with confirmation. Forget moves the session JSONL to a trash subdir (not `rm`), keyed on delete date, swept on a coarse schedule (weekly) or next startup if older than 7 days.
 
-**Sketch of lifecycle policies still to decide:**
-- **Close semantics.** Does closing a card leave the workspace's map entry intact (default: yes, so the next card can offer resume) or clear it? Probably preserve by default; expose an explicit user action ("Forget session for this workspace") rather than piggybacking on close.
-- **Map eviction.** Cap the map size; decide the policy (LRU by last-spawn, age-based expiry, or both). Orphaned ids accumulate otherwise.
-- **Recent projects ↔ map coherence.** [4m](#step-4m) adds a recent-projects list. When an entry is evicted from recents, should its session-id map entry go with it? Probably yes, but confirm.
-- **Concurrent same-workspace cards.** Even with 4k landed, if two cards on the same workspace both pick "resume," they collide again. The UX should surface this (grey out "resume" for any workspace that currently has a live binding on another card), or the CONTROL handler should reject the second resume. Pick one.
+**Non-goals even for 4.6:**
+- Server-side archival or search across prior sessions — requires an external index, out of this plan's scope.
+- Cross-machine sync — the ledger is tugcast-process-local, backed by a single file in the user's data dir.
+- Session branching ("fork from turn N") — that is a Claude-side feature, not a picker UX.
+- A purpose-built table / grid component for the session list. If one lands upstream, reshape; otherwise stick with the list.
 
-**Non-goals for the first cut:**
-- Multi-session branching per workspace ("resume which of three prior sessions?") — one resume target is enough until the UX tells us otherwise.
-- Session-history previews in the picker beyond the first-prompt snippet.
-- Server-side archival or search over prior sessions.
+**Open design questions for the promotion pass:**
+- Sqlite vs JSONL backing. Starting preference: sqlite.
+- Whether tugcode reads the ledger via CONTROL round-trip, or tugcast resolves the id and passes it as a CLI flag. Starting preference: CLI flag (keeps tugcode stateless).
+- Whether `resume_failed` downgrades ledger state to `"failed"` (crumb for diagnostics) or deletes outright. Starting preference: `"failed"`.
+- Whether the ledger also tracks assistant response bytes / storage pressure for a future "trim old sessions" UX.
+- Whether any of [4m](#step-4m)'s recent-projects logic should move into the ledger itself (one store, two views) or stay separate (tugbank stays the source of truth for recents). Starting preference: keep separate — recents and sessions are different entities with different eviction policies.
+- Trash sweep cadence: on-demand during Forget, or background on tugcast startup? Starting preference: startup sweep of anything > 7 days old.
 
 #### Step 5 — Wire `TugMarkdownView` to streaming output {#step-5}
 

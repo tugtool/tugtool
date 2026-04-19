@@ -34,6 +34,7 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugInput } from "../tug-input";
 import { TugPushButton } from "../tug-push-button";
+import { TugRadioGroup, TugRadioItem } from "../tug-radio-group";
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { useTugSheet } from "../tug-sheet";
@@ -51,7 +52,11 @@ import { presentWorkspaceKey, registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-engine";
 import { useCardWorkspaceKey } from "@/components/tugways/hooks/use-card-workspace-key";
-import { cardSessionBindingStore, type CardSessionBinding } from "@/lib/card-session-binding-store";
+import {
+  cardSessionBindingStore,
+  type CardSessionBinding,
+  type CardSessionMode,
+} from "@/lib/card-session-binding-store";
 import { sendCloseSession, sendSpawnSession } from "@/lib/session-lifecycle";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
@@ -291,9 +296,11 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     setServices(next);
 
     // Bind success → prepend this card's project path to the tide
-    // recent-projects list (dedup, cap). Persist via HTTP PUT; the
-    // TugbankClient cache refreshes via the DEFAULTS feed so the
-    // next picker mount reads the updated list (roadmap step 4m).
+    // recent-projects list (dedup, cap). The path is the *same*
+    // identifier tugcode keys its session-id persistence by, so the
+    // picker's next resume lookup can read `session-id-by-workspace`
+    // with the typed path directly — no translation table, no drift.
+    // Roadmap step 4.5 + step 4m.
     const tugbank = getTugbankClient();
     if (tugbank) {
       const current = readTideRecentProjects(tugbank);
@@ -425,13 +432,19 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       title: "Open Project",
       content: (close) => (
         <TideProjectPickerForm
-          onOpen={(projectDir) => {
+          onOpen={(projectDir, sessionMode, sessionId) => {
             const connection = getConnection();
             if (!connection) {
               console.warn("TideProjectPicker: connection unavailable");
               return;
             }
-            sendSpawnSession(connection, cardId, crypto.randomUUID(), projectDir);
+            sendSpawnSession(
+              connection,
+              cardId,
+              sessionId,
+              projectDir,
+              sessionMode,
+            );
             close("open");
           }}
           onCancel={() => close("cancel")}
@@ -465,8 +478,75 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
 }
 
 interface TideProjectPickerFormProps {
-  onOpen: (projectDir: string) => void;
+  onOpen: (
+    projectDir: string,
+    sessionMode: CardSessionMode,
+    sessionId: string,
+  ) => void;
   onCancel: () => void;
+}
+
+/** One entry in the sessions record. */
+interface SessionRecord {
+  sessionId: string;
+  projectDir: string;
+  createdAt: number;
+}
+
+/**
+ * Read the `dev.tugtool.tide / sessions` map synchronously from the
+ * tugbank cache. Each entry is `{projectDir, createdAt}` keyed by the
+ * session id (the single identifier claude uses as its own session id
+ * and tugcast uses for feed routing).
+ *
+ * Returns `[]` for unset / malformed records. Parsing failures degrade
+ * gracefully to "no known sessions" rather than blocking the picker.
+ */
+function readAllSessions(): SessionRecord[] {
+  const client = getTugbankClient();
+  if (!client) return [];
+  const entry = client.get("dev.tugtool.tide", "sessions");
+  if (!entry) return [];
+  // tugcode persists the map as a JSON *string* via `tb.set(domain, key,
+  // JSON.stringify(map))` — tugbank writes those through as `kind: "json"`
+  // with the parsed value, or (for older / raw writes) `kind: "string"`.
+  let map: unknown;
+  if (entry.kind === "json" && entry.value !== undefined) {
+    map = entry.value;
+  } else if (entry.kind === "string" && typeof entry.value === "string") {
+    try {
+      map = JSON.parse(entry.value);
+    } catch {
+      return [];
+    }
+  } else {
+    return [];
+  }
+  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
+  const out: SessionRecord[] = [];
+  for (const [sessionId, raw] of Object.entries(map as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const rec = raw as { projectDir?: unknown; createdAt?: unknown };
+    if (typeof rec.projectDir !== "string" || rec.projectDir.length === 0) continue;
+    if (typeof rec.createdAt !== "number") continue;
+    out.push({
+      sessionId,
+      projectDir: rec.projectDir,
+      createdAt: rec.createdAt,
+    });
+  }
+  return out;
+}
+
+/**
+ * Resume candidates for `projectDir`, newest first. The picker's
+ * "Resume last session" row points at the head of this list; future
+ * multi-session UX can surface the whole list.
+ */
+function readSessionsForProject(projectDir: string): SessionRecord[] {
+  return readAllSessions()
+    .filter((r) => r.projectDir === projectDir)
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps) {
@@ -483,55 +563,155 @@ function TideProjectPickerForm({ onOpen, onCancel }: TideProjectPickerFormProps)
     return client ? readTideRecentProjects(client) : [];
   });
 
+  // Live path state drives the resume-option visibility. The input is
+  // controlled; recents clicks call setPath. Roadmap step 4.5 — the
+  // recents click fills the input rather than spawning directly so
+  // every path flows through the Start-fresh / Resume-last choice.
+  const [path, setPath] = useState("");
+  const [sessionMode, setSessionMode] = useState<CardSessionMode>("new");
+
+  // The TugRadioGroup dispatches `selectValue` actions through the
+  // responder chain per L11 — `useResponderForm` installs a handler
+  // that routes the dispatch to `setSessionMode` by sender id.
+  const sessionModeSenderId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [sessionModeSenderId]: (next) => {
+        if (next === "new" || next === "resume") {
+          setSessionMode(next);
+        }
+      },
+    },
+  });
+
+  // Resume is offered when the typed path has at least one record in
+  // the sessions map. The picker presents the newest session's id on
+  // the "Resume last session" row; the picker's Open handler forwards
+  // it as-is on `spawn_session`. No per-card identifier translation.
+  const resumeCandidate = useMemo<SessionRecord | null>(() => {
+    const trimmed = path.trim();
+    if (trimmed.length === 0) return null;
+    const candidates = readSessionsForProject(trimmed);
+    return candidates[0] ?? null;
+  }, [path]);
+
+  // Revert the selection to "new" if the user edits the path into a
+  // workspace with no resume candidate. Prevents a hidden radio from
+  // silently being the active choice on submit.
+  useLayoutEffect(() => {
+    if (resumeCandidate === null && sessionMode === "resume") {
+      setSessionMode("new");
+    }
+  }, [resumeCandidate, sessionMode]);
+
   const submit = useCallback(() => {
     const trimmed = inputRef.current?.value.trim() ?? "";
     if (!trimmed) return;
-    onOpen(trimmed);
-  }, [onOpen]);
+    // Defense-in-depth: if sessionMode is "resume" but the lookup
+    // returned null (race between the state commit and submit click),
+    // downgrade to "new" on the wire. For "new", always mint a brand-
+    // new id so two concurrent Start-fresh clicks on the same project
+    // get independent sessions. For "resume", use the candidate's id.
+    const effectiveMode: CardSessionMode =
+      sessionMode === "resume" && resumeCandidate !== null ? "resume" : "new";
+    const effectiveSessionId =
+      effectiveMode === "resume" && resumeCandidate !== null
+        ? resumeCandidate.sessionId
+        : crypto.randomUUID();
+    onOpen(trimmed, effectiveMode, effectiveSessionId);
+  }, [onOpen, resumeCandidate, sessionMode]);
 
   return (
-    <div className="tide-card-picker-form">
-      <label className="tide-card-picker-field">
-        <span className="tide-card-picker-label">Project path</span>
-        <TugInput
-          ref={inputRef}
-          type="text"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder="/path/to/project"
-          autoFocus
-        />
-      </label>
-      {recents.length > 0 && (
-        <div className="tide-card-picker-recents">
-          <span className="tide-card-picker-label">Recent</span>
-          <div className="tide-card-picker-recents-list">
-            {recents.map((path) => (
-              <TugPushButton
-                key={path}
-                emphasis="ghost"
-                role="action"
-                onClick={() => onOpen(path)}
-              >
-                {path}
-              </TugPushButton>
-            ))}
+    <ResponderScope>
+      <div className="tide-card-picker-form" ref={responderRef}>
+        <label className="tide-card-picker-field">
+          <span className="tide-card-picker-label">Project path</span>
+          <TugInput
+            ref={inputRef}
+            type="text"
+            value={path}
+            onChange={(e) => setPath((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="/path/to/project"
+            autoFocus
+          />
+        </label>
+        {recents.length > 0 && (
+          <div className="tide-card-picker-recents">
+            <span className="tide-card-picker-label">Recent</span>
+            <div className="tide-card-picker-recents-list">
+              {recents.map((p) => (
+                // 4.5 regression from 4m: a recent click now fills the
+                // input. Single-click spawn was removed so every path
+                // goes through the Start-fresh / Resume-last radio
+                // group below.
+                <TugPushButton
+                  key={p}
+                  emphasis="ghost"
+                  role="action"
+                  onClick={() => setPath(p)}
+                >
+                  {p}
+                </TugPushButton>
+              ))}
+            </div>
           </div>
+        )}
+        {/*
+          Both rows are always rendered. The Resume row is disabled
+          when the typed workspace has no recorded session id — we do
+          not hide it, because the user deserves to see every available
+          option for this picker scenario (disabled rows communicate
+          "this is a real choice, it just doesn't apply right now").
+        */}
+        <TugRadioGroup
+          aria-label="Session mode"
+          value={sessionMode}
+          senderId={sessionModeSenderId}
+          size="md"
+          orientation="vertical"
+        >
+          <TugRadioItem value="new">
+            <span className="tide-card-picker-session-option">
+              <span className="tide-card-picker-session-option-title">
+                Start fresh
+              </span>
+              <span className="tide-card-picker-session-option-subtitle">
+                New conversation
+              </span>
+            </span>
+          </TugRadioItem>
+          <TugRadioItem value="resume" disabled={resumeCandidate === null}>
+            <span className="tide-card-picker-session-option">
+              <span className="tide-card-picker-session-option-title">
+                Resume last session
+              </span>
+              <span
+                className="tide-card-picker-session-option-subtitle"
+                data-testid="tide-card-picker-resume-subtitle"
+              >
+                {resumeCandidate === null
+                  ? "No prior session for this path"
+                  : `Session ${resumeCandidate.sessionId.slice(0, 8)}…`}
+              </span>
+            </span>
+          </TugRadioItem>
+        </TugRadioGroup>
+        <div className="tug-sheet-actions">
+          <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
+            Cancel
+          </TugPushButton>
+          <TugPushButton emphasis="filled" role="action" onClick={submit}>
+            Open
+          </TugPushButton>
         </div>
-      )}
-      <div className="tug-sheet-actions">
-        <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
-          Cancel
-        </TugPushButton>
-        <TugPushButton emphasis="filled" role="action" onClick={submit}>
-          Open
-        </TugPushButton>
       </div>
-    </div>
+    </ResponderScope>
   );
 }
 

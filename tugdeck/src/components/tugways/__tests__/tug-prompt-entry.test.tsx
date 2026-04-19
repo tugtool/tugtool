@@ -821,7 +821,7 @@ function renderEntryWithStore(opts: {
       </React.Profiler>
     ) : tree,
   );
-  return { ...utils, store, id, entryRef, managerRef };
+  return { ...utils, store, services: scripted, id, entryRef, managerRef };
 }
 
 describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () => {
@@ -1141,5 +1141,140 @@ describe("TugPromptEntry — Step 5 submit / interrupt / queue / errored", () =>
     )!;
     expect(root.getAttribute("data-phase")).toBe("awaiting_approval");
     expect(root.hasAttribute("data-pending-approval")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-session prompt history keys on `claudeSessionId`, not on the routing
+// `tugSessionId`. Two regressions live here:
+//
+// 1. Cache poisoning. The provider cache used to key on `route` only;
+//    when `claudeSessionId` changed (e.g. resume → silent fresh fallback)
+//    the cached provider returned the old session's entries even though
+//    `snap.claudeSessionId` had moved on. Verified by changing the
+//    snapshot's `claudeSessionId` mid-session and asserting `push()`
+//    targets the new id (proving a fresh provider was created).
+//
+// 2. Push key. `performSubmit` previously pushed under
+//    `snap.tugSessionId`; that orphaned the entry from the on-disk
+//    claude session file (which is named after the claude id, the
+//    only string `--resume` can find). Verified by inspecting the
+//    `sessionId` field on the pushed entry.
+// ---------------------------------------------------------------------------
+
+describe("TugPromptEntry — per-session prompt history keys on claudeSessionId", () => {
+  beforeEach(() => {
+    installExecCommandShim();
+    installCanvas2DShim();
+  });
+
+  afterEach(() => {
+    cleanup();
+    uninstallExecCommandShim();
+    uninstallCanvas2DShim();
+  });
+
+  it("push uses claudeSessionId (not tugSessionId) as the entry's session id", () => {
+    const store = new ScriptedStore({
+      tugSessionId: "tug-routing-id",
+      claudeSessionId: "claude-real-id",
+    });
+    const { id, managerRef, services } = renderEntryWithStore({ store });
+    const pushSpy = spyOn(services.historyStore, "push");
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hello");
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    const entry = pushSpy.mock.calls[0]![0] as { sessionId: string; id: string };
+    expect(entry.sessionId).toBe("claude-real-id");
+    // The composite entry id should be derived from claudeSessionId too,
+    // not tugSessionId — otherwise dedup on re-load mis-matches.
+    expect(entry.id.startsWith("claude-real-id-")).toBe(true);
+  });
+
+  it("push skips silently when claudeSessionId is null (system_init not yet received)", () => {
+    const store = new ScriptedStore({
+      tugSessionId: "tug-routing-id",
+      claudeSessionId: null,
+    });
+    const { id, managerRef, services } = renderEntryWithStore({ store });
+    const pushSpy = spyOn(services.historyStore, "push");
+
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "hello");
+    });
+
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    // Better to lose one history entry than to silently mis-key it
+    // under a temporary id and orphan it from the on-disk session file.
+    expect(pushSpy).not.toHaveBeenCalled();
+  });
+
+  it("provider cache invalidates when claudeSessionId changes (resume → silent fresh fallback)", () => {
+    const store = new ScriptedStore({
+      tugSessionId: "tug-routing-id",
+      claudeSessionId: "claude-old-id",
+    });
+    const { id, managerRef, services } = renderEntryWithStore({ store });
+    const pushSpy = spyOn(services.historyStore, "push");
+
+    // First submit: pushes under the old id.
+    const editor = findEditableRoot();
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "first");
+    });
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect((pushSpy.mock.calls[0]![0] as { sessionId: string }).sessionId).toBe(
+      "claude-old-id",
+    );
+
+    // Simulate a resume_failed → fresh fallback: claude assigns a new id,
+    // CodeSessionStore's snapshot updates. The provider cache must NOT
+    // hand back the stale provider; the next push must target the new id.
+    act(() => {
+      store.setSnapshot({ claudeSessionId: "claude-new-id" });
+    });
+
+    placeCaretAtEnd(editor!);
+    act(() => {
+      document.execCommand("insertText", false, "second");
+    });
+    act(() => {
+      managerRef.current!.sendToTarget(id, {
+        action: TUG_ACTIONS.SUBMIT,
+        phase: "discrete",
+      });
+    });
+
+    expect(pushSpy).toHaveBeenCalledTimes(2);
+    expect((pushSpy.mock.calls[1]![0] as { sessionId: string }).sessionId).toBe(
+      "claude-new-id",
+    );
   });
 });

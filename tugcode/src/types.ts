@@ -270,6 +270,24 @@ export interface ControlRequestCancel {
   ipc_version: number;
 }
 
+/**
+ * Emitted by `SessionManager.initialize()` when a `--session-mode resume`
+ * spawn attempt fails (claude exits before `system:init`, JSONL missing,
+ * stale id, etc.). Tugcast forwards the frame to the card as a CODE_OUTPUT
+ * event and tugdeck surfaces it through `CodeSessionStore.lastError` so
+ * Step 6's affordance renders it without new UI machinery. After emitting
+ * this, tugcode falls back to a fresh spawn so the card still becomes
+ * usable. Roadmap step 4.5.
+ */
+export interface ResumeFailed {
+  type: "resume_failed";
+  /** Machine-readable category describing why resume failed. */
+  reason: string;
+  /** The id tugcode attempted to resume. */
+  stale_session_id: string;
+  ipc_version: number;
+}
+
 export type OutboundMessage =
   | ProtocolAck
   | SessionInit
@@ -288,7 +306,8 @@ export type OutboundMessage =
   | CompactBoundary
   | ApiRetry
   | ToolUseStructured
-  | ControlRequestCancel;
+  | ControlRequestCancel
+  | ResumeFailed;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {

@@ -44,7 +44,7 @@ use tugbank_core::{TugbankClient, Value};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
 use super::agent_bridge::{
-    ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, TugcodeSpawner, run_session_bridge,
+    ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
 use super::code::parse_tug_session_id;
 use super::session_metadata::is_system_metadata;
@@ -224,6 +224,11 @@ pub struct LedgerEntry {
     /// Claude Code process's cwd, and retained for reset-session to
     /// respawn without losing the binding. (W2 Step 6.)
     pub project_dir: PathBuf,
+    /// User's spawn-time new-vs-resume choice (roadmap step 4.5).
+    /// Forwarded as `--session-mode new|resume` to the tugcode subprocess.
+    /// Reconnects reuse this value so the tugcode side of the session
+    /// doesn't flip modes mid-life.
+    pub session_mode: SessionMode,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
     /// Per-session crash budget (3 crashes / 60s by convention).
@@ -247,6 +252,7 @@ impl LedgerEntry {
         tug_session_id: TugSessionId,
         workspace_key: WorkspaceKey,
         project_dir: PathBuf,
+        session_mode: SessionMode,
         crash_budget: CrashBudget,
     ) -> Self {
         Self {
@@ -254,6 +260,7 @@ impl LedgerEntry {
             claude_session_id: None,
             workspace_key,
             project_dir,
+            session_mode,
             spawn_state: SpawnState::Idle,
             crash_budget,
             queue: BoundedQueue::new(),
@@ -403,6 +410,107 @@ impl SessionKeysStore for TugbankClient {
 }
 
 // ---------------------------------------------------------------------------
+// SessionsRecorder — writer trait for the sessions-record tugbank entry
+// ---------------------------------------------------------------------------
+
+/// Tugbank domain for the sessions record.
+pub const SESSIONS_DOMAIN: &str = "dev.tugtool.tide";
+/// Tugbank key (within `SESSIONS_DOMAIN`) for the sessions record.
+pub const SESSIONS_KEY: &str = "sessions";
+
+/// Writer for the sessions record — one entry per session, keyed by
+/// the session id (which is also claude's own id and the id the feed
+/// routes under).
+///
+/// The record shape is `{[sessionId]: {projectDir, createdAt}}`. The
+/// picker in tugdeck reads this record to surface resume candidates;
+/// tugcast writes it from the bridge on `session_init` and removes
+/// entries on `resume_failed`. Centralizing the write here — instead of
+/// tugcode reaching into the sqlite file directly — means every write
+/// goes through the Rust `TugbankClient`, which broadcasts
+/// `domain-changed` notifications automatically. No subprocess shim.
+pub trait SessionsRecorder: Send + Sync {
+    /// Upsert the record for `session_id`. Preserves an existing
+    /// `createdAt` if the record already exists; uses `now` otherwise.
+    fn record(&self, session_id: &str, project_dir: &str);
+
+    /// Remove the record for `session_id`. No-op if the id is absent.
+    fn remove(&self, session_id: &str);
+}
+
+/// Production implementation backed by a shared [`TugbankClient`].
+pub struct TugbankSessionsRecorder {
+    pub client: Arc<TugbankClient>,
+}
+
+impl TugbankSessionsRecorder {
+    pub fn new(client: Arc<TugbankClient>) -> Self {
+        Self { client }
+    }
+
+    fn read_map(&self) -> serde_json::Map<String, serde_json::Value> {
+        let existing = self
+            .client
+            .get(SESSIONS_DOMAIN, SESSIONS_KEY)
+            .ok()
+            .flatten();
+        match existing {
+            Some(Value::Json(serde_json::Value::Object(m))) => m,
+            Some(Value::String(s)) => {
+                // Tugcode historically wrote the value as a JSON-stringified
+                // map under `Value::String`. Accept both shapes on read so
+                // pre-refactor records keep working; writes always use Json.
+                match serde_json::from_str::<serde_json::Value>(&s) {
+                    Ok(serde_json::Value::Object(m)) => m,
+                    _ => serde_json::Map::new(),
+                }
+            }
+            _ => serde_json::Map::new(),
+        }
+    }
+
+    fn write_map(&self, map: serde_json::Map<String, serde_json::Value>) {
+        if let Err(err) = self.client.set(
+            SESSIONS_DOMAIN,
+            SESSIONS_KEY,
+            Value::Json(serde_json::Value::Object(map)),
+        ) {
+            warn!(error = %err, "failed to write sessions record");
+        }
+    }
+}
+
+impl SessionsRecorder for TugbankSessionsRecorder {
+    fn record(&self, session_id: &str, project_dir: &str) {
+        let mut map = self.read_map();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let existing_created_at = map
+            .get(session_id)
+            .and_then(|v| v.get("createdAt"))
+            .and_then(|v| v.as_u64());
+        let created_at = existing_created_at.unwrap_or(now);
+        map.insert(
+            session_id.to_owned(),
+            serde_json::json!({
+                "projectDir": project_dir,
+                "createdAt": created_at,
+            }),
+        );
+        self.write_map(map);
+    }
+
+    fn remove(&self, session_id: &str) {
+        let mut map = self.read_map();
+        if map.remove(session_id).is_some() {
+            self.write_map(map);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AgentSupervisor
 // ---------------------------------------------------------------------------
 
@@ -511,6 +619,11 @@ pub struct AgentSupervisor {
     pub control_tx: broadcast::Sender<Frame>,
     /// Narrow persistence surface for card↔session bindings.
     pub store: Arc<dyn SessionKeysStore>,
+    /// Writer for the per-session record under
+    /// `dev.tugtool.tide / sessions`. The bridge calls `record` on
+    /// `session_init` and `remove` on `resume_failed`. Tugcode has no
+    /// direct tugbank access for this domain.
+    pub sessions_recorder: Arc<dyn SessionsRecorder>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -554,6 +667,9 @@ struct OwnedControlPayload {
     /// rejected with `InvalidProjectDir { reason: "missing_project_dir" }`
     /// if absent on the spawn path.
     project_dir: Option<String>,
+    /// Roadmap step 4.5: new-vs-resume choice. Absent values default to
+    /// `SessionMode::New` so pre-4.5 payloads keep the step-4k behavior.
+    session_mode: SessionMode,
 }
 
 fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, ControlError> {
@@ -576,10 +692,13 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
+    let session_mode =
+        SessionMode::from_wire_str(value.get("session_mode").and_then(|v| v.as_str()));
     Ok(OwnedControlPayload {
         card_id,
         tug_session_id: TugSessionId::new(tug_session_id),
         project_dir,
+        session_mode,
     })
 }
 
@@ -696,6 +815,7 @@ impl AgentSupervisor {
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
         store: Arc<dyn SessionKeysStore>,
+        sessions_recorder: Arc<dyn SessionsRecorder>,
         spawner_factory: SpawnerFactory,
         config: AgentSupervisorConfig,
         registry: Arc<WorkspaceRegistry>,
@@ -710,6 +830,7 @@ impl AgentSupervisor {
             code_output_tx,
             control_tx,
             store,
+            sessions_recorder,
             spawner_factory,
             merger_register_tx,
             config,
@@ -743,6 +864,7 @@ impl AgentSupervisor {
                     &parsed.card_id,
                     parsed.tug_session_id,
                     project_dir_str,
+                    parsed.session_mode,
                     client_id,
                 )
                 .await
@@ -778,6 +900,7 @@ impl AgentSupervisor {
         card_id: &str,
         tug_session_id: TugSessionId,
         project_dir_str: String,
+        session_mode: SessionMode,
         client_id: ClientId,
     ) -> Result<(), ControlError> {
         let project_dir = PathBuf::from(&project_dir_str);
@@ -874,6 +997,7 @@ impl AgentSupervisor {
                         tug_session_id.clone(),
                         workspace_key.clone(),
                         project_dir.clone(),
+                        session_mode,
                         CrashBudget::new(3, Duration::from_secs(60)),
                     )))
                 })
@@ -950,6 +1074,20 @@ impl AgentSupervisor {
         // SESSION_STATE transitions. Emitting the ack as an explicit CONTROL
         // frame here lets tugdeck's spawn-session handler populate the
         // binding store in the same round-trip.
+        // Roadmap step 4.5: the ack also echoes `session_mode` so tugdeck's
+        // `cardSessionBindingStore` stamps the user's new-vs-resume choice
+        // into the binding. Pre-4.5 clients ignore the extra field.
+        //
+        // For reconnects (entry already existed), echo the mode the ledger
+        // *already* holds — not the one the incoming payload carried —
+        // because the running tugcode subprocess was spawned with the
+        // original mode and silently switching it client-side would
+        // misrepresent live state.
+        let effective_mode = if inserted {
+            session_mode
+        } else {
+            entry_arc.lock().await.session_mode
+        };
         let ack = serde_json::json!({
             "action": "spawn_session_ok",
             "card_id": card_id,
@@ -960,6 +1098,7 @@ impl AgentSupervisor {
             // The filter identity comes from `workspace_key`, not this
             // field — `project_dir` is informational for UI display.
             "project_dir": project_dir_str,
+            "session_mode": effective_mode.as_wire_str(),
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
@@ -1406,14 +1545,17 @@ impl AgentSupervisor {
         let state_tx = self.session_state_tx.clone();
         let tug_session_id_owned = tug_session_id.clone();
         let entry_arc_bridge = entry_arc.clone();
-        // W2 Step 6: per-session workspace path. Read from the ledger
-        // entry so each session's tugcode subprocess gets its own cwd.
-        // 4i: also thread the canonical `workspace_key` so tugcode can
-        // key per-workspace session-id persistence.
-        let (project_dir, workspace_key) = {
+        // Per-session workspace path. Read from the ledger entry so
+        // each session's tugcode subprocess gets its own cwd. Also
+        // thread `session_mode` so the tugcode subprocess receives
+        // `--session-mode new|resume`. The sessions recorder lets the
+        // bridge upsert/remove the per-session record in tugbank when
+        // it sees `session_init` / `resume_failed` on the IPC stream.
+        let (project_dir, session_mode) = {
             let entry = entry_arc.lock().await;
-            (entry.project_dir.clone(), entry.workspace_key.arc())
+            (entry.project_dir.clone(), entry.session_mode)
         };
+        let sessions_recorder = self.sessions_recorder.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -1423,7 +1565,8 @@ impl AgentSupervisor {
                 state_tx,
                 spawner,
                 project_dir,
-                workspace_key,
+                session_mode,
+                sessions_recorder,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -1519,10 +1662,21 @@ impl AgentSupervisor {
                 let _ = self.registry.release(&workspace_key);
                 continue;
             }
+            // Rebind predates the user's 4.5 resume choice — the tugbank
+            // record doesn't carry `session_mode`. The rebound Idle entry
+            // will not acquire a subprocess until a real client later
+            // sends `spawn_session` for it; that path's reconnect branch
+            // reuses the existing mode (since `or_insert_with` does not
+            // fire for an existing key), so this `New` default is what
+            // the rebound session will run with. `New` is the safe
+            // default — [4.6](../../../../roadmap/tugplan-tide-card.md#step-4-6)
+            // moves session metadata onto a purpose-built ledger and can
+            // preserve the user's recorded choice across restarts.
             let entry = LedgerEntry::new(
                 tug_session_id.clone(),
                 workspace_key,
                 project_dir,
+                SessionMode::New,
                 CrashBudget::new(3, Duration::from_secs(60)),
             );
             ledger.insert(tug_session_id, Arc::new(Mutex::new(entry)));
@@ -1535,6 +1689,17 @@ impl AgentSupervisor {
 // ---------------------------------------------------------------------------
 // Crate-visible test helpers — available to other modules' #[cfg(test)] code.
 // ---------------------------------------------------------------------------
+
+/// Minimal no-op [`SessionsRecorder`] for tests that don't care about the
+/// per-session record. Production uses [`TugbankSessionsRecorder`].
+#[cfg(test)]
+pub(crate) struct NoopSessionsRecorder;
+
+#[cfg(test)]
+impl SessionsRecorder for NoopSessionsRecorder {
+    fn record(&self, _session_id: &str, _project_dir: &str) {}
+    fn remove(&self, _session_id: &str) {}
+}
 
 /// Minimal in-memory [`SessionKeysStore`] used by cross-module router tests.
 /// Gated on `#[cfg(test)]` so it is not compiled into production builds.
@@ -1577,6 +1742,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     let factory: SpawnerFactory =
         Arc::new(|| unreachable!("test_minimal_supervisor has no spawner"));
     let store: Arc<dyn SessionKeysStore> = Arc::new(NoopSessionKeysStore);
+    let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
     let registry = Arc::new(WorkspaceRegistry::new());
     let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
@@ -1585,6 +1751,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         code_tx,
         control_tx,
         store,
+        recorder,
         factory,
         AgentSupervisorConfig::default(),
         registry,
@@ -1616,7 +1783,12 @@ mod tests {
     /// its own spawner via [`make_supervisor_with_spawner`].
     struct StallSpawner;
     impl ChildSpawner for StallSpawner {
-        fn spawn_child(&self, _project_dir: &std::path::Path, _workspace_key: &str) -> SpawnFuture {
+        fn spawn_child(
+            &self,
+            _project_dir: &std::path::Path,
+            _session_id: &str,
+            _session_mode: SessionMode,
+        ) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
     }
@@ -1826,12 +1998,14 @@ mod tests {
         let (control_tx, control_rx) = broadcast::channel(512);
         let registry = Arc::new(WorkspaceRegistry::new());
         let cancel = CancellationToken::new();
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
             code_tx,
             control_tx,
             store,
+            recorder,
             spawner_factory,
             config,
             registry,
@@ -1894,6 +2068,7 @@ mod tests {
             tug_session_id.clone(),
             workspace_key,
             PathBuf::from(test_project_dir()),
+            SessionMode::New,
             CrashBudget::new(3, Duration::from_secs(60)),
         )));
         sup.ledger
@@ -2834,7 +3009,8 @@ mod tests {
         let (_program, args) = build_tugcode_command(
             &config.tugcode_path,
             std::path::Path::new("/workspace-B-from-per-call"),
-            "/workspace-B-from-per-call",
+            "sess-per-call",
+            SessionMode::New,
         );
         assert!(
             args.iter().any(|a| a == "/workspace-B-from-per-call"),
@@ -2940,7 +3116,12 @@ mod tests {
     /// loop without spinning up a real subprocess.
     struct CrashingSpawner;
     impl ChildSpawner for CrashingSpawner {
-        fn spawn_child(&self, _project_dir: &std::path::Path, _workspace_key: &str) -> SpawnFuture {
+        fn spawn_child(
+            &self,
+            _project_dir: &std::path::Path,
+            _session_id: &str,
+            _session_mode: SessionMode,
+        ) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
     }
@@ -3179,6 +3360,7 @@ mod tests {
         let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
         let lines = BufReader::new(stdout_box).lines();
 
+        let recorder = NoopSessionsRecorder;
         let outcome = relay_session_io(
             &tug_id,
             &entry_arc,
@@ -3187,6 +3369,8 @@ mod tests {
             &state_tx,
             stdin_box,
             lines,
+            "/tmp/test-relay-project",
+            &recorder,
             &cancel,
         )
         .await;
@@ -3261,6 +3445,7 @@ mod tests {
 
         let retry_delay = Duration::from_micros(100);
 
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
         let a_handle = tokio::spawn(run_session_bridge(
             id_a.clone(),
             entry_a.clone(),
@@ -3269,7 +3454,8 @@ mod tests {
             state_tx.clone(),
             Arc::new(CrashingSpawner) as Arc<dyn ChildSpawner>,
             PathBuf::from("/tmp/test-workspace-a"),
-            Arc::<str>::from("/tmp/test-workspace-a"),
+            SessionMode::New,
+            recorder.clone(),
             cancel_a,
             retry_delay,
         ));
@@ -3281,7 +3467,8 @@ mod tests {
             state_tx.clone(),
             Arc::new(StallSpawner) as Arc<dyn ChildSpawner>,
             PathBuf::from("/tmp/test-workspace-b"),
-            Arc::<str>::from("/tmp/test-workspace-b"),
+            SessionMode::New,
+            recorder,
             cancel_b.clone(),
             retry_delay,
         ));

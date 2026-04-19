@@ -60,7 +60,8 @@ export interface CodeSessionState {
       | "transport_closed"
       | "wire_error"
       | "session_unknown"
-      | "session_not_owned";
+      | "session_not_owned"
+      | "resume_failed";
     message: string;
     at: number;
   } | null;
@@ -700,6 +701,31 @@ function handleWireError(
   };
 }
 
+function handleResumeFailed(
+  state: CodeSessionState,
+  event: { reason?: string; stale_session_id?: string },
+): { state: CodeSessionState; effects: Effect[] } {
+  // tugcode has already fallen back to a fresh spawn, so the store is
+  // usable. Do NOT flip to `errored`; only set `lastError` so Step 6's
+  // affordance shows a notice. The next successful turn clears it per
+  // the existing reducer convention.
+  const parts: string[] = [];
+  if (event.reason) parts.push(event.reason);
+  if (event.stale_session_id) parts.push(`stale id ${event.stale_session_id}`);
+  const message = parts.length > 0 ? parts.join("; ") : "resume failed";
+  return {
+    state: {
+      ...state,
+      lastError: {
+        cause: "resume_failed",
+        message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
 function handleTransportClose(
   state: CodeSessionState,
 ): { state: CodeSessionState; effects: Effect[] } {
@@ -849,6 +875,8 @@ export function reduce(
       return handleTransportClose(state);
     case "error":
       return handleWireError(state, event);
+    case "resume_failed":
+      return handleResumeFailed(state, event);
     default:
       return { state, effects: [] };
   }

@@ -29,8 +29,8 @@ use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
-    AgentSupervisor, AgentSupervisorConfig, SessionKeysStore, SpawnerFactory,
-    default_spawner_factory,
+    AgentSupervisor, AgentSupervisorConfig, SessionKeysStore, SessionsRecorder, SpawnerFactory,
+    TugbankSessionsRecorder, default_spawner_factory,
 };
 use crate::feeds::filetree::FileTreeQuery;
 #[cfg(debug_assertions)]
@@ -328,6 +328,8 @@ async fn main() {
     };
     let session_keys_store: Arc<dyn SessionKeysStore> =
         Arc::clone(bank_client_ref) as Arc<dyn SessionKeysStore>;
+    let sessions_recorder: Arc<dyn SessionsRecorder> =
+        Arc::new(TugbankSessionsRecorder::new(Arc::clone(bank_client_ref)));
 
     let supervisor_config = AgentSupervisorConfig {
         tugcode_path: tugcode_path.clone(),
@@ -341,6 +343,7 @@ async fn main() {
         code_tx.clone(),
         client_action_tx.clone(),
         session_keys_store,
+        sessions_recorder,
         spawner_factory,
         supervisor_config,
         Arc::clone(&registry),

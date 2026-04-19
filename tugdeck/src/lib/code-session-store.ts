@@ -68,6 +68,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "control_request_forward",
   "cost_update",
   "error",
+  // Roadmap step 4.5: tugcode emits this after a failed `--resume`
+  // spawn (falls back to fresh). Reducer rolls it into `lastError`.
+  "resume_failed",
 ]);
 
 export interface CodeSessionStoreOptions {

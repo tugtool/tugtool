@@ -262,6 +262,13 @@ export const TIDE_RECENT_PROJECTS_MAX = 5;
  *
  * Domain: `dev.tugtool.tide`, key: `recent-projects`.
  * Value shape: `{ paths: string[] }`. Returns `[]` if unset or malformed.
+ *
+ * The list is keyed by the user-typed project path — the same identifier
+ * the picker displays, submits on `spawn_session`, and uses to key the
+ * `session-id-by-workspace` map. Roadmap step 4.5 collapsed session
+ * bookkeeping to a single identifier so every consumer (recents,
+ * session-id map, bind payload, tugcode's persistence) reads and writes
+ * the same string.
  */
 export function readTideRecentProjects(client: TugbankClient): string[] {
   const entry = client.get("dev.tugtool.tide", "recent-projects");
@@ -328,7 +335,11 @@ export function putPromptHistory(sessionId: string, entries: HistoryEntry[]): vo
 export async function getPromptHistory(sessionId: string): Promise<HistoryEntry[]> {
   const url = `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`;
   try {
-    const response = await fetch(url);
+    // `cache: "no-store"` defeats the browser HTTP cache. Without it a
+    // 404 (or stale 200) from a prior load on the same URL gets reused
+    // and the picker silently shows old/empty history after another
+    // tugdeck process / card has already pushed new entries.
+    const response = await fetch(url, { cache: "no-store" });
     if (response.status === 404) {
       return [];
     }

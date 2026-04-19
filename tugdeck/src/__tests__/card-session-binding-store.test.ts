@@ -20,6 +20,7 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
     tugSessionId: "sess-1",
     workspaceKey: "/work/alpha",
     projectDir: "/work/alpha",
+    sessionMode: "new",
     ...overrides,
   };
 }

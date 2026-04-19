@@ -28,6 +28,7 @@ describe("sendCloseSession", () => {
       tugSessionId: "sess-lc",
       workspaceKey: "/work/lc",
       projectDir: "/work/lc",
+      sessionMode: "new",
     });
     expect(cardSessionBindingStore.getBinding("card-lc")).toBeDefined();
 

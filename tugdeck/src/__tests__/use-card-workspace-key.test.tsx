@@ -24,6 +24,7 @@ function bind(cardId: string, workspaceKey: string): void {
     tugSessionId: `sess-${cardId}`,
     workspaceKey,
     projectDir: workspaceKey,
+    sessionMode: "new",
   });
 }
 

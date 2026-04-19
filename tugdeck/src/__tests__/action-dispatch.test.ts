@@ -660,6 +660,7 @@ describe("initActionDispatch: spawn_session_ok", () => {
       tugSessionId: "sess-ack-ok",
       workspaceKey: "/work/canonical",
       projectDir: "/work/original",
+      sessionMode: "new",
     });
 
     cardSessionBindingStore.clearBinding("card-ack-ok");

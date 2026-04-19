@@ -23,7 +23,11 @@
  */
 
 import type { TugConnection } from "../connection";
-import { encodeCloseSession, encodeSpawnSession } from "../protocol";
+import {
+  encodeCloseSession,
+  encodeSpawnSession,
+  type SpawnSessionMode,
+} from "../protocol";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 
 /**
@@ -41,8 +45,14 @@ export function sendSpawnSession(
   cardId: string,
   tugSessionId: string,
   projectDir: string,
+  sessionMode: SpawnSessionMode = "new",
 ): void {
-  const frame = encodeSpawnSession(cardId, tugSessionId, projectDir);
+  const frame = encodeSpawnSession(
+    cardId,
+    tugSessionId,
+    projectDir,
+    sessionMode,
+  );
   connection.send(frame.feedId, frame.payload);
 }
 

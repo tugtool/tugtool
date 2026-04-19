@@ -13,10 +13,19 @@
  * @module lib/card-session-binding-store
  */
 
+/**
+ * User's choice of session mode when the card was opened. Populated from
+ * the `spawn_session_ok` CONTROL ack, which echoes the value tugdeck sent
+ * on `spawn_session`. "new" matches the fresh-by-default behavior of
+ * roadmap step 4k; "resume" carries the resume intent surfaced in 4.5.
+ */
+export type CardSessionMode = "new" | "resume";
+
 export interface CardSessionBinding {
   readonly tugSessionId: string;
   readonly workspaceKey: string;
   readonly projectDir: string;
+  readonly sessionMode: CardSessionMode;
 }
 
 export class CardSessionBindingStore {

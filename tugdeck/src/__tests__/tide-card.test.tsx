@@ -102,6 +102,7 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
     tugSessionId: "sess-4b-1",
     workspaceKey: "/work/4b",
     projectDir: "/work/4b",
+    sessionMode: "new",
     ...overrides,
   };
 }
@@ -219,7 +220,7 @@ describe("TideCardContent – binding gate and project picker", () => {
     expect(cardSessionBindingStore.getBinding(CARD_ID)).toBeUndefined();
   });
 
-  it("T-TIDE-06: a recent-project quick-pick button sends spawn_session with that path in one click", () => {
+  it("T-TIDE-RESUME-06: a recent-project button fills the path input without sending a frame (4.5 regression from 4m)", () => {
     tugbankStore["dev.tugtool.tide"] = {
       "recent-projects": { kind: "json", value: { paths: ["/u/src/tugtool", "/tmp"] } },
     };
@@ -235,16 +236,216 @@ describe("TideCardContent – binding gate and project picker", () => {
       fireEvent.click(recentButton!);
     });
 
+    // 4.5 replaced the single-click spawn with a fill-the-input gesture so
+    // every path flows through the Start-fresh / Resume-last radio group.
+    expect(sentFrames.length).toBe(0);
+    const input = document.querySelector<HTMLInputElement>(
+      '.tug-sheet-content input[type="text"]',
+    );
+    expect(input?.value).toBe("/u/src/tugtool");
+  });
+
+  // The picker wires path changes through React's onChange, which does not
+  // fire synthetically via fireEvent.change under bun-test + happy-dom (see
+  // the debug trace in the commit that landed these tests). Tests that need
+  // to change the typed path do so by clicking a recents button — that path
+  // goes through React's onClick, which DOES fire cleanly under this setup.
+  function clickRecent(label: string): void {
+    const btn = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
+    ).find((b) => b.textContent?.trim() === label);
+    expect(btn).not.toBeUndefined();
+    act(() => {
+      fireEvent.click(btn!);
+    });
+  }
+
+  it("T-TIDE-RESUME-01: picker with no map entry renders both rows, with Resume disabled", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/fresh-only"] } },
+    };
+
+    renderTideCard(CARD_ID);
+
+    clickRecent("/work/fresh-only");
+
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    expect(radios.length).toBe(2);
+    expect(radios[0]!.textContent).toContain("Start fresh");
+    expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(radios[0]!.disabled).toBe(false);
+    expect(radios[1]!.textContent).toContain("Resume last session");
+    expect(radios[1]!.getAttribute("aria-checked")).toBe("false");
+    expect(radios[1]!.disabled).toBe(true);
+    // Subtitle explains why the row is inactive.
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toContain("No prior session");
+  });
+
+  it("T-TIDE-RESUME-02: picker with a session record for the typed path renders both rows; Start-fresh is selected by default", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/resumable"] } },
+      sessions: {
+        kind: "json",
+        value: {
+          "sess-old-id-abc12345": {
+            projectDir: "/work/resumable",
+            createdAt: 1000,
+          },
+        },
+      },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/resumable");
+
+    const radios = document.querySelectorAll<HTMLButtonElement>(
+      '.tug-sheet-content [role="radio"]',
+    );
+    expect(radios.length).toBe(2);
+    expect(radios[0]!.textContent).toContain("Start fresh");
+    expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(radios[1]!.textContent).toContain("Resume last session");
+    expect(radios[1]!.getAttribute("aria-checked")).toBe("false");
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toContain("sess-old");
+  });
+
+  it("T-TIDE-RESUME-03: selecting Resume-last + Open sends spawn_session with sessionMode=resume and the picked session id", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/resumable"] } },
+      sessions: {
+        kind: "json",
+        value: {
+          "sess-resume-me": {
+            projectDir: "/work/resumable",
+            createdAt: 1000,
+          },
+        },
+      },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/resumable");
+
+    const resumeRadio = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '.tug-sheet-content [role="radio"]',
+      ),
+    ).find((b) => b.textContent?.includes("Resume last session"));
+    expect(resumeRadio).not.toBeUndefined();
+    act(() => {
+      fireEvent.click(resumeRadio!);
+    });
+
+    const openButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
+    ).find((b) => b.textContent?.trim().toLowerCase() === "open");
+    act(() => {
+      fireEvent.click(openButton!);
+    });
+
     expect(sentFrames.length).toBe(1);
-    const [frame] = sentFrames;
-    expect(frame.feedId).toBe(FeedId.CONTROL);
-    const payload = JSON.parse(new TextDecoder().decode(frame.payload)) as {
+    const payload = JSON.parse(new TextDecoder().decode(sentFrames[0]!.payload)) as {
       action: string;
       project_dir: string;
+      session_mode: string;
+      tug_session_id: string;
     };
     expect(payload.action).toBe("spawn_session");
-    expect(payload.project_dir).toBe("/u/src/tugtool");
+    expect(payload.project_dir).toBe("/work/resumable");
+    expect(payload.session_mode).toBe("resume");
+    // Resume must forward the picked session id — not mint a new one.
+    expect(payload.tug_session_id).toBe("sess-resume-me");
   });
+
+  it("T-TIDE-RESUME-04b: two sessions on the same project coexist; picker offers the newest", () => {
+    // The session — not the project — is the primary identifier.
+    // Two concurrent cards on the same project each hold their own
+    // session id; both records live in the sessions map; the picker's
+    // Resume row points at the newest (`createdAt` wins).
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": { kind: "json", value: { paths: ["/work/multi"] } },
+      sessions: {
+        kind: "json",
+        value: {
+          "sess-older": { projectDir: "/work/multi", createdAt: 1000 },
+          "sess-newer": { projectDir: "/work/multi", createdAt: 2000 },
+          // Different project — must not bleed into this picker.
+          "sess-elsewhere": { projectDir: "/other/project", createdAt: 9999 },
+        },
+      },
+    };
+
+    renderTideCard(CARD_ID);
+    clickRecent("/work/multi");
+
+    const subtitle = document.querySelector(
+      '[data-testid="tide-card-picker-resume-subtitle"]',
+    );
+    expect(subtitle?.textContent).toContain("sess-new");
+
+    // Pick Resume and submit; the frame must carry the newest id.
+    const resumeRadio = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '.tug-sheet-content [role="radio"]',
+      ),
+    ).find((b) => b.textContent?.includes("Resume last session"));
+    act(() => {
+      fireEvent.click(resumeRadio!);
+    });
+    const openButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".tug-sheet-content button"),
+    ).find((b) => b.textContent?.trim().toLowerCase() === "open");
+    act(() => {
+      fireEvent.click(openButton!);
+    });
+
+    const payload = JSON.parse(new TextDecoder().decode(sentFrames[0]!.payload)) as {
+      tug_session_id: string;
+    };
+    expect(payload.tug_session_id).toBe("sess-newer");
+  });
+
+  it("T-TIDE-RESUME-04: switching paths re-reads the sessions record and enables/disables the Resume row", () => {
+    tugbankStore["dev.tugtool.tide"] = {
+      "recent-projects": {
+        kind: "json",
+        value: { paths: ["/work/resumable", "/work/nope"] },
+      },
+      sessions: {
+        kind: "json",
+        value: {
+          "sess-x": { projectDir: "/work/resumable", createdAt: 1000 },
+        },
+      },
+    };
+
+    renderTideCard(CARD_ID);
+
+    function resumeRow(): HTMLButtonElement {
+      const radios = document.querySelectorAll<HTMLButtonElement>(
+        '.tug-sheet-content [role="radio"]',
+      );
+      expect(radios.length).toBe(2);
+      return radios[1]!;
+    }
+
+    // With a map entry for /work/resumable: Resume is enabled.
+    clickRecent("/work/resumable");
+    expect(resumeRow().disabled).toBe(false);
+
+    // Switch to a path without an entry: Resume becomes disabled.
+    clickRecent("/work/nope");
+    expect(resumeRow().disabled).toBe(true);
+  });
+
 
   it("T-TIDE-07: bind success persists the project path to recent-projects", () => {
     tugbankStore["dev.tugtool.tide"] = {
@@ -265,6 +466,8 @@ describe("TideCardContent – binding gate and project picker", () => {
     // commit, so no async flush is required.
     expect(recentsPuts.length).toBe(1);
     // New path first, old path retained (dedup, cap did not kick in).
+    // Path is the single identifier — what tugcode keys session-id
+    // persistence by, what the picker looks up, what the wire carries.
     expect(recentsPuts[0].paths).toEqual(["/new/path", "/old/path"]);
   });
 

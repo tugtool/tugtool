@@ -192,9 +192,19 @@ function entryToEditingState(entry: HistoryEntry): TugTextEditingState {
 export class PromptHistoryStore {
   private _sessions: Map<string, HistoryEntry[]> = new Map();
   private _loadedSessions: Set<string> = new Set();
+  /**
+   * Pending in-flight load promise per session id. Lets concurrent
+   * `loadSession(id)` callers share a single fetch and lets `push(id)`
+   * defer its PUT until the load settles — without this, a quick
+   * push() before fetch resolves would PUT a partial in-memory list,
+   * clobbering the persisted record.
+   */
+  private _loadPromises: Map<string, Promise<void>> = new Map();
   private _listeners: Set<() => void> = new Set();
   private _lastActiveSessionId: string | null = null;
   private _version = 0;
+  private _cachedSnapshot: PromptHistorySnapshot | null = null;
+  private _cachedSnapshotVersion = -1;
 
   // ── L02: subscribe/getSnapshot ────────────────────────────────────────────
 
@@ -206,8 +216,19 @@ export class PromptHistoryStore {
     };
   };
 
-  /** Return the current snapshot. Lightweight — counts only. */
+  /**
+   * Return the current snapshot. Lightweight — counts only.
+   * Reference-stable across calls until `_version` changes; required
+   * by `useSyncExternalStore` consumers (otherwise React detects a
+   * "new" snapshot every render and loops infinitely).
+   */
   getSnapshot = (): PromptHistorySnapshot => {
+    if (
+      this._cachedSnapshot !== null &&
+      this._cachedSnapshotVersion === this._version
+    ) {
+      return this._cachedSnapshot;
+    }
     let total = 0;
     for (const entries of this._sessions.values()) {
       total += entries.length;
@@ -216,7 +237,10 @@ export class PromptHistoryStore {
       this._lastActiveSessionId !== null
         ? (this._sessions.get(this._lastActiveSessionId)?.length ?? 0)
         : 0;
-    return { totalEntries: total, sessionEntries };
+    const snap: PromptHistorySnapshot = { totalEntries: total, sessionEntries };
+    this._cachedSnapshot = snap;
+    this._cachedSnapshotVersion = this._version;
+    return snap;
   };
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -245,8 +269,19 @@ export class PromptHistoryStore {
       entries.splice(0, entries.length - MAX_ENTRIES_PER_SESSION);
     }
 
-    // Persist to tugbank (fire-and-forget).
-    putPromptHistory(sessionId, entries);
+    // If a load is in flight for this session, defer the PUT until it
+    // settles so the merged in-memory view (persisted history + this
+    // new entry) is what hits the wire — not just the latest entry,
+    // which would otherwise clobber the persisted record.
+    const pending = this._loadPromises.get(sessionId);
+    if (pending) {
+      pending.then(() => {
+        const latest = this._sessions.get(sessionId) ?? [];
+        putPromptHistory(sessionId, latest);
+      });
+    } else {
+      putPromptHistory(sessionId, entries);
+    }
 
     this._version++;
     this._notifyListeners();
@@ -255,30 +290,53 @@ export class PromptHistoryStore {
   /**
    * Load history entries for a session from tugbank.
    *
-   * No-op if already loaded for this session.
+   * - Idempotent: returns the cached promise for any concurrent caller
+   *   on the same `sessionId`; no-op if the session is already loaded.
+   * - Marks `_loadedSessions` only on a successful fetch (404 included
+   *   — that's a definitive "no record"). A network error leaves the
+   *   session unmarked so the next `createProvider` call retries.
+   * - Dedups the merge by entry id so a re-fetch can't introduce
+   *   duplicates for entries that were pushed during the load window.
    */
   async loadSession(sessionId: string): Promise<void> {
     if (this._loadedSessions.has(sessionId)) return;
-    this._loadedSessions.add(sessionId);
+    const inFlight = this._loadPromises.get(sessionId);
+    if (inFlight) return inFlight;
 
-    try {
-      const entries = await getPromptHistory(sessionId);
-      if (entries.length > 0) {
+    const promise = (async () => {
+      try {
+        const entries = await getPromptHistory(sessionId);
         const existing = this._sessions.get(sessionId) ?? [];
-        // Merge: existing in-session pushes take priority; prepend persisted entries.
-        const merged = [...entries, ...existing];
-        // Apply cap after merge.
+        // Merge: persisted entries first (older), then in-session
+        // pushes (newer). Dedup by entry id.
+        const seen = new Set<string>();
+        const merged: HistoryEntry[] = [];
+        for (const e of [...entries, ...existing]) {
+          if (seen.has(e.id)) continue;
+          seen.add(e.id);
+          merged.push(e);
+        }
         const capped =
           merged.length > MAX_ENTRIES_PER_SESSION
             ? merged.slice(merged.length - MAX_ENTRIES_PER_SESSION)
             : merged;
-        this._sessions.set(sessionId, capped);
-        this._version++;
-        this._notifyListeners();
+        if (capped.length > 0 || existing.length > 0) {
+          this._sessions.set(sessionId, capped);
+        }
+        this._loadedSessions.add(sessionId);
+        if (entries.length > 0) {
+          this._version++;
+          this._notifyListeners();
+        }
+      } catch {
+        // Don't mark loaded on error — a future createProvider call
+        // will try again. The in-memory state survives.
+      } finally {
+        this._loadPromises.delete(sessionId);
       }
-    } catch {
-      // If fetch fails, continue with in-memory state.
-    }
+    })();
+    this._loadPromises.set(sessionId, promise);
+    return promise;
   }
 
   /**

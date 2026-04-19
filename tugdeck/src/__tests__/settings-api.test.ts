@@ -327,7 +327,11 @@ describe("insertTideRecentProject", () => {
   });
 
   test("moves an existing path to the front (dedup)", () => {
-    expect(insertTideRecentProject(["/a", "/b", "/c"], "/b")).toEqual(["/b", "/a", "/c"]);
+    expect(insertTideRecentProject(["/a", "/b", "/c"], "/b")).toEqual([
+      "/b",
+      "/a",
+      "/c",
+    ]);
   });
 
   test("caps the list at TIDE_RECENT_PROJECTS_MAX", () => {

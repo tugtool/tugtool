@@ -36,6 +36,22 @@ export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 /** TugButton role values — controls color domain [D02] */
 export type TugButtonRole = "accent" | "action" | "data" | "danger" | "option";
 
+/**
+ * Set of recognized semantic role values. Used at runtime to disambiguate
+ * TugButton's semantic `role` prop from an ARIA role attribute that
+ * arrives via Radix `asChild` composition (e.g. `RadioGroupPrimitive.Item`
+ * merging `role="radio"` onto the child button). When the incoming `role`
+ * is not in this set, TugButton treats it as an ARIA role and forwards
+ * it to the DOM rather than using it for classname theming.
+ */
+const SEMANTIC_ROLES: ReadonlySet<string> = new Set<TugButtonRole>([
+  "accent",
+  "action",
+  "data",
+  "danger",
+  "option",
+]);
+
 /** TugButton size names */
 export type TugButtonSize = "xs" | "sm" | "md" | "lg";
 
@@ -206,7 +222,7 @@ function Spinner() {
 export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(function TugButton({
   subtype = "text",
   emphasis = "outlined",
-  role = "action",
+  role: roleProp = "action",
   size = "md",
   onClick,
   action,
@@ -222,6 +238,28 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   asChild = false,
   ...rest
 }: TugButtonProps, ref) {
+  // `role` is overloaded. For 99% of call sites it's a semantic theming
+  // value from [D02]'s emphasis × role matrix (`action`, `data`, etc.)
+  // and maps into a classname like `tug-button-ghost-action`. But when
+  // this button is composed under a Radix `asChild` primitive (e.g.
+  // `RadioGroupPrimitive.Item`), the primitive merges an *ARIA* role —
+  // `"radio"`, `"tab"`, `"menuitem"` — onto the child via Slot. That
+  // string isn't a valid `TugButtonRole`, and without the disambiguation
+  // below it would both (a) produce a broken classname with no matching
+  // CSS and (b) never land on the DOM button as an ARIA role.
+  //
+  // Disambiguation: if the incoming `role` matches a known semantic
+  // value, use it for theming and leave the DOM role attribute empty
+  // (native <button> semantics apply). Otherwise, treat it as an ARIA
+  // role and pass it through to the DOM, using `"action"` as the
+  // theming fallback so visual appearance stays sensible.
+  const isSemanticRole = SEMANTIC_ROLES.has(roleProp as string);
+  const role: TugButtonRole = isSemanticRole
+    ? (roleProp as TugButtonRole)
+    : "action";
+  const htmlRole: string | undefined = isSemanticRole
+    ? undefined
+    : (roleProp as string);
   const boxDisabled = useTugBoxDisabled();
   const effectiveDisabled = disabled || boxDisabled;
 
@@ -405,6 +443,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       data-slot="tug-button"
       data-tug-focus="refuse"
       disabled={effectiveDisabled}
+      role={htmlRole}
       aria-label={ariaLabel}
       aria-busy={loading ? "true" : undefined}
       aria-disabled={ariaDisabled}

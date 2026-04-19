@@ -255,23 +255,37 @@ export function controlFrame(action: string, params?: Record<string, unknown>): 
 }
 
 /**
+ * Session-mode choice on spawn. Mirrors
+ * `CardSessionBinding["sessionMode"]` — kept as a standalone type so the
+ * wire encoder can import it without dragging the binding store in.
+ * Roadmap step 4.5.
+ */
+export type SpawnSessionMode = "new" | "resume";
+
+/**
  * Build a `spawn_session` CONTROL frame for the supervisor.
  *
- * Payload shape per Spec S03:
+ * Payload shape per Spec S03 (extended in roadmap step 4.5 with
+ * `session_mode`):
  * ```json
  * {
  *   "action": "spawn_session",
  *   "card_id": "...",
  *   "tug_session_id": "...",
- *   "project_dir": "..."
+ *   "project_dir": "...",
+ *   "session_mode": "new" | "resume"
  * }
  * ```
  *
- * All three arguments are required: the server-side supervisor hard-rejects
- * CONTROL frames missing `card_id`, `tug_session_id`, or `project_dir` via
+ * `cardId`, `tugSessionId`, and `projectDir` are required; the server-side
+ * supervisor hard-rejects CONTROL frames missing any of them via
  * `send_control_json` (`missing_card_id` / `missing_tug_session_id` /
  * `missing_project_dir` error details), so optional arguments on the client
  * side would only create silent failure modes.
+ *
+ * `sessionMode` defaults to `"new"` when omitted so pre-4.5 callers remain
+ * on the fresh-by-default behavior from step 4k. On the server both sides
+ * also default to `"new"` when the wire field is absent.
  *
  * `projectDir` is the workspace path the tugcode subprocess will be given
  * as its cwd. The server canonicalizes it via `PathResolver::watch_path()`
@@ -286,11 +300,13 @@ export function encodeSpawnSession(
   cardId: string,
   tugSessionId: string,
   projectDir: string,
+  sessionMode: SpawnSessionMode = "new",
 ): Frame {
   return controlFrame(CONTROL_ACTION_SPAWN_SESSION, {
     card_id: cardId,
     tug_session_id: tugSessionId,
     project_dir: projectDir,
+    session_mode: sessionMode,
   });
 }
 

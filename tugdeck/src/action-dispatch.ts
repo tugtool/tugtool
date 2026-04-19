@@ -360,6 +360,7 @@ export function initActionDispatch(
     const tugSessionId = payload.tug_session_id;
     const workspaceKey = payload.workspace_key;
     const projectDir = payload.project_dir;
+    const sessionMode = payload.session_mode;
     if (
       typeof cardId !== "string" ||
       typeof tugSessionId !== "string" ||
@@ -378,10 +379,16 @@ export function initActionDispatch(
     // the filter uses `workspaceKey`.
     const projectDirResolved =
       typeof projectDir === "string" ? projectDir : workspaceKey;
+    // `session_mode` was added by roadmap step 4.5. Pre-4.5 server acks
+    // omit the field; default to "new" to match the fresh-by-default
+    // behavior from step 4k.
+    const sessionModeResolved =
+      sessionMode === "resume" ? "resume" : "new";
     cardSessionBindingStore.setBinding(cardId, {
       tugSessionId,
       workspaceKey,
       projectDir: projectDirResolved,
+      sessionMode: sessionModeResolved,
     });
   });
 }

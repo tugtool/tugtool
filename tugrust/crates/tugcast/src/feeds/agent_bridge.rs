@@ -26,7 +26,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 
-use super::agent_supervisor::{LedgerEntry, SpawnState, build_session_state_frame};
+use super::agent_supervisor::{
+    LedgerEntry, SessionsRecorder, SpawnState, build_session_state_frame,
+};
 use super::code::{parse_code_input, splice_tug_session_id};
 
 // ---------------------------------------------------------------------------
@@ -130,6 +132,50 @@ pub fn resolve_tugcode_path(cli_override: Option<&Path>) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
+// SessionMode
+// ---------------------------------------------------------------------------
+
+/// User's choice of session mode on spawn. Threaded from the tugdeck
+/// `spawn_session` CONTROL payload through the supervisor into
+/// `ChildSpawner::spawn_child`, which surfaces it as a `--session-mode`
+/// CLI flag on the tugcode subprocess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionMode {
+    /// Fresh Claude session: tugcode passes `--session-id <id>` so
+    /// claude claims the tugdeck-generated UUID as its own session id.
+    New,
+    /// Resume an existing session: tugcode passes `--resume <id>` so
+    /// claude reopens the prior conversation under that same id.
+    Resume,
+}
+
+impl SessionMode {
+    /// CLI flag value for `--session-mode`.
+    pub fn as_flag_value(&self) -> &'static str {
+        match self {
+            SessionMode::New => "new",
+            SessionMode::Resume => "resume",
+        }
+    }
+
+    /// JSON/wire identifier. Matches `as_flag_value` today; kept as a
+    /// separate method so the two callers (tugcode CLI vs JSON ack)
+    /// stay independently evolvable.
+    pub fn as_wire_str(&self) -> &'static str {
+        self.as_flag_value()
+    }
+
+    /// Decode a wire string (`"new"` / `"resume"`) into a `SessionMode`.
+    /// Unknown / absent values default to `New`.
+    pub fn from_wire_str(raw: Option<&str>) -> SessionMode {
+        match raw {
+            Some("resume") => SessionMode::Resume,
+            _ => SessionMode::New,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ChildSpawner abstraction
 // ---------------------------------------------------------------------------
 
@@ -158,12 +204,24 @@ pub struct SessionChild {
 /// storage before `await`-ing, since the returned `SpawnFuture` outlives
 /// the call frame.
 pub trait ChildSpawner: Send + Sync + 'static {
-    /// `workspace_key` is the canonical identifier tugcast assigns to
-    /// the workspace (via `WorkspaceRegistry::get_or_create`). tugcode
-    /// keys its per-session tugbank entries by this value so sessions
-    /// opened against different projects don't collide on the same
-    /// `--resume <session-id>` (roadmap step 4i).
-    fn spawn_child(&self, project_dir: &Path, workspace_key: &str) -> SpawnFuture;
+    /// `project_dir` is the user-typed path tugdeck sent in the
+    /// `spawn_session` CONTROL payload; tugcode uses it as the
+    /// subprocess cwd.
+    ///
+    /// `session_id` is the single identifier for this session: the same
+    /// UUID that tugdeck pre-generated for fresh spawns (or picked from
+    /// the sessions record for resume), that tugcast uses as the feed
+    /// routing key, and that claude adopts as its own session id (via
+    /// `--session-id` for new, `--resume` for resume).
+    ///
+    /// `session_mode` is the user's new-vs-resume choice from the Tide
+    /// picker. Forwarded to tugcode as `--session-mode new|resume`.
+    fn spawn_child(
+        &self,
+        project_dir: &Path,
+        session_id: &str,
+        session_mode: SessionMode,
+    ) -> SpawnFuture;
 }
 
 /// Production spawner: launches `tugcode --dir <project_dir>` (or the bun
@@ -190,13 +248,12 @@ impl TugcodeSpawner {
 /// - Anything else is invoked directly.
 ///
 /// In both cases the returned args vector ends with
-/// `["--dir", <project_dir>, "--workspace-key", <workspace_key>]`, which is
-/// what tugcode parses to locate the workspace and key its per-workspace
-/// session-id persistence (roadmap step 4i).
+/// `["--dir", <project_dir>, "--session-id", <uuid>, "--session-mode", <new|resume>]`.
 pub(crate) fn build_tugcode_command(
     tugcode_path: &Path,
     project_dir: &Path,
-    workspace_key: &str,
+    session_id: &str,
+    session_mode: SessionMode,
 ) -> (String, Vec<String>) {
     let (program, mut args): (String, Vec<String>) =
         if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
@@ -215,18 +272,26 @@ pub(crate) fn build_tugcode_command(
         };
     args.push("--dir".to_string());
     args.push(project_dir.display().to_string());
-    args.push("--workspace-key".to_string());
-    args.push(workspace_key.to_string());
+    args.push("--session-id".to_string());
+    args.push(session_id.to_string());
+    args.push("--session-mode".to_string());
+    args.push(session_mode.as_flag_value().to_string());
     (program, args)
 }
 
 impl ChildSpawner for TugcodeSpawner {
-    fn spawn_child(&self, project_dir: &Path, workspace_key: &str) -> SpawnFuture {
+    fn spawn_child(
+        &self,
+        project_dir: &Path,
+        session_id: &str,
+        session_mode: SessionMode,
+    ) -> SpawnFuture {
         let tugcode_path = self.tugcode_path.clone();
         let project_dir = project_dir.to_path_buf();
-        let workspace_key = workspace_key.to_string();
+        let session_id = session_id.to_string();
         Box::pin(async move {
-            let (cmd, args) = build_tugcode_command(&tugcode_path, &project_dir, &workspace_key);
+            let (cmd, args) =
+                build_tugcode_command(&tugcode_path, &project_dir, &session_id, session_mode);
             info!(cmd, ?args, "Spawning tugcode");
             // Scrub Anthropic auth env vars so the downstream claude CLI
             // authenticates via `~/.claude.json` (the user's Max/Pro
@@ -339,10 +404,15 @@ pub async fn run_session_bridge(
     state_tx: broadcast::Sender<Frame>,
     spawner: Arc<dyn ChildSpawner>,
     project_dir: PathBuf,
-    workspace_key: Arc<str>,
+    session_mode: SessionMode,
+    sessions_recorder: Arc<dyn SessionsRecorder>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
+    // `tug_session_id` is also the session id we pass to tugcode via
+    // `--session-id` — the single identifier for this session.
+    let session_id_str = tug_session_id.as_str().to_string();
+    let project_dir_str = project_dir.display().to_string();
     loop {
         // Crash-budget check: if exhausted, flip state + drop dispatcher
         // sender under a single lock acquisition so a racing `close_session`
@@ -374,7 +444,11 @@ pub async fn run_session_bridge(
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
         let spawn_result = tokio::select! {
-            result = spawner.spawn_child(project_dir.as_path(), workspace_key.as_ref()) => result,
+            result = spawner.spawn_child(
+                project_dir.as_path(),
+                session_id_str.as_str(),
+                session_mode,
+            ) => result,
             _ = cancel.cancelled() => return,
         };
         let child = match spawn_result {
@@ -399,6 +473,8 @@ pub async fn run_session_bridge(
             &state_tx,
             child.stdin,
             lines,
+            &project_dir_str,
+            sessions_recorder.as_ref(),
             &cancel,
         )
         .await;
@@ -441,6 +517,8 @@ pub async fn relay_session_io(
     state_tx: &broadcast::Sender<Frame>,
     mut stdin: Box<dyn AsyncWrite + Send + Unpin>,
     mut lines: Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
+    project_dir: &str,
+    sessions_recorder: &dyn SessionsRecorder,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
@@ -507,8 +585,8 @@ pub async fn relay_session_io(
                         if line.contains("\"type\":\"session_init\"") {
                             let claude_id = parse_claude_session_id(line.as_bytes());
                             let mut entry = ledger_entry.lock().await;
-                            if let Some(id) = claude_id {
-                                entry.claude_session_id = Some(id);
+                            if let Some(id) = &claude_id {
+                                entry.claude_session_id = Some(id.clone());
                             }
                             if entry.spawn_state == SpawnState::Spawning {
                                 entry.spawn_state.try_transition(SpawnState::Live).ok();
@@ -529,6 +607,47 @@ pub async fn relay_session_io(
                                 ));
                             }
                             drop(entry);
+
+                            // Record under claude's own session id — that
+                            // is the on-disk file name, the only thing
+                            // `--resume` accepts, and the unforgeable
+                            // identity of the conversation. Tugdeck's
+                            // prompt history follows the same id (read
+                            // from `CodeSessionStore.claudeSessionId`,
+                            // which is captured from this same
+                            // `session_init`), so picker → sessions
+                            // record → prompt history all key on the
+                            // string claude told us, never on a value
+                            // we assumed and forced.
+                            //
+                            // If claude failed to emit one we still need
+                            // SOMETHING to key by; fall back to the
+                            // tug session id and log loudly. In practice
+                            // this only happens on malformed payloads.
+                            let record_id = match claude_id.as_deref() {
+                                Some(id) => id,
+                                None => {
+                                    warn!(
+                                        tug_session_id = %tug_session_id,
+                                        "session_init payload missing session_id; \
+                                         recording under tug_session_id as a fallback"
+                                    );
+                                    tug_session_id.as_str()
+                                }
+                            };
+                            sessions_recorder.record(record_id, project_dir);
+                        }
+
+                        // `resume_failed` peek: tugcode emits this when
+                        // a `--resume` attempt aborts before `session_init`.
+                        // The stale id is no longer usable; remove its
+                        // sessions record so the next picker doesn't
+                        // re-offer it. The frame still gets forwarded to
+                        // the card so `lastError` surfaces a notice.
+                        if line.contains("\"type\":\"resume_failed\"") {
+                            if let Some(stale) = parse_resume_failed_id(line.as_bytes()) {
+                                sessions_recorder.remove(&stale);
+                            }
                         }
 
                         let spliced = splice_tug_session_id(line.as_bytes(), tug_session_id.as_str());
@@ -576,6 +695,17 @@ fn parse_claude_session_id(line: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(line).ok()?;
     value
         .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Extract the `stale_session_id` field from a `resume_failed` IPC line.
+/// Used by the bridge to remove the stale sessions record after a
+/// failed `--resume` fallback.
+fn parse_resume_failed_id(line: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    value
+        .get("stale_session_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
@@ -634,14 +764,15 @@ mod tests {
         );
     }
 
-    // ---- W2 Step 4: build_tugcode_command + stateless TugcodeSpawner ----
+    // ---- build_tugcode_command + TugcodeSpawner argv composition ----
 
     #[test]
-    fn test_build_tugcode_command_binary_passes_project_dir() {
+    fn test_build_tugcode_command_binary_passes_all_args() {
         let (program, args) = build_tugcode_command(
             Path::new("/opt/tugtool/tugcode"),
             Path::new("/work/alpha"),
-            "/canonical/alpha",
+            "sess-alpha-uuid",
+            SessionMode::New,
         );
         assert_eq!(program, "/opt/tugtool/tugcode");
         assert_eq!(
@@ -649,18 +780,21 @@ mod tests {
             vec![
                 "--dir".to_string(),
                 "/work/alpha".to_string(),
-                "--workspace-key".to_string(),
-                "/canonical/alpha".to_string(),
+                "--session-id".to_string(),
+                "sess-alpha-uuid".to_string(),
+                "--session-mode".to_string(),
+                "new".to_string(),
             ]
         );
     }
 
     #[test]
-    fn test_build_tugcode_command_ts_uses_bun_run_and_passes_project_dir() {
+    fn test_build_tugcode_command_ts_uses_bun_run_and_passes_all_args() {
         let (program, args) = build_tugcode_command(
             Path::new("/u/src/tugtool/tugcode/src/main.ts"),
             Path::new("/work/beta"),
-            "/canonical/beta",
+            "sess-beta-uuid",
+            SessionMode::New,
         );
         assert_eq!(program, "bun");
         assert_eq!(
@@ -670,45 +804,67 @@ mod tests {
                 "/u/src/tugtool/tugcode/src/main.ts".to_string(),
                 "--dir".to_string(),
                 "/work/beta".to_string(),
-                "--workspace-key".to_string(),
-                "/canonical/beta".to_string(),
+                "--session-id".to_string(),
+                "sess-beta-uuid".to_string(),
+                "--session-mode".to_string(),
+                "new".to_string(),
             ]
         );
     }
 
     #[test]
-    fn test_tugcode_spawner_uses_per_call_project_dir() {
-        // Belt-and-suspenders: verify that the same TugcodeSpawner instance
-        // produces commands for different workspaces when `spawn_child` is
-        // invoked with different `project_dir` arguments. Since the spawner
-        // field-less on project_dir after W2 Step 4, this can only work if
-        // the per-call argument actually flows through build_tugcode_command.
+    fn test_tugcode_spawner_uses_per_call_project_dir_and_session_id() {
+        // Belt-and-suspenders: the same TugcodeSpawner instance must
+        // produce commands with per-call `project_dir` + `session_id`
+        // arguments, not captured construction-time state.
         let spawner = TugcodeSpawner::new(PathBuf::from("/opt/tugtool/tugcode"));
-        let (_p1, args1) =
-            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/a"), "/canonical/a");
-        let (_p2, args2) =
-            build_tugcode_command(&spawner.tugcode_path, Path::new("/work/b"), "/canonical/b");
+        let (_p1, args1) = build_tugcode_command(
+            &spawner.tugcode_path,
+            Path::new("/work/a"),
+            "sess-a",
+            SessionMode::New,
+        );
+        let (_p2, args2) = build_tugcode_command(
+            &spawner.tugcode_path,
+            Path::new("/work/b"),
+            "sess-b",
+            SessionMode::New,
+        );
         assert!(args1.iter().any(|a| a == "/work/a"));
+        assert!(args1.iter().any(|a| a == "sess-a"));
         assert!(!args1.iter().any(|a| a == "/work/b"));
+        assert!(!args1.iter().any(|a| a == "sess-b"));
         assert!(args2.iter().any(|a| a == "/work/b"));
-        assert!(!args2.iter().any(|a| a == "/work/a"));
-        assert!(args1.iter().any(|a| a == "/canonical/a"));
-        assert!(args2.iter().any(|a| a == "/canonical/b"));
+        assert!(args2.iter().any(|a| a == "sess-b"));
     }
 
     #[test]
-    fn test_build_tugcode_command_includes_workspace_key() {
-        // Explicit regression: --workspace-key is always emitted (roadmap 4i).
+    fn test_build_tugcode_command_emits_session_mode_resume() {
         let (_, args) = build_tugcode_command(
             Path::new("/opt/tugtool/tugcode"),
             Path::new("/work/x"),
-            "/canonical/x",
+            "sess-x",
+            SessionMode::Resume,
         );
-        let i = args.iter().position(|a| a == "--workspace-key").expect(
-            "--workspace-key flag must be present so tugcode can key per-workspace \
-             session-id persistence",
+        let i = args
+            .iter()
+            .position(|a| a == "--session-mode")
+            .expect("--session-mode flag must be present");
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("resume"));
+    }
+
+    #[test]
+    fn test_session_mode_wire_roundtrip() {
+        assert_eq!(SessionMode::from_wire_str(Some("new")), SessionMode::New);
+        assert_eq!(
+            SessionMode::from_wire_str(Some("resume")),
+            SessionMode::Resume
         );
-        assert_eq!(args.get(i + 1).map(String::as_str), Some("/canonical/x"));
+        // Absent / unknown values default to New.
+        assert_eq!(SessionMode::from_wire_str(None), SessionMode::New);
+        assert_eq!(SessionMode::from_wire_str(Some("bogus")), SessionMode::New);
+        assert_eq!(SessionMode::New.as_wire_str(), "new");
+        assert_eq!(SessionMode::Resume.as_wire_str(), "resume");
     }
 
     #[test]

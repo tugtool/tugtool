@@ -125,7 +125,8 @@ export interface CodeSessionSnapshot {
       | "transport_closed"
       | "wire_error"
       | "session_unknown"
-      | "session_not_owned";
+      | "session_not_owned"
+      | "resume_failed";
     message: string;
     at: number;
   } | null;

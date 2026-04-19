@@ -233,6 +233,16 @@ export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProp
     // Map TugRadioGroupSize → TugButtonSize (same union values)
     const buttonSize = size as TugButtonSize;
 
+    // Do NOT pass an explicit `role` prop to TugButton here. The parent
+    // Radix `RadioGroupPrimitive.Item` merges `role="radio"` onto the
+    // child via Slot, and an explicit child `role` would override that
+    // ARIA role (Radix's Slot `mergeProps` has child precedence). The
+    // semantic theming role falls through to TugButton's default
+    // (`"action"`), which is what every existing radio item used before
+    // this deliberate removal. Runtime disambiguation lives in
+    // `tug-button.tsx`: ARIA values (`"radio"`, `"tab"`, …) pass through
+    // to the DOM, while semantic values (`"action"`, `"data"`, …) drive
+    // classname theming.
     return (
       <RadioGroupPrimitive.Item
         value={value}
@@ -243,7 +253,6 @@ export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProp
           ref={ref}
           data-slot="tug-radio-item"
           emphasis="ghost"
-          role="action"
           size={buttonSize}
           subtype="icon-text"
           disabled={isDisabled}

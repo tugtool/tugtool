@@ -246,6 +246,26 @@ export interface SessionNotOwnedEvent {
   detail?: string;
 }
 
+/**
+ * Emitted by tugcode when a `--session-mode resume` spawn fails and falls
+ * back to a fresh spawn. Forwarded by tugcast on the CODE_OUTPUT feed as
+ * a normal stream-json message; `CodeSessionStore`'s `acceptFrame` maps
+ * it to this event and the reducer rolls it into `lastError` with cause
+ * `"resume_failed"`. Roadmap step 4.5.
+ *
+ * The store does *not* change phase on this event — the fallback already
+ * produced a usable fresh session, so the card is in the idle "ready to
+ * submit" state. `lastError` surfaces the notice; the next successful
+ * turn clears it per the existing reducer convention.
+ */
+export interface ResumeFailedEvent {
+  type: "resume_failed";
+  /** Machine-readable category (e.g. `"exit"`, `"timeout"`). */
+  reason?: string;
+  /** The id tugcode attempted to resume. */
+  stale_session_id?: string;
+}
+
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
@@ -266,4 +286,5 @@ export type CodeSessionEvent =
   | SessionStateErroredEvent
   | SessionUnknownEvent
   | SessionNotOwnedEvent
-  | TransportCloseEvent;
+  | TransportCloseEvent
+  | ResumeFailedEvent;

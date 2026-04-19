@@ -147,6 +147,12 @@ export class TugbankClient {
   /**
    * Write a single key/value pair to a domain.
    * Creates the domain row if it does not exist and bumps the generation.
+   *
+   * Note: writes here go directly to sqlite and do NOT broadcast a
+   * tugbank-change notification. Tugcast's in-memory cache won't see
+   * the change until something else triggers a refresh. Prefer routing
+   * writes that need to be visible to tugcast / tugdeck through the
+   * Rust path (which auto-broadcasts) rather than calling this.
    */
   set(domain: string, key: string, value: TugbankValue): void {
     const enc = encodeValue(value);

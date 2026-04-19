@@ -161,7 +161,7 @@ describe("session CONTROL frame builders", () => {
     return JSON.parse(new TextDecoder().decode(frame.payload));
   }
 
-  test("encodeSpawnSession produces a CONTROL frame with card_id, tug_session_id, and project_dir", () => {
+  test("encodeSpawnSession produces a CONTROL frame with card_id, tug_session_id, project_dir, and session_mode (default new)", () => {
     const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha");
     expect(frame.feedId).toBe(FeedId.CONTROL);
     expect(frame.flags).toBe(FrameFlags.DATA);
@@ -171,7 +171,15 @@ describe("session CONTROL frame builders", () => {
       card_id: "card-1",
       tug_session_id: "sess-1",
       project_dir: "/work/alpha",
+      session_mode: "new",
     });
+  });
+
+  test("encodeSpawnSession with session_mode=resume emits the resume variant", () => {
+    // Roadmap step 4.5.
+    const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha", "resume");
+    const payload = parsePayload(frame);
+    expect(payload.session_mode).toBe("resume");
   });
 
   test("encodeCloseSession produces a CONTROL frame with card_id and tug_session_id", () => {

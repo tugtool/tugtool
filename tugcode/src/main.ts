@@ -32,20 +32,38 @@ console.error = (...args: unknown[]) => {
 
 // Parse CLI arguments
 let projectDir: string = process.cwd();
-let workspaceKey: string | undefined;
+// `--session-id <uuid>` is the one identifier for this session:
+// claude's own session id (either claimed via `--session-id` for a
+// fresh spawn or matched via `--resume` for a resume), the tugbank
+// sessions-record key, and the id tugcast routes CODE_OUTPUT under.
+let sessionId: string | undefined;
+// `--session-mode new|resume` picks between a fresh spawn (claude
+// claims `sessionId` as its own id) and resuming an existing
+// conversation. Absent / unknown values fall through to "new".
+let sessionMode: "new" | "resume" = "new";
 const args = Bun.argv.slice(2); // Skip bun and script path
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dir" && i + 1 < args.length) {
     projectDir = args[i + 1];
     i++;
-  } else if (args[i] === "--workspace-key" && i + 1 < args.length) {
-    workspaceKey = args[i + 1];
+  } else if (args[i] === "--session-id" && i + 1 < args.length) {
+    sessionId = args[i + 1];
+    i++;
+  } else if (args[i] === "--session-mode" && i + 1 < args.length) {
+    const raw = args[i + 1];
+    sessionMode = raw === "resume" ? "resume" : "new";
     i++;
   }
 }
 
+// If tugcast didn't supply a session id (standalone invocation), mint
+// one so SessionManager always has a stable identifier.
+if (!sessionId) {
+  sessionId = crypto.randomUUID();
+}
+
 console.log(
-  `Starting tugcode (projectDir: ${projectDir}, workspaceKey: ${workspaceKey ?? "<unset>"})`,
+  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode})`,
 );
 
 // Session manager (initialized after protocol handshake)
@@ -94,7 +112,7 @@ async function main() {
       }
 
       // Create session manager and initialize claude process
-      sessionManager = new SessionManager(projectDir, workspaceKey);
+      sessionManager = new SessionManager(projectDir, sessionId, sessionMode);
 
       // Send protocol_ack first (with placeholder session_id)
       writeLine({

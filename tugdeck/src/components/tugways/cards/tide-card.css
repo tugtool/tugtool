@@ -67,8 +67,10 @@
   font-family: var(--tug-font-family-sans);
 }
 
-/* Recent-projects section below the path input. Each button fills a
-   path + submits in one click (roadmap step 4m). */
+/* Recent-projects section below the path input. Roadmap step 4.5:
+   clicking a button now fills the input rather than spawning directly;
+   all spawns go through the session-mode radio group + Open confirm
+   below. */
 .tide-card-picker-recents {
   display: flex;
   flex-direction: column;
@@ -80,4 +82,26 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--tug-space-xs, 4px);
+}
+
+/* Session-option layout inside each TugRadioItem (roadmap step 4.5).
+   The radio circle is owned by TugRadioGroup; this block only shapes
+   the per-row title + subtitle stack that we pass as the item's
+   children. */
+.tide-card-picker-session-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tug-space-xxs, 2px);
+}
+
+.tide-card-picker-session-option-title {
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  font-weight: 500;
+}
+
+/* @tug-renders-on: surface.global.neutral.default */
+.tide-card-picker-session-option-subtitle {
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
