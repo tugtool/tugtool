@@ -2,11 +2,11 @@
 
 ## T3.4.d — Tide Card Polish & Exit Criteria {#tide-card-polish}
 
-**Purpose:** Close out Phase T3 by working through the polish, ergonomics, and exit-criteria items folded into [tide.md §T3.4.d](./tide.md#t3-4-d-polish-exit). The Tide card landed in [T3.4.c](./archive/tugplan-tide-card.md) as a registered, functional surface that round-trips a single turn against real Claude. This plan picks that surface up and finishes it: the small-but-irritating ergonomic gaps (focus, labels, keyboard jumps), the layout bugs that show up the first time you open completions inside a small card, the participant-aware multi-turn transcript that the Step 5 wire-up deferred, and the larger feature-coverage / quality / a11y bars that gate Phase T3 exit.
+**Purpose:** Close out Phase T3 by working through the polish, ergonomics, and exit-criteria items folded into [tide.md §T3.4.d](./tide.md#t3-4-d-polish-exit). The Tide card landed in [T3.4.c](./archive/tugplan-tide-card.md) as a registered, functional surface that round-trips a single turn against real Claude. This plan picks that surface up and finishes it: the small-but-irritating ergonomic gaps (focus, labels, keyboard jumps), the layout bugs that show up the first time you open completions inside a small card, the session ledger + full resume UX deferred from T3.4.c, the participant-aware multi-turn transcript that the Step 5 wire-up deferred, and the larger feature-coverage / quality / a11y bars that gate Phase T3 exit.
 
-The work is staged smallest-blast-radius first: each step is one commit, the build stays green at every commit, and the early steps are deliberately scoped so any of them could be cherry-picked without taking the rest. The big-ticket items (participant model, transcript rendering, permission/question UI) come later in the sequence, with the small ergonomic wins paying down user pain immediately.
+The work is staged smallest-blast-radius first: each step is one commit, the build stays green at every commit, and the early steps are deliberately scoped so any of them could be cherry-picked without taking the rest. The big-ticket items (session ledger, participant model, transcript rendering, permission/question UI) come later in the sequence, with the small ergonomic wins paying down user pain immediately.
 
-This plan supersedes the bullet list under [tide.md §T3.4.d](./tide.md#t3-4-d-polish-exit) — same items (plus the participant model and explicit user-submission rendering added during plan authoring), ordered for execution and broken into commit-sized steps.
+This plan supersedes the bullet list under [tide.md §T3.4.d](./tide.md#t3-4-d-polish-exit) — same items (plus the participant model, explicit user-submission rendering, and the carried-forward session ledger placeholder added during plan authoring), ordered for execution and broken into commit-sized steps.
 
 ---
 
@@ -27,7 +27,7 @@ This plan supersedes the bullet list under [tide.md §T3.4.d](./tide.md#t3-4-d-p
 
 #### Context {#context}
 
-[T3.4.c](./archive/tugplan-tide-card.md) shipped the Tide card as a registered surface with a real `CodeSessionStore`, project picker, `spawn_session` / `close_session` lifecycle, per-workspace session-id ledger, resume-vs-new picker, fresh-spawn default, and a single-turn `TugMarkdownView` wire-up. Step 5 of that plan deliberately wired *only* `inflight.assistant` — multi-turn accumulation, thinking blocks, and tool surfaces were called out as T3.4.d follow-ups. The status badge in `tide-card.tsx:828` still hard-codes `"Project path /gallery/demo"` as a gallery-copy artifact. The card body inherits the polished ergonomics of `gallery-prompt-entry.tsx` but, when used as a *real* Claude surface (rather than a gallery demo), several small interaction gaps became obvious immediately:
+[T3.4.c](./archive/tugplan-tide-card.md) shipped the Tide card as a registered surface with a real `CodeSessionStore`, project picker, `spawn_session` / `close_session` lifecycle, per-workspace session-id ledger, resume-vs-new picker, fresh-spawn default, and a single-turn `TugMarkdownView` wire-up. Step 5 of that plan deliberately wired *only* `inflight.assistant` — multi-turn accumulation, thinking blocks, and tool surfaces were called out as T3.4.d follow-ups. [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6) was authored as a design sketch for a tugcast-side session ledger + full resume UX but deliberately deferred to T3.4.d — this plan carries that placeholder forward. The status badge in `tide-card.tsx:828` still hard-codes `"Project path /gallery/demo"` as a gallery-copy artifact. The card body inherits the polished ergonomics of `gallery-prompt-entry.tsx` but, when used as a *real* Claude surface (rather than a gallery demo), several small interaction gaps became obvious immediately:
 
 - The prompt input does not get focus when a card is opened. Every interaction starts with a click-to-focus.
 - After submitting a turn, focus is lost. Typing the next prompt requires another click.
@@ -39,16 +39,18 @@ This plan supersedes the bullet list under [tide.md §T3.4.d](./tide.md#t3-4-d-p
 - There is no "speaker" model to distinguish *who* produced an entry in the transcript. Tide will mix at least four participants — the user, Claude Code, shell output (post-T4), and `:` surface command output (post-T10) — and there is currently no shared component vocabulary for rendering them so a reader can tell at a glance who said what.
 - There is no way to navigate the transcript with the keyboard — no jump-to-history-entry, no jump-to-bottom.
 - The status badge that should display the bound `projectDir` (or a cwd glyph) still shows the gallery string.
+- Session bookkeeping still lives in the tugbank map landed by [Step 4i of T3.4.c](./archive/tugplan-tide-card.md#step-4i): one id per workspace, no metadata, no branching, no "forget one specific session." The resume-vs-new picker landed in [Step 4.5 of T3.4.c](./archive/tugplan-tide-card.md#step-4-5) is honest but minimal — users will hit its limits the moment they have more than one session per workspace they care about.
 
-The bigger items deferred from T3.4.c — multi-turn transcript rendering, thinking + tool surfaces, markdown styling pass, mid-stream behaviors E2E, `control_request_forward` UI — are all in scope here too. They land later in the sequence after the small ergonomic wins.
+The bigger items deferred from T3.4.c — session ledger + full resume UX, multi-turn transcript rendering, thinking + tool surfaces, markdown styling pass, mid-stream behaviors E2E, `control_request_forward` UI — are all in scope here too. They land later in the sequence after the small ergonomic wins.
 
 #### Strategy {#strategy}
 
-- **Easy first.** The first eight steps are scoped so that a single commit per step is realistic: a string rename, a focus call, a key handler, a label swap. Each lands user-visible improvement immediately and does not need follow-on work to be useful. The deeper items (participant primitive, transcript, permission UI) come later.
-- **Design before wire-up.** The participant model (Step 9) lands as a designed primitive in a gallery card *before* the transcript rendering step (Step 10) wires it into the live `CodeSessionStore`. That keeps the visual design tunable in isolation and the wiring step focused on data binding.
-- **One commit per step.** Where a step might want to grow (transcript, atom line-heights, participant primitive), the step's Work section calls out the minimal viable shape and defers richer treatment to a noted follow-up rather than expanding the commit.
+- **Easy first.** The first eight steps are scoped so that a single commit per step is realistic: a string rename, a focus call, a key handler, a label swap. Each lands user-visible improvement immediately and does not need follow-on work to be useful. The deeper items (participant primitive, session ledger, transcript, permission UI) come later.
+- **Design before wire-up.** The participant model (Step 9) lands as a designed primitive in a gallery card *before* the transcript rendering step (Step 11) wires it into the live `CodeSessionStore`. That keeps the visual design tunable in isolation and the wiring step focused on data binding.
+- **Placeholders carry forward explicitly.** The session ledger + full resume UX (Step 10) arrives as a *design placeholder only*, carried over from [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6). Before implementation, the sketch is promoted into its own concrete plan (`roadmap/tugplan-tide-session-ledger.md` or equivalent) that enumerates files, sub-steps, verifications, and exit criteria. The placeholder in this plan documents intent, non-goals, and open questions — not a landable commit sequence.
+- **One commit per step.** Where a step might want to grow (transcript, atom line-heights, participant primitive), the step's Work section calls out the minimal viable shape and defers richer treatment to a noted follow-up rather than expanding the commit. The session ledger step is the deliberate exception — it is a "stop and design" marker, not a commit.
 - **Build stays green at every commit.** `bun run check`, `bun test`, `bun run audit:tokens lint`, and `cargo nextest run` pass on every step. `-D warnings` enforced.
-- **No new IndexedDB.** Per [D-T3-10](./tide.md#decisions-t3). Any persistence goes through tugbank.
+- **No new IndexedDB.** Per [D-T3-10](./tide.md#decisions-t3). Any persistence goes through tugbank or, in the session ledger case, the purpose-built sqlite store that replaces it.
 - **Tuglaws apply.** Every step that touches `tide-card.tsx`, `tug-prompt-entry.tsx`, the new transcript primitive, or new helpers re-checks against [tuglaws.md](../tuglaws/tuglaws.md). The closing step records a walkthrough.
 - **Reuse the existing surfaces.** Focus / keybinding work threads through the existing `TugPromptEntryDelegate` handle and `ResponderScope`. Transcript rendering uses `TugMarkdownView`'s imperative `setRegion` handle (already in use for the streaming region), now plugged into the new `TugTranscriptEntry` body slot. Permission / question UI uses the existing CONTROL frame plumbing — no new transport.
 - **Defer P2-gated multi-session work to its own step.** Two concurrent Tide cards already work post-[4k](./archive/tugplan-tide-card.md#step-4k); the multi-session *exit criterion* in tide.md §T3.4.d is about formalizing the verification, not building new infrastructure. It rides as a late step.
@@ -76,6 +78,10 @@ The bigger items deferred from T3.4.c — multi-turn transcript rendering, think
 - User-submitted prompts/commands appear in the transcript flow as `participant: "user"` rows, in line with the assistant responses they precede. The user sees their own submission appear the moment they hit Enter. (verification: test + manual)
 - Multi-turn conversations accumulate in the top pane: pairs of `user` + `code` rows for each turn render as the conversation grows. The in-flight turn streams into the `code` row's body region; completed turns occupy permanent rows. (verification: manual; test against a recorded session fixture)
 - The "sticky last turn" Step 5 fallback is removed once transcript rendering lands. (verification: code review; `rg` for the relevant comment)
+
+**Session ledger + resume UX:**
+- A concrete plan for the session ledger + full resume UX exists at `roadmap/tugplan-tide-session-ledger.md` (or equivalent), promoted from the design sketch in [Step 10](#step-10). The concrete plan's own exit criteria replace this line once it lands. (verification: the file exists; this plan's Step 10 references it as promoted.)
+- Until the concrete plan lands, this plan's Step 10 is a placeholder — it does not commit code, and downstream steps do not depend on ledger-backed behavior.
 
 **End-to-end coverage:**
 - Type `> hello` → `user_message` on `CODE_INPUT` → `assistant_text` deltas on `CODE_OUTPUT` → streaming render → `turn_complete(success)` → entry returns to idle.
@@ -118,6 +124,7 @@ The bigger items deferred from T3.4.c — multi-turn transcript rendering, think
 - Completion popup overflow / clipping fix.
 - Atom rendering at tighter line-heights.
 - Participant model + `TugTranscriptEntry` primitive (Slack-like layout, no chat bubbles), with gallery demo.
+- **Session ledger + full resume UX as a design placeholder** — a carry-forward of [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6). Implementation is gated on a promoted plan; the placeholder here captures intent, schema sketch, CONTROL protocol additions, migration notes, lifecycle policies, non-goals, and open questions.
 - Multi-turn transcript rendering using the participant primitive; user submissions visible in-flow; removal of the sticky-last-turn fallback.
 - Markdown typography / spacing / chrome polish for Claude Code output.
 - Thinking and tool-use surface wiring (placement TBD in the step).
@@ -131,6 +138,7 @@ The bigger items deferred from T3.4.c — multi-turn transcript rendering, think
 - Tuglaws walkthrough.
 
 **Out of scope (deferred):**
+- Implementation of the session ledger + full resume UX — lives in its own promoted plan (Step 10's promotion gate).
 - Live `shell` and `command` participant rows in the transcript — the primitive supports them and the gallery demos them, but the live wires arrive with Phase T4 (tugshell) and Phase T10 (`:` surface built-ins) respectively. This plan only wires `user` and `code` rows to live data.
 - `BuildStatusCollector` per-workspace ([tide.md line 2102](./tide.md#prefix-router-prompt-input)).
 - Claude `--resume` (P14) and stream-json version gate (P15) — separate plans.
@@ -146,12 +154,13 @@ The bigger items deferred from T3.4.c — multi-turn transcript rendering, think
 - **D4 — Cmd+J semantics.** With a history entry navigated to in the prompt-entry, Cmd+J scrolls the transcript to that entry's location. With no history selection, Cmd+J behaves like End / Cmd+Down: scroll to bottom.
 - **D5 — Atom line-height target.** Tighter than 1.7 must work without baseline jump. Concrete minimum decided in [Step 7](#step-7) once the engine work surfaces the constraint.
 - **D6 — Participant model is Slack-like, *not* chat bubbles.** Decided by the user during plan authoring. Rationale: chat bubbles are wrong for a developer surface that mixes human, AI, shell, and command output — alternating sides and rounded backgrounds make a transcript hard to scan. Layout: left-aligned icon column (~32–40px), then a content column with a header row (bold identifier + small timestamp), then the body, then an optional controls/badges/icons strip beneath the body. Initial participants: `user`, `code` (Claude Code), `shell` (post-T4), `command` (post-T10). The model is open for extension via a token registration, not a code rewrite. No avatar photos; participant icons are glyphs/marks.
+- **D7 — Session ledger starts as a design placeholder.** Carried forward from [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6). Rationale: the sketch is rich enough that treating it as a single commit would under-specify the sqlite schema, CONTROL protocol additions, migration, and picker reshape. Starting preferences captured in [Step 10](#step-10)'s open-questions list (sqlite over JSONL; tugcast CLI flag over CONTROL round-trip; `resume_failed` → `"failed"` state rather than delete). Promotion to a concrete plan happens before implementation, in its own document.
 
 ---
 
 ### Steps {#steps}
 
-Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens lint`, and `cargo nextest run` pass at the end of every step.
+Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens lint`, and `cargo nextest run` pass at the end of every step. [Step 10](#step-10) is the deliberate exception — it is a design placeholder that promotes to its own plan before any code lands.
 
 #### Step 1 — Status row shows the bound `projectDir` {#step-1}
 
@@ -251,7 +260,7 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - New test: render a Tide card with a recorded transcript fixture, set selected history entry → simulate Cmd+J → assert the transcript scroll position changes to that entry's region. Then clear selection → simulate Cmd+J → assert scroll-to-bottom.
 - Manual: with a multi-turn transcript visible, navigate history with Cmd+Up to a past entry; press Cmd+J; transcript jumps to that entry. Press Esc to clear history navigation; press Cmd+J; transcript scrolls to bottom.
 
-> **Step 6 depends on [Step 10](#step-10)'s transcript rendering** for the "scroll to a transcript region" path to do anything visible. Until Step 10 lands, the bottom-scroll fallback is the only branch with user-visible effect. Both branches still ship in this commit so the keybinding is not split across two commits — the second branch becomes useful when Step 10 lands.
+> **Step 6 depends on [Step 11](#step-11)'s transcript rendering** for the "scroll to a transcript region" path to do anything visible. Until Step 11 lands, the bottom-scroll fallback is the only branch with user-visible effect. Both branches still ship in this commit so the keybinding is not split across two commits — the second branch becomes useful when Step 11 lands.
 
 #### Step 7 — Atoms render cleanly at tighter line-heights {#step-7}
 
@@ -341,7 +350,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 *Tokens.* New `--tugx-transcript-*` token set (icon size, identifier weight + color, body line-height, controls-row spacing, row vertical gap). Per-participant overrides keyed by `[data-participant="..."]`. All names conform to the seven-slot naming convention; `bun run audit:tokens lint` exits 0.
 
-*Gallery card.* Build `gallery-transcript-entry` that stacks all four participant variants with realistic content: a `user` row reading "> tell me a haiku", a `code` row with a streaming-style markdown response and a copy button + model badge, a `shell` row with mock `git status` output and an exit-code badge, a `command` row with `:cost` output. Lets the design be tuned in isolation before [Step 10](#step-10) wires it into live data.
+*Gallery card.* Build `gallery-transcript-entry` that stacks all four participant variants with realistic content: a `user` row reading "> tell me a haiku", a `code` row with a streaming-style markdown response and a copy button + model badge, a `shell` row with mock `git status` output and an exit-code badge, a `command` row with `:cost` output. Lets the design be tuned in isolation before [Step 11](#step-11) wires it into live data.
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green.
@@ -350,13 +359,109 @@ The component renders a `data-participant` attribute on its root for theme overr
 - Visual review against [D6](#resolved-decisions): no rounded per-row container, no bubble background, no left-vs-right alignment by speaker, identifier + timestamp on top of body.
 - Manual: open `gallery-transcript-entry` in tugdeck; all four variants render with distinct icons / identifiers; vertical rhythm reads cleanly top-to-bottom.
 
-**Out of scope (deferred to [Step 10](#step-10) and later phases):**
-- Wiring into the live `CodeSessionStore` transcript — that's [Step 10](#step-10).
+**Out of scope (deferred to [Step 11](#step-11) and later phases):**
+- Wiring into the live `CodeSessionStore` transcript — that's [Step 11](#step-11).
 - Live `shell` rows — needs Phase T4 (tugshell) data. Gallery uses mock data for now.
 - Live `command` rows — needs Phase T10 (`:` surface built-ins) data. Gallery uses mock data for now.
 - Per-row reactions, threading, or message editing — Slack borrowings stop at the visual structure.
 
-#### Step 10 — Multi-turn transcript rendering with `TugTranscriptEntry` {#step-10}
+#### Step 10 — Tugcast-side session ledger + full resume UX (placeholder; design before implementation) {#step-10}
+
+**Status:** Design sketch only. Do NOT start implementation from these notes — they capture intent, not a landable plan. Carry-forward of [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6); promotion to a full plan (files, work, verification) happens in a dedicated document (e.g., `roadmap/tugplan-tide-session-ledger.md`) before any code commits, so the plumbing already in place from T3.4.c ([4.5](./archive/tugplan-tide-card.md#step-4-5)'s `sessionMode`, `resume_failed`, picker list shape; [4.5.5](./archive/tugplan-tide-card.md#step-4-5-5)'s post-implementation audit) is concrete before the richer UX and storage redesign are scoped.
+
+**Why this exists:** T3.4.c's [4.5](./archive/tugplan-tide-card.md#step-4-5) wires the user-facing choice but keeps storage inside the tugbank map — one id per workspace, no metadata, no branching. That is enough to make resume *work*; it is not enough to make it *right*. Users will hit every one of these the moment they have more than one session per workspace they care about:
+
+- "I have three sessions going in this repo — which one am I resuming?"
+- "I closed a card; did that throw away my session?"
+- "Two cards both resumed the same session — now the JSONL is corrupt."
+- "I want to forget one specific session without forgetting all of them."
+- "The resume timestamp is opaque; I want to see what the conversation was about."
+
+This step addresses all of these by moving session bookkeeping out of tugbank and into a purpose-built tugcast-side ledger, and by reshaping the picker around the richer data the ledger exposes.
+
+**Why a tugcast-side ledger (not tugbank):**
+- **Row-level queries with ordering:** N sessions per workspace, sorted by `last_used_at`, filtered by state, keyed on `workspace_key`. Tugbank is a KV store; modelling this as JSON blobs would push all the logic into the reader and re-parse on every picker paint.
+- **Write volume:** the ledger updates on every `turn_complete` frame (to tick `turn_count` and `last_used_at`), plus on every `spawn_session_ok` / `close_session` / `resume_failed`. Tugbank is not built for that cadence and the churn would pollute its change-notification stream.
+- **Ownership:** the ledger is tugcast-process-local state about tugcast-managed child processes. It has no meaning outside tugcast; routing it through tugbank spreads responsibility across a boundary that doesn't carry its weight.
+- **Lifecycle:** migration from T3.4.c 4.5's tugbank map is one-shot (read once, synthesize rows, delete the tugbank key). After migration, tugbank has no role in session bookkeeping.
+
+**Sketch of the ledger:**
+- **Location:** `tugrust/crates/tugcast/src/session_ledger.rs`, owned by the tugcast process. A single `SessionLedger` instance lives on the server, shared by the supervisor and the CONTROL handler.
+- **Storage backing:** preferred **`rusqlite` with a single-file database** under the user's data dir (`~/Library/Application Support/Tug/sessions.db` on macOS, `$XDG_DATA_HOME/tugcast/sessions.db` on Linux). Sqlite carries its weight because row-level queries with `ORDER BY last_used_at DESC` and concurrent reads while the supervisor writes are exactly what it's for. Alternative considered: JSONL per workspace. Cheaper to introduce, O(N) to query, no index, worse eviction. The promotion pass picks one; sqlite is the starting preference.
+- **Schema (sqlite sketch):**
+  ```sql
+  CREATE TABLE sessions (
+    session_id        TEXT PRIMARY KEY,
+    workspace_key     TEXT NOT NULL,
+    project_dir       TEXT NOT NULL,
+    created_at        INTEGER NOT NULL,  -- unix millis
+    last_used_at      INTEGER NOT NULL,
+    turn_count        INTEGER NOT NULL DEFAULT 0,
+    first_user_prompt TEXT,              -- first user_message, truncated to 256 chars
+    state             TEXT NOT NULL,     -- "live" | "closed" | "failed"
+    card_id_live      TEXT               -- set while a card is bound; NULL otherwise
+  );
+  CREATE INDEX sessions_workspace ON sessions(workspace_key, last_used_at DESC);
+  ```
+- **Ledger writes (driven by tugcast's supervisor, not tugcode):**
+  - On `spawn_session_ok`: `INSERT OR IGNORE`; set `state="live"`, `card_id_live=<card_id>`, `created_at=now`, `last_used_at=now`.
+  - On first `user_message` of a session: `UPDATE first_user_prompt` (only if NULL) with the trimmed body.
+  - On every `turn_complete`: `UPDATE turn_count = turn_count + 1, last_used_at = now`.
+  - On `close_session` / tugcode exit: `UPDATE state="closed", card_id_live=NULL`.
+  - On `resume_failed`: `UPDATE state="failed"` (ledger retains the crumb for diagnostics; Forget is the only path to full deletion).
+
+**CONTROL protocol additions:**
+- `list_sessions { workspace_key }` → `{ sessions: [{ session_id, created_at, last_used_at, turn_count, first_user_prompt, state, card_id_live }, ...] }`. Picker calls on mount and on path change.
+- `forget_session { session_id }` → deletes the row; kills the tugcode child if any; moves the underlying `~/.claude/projects/.../<id>.jsonl` to a trash subdir (recoverable for a week).
+- `forget_workspace_sessions { workspace_key }` → batch Forget for the picker's "Forget all sessions for this workspace" button.
+- `session_updated { session_id, fields... }` → broadcast on every write above; tugdeck's picker subscribes while open so turn counts tick and state indicators stay current without polling.
+
+**Migration from T3.4.c 4.5:**
+- On tugcast startup (one-time): read `dev.tugtool.tide / session-id-by-workspace` from tugbank, synthesize ledger rows (`state="closed"`, metadata defaulted), delete the tugbank key. Guard against partial failures with a single transaction.
+- tugcode stops reading/writing the tugbank map. The preferred shape: tugcast resolves the session id *before* spawning tugcode and passes it as a `--resume-session-id <id>` flag, so tugcode is entirely free of session bookkeeping. The alternative — tugcode calls out to tugcast over CONTROL for the id — keeps tugcode closer to its current shape but adds a round-trip on every spawn. Promotion picks one.
+
+**Sketch of the UX:**
+- Picker reshaped around the ledger's richer rows:
+  - Path input (unchanged).
+  - "Start fresh" row, always first.
+  - N "Resume session" rows, one per ledger entry for the typed workspace, ordered by `last_used_at DESC`. Each row shows: first_user_prompt snippet (or "No prompts yet" for empty sessions), turn count, relative timestamp ("2h ago"), and a state indicator. Rows with `state="failed"` render greyed with a diagnostic subtitle.
+  - Per-row "Forget" action (disabled when `card_id_live` is set). A confirmation sheet warns before deletion — this is destructive and user-visible.
+  - A footer "Forget all sessions for this workspace" button.
+- Live updates: picker subscribes to `session_updated` broadcasts while open. Turn counts and state change in place; no flash, no re-mount.
+- Keyboard: arrow keys navigate the whole list (Start fresh + all resume rows); Enter submits; Backspace on a row triggers Forget (with confirmation sheet).
+- Still no proper table component. The row shape is richer than T3.4.c 4.5's radio group; if a table primitive lands in tugdeck between T3.4.c and this step's promotion, reshape accordingly, but do **not** detour to build one inside this step. The list-with-rich-rows shape is sufficient for the session counts we expect (tens, not hundreds).
+
+**Lifecycle policies (decidable with ledger in hand):**
+- **Close semantics.** Closing a card sets `state="closed"`, `card_id_live=NULL`. Metadata preserved. Next card can resume. Explicit Forget is the only path to deletion.
+- **Concurrent-resume collision.** Picker greys out resume rows with `card_id_live != null && card_id_live != this.cardId`. Defense in depth: the CONTROL `spawn_session` handler in tugcast rejects `session_mode="resume"` with `session_id` already live on another card, returning `spawn_session_err { reason: "session_live_elsewhere" }`.
+- **Eviction.** Ledger cap: named constant `TIDE_LEDGER_MAX_PER_WORKSPACE` (initial: 20). On spawn, if the workspace has ≥ cap rows, evict the oldest `state="closed"` row by `last_used_at`. Age-based expiry: rows older than a named `TIDE_LEDGER_MAX_AGE` (initial: 90 days) with `state != "live"` evicted on startup. Both thresholds are named constants, not magic numbers. `state="live"` rows are never evicted.
+- **Recents↔ledger coherence.** When a recent-projects entry is evicted (per [4m of T3.4.c](./archive/tugplan-tide-card.md#step-4m)'s cap), evict all ledger rows for that workspace in the same transaction. The reverse — ledger eviction triggering recents eviction — is **not** automatic; a workspace with no stored sessions can still be a recent project.
+- **Explicit Forget.** Per-row Forget + per-workspace Forget-all, each with confirmation. Forget moves the session JSONL to a trash subdir (not `rm`), keyed on delete date, swept on a coarse schedule (weekly) or next startup if older than 7 days.
+
+**Non-goals even for the promoted plan:**
+- Server-side archival or search across prior sessions — requires an external index, out of this plan's scope.
+- Cross-machine sync — the ledger is tugcast-process-local, backed by a single file in the user's data dir.
+- Session branching ("fork from turn N") — that is a Claude-side feature, not a picker UX.
+- A purpose-built table / grid component for the session list. If one lands upstream, reshape; otherwise stick with the list.
+
+**Open design questions for the promotion pass:**
+- Sqlite vs JSONL backing. Starting preference: sqlite.
+- Whether tugcode reads the ledger via CONTROL round-trip, or tugcast resolves the id and passes it as a CLI flag. Starting preference: CLI flag (keeps tugcode stateless).
+- Whether `resume_failed` downgrades ledger state to `"failed"` (crumb for diagnostics) or deletes outright. Starting preference: `"failed"`.
+- Whether the ledger also tracks assistant response bytes / storage pressure for a future "trim old sessions" UX.
+- Whether any of [4m of T3.4.c](./archive/tugplan-tide-card.md#step-4m)'s recent-projects logic should move into the ledger itself (one store, two views) or stay separate (tugbank stays the source of truth for recents). Starting preference: keep separate — recents and sessions are different entities with different eviction policies.
+- Trash sweep cadence: on-demand during Forget, or background on tugcast startup? Starting preference: startup sweep of anything > 7 days old.
+
+**Promotion gate:**
+- Before a single commit lands against the ledger, author `roadmap/tugplan-tide-session-ledger.md` (or equivalent). The promoted plan enumerates: files, sub-steps (one commit each), schema + migration tests, picker tests, tugcast integration tests, and exit criteria. It resolves each open design question above.
+- Downstream steps in this polish plan ([Step 11](#step-11) onwards) do **not** depend on the ledger landing. They build on T3.4.c's existing session state (tugbank map + resume-vs-new picker) and gain ledger-backed behavior only after the promoted plan ships.
+
+**Verification (of the placeholder, not the eventual implementation):**
+- The "Open design questions" list above is complete and each question has a starting preference recorded.
+- The promotion-gate paragraph is explicit about the promoted-plan filename and exit criteria before any code lands.
+- No code change lands under this step's SHA. If a commit is needed against this plan file to record the placeholder, its diff is documentation-only.
+
+#### Step 11 — Multi-turn transcript rendering with `TugTranscriptEntry` {#step-11}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (replace top-pane wire-up).
@@ -379,7 +484,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - New test: simulate submit of `> hi` → assert a `user` `TugTranscriptEntry` row carrying `> hi` appears in the transcript *immediately* (before any assistant deltas arrive).
 - Manual: open a Tide card, submit `> tell me a haiku`; observe the `user` row appear immediately, then the `code` row stream in beneath it. Submit `> now another`; both prior rows stay visible above the new pair. Scroll up while a new turn streams; auto-scroll defers per `SmartScroll`.
 
-#### Step 11 — Markdown styling pass for assistant output {#step-11}
+#### Step 12 — Markdown styling pass for assistant output {#step-12}
 
 **Files:**
 - `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css` (`--tugx-md-*` token tuning).
@@ -394,7 +499,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` green.
 - Manual: side-by-side comparison of Claude Code output in a Tide card before vs. after this commit. Headings, paragraphs, lists, blockquotes, inline code, fenced code blocks, tables — each looks polished. Both `brio` and `harmony` themes verified.
 
-#### Step 12 — Wire thinking + tool surfaces {#step-12}
+#### Step 13 — Wire thinking + tool surfaces {#step-13}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (`streamingPaths.thinking` + `streamingPaths.tools` consumers).
@@ -412,7 +517,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - New test: render Tide card against a fixture turn that includes thinking + tool_use events → assert thinking region and tool region are both rendered, in correct order, with correct content, inside the `code` row.
 - Manual: submit a prompt that elicits both thinking and tool use (e.g., `> use bash to list /tmp`); observe thinking block and tool_use / tool_result blocks rendering inline alongside the assistant response.
 
-#### Step 13 — Mid-stream behaviors end-to-end (Stop, queued sends, tool sub-state) {#step-13}
+#### Step 14 — Mid-stream behaviors end-to-end (Stop, queued sends, tool sub-state) {#step-14}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (verify; behavior is mostly in `CodeSessionStore` already).
@@ -430,7 +535,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` green; new tests exercise each scenario.
 - Manual smoke against live Claude: each of the four scenarios behaves as described.
 
-#### Step 14 — `control_request_forward` UI (permission + question) {#step-14}
+#### Step 15 — `control_request_forward` UI (permission + question) {#step-15}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (mount the dialog component when a snapshot field carries a `control_request_forward`).
@@ -438,7 +543,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - Tests.
 
 **Work:**
-- Surface `control_request_forward` events as inline blocks inside the in-flight `code` row (consistent with the transcript style from Step 10; not a modal). Two variants:
+- Surface `control_request_forward` events as inline blocks inside the in-flight `code` row (consistent with the transcript style from Step 11; not a modal). Two variants:
   - `is_question: false` — permission block. Displays tool name, input, reason. Allow / deny buttons. Approving writes a `tool_approval` frame; denying does the same with the inverse decision. The turn resumes from the decision.
   - `is_question: true` — question block. Renders the question + options (single-select or multi-select per the payload). Submitting writes a `question_answer` frame.
 - Keyboard: arrow keys move selection within the block; Enter submits; Esc cancels (cancel = deny / dismiss).
@@ -450,7 +555,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - New tests: render Tide card with a fixture `control_request_forward` (both variants); assert the block renders with correct fields; simulate Allow → assert `tool_approval` frame sent; simulate Deny → frame sent; simulate question Answer → `question_answer` frame sent.
 - Manual smoke against live Claude: prompt that requires permission (e.g., a Bash invocation in plan mode) → permission block appears; allow → tool runs. Use `AskUserQuestion` similarly.
 
-#### Step 15 — Feature coverage: route prefixes, indicator sync, completions, history {#step-15}
+#### Step 16 — Feature coverage: route prefixes, indicator sync, completions, history {#step-16}
 
 **Files:**
 - `tugdeck/src/components/tugways/__tests__/tug-prompt-entry.test.tsx` and/or `tide-card.test.tsx` (new coverage tests).
@@ -463,13 +568,13 @@ The component renders a `data-participant` attribute on its root for theme overr
   - `@` completion returns FILETREE-backed results; selecting an entry inserts a file atom.
   - `/` completion merges `SessionMetadataStore.slashCommands` and the skill list; selecting an entry inserts the slash command into the input.
   - Cmd+Up / Cmd+Down navigate `PromptHistoryStore` per-route; per-route drafts persist.
-- Where a test exposes a real bug, fix it in the same commit (or, if the bug is large enough to warrant its own commit, split into a follow-up step before [Step 22](#step-22)).
+- Where a test exposes a real bug, fix it in the same commit (or, if the bug is large enough to warrant its own commit, split into a follow-up step before [Step 23](#step-23)).
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` green; new tests exercise each criterion.
 - Manual: walk the criteria interactively in a running Tide card.
 
-#### Step 16 — CJK end-to-end {#step-16}
+#### Step 17 — CJK end-to-end {#step-17}
 
 **Files:**
 - Test fixtures (Japanese, Chinese strings).
@@ -484,7 +589,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` green; new CJK tests pass.
 - Manual: with a Japanese IME active, type `> こんにちは`, submit, verify the assistant responds in kind. Repeat with Chinese.
 
-#### Step 17 — VoiceOver / a11y pass {#step-17}
+#### Step 18 — VoiceOver / a11y pass {#step-18}
 
 **Files:**
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (aria-label / role attributes on atoms, route indicator, submit/stop button).
@@ -506,7 +611,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` green.
 - Manual VoiceOver walkthrough recorded; each criterion above passes.
 
-#### Step 18 — Atom drag-and-drop from Finder {#step-18}
+#### Step 19 — Atom drag-and-drop from Finder {#step-19}
 
 **Files:**
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` (drop target wiring).
@@ -521,7 +626,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` green.
 - Manual: drag a file from Finder onto the Tide card's prompt input; observe a file atom appear; submit; verify the path is included in the user message.
 
-#### Step 19 — Typeahead jank profiling {#step-19}
+#### Step 20 — Typeahead jank profiling {#step-20}
 
 **Files:**
 - `tugdeck/src/lib/filetree-store.ts` and/or completion provider for `@`.
@@ -537,7 +642,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - Manual: in a Tide card pointed at the full tugtool checkout, type `@` and several characters quickly; observe no perceptible jank; results update smoothly.
 - Performance test (if the test infra supports it): query latency stays under ~16ms per keystroke for FILETREEs of N files.
 
-#### Step 20 — Concurrent Tide cards regression test {#step-20}
+#### Step 21 — Concurrent Tide cards regression test {#step-21}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` (new test).
@@ -557,7 +662,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - `bun x tsc --noEmit` + `bun test` green; new test exercises the two-card scenario.
 - Manual smoke: open two Tide cards on different projects, submit in each, verify no cross-talk.
 
-#### Step 21 — Compliance close-out {#step-21}
+#### Step 22 — Compliance close-out {#step-22}
 
 **Files:**
 - Whatever last-mile cleanup the audit surfaces; ideally none.
@@ -578,7 +683,7 @@ The component renders a `data-participant` attribute on its root for theme overr
 - The full check matrix above passes.
 - The audit greps return clean results.
 
-#### Step 22 — Tuglaws walkthrough {#step-22}
+#### Step 23 — Tuglaws walkthrough {#step-23}
 
 **Files:**
 - `roadmap/tugplan-tide-card-polish.md` (this file — append the walkthrough to this section).
@@ -592,7 +697,7 @@ The component renders a `data-participant` attribute on its root for theme overr
   - **L06** — Appearance changes via CSS/DOM, not React state (relevant for the popup-overflow fix in Step 8 and the per-participant theming in Step 9).
   - **L07** — Action handlers access state via refs or stable singletons.
   - **L19** — Component authoring guide (relevant for `TugTranscriptEntry`).
-  - **L22** — Store observers drive DOM writes directly (relevant for the transcript `code` rows in Step 10).
+  - **L22** — Store observers drive DOM writes directly (relevant for the transcript `code` rows in Step 11).
   - **L23** — User-visible state preserved across internal ops.
   - **L24** — State partitioned into appearance / local-data / structure zones.
 - For each law: applies-and-satisfied, or does-not-apply (and why). Record the walkthrough below this section as a closing artifact (the same pattern as [Step 8 of T3.4.c](./archive/tugplan-tide-card.md#step-8)).
@@ -606,15 +711,17 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 ### Risks {#risks}
 
-- **Step 6 (Cmd+J) leaks visual reach into Step 10 (transcript).** Cmd+J's "scroll to entry" branch only does anything once the transcript renders multiple entries. Mitigation: Step 6's Work section calls this out; the bottom-scroll fallback is useful immediately, and the entry-scroll branch becomes useful when Step 10 lands. No code change between steps 6 and 10 to wire them together.
+- **Step 6 (Cmd+J) leaks visual reach into Step 11 (transcript).** Cmd+J's "scroll to entry" branch only does anything once the transcript renders multiple entries. Mitigation: Step 6's Work section calls this out; the bottom-scroll fallback is useful immediately, and the entry-scroll branch becomes useful when Step 11 lands. No code change between steps 6 and 11 to wire them together.
 - **Step 7 (atom line-heights) may surface engine work larger than one commit.** If the bisect reveals the bug is in `tug-text-engine.ts`'s line-box layout rather than just atom metrics, the work could grow. Mitigation: Step 7's Work section permits a "decide the minimum supported line-height" escape hatch; if 1.2 turns out to require a larger refactor, a documented intermediate floor (e.g., 1.4) ships in this step and the deeper work moves to a follow-up.
 - **Step 8 (popup overflow) may need new primitives.** If `tug-popup-*` does not already support upward-opening + capped-height, the primitive extension lives in this step's commit. That can grow the commit; if the primitive change is itself non-trivial, split into "extend primitive" + "consume in completions" — two commits.
 - **Step 9 (participant primitive) ships tokens for two participants we don't wire live in this plan.** `shell` and `command` rows exist in the gallery but do not appear in the live Tide transcript until Phases T4 and T10 respectively. Risk: the design choices for those participants are unconfirmed against real data. Mitigation: gallery uses realistic mock data; the token slots are meant to be tunable; nothing about Step 9 prevents Phase T4 / T10 from refining the participant's icon, identifier, or controls when the live wire arrives.
 - **Step 9 design risk: bubble drift.** Even with [D6](#resolved-decisions) explicit, it is easy to slip toward a bubble-ish look (subtle backgrounds, rounded corners, alternating tinting). Mitigation: Step 9's verification includes an explicit visual review against D6, and the gallery card is the durable artifact future contributors can compare against.
-- **Step 10 (transcript) interacts with `SmartScroll`.** The "scroll to bottom on new content unless the user has scrolled away" behavior should already be implemented by `SmartScroll`. If the Tide card's transcript needs different semantics than the existing consumers, the transcript rendering and the smart-scroll wire-up are coupled. Mitigation: Step 10's verification includes a manual scroll-away scenario.
-- **Step 12 (thinking + tool surfaces) commits to a placement that Phase T1 must accept.** Choosing a placement T1 will replace defeats the point. Mitigation: Step 12's Work section names the chosen placement (default: inside the `code` row) and the rationale; T1 inherits or revises. Either is fine — the commitment is to a working surface, not a final design.
-- **Step 14 (control_request_forward UI) is the largest feature commit in the plan.** It introduces a new component, a new snapshot field, and new frame-write paths. Mitigation: scope is "the minimum that closes the T3.4.d exit criterion" — Phase T9 picks up richer treatment.
-- **Step 19 (typeahead jank) may not need a fix.** If the existing implementation is already jank-free at full-repo scale, the step ships as a profiled-and-documented no-op. That is acceptable; the verification still gates on the manual smoke.
+- **Step 10 (session ledger placeholder) reads as done when it is merely designed.** The placeholder captures intent but ships no code; a reader skimming the step list might conclude the feature is landed. Mitigation: the Status and Promotion Gate paragraphs are explicit; the "Session ledger + resume UX" section of Success Criteria names the promoted plan as the exit criterion; the polish plan's top-matter calls out the placeholder nature. The plan is *not* fully closed until the promoted plan has shipped its own exit criteria.
+- **Step 10's open design questions may not all resolve in one promotion pass.** Sqlite-vs-JSONL, CLI-flag-vs-CONTROL-round-trip, and `resume_failed` semantics are each load-bearing. Mitigation: promotion-pass plan enumerates each question and picks an answer; if a question cannot be resolved cheaply, the promoted plan's Strategy names the deferred sub-question and the step that revisits it.
+- **Step 11 (transcript) interacts with `SmartScroll`.** The "scroll to bottom on new content unless the user has scrolled away" behavior should already be implemented by `SmartScroll`. If the Tide card's transcript needs different semantics than the existing consumers, the transcript rendering and the smart-scroll wire-up are coupled. Mitigation: Step 11's verification includes a manual scroll-away scenario.
+- **Step 13 (thinking + tool surfaces) commits to a placement that Phase T1 must accept.** Choosing a placement T1 will replace defeats the point. Mitigation: Step 13's Work section names the chosen placement (default: inside the `code` row) and the rationale; T1 inherits or revises. Either is fine — the commitment is to a working surface, not a final design.
+- **Step 15 (control_request_forward UI) is the largest feature commit in the plan (after the ledger's promoted plan).** It introduces a new component, a new snapshot field, and new frame-write paths. Mitigation: scope is "the minimum that closes the T3.4.d exit criterion" — Phase T9 picks up richer treatment.
+- **Step 20 (typeahead jank) may not need a fix.** If the existing implementation is already jank-free at full-repo scale, the step ships as a profiled-and-documented no-op. That is acceptable; the verification still gates on the manual smoke.
 
 ---
 
@@ -622,11 +729,15 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 - [tide.md §T3.4.d — Polish & exit criteria](./tide.md#t3-4-d-polish-exit) — the source of the original work list.
 - [tide.md §T3.4.c — Tide card](./tide.md#t3-4-c-tide-card) — the predecessor surface.
-- [tugplan-tide-card.md](./archive/tugplan-tide-card.md) — the implementation that landed T3.4.c, including the deferrals this plan picks up (Step 5 transcript, Step 6 lastError, Step 8 tuglaws walkthrough pattern).
+- [tugplan-tide-card.md](./archive/tugplan-tide-card.md) — the implementation that landed T3.4.c, including the deferrals this plan picks up (Step 5 transcript, Step 6 lastError, Step 8 tuglaws walkthrough pattern, Step 4.6 session ledger design sketch).
+- [Step 4.6 of T3.4.c](./archive/tugplan-tide-card.md#step-4-6) — the session ledger design sketch carried forward into [Step 10](#step-10) of this plan.
+- [Step 4.5 of T3.4.c](./archive/tugplan-tide-card.md#step-4-5) — the resume-vs-new picker whose storage Step 10 replaces.
+- [Step 4.5.5 of T3.4.c](./archive/tugplan-tide-card.md#step-4-5-5) — the post-implementation audit whose findings Step 10 builds on.
+- [Step 4m of T3.4.c](./archive/tugplan-tide-card.md#step-4m) — the recent-projects plumbing Step 10 must stay coherent with.
 - [tide.md §T3.4.a — CodeSessionStore](./tide.md#code-session-store) — for snapshot fields, `streamingPaths`, `transcript`, `lastError`.
-- [tide.md §Phase T1 — Content Block Types](./tide.md#content-block-types) — for the markdown / thinking / tool-use treatment that Step 11 and Step 12 coordinate with.
+- [tide.md §Phase T1 — Content Block Types](./tide.md#content-block-types) — for the markdown / thinking / tool-use treatment that Step 12 and Step 13 coordinate with.
 - [tide.md §Phase T4 — Shell Bridge (Tugshell)](./tide.md#shell-bridge) — provides the live data for `shell` participant rows whose primitive lands in Step 9.
-- [tide.md §Phase T9 — Conversation Wiring](./tide.md#conversation-wiring) — for the richer permission / question UX that Step 14's minimum will be extended into.
+- [tide.md §Phase T9 — Conversation Wiring](./tide.md#conversation-wiring) — for the richer permission / question UX that Step 15's minimum will be extended into.
 - [tide.md §Phase T10 — Surface Built-Ins](./tide.md#surface-built-ins) — provides the live data for `command` participant rows whose primitive lands in Step 9.
-- [tuglaws.md](../tuglaws/tuglaws.md) — the laws walked in Step 22.
+- [tuglaws.md](../tuglaws/tuglaws.md) — the laws walked in Step 23.
 - [Design Decisions](../tuglaws/design-decisions.md) — context for L02, L06, L22, L23, L24.
