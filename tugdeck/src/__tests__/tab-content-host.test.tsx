@@ -47,12 +47,11 @@ describe("TabContentHost", () => {
       contentFactory: () => <div data-testid="tab-host-child">hello content</div>,
     });
 
-    // Pre-register a host content element so the portal path (later piece) can
-    // route into it; for Piece 1.ii the content is rendered inline.
+    // Pre-register a host content element so CardPortal routes into it.
     const host = makeDivInBody();
     registry.register("card-1", host);
 
-    const { container } = render(
+    render(
       withDeckManager(
         <ResponderChainProvider>
           <TabContentHost tabId="tab-1" hostCardId="card-1" componentId="content-host-hello" />
@@ -60,7 +59,7 @@ describe("TabContentHost", () => {
       ),
     );
 
-    const child = container.querySelector('[data-testid="tab-host-child"]');
+    const child = host.querySelector('[data-testid="tab-host-child"]');
     expect(child).not.toBeNull();
     expect(child?.textContent).toBe("hello content");
   });
@@ -69,7 +68,7 @@ describe("TabContentHost", () => {
     const host = makeDivInBody();
     registry.register("card-1", host);
 
-    const { container } = render(
+    render(
       withDeckManager(
         <ResponderChainProvider>
           <TabContentHost tabId="tab-1" hostCardId="card-1" componentId="not-registered" />
@@ -77,7 +76,7 @@ describe("TabContentHost", () => {
       ),
     );
 
-    expect(container.querySelector("[data-testid]")).toBeNull();
+    expect(host.querySelector("[data-testid]")).toBeNull();
   });
 
   it("registers a save callback keyed by tabId on mount and unregisters on unmount", () => {

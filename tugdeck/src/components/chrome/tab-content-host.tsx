@@ -53,6 +53,7 @@ import type { PropertyStore } from "../tugways/property-store";
 import type { TabStateBag } from "../../layout-tree";
 import * as cardContentRegistry from "./card-content-registry";
 import * as tabPropertyStoreRegistry from "./tab-property-store-registry";
+import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
@@ -63,6 +64,15 @@ export interface TabContentHostProps {
   hostCardId: string;
   /** The registry componentId that produces this tab's content via `contentFactory`. */
   componentId: string;
+  /**
+   * Whether this tab is the active tab within its host card. When false, the
+   * content mounts and stays alive but is hidden via `display: none` so that
+   * identity (React state, session connections, scroll position) survives
+   * across tab switches and cross-card moves. Defaults to `true`; callers
+   * that render all tabs concurrently (DeckCanvas after Piece 1.iii) pass
+   * the correct flag.
+   */
+  isActive?: boolean;
 }
 
 /**
@@ -77,30 +87,34 @@ function useHostContentElement(hostCardId: string): HTMLDivElement | null {
   );
 }
 
-export function TabContentHost({ tabId, hostCardId, componentId }: TabContentHostProps): React.ReactElement | null {
+export function TabContentHost({ tabId, hostCardId, componentId, isActive = true }: TabContentHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
   const hostContentEl = useHostContentElement(hostCardId);
 
   // ---- PropertyStore registration ----
+  //
+  // Only the active tab publishes its PropertyStore to the tab-property-store-
+  // registry: the card-level `setProperty` responder resolves by hostCardId
+  // and must find the active tab's store (not an inactive sibling's). The
+  // `isActive` gate ensures that when all tabs in a card are mounted
+  // concurrently (Piece 1.iii), only one publishes at a time.
   const propertyStoreRef = useRef<PropertyStore | null>(null);
   const registerPropertyStore = useCallback(
     (ps: PropertyStore) => {
       propertyStoreRef.current = ps;
-      tabPropertyStoreRegistry.register(hostCardId, ps);
     },
-    [hostCardId],
+    [],
   );
 
-  // Publish/unpublish on mount/unmount so the card-level setProperty responder
-  // can resolve the PropertyStore by hostCardId (see tug-card.tsx).
   useLayoutEffect(() => {
+    if (!isActive) return;
     const ps = propertyStoreRef.current;
     if (ps) tabPropertyStoreRegistry.register(hostCardId, ps);
     return () => {
       tabPropertyStoreRegistry.unregister(hostCardId);
     };
-  }, [hostCardId]);
+  }, [hostCardId, isActive]);
 
   // ---- Persistence callbacks ----
   const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
@@ -297,21 +311,39 @@ export function TabContentHost({ tabId, hostCardId, componentId }: TabContentHos
     return null;
   }
 
+  // DOM output routes through `CardPortal` so children land inside the host
+  // card's `tugcard-content` div. The portal's stable-slot pattern preserves
+  // identity when the portal re-roots to a different host card — the
+  // mechanism that keeps tide card sessions alive across detach/merge.
+  //
+  // Non-active tabs within a card are hidden via `display: none` on the
+  // wrapper so all tabs remain mounted (identity survives tab switches too)
+  // without affecting layout.
   return (
-    <TugcardDataProvider feedData={feedData}>
-      <TugcardPropertyContext value={registerPropertyStore}>
-        <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-          <TugcardDirtyContext value={markDirty}>
-            {feedsReady ? (
-              registration.contentFactory(hostCardId)
-            ) : (
-              <div className="tugcard-loading" data-testid="tugcard-loading">
-                Loading...
-              </div>
-            )}
-          </TugcardDirtyContext>
-        </TugcardPersistenceContext>
-      </TugcardPropertyContext>
-    </TugcardDataProvider>
+    <CardPortal hostCardId={hostCardId}>
+      <div
+        data-tab-content-host
+        data-tab-id={tabId}
+        style={{
+          display: isActive ? "contents" : "none",
+        }}
+      >
+        <TugcardDataProvider feedData={feedData}>
+          <TugcardPropertyContext value={registerPropertyStore}>
+            <TugcardPersistenceContext value={registerPersistenceCallbacks}>
+              <TugcardDirtyContext value={markDirty}>
+                {feedsReady ? (
+                  registration.contentFactory(hostCardId)
+                ) : (
+                  <div className="tugcard-loading" data-testid="tugcard-loading">
+                    Loading...
+                  </div>
+                )}
+              </TugcardDirtyContext>
+            </TugcardPersistenceContext>
+          </TugcardPropertyContext>
+        </TugcardDataProvider>
+      </div>
+    </CardPortal>
   );
 }

@@ -461,15 +461,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             }}
             activeTabId={cardState.activeTabId}
             renderContent={(injected) => {
-              // Unified rendering path: DeckCanvas always constructs Tugcard
-              // directly with all props. The TabContentHost for the active
-              // tab is passed as children — it wraps `registration.contentFactory`
-              // with per-tab context providers (feed data, property store,
-              // persistence, dirty marker) that used to live in Tugcard.
-              // See components/chrome/tab-content-host.tsx.
+              // Tugcard renders card chrome only after Piece 1.iii: title
+              // bar, tab bar (when multi-tab), and the content div. The
+              // content div is the portal target for TabContentHost DOM
+              // (see the flat TabContentHost list below). Tugcard's
+              // `children` prop is unused in the DeckCanvas render path.
               const hasMultipleTabs = cardState.tabs.length > 1;
-              const activeTab = cardState.tabs.find((t) => t.id === cardState.activeTabId);
-              const activeComponentId = activeTab?.componentId ?? componentId;
               return (
                 <Tugcard
                   cardId={cardState.id}
@@ -485,20 +482,32 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                   cardTitle={hasMultipleTabs ? cardState.title : undefined}
                   acceptedFamilies={hasMultipleTabs ? cardState.acceptsFamilies : undefined}
                 >
-                  {activeTab ? (
-                    <TabContentHost
-                      key={activeTab.id}
-                      tabId={activeTab.id}
-                      hostCardId={cardState.id}
-                      componentId={activeComponentId}
-                    />
-                  ) : null}
+                  {null}
                 </Tugcard>
               );
             }}
           />
         );
       })}
+
+      {/* Flat tab-content list: every tab across every card is mounted
+          exactly once and routes its DOM via portal into its host card's
+          content div. React keys by tabId so React preserves component
+          identity when tabs move between cards (detach / merge) — the
+          crux of Piece 1.iii. Non-active tabs render with `display: none`
+          so they stay alive without affecting layout. Content factories
+          and contexts live in TabContentHost; see tab-content-host.tsx. */}
+      {cards.flatMap((cardState) =>
+        cardState.tabs.map((tab) => (
+          <TabContentHost
+            key={tab.id}
+            tabId={tab.id}
+            hostCardId={cardState.id}
+            componentId={tab.componentId}
+            isActive={tab.id === cardState.activeTabId}
+          />
+        )),
+      )}
       </div>
       </div>
     </ResponderScope>

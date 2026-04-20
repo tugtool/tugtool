@@ -824,8 +824,26 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
 
     // Tab bar is present (two tabs)
     expect(container.querySelector("[data-testid='tug-tab-bar']")).not.toBeNull();
-    // Hello contentFactory content is rendered (activeTabId = tab-1)
+
+    // After Piece 1.iii every tab's TabContentHost is mounted regardless of
+    // active status (identity preservation); the active tab's wrapper has
+    // display: contents, the inactive's display: none. Both content nodes
+    // are in the DOM. Verify the visible one via its computed display.
+    function visibilityOf(testid: string): string | null {
+      const el = container.querySelector(`[data-testid='${testid}']`) as HTMLElement | null;
+      if (!el) return null;
+      // Walk up to the tab-content-host wrapper (sets the display style).
+      let node: HTMLElement | null = el;
+      while (node && !node.hasAttribute("data-tab-content-host")) {
+        node = node.parentElement;
+      }
+      return node?.style.display ?? null;
+    }
+
     expect(container.querySelector("[data-testid='hello-tab-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='terminal-tab-content']")).not.toBeNull();
+    expect(visibilityOf("hello-tab-content")).toBe("contents");
+    expect(visibilityOf("terminal-tab-content")).toBe("none");
 
     // Switch active tab to terminal
     act(() => {
@@ -834,10 +852,11 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       });
     });
 
-    // Terminal contentFactory content now rendered
+    // Both remain in the DOM; visibility flips.
+    expect(container.querySelector("[data-testid='hello-tab-content']")).not.toBeNull();
     expect(container.querySelector("[data-testid='terminal-tab-content']")).not.toBeNull();
-    // Hello content is no longer in DOM (inactive tab unmounts -- D04)
-    expect(container.querySelector("[data-testid='hello-tab-content']")).toBeNull();
+    expect(visibilityOf("hello-tab-content")).toBe("none");
+    expect(visibilityOf("terminal-tab-content")).toBe("contents");
   });
 });
 
