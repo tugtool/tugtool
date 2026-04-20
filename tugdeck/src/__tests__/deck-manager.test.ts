@@ -24,6 +24,7 @@ import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { DeckManager } from "../deck-manager";
 import { registerCard, _resetForTest } from "../card-registry";
 import type { CardRegistration } from "../card-registry";
+import { serialize } from "../serialization";
 
 // ---------------------------------------------------------------------------
 // Global fetch stub
@@ -481,6 +482,68 @@ describe("DeckManager.moveCard", () => {
     );
 
     expect(log).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// arrangeCards lifecycle events (H-A2)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.arrangeCards", () => {
+  it("cascade fires cardWillMove/cardDidMove only on cards whose position changed (H-A2)", () => {
+    registerCard(makeRegistration("hello"));
+    const id1 = manager.addCard("hello") as string;
+    const id2 = manager.addCard("hello") as string;
+    const id3 = manager.addCard("hello") as string;
+
+    // addCard lays out the cards in cascade positions already. Move
+    // one card off the cascade so arrangeCards("cascade") actually
+    // changes its position; the other two stay put.
+    const card2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
+    manager.moveCard(id2, { x: 500, y: 500 }, card2.size);
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillMove(null, (id) =>
+      log.push(`willMove:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidMove(null, (id) =>
+      log.push(`didMove:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillResize(null, (id) =>
+      log.push(`willResize:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidResize(null, (id) =>
+      log.push(`didResize:${id}`),
+    );
+
+    manager.arrangeCards("cascade");
+
+    // Only card2 actually moves back; card1 and card3 already at
+    // cascade positions. Cascade doesn't change size.
+    expect(log).toEqual([`willMove:${id2}`, `didMove:${id2}`]);
+    expect(id1).toBeTruthy();
+    expect(id3).toBeTruthy();
+  });
+
+  it("tile fires both cardWillMove/cardDidMove and cardWillResize/cardDidResize (H-A2)", () => {
+    registerCard(makeRegistration("hello"));
+    const id1 = manager.addCard("hello") as string;
+    const id2 = manager.addCard("hello") as string;
+
+    const moveLog: string[] = [];
+    const resizeLog: string[] = [];
+    manager.cardLifecycle.observeCardDidMove(null, (id) =>
+      moveLog.push(id),
+    );
+    manager.cardLifecycle.observeCardDidResize(null, (id) =>
+      resizeLog.push(id),
+    );
+
+    manager.arrangeCards("tile");
+
+    // Tile commits both position and size for all cards.
+    expect(moveLog.sort()).toEqual([id1, id2].sort());
+    expect(resizeLog.sort()).toEqual([id1, id2].sort());
   });
 });
 
@@ -1390,6 +1453,45 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     // Inherits acceptsFamilies from source card
     expect(newCard.acceptsFamilies).toEqual(["developer"]);
   });
+
+  it("fires construction + full activation transition on the detached card (H-A3)", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    manager.addTab(cardId, "hello"); // enable detach (last-tab guard)
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
+      log.push(`construct:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willAct:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didAct:${id}`),
+    );
+    log.length = 0; // clear initial-sync
+
+    const card = manager.getDeckState().cards[0];
+    const tabToDetach = card.tabs[1];
+    const newCardId = manager.detachTab(cardId, tabToDetach.id, {
+      x: 200,
+      y: 200,
+    }) as string;
+
+    expect(log).toEqual([
+      `construct:${newCardId}`,
+      `willDeact:${cardId}`,
+      `willAct:${newCardId}`,
+      `didDeact:${cardId}`,
+      `didAct:${newCardId}`,
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1496,6 +1598,84 @@ describe("DeckManager.mergeTab", () => {
     const tabsAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     expect(tabsAfter).toEqual(tabsBefore);
   });
+
+  it("fires destruction + target activation when an active single-tab source is merged (H-A4)", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const srcId = manager.addCard("hello") as string;
+    const tgtId = manager.addCard("terminal") as string;
+    // tgt is top of stack (active). Manually activate src so src is
+    // active and has exactly one tab.
+    manager.activateCard(srcId);
+
+    const srcCard = manager.getDeckState().cards.find((c) => c.id === srcId)!;
+    expect(srcCard.tabs.length).toBe(1);
+    const tabId = srcCard.tabs[0].id;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`willDestroy:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willAct:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didAct:${id}`),
+    );
+    log.length = 0; // clear initial-sync
+
+    manager.mergeTab(srcId, tabId, tgtId, 0);
+
+    expect(log).toEqual([
+      `willDeact:${srcId}`,
+      `didDeact:${srcId}`,
+      `willDestroy:${srcId}`,
+      `willAct:${tgtId}`,
+      `didAct:${tgtId}`,
+    ]);
+    expect(manager.getDeckState().cards.find((c) => c.id === srcId)).toBeUndefined();
+  });
+
+  it("fires destruction only (no activation) when a non-active single-tab source is merged (H-A4)", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const srcId = manager.addCard("hello") as string;
+    const tgtId = manager.addCard("terminal") as string;
+    // tgt is active (top-of-stack), src is single-tab but not active.
+
+    const srcCard = manager.getDeckState().cards.find((c) => c.id === srcId)!;
+    const tabId = srcCard.tabs[0].id;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`willDestroy:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willAct:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didAct:${id}`),
+    );
+    log.length = 0;
+
+    manager.mergeTab(srcId, tabId, tgtId, 0);
+
+    // Source destroyed but wasn't active — no deactivate/activate
+    // transition. Only destruction fires.
+    expect(log).toEqual([`willDestroy:${srcId}`]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1546,6 +1726,40 @@ describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
       expect(mgr2.getTabState("tab-init-1")?.scroll?.x).toBe(5);
       expect(mgr2.getTabState("tab-init-2")?.content).toBe("saved");
       expect(mgr2.getTabState("tab-init-3")).toBeUndefined();
+    } finally {
+      mgr2.destroy();
+      c2.remove();
+    }
+  });
+
+  it("loadLayout fires cardDidFinishConstruction for every loaded card (H-A5)", () => {
+    registerCard(makeRegistration("hello"));
+
+    // Build a layout with two cards by running addCard on a throwaway
+    // manager and serializing its state into the wire format.
+    const c1 = makeContainer();
+    const conn1 = makeMockConnection();
+    const primer = new DeckManager(c1, conn1);
+    primer.addCard("hello");
+    primer.addCard("hello");
+    const layout = serialize(primer.getDeckState());
+    primer.destroy();
+    c1.remove();
+
+    // Fresh manager loads the serialized layout. Subscribe via the
+    // wildcard initial-sync: every card in `constructedCards` should
+    // trigger the callback exactly once.
+    const c2 = makeContainer();
+    const conn2 = makeMockConnection();
+    const mgr2 = new DeckManager(c2, conn2, layout);
+    try {
+      const constructed: string[] = [];
+      mgr2.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
+        constructed.push(id),
+      );
+      expect(constructed.length).toBe(2);
+      const loadedIds = mgr2.getDeckState().cards.map((c) => c.id).sort();
+      expect(constructed.sort()).toEqual(loadedIds);
     } finally {
       mgr2.destroy();
       c2.remove();

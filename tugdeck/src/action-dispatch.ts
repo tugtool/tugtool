@@ -294,13 +294,17 @@ export function initActionDispatch(
 
   // focus-card: Bring a card to front by ID.
   // Swift sends focus-card with cardId: string from the View menu card list.
+  // Routes through `activateCard` (the single entry point for activation
+  // lifecycle) so selecting a card from the View menu fires the full
+  // will/didDeactivate + will/didActivate transition and promotes the
+  // responder chain. `focusCard` alone would only reorder z-order.
   registerAction("focus-card", (payload) => {
     const cardId = payload.cardId;
     if (typeof cardId !== "string") {
       console.warn("focus-card: missing or invalid cardId", payload);
       return;
     }
-    deckManager.focusCard(cardId);
+    deckManager.activateCard(cardId);
   });
 
   // show-card: Add a card by componentId (Spec S08)

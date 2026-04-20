@@ -54,8 +54,14 @@ export interface IDeckManagerStore {
    * responder chain's key card, and notifies lifecycle observers.
    * All activation paths (pointerdown, CYCLE_CARD, initial load,
    * programmatic) route through this method.
+   *
+   * Optional `knownPreviousActive` is an escape hatch for callers
+   * that have mutated the store before calling `activateCard` (e.g.,
+   * `addCard` appends first, then activates). Passing `null`
+   * explicitly forces the transition to fire activation-only (no
+   * prior to deactivate).
    */
-  activateCard: (cardId: string) => void;
+  activateCard: (cardId: string, knownPreviousActive?: string | null) => void;
 
   /**
    * Subscribe to card CONSTRUCTION events. Fires per card when

@@ -290,8 +290,11 @@ export class DeckManager implements IDeckManagerStore {
    * Activate a card. Thin pass-through to `cardLifecycle.activateCard`.
    * See `CardLifecycle.activateCard` for the full contract.
    */
-  public activateCard = (cardId: string): void => {
-    this.cardLifecycle.activateCard(cardId);
+  public activateCard = (
+    cardId: string,
+    knownPreviousActive?: string | null,
+  ): void => {
+    this.cardLifecycle.activateCard(cardId, knownPreviousActive);
   };
 
   /**
@@ -414,6 +417,19 @@ export class DeckManager implements IDeckManagerStore {
     // before root.render() executes: React may synchronously flush the first render
     // and call subscribe/getSnapshot during it.
     this.deckState = this.loadLayout();
+
+    // Fire CONSTRUCTION for every card loaded from the saved layout
+    // so the lifecycle's `constructedCards` set matches reality and
+    // later-subscribing delegates receive initial-sync correctly.
+    // Must happen BEFORE `reactRoot.render()` so the constructed-set
+    // is populated by the time card components mount and subscribe.
+    // No observers are attached yet at this point, so the fires
+    // record state without producing side effects. Initial activation
+    // (of `initialFocusedCardId`, if any) is handled downstream by
+    // `DeckCanvas`'s mount effect, which calls `activateCard(id, null)`.
+    for (const card of this.deckState.cards) {
+      this.cardLifecycle.notifyCardDidFinishConstruction(card.id);
+    }
 
     // Push the initial card list to the Swift host so the View menu
     // is populated before the user triggers any state changes.
@@ -797,8 +813,38 @@ export class DeckManager implements IDeckManagerStore {
       });
     }
 
+    // Diff per-card changes so the lifecycle fires move / resize events
+    // on exactly the cards that actually moved / resized. Mirrors the
+    // pattern in `moveCard`. All `will` events fire before the state
+    // commit; all `did` events fire after.
+    const changes: { id: string; positionChanged: boolean; sizeChanged: boolean }[] = [];
+    for (let i = 0; i < cards.length; i++) {
+      const before = cards[i];
+      const after = arranged[i];
+      changes.push({
+        id: after.id,
+        positionChanged:
+          before.position.x !== after.position.x ||
+          before.position.y !== after.position.y,
+        sizeChanged:
+          before.size.width !== after.size.width ||
+          before.size.height !== after.size.height,
+      });
+    }
+
+    for (const ch of changes) {
+      if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
+      if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
+    }
+
     this.deckState = { ...this.deckState, cards: arranged };
     this.notify();
+
+    for (const ch of changes) {
+      if (ch.positionChanged) this.cardLifecycle.notifyCardDidMove(ch.id);
+      if (ch.sizeChanged) this.cardLifecycle.notifyCardDidResize(ch.id);
+    }
+
     this.scheduleSave();
   }
 
@@ -1174,6 +1220,11 @@ export class DeckManager implements IDeckManagerStore {
       acceptsFamilies: card.acceptsFamilies,
     };
 
+    // Capture the previously-active card BEFORE the mutation. The
+    // append moves top-of-stack to the new card; without this
+    // snapshot the activation below would same-card-bail.
+    const previouslyActive = this.cardLifecycle.getActiveCardId();
+
     // Append new card to end (highest z-index).
     this.deckState = {
       ...this.deckState,
@@ -1181,6 +1232,12 @@ export class DeckManager implements IDeckManagerStore {
     };
     this.notify();
     this.scheduleSave();
+
+    // Fire construction for the newly-created card, then activate it
+    // through the full lifecycle — mirrors `addCard`'s pattern.
+    this.cardLifecycle.notifyCardDidFinishConstruction(newCardId);
+    this.cardLifecycle.activateCard(newCardId, previouslyActive);
+
     return newCardId;
   }
 
@@ -1210,6 +1267,28 @@ export class DeckManager implements IDeckManagerStore {
     const targetCard = this.deckState.cards.find((c) => c.id === targetCardId);
     if (!targetCard) return;
 
+    // The splice will destroy the source card iff it had only one tab
+    // (i.e., this merge moves the tab away, leaving the source empty).
+    // Detect that case up front so we can fire lifecycle events for the
+    // destruction. Must compute BEFORE the splice so `sourceCard.tabs`
+    // still reflects the pre-splice state.
+    const sourceWillBeDestroyed = sourceCard.tabs.length === 1;
+    const sourceWasActive =
+      sourceWillBeDestroyed &&
+      this.cardLifecycle.getActiveCardId() === sourceCardId;
+
+    // Fire will/didDeactivate on the source card if it was active and
+    // will be destroyed by the splice. Fire willBeginDestruction if
+    // the source will be destroyed at all. All must fire BEFORE the
+    // store mutation so observers can still read the source's state.
+    if (sourceWasActive) {
+      this.cardLifecycle.notifyCardWillDeactivate(sourceCardId);
+      this.cardLifecycle.notifyCardDidDeactivate(sourceCardId);
+    }
+    if (sourceWillBeDestroyed) {
+      this.cardLifecycle.notifyCardWillBeginDestruction(sourceCardId);
+    }
+
     // Remove tab from source card.
     const { updatedCards, removedTab } = this._spliceTabFromCards(
       this.deckState.cards,
@@ -1233,6 +1312,14 @@ export class DeckManager implements IDeckManagerStore {
     this.deckState = { ...this.deckState, cards: finalCards };
     this.notify();
     this.scheduleSave();
+
+    // If the source was active and has been destroyed, activate the
+    // target as the new home for the merged tab. The source's
+    // deactivation already fired above, so pass `null` as the
+    // known-previous — the transition emits activation-only.
+    if (sourceWasActive) {
+      this.cardLifecycle.activateCard(targetCardId, null);
+    }
   }
 
   // ---- Collapse management (Step 3) ----

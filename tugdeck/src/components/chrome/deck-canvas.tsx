@@ -338,7 +338,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     const cardExists = snapshot.cards.some((c) => c.id === focusedCardId);
     if (!cardExists) return;
 
-    store.activateCard(focusedCardId);
+    // Pass `null` as known-previous: the app just launched, no card
+    // was previously active in this session. Without this the loaded
+    // top-of-stack card would same-card-bail inside activateCard and
+    // fire no will/didActivate — delegates waiting on activation
+    // would miss the event on reload.
+    store.activateCard(focusedCardId, null);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fade out the startup overlay once DeckCanvas has committed its first render.
