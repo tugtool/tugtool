@@ -1624,7 +1624,7 @@ describe("DeckManager.moveCardToStack", () => {
     expect(cardsAfter).toEqual(cardsBefore);
   });
 
-  it("fires destruction + target activation when an active single-card source is merged (H-A4)", () => {
+  it("fires deactivation + target activation on the merged card when an active single-card source is merged", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const srcCardId = manager.addCard("hello") as string;
@@ -1634,9 +1634,11 @@ describe("DeckManager.moveCardToStack", () => {
     // tgt is top-of-stack (active). Manually activate src so src is active.
     manager.activateCard(srcCardId);
 
-    // Under the two-table model, destruction fires on the stack id (the
-    // "frame" that's going away); card identity is preserved and moves to
-    // the target.
+    // Card identity is preserved across merge — the card moves from source
+    // to target, so no `cardWillBeginDestruction` fires for this path. The
+    // source *stack* is removed as a side effect of emptying, but a stack
+    // vanishing is not a card-lifecycle event. The test asserts absence of
+    // that spurious destruction signal.
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
       log.push(`willDeact:${id}`),
@@ -1657,20 +1659,20 @@ describe("DeckManager.moveCardToStack", () => {
 
     manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
 
-    // Deactivation fires on the source card identity; destruction fires on
-    // the source stack identity; activation lands on the merged card in
-    // its new home.
     expect(log).toEqual([
       `willDeact:${srcCardId}`,
       `didDeact:${srcCardId}`,
-      `willDestroy:${srcStackId}`,
       `willAct:${srcCardId}`,
       `didAct:${srcCardId}`,
     ]);
+    // No spurious destruction event in the log.
+    expect(log.some((entry) => entry.startsWith("willDestroy:"))).toBe(false);
+    // Source stack is gone, target survives.
     expect(manager.getDeckState().stacks.find((s) => s.id === srcStackId)).toBeUndefined();
+    expect(manager.getDeckState().stacks.find((s) => s.id === tgtStackId)).toBeDefined();
   });
 
-  it("fires destruction only (no activation) when a non-active single-card source is merged (H-A4)", () => {
+  it("fires no card-lifecycle events when a non-active single-card source is merged", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const srcCardId = manager.addCard("hello") as string;
@@ -1699,9 +1701,13 @@ describe("DeckManager.moveCardToStack", () => {
 
     manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
 
-    // Source stack destroyed but its sole card wasn't active — no deactivate
-    // / activate transition. Only stack destruction fires.
-    expect(log).toEqual([`willDestroy:${srcStackId}`]);
+    // Card identity preserved (no destruction); source's sole card was not
+    // active (no deactivation); tgt stays active with its own activeCardId
+    // replaced by the merged card, but the lifecycle's active-card pointer
+    // is still tgtCardId's sibling — the merge does not re-fire activation
+    // events for the moved card because it was not the first responder
+    // before or after.
+    expect(log).toEqual([]);
   });
 });
 

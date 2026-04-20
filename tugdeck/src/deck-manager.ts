@@ -990,12 +990,16 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId !== null &&
       sourceStack.cardIds.includes(activeCardId);
 
+    // Merge preserves card identity: the card moves from source to target,
+    // nothing dies. If the source stack empties and is removed, no card is
+    // destroyed — the only card that was in it is the one being merged.
+    // We therefore fire NO `cardWillBeginDestruction` in this path. The old
+    // code fired it with the source *stackId*, which smuggled a stack id
+    // through a card-lifecycle event and confused wildcard observers that
+    // expected every payload to resolve back to a live card.
     if (sourceWasActive && activeCardId) {
       this.cardLifecycle.notifyCardWillDeactivate(activeCardId);
       this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
-    }
-    if (sourceWillBeDestroyed) {
-      this.cardLifecycle.notifyCardWillBeginDestruction(sourceStackId);
     }
 
     // Remove from source.
