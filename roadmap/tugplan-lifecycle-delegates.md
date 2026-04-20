@@ -743,6 +743,58 @@ Invariants:
 
 **Note on scope:** This step is mechanical. No new lifecycle events. No delegate-semantic changes. The focus bug reproduction from the motivation STILL manifests at the end of 11.6.1a (because card-level activate/deactivate still fires only on stack-level activation) — that's fixed in 11.6.1b. Verification criterion for "this step is done" is: identity-preservation tests pass, tide's WebSocket survives every card-movement operation, and all pre-existing tests pass under the new API names.
 
+**Execution plan (incremental commits):**
+
+A single-shot rewrite of this step failed once already (dropped ~95 tests and silently deferred the portal split). To land 11.6.1a reliably, break the work into five commits in the order below. Each commit builds a green tree and a green test suite. Each is independently reviewable.
+
+*Piece 1 — Portal rendering for tab content (current data model preserved).*
+- New file `tugdeck/src/components/chrome/card-content-registry.ts`: module-level registry mapping `cardId → HTMLDivElement` with subscribe-on-change semantics.
+- New file `tugdeck/src/components/chrome/card-portal.tsx`: a `<CardPortal tabId hostCardId>` component that looks up the host card's content div from the registry and `createPortal`s its children into it. Subscribes to registry updates so a host-id change re-roots the portal without unmounting children.
+- Modify `tugdeck/src/components/chrome/card-frame.tsx`: stop rendering the active tab's content directly. Leave an empty content `<div>` with a ref that registers with the registry on mount (keyed by `cardId`) and unregisters on unmount.
+- Modify `tugdeck/src/components/chrome/deck-canvas.tsx`: render two flat lists as siblings — (a) `cards.map(c => <CardFrame />)` for chrome; (b) `cards.flatMap(c => c.tabs).map(tab => <CardPortal key={tab.id} tabId={tab.id} hostCardId={lookupHostCardId(tab.id)} />)` for content. Only the active tab of each card is visually displayed (CSS `display: none` on non-active tabs' content div); all are mounted.
+- New identity-preservation tests: mount-probe card component (`useEffect(() => { mountCount++; return () => unmountCount++; }, [])`); perform `addTab`, `setActiveTab`, `detachTab`, `mergeTab`; assert `mountCount === 1` and `unmountCount === 0` on the probed card across every operation.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green; new tests pass. **Effect: the detach focus bug's root cause (content unmount) is resolved; tide's WebSocket survives every card operation.**
+- Data model unchanged. No API rename. Commit boundary is purely additive + CardFrame's render change.
+
+*Piece 2 — Data-model rename and store API rewrite (single atomic commit).*
+- `tugdeck/src/layout-tree.ts`: rename existing `CardState` → `CardStackState`; change field `tabs: TabItem[]` → `cardIds: string[]`; `activeTabId` → `activeCardId`. Introduce a new `CardState { id, componentId, title, closable, state?: TabStateBag }`. Update `DeckState` to `{ cards: CardState[]; stacks: CardStackState[]; activeStackId?: string; focusedCardId?: string }`. Document invariants in JSDoc.
+- `tugdeck/src/deck-manager.ts`: rewrite internals against the two-table model. Rename the public mutators: `addTab` → `addCardToStack`, `detachTab` → `detachCard`, `mergeTab` → `moveCardToStack`, `setActiveTab` → `setActiveCardInStack`, `reorderTab` → `reorderCardInStack`, `toggleCardCollapse` → `toggleStackCollapse`. `getTabState` / `setTabState` → `getCardState` / `setCardState` (the id being keyed is now `cardId`, which IS the former `tabId`; tugbank storage keys unchanged so no tabstate-data migration needed). `addCard(componentId)` keeps its name and public shape (creates a Card, wraps it in a new Stack of 1, makes the Stack active, returns the cardId). `handleCardClosed(cardId)` keeps its name (removes a Card; if its Stack becomes empty, removes the Stack). `handleCardMoved` keeps its name but the `id` it accepts is now a `stackId` (stacks own position/size, not cards).
+- `tugdeck/src/deck-manager-store.ts`: rewrite `IDeckManagerStore` to match. Keep the `activateCard(cardId, knownPreviousActive?)` signature intact in this piece (11.6.1b removes `knownPreviousActive`).
+- `tugdeck/src/components/chrome/card-frame.tsx`: prop type now carries `CardStackState` (rename the prop if helpful; still register by the stack's id in the registry, so `CardPortal`'s `hostCardId` becomes `hostStackId` at every callsite).
+- `tugdeck/src/components/chrome/card-portal.tsx`: rename `hostCardId` → `hostStackId`; `tabId` → `cardId`.
+- `tugdeck/src/components/chrome/deck-canvas.tsx`: render stacks as chrome; render the flat card list as portals using `deckState.cards`.
+- `tugdeck/src/action-dispatch.ts`: `new-tab-on-active-card` routes to `addCardToStack(activeStackId, componentId)`. `focus-card` still accepts a cardId publicly; internally looks up the host stack and activates.
+- `tugdeck/src/tab-drag-coordinator.ts`: route reorder/detach/merge to the new methods. Rename variables so `tabId`-as-content-identity reads as `cardId`.
+- `tugdeck/src/main.tsx` and any other callers: propagate the rename.
+- `tugdeck/src/serialization.ts`: emit `version: 2` blobs. On load: if blob lacks `version` or has `version !== 2`, run the v1→v2 migration described in the main Work section. Preserve all tab ids as card ids, all card ids as stack ids. Preserve tugbank tabstate row keys by keeping cardId === former tabId.
+- `tugdeck/src/__tests__/*`: mechanical rename of call sites. Add a `serialization.test.ts` case (or extend existing) for the v1→v2 migration: hand-authored v1 blob loads into an expected v2 DeckState; save round-trip writes `version: 2`.
+- **Do NOT delete existing tests.** Every test must be migrated to the new API, not removed. If a test becomes meaningless under the new model, explain in a short comment and leave the assertion in place operating on the new equivalent.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with a test count ≥ baseline (Piece 1 end-state baseline, not further reduced). Manual check that every `addTab` / `detachTab` / `mergeTab` / `setActiveTab` / `reorderTab` call in the codebase is gone.
+
+*Piece 3 — Rename `CardFrame` component and file to `StackFrame` / `stack-frame.tsx`.*
+- `tugdeck/src/components/chrome/card-frame.tsx` → `tugdeck/src/components/chrome/stack-frame.tsx`. `CardFrame` export → `StackFrame`. Prop names `card` / `cardState` → `stack` / `stackState`. `CardFrameProps` → `StackFrameProps`.
+- Update every import site.
+- Update every test file that references `CardFrame`.
+- Pure rename commit. Behavior unchanged.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green.
+
+*Piece 4 — Portal DOM containment test + additional identity-preservation coverage.*
+- Add a test that asserts, after `moveCardToStack`, the moved card's rendered root element is contained within the destination stack's content div (via `document.getElementById` or a ref-based query; use whichever pattern the existing tests use).
+- Add tests covering the invariants listed in the main Work section: no orphan cards, no stacks with empty cardIds, every activeCardId ∈ cardIds, activeStackId references a real stack. One test per invariant, exercised through a mutation that would break the invariant if the implementation is wrong.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with at least 4 new tests (1 containment + 3 invariant).
+
+*Piece 5 — Manual smoke and step close.*
+- Run tugdeck in dev (HMR). Execute the manual smoke checklist from the main Verification block. If any step fails, identify which of Pieces 1–4 regressed and fix before declaring done.
+- Update this step's section header in the plan to reflect completion (status note at the end of the Work block).
+- No code change in this piece.
+
+**Rules for executing each piece:**
+- Each piece lands as exactly one commit with a clear commit message.
+- `bun x tsc --noEmit` and `bun test` must pass at HEAD of every piece before moving to the next.
+- Do not edit files outside the piece's stated file list. If an unexpected file needs a change, pause and surface it before editing.
+- Do not delete tests. If a test is meaningless under the new model, migrate it rather than remove it.
+- If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
+
 #### Step 11.6.1b — First-responder `cardDidActivate` semantics + remove card-level focus duplication {#step-11-6-1b}
 
 **Motivation:** With 11.6.1a in place, card identity is preserved across all movement operations. The last piece is making `cardDidActivate` / `cardWillDeactivate` fire on the right transitions: not just when a stack becomes the active stack, but whenever **the composite bit "this card is the first responder"** changes.
