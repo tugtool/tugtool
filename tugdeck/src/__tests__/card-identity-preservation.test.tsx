@@ -81,6 +81,7 @@ class Store implements IDeckManagerStore {
     this.notify();
   };
 
+  focusCard = (): void => {};
   activateCard = (): void => {};
   observeCardDidFinishConstruction = (): (() => void) => () => {};
   observeCardDidActivate = (): (() => void) => () => {};

@@ -862,6 +862,124 @@ The original plan split the chrome rename (`CardFrame` → `StackFrame`) into it
 - `bun test` green with a test count ≥ the pre-Piece-2 baseline. No regressions.
 - Grep sweep: no occurrence of `addTab`, `detachTab`, `mergeTab`, `setActiveTab`, `reorderTab`, `TabItem`, `TabContentHost`, `CardFrame` (as a component) in `tugdeck/src/`. `tabId` may still appear as a variable name in legacy comments or in `tugbank` row prefixes; surface any remaining occurrences in the commit message.
 
+*Piece 2.5 — Audit and regression cleanup.*
+
+Piece 2 landed in four commits (`4d1191f0`, `8f63ef3a`, `a629f490`, `64ee223d`). Post-merge audit surfaced one critical runtime regression and a set of design smells and code-quality defects that must be fixed before Piece 3. **Every item below is in-scope; none is acceptable to carry forward into Piece 3's invariant tests.**
+
+**P0 — Critical regression: click-to-activate is broken.**
+
+`StackFrame.handleFramePointerDown` fires `onCardFocused(id)` with `stackState.id`. `deck-canvas.tsx` wires that to `handleCardActivate`, which calls `store.activateCard(id)`. In the pre-split model the id was both the frame id and the card id — same value — so the call worked by accident. After the two-table split the id is a **stackId**, but `activateCard` expects a **cardId**. No card in the lifecycle's `constructedCards` set matches, so no will/didActivate fires and the responder chain never promotes. z-order also stays stale because the click path no longer calls `store.focusCard(cardId)`.
+
+Fix:
+- In `deck-canvas.tsx`, resolve the clicked stack's `activeCardId` and pass it to both `store.activateCard(cardId)` and `store.focusCard(cardId)`. The cleanest shape is a single handler like:
+  ```ts
+  const handleStackActivate = useCallback(
+    (stackId: string) => {
+      const stack = store.getSnapshot().stacks.find((s) => s.id === stackId);
+      if (!stack) return;
+      store.focusCard(stack.activeCardId);
+      store.activateCard(stack.activeCardId);
+    },
+    [store],
+  );
+  ```
+- Rename `StackFrame.onCardFocused` → `onStackActivated` (the prop receives a stackId, not a cardId — the current name is leftover from the pre-split vocabulary).
+- Adjust the resize-start and frame-pointer-down callers inside `StackFrame` to pass `id` (the stackId) unchanged; the resolution to `activeCardId` happens in `deck-canvas.tsx`.
+- Add a regression test in `deck-canvas.test.tsx`: render a deck with two stacks, fire a pointer-down on the non-focused stack, assert (a) `store.activateCard` was called with the stack's `activeCardId` (not the stack id), and (b) `store.focusCard` was called with the same cardId. If there is an existing test for click-to-focus, extend it; do not duplicate.
+- Manual smoke after the fix: open two cards, click the non-active card, verify its title bar takes the focused style and a `cardDidActivate` observer fires.
+
+**P1 — Lifecycle API abuse: `notifyCardWillBeginDestruction(stackId)` in `_moveCardToStack`.**
+
+When a single-card source stack is merged away, `_moveCardToStack` fires `cardLifecycle.notifyCardWillBeginDestruction(sourceStackId)`. No card is actually destroyed (identity is preserved across the move), and the payload is a **stackId** being smuggled through a card-level event. A wildcard observer that does `lookupCard(id)` on the payload sees nothing. The test at `deck-manager.test.ts:~1671` codifies the misuse.
+
+**Decision: option (a). Drop the event entirely.** Nothing dies when a stack is emptied-by-merge; the destruction event is a false positive. Update the test to assert the event does *not* fire in the merge-destroy path. No stack-lifecycle event subsystem is added.
+
+Re-audit `_closeStack` too: every card in the closed stack genuinely dies, so firing `notifyCardWillBeginDestruction(cid)` per card is correct there and stays. Only the merge path is wrong.
+
+**P1 — Rename `handleCardClosed` → `handleStackClosed`.**
+
+`handleCardClosed` is bound to `_closeStack` and is called with a stackId. The matching `StackFrame.onCardClosed` prop is likewise a stack-close callback. These are the last vocabulary holdovers in the public store API surface. Rename:
+- `DeckManager.handleCardClosed` → `handleStackClosed` (and `IDeckManagerStore` too).
+- `StackFrame.onCardClosed` → `onStackClosed`.
+- Any test spies / mock stores that reference the old name.
+- Production call sites: `deck-canvas.tsx` binds `store.handleStackClosed` in the `handleClose` wrapper; the gallery-ref bookkeeping stays unchanged.
+
+The companion `removeCard(stackId, cardId)` (close a single card in a stack) keeps its name — it's correct.
+
+**P1 — Invariants: enforce, don't document.**
+
+`layout-tree.ts` lists five invariants. Nothing validates them at the code level.
+
+Add a `validateDeckState(state): void` helper that throws in dev/test builds when any invariant is violated:
+1. every `stack.cardIds` entry references a real `state.cards[].id`;
+2. every card appears in exactly one stack's `cardIds` (no orphans, no duplicates);
+3. no stack has `cardIds.length === 0`;
+4. every `stack.activeCardId` is a member of that stack's `cardIds`;
+5. when `state.activeStackId` is set, it references a real stack.
+
+Call it from `applyLayout` (always) and from a dev-only check inside `notify()` (behind an `import.meta.env.DEV` guard or equivalent — do NOT run in production). Piece 3's invariant tests will drive this helper directly instead of re-implementing the check.
+
+**P2 — Deduplicate the splice-active-card pattern.**
+
+`_removeCard`, `_detachCard`, and `_moveCardToStack` each compute "remove cardId from stack, fall back `activeCardId` to previous index if the removed card was active." Three copies of the same 6–10 line pattern. Extract:
+```ts
+function spliceCardFromStack(stack, cardId): {
+  cardIds: readonly string[];
+  activeCardId: string | null;  // null when the stack has become empty
+}
+```
+Consume from all three mutators. If the resulting `cardIds` is empty, the caller decides what to do (close the stack, or let it be merged-away).
+
+**P2 — Hoist `cardsById` map in `deck-canvas.tsx`.**
+
+Currently rebuilt inside `sortedStacks.map((stackState) => { const cardsById = new Map(...); ... })`. Move it one scope out so it's built once per render.
+
+**P2 — `focusedCardId` persistence clarification.**
+
+`focusedCardId` lives on `DeckState` but is persisted separately from the layout blob (via `putFocusedCardId`). Two persistence paths for one field. Options:
+- Keep it on DeckState (runtime access via `getSnapshot`) but drop it from the serialized layout blob — `serialize()` already emits it; `deserialize()` already reads it. Pick one persistence path, not both. If `putFocusedCardId` is the canonical one, strip it from the v2 blob. If the v2 blob is canonical, delete `putFocusedCardId` and read from the layout on reload.
+- Document explicitly in the layout-tree JSDoc which persistence path wins on reload when they disagree.
+
+Pick the simpler path: `putFocusedCardId` stays, `focusedCardId` is removed from the serialized v2 shape. Update `parseV2`, `serialize`, and the migration accordingly.
+
+**P2 — Dead code cleanup.**
+
+- `DeckManager.handleResize = (): void => {}` plus its matching `window.addEventListener("resize", this.handleResize)` and `removeEventListener`: delete both together. The no-op arrow has no callers that need it.
+- `buildDefaultLayout(_canvasWidth, _canvasHeight)` takes two unused parameters. Change to `buildDefaultLayout(): DeckState { return { cards: [], stacks: [] }; }` and update call sites in `deck-manager.ts`.
+- In `deck-canvas.tsx`, the `tabCount` field sent to the Swift `cardList` handler retains the legacy "tab" name. The Swift side still expects that key — leave it, but add a one-line comment above `pushCardListToHost` in `deck-manager.ts` noting that `tabCount` is a Swift wire field, not project vocabulary.
+
+**P2 — `galleryStackIdRef` robustness.**
+
+If a user detaches the gallery card into its own stack, `galleryStackIdRef.current` still points at the old (now-gone) stackId. The next `show-component-gallery` dispatch cannot find the tracked stack and creates a new one — producing two gallery stacks. Fix: on every render, verify the ref against the live snapshot and clear it if the stack no longer exists. Simplest shape is a `useLayoutEffect` guarded on `stacks` identity that runs `if (galleryStackIdRef.current && !stacks.find(...)) galleryStackIdRef.current = null;`.
+
+Alternatively, look up the gallery stack by walking `deckState.cards` for a card whose `componentId === "gallery-buttons"` and returning its host stack id. The ref becomes pure derived state and can be removed. Prefer this if it doesn't duplicate work on hot paths; it's more honest.
+
+**P2 — Test fixture helper refactor in `deck-canvas.test.tsx`.**
+
+`makeCardState(id, componentId)` is a surviving piece of the old pre-split naming — it produces a single-card StackSpec, not a CardState. Rename to `makeSingleCardStack(stackId, componentId)` and `makeMultiCardStack(stackId, cards)`. Update call sites. The `StackSpec.cards` interior list uses field names `id/componentId/title/closable` — those are Card fields and stay as-is.
+
+**Sequencing within Piece 2.5:**
+
+Land each subsection as a separate commit in roughly this order:
+1. **P0 click-to-activate fix** (blocks user interaction).
+2. **P1 `notifyCardWillBeginDestruction(stackId)` decision and fix.**
+3. **P1 `handleCardClosed` → `handleStackClosed` rename** (public API change).
+4. **P1 `validateDeckState` helper + applyLayout/notify hook.**
+5. **P2 nits bundle**: splice helper extraction, `cardsById` hoist, dead code deletion, `focusedCardId` dedup, `galleryStackIdRef` robustness, test helper rename, Swift wire comment.
+
+Each commit: `bun x tsc --noEmit` clean, `bun test` green with test count ≥ post-Piece-2 baseline (2257). P0 adds one regression test; P1 invariants commit does not add tests (Piece 3 does that); P2 bundles may add small helper tests.
+
+**Verification (Piece 2.5 as a whole):**
+- `bun x tsc --noEmit` clean.
+- `bun test` ≥ 2258 pass.
+- Manual smoke: two-card deck, click the non-active card, verify title-bar focus style flips and `cardDidActivate` fires. Drag a card out of a two-card stack, verify the detached stack activates without a spurious destruction event.
+- Grep sweep: no `handleCardClosed` in `tugdeck/src/`; no `onCardFocused` prop on `StackFrame`; no `onCardClosed` prop on `StackFrame`.
+
+**Explicitly out of scope for 2.5 (defer to 11.6.1b or later):**
+- Broader store-API decomposition (the `IDeckManagerStore` surface is still wide — that's a Phase 12+ concern).
+- Stack-lifecycle events as a first-class subsystem (only add if option (b) is picked under P1, which is unlikely).
+- `tabCount` wire-field renaming (requires Swift-side coordination).
+
 *Piece 3 — Portal DOM containment test + additional identity-preservation coverage.*
 - Add a test that asserts, after `moveCardToStack`, the moved card's rendered root element is contained within the destination stack's content div (via `document.getElementById` or a ref-based query; use whichever pattern the existing tests use).
 - Add tests covering the invariants listed in the Data model section above: no orphan cards, no stacks with empty `cardIds`, every `activeCardId ∈ cardIds`, `activeStackId` references a real stack. One test per invariant, exercised through a mutation that would break the invariant if the implementation is wrong.

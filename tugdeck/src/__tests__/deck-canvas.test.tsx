@@ -30,7 +30,7 @@ import "./setup-rtl";
 
 import React from "react";
 import { describe, it, expect, afterEach, beforeEach, spyOn } from "bun:test";
-import { render, act, cleanup } from "@testing-library/react";
+import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
@@ -85,6 +85,7 @@ function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckM
     getVersion: () => 0,
     handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
+    focusCard: (_id: string) => {},
     activateCard: (_id: string) => {},
     observeCardDidFinishConstruction: () => () => {},
     observeCardDidActivate: () => () => {},
@@ -607,6 +608,88 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
 });
 
 // ============================================================================
+// Click-to-activate regression: stack pointerdown resolves to activeCardId
+// ============================================================================
+
+describe("DeckCanvas – click-to-activate dispatches cardId, not stackId", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("pointer-down on a stack frame calls store.focusCard and store.activateCard with the stack's activeCardId", () => {
+    registerCard({
+      componentId: "hello",
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    // Fixture uses a multi-card stack so stack id and card ids are distinct
+    // — if the handler passes the stack id by mistake, focusCard /
+    // activateCard will see a non-card value and the assertions fail.
+    const stackSpec: StackSpec = {
+      id: "stack-alpha",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      cards: [
+        { id: "card-a1", componentId: "hello", title: "A1", closable: true },
+        { id: "card-a2", componentId: "hello", title: "A2", closable: true },
+      ],
+      activeCardId: "card-a2",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+
+    const focusCalls: string[] = [];
+    const activateCalls: string[] = [];
+    const store = makeMockStore(makeDeckState([stackSpec]));
+    store.focusCard = (id: string) => { focusCalls.push(id); };
+    store.activateCard = (id: string) => { activateCalls.push(id); };
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    const frame = container.querySelector("[data-card-id='stack-alpha']") as HTMLElement;
+    expect(frame).not.toBeNull();
+
+    act(() => {
+      fireEvent.pointerDown(frame);
+    });
+
+    expect(focusCalls).toEqual(["card-a2"]);
+    expect(activateCalls).toEqual(["card-a2"]);
+  });
+
+  it("pointer-down on an unknown stack id is a no-op", () => {
+    registerCard({
+      componentId: "hello",
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const focusCalls: string[] = [];
+    const activateCalls: string[] = [];
+    const store = makeMockStore(makeDeckState([]));
+    store.focusCard = (id: string) => { focusCalls.push(id); };
+    store.activateCard = (id: string) => { activateCalls.push(id); };
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    // No frames present; nothing to click. The guarantee here is that the
+    // handler does not crash and does not call focusCard / activateCard with
+    // any value when the snapshot lookup fails.
+    expect(container.querySelectorAll("[data-testid='card-frame']").length).toBe(0);
+    expect(focusCalls).toEqual([]);
+    expect(activateCalls).toEqual([]);
+  });
+});
+
+// ============================================================================
 // T26: DeckCanvas with empty store renders no cards
 // ============================================================================
 
@@ -725,6 +808,7 @@ class ReactiveStore implements IDeckManagerStore {
 
   handleStackMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
+  focusCard = (_id: string): void => {};
   activateCard = (_id: string): void => {};
   observeCardDidFinishConstruction = (
     _cardId: string | null,

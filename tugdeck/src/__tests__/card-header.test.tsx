@@ -67,6 +67,7 @@ const mockStore: IDeckManagerStore = {
   getVersion: () => 0,
   handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
   handleCardClosed: (_id: string) => {},
+  focusCard: (_id: string) => {},
   activateCard: (_id: string) => {},
   observeCardDidFinishConstruction: () => () => {},
   observeCardDidActivate: () => () => {},
@@ -315,7 +316,7 @@ describe("StackFrame – resize handles hidden when collapsed", () => {
           )}
           onCardMoved={() => {}}
           onCardClosed={() => {}}
-          onCardFocused={() => {}}
+          onStackActivated={() => {}}
           onCardCollapsed={() => {}}
           zIndex={1}
           isFocused={false}
@@ -336,7 +337,7 @@ describe("StackFrame – resize handles hidden when collapsed", () => {
           renderContent={() => <div />}
           onCardMoved={() => {}}
           onCardClosed={() => {}}
-          onCardFocused={() => {}}
+          onStackActivated={() => {}}
           zIndex={1}
           isFocused={false}
         />
@@ -356,7 +357,7 @@ describe("StackFrame – resize handles hidden when collapsed", () => {
           renderContent={() => <div />}
           onCardMoved={() => {}}
           onCardClosed={() => {}}
-          onCardFocused={() => {}}
+          onStackActivated={() => {}}
           zIndex={1}
           isFocused={false}
         />

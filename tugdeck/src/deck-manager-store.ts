@@ -53,11 +53,18 @@ export interface IDeckManagerStore {
   handleCardClosed: (stackId: string) => void;
 
   /**
-   * Activate a card — the canonical "make this card the one the user
-   * is in" operation. Synchronously updates z-order, promotes the
-   * responder chain's key card, and notifies lifecycle observers.
-   * All activation paths (pointerdown, CYCLE_CARD, initial load,
-   * programmatic) route through this method.
+   * Promote a card's host stack to the top of the stacks array (highest
+   * z-index) and persist the card id for reload restoration. Does NOT
+   * fire lifecycle events — pair with `activateCard` when handling a
+   * user gesture that should also drive the responder chain.
+   */
+  focusCard: (cardId: string) => void;
+
+  /**
+   * Activate a card — fire will/didActivate through the card lifecycle
+   * and promote the card as the responder chain's key card. Does NOT
+   * update z-order; callers that need z-order (user clicks, detach,
+   * addCard) call `focusCard` first.
    *
    * Optional `knownPreviousActive` is an escape hatch for callers
    * that have mutated the store before calling `activateCard` (e.g.,

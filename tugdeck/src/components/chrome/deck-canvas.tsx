@@ -19,7 +19,7 @@
  * Phase 5a2 (Spec S04, [D01], [D04]):
  *          DeckCanvas reads deckState via useSyncExternalStore from the
  *          DeckManagerContext store. Props deckState / onCardMoved /
- *          onCardClosed / onCardFocused are removed. DeckCanvasProps now
+ *          onCardClosed / onStackActivated are removed. DeckCanvasProps now
  *          contains only `connection`. The store variable is named `store`
  *          (not `manager`) to avoid collision with the existing `manager`
  *          variable used for the ResponderChainManager via
@@ -77,7 +77,7 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 /**
  * DeckCanvasProps after Phase 5a2 migration (Spec S04).
  *
- * deckState, onCardMoved, onCardClosed, and onCardFocused are removed --
+ * deckState, onCardMoved, onCardClosed, and onStackActivated are removed --
  * DeckCanvas reads them from the DeckManagerContext store via
  * useSyncExternalStore. No props remain.
  */
@@ -118,7 +118,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // reordering the store array only changes z-index values -- React never
   // calls insertBefore to move DOM nodes. This preserves the browser's
   // pointer->click event sequence when clicking interactive elements on
-  // unfocused stacks (the synchronous onCardFocused on pointerdown updates
+  // unfocused stacks (the synchronous onStackActivated on pointerdown updates
   // z-index before click fires, so the stack is already focused).
   //
   // Z-index comes from each stack's position in the *store* array (focus
@@ -182,17 +182,21 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Thin adapter: card-frame's pointerdown → deck-wide activation.
-  // The full choreography (z-order, responder chain, selection
-  // guard notification, lifecycle observer broadcast) lives in
-  // `deck.activateCard`. Deck-canvas only contributes its local
-  // `setDeselected(false)` React state, subscribed below via
-  // `observeCardDidActivate` (wildcard) so every activation path
-  // — pointerdown, CYCLE_CARD, SHOW_COMPONENT_GALLERY, initial load —
-  // clears the canvas deselect flag uniformly.
-  const handleCardActivate = useCallback(
-    (id: string) => {
-      store.activateCard(id);
+  // StackFrame's pointerdown fires with a stack id. Activation/focus
+  // operate on a **card** id, so resolve the stack's current
+  // `activeCardId` and drive both z-order and the lifecycle from it.
+  // `focusCard` bumps the host stack to the top of the stacks array
+  // (z-index) and persists `focusedCardId` for reload restoration;
+  // `activateCard` fires will/didActivate through the lifecycle.
+  // The order is z-order first, lifecycle second — observers reading
+  // `getSnapshot()` in their callback see the stack already promoted.
+  const handleStackActivate = useCallback(
+    (stackId: string) => {
+      const stack = store.getSnapshot().stacks.find((s) => s.id === stackId);
+      if (!stack) return;
+      const cardId = stack.activeCardId;
+      store.focusCard(cardId);
+      store.activateCard(cardId);
     },
     [store],
   );
@@ -461,7 +465,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             isFocused={stackState.id === focusedStackId}
             onCardMoved={store.handleStackMoved}
             onCardClosed={handleClose}
-            onCardFocused={handleCardActivate}
+            onStackActivated={handleStackActivate}
             onCardCollapsed={(id) => store.toggleStackCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.

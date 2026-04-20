@@ -36,6 +36,7 @@ export function makeMockStore(
     getVersion: () => 0,
     handleStackMoved: () => {},
     handleCardClosed: () => {},
+    focusCard: () => {},
     activateCard: () => {},
     observeCardDidFinishConstruction: () => () => {},
     observeCardDidActivate: () => () => {},

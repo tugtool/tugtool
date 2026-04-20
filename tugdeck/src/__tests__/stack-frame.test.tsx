@@ -4,7 +4,7 @@
  * Tests cover:
  * - T16: StackFrame renders at correct position and size from cardState
  * - T17: StackFrame applies zIndex prop
- * - T18: StackFrame calls onCardFocused on pointer-down
+ * - T18: StackFrame calls onStackActivated on pointer-down
  * - T19: StackFrame calls onCardClosed when Tugcard fires close
  * - T20: StackFrame clamps resize to min-size
  *
@@ -67,7 +67,7 @@ const defaultProps = {
   stackState: makeStackState(),
   onCardMoved: mock(() => {}),
   onCardClosed: mock(() => {}),
-  onCardFocused: mock(() => {}),
+  onStackActivated: mock(() => {}),
   zIndex: 1,
   isFocused: false,
 };
@@ -134,19 +134,19 @@ describe("StackFrame – zIndex", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T18: StackFrame calls onCardFocused on pointer-down
+// T18: StackFrame calls onStackActivated on pointer-down
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – onCardFocused", () => {
-  it("T18: calls onCardFocused with cardId on pointer-down anywhere in the frame", () => {
-    const onCardFocused = mock((_id: string) => {});
-    const stackState = makeStackState({ id: "focus-test-card" });
+describe("StackFrame – onStackActivated", () => {
+  it("T18: calls onStackActivated with the stack id on pointer-down anywhere in the frame", () => {
+    const onStackActivated = mock((_id: string) => {});
+    const stackState = makeStackState({ id: "focus-test-stack" });
 
     const { container } = render(
       <StackFrame
         {...defaultProps}
         stackState={stackState}
-        onCardFocused={onCardFocused}
+        onStackActivated={onStackActivated}
         renderContent={makeRenderContent()}
       />
     );
@@ -157,17 +157,17 @@ describe("StackFrame – onCardFocused", () => {
       fireEvent.pointerDown(frame);
     });
 
-    expect(onCardFocused).toHaveBeenCalledTimes(1);
-    expect(onCardFocused.mock.calls[0][0]).toBe("focus-test-card");
+    expect(onStackActivated).toHaveBeenCalledTimes(1);
+    expect(onStackActivated.mock.calls[0][0]).toBe("focus-test-stack");
   });
 
-  it("also fires onCardFocused when pointer-down hits the card content", () => {
-    const onCardFocused = mock((_id: string) => {});
+  it("also fires onStackActivated when pointer-down hits the card content", () => {
+    const onStackActivated = mock((_id: string) => {});
 
     const { container } = render(
       <StackFrame
         {...defaultProps}
-        onCardFocused={onCardFocused}
+        onStackActivated={onStackActivated}
         renderContent={makeRenderContent()}
       />
     );
@@ -177,8 +177,8 @@ describe("StackFrame – onCardFocused", () => {
       fireEvent.pointerDown(content);
     });
 
-    // Event bubbles up to frame → onCardFocused fires.
-    expect(onCardFocused.mock.calls.length).toBeGreaterThan(0);
+    // Event bubbles up to frame → onStackActivated fires.
+    expect(onStackActivated.mock.calls.length).toBeGreaterThan(0);
   });
 });
 

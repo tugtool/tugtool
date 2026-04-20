@@ -9,7 +9,7 @@
  * - Inject onDragStart and onMinSizeChange into Tugcard via renderContent
  * - Drag: RAF appearance-zone mutation during, onCardMoved structure-zone commit on end
  * - Resize: 8 edge/corner handles, clamped to min-size, onCardMoved on end
- * - Bring to front via onCardFocused on any pointer-down in the frame
+ * - Bring to front via onStackActivated on any pointer-down in the frame
  *
  * [D03] StackFrame/Tugcard separation, [D06] appearance-zone drag
  *
@@ -125,8 +125,11 @@ export interface StackFrameProps {
   ) => void;
   /** Called when the Tugcard's close action fires (wired via renderContent factory). */
   onCardClosed: (id: string) => void;
-  /** Called on pointer-down anywhere in the frame to bring the card to front. */
-  onCardFocused: (id: string) => void;
+  /** Called on pointer-down anywhere in the frame to bring the stack to front.
+   * The `stackId` is this frame's stack id — callers must resolve the stack's
+   * active card id before invoking card-level APIs like `activateCard` /
+   * `focusCard`. */
+  onStackActivated: (stackId: string) => void;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -180,7 +183,7 @@ export function StackFrame({
   stackState,
   renderContent,
   onCardMoved,
-  onCardFocused,
+  onStackActivated,
   sizePolicy: sizePolicyProp,
   onCardMerged,
   activeCardId,
@@ -589,9 +592,9 @@ export function StackFrame({
     (edge: ResizeEdge, event: React.PointerEvent) => {
       // Bring to front on resize unless Command is held (standard Mac modifier convention).
       // stopPropagation below prevents the frame's onPointerDown from firing, so we must
-      // call onCardFocused explicitly here.
+      // call onStackActivated explicitly here.
       if (!event.metaKey) {
-        onCardFocused(id);
+        onStackActivated(id);
       }
       // Stop propagation so the frame's onPointerDown does not fire a second time.
       event.stopPropagation();
@@ -733,7 +736,7 @@ export function StackFrame({
     },
     // minSizeRef.current is always current; position/size are start values read at resize-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height],
+    [id, onStackActivated, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
   // ---------------------------------------------------------------------------
@@ -743,9 +746,9 @@ export function StackFrame({
   const handleFramePointerDown = useCallback((event: React.PointerEvent) => {
     // Skip activation when Command is held (standard Mac modifier convention).
     if (!event.metaKey) {
-      onCardFocused(id);
+      onStackActivated(id);
     }
-  }, [id, onCardFocused]);
+  }, [id, onStackActivated]);
 
   // ---------------------------------------------------------------------------
   // Render
