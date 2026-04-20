@@ -2,7 +2,7 @@
  * Gallery card registrations.
  *
  * Registers all twenty-three gallery card types in the global card registry.
- * Also exports GALLERY_DEFAULT_TABS and small adapter components.
+ * Also exports GALLERY_DEFAULT_CARDS and small adapter components.
  *
  * **Authoritative references:**
  * - [D01] Seven separate componentIds for gallery sections
@@ -74,22 +74,20 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
-// GALLERY_DEFAULT_TABS
+// GALLERY_DEFAULT_CARDS
 // ---------------------------------------------------------------------------
 
 /**
- * Default tab templates for the gallery host card.
+ * Default card templates for the gallery host stack.
  *
- * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a starter card with one tab from
+ * Only `gallery-buttons` uses these — passed as `defaultCards` so that
+ * `addCard("gallery-buttons")` creates a starter stack with one card from
  * each of the first four `+` menu groups (Buttons, Text Input & Display,
  * Selection, Overlays). The remaining component demos are still discoverable
  * via the `+` type picker. Template `id` values are placeholders:
  * `DeckManager.addCard` replaces them with fresh UUIDs.
- *
- * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
-export const GALLERY_DEFAULT_TABS: readonly CardState[] = [
+export const GALLERY_DEFAULT_CARDS: readonly CardState[] = [
   { id: "template", componentId: "gallery-buttons",  title: "TugPushButton", closable: true },
   { id: "template", componentId: "gallery-input",    title: "TugInput",      closable: true },
   { id: "template", componentId: "gallery-checkbox", title: "TugCheckbox",   closable: true },
@@ -240,11 +238,11 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
  * Each gallery card type:
  * - `family: "developer"` -- appears only in developer-family type pickers
  * - `acceptsFamilies: ["developer"]` -- type picker shows only developer cards
- * - `closable: true` -- gallery tabs can be closed and re-added via [+]
+ * - `closable: true` -- gallery cards can be closed and re-added via [+]
  *
- * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- seeds the gallery card with one
- *    tab from each of the first four `+` menu groups
+ * Only `gallery-buttons` has `defaultCards` and `defaultTitle`:
+ * - `defaultCards: GALLERY_DEFAULT_CARDS` -- seeds the gallery stack with one
+ *    card from each of the first four `+` menu groups
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
@@ -272,14 +270,14 @@ export function registerGalleryCards(): void {
   // Buttons
   // ===========================================================================
 
-  // gallery-buttons (entry-point: carries defaultTabs + defaultTitle)
+  // gallery-buttons (entry-point: carries defaultCards + defaultTitle)
   registerCard({
     componentId: "gallery-buttons",
     contentFactory: (_cardId) => <GalleryPushButton />,
     defaultMeta: { title: "TugPushButton", icon: "MousePointerClick", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
-    defaultTabs: GALLERY_DEFAULT_TABS,
+    defaultCards: GALLERY_DEFAULT_CARDS,
     defaultTitle: "Component Gallery",
     sizePolicy: GALLERY_ENTRY_SIZE,
     category: CATEGORIES.buttons,

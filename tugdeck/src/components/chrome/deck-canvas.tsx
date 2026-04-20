@@ -291,18 +291,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           store.activateCard(existingStack.activeCardId);
         } else {
           // No gallery stack -- create one and activate the seeded card.
-          const newId = store.addCard("gallery-buttons");
-          if (newId) {
-            // `addCard` returns the first seeded card id; look up its host
-            // stack in the fresh snapshot and remember it for subsequent
-            // show-only dispatches. Fall back to treating `newId` itself as
-            // a stack id for test harnesses that return one.
+          const newCardId = store.addCard("gallery-buttons");
+          if (newCardId) {
             const snapshot = store.getSnapshot();
-            const hostStack =
-              snapshot.stacks.find((st) => st.cardIds.includes(newId)) ??
-              snapshot.stacks.find((st) => st.id === newId);
+            const hostStack = snapshot.stacks.find((st) =>
+              st.cardIds.includes(newCardId),
+            );
             if (hostStack) galleryStackIdRef.current = hostStack.id;
-            store.activateCard(newId);
+            store.activateCard(newCardId);
           }
         }
       },

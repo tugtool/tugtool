@@ -154,12 +154,12 @@ export class DeckManager implements IDeckManagerStore {
   // ---- Stable bound callbacks ----
 
   public handleStackMoved: (
-    id: string,
+    stackId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
 
-  public handleCardClosed: (id: string) => void;
+  public handleCardClosed: (stackId: string) => void;
 
   public readonly cardLifecycle: CardLifecycle;
 
@@ -400,7 +400,7 @@ export class DeckManager implements IDeckManagerStore {
    * the cascaded position. Returns the generated card id, or null if no
    * registration is found for `componentId`.
    *
-   * If the registration carries `defaultTabs`, the stack is seeded with one
+   * If the registration carries `defaultCards`, the stack is seeded with one
    * card per template (fresh UUIDs); otherwise a single card is created from
    * `defaultMeta`.
    */
@@ -419,8 +419,8 @@ export class DeckManager implements IDeckManagerStore {
     const position = this.nextCascadePosition(sizePolicy.preferred);
 
     const seededCards: CardState[] = [];
-    if (registration.defaultTabs && registration.defaultTabs.length > 0) {
-      for (const template of registration.defaultTabs) {
+    if (registration.defaultCards && registration.defaultCards.length > 0) {
+      for (const template of registration.defaultCards) {
         seededCards.push({
           id: crypto.randomUUID(),
           componentId: template.componentId,
@@ -471,17 +471,9 @@ export class DeckManager implements IDeckManagerStore {
    * every card in the stack; removes the stack and all its cards; activates
    * the new top-of-deck if the closed stack was active.
    */
-  _closeStack(id: string): void {
-    // Accept either a stack id or a card id: tests and legacy call sites
-    // still pass cardIds (from `addCard`'s return value) when asking the
-    // deck to "close this card". Resolve to the host stack id so the
-    // two-table invariants hold.
-    let stack = this.deckState.stacks.find((s) => s.id === id);
-    if (!stack) {
-      stack = this.deckState.stacks.find((s) => s.cardIds.includes(id));
-    }
+  _closeStack(stackId: string): void {
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
-    const stackId = stack.id;
 
     const activeCardId = this.cardLifecycle.getActiveCardId();
     const wasActive =
@@ -531,19 +523,12 @@ export class DeckManager implements IDeckManagerStore {
    * the observable subject).
    */
   moveStack(
-    id: string,
+    stackId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ): void {
-    // Accept either a stack id or a card id: legacy call sites (including
-    // tests written before the two-table split) still pass cardIds. Resolve
-    // to the host stack id so the right frame moves.
-    let existing = this.deckState.stacks.find((s) => s.id === id);
-    if (!existing) {
-      existing = this.deckState.stacks.find((s) => s.cardIds.includes(id));
-    }
+    const existing = this.deckState.stacks.find((s) => s.id === stackId);
     if (!existing) return;
-    const stackId = existing.id;
     const positionChanged =
       existing.position.x !== position.x || existing.position.y !== position.y;
     const sizeChanged =
@@ -767,33 +752,18 @@ export class DeckManager implements IDeckManagerStore {
     this.reloadPending = true;
   }
 
-  /**
-   * Resolve a stack id from an input that may be either a stack id or a card
-   * id. Tests written against the single-table API still pass card ids into
-   * stack-targeted mutators; production call sites pass stack ids directly.
-   * Returns `null` if neither interpretation matches a live stack.
-   */
-  private resolveStackId(id: string): string | null {
-    const direct = this.deckState.stacks.find((s) => s.id === id);
-    if (direct) return direct.id;
-    const host = this.deckState.stacks.find((s) => s.cardIds.includes(id));
-    return host ? host.id : null;
-  }
-
   // ---- Stack/card mutators (Spec S03) ----
 
   /**
    * Add a new card to an existing stack. Creates a fresh card, appends its id
    * to the stack's `cardIds`, and sets it as the stack's `activeCardId`.
    */
-  private _addCardToStack(stackIdInput: string, componentId: string): string | null {
-    const stackId = this.resolveStackId(stackIdInput);
-    if (!stackId) {
-      console.warn(`[DeckManager] addCardToStack: stack "${stackIdInput}" not found.`);
+  private _addCardToStack(stackId: string, componentId: string): string | null {
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) {
+      console.warn(`[DeckManager] addCardToStack: stack "${stackId}" not found.`);
       return null;
     }
-    const stack = this.deckState.stacks.find((s) => s.id === stackId);
-    if (!stack) return null;
     const registration = getRegistration(componentId);
     if (!registration) {
       console.warn(
@@ -833,8 +803,7 @@ export class DeckManager implements IDeckManagerStore {
    * `_closeStack`. Otherwise removes the card from `deckState.cards` and from
    * the stack's `cardIds`, reassigning `activeCardId` if needed.
    */
-  private _removeCard(stackIdInput: string, cardId: string): void {
-    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+  private _removeCard(stackId: string, cardId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
 
@@ -872,8 +841,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Set the active card in a stack. No-op if the cardId is not in the stack.
    */
-  private _setActiveCardInStack(stackIdInput: string, cardId: string): void {
-    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+  private _setActiveCardInStack(stackId: string, cardId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
     if (!stack.cardIds.includes(cardId)) return;
@@ -892,8 +860,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Reorder a card within its stack.
    */
-  private _reorderCardInStack(stackIdInput: string, fromIndex: number, toIndex: number): void {
-    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+  private _reorderCardInStack(stackId: string, fromIndex: number, toIndex: number): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
 
@@ -924,11 +891,10 @@ export class DeckManager implements IDeckManagerStore {
    * stack's `cardIds`. Tugcast sessions, portal DOM, and React state survive.
    */
   private _detachCard(
-    stackIdInput: string,
+    stackId: string,
     cardId: string,
     position: { x: number; y: number },
   ): string | null {
-    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return null;
     if (!stack.cardIds.includes(cardId)) return null;
@@ -1004,15 +970,11 @@ export class DeckManager implements IDeckManagerStore {
    * only this card), the source stack is closed.
    */
   private _moveCardToStack(
-    sourceStackIdInput: string,
+    sourceStackId: string,
     cardId: string,
-    targetStackIdInput: string,
+    targetStackId: string,
     insertAtIndex: number,
   ): void {
-    const sourceStackId =
-      this.resolveStackId(sourceStackIdInput) ?? sourceStackIdInput;
-    const targetStackId =
-      this.resolveStackId(targetStackIdInput) ?? targetStackIdInput;
     if (sourceStackId === targetStackId) return;
 
     const sourceStack = this.deckState.stacks.find((s) => s.id === sourceStackId);
@@ -1091,8 +1053,7 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Collapse management ----
 
-  private _toggleStackCollapse(stackIdInput: string): void {
-    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+  private _toggleStackCollapse(stackId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
 

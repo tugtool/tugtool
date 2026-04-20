@@ -156,69 +156,67 @@ function fireKeydown(options: {
 
 // ---- Card registry helpers ----
 
-/**
- * Legacy card-view used by this test file: a value shaped like the
- * pre-two-table `CardState` (with `tabs`, `activeTabId`, `position`, `size`,
- * `acceptsFamilies`, `title`, `collapsed`). `makeDeckState` below explodes
- * each of these into a Card + CardStack pair in the deck state.
- */
-/** Legacy-shape per-tab entry. Carries the same fields the pre-split `TabItem`
- *  type did, kept local to this test file so assertions can use named
- *  variables without reaching for `any`. */
-interface TabItem {
+/** Spec for a card within a {@link StackSpec}. Carries only what assertions
+ *  need (id, componentId, title, closable); the rest of the CardState record
+ *  is filled in by {@link makeDeckState}. */
+interface CardSpec {
   id: string;
   componentId: string;
   title: string;
   closable: boolean;
 }
 
-interface LegacyCardShape {
+/** Spec for a stack: position/size/title/acceptsFamilies plus an inline list
+ *  of {@link CardSpec}s whose order becomes the stack's `cardIds`. */
+interface StackSpec {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
-  tabs: TabItem[];
-  activeTabId: string;
+  cards: CardSpec[];
+  activeCardId: string;
   title: string;
   acceptsFamilies: readonly string[];
   collapsed?: boolean;
 }
 
-/** Build a legacy-shape card with one tab. The test pipeline explodes it into a stack+card pair. */
-function makeCardState(id: string, componentId: string): LegacyCardShape {
+/** Build a single-card StackSpec where the card id equals the stack id.
+ *  Mirrors production `addCard`, which creates a single-card stack and
+ *  returns the card id. Keeping the two ids equal lets mock `addCard` return
+ *  values and `hostStack` lookups line up. */
+function makeCardState(id: string, componentId: string): StackSpec {
   return {
     id,
     position: { x: 0, y: 0 },
     size: { width: 400, height: 300 },
-    tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
-    activeTabId: `${id}-tab`,
+    cards: [{ id, componentId, title: componentId, closable: true }],
+    activeCardId: id,
     title: "",
     acceptsFamilies: ["standard"],
   };
 }
 
-/** Build a DeckState from an array of legacy-shape cards. Each legacy card
- *  becomes a stack whose `cardIds` is its tab ids. */
-function makeDeckState(legacyCards: LegacyCardShape[]): DeckState {
+/** Flatten an array of {@link StackSpec}s into a two-table DeckState. */
+function makeDeckState(specs: StackSpec[]): DeckState {
   const cards: CardState[] = [];
   const stacks: CardStackState[] = [];
-  for (const legacy of legacyCards) {
-    for (const t of legacy.tabs) {
+  for (const spec of specs) {
+    for (const c of spec.cards) {
       cards.push({
-        id: t.id,
-        componentId: t.componentId,
-        title: t.title,
-        closable: t.closable,
+        id: c.id,
+        componentId: c.componentId,
+        title: c.title,
+        closable: c.closable,
       });
     }
     stacks.push({
-      id: legacy.id,
-      position: legacy.position,
-      size: legacy.size,
-      cardIds: legacy.tabs.map((t) => t.id),
-      activeCardId: legacy.activeTabId,
-      title: legacy.title,
-      acceptsFamilies: legacy.acceptsFamilies,
-      ...(legacy.collapsed === true ? { collapsed: true } : {}),
+      id: spec.id,
+      position: spec.position,
+      size: spec.size,
+      cardIds: spec.cards.map((c) => c.id),
+      activeCardId: spec.activeCardId,
+      title: spec.title,
+      acceptsFamilies: spec.acceptsFamilies,
+      ...(spec.collapsed === true ? { collapsed: true } : {}),
     });
   }
   return { cards, stacks };
@@ -571,11 +569,11 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(2);
 
-    // After Piece 1.iii, contentFactory receives the tab's id (stable across
-    // detach/merge) rather than the host card's id. makeCardState above
-    // tags each card's sole tab as `${cardId}-tab`.
-    expect(container.querySelector("[data-testid='mock-card-content-card-a-tab']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='mock-card-content-card-b-tab']")).not.toBeNull();
+    // contentFactory receives the card's id (stable across detach/merge).
+    // `makeCardState` produces single-card stacks where stack id === card id,
+    // so the rendered content nodes are tagged with the original fixture id.
+    expect(container.querySelector("[data-testid='mock-card-content-card-a']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='mock-card-content-card-b']")).not.toBeNull();
   });
 
   it("assigns ascending z-index by store array position", () => {
@@ -787,13 +785,13 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
-    const singleTabCard: LegacyCardShape = {
+    const tab1: CardSpec = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const singleTabCard: StackSpec = {
       id: "card-a",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [tab1],
-      activeTabId: "tab-1",
+      cards: [tab1],
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };
@@ -815,12 +813,12 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
     expect(container.querySelector("[data-testid='tug-tab-bar']")).toBeNull();
 
     // Add a second tab
-    const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
+    const tab2: CardSpec = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
     act(() => {
       store.setState(makeDeckState([{
         ...singleTabCard,
-        tabs: [tab1, tab2],
-        activeTabId: "tab-2",
+        cards: [tab1, tab2],
+        activeCardId: "tab-2",
       }]));
     });
 
@@ -847,15 +845,15 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       defaultMeta: { title: "Terminal", closable: true },
     });
 
-    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
-    const tab2: TabItem = { id: "tab-2", componentId: "terminal", title: "Terminal", closable: true };
+    const tab1: CardSpec = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const tab2: CardSpec = { id: "tab-2", componentId: "terminal", title: "Terminal", closable: true };
 
-    const multiTabCard: LegacyCardShape = {
+    const multiTabCard: StackSpec = {
       id: "card-multi",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [tab1, tab2],
-      activeTabId: "tab-1",
+      cards: [tab1, tab2],
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };
@@ -898,7 +896,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
 
     // Switch active tab to terminal
     act(() => {
-      store.setState(makeDeckState([{ ...multiTabCard, activeTabId: "tab-2" }]));
+      store.setState(makeDeckState([{ ...multiTabCard, activeCardId: "tab-2" }]));
     });
 
     // Both remain in the DOM; visibility flips.
@@ -921,15 +919,15 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
-    const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
+    const tab1: CardSpec = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const tab2: CardSpec = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
 
-    const multiTabCard: LegacyCardShape = {
+    const multiTabCard: StackSpec = {
       id: "card-close-test",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [tab1, tab2],
-      activeTabId: "tab-1",
+      cards: [tab1, tab2],
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };
@@ -1237,12 +1235,12 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
     // the component that sets data-card-id on .tugcard-accessory. [D05, Spec S07]
     registerHelloWorldCard();
 
-    const singleTabCard: LegacyCardShape = {
+    const singleTabCard: StackSpec = {
       id: "single-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
-      activeTabId: "tab-1",
+      cards: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };
@@ -1279,15 +1277,15 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: LegacyCardShape = {
+    const multiTabCard: StackSpec = {
       id: "titled-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [
+      cards: [
         { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
         { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
-      activeTabId: "tab-1",
+      activeCardId: "tab-1",
       title: "Foo",
       acceptsFamilies: ["standard"],
     };
@@ -1311,15 +1309,15 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: LegacyCardShape = {
+    const multiTabCard: StackSpec = {
       id: "untitled-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [
+      cards: [
         { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
         { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
-      activeTabId: "tab-1",
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };
@@ -1352,15 +1350,15 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: LegacyCardShape = {
+    const multiTabCard: StackSpec = {
       id: "multi-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
-      tabs: [
+      cards: [
         { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
         { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
-      activeTabId: "tab-1",
+      activeCardId: "tab-1",
       title: "",
       acceptsFamilies: ["standard"],
     };

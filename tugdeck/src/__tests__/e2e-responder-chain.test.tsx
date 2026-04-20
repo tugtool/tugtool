@@ -103,43 +103,43 @@ function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckM
   };
 }
 
-/** Build a minimal legacy-shape card (single tab). `buildDeckState` below
- *  expands each into a Card + CardStack pair. */
-interface LegacyCard {
+/** Minimal stack-spec for e2e tests. `buildDeckState` expands each into a
+ *  Card + CardStack pair. */
+interface StackSpec {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
-  tabs: Array<{ id: string; componentId: string; title: string; closable: boolean }>;
-  activeTabId: string;
+  cards: Array<{ id: string; componentId: string; title: string; closable: boolean }>;
+  activeCardId: string;
   title: string;
   acceptsFamilies: readonly string[];
 }
-function makeCardState(id: string, componentId: string): LegacyCard {
+function makeCardState(id: string, componentId: string): StackSpec {
   return {
     id,
     position: { x: 0, y: 0 },
     size: { width: 400, height: 300 },
-    tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
-    activeTabId: `${id}-tab`,
+    cards: [{ id, componentId, title: componentId, closable: true }],
+    activeCardId: id,
     title: "",
     acceptsFamilies: ["developer"],
   };
 }
 
-function buildDeckState(legacyCards: LegacyCard[]): DeckState {
+function buildDeckState(specs: StackSpec[]): DeckState {
   const cards: CardState[] = [];
-  const stacks = legacyCards.map((lc) => {
-    for (const t of lc.tabs) {
-      cards.push({ id: t.id, componentId: t.componentId, title: t.title, closable: t.closable });
+  const stacks = specs.map((spec) => {
+    for (const c of spec.cards) {
+      cards.push({ id: c.id, componentId: c.componentId, title: c.title, closable: c.closable });
     }
     return {
-      id: lc.id,
-      position: lc.position,
-      size: lc.size,
-      cardIds: lc.tabs.map((t) => t.id),
-      activeCardId: lc.activeTabId,
-      title: lc.title,
-      acceptsFamilies: lc.acceptsFamilies,
+      id: spec.id,
+      position: spec.position,
+      size: spec.size,
+      cardIds: spec.cards.map((c) => c.id),
+      activeCardId: spec.activeCardId,
+      title: spec.title,
+      acceptsFamilies: spec.acceptsFamilies,
     };
   });
   return { cards, stacks };

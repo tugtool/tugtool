@@ -112,9 +112,9 @@ describe("_resetForTest", () => {
   });
 });
 
-// ---- Phase 5b3 Step 1: family, acceptsFamilies, defaultTabs, defaultTitle fields ----
+// ---- Phase 5b3 Step 1: family, acceptsFamilies, defaultCards, defaultTitle fields ----
 
-describe("CardRegistration – family, acceptsFamilies, defaultTabs, defaultTitle", () => {
+describe("CardRegistration – family, acceptsFamilies, defaultCards, defaultTitle", () => {
   it("registers a card with family and getRegistration returns it", () => {
     registerCard({
       ...makeRegistration("gallery-buttons"),
@@ -145,21 +145,21 @@ describe("CardRegistration – family, acceptsFamilies, defaultTabs, defaultTitl
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("registers a card with defaultTabs and getRegistration returns them", () => {
-    const defaultTabs = [
+  it("registers a card with defaultCards and getRegistration returns them", () => {
+    const defaultCards = [
       { id: "tmpl-1", componentId: "gallery-buttons", title: "Buttons", closable: false },
       { id: "tmpl-2", componentId: "gallery-chain-actions", title: "Chain Actions", closable: false },
     ] as const;
     registerCard({
-      ...makeRegistration("gallery-host-tabs"),
-      defaultTabs,
+      ...makeRegistration("gallery-host-cards"),
+      defaultCards,
     });
-    const reg = getRegistration("gallery-host-tabs");
+    const reg = getRegistration("gallery-host-cards");
     expect(reg).toBeDefined();
-    expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(2);
-    expect(reg!.defaultTabs![0].componentId).toBe("gallery-buttons");
-    expect(reg!.defaultTabs![1].componentId).toBe("gallery-chain-actions");
+    expect(reg!.defaultCards).toBeDefined();
+    expect(reg!.defaultCards!.length).toBe(2);
+    expect(reg!.defaultCards![0].componentId).toBe("gallery-buttons");
+    expect(reg!.defaultCards![1].componentId).toBe("gallery-chain-actions");
   });
 
   it("fields are all optional: registration without them is valid", () => {
@@ -168,7 +168,7 @@ describe("CardRegistration – family, acceptsFamilies, defaultTabs, defaultTitl
     expect(reg).toBeDefined();
     expect(reg!.family).toBeUndefined();
     expect(reg!.acceptsFamilies).toBeUndefined();
-    expect(reg!.defaultTabs).toBeUndefined();
+    expect(reg!.defaultCards).toBeUndefined();
     expect(reg!.defaultTitle).toBeUndefined();
   });
 });

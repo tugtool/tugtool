@@ -42,11 +42,6 @@ export interface CardStateBag {
   content?: unknown;
 }
 
-/** Deprecated alias for {@link CardStateBag}. Kept so the tugbank settings API
- *  and any external call sites that still import the old name continue to
- *  type-check. New code should use {@link CardStateBag}. */
-export type TabStateBag = CardStateBag;
-
 /**
  * A card — the content identity that survives cross-stack moves.
  *

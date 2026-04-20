@@ -40,18 +40,17 @@ export interface IDeckManagerStore {
 
   /**
    * Stable bound callback: update a stack's position/size on drag-end /
-   * resize-end. (Renamed from `handleCardMoved` — the frame that gets
-   * dragged is a CardStack; individual cards within it share the stack's
-   * position.)
+   * resize-end. The frame that gets dragged is a CardStack; individual
+   * cards within it share the stack's position.
    */
   handleStackMoved: (
-    id: string,
+    stackId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
 
-  /** Stable bound callback: remove a card. */
-  handleCardClosed: (id: string) => void;
+  /** Stable bound callback: close a stack (and all of its cards). */
+  handleCardClosed: (stackId: string) => void;
 
   /**
    * Activate a card — the canonical "make this card the one the user

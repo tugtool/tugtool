@@ -22,7 +22,7 @@ import {
   insertTideRecentProject,
   TIDE_RECENT_PROJECTS_MAX,
 } from "../settings-api";
-import type { TabStateBag } from "../layout-tree";
+import type { CardStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
 import type { HistoryEntry } from "../lib/prompt-history-store";
 
@@ -75,7 +75,7 @@ describe("putTabState", () => {
     }) as unknown as typeof fetch;
 
     const tabId = "tab-abc-123";
-    const bag: TabStateBag = { scroll: { x: 10, y: 50 }, content: { key: "val" } };
+    const bag: CardStateBag = { scroll: { x: 10, y: 50 }, content: { key: "val" } };
     putTabState(tabId, bag);
 
     // Give the fire-and-forget promise a tick to run.
@@ -184,8 +184,8 @@ describe("readTabStates", () => {
   });
 
   test("returns populated Map for tabs with stored state", () => {
-    const bag1: TabStateBag = { scroll: { x: 0, y: 100 } };
-    const bag2: TabStateBag = { scroll: { x: 20, y: 30 }, content: "hello" };
+    const bag1: CardStateBag = { scroll: { x: 0, y: 100 } };
+    const bag2: CardStateBag = { scroll: { x: 20, y: 30 }, content: "hello" };
 
     const client = makeMockClient({
       "dev.tugtool.deck.tabstate": {
@@ -202,7 +202,7 @@ describe("readTabStates", () => {
   });
 
   test("skips missing entries — absent tabs are not in the returned Map", () => {
-    const bag: TabStateBag = { scroll: { x: 5, y: 10 } };
+    const bag: CardStateBag = { scroll: { x: 5, y: 10 } };
 
     const client = makeMockClient({
       "dev.tugtool.deck.tabstate": {

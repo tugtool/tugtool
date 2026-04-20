@@ -357,7 +357,7 @@ describe("Tugcard – feedless card", () => {
 // Phase 5b: Tab support tests
 // ---------------------------------------------------------------------------
 
-/** Build a TabItem for use in tests. */
+/** Build a CardState for use in tests. */
 function makeTab(id: string, componentId: string, title: string, closable = true): CardState {
   return { id, componentId, title, closable };
 }

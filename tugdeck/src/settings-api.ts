@@ -14,7 +14,7 @@
  * values and `{"kind":"string","value":"brio"}` for strings.
  */
 
-import type { TabStateBag } from "./layout-tree";
+import type { CardStateBag } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
@@ -59,17 +59,17 @@ export function readDeckState(client: TugbankClient): string | null {
 
 /**
  * Read all tab state bags from the TugbankClient cache.
- * Returns a Map of tabId → TabStateBag for tabs that have stored state.
+ * Returns a Map of tabId → CardStateBag for tabs that have stored state.
  */
-export function readTabStates(client: TugbankClient, tabIds: string[]): Map<string, TabStateBag> {
-  const map = new Map<string, TabStateBag>();
+export function readTabStates(client: TugbankClient, tabIds: string[]): Map<string, CardStateBag> {
+  const map = new Map<string, CardStateBag>();
   const domain = client.readDomain("dev.tugtool.deck.tabstate");
   if (!domain) return map;
 
   for (const tabId of tabIds) {
     const entry = domain[tabId] as TaggedValue | undefined;
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      map.set(tabId, entry.value as TabStateBag);
+      map.set(tabId, entry.value as CardStateBag);
     }
   }
   return map;
@@ -115,7 +115,7 @@ export function putTheme(theme: string): void {
  * need to wait (e.g. prepareForReload) can await it; fire-and-forget
  * callers can ignore the return value.
  */
-export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+export function putTabState(tabId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
   const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
   const body = JSON.stringify({ kind: "json", value: bag });
 
