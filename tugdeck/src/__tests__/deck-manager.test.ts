@@ -254,6 +254,110 @@ describe("DeckManager.moveCard", () => {
     expect(card2.size.width).toBe(originalSize2.width);
     expect(card2.size.height).toBe(originalSize2.height);
   });
+
+  it("fires cardWillMove/cardDidMove only when position changes", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillMove(cardId, () =>
+      log.push("willMove"),
+    );
+    manager.cardLifecycle.observeCardDidMove(cardId, () => log.push("didMove"));
+    manager.cardLifecycle.observeCardWillResize(cardId, () =>
+      log.push("willResize"),
+    );
+    manager.cardLifecycle.observeCardDidResize(cardId, () =>
+      log.push("didResize"),
+    );
+
+    // Pure drag: position changes, size stays the same.
+    manager.moveCard(
+      cardId,
+      { x: card.position.x + 100, y: card.position.y + 50 },
+      { width: card.size.width, height: card.size.height },
+    );
+
+    expect(log).toEqual(["willMove", "didMove"]);
+  });
+
+  it("fires cardWillResize/cardDidResize only when size changes", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillMove(cardId, () =>
+      log.push("willMove"),
+    );
+    manager.cardLifecycle.observeCardDidMove(cardId, () => log.push("didMove"));
+    manager.cardLifecycle.observeCardWillResize(cardId, () =>
+      log.push("willResize"),
+    );
+    manager.cardLifecycle.observeCardDidResize(cardId, () =>
+      log.push("didResize"),
+    );
+
+    // Pure edge resize: size changes, position stays.
+    manager.moveCard(
+      cardId,
+      { x: card.position.x, y: card.position.y },
+      { width: card.size.width + 50, height: card.size.height + 30 },
+    );
+
+    expect(log).toEqual(["willResize", "didResize"]);
+  });
+
+  it("fires both pairs when a corner-handle resize changes position AND size", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillMove(cardId, () =>
+      log.push("willMove"),
+    );
+    manager.cardLifecycle.observeCardDidMove(cardId, () => log.push("didMove"));
+    manager.cardLifecycle.observeCardWillResize(cardId, () =>
+      log.push("willResize"),
+    );
+    manager.cardLifecycle.observeCardDidResize(cardId, () =>
+      log.push("didResize"),
+    );
+
+    // Top-left handle drag: origin moves, size changes.
+    manager.moveCard(
+      cardId,
+      { x: card.position.x + 20, y: card.position.y + 20 },
+      { width: card.size.width - 20, height: card.size.height - 20 },
+    );
+
+    // will-pair fires before store update (both fires), did-pair after.
+    // Plan spec has will* → store → did* so: willMove, willResize,
+    // didMove, didResize.
+    expect(log).toEqual(["willMove", "willResize", "didMove", "didResize"]);
+  });
+
+  it("fires neither pair on an identity moveCard (same position AND size)", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillMove(cardId, () => log.push("m"));
+    manager.cardLifecycle.observeCardDidMove(cardId, () => log.push("M"));
+    manager.cardLifecycle.observeCardWillResize(cardId, () => log.push("r"));
+    manager.cardLifecycle.observeCardDidResize(cardId, () => log.push("R"));
+
+    manager.moveCard(
+      cardId,
+      { x: card.position.x, y: card.position.y },
+      { width: card.size.width, height: card.size.height },
+    );
+
+    expect(log).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

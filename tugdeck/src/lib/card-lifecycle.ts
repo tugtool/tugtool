@@ -96,6 +96,10 @@ export class CardLifecycle {
   private readonly activationSubs: Set<Subscription> = new Set();
   private readonly willDeactivateSubs: Set<Subscription> = new Set();
   private readonly deactivationSubs: Set<Subscription> = new Set();
+  private readonly willMoveSubs: Set<Subscription> = new Set();
+  private readonly didMoveSubs: Set<Subscription> = new Set();
+  private readonly willResizeSubs: Set<Subscription> = new Set();
+  private readonly didResizeSubs: Set<Subscription> = new Set();
   private readonly destructionSubs: Set<Subscription> = new Set();
 
   // Tracks which cards have been constructed but not yet destroyed.
@@ -256,6 +260,47 @@ export class CardLifecycle {
     this.fire(this.deactivationSubs, cardId);
   }
 
+  /**
+   * Fire WILL-MOVE for `cardId`. Preparation phase: subscribers can
+   * stash state before the position commit. Called by the deck's
+   * `moveCard` when the new position differs from the existing one.
+   */
+  notifyCardWillMove(cardId: string): void {
+    console.log(`[CardLifecycle] cardWillMove id=${cardId}`);
+    this.fire(this.willMoveSubs, cardId);
+  }
+
+  /**
+   * Fire DID-MOVE for `cardId`. Reaction phase: the store now reflects
+   * the new position. Canonical place to re-assert focus or other
+   * side-effects that a move may have disturbed (browser-level focus
+   * loss during a drag gesture, etc.).
+   */
+  notifyCardDidMove(cardId: string): void {
+    console.log(`[CardLifecycle] cardDidMove id=${cardId}`);
+    this.fire(this.didMoveSubs, cardId);
+  }
+
+  /**
+   * Fire WILL-RESIZE for `cardId`. Preparation phase: subscribers can
+   * stash state before the size commit. Called by the deck's
+   * `moveCard` when the new size differs from the existing one.
+   */
+  notifyCardWillResize(cardId: string): void {
+    console.log(`[CardLifecycle] cardWillResize id=${cardId}`);
+    this.fire(this.willResizeSubs, cardId);
+  }
+
+  /**
+   * Fire DID-RESIZE for `cardId`. Reaction phase: the store now
+   * reflects the new size. Parallel to `cardDidMove` for the size
+   * transition.
+   */
+  notifyCardDidResize(cardId: string): void {
+    console.log(`[CardLifecycle] cardDidResize id=${cardId}`);
+    this.fire(this.didResizeSubs, cardId);
+  }
+
   // ---- Observe ----
 
   /**
@@ -335,6 +380,47 @@ export class CardLifecycle {
     callback: CardLifecycleObserver,
   ): () => void {
     return this.subscribe(this.deactivationSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to WILL-MOVE events. No initial-sync — move is strictly
+   * transitional, no "currently about to move" state to replay.
+   */
+  observeCardWillMove(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.willMoveSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to DID-MOVE events. No initial-sync.
+   */
+  observeCardDidMove(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.didMoveSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to WILL-RESIZE events. No initial-sync.
+   */
+  observeCardWillResize(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.willResizeSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to DID-RESIZE events. No initial-sync.
+   */
+  observeCardDidResize(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.didResizeSubs, cardId, callback);
   }
 
   /**
@@ -436,10 +522,14 @@ export function useCardLifecycle(): CardLifecycle | null {
  */
 export interface TugCardDelegate {
   cardDidFinishConstruction?(cardId: string): void;
-  cardWillActivate?(cardId: string): void; // wired in Step 3
+  cardWillActivate?(cardId: string): void;
   cardDidActivate?(cardId: string): void;
-  cardWillDeactivate?(cardId: string): void; // wired in Step 3
+  cardWillDeactivate?(cardId: string): void;
   cardDidDeactivate?(cardId: string): void;
+  cardWillMove?(cardId: string): void;
+  cardDidMove?(cardId: string): void;
+  cardWillResize?(cardId: string): void;
+  cardDidResize?(cardId: string): void;
   cardWillBeginDestruction?(cardId: string): void;
 }
 
@@ -454,6 +544,10 @@ type CardDelegateMethodName =
   | "cardDidActivate"
   | "cardWillDeactivate"
   | "cardDidDeactivate"
+  | "cardWillMove"
+  | "cardDidMove"
+  | "cardWillResize"
+  | "cardDidResize"
   | "cardWillBeginDestruction";
 
 // ---- MessageChannel-based delegate drain queue ----
@@ -564,6 +658,18 @@ export function useCardDelegate(
       ),
       lifecycle.observeCardDidDeactivate(cardId, (id) =>
         enqueue("cardDidDeactivate", id),
+      ),
+      lifecycle.observeCardWillMove(cardId, (id) =>
+        enqueue("cardWillMove", id),
+      ),
+      lifecycle.observeCardDidMove(cardId, (id) =>
+        enqueue("cardDidMove", id),
+      ),
+      lifecycle.observeCardWillResize(cardId, (id) =>
+        enqueue("cardWillResize", id),
+      ),
+      lifecycle.observeCardDidResize(cardId, (id) =>
+        enqueue("cardDidResize", id),
       ),
       lifecycle.observeCardWillBeginDestruction(cardId, (id) =>
         enqueue("cardWillBeginDestruction", id),

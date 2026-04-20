@@ -635,12 +635,30 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Update a card's position and size (called on drag-end / resize-end).
+   *
+   * Fires will/did lifecycle events on the transitions that actually
+   * occurred:
+   *   - Pure drag: `cardWillMove` → store update → `cardDidMove`.
+   *   - Pure edge resize: `cardWillResize` → store update → `cardDidResize`.
+   *   - Corner-handle resize (moves origin AND changes size): both pairs fire.
+   *   - Identity commit (same position and size): neither pair fires.
    */
   moveCard(
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ): void {
+    const existing = this.deckState.cards.find((c) => c.id === id);
+    const positionChanged = existing !== undefined
+      ? existing.position.x !== position.x || existing.position.y !== position.y
+      : false;
+    const sizeChanged = existing !== undefined
+      ? existing.size.width !== size.width || existing.size.height !== size.height
+      : false;
+
+    if (positionChanged) this.cardLifecycle.notifyCardWillMove(id);
+    if (sizeChanged) this.cardLifecycle.notifyCardWillResize(id);
+
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.map((c) =>
@@ -648,6 +666,10 @@ export class DeckManager implements IDeckManagerStore {
       ),
     };
     this.notify();
+
+    if (positionChanged) this.cardLifecycle.notifyCardDidMove(id);
+    if (sizeChanged) this.cardLifecycle.notifyCardDidResize(id);
+
     this.scheduleSave();
   }
 

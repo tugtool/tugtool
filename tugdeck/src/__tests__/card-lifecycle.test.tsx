@@ -361,6 +361,119 @@ describe("CardLifecycle.notifyCardWillBeginDestruction", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Move / Resize
+// ---------------------------------------------------------------------------
+
+describe("CardLifecycle move/resize events", () => {
+  it("T-CL-MOVE-01: notifyCardWillMove fires matching + wildcard observers synchronously", () => {
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+    lifecycle.observeCardWillMove(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardWillMove("card-A", (id) =>
+      calls.push(`specific:${id}`),
+    );
+    lifecycle.observeCardWillMove("card-B", (id) =>
+      calls.push(`specific-B:${id}`),
+    );
+
+    lifecycle.notifyCardWillMove("card-A");
+
+    expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
+  });
+
+  it("T-CL-MOVE-02: notifyCardDidMove fires matching + wildcard observers synchronously", () => {
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+    lifecycle.observeCardDidMove(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardDidMove("card-A", (id) => calls.push(`specific:${id}`));
+
+    lifecycle.notifyCardDidMove("card-A");
+
+    expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
+  });
+
+  it("T-CL-MOVE-03: move observers have no initial-sync", () => {
+    const { lifecycle } = makeLifecycle();
+    lifecycle.notifyCardDidMove("card-A");
+
+    const calls: string[] = [];
+    // Subscribing after a fire — no replay.
+    lifecycle.observeCardDidMove("card-A", (id) => calls.push(id));
+
+    expect(calls).toEqual([]);
+  });
+
+  it("T-CL-RESIZE-01: notifyCardWillResize fires matching + wildcard observers synchronously", () => {
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+    lifecycle.observeCardWillResize(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardWillResize("card-A", (id) =>
+      calls.push(`specific:${id}`),
+    );
+
+    lifecycle.notifyCardWillResize("card-A");
+
+    expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
+  });
+
+  it("T-CL-RESIZE-02: notifyCardDidResize fires matching + wildcard observers synchronously", () => {
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+    lifecycle.observeCardDidResize(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardDidResize("card-A", (id) =>
+      calls.push(`specific:${id}`),
+    );
+
+    lifecycle.notifyCardDidResize("card-A");
+
+    expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
+  });
+
+  it("T-CL-RESIZE-03: resize observers have no initial-sync", () => {
+    const { lifecycle } = makeLifecycle();
+    lifecycle.notifyCardDidResize("card-A");
+
+    const calls: string[] = [];
+    lifecycle.observeCardDidResize("card-A", (id) => calls.push(id));
+
+    expect(calls).toEqual([]);
+  });
+
+  it("T-CL-HOOK-10: cardDidMove and cardDidResize fire through useCardDelegate", async () => {
+    // Verifies the new events route through the MessageChannel drain
+    // and reach the delegate methods. Complements T-CL-HOOK-07.
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+
+    renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardWillMove: (id) => calls.push(`willMove:${id}`),
+          cardDidMove: (id) => calls.push(`didMove:${id}`),
+          cardWillResize: (id) => calls.push(`willResize:${id}`),
+          cardDidResize: (id) => calls.push(`didResize:${id}`),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
+
+    act(() => {
+      lifecycle.notifyCardWillMove("card-A");
+      lifecycle.notifyCardDidMove("card-A");
+      lifecycle.notifyCardWillResize("card-A");
+      lifecycle.notifyCardDidResize("card-A");
+    });
+    await flushDeferred();
+
+    expect(calls).toEqual([
+      "willMove:card-A",
+      "didMove:card-A",
+      "willResize:card-A",
+      "didResize:card-A",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // observeCardDidActivate
 // ---------------------------------------------------------------------------
 

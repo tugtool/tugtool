@@ -818,6 +818,8 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   useCardDelegate(cardId, {
     cardDidFinishConstruction: () => entryDelegateRef.current?.focus(),
     cardDidActivate: () => entryDelegateRef.current?.focus(),
+    cardDidMove: () => entryDelegateRef.current?.focus(),
+    cardDidResize: () => entryDelegateRef.current?.focus(),
   });
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
