@@ -257,6 +257,13 @@ class SelectionGuard {
   private boundSelectionChange: () => void;
   private boundSelectStart: (e: Event) => void;
 
+  // CardLifecycle subscription — installed on attach() when a
+  // lifecycle is provided. Replaces the deck-canvas-side
+  // `useLayoutEffect(() => selectionGuard.activateCard(focusedCardId), ...)`
+  // so the guard reacts to activations via one subscription rather
+  // than two coupled effects on opposite sides of the tree.
+  private lifecycleUnsubscribe: (() => void) | null = null;
+
   constructor() {
     this.boundPointerDown = this.handlePointerDown.bind(this);
     this.boundPointerMove = this.handlePointerMove.bind(this);
@@ -320,7 +327,12 @@ class SelectionGuard {
    * CSS Custom Highlights are created eagerly in the constructor (not here)
    * so they exist before any React effects fire.
    */
-  attach(): void {
+  attach(lifecycle?: {
+    observeCardActivation: (
+      cardId: string | null,
+      callback: (cardId: string) => void,
+    ) => () => void;
+  } | null): void {
     document.addEventListener("pointerdown", this.boundPointerDown, { capture: true });
     document.addEventListener("pointermove", this.boundPointerMove, { capture: true });
     document.addEventListener("pointerup", this.boundPointerUp, { capture: true });
@@ -334,6 +346,17 @@ class SelectionGuard {
     if (this.highlightsAvailable && this.inactiveHighlight &&
         typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       CSS.highlights.set("inactive-selection", this.inactiveHighlight);
+    }
+
+    // Wildcard subscription to the card lifecycle so every activation
+    // flips the highlight bookkeeping. Initial-sync fires the
+    // callback immediately for the currently-active card, so the
+    // old explicit-effect path is no longer needed in DeckCanvas.
+    if (lifecycle) {
+      this.lifecycleUnsubscribe = lifecycle.observeCardActivation(
+        null,
+        (cardId) => this.activateCard(cardId),
+      );
     }
   }
 
@@ -359,6 +382,11 @@ class SelectionGuard {
     }
     this.inactiveRanges.clear();
     this.activeCardId_highlight = null;
+
+    if (this.lifecycleUnsubscribe !== null) {
+      this.lifecycleUnsubscribe();
+      this.lifecycleUnsubscribe = null;
+    }
   }
 
   // ---- Card activation (highlight management) ----

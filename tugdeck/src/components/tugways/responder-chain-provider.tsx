@@ -26,6 +26,7 @@ import { ResponderChainContext, ResponderChainManager } from "./responder-chain"
 import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
+import { getCardLifecycle } from "../../lib/card-lifecycle";
 
 // ---- Fallback context menu ----
 
@@ -113,13 +114,25 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // ([D06], [D09])
     registerResponderChainManager(manager);
 
+    // Late-bind the responder chain manager to the CardLifecycle so
+    // activations can promote the key responder. DeckManager
+    // constructed the lifecycle in its own constructor and
+    // registered it via `registerCardLifecycle`; we resolve it
+    // here and hand over the manager instance. Safe when no
+    // lifecycle is registered (test contexts that bootstrap only
+    // the responder chain) — setManager is a no-op on null.
+    const lifecycle = getCardLifecycle();
+    lifecycle?.setManager(manager);
+
     // ---- SelectionGuard lifecycle ----
     // Install SelectionGuard event listeners alongside the key pipeline.
     // Both are document-level event systems that live for the duration of
     // the provider. CSS Highlight objects are created eagerly in the
     // SelectionGuard constructor (not here) so they exist before any React
     // effects fire. attach() only installs event listeners. ([D02])
-    selectionGuard.attach();
+    // Passing the lifecycle subscribes the guard to activation events
+    // (wildcard, initial-sync on attach); detach() unsubscribes.
+    selectionGuard.attach(lifecycle);
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {

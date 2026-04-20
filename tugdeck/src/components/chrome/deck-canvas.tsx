@@ -63,7 +63,6 @@ import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { CardFrame } from "./card-frame";
 import { getRegistration, getSizePolicy } from "@/card-registry";
@@ -173,34 +172,30 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Responder chain manager (stable singleton, safe in mount-time closure).
-  // Named `manager` as before -- distinct from `store` (IDeckManagerStore).
-  const manager = useRequiredResponderChain();
-
-  // Bring card to front (z-order via store) and clear deselect flag.
-  // Dependency is `store` -- a stable singleton from context.
-  //
-  // Also kick the responder chain when this click changed the deck's
-  // focused card but the capture-phase pointerdown promoter didn't
-  // advance the key card. That happens on `data-tug-focus="refuse"`
-  // targets — title bar, maximize, chrome buttons — which are refused
-  // promotion so clicks on intra-card chrome don't steal caret from
-  // the card's own editor. Same-card click: getKeyCard() already
-  // points at `id` (either because the editor's responder is first
-  // or because a descendant of this card is) → no-op. Cross-card
-  // title-bar click: getKeyCard() still points at the previous card
-  // → promote this card so downstream observers
-  // (tide-card focus-on-key, etc.) fire.
-  const handleCardFocused = useCallback(
+  // Thin adapter: card-frame's pointerdown → deck-wide activation.
+  // The full choreography (z-order, responder chain, selection
+  // guard notification, lifecycle observer broadcast) lives in
+  // `deck.activateCard`. Deck-canvas only contributes its local
+  // `setDeselected(false)` React state, subscribed below via
+  // `observeCardActivation` (wildcard) so every activation path
+  // — pointerdown, CYCLE_CARD, SHOW_COMPONENT_GALLERY, initial load —
+  // clears the canvas deselect flag uniformly.
+  const handleCardActivate = useCallback(
     (id: string) => {
-      store.handleCardFocused(id);
-      setDeselected(false);
-      if (manager.getKeyCard() !== id) {
-        manager.makeFirstResponder(id);
-      }
+      store.activateCard(id);
     },
-    [store, manager],
+    [store],
   );
+
+  // Deck-canvas-local reaction to any card activation: clear the
+  // canvas-background-click deselect flag. Subscribed on mount; the
+  // initial-sync in observeCardActivation fires for the currently-
+  // active card so the startup state is consistent.
+  useLayoutEffect(() => {
+    return store.observeCardActivation(null, () => {
+      setDeselected(false);
+    });
+  }, [store]);
 
   // ---------------------------------------------------------------------------
   // Canvas background click: deselect all cards
@@ -250,9 +245,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const c = cardsRef.current;
         if (c.length < 2) return;
         const nextId = c[0].id; // bottom card rotates to top
-        store.handleCardFocused(nextId); // z-order update (stable store method)
-        setDeselected(false); // clear deselect flag (stable state setter)
-        manager.makeFirstResponder(nextId); // responder chain focus
+        // Single activation entry point: updates z-order, promotes
+        // the key responder, fires deselect-clear + selection-guard
+        // + tide-card focus via the observer pipe.
+        store.activateCard(nextId);
       },
       [TUG_ACTIONS.RESET_LAYOUT]: (_event: ActionEvent) => {
         // Phase 5 will reset card positions.
@@ -280,17 +276,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const existingCard = existingId ? c.find((card) => card.id === existingId) : null;
 
         if (existingCard) {
-          // Gallery card already exists -- focus it ([D07] show-only, never close)
-          store.handleCardFocused(existingCard.id);
-          setDeselected(false);
-          manager.makeFirstResponder(existingCard.id);
+          // Gallery card already exists -- activate it ([D07] show-only,
+          // never close). activateCard replaces the former three-line
+          // sequence (focusCard + setDeselected + makeFirstResponder).
+          store.activateCard(existingCard.id);
         } else {
-          // No gallery card -- create one
+          // No gallery card -- create one and activate.
           const newId = store.addCard("gallery-buttons");
           if (newId) {
             galleryCardIdRef.current = newId;
-            setDeselected(false);
-            manager.makeFirstResponder(newId);
+            store.activateCard(newId);
           }
         }
       },
@@ -326,17 +321,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   //
   // On mount, read store.initialFocusedCardId (populated by the DeckManager
   // constructor from the tugbank-fetched focusedCardId). If the card still
-  // exists in the deck:
-  //   1. store.handleCardFocused(id) — update z-order so the card is top-most.
-  //   2. setDeselected(false)        — clear the canvas deselect overlay.
-  //   3. manager.makeFirstResponder(id) — route keyboard events to the card.
+  // exists in the deck, call `store.activateCard(id)` — the single entry
+  // point that updates z-order, promotes the responder-chain key card, and
+  // notifies lifecycle observers (selection guard, tide-card focus, etc.).
   // Then clear the field so this only fires once on mount.
   //
-  // DeckManager cannot call makeFirstResponder directly (it is a plain class
-  // without access to the responder chain). DeckCanvas has manager via
-  // useRequiredResponderChain(), so focus restoration is delegated here ([D03]).
-  //
-  // Empty deps array: runs once on mount. store and manager are stable singletons.
+  // Empty deps array: runs once on mount. The store is a stable singleton.
   useEffect(() => {
     const focusedCardId = store.initialFocusedCardId;
     if (!focusedCardId) return;
@@ -348,9 +338,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     const cardExists = snapshot.cards.some((c) => c.id === focusedCardId);
     if (!cardExists) return;
 
-    store.handleCardFocused(focusedCardId);
-    setDeselected(false);
-    manager.makeFirstResponder(focusedCardId);
+    store.activateCard(focusedCardId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fade out the startup overlay once DeckCanvas has committed its first render.
@@ -368,22 +356,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // provides visual continuity while the WebView is hidden. The WebView is
   // revealed by frontendReady after the theme and layout are fully applied.
 
-  // Sync SelectionGuard highlight state whenever the focused card changes.
-  //
-  // useLayoutEffect ensures the highlight swap happens before paint, so there is
-  // no frame where the old card's selection shows active blue while the card is
-  // visually unfocused. This single effect covers ALL focus-change paths:
-  // pointer clicks (redundant with handlePointerDown's internal activateCard —
-  // the second call is a no-op), keyboard shortcuts (Ctrl+`), card creation
-  // (addCard), card close (focus shifts to next card), and initial restore.
-  //
-  // Rule 4: The appearance change is through the browser Selection API and the
-  // inactive-selection CSS Highlight (DOM), not React state.
-  useLayoutEffect(() => {
-    if (focusedCardId) {
-      selectionGuard.activateCard(focusedCardId);
-    }
-  }, [focusedCardId]);
+  // SelectionGuard highlight sync is handled by the guard's own
+  // subscription to the card lifecycle (installed via
+  // `selectionGuard.attach(lifecycle)` in ResponderChainProvider).
+  // The deck-canvas no longer drives it from a focused-card effect;
+  // the lifecycle's wildcard observer + initial-sync covers every
+  // activation path without a coupled react-side effect.
 
   return (
     <ResponderScope>
@@ -463,7 +441,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             isFocused={cardState.id === focusedCardId}
             onCardMoved={store.handleCardMoved}
             onCardClosed={handleClose}
-            onCardFocused={handleCardFocused}
+            onCardFocused={handleCardActivate}
             onCardCollapsed={(id) => store.toggleCardCollapse(id)}
             onCardMerged={(sourceCardId, targetCardId, insertIndex) => {
               // Resolve the active tab id from the source card at commit time.

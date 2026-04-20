@@ -85,7 +85,12 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     getVersion: () => 0,
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
-    handleCardFocused: (_id: string) => {},
+    activateCard: (_id: string) => {},
+    observeCardConstruction: () => () => {},
+    observeCardActivation: () => () => {},
+    observeCardDeactivation: () => () => {},
+    observeCardDestruction: () => () => {},
+    getActiveCardId: () => null,
     addCard: (_componentId: string) => null,
     addTab: (_cardId: string, _componentId: string) => null,
     removeTab: (_cardId: string, _tabId: string) => {},
@@ -358,7 +363,10 @@ describe("DeckCanvas – showComponentGallery action", () => {
     expect(addCardCalls[0]).toBe("gallery-buttons");
   });
 
-  it("showComponentGallery calls makeFirstResponder with new card ID after addCard", () => {
+  it("showComponentGallery calls store.activateCard with the new card ID after addCard", () => {
+    // Post-Step-5.5: the action dispatches through store.activateCard
+    // (which internally updates z-order + responder chain + observers),
+    // not through manager.makeFirstResponder directly.
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -368,10 +376,12 @@ describe("DeckCanvas – showComponentGallery action", () => {
     }
 
     const GALLERY_CARD_ID = "gallery-card-uuid-2";
+    const activateCalls: string[] = [];
     const store = makeMockStore();
     store.addCard = (_componentId: string) => GALLERY_CARD_ID;
-
-    const makeFirstResponderCalls: string[] = [];
+    store.activateCard = (id: string) => {
+      activateCalls.push(id);
+    };
 
     act(() => {
       render(
@@ -384,21 +394,14 @@ describe("DeckCanvas – showComponentGallery action", () => {
       );
     });
 
-    // Wrap makeFirstResponder to capture calls after mount
-    const origMakeFirstResponder = manager!.makeFirstResponder.bind(manager);
-    manager!.makeFirstResponder = (id: string) => {
-      makeFirstResponderCalls.push(id);
-      origMakeFirstResponder(id);
-    };
-
     act(() => {
       manager!.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
 
-    expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
+    expect(activateCalls).toContain(GALLERY_CARD_ID);
   });
 
-  it("showComponentGallery a second time calls store.handleCardFocused (show-only, [D07])", () => {
+  it("showComponentGallery a second time calls store.activateCard (show-only, [D07])", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -421,7 +424,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       });
       return GALLERY_CARD_ID;
     };
-    reactiveStore.handleCardFocused = (id: string) => {
+    reactiveStore.activateCard = (id: string) => {
       focusedIds.push(id);
     };
 
@@ -670,7 +673,24 @@ class ReactiveStore implements IDeckManagerStore {
 
   handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
-  handleCardFocused = (_id: string): void => {};
+  activateCard = (_id: string): void => {};
+  observeCardConstruction = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardActivation = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardDeactivation = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardDestruction = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  getActiveCardId = (): string | null => null;
   addCard = (_componentId: string): string | null => null;
   addTab = (_cardId: string, _componentId: string): string | null => null;
   removeTab = (_cardId: string, _tabId: string): void => {};

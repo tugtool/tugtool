@@ -77,7 +77,12 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     getVersion: () => 0,
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
-    handleCardFocused: (_id: string) => {},
+    activateCard: (_id: string) => {},
+    observeCardConstruction: () => () => {},
+    observeCardActivation: () => () => {},
+    observeCardDeactivation: () => () => {},
+    observeCardDestruction: () => () => {},
+    getActiveCardId: () => null,
     addCard: (_componentId: string) => null,
     addTab: (_cardId: string, _componentId: string) => null,
     removeTab: (_cardId: string, _tabId: string) => {},
@@ -133,7 +138,24 @@ class ReactiveStore implements IDeckManagerStore {
 
   handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
-  handleCardFocused = (_id: string): void => {};
+  activateCard = (_id: string): void => {};
+  observeCardConstruction = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardActivation = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardDeactivation = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  observeCardDestruction = (
+    _cardId: string | null,
+    _callback: (cardId: string) => void,
+  ): (() => void) => () => {};
+  getActiveCardId = (): string | null => null;
   addCard = (_componentId: string): string | null => null;
   addTab = (_cardId: string, _componentId: string): string | null => null;
   removeTab = (_cardId: string, _tabId: string): void => {};
@@ -273,7 +295,7 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
       });
       return GALLERY_CARD_ID;
     };
-    reactiveStore.handleCardFocused = (id: string) => {
+    reactiveStore.activateCard = (id: string) => {
       focusedIds.push(id);
     };
 
@@ -301,7 +323,7 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
       manager.sendToFirstResponder({ action: TUG_ACTIONS.SHOW_COMPONENT_GALLERY, phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // Still exactly 1
-    // handleCardFocused should have been called instead
+    // activateCard should have been called instead
     expect(focusedIds).toContain(GALLERY_CARD_ID);
   });
 });

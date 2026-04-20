@@ -434,7 +434,40 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       clear() { engineRef.current?.clear(); },
       undo() { engineRef.current?.undo(); },
       redo() { engineRef.current?.redo(); },
-      focus() { engineRef.current?.root.focus(); },
+      focus() {
+        // Post-condition: after this returns, the user can type —
+        // activeElement is the contenteditable AND a visible caret is
+        // placed inside it.
+        //
+        // Native `.focus()` alone is not sufficient: a contenteditable
+        // whose browser Selection has no range inside it shows no
+        // caret even when activeElement === root. That's the state
+        // left by the card lifecycle's selection guard, which calls
+        // `removeAllRanges()` on every cross-card activation. Place a
+        // collapsed caret at the end of the content before calling
+        // focus() so the browser has a valid Selection anchor when
+        // focus applies. If a selection is already inside root
+        // (e.g., a restored range from selectionGuard, or a user-
+        // placed caret), leave it alone.
+        const engine = engineRef.current;
+        if (!engine) return;
+        const root = engine.root;
+        const sel = window.getSelection();
+        if (sel) {
+          const inside =
+            sel.rangeCount > 0 && root.contains(sel.anchorNode);
+          if (!inside) {
+            try {
+              sel.collapse(root, root.childNodes.length);
+            } catch {
+              // Some browsers throw if the anchor/offset is invalid
+              // (e.g., root temporarily detached). Fall through to
+              // focus() and let the browser do what it can.
+            }
+          }
+        }
+        root.focus();
+      },
       get isTypeaheadActive() { return engineRef.current?.isTypeaheadActive ?? false; },
       acceptTypeahead(index?: number) { engineRef.current?.acceptTypeahead(index); },
       cancelTypeahead() { engineRef.current?.cancelTypeahead(); },

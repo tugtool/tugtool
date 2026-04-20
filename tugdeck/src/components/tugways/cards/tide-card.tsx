@@ -44,6 +44,10 @@ import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
+import {
+  useOnCardActivation,
+  useOnCardConstruction,
+} from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -711,8 +715,6 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useTideCardObserver(cardId, codeSessionStore);
 
-  const manager = useResponderChain();
-
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
 
   const codeSnap = useSyncExternalStore(
@@ -800,35 +802,28 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
-  // --- Focus the prompt editor whenever this card becomes key. ---
-  // One unified mechanism for every path that makes the tide card
-  // the active card:
-  //   • body first mounts (picker dismissed, this card was already
-  //     the key card via the tug-card responder);
-  //   • user clicks a card's chrome or body (pointerdown promotion
-  //     flips the key card);
-  //   • user cycles with Ctrl+` (the Cmd-family shortcuts walk the
-  //     deck's focus order);
-  //   • any future programmatic key-card change.
+  // Focus the prompt editor at both meaningful moments:
   //
-  // Subscribes to `observeKeyResponder("card", ...)`, which fires
-  // only on transitions — so re-renders within a single active
-  // session don't stomp on the caret. The initial sync check at
-  // mount covers the first-bind case (subscriptions don't fire on
-  // subscribe). [L07]: the callback reads the delegate via the ref,
-  // never a closed-over value.
-  useLayoutEffect(() => {
-    if (manager === null) return;
-    if (manager.getKeyCard() === cardId) {
-      entryDelegateRef.current?.focus();
-    }
-    const unsubscribe = manager.observeKeyResponder("card", (nextKeyCardId) => {
-      if (nextKeyCardId === cardId) {
-        entryDelegateRef.current?.focus();
-      }
-    });
-    return unsubscribe;
-  }, [cardId, manager, entryDelegateRef]);
+  //   - Construction: fires once when the card body first mounts
+  //     (fresh card creation, picker → body transition, reload
+  //     restoration). Guarantees a caret the moment the editor
+  //     appears, regardless of whether the card happens to be the
+  //     key card at that instant.
+  //
+  //   - Activation: fires on every path that makes this card the
+  //     active card later — click, Ctrl+`, programmatic activation.
+  //
+  // Both route through `entryDelegate.focus()`, which is idempotent
+  // if the editor already holds focus and places a caret if the
+  // Selection has been cleared (e.g., by the selection guard).
+  // Double-firing on a first-mount-into-active card is harmless;
+  // missing either moment would leave the user unable to type.
+  useOnCardConstruction(cardId, () => {
+    entryDelegateRef.current?.focus();
+  });
+  useOnCardActivation(cardId, () => {
+    entryDelegateRef.current?.focus();
+  });
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
   // not on any other data-empty transition (manual delete, undo, etc.).

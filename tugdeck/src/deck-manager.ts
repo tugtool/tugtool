@@ -54,6 +54,13 @@ import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
 import { BASE_THEME_NAME } from "./theme-constants";
+import {
+  CardLifecycle,
+  CardLifecycleContext,
+  registerCardLifecycle,
+  type CardLifecycleManager,
+  type CardLifecycleObserver,
+} from "./lib/card-lifecycle";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -188,8 +195,12 @@ export class DeckManager implements IDeckManagerStore {
   /** Stable bound callback: remove a card. */
   public handleCardClosed: (id: string) => void;
 
-  /** Stable bound callback: bring a card to front. */
-  public handleCardFocused: (id: string) => void;
+  /**
+   * Card-activation lifecycle. Single source of truth for "which
+   * card is the user in." All activation paths route through
+   * `activateCard`; observers subscribe via `observeCardActivation`.
+   */
+  public readonly cardLifecycle: CardLifecycle;
 
   /** Stable bound callback: add a tab to an existing card. */
   public addTab: (cardId: string, componentId: string) => string | null;
@@ -237,6 +248,81 @@ export class DeckManager implements IDeckManagerStore {
    */
   public getVersion = (): number => this.stateVersion;
 
+  // ---- CardLifecycleStore contract ----
+
+  /**
+   * The id of the currently-focused card (top of z-order). `null`
+   * when the deck has no cards. Derived from deckState — no
+   * separate state field. Required by `CardLifecycleStore`.
+   */
+  public getFocusedCardId = (): string | null => {
+    const cards = this.deckState.cards;
+    return cards.length > 0 ? cards[cards.length - 1].id : null;
+  };
+
+  // ---- CardLifecycle pass-throughs ----
+
+  /**
+   * Activate a card. Thin pass-through to `cardLifecycle.activateCard`.
+   * See `CardLifecycle.activateCard` for the full contract.
+   */
+  public activateCard = (cardId: string): void => {
+    this.cardLifecycle.activateCard(cardId);
+  };
+
+  /**
+   * Subscribe to card CONSTRUCTION events. Pass-through to
+   * `cardLifecycle.observeCardConstruction`.
+   */
+  public observeCardConstruction = (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): (() => void) =>
+    this.cardLifecycle.observeCardConstruction(cardId, callback);
+
+  /**
+   * Subscribe to card ACTIVATION events. Pass-through to
+   * `cardLifecycle.observeCardActivation`.
+   */
+  public observeCardActivation = (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): (() => void) => this.cardLifecycle.observeCardActivation(cardId, callback);
+
+  /**
+   * Subscribe to card DEACTIVATION events. Pass-through to
+   * `cardLifecycle.observeCardDeactivation`.
+   */
+  public observeCardDeactivation = (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): (() => void) =>
+    this.cardLifecycle.observeCardDeactivation(cardId, callback);
+
+  /**
+   * Subscribe to card DESTRUCTION events. Pass-through to
+   * `cardLifecycle.observeCardDestruction`.
+   */
+  public observeCardDestruction = (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): (() => void) =>
+    this.cardLifecycle.observeCardDestruction(cardId, callback);
+
+  /** Currently-active card id. Thin pass-through. */
+  public getActiveCardId = (): string | null =>
+    this.cardLifecycle.getActiveCardId();
+
+  /**
+   * Late-bind the responder chain manager to the card lifecycle.
+   * Called by `ResponderChainProvider`'s mount effect.
+   */
+  public attachResponderChainManager = (
+    manager: CardLifecycleManager | null,
+  ): void => {
+    this.cardLifecycle.setManager(manager);
+  };
+
   constructor(
     container: HTMLElement,
     connection: TugConnection,
@@ -267,7 +353,12 @@ export class DeckManager implements IDeckManagerStore {
     // Bind callbacks once -- stable identity, safe to pass directly to the store interface.
     this.handleCardMoved = this.moveCard.bind(this);
     this.handleCardClosed = this.removeCard.bind(this);
-    this.handleCardFocused = this.focusCard.bind(this);
+    // Construct the card lifecycle. The store end is this deck manager
+    // (we implement CardLifecycleStore via focusCard + getFocusedCardId).
+    // The responder-chain manager is attached later by
+    // ResponderChainProvider's mount effect (late binding).
+    this.cardLifecycle = new CardLifecycle(this);
+    registerCardLifecycle(this.cardLifecycle);
     this.addTab = this._addTab.bind(this);
     this.removeTab = this._removeTab.bind(this);
     this.setActiveTab = this._setActiveTab.bind(this);
@@ -307,15 +398,19 @@ export class DeckManager implements IDeckManagerStore {
                 DeckManagerContext.Provider,
                 { value: this },
                 React.createElement(
-                  TugAlertProvider,
-                  null,
+                  CardLifecycleContext.Provider,
+                  { value: this.cardLifecycle },
                   React.createElement(
-                    TugBulletinProvider,
+                    TugAlertProvider,
                     null,
-                    React.createElement(TugBannerProvider, {
-                      connection: this.connection,
-                    }),
-                    React.createElement(DeckCanvas, {}),
+                    React.createElement(
+                      TugBulletinProvider,
+                      null,
+                      React.createElement(TugBannerProvider, {
+                        connection: this.connection,
+                      }),
+                      React.createElement(DeckCanvas, {}),
+                    ),
                   ),
                 ),
               ),
@@ -460,13 +555,25 @@ export class DeckManager implements IDeckManagerStore {
     this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
     this.notify();
     this.scheduleSave();
+    // Fire CONSTRUCTION after the store update and notify. Observers
+    // reading state in their callback see the card present.
+    this.cardLifecycle.notifyConstruction(cardId);
     return cardId;
   }
 
   /**
    * Remove a card from the canvas by card ID.
+   *
+   * Lifecycle order (all synchronous):
+   *   1. If the card was active, fire DEACTIVATION.
+   *   2. Fire DESTRUCTION — subscribers can still read card state.
+   *   3. Remove from store and notify subscribers / schedule save.
    */
   removeCard(cardId: string): void {
+    if (this.cardLifecycle.getActiveCardId() === cardId) {
+      this.cardLifecycle.notifyDeactivation(cardId);
+    }
+    this.cardLifecycle.notifyDestruction(cardId);
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),

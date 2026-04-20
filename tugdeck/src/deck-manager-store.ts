@@ -12,6 +12,7 @@
  */
 
 import type { DeckState, TabStateBag } from "./layout-tree";
+import type { CardLifecycleObserver } from "./lib/card-lifecycle";
 
 /**
  * Subscribable store interface for DeckManager.
@@ -47,8 +48,58 @@ export interface IDeckManagerStore {
   /** Stable bound callback: remove a card. */
   handleCardClosed: (id: string) => void;
 
-  /** Stable bound callback: bring a card to front. */
-  handleCardFocused: (id: string) => void;
+  /**
+   * Activate a card — the canonical "make this card the one the user
+   * is in" operation. Synchronously updates z-order, promotes the
+   * responder chain's key card, and notifies lifecycle observers.
+   * All activation paths (pointerdown, CYCLE_CARD, initial load,
+   * programmatic) route through this method.
+   */
+  activateCard: (cardId: string) => void;
+
+  /**
+   * Subscribe to card CONSTRUCTION events. Fires per card when
+   * `deck.addCard` completes; initial-sync fires for each
+   * already-constructed card matching the subscription.
+   */
+  observeCardConstruction: (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ) => () => void;
+
+  /**
+   * Subscribe to card ACTIVATION events. `cardId === null` is a
+   * wildcard (every activation); `cardId === "X"` is specific.
+   * Fires synchronously on subscribe if the subscription matches
+   * the currently-active card. Returns an unsubscribe function.
+   */
+  observeCardActivation: (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ) => () => void;
+
+  /**
+   * Subscribe to card DEACTIVATION events — fires when a card loses
+   * active status, either to a subsequent activation or to closure
+   * while active. No initial-sync.
+   */
+  observeCardDeactivation: (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ) => () => void;
+
+  /**
+   * Subscribe to card DESTRUCTION events. Fires once, synchronously,
+   * right before the card is removed from the deck. Subscribers can
+   * still read state. No initial-sync.
+   */
+  observeCardDestruction: (
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ) => () => void;
+
+  /** Currently-active card id, or null if no card is active. */
+  getActiveCardId: () => string | null;
 
   /**
    * Add a new card from the registry.

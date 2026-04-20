@@ -1342,7 +1342,7 @@ describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () =>
     }) as unknown as typeof fetch;
 
     // Focus card1 (currently not top — card2 was added last).
-    manager.handleCardFocused(card1Id);
+    manager.focusCard(card1Id);
     // Give fire-and-forget a tick.
     await new Promise((r) => setTimeout(r, 0));
 
@@ -1366,7 +1366,7 @@ describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () =>
     }) as unknown as typeof fetch;
 
     // card2 is already top-most (last in array). This should still PUT.
-    manager.handleCardFocused(card2Id);
+    manager.focusCard(card2Id);
     await new Promise((r) => setTimeout(r, 0));
 
     const deckStatePuts = putCalls.filter((u) =>
