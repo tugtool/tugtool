@@ -61,6 +61,11 @@ import {
   type CardLifecycleManager,
   type CardLifecycleObserver,
 } from "./lib/card-lifecycle";
+import {
+  AppLifecycle,
+  AppLifecycleContext,
+  registerAppLifecycle,
+} from "./lib/app-lifecycle";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -201,6 +206,14 @@ export class DeckManager implements IDeckManagerStore {
    * `activateCard`; observers subscribe via `observeCardDidActivate`.
    */
   public readonly cardLifecycle: CardLifecycle;
+
+  /**
+   * App-lifecycle. Parallel to `cardLifecycle`, driven by the Swift
+   * `NSApplicationDelegate` callbacks. Step 4 of the lifecycle-
+   * delegates plan constructs this; Step 5 routes control-frame
+   * `app-lifecycle` events into it via `action-dispatch.ts`.
+   */
+  public readonly appLifecycle: AppLifecycle;
 
   /** Stable bound callback: add a tab to an existing card. */
   public addTab: (cardId: string, componentId: string) => string | null;
@@ -359,6 +372,14 @@ export class DeckManager implements IDeckManagerStore {
     // ResponderChainProvider's mount effect (late binding).
     this.cardLifecycle = new CardLifecycle(this);
     registerCardLifecycle(this.cardLifecycle);
+    // Construct the app lifecycle in parallel. No constructor args —
+    // app events are singular (one app) and carry no per-target id.
+    // Step 5 of the lifecycle-delegates plan wires Swift
+    // `NSApplicationDelegate` events here via the `app-lifecycle`
+    // control frame; Step 7 adds a cascade layer coupling this to
+    // `cardLifecycle`.
+    this.appLifecycle = new AppLifecycle();
+    registerAppLifecycle(this.appLifecycle);
     this.addTab = this._addTab.bind(this);
     this.removeTab = this._removeTab.bind(this);
     this.setActiveTab = this._setActiveTab.bind(this);
@@ -401,15 +422,19 @@ export class DeckManager implements IDeckManagerStore {
                   CardLifecycleContext.Provider,
                   { value: this.cardLifecycle },
                   React.createElement(
-                    TugAlertProvider,
-                    null,
+                    AppLifecycleContext.Provider,
+                    { value: this.appLifecycle },
                     React.createElement(
-                      TugBulletinProvider,
+                      TugAlertProvider,
                       null,
-                      React.createElement(TugBannerProvider, {
-                        connection: this.connection,
-                      }),
-                      React.createElement(DeckCanvas, {}),
+                      React.createElement(
+                        TugBulletinProvider,
+                        null,
+                        React.createElement(TugBannerProvider, {
+                          connection: this.connection,
+                        }),
+                        React.createElement(DeckCanvas, {}),
+                      ),
                     ),
                   ),
                 ),
