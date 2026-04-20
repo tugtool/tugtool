@@ -100,3 +100,102 @@ export interface DeckState {
   activeStackId?: string;
   focusedCardId?: string;
 }
+
+// ---- Invariant validation ----
+
+/**
+ * Thrown by {@link validateDeckState} when the two-table invariants are
+ * violated. The `message` names the violated invariant and includes the
+ * offending ids so failures are traceable in test output.
+ */
+export class DeckStateInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeckStateInvariantError";
+  }
+}
+
+/**
+ * Validate every DeckState invariant documented above. Throws
+ * {@link DeckStateInvariantError} on the first violation.
+ *
+ * Invariants checked:
+ *   1. every `stack.cardIds` entry references a real `state.cards[].id`;
+ *   2. every card appears in exactly one stack's `cardIds` (no orphans, no
+ *      duplicates);
+ *   3. no stack has `cardIds.length === 0`;
+ *   4. every `stack.activeCardId` is a member of that stack's `cardIds`;
+ *   5. when `state.activeStackId` is set, it references a real stack.
+ *
+ * Called unconditionally from `DeckManager.applyLayout` (before notify) and
+ * from `DeckManager.notify` in dev/test builds only.
+ */
+export function validateDeckState(state: DeckState): void {
+  const cardIds = new Set<string>();
+  for (const card of state.cards) {
+    if (cardIds.has(card.id)) {
+      throw new DeckStateInvariantError(
+        `duplicate card id "${card.id}" in deckState.cards`,
+      );
+    }
+    cardIds.add(card.id);
+  }
+
+  const stackIds = new Set<string>();
+  const cardToStack = new Map<string, string>();
+  for (const stack of state.stacks) {
+    if (stackIds.has(stack.id)) {
+      throw new DeckStateInvariantError(
+        `duplicate stack id "${stack.id}" in deckState.stacks`,
+      );
+    }
+    stackIds.add(stack.id);
+
+    // Invariant 3
+    if (stack.cardIds.length === 0) {
+      throw new DeckStateInvariantError(
+        `stack "${stack.id}" has empty cardIds (no empty stacks permitted)`,
+      );
+    }
+
+    for (const cid of stack.cardIds) {
+      // Invariant 1
+      if (!cardIds.has(cid)) {
+        throw new DeckStateInvariantError(
+          `stack "${stack.id}" references missing card id "${cid}"`,
+        );
+      }
+      // Invariant 2
+      const existingHost = cardToStack.get(cid);
+      if (existingHost !== undefined) {
+        throw new DeckStateInvariantError(
+          `card "${cid}" appears in both stack "${existingHost}" and "${stack.id}"`,
+        );
+      }
+      cardToStack.set(cid, stack.id);
+    }
+
+    // Invariant 4
+    if (!stack.cardIds.includes(stack.activeCardId)) {
+      throw new DeckStateInvariantError(
+        `stack "${stack.id}" activeCardId "${stack.activeCardId}" is not in cardIds`,
+      );
+    }
+  }
+
+  // Invariant 2 (second half): every card has a host stack.
+  for (const card of state.cards) {
+    if (!cardToStack.has(card.id)) {
+      throw new DeckStateInvariantError(
+        `card "${card.id}" is orphaned (no stack references it)`,
+      );
+    }
+  }
+
+  // Invariant 5
+  if (state.activeStackId !== undefined && !stackIds.has(state.activeStackId)) {
+    throw new DeckStateInvariantError(
+      `activeStackId "${state.activeStackId}" does not reference a real stack`,
+    );
+  }
+}

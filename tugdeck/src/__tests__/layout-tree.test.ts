@@ -4,6 +4,8 @@ import {
   type CardState,
   type CardStackState,
   type CardStateBag,
+  validateDeckState,
+  DeckStateInvariantError,
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
@@ -556,5 +558,139 @@ describe("Two-table invariants via the parser", () => {
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
     expect(restored.cards.length).toBe(1);
     expect(restored.cards[0].id).toBe("a");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateDeckState — invariant checker
+// ---------------------------------------------------------------------------
+
+describe("validateDeckState", () => {
+  function makeCard(id: string, componentId = "hello"): CardState {
+    return { id, componentId, title: id, closable: true };
+  }
+
+  function makeStack(
+    id: string,
+    cardIds: string[],
+    activeCardId: string,
+  ): CardStackState {
+    return {
+      id,
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      cardIds,
+      activeCardId,
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+  }
+
+  test("accepts the empty deck", () => {
+    expect(() => validateDeckState({ cards: [], stacks: [] })).not.toThrow();
+  });
+
+  test("accepts a well-formed single-card, single-stack deck", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1")],
+      stacks: [makeStack("s1", ["c1"], "c1")],
+    };
+    expect(() => validateDeckState(state)).not.toThrow();
+  });
+
+  test("accepts a well-formed multi-card stack with activeStackId set", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c2"), makeCard("c3")],
+      stacks: [
+        makeStack("s1", ["c1", "c2"], "c2"),
+        makeStack("s2", ["c3"], "c3"),
+      ],
+      activeStackId: "s2",
+    };
+    expect(() => validateDeckState(state)).not.toThrow();
+  });
+
+  test("rejects a stack referencing a missing card id (invariant 1)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1")],
+      stacks: [makeStack("s1", ["c1", "ghost"], "c1")],
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(/missing card id "ghost"/);
+  });
+
+  test("rejects a card appearing in two stacks (invariant 2: no duplicates)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c2")],
+      stacks: [
+        makeStack("s1", ["c1", "c2"], "c1"),
+        makeStack("s2", ["c2"], "c2"),
+      ],
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(/appears in both stack/);
+  });
+
+  test("rejects an orphan card (invariant 2: every card has a host)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("orphan")],
+      stacks: [makeStack("s1", ["c1"], "c1")],
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(/"orphan" is orphaned/);
+  });
+
+  test("rejects an empty stack (invariant 3)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1")],
+      stacks: [
+        makeStack("s1", ["c1"], "c1"),
+        makeStack("s-empty", [], "x"),
+      ],
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(/empty cardIds/);
+  });
+
+  test("rejects activeCardId that is not in cardIds (invariant 4)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c2")],
+      stacks: [makeStack("s1", ["c1", "c2"], "ghost")],
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(
+      /activeCardId "ghost" is not in cardIds/,
+    );
+  });
+
+  test("rejects activeStackId that references no real stack (invariant 5)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1")],
+      stacks: [makeStack("s1", ["c1"], "c1")],
+      activeStackId: "no-such-stack",
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(
+      /activeStackId "no-such-stack" does not reference a real stack/,
+    );
+  });
+
+  test("rejects duplicate card ids in deckState.cards", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c1", "terminal")],
+      stacks: [makeStack("s1", ["c1"], "c1")],
+    };
+    expect(() => validateDeckState(state)).toThrow(/duplicate card id "c1"/);
+  });
+
+  test("rejects duplicate stack ids in deckState.stacks", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c2")],
+      stacks: [
+        makeStack("s1", ["c1"], "c1"),
+        makeStack("s1", ["c2"], "c2"),
+      ],
+    };
+    expect(() => validateDeckState(state)).toThrow(/duplicate stack id "s1"/);
   });
 });

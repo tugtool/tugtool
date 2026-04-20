@@ -37,6 +37,7 @@ import {
   type CardState,
   type CardStackState,
   type CardStateBag,
+  validateDeckState,
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy } from "./card-registry";
@@ -78,6 +79,21 @@ const SAVE_DEBOUNCE_MS = 500;
 
 /** Cascade step between consecutive new stacks (pixels) */
 const CASCADE_STEP = 30;
+
+/**
+ * True when running outside a production build. Used to gate dev-only
+ * assertions (deck-state invariant checks) so production pays no cost.
+ * Permissive: returns true in any environment without `NODE_ENV=production`
+ * (browsers, worker contexts, test runners).
+ */
+function isDevEnv(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (globalThis as any).process?.env?.NODE_ENV !== "production";
+  } catch {
+    return true;
+  }
+}
 
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
@@ -351,6 +367,12 @@ export class DeckManager implements IDeckManagerStore {
   // ---- Store notification ----
 
   private notify(): void {
+    // Dev-only invariant check. Fires after every mutation so violations
+    // surface at the site that produced them rather than downstream where
+    // the symptom manifests. Guarded so production builds pay no cost.
+    if (isDevEnv()) {
+      validateDeckState(this.deckState);
+    }
     this.stateVersion += 1;
     this.subscribers.forEach((cb) => cb());
     this.pushCardListToHost();
@@ -1210,9 +1232,14 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Apply an external DeckState, notify subscribers, and schedule a save.
+   *
+   * Validates the two-table invariants **unconditionally** after
+   * filtering — `applyLayout` is the external-input gate, and bad shapes
+   * must fail loudly in every build, not just dev.
    */
   applyLayout(deckState: DeckState): void {
     this.deckState = this.filterRegisteredCards(deckState);
+    validateDeckState(this.deckState);
     this.notify();
     this.scheduleSave();
   }
