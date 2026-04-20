@@ -550,6 +550,128 @@ This also closes out the "Out of scope" note in [§Scope](#scope) that deferred 
 
 **Note on scope:** Does not change `activateCard`'s semantics (same-card re-activation remains silent per D3 / T-CL-03). Does not introduce a click-affirmation event. Solves the focus-loss bug by adding two specific lifecycle transitions that the bug maps to — nothing more.
 
+#### Step 11.6 — Lifecycle routing audit fix (H-A1 … H-A6) {#step-11-6}
+
+**Motivation:** A 360° audit after Step 11.5 surfaced six critical and moderate holes where `deckState` mutates without routing through the lifecycle delegate machinery. The user's rule: *every* code path that affects foreground/background/hide/unhide or construction/destruction/activation/deactivation/move/resize MUST go through the delegates. This step closes every live path that violates that rule.
+
+**Files:**
+- `tugdeck/src/action-dispatch.ts`
+- `tugdeck/src/deck-manager.ts`
+- `tugdeck/src/components/chrome/deck-canvas.tsx`
+- `tugdeck/src/__tests__/deck-manager.test.ts`
+- `tugdeck/src/__tests__/action-dispatch.test.ts` (if touched)
+
+**Work:**
+
+*H-A1 — `focus-card` menu action bypasses lifecycle.*
+- `action-dispatch.ts`: change `deckManager.focusCard(cardId)` to `deckManager.activateCard(cardId)` in the `focus-card` handler. `activateCard` internally calls `focusCard` for z-order but ALSO fires will/did events and promotes the responder chain. The View menu card-list selection becomes a first-class activation path.
+
+*H-A2 — `arrangeCards` silently moves/resizes every card.*
+- `DeckManager.arrangeCards(mode)`: diff the arranged cards against the pre-arrange state. For each card whose position changed, fire `notifyCardWillMove` / `notifyCardDidMove`. For each card whose size changed (tile mode), fire `notifyCardWillResize` / `notifyCardDidResize`. Same change-detection pattern as `moveCard`.
+- Ordering: fire all `will` events first across all cards, then commit `deckState`, then fire all `did` events.
+
+*H-A3 — `_detachTab` creates a new card without firing construction or activation.*
+- `_detachTab`: capture `previouslyActive = this.cardLifecycle.getActiveCardId()` before the splice+append mutation. After the mutation + `notify()`, fire `notifyCardDidFinishConstruction(newCardId)` then `activateCard(newCardId, previouslyActive)`. Mirrors the `addCard` pattern exactly.
+- Test: detach a tab → assert construction fires, source card's `cardDidDeactivate` fires, new card's `cardDidActivate` fires.
+
+*H-A4 — `_mergeTab` silently destroys the source card when merging its last tab.*
+- `_mergeTab`: detect the source-card-will-be-destroyed case (source has exactly 1 tab, matching the splice's last-tab branch). If source was active, fire `notifyCardWillDeactivate(sourceId)` + `notifyCardDidDeactivate(sourceId)` before the mutation. Fire `notifyCardWillBeginDestruction(sourceId)` before the mutation. After the mutation + `notify()`, if the source was active, activate the target card (via `activateCard(targetCardId, null)` since deactivation already fired).
+- If source is NOT the active card but IS destroyed, fire destruction only.
+- Test: single-tab source card → merge its tab → assert destruction fires and target activation fires (if source was active).
+
+*H-A5 — `loadLayout` creates cards without firing construction.*
+- `DeckManager` constructor: after `this.deckState = this.loadLayout()`, iterate `this.deckState.cards` and call `this.cardLifecycle.notifyCardDidFinishConstruction(card.id)` for each. This populates `constructedCards` so later-subscribing delegates receive initial-sync correctly for loaded cards.
+- Must fire BEFORE `reactRoot.render()` so React subscribers don't miss the initial-sync.
+- Note: no activation events fire here — the `initialFocusedCardId` restoration in DeckCanvas (fixed by H-A6 below) handles activation.
+
+*H-A6 — `initialFocusedCardId` restoration same-card-bails.*
+- `deck-canvas.tsx`: change `store.activateCard(focusedCardId)` → `store.activateCard(focusedCardId, null)`. Passing `null` as the known-previous forces the full activation transition (no prior to deactivate; fires `will/didActivate` for the restored card).
+- `IDeckManagerStore.activateCard` signature needs extending: `activateCard: (cardId: string, knownPreviousActive?: string | null) => void`. The DeckManager implementation already accepts the 2-arg form post-Step-11.5-fix; this just makes the interface match.
+
+**Tests:**
+- H-A1: mock control frame `focus-card` → assert `activateCard` called, not `focusCard`.
+- H-A2: `arrangeCards("cascade")` with 3 cards → assert 3 `cardDidMove` events; `arrangeCards("tile")` → assert 3 move + 3 resize.
+- H-A3: detach tab from multi-tab card → assert `construct:new, willDeact:old, willAct:new, didDeact:old, didAct:new` in order.
+- H-A4: merge tab from single-tab source (active) → assert `willDeact:src, didDeact:src, willDestroy:src, willAct:tgt, didAct:tgt`.
+- H-A4 alt: merge tab from single-tab source (non-active) → assert `willDestroy:src` only, no activation events.
+- H-A5: construct a DeckManager with a pre-populated layout → observe `cardDidFinishConstruction` wildcard → assert fires for each loaded card.
+- H-A6: simulate reload with a focused card id → assert `cardWillActivate` + `cardDidActivate` fire for the restored card.
+
+**Verification:**
+- `bun x tsc --noEmit` clean.
+- `bun test` green (2224 + ~8 new).
+- Manual test matrix:
+  - Select a card from the View menu → card comes to top AND prompt of new top gains focus (H-A1).
+  - Pick View > Cascade (or Tile) while a tide card is active → all cards rearrange; tide prompt regains focus after arrangement (H-A2).
+  - Drag a tab off a multi-tab card → new card appears with its prompt focused; old card's prompt blurs (H-A3).
+  - Drag the last tab off a single-tab tide card onto another card → source disappears; if source was active, target's prompt gains focus (H-A4).
+  - Reload Tug.app with a tide card focused → after reload, that card's prompt is auto-focused (H-A5 + H-A6).
+
+**Note on scope:** This step fixes routing only. It does not introduce new events or change existing event semantics. Every fix follows the patterns already established in Steps 3, 7, 11, and 11.5.
+
+#### Step 11.6.5 — Close out H6–H11 + H-A7/A8/A9 residuals {#step-11-6-5}
+
+**Motivation:** The reliability study's H1–H3 are resolved by Step 11. H4–H5 were resolved incidentally in the 2cdc5fa5 commit (Route addCard/removeCard through activation lifecycle). The remaining holes (H6, H7, H8/H-A9, H9, H10, H11) and three residuals from the 11.6 audit (H-A7, H-A8, H-A9) land in one coordinated cleanup step.
+
+**Files:**
+- `tugdeck/src/lib/card-lifecycle.ts`
+- `tugdeck/src/lib/app-lifecycle.ts`
+- `tugdeck/src/lib/lifecycle-cascade.ts`
+- `tugdeck/src/action-dispatch.ts`
+- `tugdeck/src/main.tsx` (or a new `globals.d.ts`)
+- `tugdeck/src/deck-manager.ts` (applyLayout; possibly collapse docstring)
+- `tugdeck/src/__tests__/deck-manager.test.ts`
+- `tugdeck/src/__tests__/lifecycle-cascade.test.ts`
+
+**Work:**
+
+*H6 — `initActionDispatch`'s save-on-resign subscription has no dispose.*
+- Change `initActionDispatch(connection, deck)` return type from `void` to `() => void`. The returned function disposes the `observeApplicationDidResignActive` subscription (and any other lifecycle subscriptions added later).
+- `main.tsx` captures the returned disposer if a tear-down path ever needs it. Production doesn't call it; tests that reinitialize action-dispatch can.
+
+*H7 — No test for DeckManager → cascade install/dispose.*
+- Add a `deck-manager.test.ts` test: construct a DeckManager, fire `deck.appLifecycle.notifyApplicationWillResignActive()`, assert the cascade fires `cardWillDeactivate`/`cardDidDeactivate` on the active card. Call `deck.destroy()`. Fire the app event again, assert no cascade fires (subscriptions disposed).
+
+*H8 / H-A9 — Cascade reactivation on destroyed card logs a phantom activation.*
+- Add `hasConstructed(cardId: string): boolean` to `CardLifecycle` (delegates to the existing `constructedCards` Set).
+- In `lifecycle-cascade.ts` `reactivateIfNeeded`: before firing `notifyCardWillActivate(cardId)`, check `cardLifecycle.hasConstructed(cardId)`. If false, clear `deactivatedByAppCardId` silently and log `[CardLifecycle] cascade from <trigger> → card <id> destroyed between deactivate and reactivate; skipping reactivation`.
+- Test: cascade deactivates card A, then A is destroyed, then app foregrounds → cascade logs skip and does not fire activation.
+
+*H9 — Early-launch will-events may be dropped.*
+- Documentation-only. Add a banner comment at the top of `AppLifecycle` explaining: "App lifecycle events during startup (before the JS side has registered the `AppLifecycle` singleton via `DeckManager` construction) are best-effort; control frames dispatched before registration are dropped. Consumers should not rely on receiving every app event in the pre-mount window; the first post-mount `applicationDidBecomeActive` on user interaction recovers state."
+- No code change.
+
+*H10 — Step 9 logs are always-on.*
+- Add a module-level `const LIFECYCLE_LOG: boolean` at the top of `card-lifecycle.ts`, `app-lifecycle.ts`, and `lifecycle-cascade.ts`. Default to `import.meta.env.DEV ?? false` (or an equivalent dev-mode check consistent with how tugdeck gates dev-only behavior elsewhere).
+- Wrap every `console.log("[CardLifecycle] ...")` / `console.log("[AppLifecycle] ...")` call with `if (LIFECYCLE_LOG) ...`.
+- Production builds default-off; dev builds default-on. Toggleable via a single boolean for manual investigation.
+
+*H11 — `window.tugdeck` is a cast, not a typed global.*
+- Add a `declare global { interface Window { tugdeck?: { saveState(): void; reconnect(): void }; } }` block in `main.tsx` (or extract to a new `tugdeck/src/globals.d.ts`).
+- Replace the cast `(window as unknown as Record<string, unknown>).tugdeck = ...` with `window.tugdeck = { saveState: ..., reconnect: ... }`.
+
+*H-A7 — `applyLayout` has zero lifecycle events.*
+- `applyLayout` is test-only today. Decision: mark as **deprecated** with a JSDoc `@deprecated` tag and a comment pointing to a future diff-based replacement if a production need arises. No diff-based implementation for now — adding one risks introducing a parallel-to-`addCard`-and-`removeCard` event pipeline that could drift.
+
+*H-A8 — Is collapse a resize?*
+- Documentation-only. Add a JSDoc note on `_toggleCardCollapse` explaining: "Collapse/expand changes rendered geometry (via CardFrame's height override) but NOT the stored `CardState.size`. Per L06 (appearance via CSS/DOM), this is an appearance-zone transition, not a data-zone event. No `cardWillResize` / `cardDidResize` fires; consumers that want to react to collapse specifically should subscribe to the deck-manager store directly (collapse flips `CardState.collapsed`, which the store-subscriber sees)."
+- No code change.
+
+**Tests:**
+- H6: `initActionDispatch` returns a disposer; calling it removes the subscription (manual: `deck.appLifecycle.notifyApplicationDidResignActive()` after dispose → `saveAndFlush` not called).
+- H7: DeckManager → cascade install + destroy dispose test.
+- H8: cascade reactivate of destroyed card → log + skip.
+- H10: flip LIFECYCLE_LOG false → no console.log fires during lifecycle events.
+- H11: TypeScript picks up `window.tugdeck.saveState()` as a known method.
+
+**Verification:**
+- `bun x tsc --noEmit` clean.
+- `bun test` green (2232 + new).
+- Manual: run the full card-switch / app-transition trace with `LIFECYCLE_LOG = false` — console is quiet.
+- Manual: run with `LIFECYCLE_LOG = true` — console shows the full trace as before Step 9.
+
+**Note on scope:** This is a hygiene / polish / documentation sweep. No behavior changes on the happy path. Closes out every hole flagged by the reliability study except H1–H5 (already closed) and the standing behavior of H-A7 (deprecated, not deleted).
+
 #### Step 12 — Tuglaws walkthrough and plan close {#step-12}
 
 **Files:**
