@@ -114,7 +114,7 @@ This plan unifies (1) through (6) into a coherent delegate surface.
 
 **Out of scope (deferred):**
 - Changing the `NSWindowDelegate` surface (window becomeKey / resignKey / miniaturize / deminiaturize). These are useful but orthogonal; they can land in a follow-up that uses the same delegate-object shape.
-- Card *resize* and *move* delegate methods. These exist implicitly today via the deck manager's store; folding them into the delegate protocol is a later unification, not this plan.
+- ~~Card *resize* and *move* delegate methods.~~ **Pulled in as [Step 11.5](#step-11-5)** once the delegate model had proven out. `cardWillMove` / `cardDidMove` / `cardWillResize` / `cardDidResize` now ship as part of this plan.
 - Routing keyboard events through delegate methods. Keybinding stays in the responder chain.
 - Removing the synchronous `saveState` / `reconnect` paths themselves. Only their *names* change.
 - Multi-window support. Current app has a single `MainWindow`; delegate methods are singular.
@@ -471,6 +471,84 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - `rg "deferToNextMacrotask|defer\.ts" tugdeck/src` returns zero matches.
 - `bun test` green.
 - Manual stress test (50 consecutive new-card opens) shows zero focus failures.
+
+#### Step 11.5 — Add `cardWill/DidMove` and `cardWill/DidResize` delegate methods {#step-11-5}
+
+**Motivation:** A reproducible focus bug surfaced after Step 11 shipped: dragging an already-active tide card's title bar to *move* it leaves the prompt editor de-focused, and resizing the card does the same. The underlying cause is some interaction between WebKit's pointer-capture-during-gesture behavior and the prompt's contenteditable focus — diagnosable but not worth chasing when the lifecycle protocol already has a clean place to land a fix: make move and resize first-class delegate events so the tide card's `entryDelegate.focus()` re-asserts deterministically on gesture completion.
+
+This also closes out the "Out of scope" note in [§Scope](#scope) that deferred card-resize / card-move delegates to "a later unification" — this plan has proven the delegate model works; pulling the deferred pair in now is the right time to unify.
+
+**Files:**
+- `tugdeck/src/lib/card-lifecycle.ts`
+- `tugdeck/src/deck-manager.ts`
+- `tugdeck/src/components/tugways/cards/tide-card.tsx`
+- `tugdeck/src/__tests__/card-lifecycle.test.tsx`
+
+**Work:**
+
+*CardLifecycle:*
+- Add four subscriber sets: `willMoveSubs`, `didMoveSubs`, `willResizeSubs`, `didResizeSubs`.
+- Add four public notify methods: `notifyCardWillMove`, `notifyCardDidMove`, `notifyCardWillResize`, `notifyCardDidResize`. Each logs `[CardLifecycle] cardWill/DidMove id=...` / `cardWill/DidResize id=...`.
+- Add four public observe methods: `observeCardWillMove`, `observeCardDidMove`, `observeCardWillResize`, `observeCardDidResize`. No initial-sync — both are strictly transitional events, like deactivation.
+
+*TugCardDelegate:*
+- Add four optional methods:
+  ```ts
+  cardWillMove?(cardId: string): void;
+  cardDidMove?(cardId: string): void;
+  cardWillResize?(cardId: string): void;
+  cardDidResize?(cardId: string): void;
+  ```
+- Signature choice: **cardId-only**, matching every other delegate method. Consumers that need the new position/size read from the deck store via `deckState.cards.find(c => c.id === cardId)`. (An args-carrying variant can land later if a consumer needs it; keeping the uniform shape now avoids per-event signature drift.)
+
+*useCardDelegate:*
+- Extend `CardDelegateMethodName` union with the four new names.
+- Install four more observer subscriptions in the `useLayoutEffect`, routed through the existing `scheduleDelegateCall` drain.
+
+*DeckManager.moveCard:*
+- `moveCard(id, position, size)` is the single commit point for both drag and resize (corner handles change both position and size; edge handles change one or the other; drag changes only position). Detect which components changed by comparing against the pre-mutation card state, and fire only the matching event pair:
+  ```ts
+  moveCard(id, position, size) {
+    const existing = this.deckState.cards.find(c => c.id === id);
+    const positionChanged = existing
+      ? existing.position.x !== position.x || existing.position.y !== position.y
+      : false;
+    const sizeChanged = existing
+      ? existing.size.width !== size.width || existing.size.height !== size.height
+      : false;
+    if (positionChanged) this.cardLifecycle.notifyCardWillMove(id);
+    if (sizeChanged) this.cardLifecycle.notifyCardWillResize(id);
+    // ... existing store mutation + notify() ...
+    if (positionChanged) this.cardLifecycle.notifyCardDidMove(id);
+    if (sizeChanged) this.cardLifecycle.notifyCardDidResize(id);
+    this.scheduleSave();
+  }
+  ```
+  A pure drag fires only the move pair. A pure edge resize fires only the resize pair. A corner-handle resize (which moves the origin AND changes size) fires both pairs. A no-op `moveCard` with identical values fires neither.
+
+*Tide card:*
+- Extend `useCardDelegate` call to react to both new events:
+  ```tsx
+  useCardDelegate(cardId, {
+    cardDidFinishConstruction: () => entryDelegateRef.current?.focus(),
+    cardDidActivate: () => entryDelegateRef.current?.focus(),
+    cardDidMove: () => entryDelegateRef.current?.focus(),
+    cardDidResize: () => entryDelegateRef.current?.focus(),
+  });
+  ```
+
+**Tests:**
+- Direct API: two tests per event (matching + wildcard fires; no-op when no actual change). Six total (will+did for move, will+did for resize, plus "no-op on identity moveCard").
+- Hook: one test that a delegate with `cardDidMove`/`cardDidResize` receives the event via the MessageChannel drain — asserts the closure survives the notification.
+
+**Verification:**
+- `bun test` green (2209 + ~6 new).
+- `bun x tsc --noEmit` clean.
+- Manual: move an already-active tide card by its title bar — prompt stays focused throughout and resumes caret blink after drag-end.
+- Manual: resize an already-active tide card by any handle — prompt stays focused and caret blink resumes after resize-end.
+- The test effect named in §Success Criteria for activation now extends to cover move/resize: "Any gesture that commits a card's geometry leaves the prompt editor focused afterward."
+
+**Note on scope:** Does not change `activateCard`'s semantics (same-card re-activation remains silent per D3 / T-CL-03). Does not introduce a click-affirmation event. Solves the focus-loss bug by adding two specific lifecycle transitions that the bug maps to — nothing more.
 
 #### Step 12 — Tuglaws walkthrough and plan close {#step-12}
 
