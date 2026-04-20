@@ -41,7 +41,10 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
 import { TugcardPropertyContext } from "../tugways/hooks/use-property-store";
 import { TugcardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
-import { TugcardDirtyContext } from "../tugways/tug-card";
+import { TugcardDirtyContext, TugcardPortalContext } from "../tugways/tug-card";
+import { useResponder } from "../tugways/use-responder";
+import type { ActionEvent } from "../tugways/responder-chain";
+import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { selectionGuard } from "../tugways/selection-guard";
 import type { SavedSelection } from "../tugways/selection-guard";
@@ -53,6 +56,7 @@ import type { PropertyStore } from "../tugways/property-store";
 import type { TabStateBag } from "../../layout-tree";
 import * as cardContentRegistry from "./card-content-registry";
 import * as tabPropertyStoreRegistry from "./tab-property-store-registry";
+import * as tabCardRootRegistry from "./tab-card-root-registry";
 import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
@@ -87,10 +91,26 @@ function useHostContentElement(hostCardId: string): HTMLDivElement | null {
   );
 }
 
+/**
+ * Look up the host card's root element from the tab-card-root-registry,
+ * reactively. Used to bridge `TugcardPortalContext` — tab content needs
+ * access to its host card's root `<div>` for sheets and tooltips that
+ * portal into it, and TabContentHost cannot consume the provider directly
+ * because it lives outside Tugcard's React tree.
+ */
+function useHostCardRootElement(hostCardId: string): HTMLDivElement | null {
+  return useSyncExternalStore(
+    (cb) => tabCardRootRegistry.subscribe(hostCardId, cb),
+    () => tabCardRootRegistry.getElement(hostCardId),
+    () => null,
+  );
+}
+
 export function TabContentHost({ tabId, hostCardId, componentId, isActive = true }: TabContentHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
   const hostContentEl = useHostContentElement(hostCardId);
+  const hostCardRootEl = useHostCardRootElement(hostCardId);
 
   // ---- PropertyStore registration ----
   //
@@ -306,6 +326,28 @@ export function TabContentHost({ tabId, hostCardId, componentId, isActive = true
 
   const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
+  // ---- Tab-level responder (handles setProperty routed by tabId) ----
+  //
+  // Gallery cards (observable-props) dispatch `setProperty` via
+  // `manager.sendToTarget(cardId, ...)`, where `cardId` is the stable id
+  // passed to their `contentFactory` — which, post-Piece 1.iii, is
+  // `tabId`. Register a responder with id=tabId here so those dispatches
+  // resolve to this host and write through to the content's PropertyStore.
+  const { ResponderScope, responderRef } = useResponder({
+    id: tabId,
+    actions: {
+      [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
+        const ps = propertyStoreRef.current;
+        if (!ps) return;
+        const payload = event.value as
+          | { path: string; value: unknown; source?: string }
+          | undefined;
+        if (!payload || typeof payload.path !== "string") return;
+        ps.set(payload.path, payload.value, payload.source ?? "inspector");
+      },
+    },
+  });
+
   // ---- Render ----
   if (!registration) {
     return null;
@@ -322,27 +364,38 @@ export function TabContentHost({ tabId, hostCardId, componentId, isActive = true
   return (
     <CardPortal hostCardId={hostCardId}>
       <div
+        ref={responderRef}
         data-tab-content-host
         data-tab-id={tabId}
         style={{
           display: isActive ? "contents" : "none",
         }}
       >
-        <TugcardDataProvider feedData={feedData}>
-          <TugcardPropertyContext value={registerPropertyStore}>
-            <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-              <TugcardDirtyContext value={markDirty}>
-                {feedsReady ? (
-                  registration.contentFactory(hostCardId)
-                ) : (
-                  <div className="tugcard-loading" data-testid="tugcard-loading">
-                    Loading...
-                  </div>
-                )}
-              </TugcardDirtyContext>
-            </TugcardPersistenceContext>
-          </TugcardPropertyContext>
-        </TugcardDataProvider>
+        <TugcardPortalContext value={hostCardRootEl}>
+          <ResponderScope>
+            <TugcardDataProvider feedData={feedData}>
+              <TugcardPropertyContext value={registerPropertyStore}>
+                <TugcardPersistenceContext value={registerPersistenceCallbacks}>
+                  <TugcardDirtyContext value={markDirty}>
+                    {feedsReady ? (
+                      // Pass `tabId` as the stable identity for content.
+                      // Consumers (tide, gallery observable-props) key their
+                      // per-content state (session bindings, property stores,
+                      // responder target ids) off this value. `tabId` survives
+                      // detach/merge; `hostCardId` changes when the tab moves
+                      // between stacks.
+                      registration.contentFactory(tabId)
+                    ) : (
+                      <div className="tugcard-loading" data-testid="tugcard-loading">
+                        Loading...
+                      </div>
+                    )}
+                  </TugcardDirtyContext>
+                </TugcardPersistenceContext>
+              </TugcardPropertyContext>
+            </TugcardDataProvider>
+          </ResponderScope>
+        </TugcardPortalContext>
       </div>
     </CardPortal>
   );

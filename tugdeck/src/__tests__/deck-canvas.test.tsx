@@ -521,8 +521,11 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(2);
 
-    expect(container.querySelector("[data-testid='mock-card-content-card-a']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='mock-card-content-card-b']")).not.toBeNull();
+    // After Piece 1.iii, contentFactory receives the tab's id (stable across
+    // detach/merge) rather than the host card's id. makeCardState above
+    // tags each card's sole tab as `${cardId}-tab`.
+    expect(container.querySelector("[data-testid='mock-card-content-card-a-tab']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='mock-card-content-card-b-tab']")).not.toBeNull();
   });
 
   it("assigns ascending z-index by store array position", () => {

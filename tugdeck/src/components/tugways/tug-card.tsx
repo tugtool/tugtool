@@ -37,6 +37,7 @@ import { useDeckManager } from "../../deck-manager-context";
 import { TugButton } from "./internal/tug-button";
 import * as cardContentRegistry from "../chrome/card-content-registry";
 import * as tabPropertyStoreRegistry from "../chrome/tab-property-store-registry";
+import * as tabCardRootRegistry from "../chrome/tab-card-root-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -533,6 +534,20 @@ export function Tugcard({
       cardContentRegistry.unregister(cardId);
     };
   }, [cardId]);
+
+  // Register the card's root element with tab-card-root-registry so
+  // TabContentHost (which lives at the deck level in the React tree and
+  // therefore cannot see TugcardPortalContext directly) can re-provide
+  // that context with the correct element. Re-registered whenever cardEl
+  // changes (rootRefCallback's state-setter causes one extra render with
+  // the element populated).
+  useLayoutEffect(() => {
+    if (!cardEl) return;
+    tabCardRootRegistry.register(cardId, cardEl);
+    return () => {
+      tabCardRootRegistry.unregister(cardId);
+    };
+  }, [cardId, cardEl]);
 
   // ---------------------------------------------------------------------------
   // Responder registration (D07)
