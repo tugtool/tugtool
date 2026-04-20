@@ -42,7 +42,7 @@ function makeMockStore() {
     getSnapshot: () => ({ cards: [], stacks: [] }),
     getVersion: () => 0,
     handleStackMoved: () => {},
-    handleCardClosed: () => {},
+    handleStackClosed: () => {},
     focusCard: () => {},
     activateCard: () => {},
     observeCardDidFinishConstruction: () => () => {},

@@ -22,7 +22,7 @@
  * - T25: DeckCanvas renders cards from store-provided deckState
  * - T26: DeckCanvas with empty store renders no cards
  * - T27: DeckCanvas skips cards with unregistered componentIds (warning logged)
- * - onClose wiring: DeckCanvas wires onClose from store.handleCardClosed via Tugcard
+ * - onClose wiring: DeckCanvas wires onClose from store.handleStackClosed via Tugcard
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -74,7 +74,7 @@ function makeMockConnection() {
  * - getSnapshot() returning the supplied DeckState (default: empty cards)
  * - subscribe() returning a no-op unsubscribe
  * - getVersion() returning 0
- * - no-op handleStackMoved, handleCardClosed, handleCardFocused
+ * - no-op handleStackMoved, handleStackClosed, handleCardFocused
  *
  * Override individual fields with spies for tests that need callback assertions.
  */
@@ -84,7 +84,7 @@ function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckM
     getSnapshot: () => deckState,
     getVersion: () => 0,
     handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
-    handleCardClosed: (_id: string) => {},
+    handleStackClosed: (_id: string) => {},
     focusCard: (_id: string) => {},
     activateCard: (_id: string) => {},
     observeCardDidFinishConstruction: () => () => {},
@@ -807,7 +807,7 @@ class ReactiveStore implements IDeckManagerStore {
   getVersion = (): number => this._version;
 
   handleStackMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
-  handleCardClosed = (_id: string): void => {};
+  handleStackClosed = (_id: string): void => {};
   focusCard = (_id: string): void => {};
   activateCard = (_id: string): void => {};
   observeCardDidFinishConstruction = (
@@ -991,11 +991,11 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
   });
 });
 
-describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClosed", () => {
+describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleStackClosed", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("onClose on directly-constructed multi-tab Tugcard calls store.handleCardClosed", () => {
+  it("onClose on directly-constructed multi-tab Tugcard calls store.handleStackClosed", () => {
     registerCard({
       componentId: "hello",
       contentFactory: (_cardId: string) =>
@@ -1018,7 +1018,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
 
     const closedIds: string[] = [];
     const store = new ReactiveStore(makeDeckState([multiTabCard]));
-    store.handleCardClosed = (id: string) => closedIds.push(id);
+    store.handleStackClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
     act(() => {
@@ -1045,14 +1045,14 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
 });
 
 // ============================================================================
-// onClose wiring: single-tab card close button calls store.handleCardClosed
+// onClose wiring: single-tab card close button calls store.handleStackClosed
 // ============================================================================
 
-describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard", () => {
+describe("DeckCanvas – onClose wired from store.handleStackClosed via Tugcard", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("clicking the Tugcard close button invokes store.handleCardClosed with the card id", () => {
+  it("clicking the Tugcard close button invokes store.handleStackClosed with the card id", () => {
     registerCard({
       componentId: "closeable-card",
       contentFactory: (_cardId: string) =>
@@ -1063,7 +1063,7 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard",
     const closedIds: string[] = [];
     const card = makeCardState("target-card", "closeable-card");
     const store = makeMockStore(makeDeckState([card]));
-    store.handleCardClosed = (id: string) => closedIds.push(id);
+    store.handleStackClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
     act(() => {

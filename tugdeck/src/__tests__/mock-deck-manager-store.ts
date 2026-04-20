@@ -35,7 +35,7 @@ export function makeMockStore(
     getSnapshot: (): DeckState => ({ cards: [], stacks: [] }),
     getVersion: () => 0,
     handleStackMoved: () => {},
-    handleCardClosed: () => {},
+    handleStackClosed: () => {},
     focusCard: () => {},
     activateCard: () => {},
     observeCardDidFinishConstruction: () => () => {},

@@ -5,7 +5,7 @@
  * - T16: StackFrame renders at correct position and size from cardState
  * - T17: StackFrame applies zIndex prop
  * - T18: StackFrame calls onStackActivated on pointer-down
- * - T19: StackFrame calls onCardClosed when Tugcard fires close
+ * - T19: StackFrame calls onStackClosed when Tugcard fires close
  * - T20: StackFrame clamps resize to min-size
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -66,7 +66,7 @@ function makeRenderContent(
 const defaultProps = {
   stackState: makeStackState(),
   onCardMoved: mock(() => {}),
-  onCardClosed: mock(() => {}),
+  onStackClosed: mock(() => {}),
   onStackActivated: mock(() => {}),
   zIndex: 1,
   isFocused: false,
@@ -183,25 +183,25 @@ describe("StackFrame – onStackActivated", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T19: StackFrame calls onCardClosed when Tugcard fires close
+// T19: StackFrame calls onStackClosed when Tugcard fires close
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – onCardClosed", () => {
-  it("T19: calls onCardClosed with cardId when renderContent triggers onClose", () => {
-    const onCardClosed = mock((_id: string) => {});
+describe("StackFrame – onStackClosed", () => {
+  it("T19: calls onStackClosed with cardId when renderContent triggers onClose", () => {
+    const onStackClosed = mock((_id: string) => {});
     const stackState = makeStackState({ id: "close-test-card" });
 
-    // The factory wires onClose → onCardClosed(id). Simulate this in the test
-    // renderContent by calling onCardClosed directly on close trigger.
+    // The factory wires onClose → onStackClosed(id). Simulate this in the test
+    // renderContent by calling onStackClosed directly on close trigger.
     const { container } = render(
       <StackFrame
         {...defaultProps}
         stackState={stackState}
-        onCardClosed={onCardClosed}
+        onStackClosed={onStackClosed}
         renderContent={() => (
           <button
             data-testid="close-trigger"
-            onClick={() => onCardClosed("close-test-card")}
+            onClick={() => onStackClosed("close-test-card")}
           >
             Close
           </button>
@@ -214,8 +214,8 @@ describe("StackFrame – onCardClosed", () => {
       fireEvent.click(closeBtn);
     });
 
-    expect(onCardClosed).toHaveBeenCalledTimes(1);
-    expect(onCardClosed.mock.calls[0][0]).toBe("close-test-card");
+    expect(onStackClosed).toHaveBeenCalledTimes(1);
+    expect(onStackClosed.mock.calls[0][0]).toBe("close-test-card");
   });
 });
 

@@ -114,7 +114,7 @@ export interface StackFrameProps {
   /**
    * Render function that receives injected callbacks and returns the Tugcard.
    * The factory closure (from the card registry) is responsible for wiring
-   * the Tugcard's `onClose` prop to `onCardClosed(id)`.
+   * the Tugcard's `onClose` prop to `onStackClosed(id)`.
    */
   renderContent: (injected: StackFrameInjectedProps) => React.ReactNode;
   /** Called on drag-end or resize-end (structure-zone commit). */
@@ -123,8 +123,10 @@ export interface StackFrameProps {
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
-  /** Called when the Tugcard's close action fires (wired via renderContent factory). */
-  onCardClosed: (id: string) => void;
+  /** Called when the Tugcard's close action fires (wired via renderContent
+   * factory). `id` is the stack id — close-button action closes the whole
+   * stack, not an individual card. */
+  onStackClosed: (stackId: string) => void;
   /** Called on pointer-down anywhere in the frame to bring the stack to front.
    * The `stackId` is this frame's stack id — callers must resolve the stack's
    * active card id before invoking card-level APIs like `activateCard` /

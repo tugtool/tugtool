@@ -50,7 +50,7 @@ export interface IDeckManagerStore {
   ) => void;
 
   /** Stable bound callback: close a stack (and all of its cards). */
-  handleCardClosed: (stackId: string) => void;
+  handleStackClosed: (stackId: string) => void;
 
   /**
    * Promote a card's host stack to the top of the stacks array (highest

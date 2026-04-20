@@ -248,14 +248,14 @@ describe("DeckManager.addCard – unregistered component", () => {
 // T32: removeCard removes the card
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.handleCardClosed", () => {
+describe("DeckManager.handleStackClosed", () => {
   it("T32: closes the specified stack, removing all its cards from DeckState.cards", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const stackId = hostStack(manager.getDeckState(), cardId).id;
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.handleCardClosed(stackId);
+    manager.handleStackClosed(stackId);
     expect(manager.getDeckState().cards.length).toBe(0);
     expect(manager.getDeckState().stacks.length).toBe(0);
   });
@@ -268,7 +268,7 @@ describe("DeckManager.handleCardClosed", () => {
     const stack1Id = hostStack(manager.getDeckState(), id1).id;
     expect(manager.getDeckState().cards.length).toBe(2);
 
-    manager.handleCardClosed(stack1Id);
+    manager.handleStackClosed(stack1Id);
 
     const remaining = manager.getDeckState().cards;
     expect(remaining.length).toBe(1);
@@ -280,7 +280,7 @@ describe("DeckManager.handleCardClosed", () => {
     manager.addCard("hello");
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.handleCardClosed("nonexistent-id");
+    manager.handleStackClosed("nonexistent-id");
     expect(manager.getDeckState().cards.length).toBe(1);
   });
 
@@ -311,7 +311,7 @@ describe("DeckManager.handleCardClosed", () => {
     );
     log.length = 0;
 
-    manager.handleCardClosed(stack2Id);
+    manager.handleStackClosed(stack2Id);
 
     expect(log).toEqual([
       `willDeactivate:${id2}`,
@@ -336,7 +336,7 @@ describe("DeckManager.handleCardClosed", () => {
     );
     log.length = 0;
 
-    manager.handleCardClosed(stackId);
+    manager.handleStackClosed(stackId);
 
     expect(log).toEqual([]);
   });
@@ -363,7 +363,7 @@ describe("DeckManager.handleCardClosed", () => {
     );
     log.length = 0;
 
-    manager.handleCardClosed(stack1Id);
+    manager.handleStackClosed(stack1Id);
 
     expect(log).toEqual([]);
   });
@@ -781,12 +781,12 @@ describe("DeckManager store API – getVersion", () => {
     expect(manager.getVersion()).toBe(v0 + 1);
   });
 
-  it("getVersion() increments after handleCardClosed()", () => {
+  it("getVersion() increments after handleStackClosed()", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const stackId = hostStack(manager.getDeckState(), cardId).id;
     const v1 = manager.getVersion();
-    manager.handleCardClosed(stackId);
+    manager.handleStackClosed(stackId);
     expect(manager.getVersion()).toBe(v1 + 1);
   });
 
@@ -842,13 +842,13 @@ describe("DeckManager store API – subscriber callback timing", () => {
     expect(fired).toBe(true);
   });
 
-  it("subscriber fires on handleCardClosed()", () => {
+  it("subscriber fires on handleStackClosed()", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const stackId = hostStack(manager.getDeckState(), cardId).id;
     let fired = false;
     manager.subscribe(() => { fired = true; });
-    manager.handleCardClosed(stackId);
+    manager.handleStackClosed(stackId);
     expect(fired).toBe(true);
   });
 

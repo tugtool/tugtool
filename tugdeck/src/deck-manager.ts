@@ -159,7 +159,7 @@ export class DeckManager implements IDeckManagerStore {
     size: { width: number; height: number },
   ) => void;
 
-  public handleCardClosed: (stackId: string) => void;
+  public handleStackClosed: (stackId: string) => void;
 
   public readonly cardLifecycle: CardLifecycle;
 
@@ -272,7 +272,7 @@ export class DeckManager implements IDeckManagerStore {
     this.reactRoot = createRoot(container);
 
     this.handleStackMoved = this.moveStack.bind(this);
-    this.handleCardClosed = this._closeStack.bind(this);
+    this.handleStackClosed = this._closeStack.bind(this);
     this.cardLifecycle = new CardLifecycle(this);
     registerCardLifecycle(this.cardLifecycle);
     this.appLifecycle = new AppLifecycle();

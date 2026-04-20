@@ -19,7 +19,7 @@
  * Phase 5a2 (Spec S04, [D01], [D04]):
  *          DeckCanvas reads deckState via useSyncExternalStore from the
  *          DeckManagerContext store. Props deckState / onCardMoved /
- *          onCardClosed / onStackActivated are removed. DeckCanvasProps now
+ *          onStackClosed / onStackActivated are removed. DeckCanvasProps now
  *          contains only `connection`. The store variable is named `store`
  *          (not `manager`) to avoid collision with the existing `manager`
  *          variable used for the ResponderChainManager via
@@ -77,7 +77,7 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 /**
  * DeckCanvasProps after Phase 5a2 migration (Spec S04).
  *
- * deckState, onCardMoved, onCardClosed, and onStackActivated are removed --
+ * deckState, onCardMoved, onStackClosed, and onStackActivated are removed --
  * DeckCanvas reads them from the DeckManagerContext store via
  * useSyncExternalStore. No props remain.
  */
@@ -448,7 +448,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           if (galleryStackIdRef.current === stackState.id) {
             galleryStackIdRef.current = null;
           }
-          store.handleCardClosed(stackState.id);
+          store.handleStackClosed(stackState.id);
         };
 
         const stackCards = stackState.cardIds
@@ -464,7 +464,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             isFocused={stackState.id === focusedStackId}
             onCardMoved={store.handleStackMoved}
-            onCardClosed={handleClose}
+            onStackClosed={handleClose}
             onStackActivated={handleStackActivate}
             onCardCollapsed={(id) => store.toggleStackCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {

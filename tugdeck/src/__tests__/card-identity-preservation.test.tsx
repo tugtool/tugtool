@@ -69,7 +69,7 @@ class Store implements IDeckManagerStore {
   getVersion = (): number => this.version;
 
   handleStackMoved = (): void => {};
-  handleCardClosed = (stackId: string): void => {
+  handleStackClosed = (stackId: string): void => {
     const stack = this.state.stacks.find((s) => s.id === stackId);
     if (!stack) return;
     const dropped = new Set(stack.cardIds);
