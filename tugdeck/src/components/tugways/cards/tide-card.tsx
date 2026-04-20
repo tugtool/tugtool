@@ -44,7 +44,7 @@ import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
-import { useCardDelegate } from "@/lib/card-lifecycle";
+import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -799,27 +799,38 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
 
   useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
-  // Focus the prompt editor at both meaningful moments:
+  // Focus the prompt editor at meaningful moments:
   //
-  //   - Construction: fires once when the card body first mounts
-  //     (fresh card creation, picker → body transition, reload
-  //     restoration). Guarantees a caret the moment the editor
-  //     appears, regardless of whether the card happens to be the
-  //     key card at that instant.
+  //   - Construction: fires once when the card body first mounts.
+  //     Guarantees a caret the moment the editor appears.
   //
   //   - Activation: fires on every path that makes this card the
-  //     active card later — click, Ctrl+`, programmatic activation.
+  //     active card — click, Ctrl+`, programmatic activation. By
+  //     definition the card is active when this fires.
   //
-  // Both route through `entryDelegate.focus()`, which is idempotent
-  // if the editor already holds focus and places a caret if the
-  // Selection has been cleared (e.g., by the selection guard).
-  // Double-firing on a first-mount-into-active card is harmless;
-  // missing either moment would leave the user unable to type.
+  //   - Move / Resize: fires whenever this card's geometry commits.
+  //     Cmd-drag and Cmd-resize move/resize a card WITHOUT activating
+  //     it (a deliberate convenience for rearranging background cards
+  //     without disturbing focus). We therefore guard the focus
+  //     re-assertion with `getActiveCardId() === cardId` so a
+  //     background-card Cmd-drag does not steal focus from whatever
+  //     card the user is actually working in.
+  //
+  // All paths route through `entryDelegate.focus()`, which is
+  // idempotent if the editor already holds focus and places a caret
+  // if the Selection has been cleared (e.g., by the selection guard).
+  const cardLifecycle = useCardLifecycle();
   useCardDelegate(cardId, {
     cardDidFinishConstruction: () => entryDelegateRef.current?.focus(),
     cardDidActivate: () => entryDelegateRef.current?.focus(),
-    cardDidMove: () => entryDelegateRef.current?.focus(),
-    cardDidResize: () => entryDelegateRef.current?.focus(),
+    cardDidMove: () => {
+      if (cardLifecycle?.getActiveCardId() !== cardId) return;
+      entryDelegateRef.current?.focus();
+    },
+    cardDidResize: () => {
+      if (cardLifecycle?.getActiveCardId() !== cardId) return;
+      entryDelegateRef.current?.focus();
+    },
   });
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —
