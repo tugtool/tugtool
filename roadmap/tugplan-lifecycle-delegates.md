@@ -946,7 +946,7 @@ Pick the simpler path: `putFocusedCardId` stays, `focusedCardId` is removed from
 
 - `DeckManager.handleResize = (): void => {}` plus its matching `window.addEventListener("resize", this.handleResize)` and `removeEventListener`: delete both together. The no-op arrow has no callers that need it.
 - `buildDefaultLayout(_canvasWidth, _canvasHeight)` takes two unused parameters. Change to `buildDefaultLayout(): DeckState { return { cards: [], stacks: [] }; }` and update call sites in `deck-manager.ts`.
-- In `deck-canvas.tsx`, the `tabCount` field sent to the Swift `cardList` handler retains the legacy "tab" name. The Swift side still expects that key — leave it, but add a one-line comment above `pushCardListToHost` in `deck-manager.ts` noting that `tabCount` is a Swift wire field, not project vocabulary.
+- Rename the Swift wire field `tabCount` → `cardCount` in lockstep: update `pushCardListToHost` in `deck-manager.ts` to emit `cardCount`, and update `AppDelegate.swift` in `tugapp/` to read `cardCount`. The Swift menu title strings ("Close Tab" / "Close Card") are user-facing UX and stay unchanged.
 
 **P2 — `galleryStackIdRef` robustness.**
 
@@ -978,7 +978,6 @@ Each commit: `bun x tsc --noEmit` clean, `bun test` green with test count ≥ po
 **Explicitly out of scope for 2.5 (defer to 11.6.1b or later):**
 - Broader store-API decomposition (the `IDeckManagerStore` surface is still wide — that's a Phase 12+ concern).
 - Stack-lifecycle events as a first-class subsystem (only add if option (b) is picked under P1, which is unlikely).
-- `tabCount` wire-field renaming (requires Swift-side coordination).
 
 *Piece 3 — Portal DOM containment test + additional identity-preservation coverage.*
 - Add a test that asserts, after `moveCardToStack`, the moved card's rendered root element is contained within the destination stack's content div (via `document.getElementById` or a ref-based query; use whichever pattern the existing tests use).

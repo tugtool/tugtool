@@ -95,6 +95,36 @@ function isDevEnv(): boolean {
   }
 }
 
+/**
+ * Pure helper: remove `cardId` from the stack's `cardIds` and pick a new
+ * `activeCardId` if the removed card was active. Mirrors the fallback rule
+ * used by `_removeCard`, `_detachCard`, and `_moveCardToStack`: the previous
+ * card becomes active, or the first card if the removed card was first.
+ *
+ * Returns `activeCardId: null` when the stack is left empty — the caller
+ * decides what to do (close the stack, or drop it because its card moved
+ * elsewhere). Returns the input references unchanged when `cardId` is not
+ * in `cardIds`.
+ */
+function spliceCardFromStack(
+  stack: CardStackState,
+  cardId: string,
+): { cardIds: readonly string[]; activeCardId: string | null } {
+  const cardIndex = stack.cardIds.indexOf(cardId);
+  if (cardIndex === -1) {
+    return { cardIds: stack.cardIds, activeCardId: stack.activeCardId };
+  }
+  const cardIds = stack.cardIds.filter((id) => id !== cardId);
+  if (cardIds.length === 0) {
+    return { cardIds, activeCardId: null };
+  }
+  let activeCardId = stack.activeCardId;
+  if (activeCardId === cardId) {
+    activeCardId = cardIds[cardIndex > 0 ? cardIndex - 1 : 0];
+  }
+  return { cardIds, activeCardId };
+}
+
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
@@ -359,7 +389,6 @@ export class DeckManager implements IDeckManagerStore {
       ),
     );
 
-    window.addEventListener("resize", this.handleResize);
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
   }
@@ -379,9 +408,12 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Push the current stack list (id, title, focused state) to the Swift host
-   * via WKScriptMessage so the View menu can build a dynamic stack list.
-   * No-op when running outside a WKWebView (browser dev mode).
+   * Push the current stack list (id, title, focused state, cardCount) to the
+   * Swift host via WKScriptMessage so the View menu can build a dynamic stack
+   * list. No-op when running outside a WKWebView (browser dev mode).
+   *
+   * Payload shape is a wire contract with `AppDelegate.swift`
+   * (`updateCardList`). Keep the fields here in sync with the Swift reader.
    */
   private pushCardListToHost(): void {
     const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
@@ -398,7 +430,7 @@ export class DeckManager implements IDeckManagerStore {
       const activeCard = cardsById.get(s.activeCardId);
       const firstCard = cardsById.get(s.cardIds[0]);
       const title = s.title || activeCard?.title || firstCard?.title || "Untitled";
-      return { id: s.id, title, focused: s.id === focusedId, tabCount: s.cardIds.length };
+      return { id: s.id, title, focused: s.id === focusedId, cardCount: s.cardIds.length };
     }).reverse();
     handler.postMessage(list);
   }
@@ -828,27 +860,19 @@ export class DeckManager implements IDeckManagerStore {
   private _removeCard(stackId: string, cardId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
-
-    const cardIndex = stack.cardIds.indexOf(cardId);
-    if (cardIndex === -1) return;
+    if (!stack.cardIds.includes(cardId)) return;
 
     if (stack.cardIds.length === 1) {
       this._closeStack(stackId);
       return;
     }
 
-    const newCardIds = stack.cardIds.filter((id) => id !== cardId);
-
-    let newActiveCardId = stack.activeCardId;
-    if (stack.activeCardId === cardId) {
-      const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
-      newActiveCardId = newCardIds[newIndex];
-    }
-
+    const spliced = spliceCardFromStack(stack, cardId);
+    // `cardIds.length > 1` above guarantees a survivor → activeCardId !== null.
     const updatedStack: CardStackState = {
       ...stack,
-      cardIds: newCardIds,
-      activeCardId: newActiveCardId,
+      cardIds: spliced.cardIds,
+      activeCardId: spliced.activeCardId as string,
     };
 
     this.deckState = {
@@ -951,17 +975,13 @@ export class DeckManager implements IDeckManagerStore {
       acceptsFamilies: stack.acceptsFamilies,
     };
 
-    const cardIndex = stack.cardIds.indexOf(cardId);
-    const remainingCardIds = stack.cardIds.filter((id) => id !== cardId);
-    let newSourceActiveCardId = stack.activeCardId;
-    if (stack.activeCardId === cardId) {
-      const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
-      newSourceActiveCardId = remainingCardIds[newIndex];
-    }
+    // Source keeps at least one card (last-card guard above), so
+    // `spliced.activeCardId` is guaranteed non-null here.
+    const spliced = spliceCardFromStack(stack, cardId);
     const updatedSourceStack: CardStackState = {
       ...stack,
-      cardIds: remainingCardIds,
-      activeCardId: newSourceActiveCardId,
+      cardIds: spliced.cardIds,
+      activeCardId: spliced.activeCardId as string,
     };
 
     const previouslyActive = this.cardLifecycle.getActiveCardId();
@@ -1024,23 +1044,17 @@ export class DeckManager implements IDeckManagerStore {
       this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
     }
 
-    // Remove from source.
-    const cardIndex = sourceStack.cardIds.indexOf(cardId);
-    const remainingSourceCardIds = sourceStack.cardIds.filter((id) => id !== cardId);
-
+    // Remove from source. If the source empties, drop it entirely;
+    // otherwise patch the source stack with the new cardIds/activeCardId.
+    const spliced = spliceCardFromStack(sourceStack, cardId);
     let intermediateStacks = this.deckState.stacks;
-    if (remainingSourceCardIds.length === 0) {
+    if (spliced.activeCardId === null) {
       intermediateStacks = intermediateStacks.filter((s) => s.id !== sourceStackId);
     } else {
-      let newSourceActiveCardId = sourceStack.activeCardId;
-      if (sourceStack.activeCardId === cardId) {
-        const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
-        newSourceActiveCardId = remainingSourceCardIds[newIndex];
-      }
       const updatedSourceStack: CardStackState = {
         ...sourceStack,
-        cardIds: remainingSourceCardIds,
-        activeCardId: newSourceActiveCardId,
+        cardIds: spliced.cardIds,
+        activeCardId: spliced.activeCardId,
       };
       intermediateStacks = intermediateStacks.map((s) =>
         s.id === sourceStackId ? updatedSourceStack : s,
@@ -1115,10 +1129,6 @@ export class DeckManager implements IDeckManagerStore {
     return { x, y };
   }
 
-  // ---- Resize Handling ----
-
-  handleResize = (): void => {};
-
   // ---- Layout Persistence ----
 
   private loadLayout(): DeckState {
@@ -1138,7 +1148,7 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     if (state === null) {
-      state = buildDefaultLayout(canvasWidth, canvasHeight);
+      state = buildDefaultLayout();
     }
 
     return this.filterRegisteredCards(state);
@@ -1261,8 +1271,6 @@ export class DeckManager implements IDeckManagerStore {
       this.reactRoot.unmount();
       this.reactRoot = null;
     }
-    window.removeEventListener("resize", this.handleResize);
-
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
 

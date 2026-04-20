@@ -26,15 +26,13 @@
  *          useRequiredResponderChain().
  *
  * Phase 5b3 (Step 6, [D05], [D06], [D07]):
- *          Floating ComponentGallery panel removed. showComponentGallery now
- *          uses a galleryCardIdRef to find-or-create the gallery card via
- *          store.addCard("gallery-buttons"). Show-only semantics: the gallery
- *          is never closed by showComponentGallery -- only focused if already
- *          present ([D07]). The onClose callback clears galleryCardIdRef when
- *          the user explicitly closes the card (defense-in-depth). The Mac
- *          menu show-component-gallery action now dispatches through the
- *          responder chain manager (registerGallerySetter removed from
- *          action-dispatch).
+ *          Floating ComponentGallery panel removed. showComponentGallery
+ *          now walks the live snapshot for a `gallery-buttons` card, looks
+ *          up its host stack, and activates it; if no gallery card exists,
+ *          it creates one via `store.addCard("gallery-buttons")`. Show-only
+ *          semantics: the gallery is never closed by showComponentGallery.
+ *          The Mac menu show-component-gallery action dispatches through
+ *          the responder chain manager.
  *
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
@@ -141,6 +139,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     return map;
   }, [stacks]);
 
+  // Build a cardId → CardState map once per render. Consumed by the stack
+  // render loop (active-card lookup, componentId resolution) and by the
+  // card render loop. Hoisted out of `.map()` so the Map isn't rebuilt per
+  // stack.
+  const cardsById = useMemo(() => {
+    const map = new Map<string, typeof cards[number]>();
+    for (const c of cards) map.set(c.id, c);
+    return map;
+  }, [cards]);
+
   // ---------------------------------------------------------------------------
   // Visual focus
   // ---------------------------------------------------------------------------
@@ -164,17 +172,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const stacksRef = useRef<readonly CardStackState[]>(stacks);
   stacksRef.current = stacks;
-
-  /**
-   * galleryStackIdRef tracks the ID of the stack that currently hosts the
-   * gallery card.
-   *
-   * showComponentGallery reads this ref to determine whether to create a new
-   * gallery card or focus the existing one ([D07] show-only semantics). The
-   * onClose callback for the gallery stack clears this ref so the next
-   * showComponentGallery dispatch creates a fresh gallery stack.
-   */
-  const galleryStackIdRef = useRef<string | null>(null);
 
   /**
    * containerRef: ref to the positioning wrapper div that card frames and snap guides
@@ -271,37 +268,32 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         console.log("show-settings: stub -- not implemented until Phase 8");
       },
       /**
-       * show-component-gallery -- find or create the gallery card ([D05], [D07]).
+       * show-component-gallery — find or create the gallery card ([D05], [D07]).
        *
        * Show-only semantics ([D07]): the gallery card is never closed by this
-       * action. If a gallery card is already present (tracked via galleryCardIdRef),
-       * it is focused. If not, a new gallery card is created via
-       * store.addCard("gallery-buttons") and the returned ID is stored in
-       * galleryCardIdRef. In both paths, makeFirstResponder is called so the
-       * gallery takes responder focus immediately ([D05]).
+       * action. Derives the gallery stack from the live snapshot on every
+       * dispatch (walk `cards` for a `gallery-buttons` card, look up its host
+       * stack) so detach / merge / close operations stay in sync without a
+       * separate tracking ref. If no gallery card exists, create one and
+       * activate its seeded card.
        */
       [TUG_ACTIONS.SHOW_COMPONENT_GALLERY]: (_event: ActionEvent) => {
-        const existingStackId = galleryStackIdRef.current;
-        const s = stacksRef.current;
+        const snapshot = store.getSnapshot();
+        const galleryCard = snapshot.cards.find(
+          (c) => c.componentId === "gallery-buttons",
+        );
+        const galleryStack = galleryCard
+          ? snapshot.stacks.find((st) => st.cardIds.includes(galleryCard.id))
+          : undefined;
 
-        // Check whether the tracked gallery stack still exists in the store.
-        const existingStack = existingStackId
-          ? s.find((stack) => stack.id === existingStackId)
-          : null;
-
-        if (existingStack) {
-          // Gallery stack already exists -- activate its active card
-          // ([D07] show-only, never close).
-          store.activateCard(existingStack.activeCardId);
+        if (galleryStack) {
+          // Gallery stack already exists — activate its active card.
+          store.focusCard(galleryStack.activeCardId);
+          store.activateCard(galleryStack.activeCardId);
         } else {
-          // No gallery stack -- create one and activate the seeded card.
+          // No gallery card anywhere — create one and activate its seed.
           const newCardId = store.addCard("gallery-buttons");
           if (newCardId) {
-            const snapshot = store.getSnapshot();
-            const hostStack = snapshot.stacks.find((st) =>
-              st.cardIds.includes(newCardId),
-            );
-            if (hostStack) galleryStackIdRef.current = hostStack.id;
             store.activateCard(newCardId);
           }
         }
@@ -419,7 +411,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           active card's componentId is unregistered are skipped with a
           warning. */}
       {sortedStacks.map((stackState) => {
-        const cardsById = new Map(cards.map((c) => [c.id, c]));
         const activeCard = cardsById.get(stackState.activeCardId);
         const fallbackCard =
           activeCard ?? cardsById.get(stackState.cardIds[0]);
@@ -441,13 +432,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
         /**
          * onClose wrapper: when the closed stack matches
-         * galleryStackIdRef.current, clear the ref to null so the next
-         * showComponentGallery dispatch creates a fresh gallery stack.
+         * Close-button handler: delegates to store. No gallery-stack bookkeeping
+         * needed — show-component-gallery re-derives the gallery stack from
+         * the live snapshot on every dispatch.
          */
         const handleClose = () => {
-          if (galleryStackIdRef.current === stackState.id) {
-            galleryStackIdRef.current = null;
-          }
           store.handleStackClosed(stackState.id);
         };
 

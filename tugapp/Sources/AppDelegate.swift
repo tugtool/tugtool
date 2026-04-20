@@ -503,10 +503,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateCardList(_ list: [[String: Any]]) {
         cachedCardList = list
 
-        // Update Close menu item title based on focused card's tab count.
-        let focusedCard = list.first { ($0["focused"] as? Bool) == true }
-        let tabCount = focusedCard?["tabCount"] as? Int ?? 0
-        closeMenuItem?.title = tabCount > 1 ? "Close Tab" : "Close Card"
+        // Update Close menu item title based on the focused stack's card count.
+        let focusedStack = list.first { ($0["focused"] as? Bool) == true }
+        let cardCount = focusedStack?["cardCount"] as? Int ?? 0
+        closeMenuItem?.title = cardCount > 1 ? "Close Tab" : "Close Card"
     }
 
     // MARK: - UDS control commands

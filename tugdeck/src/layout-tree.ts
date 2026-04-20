@@ -90,15 +90,17 @@ export interface CardStackState {
  * - `stacks` holds every stack frame; each stack's `cardIds` partitions
  *   `cards`.
  * - `activeStackId` identifies the deck's currently-active stack, if any.
- * - `focusedCardId` records the card focused when the deck was last saved
- *   (reload restoration only; not runtime focus inference). Persisted
- *   separately to tugbank via settings-api, not in the layout blob. ([D03])
+ *
+ * Reload-focus restoration is handled out-of-band: `putFocusedCardId`
+ * writes a single-field row to tugbank, and `DeckManager` reads it back
+ * via the `initialFocusedCardId` constructor parameter. That pointer is
+ * deliberately not part of `DeckState` — it would duplicate persistence
+ * paths.
  */
 export interface DeckState {
   cards: readonly CardState[];
   stacks: readonly CardStackState[];
   activeStackId?: string;
-  focusedCardId?: string;
 }
 
 // ---- Invariant validation ----

@@ -81,7 +81,7 @@ describe("CardStackState (two-table model)", () => {
 
 describe("buildDefaultLayout", () => {
   test("buildDefaultLayout returns empty DeckState (Phase 5: no pre-registered cards)", () => {
-    const result = buildDefaultLayout(1200, 800);
+    const result = buildDefaultLayout();
     expect(result.cards.length).toBe(0);
     expect(result.stacks.length).toBe(0);
   });
@@ -242,9 +242,15 @@ describe("v1 → v2 migration", () => {
     };
     const loaded = deserialize(JSON.stringify(v1), 1920, 1080);
     expect(loaded.stacks.length).toBe(1);
-    expect(loaded.focusedCardId).toBe("T1b");
-    const saved = serialize(loaded) as { version: number };
+    // `focusedCardId` is persisted separately via putFocusedCardId — it
+    // does not round-trip through the layout blob.
+    expect((loaded as { focusedCardId?: string }).focusedCardId).toBeUndefined();
+    const saved = serialize(loaded) as {
+      version: number;
+      focusedCardId?: string;
+    };
     expect(saved.version).toBe(2);
+    expect(saved.focusedCardId).toBeUndefined();
   });
 
   test("legacy blob without a `version` field still migrates", () => {
@@ -298,15 +304,22 @@ describe("CardStateBag type", () => {
   });
 });
 
-describe("DeckState focusedCardId field", () => {
-  test("DeckState accepts optional focusedCardId", () => {
-    const state: DeckState = { cards: [], stacks: [], focusedCardId: "card-abc" };
-    expect(state.focusedCardId).toBe("card-abc");
+describe("DeckState focusedCardId persistence", () => {
+  test("serialize does not emit focusedCardId in the layout blob", () => {
+    const state: DeckState = { cards: [], stacks: [] };
+    const blob = serialize(state) as Record<string, unknown>;
+    expect("focusedCardId" in blob).toBe(false);
   });
 
-  test("DeckState without focusedCardId has undefined field", () => {
-    const state: DeckState = { cards: [], stacks: [] };
-    expect(state.focusedCardId).toBeUndefined();
+  test("parseV2 ignores focusedCardId if present in a v2 blob", () => {
+    const withFocused = {
+      version: 2,
+      cards: [],
+      stacks: [],
+      focusedCardId: "card-abc",
+    };
+    const restored = deserialize(JSON.stringify(withFocused), 1920, 1080);
+    expect((restored as { focusedCardId?: string }).focusedCardId).toBeUndefined();
   });
 });
 

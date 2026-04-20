@@ -115,7 +115,7 @@ interface StackSpec {
   title: string;
   acceptsFamilies: readonly string[];
 }
-function makeCardState(id: string, componentId: string): StackSpec {
+function makeSingleCardStack(id: string, componentId: string): StackSpec {
   return {
     id,
     position: { x: 0, y: 0 },
@@ -255,7 +255,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
     const reactiveStore = new ReactiveStore({ cards: [], stacks: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
-      reactiveStore.setState(buildDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]));
+      reactiveStore.setState(buildDeckState([makeSingleCardStack(GALLERY_CARD_ID, "gallery-buttons")]));
       return GALLERY_CARD_ID;
     };
 
@@ -321,7 +321,7 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
     const reactiveStore = new ReactiveStore({ cards: [], stacks: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
-      reactiveStore.setState(buildDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]));
+      reactiveStore.setState(buildDeckState([makeSingleCardStack(GALLERY_CARD_ID, "gallery-buttons")]));
       return GALLERY_CARD_ID;
     };
     reactiveStore.activateCard = (id: string) => {

@@ -184,7 +184,7 @@ interface StackSpec {
  *  Mirrors production `addCard`, which creates a single-card stack and
  *  returns the card id. Keeping the two ids equal lets mock `addCard` return
  *  values and `hostStack` lookups line up. */
-function makeCardState(id: string, componentId: string): StackSpec {
+function makeSingleCardStack(id: string, componentId: string): StackSpec {
   return {
     id,
     position: { x: 0, y: 0 },
@@ -470,7 +470,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       addCardCalls.push(componentId);
       // Simulate adding the card to store state
       reactiveStore.setState(
-        makeDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]),
+        makeDeckState([makeSingleCardStack(GALLERY_CARD_ID, "gallery-buttons")]),
       );
       return GALLERY_CARD_ID;
     };
@@ -558,8 +558,8 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
       defaultMeta: { title: "Mock Card", closable: true },
     });
 
-    const card1 = makeCardState("card-a", "mock-card");
-    const card2 = makeCardState("card-b", "mock-card");
+    const card1 = makeSingleCardStack("card-a", "mock-card");
+    const card2 = makeSingleCardStack("card-b", "mock-card");
     const store = makeMockStore(makeDeckState([card1, card2]));
 
     let container!: HTMLElement;
@@ -571,7 +571,7 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
     expect(frames.length).toBe(2);
 
     // contentFactory receives the card's id (stable across detach/merge).
-    // `makeCardState` produces single-card stacks where stack id === card id,
+    // `makeSingleCardStack` produces single-card stacks where stack id === card id,
     // so the rendered content nodes are tagged with the original fixture id.
     expect(container.querySelector("[data-testid='mock-card-content-card-a']")).not.toBeNull();
     expect(container.querySelector("[data-testid='mock-card-content-card-b']")).not.toBeNull();
@@ -586,8 +586,8 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
     });
 
     // Store array order: z1 first (lowest z-index), z2 second (highest).
-    const card1 = makeCardState("z1", "zindex-card");
-    const card2 = makeCardState("z2", "zindex-card");
+    const card1 = makeSingleCardStack("z1", "zindex-card");
+    const card2 = makeSingleCardStack("z2", "zindex-card");
     const store = makeMockStore(makeDeckState([card1, card2]));
 
     let container!: HTMLElement;
@@ -729,7 +729,7 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
   it("logs a warning and renders no CardFrame for an unregistered componentId", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const badCard = makeCardState("bad-card", "not-registered");
+    const badCard = makeSingleCardStack("bad-card", "not-registered");
     const store = makeMockStore(makeDeckState([badCard]));
 
     let container!: HTMLElement;
@@ -757,8 +757,8 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
       defaultMeta: { title: "Known", closable: true },
     });
 
-    const goodCard = makeCardState("good", "known-card");
-    const badCard = makeCardState("bad", "unknown-card");
+    const goodCard = makeSingleCardStack("good", "known-card");
+    const badCard = makeSingleCardStack("bad", "unknown-card");
     const store = makeMockStore(makeDeckState([goodCard, badCard]));
 
     let container!: HTMLElement;
@@ -1061,7 +1061,7 @@ describe("DeckCanvas – onClose wired from store.handleStackClosed via Tugcard"
     });
 
     const closedIds: string[] = [];
-    const card = makeCardState("target-card", "closeable-card");
+    const card = makeSingleCardStack("target-card", "closeable-card");
     const store = makeMockStore(makeDeckState([card]));
     store.handleStackClosed = (id: string) => closedIds.push(id);
 
@@ -1138,7 +1138,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     });
 
     const addTabCalls: Array<{ cardId: string; componentId: string }> = [];
-    const card = makeCardState("focused-card", "hello");
+    const card = makeSingleCardStack("focused-card", "hello");
     const store = makeMockStore(makeDeckState([card]));
     store.addCardToStack = (cardId, componentId) => {
       addTabCalls.push({ cardId, componentId });

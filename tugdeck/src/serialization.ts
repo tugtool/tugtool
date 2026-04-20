@@ -2,7 +2,9 @@
  * Serialization, deserialization, and default layout for DeckState.
  *
  * Emits `version: 2` blobs with the two-table shape
- * `{ version: 2, cards, stacks, activeStackId?, focusedCardId? }`.
+ * `{ version: 2, cards, stacks, activeStackId? }`. `focusedCardId` is
+ * persisted separately via `putFocusedCardId` and is not part of the
+ * layout blob.
  *
  * On load, blobs without `version` or with `version !== 2` (including legacy
  * `version: 5`, which used the single-table "one card per frame" shape) are
@@ -28,6 +30,11 @@ const TITLE_BAR_HEIGHT = 36;
  * Serialize a DeckState to the v2 format for settings API persistence.
  *
  * Returns a plain object. Caller should JSON.stringify before writing.
+ *
+ * `focusedCardId` is intentionally NOT included in the layout blob. It is
+ * persisted separately via `putFocusedCardId` (single source of truth) and
+ * read back on mount through `initialFocusedCardId`. Keeping two paths for
+ * one field invites divergence.
  */
 export function serialize(deckState: DeckState): object {
   return {
@@ -36,9 +43,6 @@ export function serialize(deckState: DeckState): object {
     stacks: deckState.stacks,
     ...(deckState.activeStackId !== undefined
       ? { activeStackId: deckState.activeStackId }
-      : {}),
-    ...(deckState.focusedCardId !== undefined
-      ? { focusedCardId: deckState.focusedCardId }
       : {}),
   };
 }
@@ -76,9 +80,9 @@ export function deserialize(
       return migrateV1ToV2(raw, canvasWidth, canvasHeight);
     }
 
-    return buildDefaultLayout(canvasWidth, canvasHeight);
+    return buildDefaultLayout();
   } catch {
-    return buildDefaultLayout(canvasWidth, canvasHeight);
+    return buildDefaultLayout();
   }
 }
 
@@ -92,7 +96,7 @@ function parseV2(
   const rawCards = raw["cards"];
   const rawStacks = raw["stacks"];
   if (!Array.isArray(rawCards) || !Array.isArray(rawStacks)) {
-    return buildDefaultLayout(canvasWidth, canvasHeight);
+    return buildDefaultLayout();
   }
 
   const cards: CardState[] = [];
@@ -199,15 +203,13 @@ function parseV2(
       ? rawActiveStackId
       : undefined;
 
-  const rawFocusedCardId = raw["focusedCardId"];
-  const focusedCardId =
-    typeof rawFocusedCardId === "string" ? rawFocusedCardId : undefined;
+  // `focusedCardId` in the raw blob is ignored — that field is persisted
+  // separately via `putFocusedCardId` / `initialFocusedCardId`.
 
   return {
     cards: filteredCards,
     stacks,
     ...(activeStackId !== undefined ? { activeStackId } : {}),
-    ...(focusedCardId !== undefined ? { focusedCardId } : {}),
   };
 }
 
@@ -235,7 +237,7 @@ function migrateV1ToV2(
 ): DeckState {
   const rawCards = raw["cards"];
   if (!Array.isArray(rawCards)) {
-    return buildDefaultLayout(canvasWidth, canvasHeight);
+    return buildDefaultLayout();
   }
 
   const cards: CardState[] = [];
@@ -315,15 +317,10 @@ function migrateV1ToV2(
     });
   }
 
-  const rawFocusedCardId = raw["focusedCardId"];
-  const focusedCardId =
-    typeof rawFocusedCardId === "string" ? rawFocusedCardId : undefined;
+  // Legacy `focusedCardId` is ignored — reload restoration now reads from
+  // tugbank via the `putFocusedCardId` / `initialFocusedCardId` path.
 
-  return {
-    cards,
-    stacks,
-    ...(focusedCardId !== undefined ? { focusedCardId } : {}),
-  };
+  return { cards, stacks };
 }
 
 // ---- Default Layout ----
@@ -335,13 +332,7 @@ function migrateV1ToV2(
  * component IDs that are not registered in Phase 5. An empty canvas is the
  * correct default until Phase 9 registers real cards.
  *
- * The `canvasWidth` and `canvasHeight` parameters are retained for API
- * compatibility with call sites that pass canvas dimensions.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function buildDefaultLayout(
-  _canvasWidth: number,
-  _canvasHeight: number,
-): DeckState {
+export function buildDefaultLayout(): DeckState {
   return { cards: [], stacks: [] };
 }
