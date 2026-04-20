@@ -118,7 +118,7 @@ export class DeckManager implements IDeckManagerStore {
       this.saveCallbacks.forEach((cb) => cb());
       // Normal async fetch — page stays alive during app backgrounding.
       // Reload teardown is handled by the stateFlushed guard above (Swift
-      // saves via __tugdeckSaveState before navigation starts).
+      // saves via `window.tugdeck.saveState()` before navigation starts).
       this.flushDirtyTabStates();
     }
   };
@@ -130,7 +130,7 @@ export class DeckManager implements IDeckManagerStore {
   private reloadPending = false;
 
   /**
-   * Set to true by saveAndFlushSync() (called from __tugdeckSaveState).
+   * Set to true by saveAndFlushSync() (called from `window.tugdeck.saveState()`).
    * Tells visibilitychange and beforeunload handlers to skip — state was
    * already persisted before the navigation/teardown started.
    */
@@ -140,7 +140,7 @@ export class DeckManager implements IDeckManagerStore {
    * Bound handler for the window beforeunload event.
    * Last-resort safety net: uses sync XHR to flush state before the
    * page unloads. Skipped when state was already saved by a prior path
-   * (prepareForReload or __tugdeckSaveState).
+   * (prepareForReload or `window.tugdeck.saveState()`).
    */
   private readonly handleBeforeUnload = (): void => {
     if (this.reloadPending || this.stateFlushed) return;
@@ -830,7 +830,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Save all card states and flush to tugbank synchronously.
    *
-   * Called by the native app (Swift) via `window.__tugdeckSaveState()` before
+   * Called by the native app (Swift) via `window.tugdeck.saveState()` before
    * terminating the WebView. WKWebView does not fire visibilitychange or
    * beforeunload on app quit, so this is the only way to persist state on exit.
    * Uses synchronous XHR so the native side can safely tear down after

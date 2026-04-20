@@ -194,7 +194,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// Capture the current WebView content as a static snapshot and overlay it,
     /// so the user sees a frozen frame during shutdown instead of disconnect
     /// banners, theme flashes, or blank screens. The WebView stays alive
-    /// underneath for __tugdeckSaveState to execute.
+    /// underneath for `window.tugdeck.saveState()` to execute.
     func freezeForShutdown(completion: @escaping () -> Void) {
         webView.takeSnapshot(with: nil) { [weak self] image, error in
             guard let self = self else {
@@ -360,7 +360,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         if navigationAction.navigationType == .reload {
             decisionHandler(.cancel)
             freezeForReload { [weak self] in
-                self?.webView.evaluateJavaScript("window.__tugdeckSaveState?.()") { [weak self] _, _ in
+                self?.webView.evaluateJavaScript("window.tugdeck?.saveState?.()") { [weak self] _, _ in
                     if let url = self?.webView.url {
                         self?.webView.load(URLRequest(url: url))
                     }

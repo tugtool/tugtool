@@ -158,29 +158,29 @@ if (!container) {
     }
   });
 
-  // Expose a global save-state function so the native app (Swift) can trigger
-  // a synchronous save of all card states before terminating the WebView.
-  // WKWebView does not fire visibilitychange or beforeunload on app quit,
-  // so the native side calls this via evaluateJavaScript in
-  // applicationShouldTerminate. Uses synchronous XHR so the native side can
-  // safely tear down after evaluateJavaScript completes.
-  (window as unknown as Record<string, unknown>).__tugdeckSaveState = () => {
-    deck.saveAndFlushSync();
-  };
-
-  // App lifecycle (willBecomeActive / didBecomeActive / willResignActive /
-  // didResignActive / willHide / didHide / willUnhide / didUnhide): these
-  // events are delivered via the `app-lifecycle` control frame (registered
-  // in action-dispatch.ts) rather than ad-hoc window globals. Side effects
-  // like `deck.saveAndFlush()` on resign-active and the selection-guard
-  // dim/restore are wired as direct subscriptions on `AppLifecycle` —
-  // action-dispatch.ts owns the save wire; selection-guard subscribes via
-  // its own `attach(cardLifecycle, appLifecycle)` path.
-
-  // Expose a reconnect trigger so the native app can force an immediate
-  // WebSocket reconnection after silent re-authentication on tugcast restart.
-  (window as unknown as Record<string, unknown>).__tugdeckReconnect = () => {
-    connection.forceReconnect();
+  // `window.tugdeck` — the single namespace the native app (Swift) uses
+  // for synchronous evaluateJavaScript entry points. Only two methods
+  // live here, both driven from the Swift host:
+  //
+  //   - `saveState()` — triggers `DeckManager.saveAndFlushSync()` before
+  //     WebView teardown on app quit. Synchronous XHR so all writes
+  //     complete before evaluateJavaScript returns. Called from
+  //     `applicationShouldTerminate` — WKWebView doesn't fire
+  //     visibilitychange or beforeunload on quit, so this is the only
+  //     reliable save-on-quit path.
+  //   - `reconnect()` — forces a WebSocket reconnection. Called after
+  //     silent re-authentication when tugcast restarts.
+  //
+  // App lifecycle events (become-active / resign-active / hide / unhide)
+  // ride the `app-lifecycle` control frame instead, routed through
+  // `action-dispatch.ts` to the `AppLifecycle` singleton. The
+  // control-frame path is preferred; only these two stay as
+  // evaluateJavaScript entry points because they're synchronous
+  // Swift-initiated RPCs where a WebSocket round-trip is the wrong
+  // timing.
+  (window as unknown as Record<string, unknown>).tugdeck = {
+    saveState: () => deck.saveAndFlushSync(),
+    reconnect: () => connection.forceReconnect(),
   };
 
   // Signal frontend readiness to native app.

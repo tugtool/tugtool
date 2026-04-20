@@ -107,7 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // The fetch sets the new session cookie; the WebSocket reconnection loop
                 // in connection.ts will pick it up on its next attempt.
                 NSLog("AppDelegate: tugcast restarted, re-authenticating silently (no page reload)")
-                self.window.evaluateJavaScript("fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.__tugdeckReconnect?.()}).catch(function(){})")
+                self.window.evaluateJavaScript("fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.tugdeck?.reconnect?.()}).catch(function(){})")
                 self.processManager.sendDevMode(
                     enabled: self.devModeEnabled,
                     sourceTree: path,
@@ -161,12 +161,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Tell the WebView to save all card states (scroll, selection, content)
             // to tugbank before we tear down. WKWebView does not fire visibilitychange
             // or beforeunload on app quit, so this is the only save trigger on exit.
-            NSLog("AppDelegate: applicationShouldTerminate — calling __tugdeckSaveState")
-            self.window.evaluateJavaScript("window.__tugdeckSaveState?.()") { result, error in
+            NSLog("AppDelegate: applicationShouldTerminate — calling window.tugdeck.saveState")
+            self.window.evaluateJavaScript("window.tugdeck?.saveState?.()") { result, error in
                 if let error = error {
-                    NSLog("AppDelegate: __tugdeckSaveState error: %@", error.localizedDescription)
+                    NSLog("AppDelegate: tugdeck.saveState error: %@", error.localizedDescription)
                 } else {
-                    NSLog("AppDelegate: __tugdeckSaveState completed successfully")
+                    NSLog("AppDelegate: tugdeck.saveState completed successfully")
                 }
                 // JS used synchronous XHR, so all writes to tugbank are confirmed
                 // by the time this completion handler runs. Safe to tear down.
