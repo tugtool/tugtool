@@ -6,7 +6,7 @@
  *     chain) and notifies observers, synchronously.
  *   - observeCardDidActivate fires on transitions only, plus initial
  *     sync for current active on subscribe.
- *   - useOnCardDidActivate wires both ends through a React context.
+ *   - useCardDelegate wires both ends through a React context.
  *
  * Plain mocks stand in for DeckManager and ResponderChainManager so
  * the tests run without any deck / responder infrastructure.
@@ -20,8 +20,7 @@ import { renderHook, act } from "@testing-library/react";
 import {
   CardLifecycle,
   CardLifecycleContext,
-  useOnCardDidActivate,
-  type CardLifecycleObserver,
+  useCardDelegate,
   type CardLifecycleManager,
   type CardLifecycleStore,
 } from "@/lib/card-lifecycle";
@@ -369,7 +368,7 @@ describe("CardLifecycle.getActiveCardId", () => {
 });
 
 // ---------------------------------------------------------------------------
-// useOnCardDidActivate
+// useCardDelegate
 // ---------------------------------------------------------------------------
 
 function wrapperFor(
@@ -384,37 +383,48 @@ function wrapperFor(
   };
 }
 
-describe("useOnCardDidActivate", () => {
-  it("T-CL-HOOK-01: fires initial sync when the card is already active at mount", () => {
+describe("useCardDelegate", () => {
+  it("T-CL-HOOK-01: cardDidActivate fires initial sync when the card is already active at mount", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
-    const cb: CardLifecycleObserver = (id) => calls.push(id);
 
-    renderHook(() => useOnCardDidActivate("card-A", cb), {
-      wrapper: wrapperFor(lifecycle),
-    });
+    renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
 
     expect(calls).toEqual(["card-A"]);
   });
 
-  it("T-CL-HOOK-02: does not fire initial sync when the card is not the active one", () => {
+  it("T-CL-HOOK-02: cardDidActivate does not fire initial sync when the card is not the active one", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
-    renderHook(() => useOnCardDidActivate("card-B", (id) => calls.push(id)), {
-      wrapper: wrapperFor(lifecycle),
-    });
+    renderHook(
+      () =>
+        useCardDelegate("card-B", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
 
     expect(calls).toEqual([]);
   });
 
-  it("T-CL-HOOK-03: fires on a subsequent activation", async () => {
+  it("T-CL-HOOK-03: cardDidActivate fires on a subsequent activation", async () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
 
-    renderHook(() => useOnCardDidActivate("card-A", (id) => calls.push(id)), {
-      wrapper: wrapperFor(lifecycle),
-    });
+    renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
 
     act(() => {
       lifecycle.activateCard("card-A");
@@ -428,7 +438,10 @@ describe("useOnCardDidActivate", () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
     const { unmount } = renderHook(
-      () => useOnCardDidActivate("card-A", (id) => calls.push(id)),
+      () =>
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
       { wrapper: wrapperFor(lifecycle) },
     );
 
@@ -442,37 +455,99 @@ describe("useOnCardDidActivate", () => {
   });
 
   it("T-CL-HOOK-05: no-op when no CardLifecycle is provided", () => {
-    // No wrapper — useCardLifecycle returns null; subscription is skipped.
+    // No wrapper — useCardLifecycle returns null; subscriptions are skipped.
     const calls: string[] = [];
     expect(() => {
-      renderHook(() => useOnCardDidActivate("card-A", (id) => calls.push(id)));
+      renderHook(() =>
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
+      );
     }).not.toThrow();
     expect(calls).toEqual([]);
   });
 
-  it("T-CL-HOOK-06: inline callback re-renders don't re-install the subscription", () => {
+  it("T-CL-HOOK-06: inline delegate re-renders don't re-install the subscription", () => {
     // If the subscription were re-installed on each render, the initial-
-    // sync would fire on every render; with the callback-ref pattern it
+    // sync would fire on every render; with the delegate-ref pattern it
     // fires exactly once at mount.
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
     const { rerender } = renderHook(
       ({ tag }: { tag: number }) =>
-        useOnCardDidActivate("card-A", (id) => calls.push(`${tag}:${id}`)),
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(`${tag}:${id}`),
+        }),
       {
         initialProps: { tag: 1 },
         wrapper: wrapperFor(lifecycle),
       },
     );
 
-    // Force re-renders with fresh closure identities.
+    // Force re-renders with fresh delegate-object identities.
     rerender({ tag: 2 });
     rerender({ tag: 3 });
 
     // Only the first (mount) subscription's initial sync fires. The
-    // callback ref updates so the most-recent closure would receive
+    // delegate ref updates so the most-recent closure would receive
     // later activations, but there are none here.
     expect(calls).toEqual(["1:card-A"]);
   });
+
+  it("T-CL-HOOK-07: routes to the right method by event type", async () => {
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+
+    renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardDidFinishConstruction: (id) => calls.push(`construct:${id}`),
+          cardDidActivate: (id) => calls.push(`activate:${id}`),
+          cardDidDeactivate: (id) => calls.push(`deactivate:${id}`),
+          cardWillBeginDestruction: (id) => calls.push(`destroy:${id}`),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
+
+    act(() => {
+      lifecycle.notifyCardDidFinishConstruction("card-A");
+      lifecycle.activateCard("card-A");
+      lifecycle.activateCard("card-B");
+      lifecycle.notifyCardWillBeginDestruction("card-A");
+    });
+    await flushDeferred();
+
+    expect(calls).toEqual([
+      "construct:card-A",
+      "activate:card-A",
+      "deactivate:card-A",
+      "destroy:card-A",
+    ]);
+  });
+
+  it("T-CL-HOOK-08: missing delegate methods are no-ops", async () => {
+    // Only cardDidActivate is defined; other events fire but produce
+    // no delegate invocations.
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+
+    renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardDidActivate: (id) => calls.push(id),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
+
+    act(() => {
+      lifecycle.notifyCardDidFinishConstruction("card-A");
+      lifecycle.activateCard("card-A");
+      lifecycle.notifyCardWillBeginDestruction("card-A");
+    });
+    await flushDeferred();
+
+    expect(calls).toEqual(["card-A"]);
+  });
 });
+

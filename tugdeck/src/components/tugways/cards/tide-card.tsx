@@ -44,10 +44,7 @@ import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
-import {
-  useOnCardDidActivate,
-  useOnCardDidFinishConstruction,
-} from "@/lib/card-lifecycle";
+import { useCardDelegate } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -818,11 +815,9 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // Selection has been cleared (e.g., by the selection guard).
   // Double-firing on a first-mount-into-active card is harmless;
   // missing either moment would leave the user unable to type.
-  useOnCardDidFinishConstruction(cardId, () => {
-    entryDelegateRef.current?.focus();
-  });
-  useOnCardDidActivate(cardId, () => {
-    entryDelegateRef.current?.focus();
+  useCardDelegate(cardId, {
+    cardDidFinishConstruction: () => entryDelegateRef.current?.focus(),
+    cardDidActivate: () => entryDelegateRef.current?.focus(),
   });
 
   // Animate the snap-back-to-userSize ONLY on explicit user submit —

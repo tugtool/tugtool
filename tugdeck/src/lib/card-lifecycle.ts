@@ -341,149 +341,123 @@ export function useCardLifecycle(): CardLifecycle | null {
 }
 
 /**
- * Shared hook body for the four `useOnCard*` hooks.
+ * Delegate protocol for a card's lifecycle events.
+ *
+ * Apple-style: a single object with optional methods, supplied to
+ * `useCardDelegate(cardId, delegate)`. Missing methods are no-ops.
+ *
+ * The two `will` variants for activate/deactivate are declared here
+ * now but are not yet wired to a notify source — Step 3 of the
+ * lifecycle-delegates plan adds `notifyCardWillActivate` /
+ * `notifyCardWillDeactivate` and the corresponding observers and
+ * extends `useCardDelegate` to install those subscriptions.
+ */
+export interface TugCardDelegate {
+  cardDidFinishConstruction?(cardId: string): void;
+  cardWillActivate?(cardId: string): void; // wired in Step 3
+  cardDidActivate?(cardId: string): void;
+  cardWillDeactivate?(cardId: string): void; // wired in Step 3
+  cardDidDeactivate?(cardId: string): void;
+  cardWillBeginDestruction?(cardId: string): void;
+}
+
+/**
+ * The set of delegate method names the hook routes events to. The
+ * discriminator on the pending-event buffer, and the key used to
+ * look up the delegate method at drain time.
+ */
+type CardDelegateMethodName =
+  | "cardDidFinishConstruction"
+  | "cardDidActivate"
+  | "cardDidDeactivate"
+  | "cardWillBeginDestruction";
+
+interface PendingDelegateEvent {
+  readonly method: CardDelegateMethodName;
+  readonly cardId: string;
+}
+
+/**
+ * `useCardDelegate` — subscribe a React component to a card's
+ * lifecycle as a delegate.
  *
  * Architecture:
- *   - Subscription installs in `useLayoutEffect` (L03 — event-
- *     dependent setup is ready before events fire).
- *   - The observer callback enqueues pending event ids into a ref
- *     and bumps a state counter.
+ *   - Subscriptions install in `useLayoutEffect` (L03 — event-
+ *     dependent setup is ready before events fire). One subscription
+ *     per observer channel is installed unconditionally; routing to
+ *     a delegate method happens at drain time.
+ *   - The observer callbacks enqueue `{ method, cardId }` tuples
+ *     into a ref and bump a state counter.
  *   - A `useEffect` (post-paint) drains the queue and invokes the
- *     user callback in React's deterministic post-commit phase,
- *     outside any browser pointer gesture. This is what lets the
- *     user callback (typically `entryDelegate.focus()`) succeed:
- *     by the time `useEffect` runs, WebKit's gesture focus-lock
- *     on `preventDefault()`-ed mousedowns has released.
+ *     matching delegate method — if present — in React's determin-
+ *     istic post-commit phase, outside any browser pointer gesture.
+ *     This is what lets the delegate callback (typically
+ *     `entryDelegate.focus()`) succeed: by the time `useEffect`
+ *     runs, WebKit's gesture focus-lock on `preventDefault()`-ed
+ *     mousedowns has released.
  *
- * The caller's callback is held in a ref so inline closures don't
- * re-install the subscription on every render. A fresh `{ seq }`
- * state object per event ensures that even same-id repeat events
- * trigger the useEffect (React only re-runs on identity change).
+ * The delegate object is held in a ref so inline literals don't
+ * re-install the subscription on every render. The four observer
+ * subscriptions install once per `(lifecycle, cardId)` pair.
  */
-function useOnCardEvent(
+export function useCardDelegate(
   cardId: string,
-  callback: CardLifecycleObserver,
-  observe: (
-    lifecycle: CardLifecycle,
-    cardId: string,
-    cb: CardLifecycleObserver,
-  ) => () => void,
+  delegate: TugCardDelegate,
 ): void {
   const lifecycle = useCardLifecycle();
 
-  // Live callback ref — avoids re-subscribing when the caller
-  // passes an inline arrow every render.
-  const callbackRef = useRef(callback);
+  // Live delegate ref — avoids re-subscribing when the caller
+  // passes an inline object every render.
+  const delegateRef = useRef(delegate);
   useLayoutEffect(() => {
-    callbackRef.current = callback;
-  }, [callback]);
+    delegateRef.current = delegate;
+  }, [delegate]);
 
-  // Pending event buffer + seq counter. Observer fire enqueues into
-  // the ref and increments the counter to schedule a re-render; the
+  // Pending event buffer + seq counter. Observer fires enqueue into
+  // the ref and increment the counter to schedule a re-render; the
   // post-paint useEffect drains the buffer in order.
-  const pendingRef = useRef<string[]>([]);
+  const pendingRef = useRef<PendingDelegateEvent[]>([]);
   const [seq, setSeq] = useState(0);
 
   useLayoutEffect(() => {
     if (lifecycle === null) return;
-    return observe(lifecycle, cardId, (eventCardId) => {
-      pendingRef.current.push(eventCardId);
+    const enqueue = (method: CardDelegateMethodName, eventCardId: string) => {
+      pendingRef.current.push({ method, cardId: eventCardId });
       setSeq((s) => s + 1);
-    });
-  }, [lifecycle, cardId, observe]);
+    };
+    const unsubs = [
+      lifecycle.observeCardDidFinishConstruction(cardId, (id) =>
+        enqueue("cardDidFinishConstruction", id),
+      ),
+      lifecycle.observeCardDidActivate(cardId, (id) =>
+        enqueue("cardDidActivate", id),
+      ),
+      lifecycle.observeCardDidDeactivate(cardId, (id) =>
+        enqueue("cardDidDeactivate", id),
+      ),
+      lifecycle.observeCardWillBeginDestruction(cardId, (id) =>
+        enqueue("cardWillBeginDestruction", id),
+      ),
+    ];
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [lifecycle, cardId]);
 
   useEffect(() => {
     if (seq === 0) return;
     const pending = pendingRef.current;
     pendingRef.current = [];
-    for (const eventCardId of pending) {
+    const d = delegateRef.current;
+    for (const event of pending) {
+      const fn = d[event.method];
+      if (fn === undefined) continue;
       try {
-        callbackRef.current(eventCardId);
+        fn(event.cardId);
       } catch (err) {
-        console.error("useOnCardEvent callback threw:", err);
+        console.error(`useCardDelegate ${event.method} threw:`, err);
       }
     }
   }, [seq]);
-}
-
-// Stable observer-bindings so the effect's dep array doesn't treat
-// each render's fresh arrow as a new subscription target.
-const observeConstruction = (
-  lifecycle: CardLifecycle,
-  cardId: string,
-  cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardDidFinishConstruction(cardId, cb);
-
-const observeActivation = (
-  lifecycle: CardLifecycle,
-  cardId: string,
-  cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardDidActivate(cardId, cb);
-
-const observeDeactivation = (
-  lifecycle: CardLifecycle,
-  cardId: string,
-  cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardDidDeactivate(cardId, cb);
-
-const observeDestruction = (
-  lifecycle: CardLifecycle,
-  cardId: string,
-  cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardWillBeginDestruction(cardId, cb);
-
-/**
- * Subscribe to CONSTRUCTION of `cardId`. For a hook called from a
- * card body, this effectively fires once on mount — a card body
- * doesn't exist unless the card does, so initial-sync always fires.
- * Wildcard hooks (if cardId is dynamic) fire for each currently-
- * constructed card on subscribe and once per subsequent new card.
- */
-export function useOnCardDidFinishConstruction(
-  cardId: string,
-  callback: CardLifecycleObserver,
-): void {
-  useOnCardEvent(cardId, callback, observeConstruction);
-}
-
-/**
- * Subscribe to ACTIVATION of `cardId`. Fires immediately on mount
- * if the card is currently active; fires again on each subsequent
- * activation. No-op when no lifecycle is provided.
- *
- * Typical use:
- *     useOnCardDidActivate(cardId, () => {
- *       entryDelegateRef.current?.focus();
- *     });
- */
-export function useOnCardDidActivate(
-  cardId: string,
-  callback: CardLifecycleObserver,
-): void {
-  useOnCardEvent(cardId, callback, observeActivation);
-}
-
-/**
- * Subscribe to DEACTIVATION of `cardId`. Fires when this card loses
- * active status — either another card became active, or this card
- * is closing while active. No initial-sync.
- */
-export function useOnCardDidDeactivate(
-  cardId: string,
-  callback: CardLifecycleObserver,
-): void {
-  useOnCardEvent(cardId, callback, observeDeactivation);
-}
-
-/**
- * Subscribe to DESTRUCTION of `cardId`. Fires once, synchronously,
- * right before the card is removed from the deck. Subscribers can
- * still read state. No initial-sync.
- */
-export function useOnCardWillBeginDestruction(
-  cardId: string,
-  callback: CardLifecycleObserver,
-): void {
-  useOnCardEvent(cardId, callback, observeDestruction);
 }
 
