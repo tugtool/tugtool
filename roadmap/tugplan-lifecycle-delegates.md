@@ -609,6 +609,261 @@ This also closes out the "Out of scope" note in [§Scope](#scope) that deferred 
 
 **Note on scope:** This step fixes routing only. It does not introduce new events or change existing event semantics. Every fix follows the patterns already established in Steps 3, 7, 11, and 11.5.
 
+#### Step 11.6.1a — Split the data model into `Card` + `CardStack` and mount card content via portals {#step-11-6-1a}
+
+**Motivation:** A second-order bug from Step 11.6 manifests as follows:
+
+1. Open a tide card pointed at `/u/src/tugtool`.
+2. Use Developer > Add Tab to Active Card to add a Hello World tab.
+3. Drag the Hello World tab out into its own card.
+4. Hello World becomes active, but the deactivated tide card's prompt entry still has a blinking caret.
+
+Tracing the events shows they all fire in the expected order. But the bug persists because **tab content components unmount and remount when a tab moves between cards.** React preserves component identity only within the same parent subtree; moving a tab from card A's children to card B's children is functionally unmount + remount no matter how the keys line up. That teardown also discards the mounted content's internal state — and for tide cards, that includes the live session WebSocket to tugcast and the text engine's input delegate. Re-mounting reconstructs the DOM but leaves the old focus state stale.
+
+The fix is to **stop treating tabs as a parallel concept.** In the unified model, every content surface is a **Card**. A card is constructed once when it enters the deck and destroyed once when it truly leaves. The fact that multiple cards can be visually grouped under a single frame with a tab bar is a **layout feature** of the deck, not a property of the cards. We call that visual container a **CardStack**. A standalone card is a stack of one. Detaching a "tab" is just moving a card between stacks; the card's React subtree never unmounts, so its session survives intact.
+
+To make identity-preservation work, card content is mounted as a **flat children array at the deck root**, keyed by cardId, and each card renders into a **portal** whose target is the content `<div>` of its current host stack. When a card moves between stacks, only the portal container changes; the component subtree stays mounted, effects do not tear down, WebSocket connections continue uninterrupted.
+
+This step (11.6.1a) is the mechanical refactor: split the data model, rewrite DeckCanvas to render via portals, rename the tab-facing store APIs to their card-facing equivalents. **No new lifecycle events; no delegate-semantic changes.** Step 11.6.1b layers the focus-bug-fix semantics on top.
+
+**Files:**
+- `tugdeck/src/layout-tree.ts` (data model rename: `CardState` → `CardStackState`; new `CardState`; `DeckState` gets `stacks` + `cards` arrays)
+- `tugdeck/src/deck-manager.ts` (store mutations operate on `cards` + `stacks`; internal helpers updated)
+- `tugdeck/src/deck-manager-store.ts` (`IDeckManagerStore` API: add `addCardToStack` / `detachCard` / `moveCardToStack`; deprecate or delete `addTab` / `detachTab` / `mergeTab`)
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (render `stacks` as chrome; render `cards` flat with portals)
+- `tugdeck/src/components/chrome/card-frame.tsx` (becomes "stack frame"; exposes content ref for portal mounting)
+- `tugdeck/src/action-dispatch.ts` (menu actions: `new-tab-on-active-card` → `addCardToStack(activeStackId, componentId)`)
+- `tugdeck/src/__tests__/deck-manager.test.ts` (migrate to new API names; add identity-preservation tests)
+- `tugdeck/src/__tests__/deck-canvas.test.tsx` (portal rendering)
+- `tugdeck/src/card-registry.ts` (no change expected; `componentId` semantics unchanged)
+- Persistence migration path for the tugbank layout blob (see *Persistence* below).
+
+**Work:**
+
+*Data model:*
+```ts
+// New:
+export interface CardState {
+  id: string;                     // stable card identity (former tabId)
+  componentId: string;            // "tide" | "hello" | "gallery" | ...
+  title: string;
+  closable: boolean;
+  state?: TabStateBag;            // per-card state bag (renamed TabStateBag later, or leave as-is)
+}
+
+export interface CardStackState {
+  id: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  cardIds: string[];              // ordered; order drives tab-bar order
+  activeCardId: string;           // must be in cardIds
+  collapsed?: boolean;
+  acceptsFamilies: readonly string[];
+}
+
+export interface DeckState {
+  cards: CardState[];             // flat table of all cards in the deck
+  stacks: CardStackState[];       // flat table of all stacks
+  activeStackId?: string;         // the focused stack (which stack the user is in)
+  focusedCardId?: string;         // reload-restoration only (unchanged role)
+}
+```
+
+Invariants:
+- Every card in `cards` is referenced by exactly one stack's `cardIds`.
+- Every `activeCardId` is present in its stack's `cardIds`.
+- A stack with an empty `cardIds` is not allowed; remove the stack when its last card is removed.
+- `activeStackId`, if set, references an existing stack.
+
+*Store API rename (`IDeckManagerStore`):*
+- `addCard(componentId): string | null` — unchanged shape; creates a Card, wraps it in a new single-card Stack at the default position, makes the new Stack active.
+- `addCardToStack(stackId: string, componentId: string): string | null` — replaces `addTab`. Creates a Card, appends to `stacks[stackId].cardIds`, sets `activeCardId` to the new card, no stack movement. Returns the new cardId.
+- `detachCard(cardId: string, position: { x: number; y: number }): string | null` — replaces `detachTab`. Removes the card from its current stack; creates a new Stack at `position` containing only this card; returns the new stackId. No-op if the card is already the only card in its stack. **Does not unmount the card's content component.**
+- `moveCardToStack(cardId: string, targetStackId: string, insertAtIndex: number): void` — replaces `mergeTab`. Moves the card from its current stack to `targetStackId` at `insertAtIndex`. The moved card becomes the target's active card. If the source stack becomes empty, remove it. **Does not unmount the card's content component.**
+- `handleCardClosed(cardId: string)` — unchanged name, semantics shifted: removes a single Card. If the card was its stack's sole card, the stack is also removed.
+- `activateCard(cardId, knownPreviousActive?)` — unchanged signature; semantics extended in 11.6.1b.
+- `reorderTab` / `setActiveTab` — rename to `reorderCardInStack` / `setActiveCardInStack` for consistency. Keep argument order `(stackId, ...)` for call-site clarity.
+
+*DeckCanvas render shape:*
+```tsx
+<DeckCanvasRoot>
+  {stacks.map(stack => (
+    <StackFrame
+      key={stack.id}
+      stack={stack}
+      // StackFrame renders: title bar + tab bar (if cardIds.length > 1) + empty content div with ref
+    />
+  ))}
+  {cards.map(card => (
+    <CardPortal key={card.id} card={card} hostStackId={lookupHostStackId(card.id)}>
+      <CardRegistry.Component componentId={card.componentId} cardId={card.id} />
+    </CardPortal>
+  ))}
+</DeckCanvasRoot>
+```
+
+`CardPortal`:
+- Resolves the host stack's content-div ref from a registry populated by `StackFrame` on mount.
+- Calls `createPortal(children, contentDiv)`; when `hostStackId` changes, rebinds to the new stack's content-div.
+- Never unmounts its children on host change.
+
+`StackFrame`:
+- Renders only chrome: title bar, tab bar (if `cardIds.length > 1`), an empty content `<div>` with a ref it registers into the content-ref registry keyed by its stack id.
+- Handles drag/resize at the stack level; delegates to `store.moveStack(stackId, position, size)` (renamed from `handleCardMoved`).
+- Tab-bar click routes to `store.setActiveCardInStack(stackId, cardId)`.
+- Tab-bar drag-out routes to `store.detachCard(cardId, position)`.
+
+*Action-dispatch:*
+- `new-tab-on-active-card` → `store.addCardToStack(activeStackId, componentId)` (was `store.addTab(activeCardId, componentId)`).
+- `focus-card` handler accepts either a stackId or a cardId; if cardId, look up its stack and activate that stack with that card active. (Card-only semantics at the View menu level arrive in 11.6.1b.)
+
+*Persistence migration:*
+- The tugbank layout blob today stores `{ cards: [{ id, position, size, tabs: [...], activeTabId }] }`. The new shape is `{ cards: [...], stacks: [...], activeStackId, focusedCardId }`.
+- Add a schema version field to the blob (`version: 1` legacy, `version: 2` new).
+- On load: if `version !== 2`, run an in-place migration (each legacy card becomes a stack of 1..N cards; tabs become cards; `activeTabId` becomes `activeCardId`; `id`s preserved for tabs-as-cards so tugbank tabstate rows match).
+- Write `version: 2` on save.
+
+**Tests:**
+- Data model invariants (orphan cards, stack with empty cardIds, dangling activeCardId, etc.) — assertion-style tests that mutations preserve them.
+- API rename round-trip: `addCard` → `addCardToStack` → `detachCard` → `moveCardToStack` produces the same final state as the pre-refactor `addCard` / `addTab` / `detachTab` / `mergeTab` sequence did.
+- **Identity preservation (the core test):** mount a `<Deck>` with a tide card; assert the tide card's component `mount` effect fires exactly once; perform `addCardToStack(...)`, then `detachCard(...)`, then `moveCardToStack(...)`, then `setActiveCardInStack(...)`; assert the mount effect still has fired exactly once (never re-mounted). Use a `useEffect(() => { mountCount++; return () => unmountCount++; }, [])` probe in a mock card component.
+- Portal rendering: a card's DOM node lives inside its host stack's content-div before and after `moveCardToStack`, verified via `contains()` on the rendered DOM.
+- Persistence migration: load a `version: 1` blob, assert the resulting `DeckState` matches a hand-written `version: 2` equivalent, save it back, assert `version: 2`.
+- Existing test suite continues to pass with the API-name updates (mechanical find-and-replace in `deck-manager.test.ts`).
+
+**Verification:**
+- `bun x tsc --noEmit` clean.
+- `bun test` green (existing count + ~8 new).
+- Manual smoke:
+  - Open a tide card → connects to tugcast.
+  - Developer > Add Tab → Hello World appears in tide's stack; tide's connection survives (check network panel: no WS reconnect).
+  - Drag Hello out → Hello appears in a new stack; tide's connection still live (no reconnect).
+  - Drag Hello back onto tide → Hello merges into tide's stack; tide's connection still live.
+  - Close the tide card → tide disconnects once (construction-destruction pair fires exactly once per card per session).
+
+**Note on scope:** This step is mechanical. No new lifecycle events. No delegate-semantic changes. The focus bug reproduction from the motivation STILL manifests at the end of 11.6.1a (because card-level activate/deactivate still fires only on stack-level activation) — that's fixed in 11.6.1b. Verification criterion for "this step is done" is: identity-preservation tests pass, tide's WebSocket survives every card-movement operation, and all pre-existing tests pass under the new API names.
+
+#### Step 11.6.1b — First-responder `cardDidActivate` semantics + remove card-level focus duplication {#step-11-6-1b}
+
+**Motivation:** With 11.6.1a in place, card identity is preserved across all movement operations. The last piece is making `cardDidActivate` / `cardWillDeactivate` fire on the right transitions: not just when a stack becomes the active stack, but whenever **the composite bit "this card is the first responder"** changes.
+
+Defining the bit: a card is the first responder iff (a) it is the `activeCardId` of its stack, AND (b) its stack is the deck's `activeStackId`. At any moment, exactly zero or one card is first responder.
+
+Events:
+- `cardDidActivate(cardId)` fires when `cardId` becomes first responder (from being non-first-responder).
+- `cardWillDeactivate(cardId)` fires when `cardId` is about to stop being first responder.
+- `cardDidDeactivate(cardId)` fires after the store mutation that took first-responder status away.
+- `cardWillActivate(cardId)` fires before the store mutation that gives first-responder status.
+
+Transitions that flip the bit (all flow through `activateCard` or internal equivalents):
+1. User clicks a card in an inactive stack → activate that stack, set that card's active-in-stack, first responder flips from old-active to new.
+2. User clicks a tab bar entry in the active stack → set that card's active-in-stack in the (already-active) stack; first responder flips.
+3. User clicks a tab bar entry in an inactive stack → both effects above at once.
+4. `addCard(componentId)` → new stack becomes active, new card is its active card → first responder flips from old to new.
+5. `addCardToStack(stackId, componentId)` → new card becomes `stackId`'s active card. If `stackId` was already the deck's active stack, first responder flips from the previous active-card-in-stack to the new one. If not, no flip (new card is active-in-its-stack but its stack is not active in the deck).
+6. `detachCard(cardId, position)` → new stack is created and becomes the deck's active stack, containing only `cardId`. If `cardId` was already first responder, no flip (still first responder). If not, flip to `cardId`. Source stack may also change its active-in-stack card; if source stack is not the deck's active stack after detach, that change does not flip first responder.
+7. `moveCardToStack(cardId, targetStackId, insertAtIndex)` → moved card becomes `targetStackId`'s active card. If `targetStackId` is or becomes the deck's active stack, first responder flips to the moved card. Source stack's active-in-stack change is evaluated the same way.
+8. `handleCardClosed(cardId)` → if the card was first responder, its stack picks a new active card (or is removed); first responder flips (or is cleared if no stack remains).
+9. App background / hide (cascade from Step 7) → first responder is cleared temporarily; flip event fires.
+10. App foreground / unhide → first responder is restored; flip event fires.
+
+**Files:**
+- `tugdeck/src/deck-manager.ts` (activateCard logic; all mutators that can flip first responder)
+- `tugdeck/src/lib/card-lifecycle.ts` (no API change; documentation of first-responder semantics)
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (consolidated delegate: `cardDidActivate` / `cardWillDeactivate` become the sole focus-management path; `cardDidFinishConstruction` focus call removed — construction never coincides with first-responder-gained in isolation; `cardDidMove` / `cardDidResize` focus re-assert retained)
+- `tugdeck/src/action-dispatch.ts` (`focus-card` handler works at the card level: activates `cardId`'s host stack AND sets `cardId` as its stack's active card)
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (`initialFocusedCardId` restoration path flows through `activateCard(cardId, null)`; unchanged signature)
+- `tugdeck/src/__tests__/deck-manager.test.ts` (new tests for transitions 1–10)
+- `tugdeck/src/__tests__/card-lifecycle.test.tsx` (first-responder sequencing tests)
+
+**Work:**
+
+*DeckManager — introduce a single `_setFirstResponder(newFirstResponderCardId: string | null)` internal method:*
+- Computes old first responder = `(activeStack?.activeCardId) ?? null`.
+- If `old === new`, no-op.
+- Otherwise: fire `cardWillDeactivate(old)` (if `old`), fire `cardWillActivate(new)` (if `new`), commit the store mutation that changes `activeStackId` and/or the target stack's `activeCardId`, `notify()`, fire `cardDidDeactivate(old)` (if `old`), fire `cardDidActivate(new)` (if `new`).
+- Every public mutator that can flip first responder routes through `_setFirstResponder`.
+
+*activateCard(cardId, knownPreviousActive?):*
+- Look up `cardId`'s host stack.
+- Compute the desired new state: `activeStackId = hostStack.id`; `hostStack.activeCardId = cardId`.
+- Call `_setFirstResponder(cardId)` (it reads old from current state; `knownPreviousActive` becomes redundant and can be removed — note follow-up in the **Note on scope** below).
+
+*addCardToStack(stackId, componentId):*
+- Create card; append to stack's `cardIds`; compute whether first responder flips; call `_setFirstResponder(newCardId)` if the stack is the deck's active stack, else just `notify()` (the new card is active-in-its-stack but not first responder). Construction event fires in between (before `notify()`).
+
+*detachCard(cardId, position):*
+- Mutate: remove from source stack, create new target stack at `position`, `activeStackId = newStackId`, new stack's `activeCardId = cardId`. Source stack may need a new active card (pick neighbor).
+- First responder flips iff the old first responder was NOT `cardId`. Route through `_setFirstResponder` regardless (no-op if same).
+- No construction or destruction events — card identity is preserved.
+
+*moveCardToStack(cardId, targetStackId, insertAtIndex):*
+- Mutate: remove from source, insert in target, target's `activeCardId = cardId`, source's `activeCardId` may change (pick neighbor) or source may be removed. `activeStackId` may or may not change depending on call-site (if the user dragged the card, activeStackId typically follows to the target).
+- `_setFirstResponder` reconciles.
+
+*handleCardClosed(cardId):*
+- If `cardId` is first responder, pick a new first responder (next card in the same stack, or first card in another stack, or null) and route through `_setFirstResponder(newFR)` BEFORE firing `cardWillBeginDestruction(cardId)`.
+- Then: fire `cardWillBeginDestruction`, mutate state, `notify()`.
+
+*Cascade (Step 7) reconciliation:*
+- App-resign/hide: cascade already deactivates the first responder. In the new model, it still works unchanged — it calls `cardWillDeactivate` / `cardDidDeactivate` on whatever card is currently first responder.
+- App-foreground/unhide: reactivate the previously deactivated card via `_setFirstResponder(sameCardId)` — already idempotent per existing cascade logic.
+
+*Tide card — consolidated delegate:*
+```tsx
+useCardDelegate(cardId, {
+  cardDidActivate: () => entryDelegateRef.current?.focus(),
+  cardWillDeactivate: () => entryDelegateRef.current?.blur(),
+  cardDidMove: () => {
+    if (!isFirstResponder(cardId)) return;
+    entryDelegateRef.current?.focus();
+  },
+  cardDidResize: () => {
+    if (!isFirstResponder(cardId)) return;
+    entryDelegateRef.current?.focus();
+  },
+});
+```
+- `cardDidFinishConstruction` focus call is removed. Construction alone does not make a card first responder (the activate call that follows does). For the addCard-then-activate path, `cardDidActivate` fires after construction and drives focus.
+- The `isFirstResponder(cardId)` check in `cardDidMove` / `cardDidResize` is `deckManagerStore.getFirstResponderCardId() === cardId` — new store method exposing the composite bit.
+
+**Tests:**
+
+*Transition coverage (one test per numbered transition from the Motivation list):*
+- T-11-6-1b-01 — Click a card in an inactive stack → `willDeact(old)`, `willAct(new)`, `didDeact(old)`, `didAct(new)`.
+- T-11-6-1b-02 — Click a tab in the active stack → same sequence, both cards in the same stack.
+- T-11-6-1b-03 — Click a tab in an inactive stack → same sequence, stack switches AND tab switches.
+- T-11-6-1b-04 — `addCard` → construction fires for new card, then full flip sequence.
+- T-11-6-1b-05a — `addCardToStack` when stack IS active → construction fires, then first-responder flip from old-in-stack to new-in-stack.
+- T-11-6-1b-05b — `addCardToStack` when stack is NOT active → construction fires, NO activate/deactivate events (new card is active-in-its-stack but not first responder).
+- T-11-6-1b-06 — `detachCard` when moved card is already first responder → no activate/deactivate events.
+- T-11-6-1b-06b — `detachCard` when moved card is NOT first responder → flip sequence to moved card.
+- T-11-6-1b-07 — `moveCardToStack` to the active stack → flip sequence.
+- T-11-6-1b-07b — `moveCardToStack` to an inactive stack → no flip.
+- T-11-6-1b-08a — close the first responder (stack has other cards) → flip to a neighbor, then destruction fires.
+- T-11-6-1b-08b — close the first responder (sole card in sole stack) → flip to null, then destruction fires.
+- T-11-6-1b-09 — App resigns active → `cardWillDeactivate` / `cardDidDeactivate` on first responder; app becomes active → `cardWillActivate` / `cardDidActivate` on the same card.
+
+*Regression test for the detach focus bug:*
+- T-11-6-1b-detach-focus — construct a deck with tide (stack S1) and add Hello via `addCardToStack(S1, "hello")`. Assert `cardWillDeactivate(tide)` + `cardDidDeactivate(tide)` fired (prompt gets blurred). Call `detachCard(hello, { x: 200, y: 200 })`. Assert Hello's new stack is active, Hello is first responder; assert NO `cardDidActivate(tide)` fires (tide's stack is no longer the active stack). End state: tide's blur call stands; no re-focus side effect was issued.
+
+**Verification:**
+- `bun x tsc --noEmit` clean.
+- `bun test` green (existing count from 11.6.1a + ~14 new).
+- Manual verification for the detach focus bug (the motivating reproducer from 11.6.1a's Motivation):
+  1. Open a tide card pointed at `/u/src/tugtool`.
+  2. Developer > Add Tab to Active Card. → prompt caret stops blinking on tide (blur fired on add).
+  3. Drag the Hello World tab out. → Hello is active with focused prompt area; tide's prompt is NOT blinking.
+- Manual smoke for every transition from the Motivation list.
+- Manual: app-hide (Cmd-H) / app-unhide — prompt blurs on hide, refocuses on unhide. (Regression check on Step 7 cascade.)
+- Manual: app-background (click Finder) / app-foreground — same blur/refocus cycle.
+
+**Note on scope:**
+- This step removes the need for `knownPreviousActive` parameter on `activateCard` (the internal `_setFirstResponder` computes old first responder from current state). The parameter can be dropped from `IDeckManagerStore.activateCard` signature in this step, with the caller in `deck-canvas.tsx` (H-A6 fix) updated accordingly.
+- This step does NOT introduce `cardDidBecomeVisible` / `cardDidBecomeHidden` events for cards that change active-in-stack status without first-responder flipping (transitions 05b, 07b, the source-stack side of 06 and 07). Those transitions are genuinely silent at the delegate layer. If a future card type (e.g., a chart) needs "I just became visible in my stack" as a hook, add a dedicated event then — do not speculate now.
+- The construction focus call in tide-card.tsx is removed. The sequence for `addCard` (standalone) is: construction fires (TideCardBody mounts), then first-responder flips to the new card, then `cardDidActivate` fires (TideCardBody focuses). Construction-with-focus is no longer a coupled pair — two independent events, ordered by the store logic.
+- Session restoration across reload (the deferred "tide card's prompt focus on reload" bug) remains out of scope. This plan's reload flow already activates the focused card via `activateCard(cardId, null)`; the missing piece is that tide's WebSocket doesn't survive reload. A follow-up phase owns session restoration.
+
 #### Step 11.6.5 — Close out H6–H11 + H-A7/A8/A9 residuals {#step-11-6-5}
 
 **Motivation:** The reliability study's H1–H3 are resolved by Step 11. H4–H5 were resolved incidentally in the 2cdc5fa5 commit (Route addCard/removeCard through activation lifecycle). The remaining holes (H6, H7, H8/H-A9, H9, H10, H11) and three residuals from the 11.6 audit (H-A7, H-A8, H-A9) land in one coordinated cleanup step.
