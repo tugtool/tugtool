@@ -1,12 +1,12 @@
 /**
- * CardFrame component unit tests -- Step 4.
+ * StackFrame component unit tests -- Step 4.
  *
  * Tests cover:
- * - T16: CardFrame renders at correct position and size from cardState
- * - T17: CardFrame applies zIndex prop
- * - T18: CardFrame calls onCardFocused on pointer-down
- * - T19: CardFrame calls onCardClosed when Tugcard fires close
- * - T20: CardFrame clamps resize to min-size
+ * - T16: StackFrame renders at correct position and size from cardState
+ * - T17: StackFrame applies zIndex prop
+ * - T18: StackFrame calls onCardFocused on pointer-down
+ * - T19: StackFrame calls onCardClosed when Tugcard fires close
+ * - T20: StackFrame clamps resize to min-size
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -16,8 +16,8 @@ import React from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
-import { CardFrame } from "@/components/chrome/card-frame";
-import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
+import { StackFrame } from "@/components/chrome/stack-frame";
+import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
 import type { CardState } from "@/layout-tree";
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,11 +42,11 @@ function makeCardState(overrides: Partial<CardState> = {}): CardState {
  */
 function makeRenderContent(
   extra?: {
-    captureRef?: React.MutableRefObject<CardFrameInjectedProps | null>;
+    captureRef?: React.MutableRefObject<StackFrameInjectedProps | null>;
     onClose?: () => void;
   }
 ) {
-  return (injected: CardFrameInjectedProps): React.ReactNode => {
+  return (injected: StackFrameInjectedProps): React.ReactNode => {
     if (extra?.captureRef) {
       extra.captureRef.current = injected;
     }
@@ -73,10 +73,10 @@ const defaultProps = {
 };
 
 // ---------------------------------------------------------------------------
-// T16: CardFrame renders at correct position and size from cardState
+// T16: StackFrame renders at correct position and size from cardState
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – position and size", () => {
+describe("StackFrame – position and size", () => {
   it("T16: renders with correct position and size from cardState", () => {
     const cardState = makeCardState({
       position: { x: 50, y: 75 },
@@ -84,7 +84,7 @@ describe("CardFrame – position and size", () => {
     });
 
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         cardState={cardState}
         renderContent={makeRenderContent()}
@@ -103,7 +103,7 @@ describe("CardFrame – position and size", () => {
 
   it("position: absolute is applied", () => {
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         renderContent={makeRenderContent()}
       />
@@ -115,13 +115,13 @@ describe("CardFrame – position and size", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T17: CardFrame applies zIndex prop
+// T17: StackFrame applies zIndex prop
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – zIndex", () => {
+describe("StackFrame – zIndex", () => {
   it("T17: applies the zIndex prop as a CSS z-index style", () => {
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         zIndex={42}
         renderContent={makeRenderContent()}
@@ -134,16 +134,16 @@ describe("CardFrame – zIndex", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T18: CardFrame calls onCardFocused on pointer-down
+// T18: StackFrame calls onCardFocused on pointer-down
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – onCardFocused", () => {
+describe("StackFrame – onCardFocused", () => {
   it("T18: calls onCardFocused with cardId on pointer-down anywhere in the frame", () => {
     const onCardFocused = mock((_id: string) => {});
     const cardState = makeCardState({ id: "focus-test-card" });
 
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         cardState={cardState}
         onCardFocused={onCardFocused}
@@ -165,7 +165,7 @@ describe("CardFrame – onCardFocused", () => {
     const onCardFocused = mock((_id: string) => {});
 
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         onCardFocused={onCardFocused}
         renderContent={makeRenderContent()}
@@ -183,10 +183,10 @@ describe("CardFrame – onCardFocused", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T19: CardFrame calls onCardClosed when Tugcard fires close
+// T19: StackFrame calls onCardClosed when Tugcard fires close
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – onCardClosed", () => {
+describe("StackFrame – onCardClosed", () => {
   it("T19: calls onCardClosed with cardId when renderContent triggers onClose", () => {
     const onCardClosed = mock((_id: string) => {});
     const cardState = makeCardState({ id: "close-test-card" });
@@ -194,7 +194,7 @@ describe("CardFrame – onCardClosed", () => {
     // The factory wires onClose → onCardClosed(id). Simulate this in the test
     // renderContent by calling onCardClosed directly on close trigger.
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         cardState={cardState}
         onCardClosed={onCardClosed}
@@ -220,12 +220,12 @@ describe("CardFrame – onCardClosed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T20: CardFrame clamps resize to min-size
+// T20: StackFrame clamps resize to min-size
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – min-size clamping", () => {
+describe("StackFrame – min-size clamping", () => {
   it("T20: resize clamped to min-size reported by Tugcard via onMinSizeChange", () => {
-    const injectedRef = { current: null as CardFrameInjectedProps | null };
+    const injectedRef = { current: null as StackFrameInjectedProps | null };
     const onCardMoved = mock(
       (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {}
     );
@@ -236,7 +236,7 @@ describe("CardFrame – min-size clamping", () => {
     });
 
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         cardState={cardState}
         onCardMoved={onCardMoved}
@@ -284,10 +284,10 @@ describe("CardFrame – min-size clamping", () => {
   it("default min-size is 150x100 before Tugcard reports", () => {
     // This is a structural/contract test: the component initializes with the
     // correct default per Spec S04.
-    const injectedRef = { current: null as CardFrameInjectedProps | null };
+    const injectedRef = { current: null as StackFrameInjectedProps | null };
 
     render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         renderContent={makeRenderContent({ captureRef: injectedRef })}
       />
@@ -304,10 +304,10 @@ describe("CardFrame – min-size clamping", () => {
 // Extra: 8 resize handles are rendered
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – resize handles", () => {
+describe("StackFrame – resize handles", () => {
   it("renders 8 resize handles with correct CSS classes", () => {
     const { container } = render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         renderContent={makeRenderContent()}
       />
@@ -325,12 +325,12 @@ describe("CardFrame – resize handles", () => {
 // Extra: renderContent receives injected callbacks
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – renderContent injection", () => {
+describe("StackFrame – renderContent injection", () => {
   it("renderContent receives onDragStart and onMinSizeChange callbacks", () => {
-    const captureRef = { current: null as CardFrameInjectedProps | null };
+    const captureRef = { current: null as StackFrameInjectedProps | null };
 
     render(
-      <CardFrame
+      <StackFrame
         {...defaultProps}
         renderContent={makeRenderContent({ captureRef })}
       />

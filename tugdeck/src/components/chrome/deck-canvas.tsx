@@ -1,5 +1,5 @@
 /**
- * DeckCanvas -- canvas shell with responder chain support and CardFrame rendering
+ * DeckCanvas -- canvas shell with responder chain support and StackFrame rendering
  * from DeckState (Phase 5).
  *
  * Phase 3: Registers as root responder "deck-canvas" via useResponder.
@@ -10,7 +10,7 @@
  *          explicit makeFirstResponder call.
  *
  * Phase 5 (Spec S06, Spec S07): Receives DeckState + stable callbacks from
- *          DeckManager via props. Maps deckState.cards to CardFrame components.
+ *          DeckManager via props. Maps deckState.cards to StackFrame components.
  *          For each card, looks up the registry to obtain the Tugcard factory.
  *          Cards with unregistered componentIds are skipped (warning logged).
  *          Z-index by array position: first card = lowest, last card = highest.
@@ -39,7 +39,7 @@
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
  *   useRequiredResponderChain -> useCallback -> useResponder ->
- *   useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
+ *   useEffect (cardDragCoordinator init) -> useEffect (initial focused card restore) ->
  *   useLayoutEffect (startup overlay fade-out) ->
  *   useLayoutEffect (selection highlight sync)
  *
@@ -64,12 +64,12 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { Tugcard } from "@/components/tugways/tug-card";
-import { CardFrame } from "./card-frame";
-import { TabContentHost } from "./tab-content-host";
+import { StackFrame } from "./stack-frame";
+import { CardContentHost } from "./card-content-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
-import { tabDragCoordinator } from "@/tab-drag-coordinator";
+import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 
 // ---- DeckCanvasProps (Spec S04) ----
@@ -96,7 +96,7 @@ const CARD_ZINDEX_BASE = 1;
 /**
  * DeckCanvas -- plain function component (Phase 5 removes forwardRef).
  *
- * Renders the responder-chain root and one CardFrame per card in deckState.
+ * Renders the responder-chain root and one StackFrame per card in deckState.
  *
  * State is read from DeckManagerContext via useSyncExternalStore -- no
  * deckState prop. The variable `store` holds the IDeckManagerStore instance;
@@ -218,7 +218,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
   //             useRequiredResponderChain -> useCallback -> useResponder ->
-  //             useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
+  //             useEffect (cardDragCoordinator init) -> useEffect (initial focused card restore) ->
   //             useLayoutEffect (startup overlay fade-out) ->
   //             useLayoutEffect (selection highlight sync)
 
@@ -315,7 +315,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // tab drag can be attempted. Re-initialization is safe: init() only
   // overwrites the stored IDeckManagerStore reference; no cleanup needed.
   useEffect(() => {
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
   }, [store]);
 
   // Phase 5f: Focused card restoration after app reload ([D03]).
@@ -395,7 +395,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
-      {/* CardFrames (Spec S06, S07): one per card in deckState.cards.
+      {/* StackFrames (Spec S06, S07): one per card in deckState.cards.
           Rendered in stable ID order (no DOM reordering on focus change).
           Z-index from store array position (first = lowest). Cards with
           unregistered componentIds are skipped with a warning. */}
@@ -439,7 +439,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         };
 
         return (
-          <CardFrame
+          <StackFrame
             key={cardState.id}
             cardState={cardState}
             sizePolicy={getSizePolicy(componentId)}
@@ -463,8 +463,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             renderContent={(injected) => {
               // Tugcard renders card chrome only after Piece 1.iii: title
               // bar, tab bar (when multi-tab), and the content div. The
-              // content div is the portal target for TabContentHost DOM
-              // (see the flat TabContentHost list below). Tugcard's
+              // content div is the portal target for CardContentHost DOM
+              // (see the flat CardContentHost list below). Tugcard's
               // `children` prop is unused in the DeckCanvas render path.
               const hasMultipleTabs = cardState.tabs.length > 1;
               return (
@@ -496,10 +496,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           identity when tabs move between cards (detach / merge) — the
           crux of Piece 1.iii. Non-active tabs render with `display: none`
           so they stay alive without affecting layout. Content factories
-          and contexts live in TabContentHost; see tab-content-host.tsx. */}
+          and contexts live in CardContentHost; see card-content-host.tsx. */}
       {cards.flatMap((cardState) =>
         cardState.tabs.map((tab) => (
-          <TabContentHost
+          <CardContentHost
             key={tab.id}
             tabId={tab.id}
             hostCardId={cardState.id}

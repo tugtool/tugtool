@@ -1,39 +1,24 @@
 /**
- * TabContentHost — renders a tab's content component and owns the
- * per-tab-content state that Tugcard used to own when Tugcard was both
- * card chrome and tab content in one component.
+ * CardContentHost — renders a card's content component and owns the
+ * per-card-content state (PropertyStore registration, persistence
+ * callbacks, dirty/auto-save, per-card save callback, content-restore
+ * effect, scroll/selection listeners, FeedStore subscriptions).
  *
- * Owns:
- *   - `PropertyStore` registration (published to the tab-property-store-registry
- *     so the card-level `setProperty` responder can resolve it by hostCardId).
- *   - `TugcardPersistenceCallbacks` registration (save/restore bag delegates).
- *   - `TugcardDirtyContext` markDirty + debounced auto-save timer.
- *   - Per-tab save callback registered on DeckManager keyed by `tabId`.
- *   - Scroll + selectionchange listeners on the host card's content element
- *     (looked up from `card-content-registry`).
- *   - Content restore `useLayoutEffect`: reads the per-tab bag and applies
- *     scroll/selection/content on mount.
- *   - `FeedStore` subscribed to `feedIds` from the component registration,
- *     with the card's workspace filter applied via `useCardWorkspaceKey`.
+ * The component lives at the deck level in the React tree; its DOM output
+ * is portaled into the host stack's content `<div>` via `CardPortal`, so
+ * React-tree position (and therefore identity) is stable across cross-stack
+ * moves — the mechanism that preserves tide card sessions across detach /
+ * merge / stack-to-stack moves.
  *
- * Does NOT own (retained by Tugcard):
- *   - SelectionGuard boundary registration — keyed by `cardId`, coupled to
- *     the lifecycle delegate system which activates by cardId.
- *   - Card-level responder (close, tab-nav, select-tab, etc.).
- *   - Title bar / tab bar chrome.
+ * Render shape: wraps `registration.contentFactory(cardId)` in the four
+ * per-content context providers (`TugcardDataProvider`,
+ * `TugcardPropertyContext`, `TugcardPersistenceContext`,
+ * `TugcardDirtyContext`) plus a re-bridged `TugcardPortalContext`
+ * (looked up from `stack-root-registry`) and a responder scope keyed by
+ * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
+ * resolve here.
  *
- * Render shape: wraps the content factory's output in the four per-content
- * context providers (`TugcardDataProvider`, `TugcardPropertyContext`,
- * `TugcardPersistenceContext`, `TugcardDirtyContext`), returning a plain
- * fragment so the host card's content area can wrap or portal it.
- *
- * Lifecycle:
- *   - Mounts when the active tab of a card changes to `tabId` (or when the
- *     card first appears with this tab active). Unmounts on tab switch away
- *     (Piece 1.ii) or when this tab is removed entirely (Piece 1.iii, once
- *     TabContentHost lives at the deck level with one per tab).
- *
- * @module components/chrome/tab-content-host
+ * @module components/chrome/card-content-host
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
@@ -55,13 +40,12 @@ import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
 import type { PropertyStore } from "../tugways/property-store";
 import type { TabStateBag } from "../../layout-tree";
 import * as cardContentRegistry from "./card-content-registry";
-import * as tabPropertyStoreRegistry from "./tab-property-store-registry";
-import * as tabCardRootRegistry from "./tab-card-root-registry";
+import * as stackRootRegistry from "./stack-root-registry";
 import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
-export interface TabContentHostProps {
+export interface CardContentHostProps {
   /** Stable identity of this tab (aka the card's content identity). */
   tabId: string;
   /** The card currently hosting this tab. Used to locate the content element and for the workspace binding. */
@@ -92,33 +76,31 @@ function useHostContentElement(hostCardId: string): HTMLDivElement | null {
 }
 
 /**
- * Look up the host card's root element from the tab-card-root-registry,
- * reactively. Used to bridge `TugcardPortalContext` — tab content needs
- * access to its host card's root `<div>` for sheets and tooltips that
- * portal into it, and TabContentHost cannot consume the provider directly
- * because it lives outside Tugcard's React tree.
+ * Look up the host stack's root element from the stack-root-registry,
+ * reactively. Used to bridge `TugcardPortalContext` — card content needs
+ * access to its host stack's root `<div>` for sheets and tooltips that
+ * portal into it, and CardContentHost cannot consume the provider
+ * directly because it lives outside Tugcard's React tree.
  */
-function useHostCardRootElement(hostCardId: string): HTMLDivElement | null {
+function useHostStackRootElement(hostCardId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => tabCardRootRegistry.subscribe(hostCardId, cb),
-    () => tabCardRootRegistry.getElement(hostCardId),
+    (cb) => stackRootRegistry.subscribe(hostCardId, cb),
+    () => stackRootRegistry.getElement(hostCardId),
     () => null,
   );
 }
 
-export function TabContentHost({ tabId, hostCardId, componentId, isActive = true }: TabContentHostProps): React.ReactElement | null {
+export function CardContentHost({ tabId, hostCardId, componentId, isActive = true }: CardContentHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
   const hostContentEl = useHostContentElement(hostCardId);
-  const hostCardRootEl = useHostCardRootElement(hostCardId);
+  const hostCardRootEl = useHostStackRootElement(hostCardId);
 
   // ---- PropertyStore registration ----
   //
-  // Only the active tab publishes its PropertyStore to the tab-property-store-
-  // registry: the card-level `setProperty` responder resolves by hostCardId
-  // and must find the active tab's store (not an inactive sibling's). The
-  // `isActive` gate ensures that when all tabs in a card are mounted
-  // concurrently (Piece 1.iii), only one publishes at a time.
+  // The card content's PropertyStore is held in a ref and consumed by the
+  // tab-level responder's `setProperty` handler below. No registry
+  // indirection — sendToTarget(cardId) resolves to this responder directly.
   const propertyStoreRef = useRef<PropertyStore | null>(null);
   const registerPropertyStore = useCallback(
     (ps: PropertyStore) => {
@@ -126,15 +108,6 @@ export function TabContentHost({ tabId, hostCardId, componentId, isActive = true
     },
     [],
   );
-
-  useLayoutEffect(() => {
-    if (!isActive) return;
-    const ps = propertyStoreRef.current;
-    if (ps) tabPropertyStoreRegistry.register(hostCardId, ps);
-    return () => {
-      tabPropertyStoreRegistry.unregister(hostCardId);
-    };
-  }, [hostCardId, isActive]);
 
   // ---- Persistence callbacks ----
   const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
@@ -365,7 +338,7 @@ export function TabContentHost({ tabId, hostCardId, componentId, isActive = true
     <CardPortal hostCardId={hostCardId}>
       <div
         ref={responderRef}
-        data-tab-content-host
+        data-card-content-host
         data-tab-id={tabId}
         style={{
           display: isActive ? "contents" : "none",

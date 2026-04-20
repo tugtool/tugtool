@@ -1,12 +1,12 @@
 /**
- * TabContentHost — owns per-tab-content scope (feed data, property store,
- * persistence callbacks, dirty-mark, save callback registration).
+ * CardContentHost — owns per-card-content scope (feed data, property
+ * store, persistence callbacks, dirty-mark, save callback registration).
  *
- * Tests cover: renders the content factory, registers a PropertyStore into
- * tab-property-store-registry keyed by hostCardId, registers a save callback
- * keyed by tabId, cleanup unregisters both, and the rendered DOM lands
- * inside the host card's tugcard-content div (via Tugcard + TabContentHost
- * composition).
+ * Tests cover: renders the content factory, the tab-level responder
+ * `setProperty` handler invokes the registered PropertyStore, the save
+ * callback keyed by cardId is registered + unregistered, and the rendered
+ * DOM lands inside the host stack's tugcard-content div (via Tugcard +
+ * CardContentHost composition).
  */
 import "./setup-rtl";
 
@@ -14,9 +14,8 @@ import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
-import { TabContentHost } from "@/components/chrome/tab-content-host";
+import { CardContentHost } from "@/components/chrome/card-content-host";
 import * as registry from "@/components/chrome/card-content-registry";
-import * as propRegistry from "@/components/chrome/tab-property-store-registry";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyDescriptor } from "@/components/tugways/property-store";
@@ -29,10 +28,9 @@ function makeDivInBody(): HTMLDivElement {
   return d;
 }
 
-describe("TabContentHost", () => {
+describe("CardContentHost", () => {
   beforeEach(() => {
     registry._resetForTests();
-    propRegistry._resetForTests();
     _resetForTest();
     document.body.innerHTML = "";
   });
@@ -54,7 +52,7 @@ describe("TabContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainProvider>
-          <TabContentHost tabId="tab-1" hostCardId="card-1" componentId="content-host-hello" />
+          <CardContentHost tabId="tab-1" hostCardId="card-1" componentId="content-host-hello" />
         </ResponderChainProvider>,
       ),
     );
@@ -71,7 +69,7 @@ describe("TabContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainProvider>
-          <TabContentHost tabId="tab-1" hostCardId="card-1" componentId="not-registered" />
+          <CardContentHost tabId="tab-1" hostCardId="card-1" componentId="not-registered" />
         </ResponderChainProvider>,
       ),
     );
@@ -90,7 +88,7 @@ describe("TabContentHost", () => {
     const { unmount } = render(
       withDeckManager(
         <ResponderChainProvider>
-          <TabContentHost tabId="my-tab" hostCardId="my-card" componentId="content-host-hello" />
+          <CardContentHost tabId="my-tab" hostCardId="my-card" componentId="content-host-hello" />
         </ResponderChainProvider>,
         store,
       ),
@@ -115,12 +113,22 @@ describe("TabContentHost", () => {
     expect(Object.keys(store.getTabState("my-tab") ?? {}).length).toBe(priorSize);
   });
 
-  it("publishes the content's PropertyStore to the registry keyed by hostCardId", () => {
+  it("setProperty dispatched to the card responder reaches the registered PropertyStore", async () => {
+    const { ResponderChainManager, ResponderChainContext } = await import(
+      "@/components/tugways/responder-chain"
+    );
+    const { TUG_ACTIONS } = await import(
+      "@/components/tugways/action-vocabulary"
+    );
+
+    const capturedStoreRef = { current: null as null | import("@/components/tugways/property-store").PropertyStore };
+
     function PropertyContent() {
       const SCHEMA: PropertyDescriptor[] = [
         { path: "style.fontSize", type: "number", label: "Font Size" },
       ];
-      usePropertyStore({ schema: SCHEMA, initialValues: { "style.fontSize": 16 } });
+      const ps = usePropertyStore({ schema: SCHEMA, initialValues: { "style.fontSize": 16 } });
+      capturedStoreRef.current = ps;
       return <div>property content</div>;
     }
 
@@ -133,52 +141,69 @@ describe("TabContentHost", () => {
     const host = makeDivInBody();
     registry.register("prop-card", host);
 
+    const manager = new ResponderChainManager();
     render(
       withDeckManager(
-        <ResponderChainProvider>
-          <TabContentHost tabId="prop-tab" hostCardId="prop-card" componentId="content-host-prop" />
-        </ResponderChainProvider>,
+        <ResponderChainContext.Provider value={manager}>
+          <CardContentHost tabId="prop-tab" hostCardId="prop-card" componentId="content-host-prop" />
+        </ResponderChainContext.Provider>,
       ),
     );
 
-    // Flush useLayoutEffect so usePropertyStore's registration completes.
     act(() => {});
 
-    const ps = propRegistry.get("prop-card");
+    // Dispatch setProperty targeted at the card's responder id (which is
+    // `tabId` in the CardContentHost's useResponder call).
+    act(() => {
+      manager.sendToTarget("prop-tab", {
+        action: TUG_ACTIONS.SET_PROPERTY,
+        phase: "discrete",
+        value: { path: "style.fontSize", value: 32, source: "inspector" },
+      });
+    });
+
+    const ps = capturedStoreRef.current;
     expect(ps).not.toBeNull();
-    expect(ps?.get("style.fontSize")).toBe(16);
+    expect(ps?.get("style.fontSize")).toBe(32);
   });
 
-  it("unpublishes the PropertyStore from the registry on unmount", () => {
-    function PropertyContent() {
-      const SCHEMA: PropertyDescriptor[] = [
-        { path: "style.fontSize", type: "number", label: "Font Size" },
-      ];
-      usePropertyStore({ schema: SCHEMA, initialValues: { "style.fontSize": 16 } });
-      return <div>property content</div>;
-    }
+  it("setProperty no-ops when the content has not registered a PropertyStore", async () => {
+    const { ResponderChainManager, ResponderChainContext } = await import(
+      "@/components/tugways/responder-chain"
+    );
+    const { TUG_ACTIONS } = await import(
+      "@/components/tugways/action-vocabulary"
+    );
 
     registerCard({
-      componentId: "content-host-prop",
-      defaultMeta: { title: "Prop", closable: true },
-      contentFactory: () => <PropertyContent />,
+      componentId: "no-prop",
+      defaultMeta: { title: "No Prop", closable: true },
+      contentFactory: () => <div>no property store</div>,
     });
 
     const host = makeDivInBody();
-    registry.register("prop-card", host);
+    registry.register("no-prop-card", host);
 
-    const { unmount } = render(
+    const manager = new ResponderChainManager();
+    render(
       withDeckManager(
-        <ResponderChainProvider>
-          <TabContentHost tabId="prop-tab" hostCardId="prop-card" componentId="content-host-prop" />
-        </ResponderChainProvider>,
+        <ResponderChainContext.Provider value={manager}>
+          <CardContentHost tabId="no-prop-tab" hostCardId="no-prop-card" componentId="no-prop" />
+        </ResponderChainContext.Provider>,
       ),
     );
 
     act(() => {});
-    expect(propRegistry.get("prop-card")).not.toBeNull();
 
-    unmount();
-    expect(propRegistry.get("prop-card")).toBeNull();
+    // No throw even though no PropertyStore was registered.
+    expect(() => {
+      act(() => {
+        manager.sendToTarget("no-prop-tab", {
+          action: TUG_ACTIONS.SET_PROPERTY,
+          phase: "discrete",
+          value: { path: "style.fontSize", value: 32 },
+        });
+      });
+    }).not.toThrow();
   });
 });

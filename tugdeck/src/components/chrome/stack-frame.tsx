@@ -1,17 +1,19 @@
 /**
- * CardFrame — absolutely-positioned frame with drag, resize, z-index, and
- * min-size clamping.
+ * StackFrame — absolutely-positioned frame with drag, resize, z-index, and
+ * min-size clamping. The visual container for a CardStack — a group of one
+ * or more cards under a shared frame. (Formerly called `StackFrame` when
+ * every "card" was also its own frame.)
  *
  * Responsibilities:
- * - Render an absolutely-positioned div at position/size from cardState
+ * - Render an absolutely-positioned div at position/size from stackState
  * - Inject onDragStart and onMinSizeChange into Tugcard via renderContent
  * - Drag: RAF appearance-zone mutation during, onCardMoved structure-zone commit on end
  * - Resize: 8 edge/corner handles, clamped to min-size, onCardMoved on end
  * - Bring to front via onCardFocused on any pointer-down in the frame
  *
- * [D03] CardFrame/Tugcard separation, [D06] appearance-zone drag
+ * [D03] StackFrame/Tugcard separation, [D06] appearance-zone drag
  *
- * @module components/chrome/card-frame
+ * @module components/chrome/stack-frame
  */
 
 import React, { useCallback, useRef, useState } from "react";
@@ -90,23 +92,23 @@ const SNAP_GAP_PX = 5;
 // ---------------------------------------------------------------------------
 
 /**
- * Props injected by CardFrame into the content returned by `renderContent`.
+ * Props injected by StackFrame into the content returned by `renderContent`.
  */
-export interface CardFrameInjectedProps {
+export interface StackFrameInjectedProps {
   /** Tugcard header calls this on pointer-down to initiate drag. */
   onDragStart: (event: React.PointerEvent) => void;
-  /** Tugcard calls this to report its computed minimum size to CardFrame. */
+  /** Tugcard calls this to report its computed minimum size to StackFrame. */
   onMinSizeChange: (size: { width: number; height: number }) => void;
   /** Whether the card is currently collapsed. Forwarded from cardState.collapsed. */
   collapsed: boolean;
-  /** Called when the user toggles collapse. CardFrame forwards to onCardCollapsed. */
+  /** Called when the user toggles collapse. StackFrame forwards to onCardCollapsed. */
   onCollapse: () => void;
 }
 
 /**
- * Props for the CardFrame component.
+ * Props for the StackFrame component.
  */
-export interface CardFrameProps {
+export interface StackFrameProps {
   /** Card position, size, and id from DeckState. */
   cardState: CardState;
   /**
@@ -114,7 +116,7 @@ export interface CardFrameProps {
    * The factory closure (from the card registry) is responsible for wiring
    * the Tugcard's `onClose` prop to `onCardClosed(id)`.
    */
-  renderContent: (injected: CardFrameInjectedProps) => React.ReactNode;
+  renderContent: (injected: StackFrameInjectedProps) => React.ReactNode;
   /** Called on drag-end or resize-end (structure-zone commit). */
   onCardMoved: (
     id: string,
@@ -147,7 +149,7 @@ export interface CardFrameProps {
   isFocused: boolean;
   /**
    * Called when the user toggles collapse on the card header.
-   * CardFrame passes this as onCollapse to the Tugcard via renderContent.
+   * StackFrame passes this as onCollapse to the Tugcard via renderContent.
    * DeckCanvas wires this to store.toggleCardCollapse(id).
    */
   onCardCollapsed?: (id: string) => void;
@@ -168,13 +170,13 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
 // ---------------------------------------------------------------------------
-// CardFrame
+// StackFrame
 // ---------------------------------------------------------------------------
 
 /**
- * CardFrame -- positions, drags, resizes, and stacks a single card on the canvas.
+ * StackFrame -- positions, drags, resizes, and stacks a single card on the canvas.
  */
-export function CardFrame({
+export function StackFrame({
   cardState,
   renderContent,
   onCardMoved,
@@ -185,7 +187,7 @@ export function CardFrame({
   zIndex,
   isFocused,
   onCardCollapsed,
-}: CardFrameProps) {
+}: StackFrameProps) {
   const { id, position, size } = cardState;
   const collapsed = cardState.collapsed === true;
 
@@ -760,7 +762,7 @@ export function CardFrame({
     onCardCollapsed?.(id);
   }, [id, onCardCollapsed]);
 
-  const injected: CardFrameInjectedProps = {
+  const injected: StackFrameInjectedProps = {
     onDragStart: handleDragStart,
     onMinSizeChange: handleMinSizeChange,
     collapsed,

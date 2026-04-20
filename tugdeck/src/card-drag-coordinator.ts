@@ -1,5 +1,5 @@
 /**
- * TabDragCoordinator -- module-scope singleton managing tab drag gestures.
+ * CardDragCoordinator -- module-scope singleton managing tab drag gestures.
  *
  * Handles the full drag lifecycle: initiation (via startDrag called from
  * TugTabBar's onPointerDown handler), RAF-throttled pointer move tracking,
@@ -17,7 +17,7 @@
  * - [D05] Single-tab card drop zone preview
  * - [D06] Last tab cannot be detached
  * - [D07] Coordinator is a module-scope singleton
- * - Spec S04: TabDragCoordinator API
+ * - Spec S04: CardDragCoordinator API
  * - Spec S05: Ghost tab element
  * - Spec S06: Insertion indicator element
  * - Spec S07: Drop-target highlight
@@ -45,7 +45,7 @@ export const GHOST_TAB_ZINDEX = 5000;
  * When no tabs have `data-overflow="hidden"` (i.e., overflow is inactive),
  * this selector matches the same set as `.tug-tab`, so it is backward-compatible.
  *
- * [D07] TabDragCoordinator selectors exclude hidden overflow tabs, Risk R04
+ * [D07] CardDragCoordinator selectors exclude hidden overflow tabs, Risk R04
  */
 export const VISIBLE_TAB_SELECTOR = '.tug-tab:not([data-overflow="hidden"])';
 
@@ -60,7 +60,7 @@ interface TabBarEntry {
   barElement: HTMLElement;
 }
 
-interface CardFrameEntry {
+interface StackFrameEntry {
   cardId: string;
   rect: DOMRect;
   accessoryElement: HTMLElement;
@@ -68,19 +68,19 @@ interface CardFrameEntry {
 
 type DragMode = "reorder" | "detach" | "merge";
 
-// ---- TabDragCoordinator class ----
+// ---- CardDragCoordinator class ----
 
 /**
  * Manages the full lifecycle of a tab drag gesture.
  *
  * Usage:
- *   1. Call `tabDragCoordinator.init(store)` once when DeckCanvas mounts.
- *   2. TugTabBar's onPointerDown handler calls `tabDragCoordinator.startDrag(...)`
+ *   1. Call `cardDragCoordinator.init(store)` once when DeckCanvas mounts.
+ *   2. TugTabBar's onPointerDown handler calls `cardDragCoordinator.startDrag(...)`
  *      after the 5px threshold is exceeded and pointer capture is acquired.
  *
  * [D07] Singleton -- not a React component, not a hook.
  */
-class TabDragCoordinator {
+class CardDragCoordinator {
   // ---- Store reference (set once via init) ----
   private store: IDeckManagerStore | null = null;
 
@@ -108,7 +108,7 @@ class TabDragCoordinator {
    * All single-tab card frame rects at drag-start.
    * These are card-frames whose cardId is NOT in allTabBarRects.
    */
-  private allCardFrameRects: CardFrameEntry[] = [];
+  private allStackFrameRects: StackFrameEntry[] = [];
 
   /** Ghost element appended to #deck-container during drag. */
   private ghostElement: HTMLDivElement | null = null;
@@ -267,7 +267,7 @@ class TabDragCoordinator {
    *
    * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-card-id] elements
    *   excluding the source card.
-   * Tier 2: allCardFrameRects -- all .card-frame[data-card-id] elements whose
+   * Tier 2: allStackFrameRects -- all .card-frame[data-card-id] elements whose
    *   cardId is NOT present in allTabBarRects (i.e., single-tab cards).
    *   The accessoryElement is the matching .tugcard-accessory[data-card-id]
    *   inside each such card-frame, used for drop-target visual feedback.
@@ -293,7 +293,7 @@ class TabDragCoordinator {
 
     // Tier 2: single-tab card frames (not in the tab bar set).
     const frameElements = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-    this.allCardFrameRects = [];
+    this.allStackFrameRects = [];
 
     frameElements.forEach((el) => {
       const cid = el.getAttribute("data-card-id");
@@ -303,7 +303,7 @@ class TabDragCoordinator {
       const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-card-id="${cid}"]`);
       if (!accessory) return;
 
-      this.allCardFrameRects.push({
+      this.allStackFrameRects.push({
         cardId: cid,
         rect: el.getBoundingClientRect(),
         accessoryElement: accessory,
@@ -467,7 +467,7 @@ class TabDragCoordinator {
     }
 
     // Check tier-2: single-tab card frames. [D05]
-    for (const entry of this.allCardFrameRects) {
+    for (const entry of this.allStackFrameRects) {
       if (this.pointInRect(cx, cy, entry.rect)) {
         this.setMode("merge");
         this.setDropTarget(entry.accessoryElement);
@@ -742,7 +742,7 @@ class TabDragCoordinator {
     for (const entry of this.allTabBarRects) {
       entry.barElement.removeAttribute("data-drop-target");
     }
-    for (const entry of this.allCardFrameRects) {
+    for (const entry of this.allStackFrameRects) {
       entry.accessoryElement.removeAttribute("data-drop-target");
     }
 
@@ -754,7 +754,7 @@ class TabDragCoordinator {
     this.sourceBarRect = null;
     this.containerRect = null;
     this.allTabBarRects = [];
-    this.allCardFrameRects = [];
+    this.allStackFrameRects = [];
     this.currentMergeTarget = null;
     this.currentDropTargetElement = null;
     this.currentMode = "reorder";
@@ -765,10 +765,10 @@ class TabDragCoordinator {
 // ---- Module-scope singleton export ----
 
 /**
- * Module-scope singleton instance of TabDragCoordinator.
+ * Module-scope singleton instance of CardDragCoordinator.
  * [D07] -- accessible from TugTabBar's pointer event handlers without prop drilling.
  */
-export const tabDragCoordinator = new TabDragCoordinator();
+export const cardDragCoordinator = new CardDragCoordinator();
 
 // ---- Threshold detection helper (exported for TugTabBar integration) ----
 

@@ -36,8 +36,7 @@ import { TugTabBar } from "./tug-tab-bar";
 import { useDeckManager } from "../../deck-manager-context";
 import { TugButton } from "./internal/tug-button";
 import * as cardContentRegistry from "../chrome/card-content-registry";
-import * as tabPropertyStoreRegistry from "../chrome/tab-property-store-registry";
-import * as tabCardRootRegistry from "../chrome/tab-card-root-registry";
+import * as stackRootRegistry from "../chrome/stack-root-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -543,9 +542,9 @@ export function Tugcard({
   // the element populated).
   useLayoutEffect(() => {
     if (!cardEl) return;
-    tabCardRootRegistry.register(cardId, cardEl);
+    stackRootRegistry.register(cardId, cardEl);
     return () => {
-      tabCardRootRegistry.unregister(cardId);
+      stackRootRegistry.unregister(cardId);
     };
   }, [cardId, cardEl]);
 
@@ -684,18 +683,10 @@ export function Tugcard({
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
         console.info("find: stub — no find UI implemented yet");
       },
-      // Route incoming set-property actions to the PropertyStore published
-      // by the active tab's TabContentHost via tab-property-store-registry.
-      // Payload shape: { path: string, value: unknown, source?: string }.
-      // No-op when no PropertyStore is registered (card content does not
-      // support inspection, or no active tab has registered one yet).
-      [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
-        const ps = tabPropertyStoreRegistry.get(cardId);
-        if (!ps) return;
-        const payload = event.value as { path: string; value: unknown; source?: string } | undefined;
-        if (!payload || typeof payload.path !== "string") return;
-        ps.set(payload.path, payload.value, payload.source ?? "inspector");
-      },
+      // setProperty is handled by the per-card responder inside
+      // CardContentHost (registered with id=cardId). Tugcard no longer
+      // participates — the registry indirection was retired in Piece 1.iii
+      // when CardContentHost got its own responder scope.
     },
   });
 

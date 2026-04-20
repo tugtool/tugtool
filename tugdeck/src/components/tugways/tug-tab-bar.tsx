@@ -29,7 +29,7 @@ import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuEntry, TugPopupMenuItem } from "./internal/tug-popup-menu";
 import { TugTooltip } from "./tug-tooltip";
 import { useControlDispatch } from "./use-control-dispatch";
-import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
+import { cardDragCoordinator, exceedsDragThreshold } from "@/card-drag-coordinator";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
   computeOverflow,
@@ -169,7 +169,7 @@ function useTabOverflow(
       if (!barEl) return;
 
       // Skip recalculation during an active drag gesture.
-      if (tabDragCoordinator.isDragging) return;
+      if (cardDragCoordinator.isDragging) return;
 
       // --- Measurements (synchronous reads) ---
 
@@ -388,7 +388,7 @@ function TabView({
    * normal click sequence for sub-threshold interactions.
    *
    * On first pointermove exceeding 5px: remove document-level listeners
-   * and hand off to tabDragCoordinator.startDrag(), which acquires
+   * and hand off to cardDragCoordinator.startDrag(), which acquires
    * pointer capture on the tab element.
    *
    * On pointerup before threshold: remove document-level listeners so
@@ -405,7 +405,7 @@ function TabView({
     function onDocumentMove(e: PointerEvent) {
       if (exceedsDragThreshold(startX, startY, e.clientX, e.clientY)) {
         cleanup();
-        tabDragCoordinator.startDrag(e, tabElement, cardId, tab.id, totalTabs);
+        cardDragCoordinator.startDrag(e, tabElement, cardId, tab.id, totalTabs);
       }
     }
 
@@ -481,7 +481,7 @@ function TabView({
  * Tab drag initiation uses a 5px threshold pattern: onPointerDown registers
  * document-level listeners to track movement without acquiring pointer capture.
  * Once the threshold is exceeded, document-level listeners are removed and
- * `tabDragCoordinator.startDrag()` is called, which acquires pointer capture
+ * `cardDragCoordinator.startDrag()` is called, which acquires pointer capture
  * and takes over the drag gesture. Sub-threshold pointer moves do not
  * interfere with the click event sequence, so click-to-select still works.
  * [D01]

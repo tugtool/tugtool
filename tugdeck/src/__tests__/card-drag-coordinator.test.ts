@@ -1,5 +1,5 @@
 /**
- * TabDragCoordinator unit tests -- Step 3.
+ * CardDragCoordinator unit tests -- Step 3.
  *
  * Tests cover:
  * - T14: startDrag guards against single-tab cards (tabCount <= 1)
@@ -18,11 +18,11 @@ import "./setup-rtl";
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import {
-  tabDragCoordinator,
+  cardDragCoordinator,
   exceedsDragThreshold,
   GHOST_TAB_ZINDEX,
   VISIBLE_TAB_SELECTOR,
-} from "@/tab-drag-coordinator";
+} from "@/card-drag-coordinator";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -148,7 +148,7 @@ function makeMockTabBar(barLeft: number, tabCount: number, tabWidth = 80): HTMLE
 
 beforeEach(() => {
   // Ensure any leftover drag state is cleared.
-  tabDragCoordinator.cleanup();
+  cardDragCoordinator.cleanup();
 
   // Set up a minimal DOM: a deck-container and a body.
   const container = document.createElement("div");
@@ -168,7 +168,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  tabDragCoordinator.cleanup();
+  cardDragCoordinator.cleanup();
   // Remove any deck-container added during the test.
   const container = document.getElementById("deck-container");
   if (container) container.remove();
@@ -182,10 +182,10 @@ afterEach(() => {
 // T14: startDrag guards against single-tab cards
 // ---------------------------------------------------------------------------
 
-describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
+describe("CardDragCoordinator.startDrag – single-tab guard (T14)", () => {
   it("T14: does not start drag when tabCount is 1", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
@@ -197,7 +197,7 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
     } as PointerEvent;
 
     // tabCount = 1: should NOT initiate drag.
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 1);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 1);
 
     // Verify drag did not start: source tab should not have data-dragging.
     expect(tabEl.getAttribute("data-dragging")).toBeNull();
@@ -207,7 +207,7 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
 
   it("T14: does not start drag when tabCount is 0", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
@@ -218,7 +218,7 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
       clientY: 14,
     } as PointerEvent;
 
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 0);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 0);
     expect(tabEl.getAttribute("data-dragging")).toBeNull();
 
     tabEl.remove();
@@ -226,7 +226,7 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
 
   it("T14: starts drag when tabCount > 1 (sets data-dragging on source tab)", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
@@ -238,12 +238,12 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
     } as PointerEvent;
 
     // tabCount = 2: should initiate drag.
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
 
     expect(tabEl.getAttribute("data-dragging")).toBe("true");
 
     // Cleanup to avoid leaking state.
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
     tabEl.remove();
   });
 });
@@ -252,7 +252,7 @@ describe("TabDragCoordinator.startDrag – single-tab guard (T14)", () => {
 // T15: computeReorderIndex returns correct insertion index
 // ---------------------------------------------------------------------------
 
-describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
+describe("CardDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
   it("T15: returns 0 when pointer is left of first tab midpoint", () => {
     // Tab bar: 3 tabs at x=[0,80,160], each 80px wide.
     // Tab midpoints: 40, 120, 200.
@@ -260,7 +260,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(0, 3, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 10);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 10);
     expect(index).toBe(0);
 
     bar.remove();
@@ -273,7 +273,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(0, 3, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 80);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 80);
     expect(index).toBe(1);
 
     bar.remove();
@@ -286,7 +286,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(0, 3, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 150);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 150);
     expect(index).toBe(2);
 
     bar.remove();
@@ -298,7 +298,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(0, 3, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 250);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 250);
     expect(index).toBe(3);
 
     bar.remove();
@@ -308,7 +308,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(0, 0, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 50);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 50);
     expect(index).toBe(0);
 
     bar.remove();
@@ -321,7 +321,7 @@ describe("TabDragCoordinator.computeReorderIndex – hit-testing (T15)", () => {
     const bar = makeMockTabBar(400, 3, 80);
     document.body.appendChild(bar);
 
-    const index = tabDragCoordinator.computeReorderIndex(bar, 450);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 450);
     expect(index).toBe(1);
 
     bar.remove();
@@ -399,126 +399,126 @@ function setupDragScenario(): {
   return { srcTabEl, srcBar, tgtBar, singleFrame, singleAccessory };
 }
 
-describe("TabDragCoordinator – mode transitions (T16)", () => {
+describe("CardDragCoordinator – mode transitions (T16)", () => {
   it("T16: starts in reorder mode when pointer is inside the source bar", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl } = setupDragScenario();
 
     // Start drag with pointer inside source bar (cx=40, cy=14).
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Initial mode should be reorder (pointer is inside source bar).
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("reorder");
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("reorder");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 
   it("T16: transitions to detach mode when pointer moves outside all bars and frames", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move pointer to cx=250, cy=14 -- outside source bar [0..160] and
     // outside target bar [400..560] and outside single frame [700..900].
-    tabDragCoordinator._testOnly_applyDragFrame(250, 14);
+    cardDragCoordinator._testOnly_applyDragFrame(250, 14);
 
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
-    expect(tabDragCoordinator._testOnly_getCurrentMergeTarget()).toBeNull();
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
+    expect(cardDragCoordinator._testOnly_getCurrentMergeTarget()).toBeNull();
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 
   it("T16: transitions to merge mode over a multi-tab target bar", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl, tgtBar } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move into target bar: cx=450, cy=14 (inside tgtBar x=[400..560]).
-    tabDragCoordinator._testOnly_applyDragFrame(450, 14);
+    cardDragCoordinator._testOnly_applyDragFrame(450, 14);
 
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
-    const mergeTarget = tabDragCoordinator._testOnly_getCurrentMergeTarget();
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
+    const mergeTarget = cardDragCoordinator._testOnly_getCurrentMergeTarget();
     expect(mergeTarget).not.toBeNull();
     expect(mergeTarget!.cardId).toBe("tgt");
 
     // data-drop-target should be set on the target bar element.
     expect(tgtBar.getAttribute("data-drop-target")).toBe("true");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 
   it("T16: transitions to merge mode over a single-tab card frame", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl, singleAccessory } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move into single-tab card frame: cx=800, cy=100 (inside frame x=[700..900], y=[0..200]).
-    tabDragCoordinator._testOnly_applyDragFrame(800, 100);
+    cardDragCoordinator._testOnly_applyDragFrame(800, 100);
 
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
-    const mergeTarget = tabDragCoordinator._testOnly_getCurrentMergeTarget();
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
+    const mergeTarget = cardDragCoordinator._testOnly_getCurrentMergeTarget();
     expect(mergeTarget).not.toBeNull();
     expect(mergeTarget!.cardId).toBe("single");
 
     // data-drop-target should be set on the accessory element (not the frame).
     expect(singleAccessory.getAttribute("data-drop-target")).toBe("true");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 
   it("T16: transitions back to reorder when pointer re-enters source bar after detach", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move out to detach zone.
-    tabDragCoordinator._testOnly_applyDragFrame(250, 14);
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
+    cardDragCoordinator._testOnly_applyDragFrame(250, 14);
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
 
     // Move back inside source bar.
-    tabDragCoordinator._testOnly_applyDragFrame(80, 14);
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("reorder");
+    cardDragCoordinator._testOnly_applyDragFrame(80, 14);
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("reorder");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 
   it("T16: drop-target attribute is cleared when pointer leaves a merge target", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl, tgtBar } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move into target bar.
-    tabDragCoordinator._testOnly_applyDragFrame(450, 14);
+    cardDragCoordinator._testOnly_applyDragFrame(450, 14);
     expect(tgtBar.getAttribute("data-drop-target")).toBe("true");
 
     // Move to detach zone -- drop-target should be cleared.
-    tabDragCoordinator._testOnly_applyDragFrame(250, 14);
+    cardDragCoordinator._testOnly_applyDragFrame(250, 14);
     expect(tgtBar.getAttribute("data-drop-target")).toBeNull();
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 });
 
@@ -526,19 +526,19 @@ describe("TabDragCoordinator – mode transitions (T16)", () => {
 // Cleanup side-effect tests (formerly mislabeled T16)
 // ---------------------------------------------------------------------------
 
-describe("TabDragCoordinator – cleanup side effects", () => {
+describe("CardDragCoordinator – cleanup side effects", () => {
   it("cleanup removes data-dragging from source tab", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
     expect(tabEl.getAttribute("data-dragging")).toBe("true");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
     expect(tabEl.getAttribute("data-dragging")).toBeNull();
 
     tabEl.remove();
@@ -546,7 +546,7 @@ describe("TabDragCoordinator – cleanup side effects", () => {
 
   it("cleanup removes the ghost element from the deck-container", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
@@ -554,11 +554,11 @@ describe("TabDragCoordinator – cleanup side effects", () => {
     const container = document.getElementById("deck-container")!;
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
 
     expect(container.querySelector(".tug-tab-ghost")).not.toBeNull();
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
 
     expect(container.querySelector(".tug-tab-ghost")).toBeNull();
 
@@ -574,20 +574,20 @@ describe("TabDragCoordinator – cleanup side effects", () => {
 // pointercancel -- silent cancel without DeckManager commit
 // ---------------------------------------------------------------------------
 
-describe("TabDragCoordinator – pointercancel does not commit (Issue 1 fix)", () => {
+describe("CardDragCoordinator – pointercancel does not commit (Issue 1 fix)", () => {
   it("pointercancel cleans up visuals without calling any DeckManager method", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl } = setupDragScenario();
 
     // Start drag with 2 tabs so drag initiates.
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move into detach zone so mode = "detach".
-    tabDragCoordinator._testOnly_applyDragFrame(250, 14);
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
+    cardDragCoordinator._testOnly_applyDragFrame(250, 14);
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("detach");
 
     // Synthesize a pointercancel event on the tab element.
     const cancelEvent = new Event("pointercancel");
@@ -608,16 +608,16 @@ describe("TabDragCoordinator – pointercancel does not commit (Issue 1 fix)", (
 
   it("pointercancel during merge mode does not call mergeTab", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     const { srcTabEl } = setupDragScenario();
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, srcTabEl, "src", "tab-src-1", 2);
 
     // Move into target bar so mode = "merge".
-    tabDragCoordinator._testOnly_applyDragFrame(450, 14);
-    expect(tabDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
+    cardDragCoordinator._testOnly_applyDragFrame(450, 14);
+    expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
 
     const cancelEvent = new Event("pointercancel");
     srcTabEl.dispatchEvent(cancelEvent);
@@ -680,7 +680,7 @@ describe("VISIBLE_TAB_SELECTOR — backward compatibility (T11)", () => {
     document.body.appendChild(bar);
 
     // Pointer at x=80: between first midpoint (40) and second midpoint (120) → index 1.
-    const index = tabDragCoordinator.computeReorderIndex(bar, 80);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 80);
     expect(index).toBe(1);
 
     bar.remove();
@@ -696,7 +696,7 @@ describe("VISIBLE_TAB_SELECTOR — excludes data-overflow='hidden' tabs (T12)", 
    * T12: Verify VISIBLE_TAB_SELECTOR matches only non-hidden tabs in a mock
    * DOM containing tabs with and without data-overflow="hidden".
    *
-   * [D07] TabDragCoordinator selectors exclude hidden overflow tabs, Risk R04
+   * [D07] CardDragCoordinator selectors exclude hidden overflow tabs, Risk R04
    */
 
   it("T12: querySelectorAll with VISIBLE_TAB_SELECTOR excludes hidden tabs", () => {
@@ -770,7 +770,7 @@ describe("VISIBLE_TAB_SELECTOR — excludes data-overflow='hidden' tabs (T12)", 
     // Pointer at x=100: would be between tab0 midpoint (40) and tab2 midpoint (200).
     // With VISIBLE_TAB_SELECTOR, tab1 is excluded.
     // tab0 midpoint=40 < 100, tab2 midpoint=200 > 100 → insertIndex=1 (between visible tabs).
-    const index = tabDragCoordinator.computeReorderIndex(bar, 100);
+    const index = cardDragCoordinator.computeReorderIndex(bar, 100);
     expect(index).toBe(1);
 
     bar.remove();
@@ -778,24 +778,24 @@ describe("VISIBLE_TAB_SELECTOR — excludes data-overflow='hidden' tabs (T12)", 
 
   it("T12: isDragging getter reflects drag state", () => {
     const store = makeMockStore();
-    tabDragCoordinator.init(store);
+    cardDragCoordinator.init(store);
 
     // Initially not dragging.
-    expect(tabDragCoordinator.isDragging).toBe(false);
+    expect(cardDragCoordinator.isDragging).toBe(false);
 
     const tabEl = makeMockTabElement(0, 80);
     document.body.appendChild(tabEl);
 
     const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
-    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
+    cardDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
 
     // Should be dragging now.
-    expect(tabDragCoordinator.isDragging).toBe(true);
+    expect(cardDragCoordinator.isDragging).toBe(true);
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
 
     // Should not be dragging after cleanup.
-    expect(tabDragCoordinator.isDragging).toBe(false);
+    expect(cardDragCoordinator.isDragging).toBe(false);
 
     tabEl.remove();
   });

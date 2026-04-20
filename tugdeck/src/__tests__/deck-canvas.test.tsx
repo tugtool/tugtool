@@ -837,7 +837,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       if (!el) return null;
       // Walk up to the tab-content-host wrapper (sets the display style).
       let node: HTMLElement | null = el;
-      while (node && !node.hasAttribute("data-tab-content-host")) {
+      while (node && !node.hasAttribute("data-card-content-host")) {
         node = node.parentElement;
       }
       return node?.style.display ?? null;
@@ -1084,13 +1084,13 @@ describe("DeckCanvas – T19: coordinator.init receives store on mount", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("T19: tabDragCoordinator is initialized with the store after DeckCanvas mounts", async () => {
-    const { tabDragCoordinator } = await import("@/tab-drag-coordinator");
+  it("T19: cardDragCoordinator is initialized with the store after DeckCanvas mounts", async () => {
+    const { cardDragCoordinator } = await import("@/card-drag-coordinator");
 
     // Record the store passed to init().
     const initCalls: IDeckManagerStore[] = [];
-    const originalInit = tabDragCoordinator.init.bind(tabDragCoordinator);
-    tabDragCoordinator.init = (s: IDeckManagerStore) => {
+    const originalInit = cardDragCoordinator.init.bind(cardDragCoordinator);
+    cardDragCoordinator.init = (s: IDeckManagerStore) => {
       initCalls.push(s);
       originalInit(s);
     };
@@ -1104,7 +1104,7 @@ describe("DeckCanvas – T19: coordinator.init receives store on mount", () => {
     expect(initCalls.length).toBeGreaterThanOrEqual(1);
     expect(initCalls[initCalls.length - 1]).toBe(store);
 
-    tabDragCoordinator.init = originalInit;
+    cardDragCoordinator.init = originalInit;
   });
 });
 
@@ -1115,7 +1115,7 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
   it("T20: DeckManager.detachTab is callable via coordinator after DeckCanvas init", async () => {
     // Test that detachTab on the store is reachable via the coordinator after
     // DeckCanvas mounts and calls coordinator.init(store).
-    const { tabDragCoordinator } = await import("@/tab-drag-coordinator");
+    const { cardDragCoordinator } = await import("@/card-drag-coordinator");
 
     registerCard({
       componentId: "hello",
@@ -1143,7 +1143,7 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
     expect(detachCalls[0].cardId).toBe("card-a");
     expect(detachCalls[0].tabId).toBe("tab-1");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 });
 
@@ -1152,7 +1152,7 @@ describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode",
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("T21: DeckManager.mergeTab is callable via coordinator after DeckCanvas init", async () => {
-    const { tabDragCoordinator } = await import("@/tab-drag-coordinator");
+    const { cardDragCoordinator } = await import("@/card-drag-coordinator");
 
     registerCard({
       componentId: "hello",
@@ -1178,7 +1178,7 @@ describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode",
     expect(mergeCalls[0].tabId).toBe("tab-1");
     expect(mergeCalls[0].targetCardId).toBe("card-tgt");
 
-    tabDragCoordinator.cleanup();
+    cardDragCoordinator.cleanup();
   });
 });
 

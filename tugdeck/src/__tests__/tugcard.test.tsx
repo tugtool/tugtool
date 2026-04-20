@@ -26,7 +26,7 @@ import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:te
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { Tugcard } from "@/components/tugways/tug-card";
-import { TabContentHost } from "@/components/chrome/tab-content-host";
+import { CardContentHost } from "@/components/chrome/card-content-host";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
@@ -876,7 +876,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
 
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-with-store">
-        <TabContentHost tabId="tab-with-store" hostCardId="card-with-store" componentId="property-test" />
+        <CardContentHost tabId="tab-with-store" hostCardId="card-with-store" componentId="property-test" />
       </Tugcard>
     );
 
@@ -892,9 +892,10 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
       changes.push(store.get("style.backgroundColor"))
     );
 
-    // Dispatch setProperty directly to the Tugcard responder node
+    // Dispatch setProperty to the CardContentHost responder (id = tabId),
+    // which is where setProperty handling lives after Piece 1.iii.
     act(() => {
-      manager.sendToTarget("card-with-store", {
+      manager.sendToTarget("tab-with-store", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#aabbcc", source: "inspector" },
@@ -918,7 +919,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
 
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-default-source">
-        <TabContentHost tabId="tab-default-source" hostCardId="card-default-source" componentId="property-default-source" />
+        <CardContentHost tabId="tab-default-source" hostCardId="card-default-source" componentId="property-default-source" />
       </Tugcard>
     );
 
@@ -931,7 +932,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     });
 
     act(() => {
-      manager.sendToTarget("card-default-source", {
+      manager.sendToTarget("tab-default-source", {
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.fontSize", value: 24 }, // no source field
@@ -977,7 +978,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
                   >
-              <TabContentHost tabId={tab1.id} hostCardId="card-sf4" componentId="hello" />
+              <CardContentHost tabId={tab1.id} hostCardId="card-sf4" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1038,7 +1039,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
                   >
-              <TabContentHost tabId={tab1.id} hostCardId="card-sg" componentId="hello" />
+              <CardContentHost tabId={tab1.id} hostCardId="card-sg" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1167,7 +1168,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-rsel" componentId="hello" />
+              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-rsel" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1236,7 +1237,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-rcb" componentId="persistent-rcb" />
+              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-rcb" componentId="persistent-rcb" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1334,7 +1335,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t01" componentId="persistent-t01" />
+              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t01" componentId="persistent-t01" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1428,7 +1429,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t02"
               activeTabId={currentTab}
             >
-              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t02" componentId="persistent-t02" />
+              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t02" componentId="persistent-t02" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1562,7 +1563,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t04"
               activeTabId={currentTab}
             >
-              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t04" componentId="persistent-t04" />
+              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t04" componentId="persistent-t04" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1632,7 +1633,7 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
               {...defaultProps}
               cardId="card-t07"
             >
-              <TabContentHost tabId="tab-t07" hostCardId="card-t07" componentId="hello" />
+              <CardContentHost tabId="tab-t07" hostCardId="card-t07" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>

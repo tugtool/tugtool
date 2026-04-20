@@ -6,7 +6,7 @@
  * - T-CH02: Clicking chevron again expands card (calls onCollapse again)
  * - T-CH03: Close button calls onClose on pointer-up-inside
  * - T-CH04: Double-click on title bar toggles collapse (calls onCollapse)
- * - T-CH05: Resize handles hidden when collapsed (via CardFrame data-collapsed)
+ * - T-CH05: Resize handles hidden when collapsed (via StackFrame data-collapsed)
  * - T-CH06: Collapsed state data attribute rendered correctly
  * - T-CH07: Icon rendered when icon prop provided
  * - T-CH08: Close button hidden when closable=false
@@ -22,8 +22,8 @@ import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { CardTitleBar, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/tug-card";
-import { CardFrame } from "@/components/chrome/card-frame";
-import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
+import { StackFrame } from "@/components/chrome/stack-frame";
+import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
 import type { CardState } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { DeckManager } from "@/deck-manager";
@@ -59,7 +59,7 @@ function makeMockConnection() {
 }
 
 /**
- * Minimal mock IDeckManagerStore for CardFrame renders in card-header tests.
+ * Minimal mock IDeckManagerStore for StackFrame renders in card-header tests.
  */
 const mockStore: IDeckManagerStore = {
   subscribe: (_cb: () => void) => () => {},
@@ -226,7 +226,7 @@ describe("CardTitleBar – drag is active when collapsed [D07]", () => {
   it("T-CH-DRAG: onDragStart prop is passed to CardTitleBar regardless of collapsed state", () => {
     // Documents the intent that collapsed cards can still be dragged.
     // The onDragStart callback must reach CardTitleBar whether collapsed=true or false.
-    // CardFrame injects onDragStart via CardFrameInjectedProps and Tugcard forwards it
+    // StackFrame injects onDragStart via StackFrameInjectedProps and Tugcard forwards it
     // to CardTitleBar unconditionally -- the title bar is always rendered.
     const onDragStart = mock((_e: React.PointerEvent) => {});
     const { getByTestId, rerender } = render(
@@ -295,20 +295,20 @@ describe("CardTitleBar – renders title and icon", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T-CH05: Resize handles hidden when collapsed (via CardFrame data-collapsed)
+// T-CH05: Resize handles hidden when collapsed (via StackFrame data-collapsed)
 // ---------------------------------------------------------------------------
 
-describe("CardFrame – resize handles hidden when collapsed", () => {
+describe("StackFrame – resize handles hidden when collapsed", () => {
   afterEach(() => cleanup());
 
   it("T-CH05: resize handle elements absent when cardState.collapsed=true", () => {
     const collapsedState = makeCardState({ collapsed: true });
     const { container } = render(
       <ResponderChainProvider>
-        <CardFrame
+        <StackFrame
 
           cardState={collapsedState}
-          renderContent={(injected: CardFrameInjectedProps) => (
+          renderContent={(injected: StackFrameInjectedProps) => (
             <div data-testid="card-content">
               <button onClick={() => {}} data-testid="close-trigger">Close</button>
             </div>
@@ -330,7 +330,7 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     const expandedState = makeCardState({ collapsed: false });
     const { container } = render(
       <ResponderChainProvider>
-        <CardFrame
+        <StackFrame
 
           cardState={expandedState}
           renderContent={() => <div />}
@@ -346,11 +346,11 @@ describe("CardFrame – resize handles hidden when collapsed", () => {
     expect(handles.length).toBe(8);
   });
 
-  it("CardFrame uses CARD_TITLE_BAR_HEIGHT + 2 for height when collapsed", () => {
+  it("StackFrame uses CARD_TITLE_BAR_HEIGHT + 2 for height when collapsed", () => {
     const collapsedState = makeCardState({ collapsed: true });
     const { getByTestId } = render(
       <ResponderChainProvider>
-        <CardFrame
+        <StackFrame
 
           cardState={collapsedState}
           renderContent={() => <div />}

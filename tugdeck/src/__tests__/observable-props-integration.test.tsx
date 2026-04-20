@@ -37,7 +37,7 @@ import { registerGalleryCards } from "@/components/tugways/cards/gallery-registr
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
-import { TabContentHost } from "@/components/chrome/tab-content-host";
+import { CardContentHost } from "@/components/chrome/card-content-host";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -74,10 +74,10 @@ function renderObservableProps(cardId = "obs-int-card") {
     ({ container } = render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId={cardId} meta={{ title: "Test" }} feedIds={[]}>
-            <TabContentHost
-              tabId={`${cardId}-tab`}
-              hostCardId={cardId}
+          <Tugcard cardId={`${cardId}-stack`} meta={{ title: "Test" }} feedIds={[]}>
+            <CardContentHost
+              tabId={cardId}
+              hostCardId={`${cardId}-stack`}
               componentId="gallery-observable-props"
             />
           </Tugcard>

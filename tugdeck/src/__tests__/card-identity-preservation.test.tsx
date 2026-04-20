@@ -20,7 +20,6 @@ import { render, act, cleanup } from "@testing-library/react";
 
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import * as registry from "@/components/chrome/card-content-registry";
-import * as propRegistry from "@/components/chrome/tab-property-store-registry";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { CardState, TabItem, DeckState } from "@/layout-tree";
 import { DeckManagerContext } from "@/deck-manager-context";
@@ -207,7 +206,6 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     probeStats.aliveUnmount = 0;
     probeStats.mountTotal = 0;
     registry._resetForTests();
-    propRegistry._resetForTests();
     _resetForTest();
     registerCard({
       componentId: "probe-hello",
