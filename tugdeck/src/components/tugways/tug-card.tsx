@@ -45,6 +45,7 @@ import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
 import { getConnection } from "../../lib/connection-singleton";
 import { useCardWorkspaceKey } from "./hooks/use-card-workspace-key";
 import { presentWorkspaceKey } from "../../card-registry";
+import * as cardContentRegistry from "../chrome/card-content-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -613,6 +614,19 @@ export function Tugcard({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
+
+  // Register this card's content element with the card-content-registry so
+  // CardPortal consumers can route their DOM output into it. Used by the
+  // portal-based tab-content hosting path (Step 11.6.1a Piece 1). Piece 1.i
+  // only establishes the registration — nothing reads it yet.
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    cardContentRegistry.register(cardId, el);
+    return () => {
+      cardContentRegistry.unregister(cardId);
+    };
+  }, [cardId]);
 
   // ---------------------------------------------------------------------------
   // Auto-save: debounced tab state persistence on scroll, selection, and

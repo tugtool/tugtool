@@ -747,14 +747,54 @@ Invariants:
 
 A single-shot rewrite of this step failed once already (dropped ~95 tests and silently deferred the portal split). To land 11.6.1a reliably, break the work into five commits in the order below. Each commit builds a green tree and a green test suite. Each is independently reviewable.
 
-*Piece 1 — Portal rendering for tab content (current data model preserved).*
-- New file `tugdeck/src/components/chrome/card-content-registry.ts`: module-level registry mapping `cardId → HTMLDivElement` with subscribe-on-change semantics.
-- New file `tugdeck/src/components/chrome/card-portal.tsx`: a `<CardPortal tabId hostCardId>` component that looks up the host card's content div from the registry and `createPortal`s its children into it. Subscribes to registry updates so a host-id change re-roots the portal without unmounting children.
-- Modify `tugdeck/src/components/chrome/card-frame.tsx`: stop rendering the active tab's content directly. Leave an empty content `<div>` with a ref that registers with the registry on mount (keyed by `cardId`) and unregisters on unmount.
-- Modify `tugdeck/src/components/chrome/deck-canvas.tsx`: render two flat lists as siblings — (a) `cards.map(c => <CardFrame />)` for chrome; (b) `cards.flatMap(c => c.tabs).map(tab => <CardPortal key={tab.id} tabId={tab.id} hostCardId={lookupHostCardId(tab.id)} />)` for content. Only the active tab of each card is visually displayed (CSS `display: none` on non-active tabs' content div); all are mounted.
-- New identity-preservation tests: mount-probe card component (`useEffect(() => { mountCount++; return () => unmountCount++; }, [])`); perform `addTab`, `setActiveTab`, `detachTab`, `mergeTab`; assert `mountCount === 1` and `unmountCount === 0` on the probed card across every operation.
-- Verification: `bun x tsc --noEmit` clean; `bun test` green; new tests pass. **Effect: the detach focus bug's root cause (content unmount) is resolved; tide's WebSocket survives every card operation.**
-- Data model unchanged. No API rename. Commit boundary is purely additive + CardFrame's render change.
+*Piece 1 — Portal-based identity preservation (split into three sub-commits).*
+
+The original single-commit framing of Piece 1 under-scoped the work. `Tugcard` wires several per-content concerns that today happen to be card-scoped but are semantically tab-scoped (property store, persistence callbacks, dirty state, selection-boundary registration, tab-state save callback). For tab content to live at the deck level (the prerequisite for identity preservation across detach/merge AND in-card tab switches), those concerns must move to a per-tab host at deck level. Splitting into three commits keeps each change independently reviewable and green at every HEAD.
+
+*Piece 1.i — Content registry + `CardPortal` component (no behavior change).*
+- New file `tugdeck/src/components/chrome/card-content-registry.ts`: module-level registry mapping `cardId → HTMLDivElement`. Exports `register(cardId, el)`, `unregister(cardId)`, `getElement(cardId)`, `subscribe(cardId, callback)`. Subscribe-on-change semantics so portals re-root when their host card's content div mounts/unmounts/re-registers.
+- New file `tugdeck/src/components/chrome/card-portal.tsx`: a `<CardPortal hostCardId>` component that uses `useSyncExternalStore` against the registry (keyed by `hostCardId`) to look up the current host element, and returns `createPortal(children, hostEl)` when the element is available. When `hostCardId` changes, the component re-roots the portal to the new host without unmounting its children.
+- Modify `tugdeck/src/components/tugways/tug-card.tsx`: register the `contentRef` div with the content registry on mount (keyed by `cardId`), unregister on unmount. No other changes; `children` still render inside the content div as today.
+- Unit tests: `__tests__/card-content-registry.test.ts` (register/unregister/subscribe basic behavior); `__tests__/card-portal.test.tsx` (portal renders into registered element; re-roots on hostCardId change; no mount/unmount of children across re-root; handles mid-mount registration).
+- Verification: `bun x tsc --noEmit` clean; `bun test` green (existing + ~6 new); no existing test should change behavior because Tugcard's children still render normally.
+
+*Piece 1.ii — Lift per-content scope from `Tugcard` to a new `TabContentHost` at deck level (no portal yet).*
+- New file `tugdeck/src/components/chrome/tab-content-host.tsx`: a `<TabContentHost tabId cardId componentId>` component that owns the per-tab concerns that currently live inside Tugcard:
+  - `PropertyStore` registration (receives the card content's store and forwards it to setProperty responder — needs the tabId-keyed store map).
+  - `TugcardPersistenceCallbacks` registration.
+  - `TugcardDirtyContext` markDirty + debounced auto-save timer keyed by `tabId`.
+  - SelectionGuard boundary registration keyed by `tabId` (currently keyed by `cardId`).
+  - `registerSaveCallback` on the deck manager keyed by `tabId` (currently keyed by `cardId`).
+  - Renders `registration.contentFactory(tabId)` wrapped in the four per-content context providers.
+- Modify `tugdeck/src/deck-manager.ts` / `tugdeck/src/deck-manager-store.ts`:
+  - `registerSaveCallback(id, callback)` / `unregisterSaveCallback(id)` — the `id` can be either a cardId or a tabId. Today it's cardId; after this piece, content callers pass tabId. Keep the signature `(id: string, cb)` and clarify in JSDoc that any unique key works; SaveCallback map semantics unchanged.
+  - Selection guard boundary registration path: audit `selection-guard.ts` — current API takes `cardId`; change consumers in Tugcard/TabContentHost to pass `tabId` instead, verify selection restore still works per-tab.
+- Modify `tugdeck/src/components/tugways/tug-card.tsx`:
+  - Remove the four context providers from the content div render path.
+  - Remove `useSelectionBoundary(cardId, contentRef)`.
+  - Remove `registerSaveCallback` / `unregisterSaveCallback` from Tugcard's useLayoutEffect.
+  - Remove `saveCurrentTabStateRef` ownership from Tugcard; move it to TabContentHost (keyed by tabId).
+  - Tugcard's `children` prop is now the already-wrapped TabContentHost for the active tab (passed from DeckCanvas).
+- Modify `tugdeck/src/components/chrome/deck-canvas.tsx`:
+  - Where `renderContent` constructs `<Tugcard>...{registration.contentFactory(cardState.id)}</Tugcard>`, change children to `<TabContentHost tabId={activeTab.id} cardId={cardState.id} componentId={componentId} />`.
+  - TabContentHost internally renders the content factory wrapped in per-tab contexts.
+  - No portals yet — TabContentHost's output still renders as a child of Tugcard in the usual React tree.
+- Existing test migration: any test that asserts against `registerSaveCallback(cardId, ...)` must be updated to accept the new key (tabId). Any test that asserts against selection-guard boundary keying moves to tabId.
+- New tests: `tab-content-host.test.tsx` — verify context providers wrap the content factory; verify save callback registers under tabId; verify selection boundary registers under tabId; verify cleanup on unmount.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green; no identity preservation benefit yet (TabContentHost still unmounts/remounts on parent change because it's still a child of Tugcard in the React tree).
+
+*Piece 1.iii — Flip `TabContentHost` to render via portal (identity preservation delivered).*
+- Modify `tugdeck/src/components/chrome/tab-content-host.tsx`:
+  - Instead of rendering its children as a normal React child, wrap them in `<CardPortal hostCardId={hostCardId}>` so the DOM output lands in the host card's content div.
+  - Hoist TabContentHost's React-tree mount location to be a flat sibling list at the top of DeckCanvas, keyed by `tabId`. This is the position that survives cross-card moves — React reconciles key matches even as the data (which card hosts which tab) changes.
+- Modify `tugdeck/src/components/chrome/deck-canvas.tsx`:
+  - Render two flat lists as siblings: (a) `cards.map(c => <CardFrame />)` for chrome; (b) `cards.flatMap(c => c.tabs).map(tab => <TabContentHost key={tab.id} tabId={tab.id} hostCardId={lookupHostCardId(tab.id)} componentId={tab.componentId} />)` for content.
+  - Remove the pass-through of TabContentHost as Tugcard's children. Tugcard's content div now receives content only via the portal landing.
+  - Hide inactive tabs with CSS `display: none` (determined at TabContentHost from `activeTabId === tabId` passed from DeckCanvas or looked up via store).
+- Modify `tugdeck/src/components/tugways/tug-card.tsx`: content div is empty (portals land there). Remove `children` prop entirely, or keep it for back-compat and document it's unused in this shape.
+- New identity-preservation tests: mount-probe card component (`useEffect(() => { mountCount++; return () => unmountCount++; }, [])`); perform `addTab` (switching active tab), `setActiveTab`, `detachTab`, `mergeTab`; assert `mountCount === 1` and `unmountCount === 0` on the probed card across every operation.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green; new identity-preservation tests pass. **Effect: the detach focus bug's root cause (content unmount) is resolved; tide's WebSocket survives every card operation. In-card tab switches also preserve identity.**
+- Data model unchanged throughout Pieces 1.i–1.iii. No API rename. Commit boundary is additive + targeted render refactor.
 
 *Piece 2 — Data-model rename and store API rewrite (single atomic commit).*
 - `tugdeck/src/layout-tree.ts`: rename existing `CardState` → `CardStackState`; change field `tabs: TabItem[]` → `cardIds: string[]`; `activeTabId` → `activeCardId`. Introduce a new `CardState { id, componentId, title, closable, state?: TabStateBag }`. Update `DeckState` to `{ cards: CardState[]; stacks: CardStackState[]; activeStackId?: string; focusedCardId?: string }`. Document invariants in JSDoc.
