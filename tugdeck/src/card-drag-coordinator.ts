@@ -55,13 +55,13 @@ const DRAG_THRESHOLD_PX = 5;
 // ---- Internal types ----
 
 interface TabBarEntry {
-  cardId: string;
+  stackId: string;
   rect: DOMRect;
   barElement: HTMLElement;
 }
 
 interface StackFrameEntry {
-  cardId: string;
+  stackId: string;
   rect: DOMRect;
   accessoryElement: HTMLElement;
 }
@@ -86,8 +86,8 @@ class CardDragCoordinator {
 
   // ---- Per-drag state (valid only while dragActive is true) ----
   private dragActive: boolean = false;
+  private sourceStackId: string = "";
   private sourceCardId: string = "";
-  private sourceTabId: string = "";
   private sourceTabElement: HTMLElement | null = null;
   private capturedPointerId: number = -1;
 
@@ -126,7 +126,7 @@ class CardDragCoordinator {
   private currentReorderIndex: number = 0;
 
   /** Current merge target, or null when not in merge mode. */
-  private currentMergeTarget: { cardId: string; insertIndex: number } | null = null;
+  private currentMergeTarget: { stackId: string; insertIndex: number } | null = null;
 
   /**
    * The element currently highlighted as a drop target.
@@ -181,19 +181,19 @@ class CardDragCoordinator {
    *
    * @param event - The native PointerEvent that triggered the drag
    * @param tabElement - The DOM element of the dragged tab div
-   * @param cardId - The source card id
-   * @param tabId - The tab being dragged
-   * @param tabCount - Number of tabs on the source card
+   * @param stackId - The source stack id
+   * @param cardId - The card being dragged
+   * @param cardCount - Number of cards in the source stack
    */
   startDrag(
     event: PointerEvent,
     tabElement: HTMLElement,
+    stackId: string,
     cardId: string,
-    tabId: string,
-    tabCount: number,
+    cardCount: number,
   ): void {
-    // [D06] Guard: single-tab cards cannot be dragged.
-    if (tabCount <= 1) return;
+    // [D06] Guard: single-card stacks cannot be dragged.
+    if (cardCount <= 1) return;
     if (!this.store) return;
 
     // Cancel any in-progress drag (safety).
@@ -202,8 +202,8 @@ class CardDragCoordinator {
     }
 
     this.dragActive = true;
+    this.sourceStackId = stackId;
     this.sourceCardId = cardId;
-    this.sourceTabId = tabId;
     this.sourceTabElement = tabElement;
     this.capturedPointerId = event.pointerId;
 
@@ -224,7 +224,7 @@ class CardDragCoordinator {
     this.grabOffsetY = event.clientY - tabRect.top;
 
     // Build two-tier hit-test cache. [Spec S04]
-    this.buildHitTestCache(cardId);
+    this.buildHitTestCache(stackId);
 
     // Create ghost element. [D02, Spec S05]
     this.ghostElement = this.createGhost(tabElement, event.clientX, event.clientY);
@@ -274,37 +274,37 @@ class CardDragCoordinator {
    *
    * [Spec S04]
    */
-  private buildHitTestCache(sourceCardId: string): void {
-    // Tier 1: multi-tab bars (excluding source card).
+  private buildHitTestCache(sourceStackId: string): void {
+    // Tier 1: multi-card stack bars (excluding source stack).
     const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-card-id]");
-    const tabBarCardIds = new Set<string>();
+    const tabBarStackIds = new Set<string>();
     this.allTabBarRects = [];
 
     barElements.forEach((el) => {
-      const cid = el.getAttribute("data-card-id");
-      if (!cid || cid === sourceCardId) return;
-      tabBarCardIds.add(cid);
+      const sid = el.getAttribute("data-card-id");
+      if (!sid || sid === sourceStackId) return;
+      tabBarStackIds.add(sid);
       this.allTabBarRects.push({
-        cardId: cid,
+        stackId: sid,
         rect: el.getBoundingClientRect(),
         barElement: el,
       });
     });
 
-    // Tier 2: single-tab card frames (not in the tab bar set).
+    // Tier 2: single-card stack frames (not in the tab bar set).
     const frameElements = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
     this.allStackFrameRects = [];
 
     frameElements.forEach((el) => {
-      const cid = el.getAttribute("data-card-id");
-      if (!cid || cid === sourceCardId || tabBarCardIds.has(cid)) return;
+      const sid = el.getAttribute("data-card-id");
+      if (!sid || sid === sourceStackId || tabBarStackIds.has(sid)) return;
 
       // Resolve the accessory div for drop-target visual feedback. [D05]
-      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-card-id="${cid}"]`);
+      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-card-id="${sid}"]`);
       if (!accessory) return;
 
       this.allStackFrameRects.push({
-        cardId: cid,
+        stackId: sid,
         rect: el.getBoundingClientRect(),
         accessoryElement: accessory,
       });
@@ -374,8 +374,8 @@ class CardDragCoordinator {
 
     // Snapshot final state before cleanup.
     const mode = this.currentMode;
+    const sourceStackId = this.sourceStackId;
     const sourceCardId = this.sourceCardId;
-    const sourceTabId = this.sourceTabId;
     const reorderIndex = this.currentReorderIndex;
     const mergeTarget = this.currentMergeTarget;
     const dropX = e.clientX;
@@ -393,11 +393,11 @@ class CardDragCoordinator {
     if (!store) return;
 
     if (mode === "reorder") {
-      // Find the original index of the dragged tab in the source card.
+      // Find the original index of the dragged card in the source stack.
       const snapshot = store.getSnapshot();
-      const sourceCard = snapshot.cards.find((c) => c.id === sourceCardId);
-      if (sourceCard) {
-        const fromIndex = sourceCard.tabs.findIndex((t) => t.id === sourceTabId);
+      const sourceStack = snapshot.stacks.find((s) => s.id === sourceStackId);
+      if (sourceStack) {
+        const fromIndex = sourceStack.cardIds.indexOf(sourceCardId);
         if (fromIndex !== -1 && fromIndex !== reorderIndex) {
           // When dropping after the source position, the effective toIndex is
           // reorderIndex - 1 because removing fromIndex shifts items left.
@@ -405,7 +405,7 @@ class CardDragCoordinator {
           if (reorderIndex > fromIndex) {
             toIndex = reorderIndex - 1;
           }
-          store.reorderCardInStack(sourceCardId, fromIndex, toIndex);
+          store.reorderCardInStack(sourceStackId, fromIndex, toIndex);
         }
       }
     } else if (mode === "detach") {
@@ -416,9 +416,9 @@ class CardDragCoordinator {
         x = dropX - containerRect.left;
         y = dropY - containerRect.top;
       }
-      store.detachCard(sourceCardId, sourceTabId, { x, y });
+      store.detachCard(sourceStackId, sourceCardId, { x, y });
     } else if (mode === "merge" && mergeTarget) {
-      store.moveCardToStack(sourceCardId, sourceTabId, mergeTarget.cardId, mergeTarget.insertIndex);
+      store.moveCardToStack(sourceStackId, sourceCardId, mergeTarget.stackId, mergeTarget.insertIndex);
     }
   }
 
@@ -460,24 +460,22 @@ class CardDragCoordinator {
 
         // Compute merge insertion index from pointer X vs tab midpoints in target bar.
         const insertIndex = this.computeReorderIndex(entry.barElement, cx);
-        this.currentMergeTarget = { cardId: entry.cardId, insertIndex };
+        this.currentMergeTarget = { stackId: entry.stackId, insertIndex };
         this.updateInsertionIndicator(entry.barElement, insertIndex);
         return;
       }
     }
 
-    // Check tier-2: single-tab card frames. [D05]
+    // Check tier-2: single-card stack frames. [D05]
     for (const entry of this.allStackFrameRects) {
       if (this.pointInRect(cx, cy, entry.rect)) {
         this.setMode("merge");
         this.setDropTarget(entry.accessoryElement);
 
-        // Default insertion index: append (insertIndex = tabs.length of target).
-        // We don't have live tab counts here; use 0 as a safe default (DeckManager
-        // clamps insertAtIndex to [0, tabs.length] in mergeTab). In practice,
-        // single-tab cards have exactly 1 tab, so appendIndex 1 is also correct.
-        // Use a large sentinel (999) that DeckManager clamps to tabs.length.
-        this.currentMergeTarget = { cardId: entry.cardId, insertIndex: 999 };
+        // Default insertion index: append (insertIndex = cardIds.length of target).
+        // DeckManager clamps insertAtIndex to [0, cardIds.length] in
+        // moveCardToStack, so using a large sentinel (999) is safe.
+        this.currentMergeTarget = { stackId: entry.stackId, insertIndex: 999 };
         this.removeInsertionIndicator();
         return;
       }
@@ -681,7 +679,7 @@ class CardDragCoordinator {
   /**
    * Return the current merge target. For use in unit tests only.
    */
-  _testOnly_getCurrentMergeTarget(): { cardId: string; insertIndex: number } | null {
+  _testOnly_getCurrentMergeTarget(): { stackId: string; insertIndex: number } | null {
     return this.currentMergeTarget;
   }
 
@@ -748,8 +746,8 @@ class CardDragCoordinator {
 
     // Reset per-drag state.
     this.sourceTabElement = null;
+    this.sourceStackId = "";
     this.sourceCardId = "";
-    this.sourceTabId = "";
     this.capturedPointerId = -1;
     this.sourceBarRect = null;
     this.containerRect = null;

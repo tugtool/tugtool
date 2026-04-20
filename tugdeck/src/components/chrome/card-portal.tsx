@@ -1,12 +1,12 @@
 /**
  * CardPortal — renders `children` into a stable intermediate "slot" DOM
- * element, and moves that slot between host card content elements via
- * `appendChild` as the portal's `hostCardId` (or the registered host element
+ * element, and moves that slot between host stack content elements via
+ * `appendChild` as the portal's `hostStackId` (or the registered host element
  * for that id) changes.
  *
  * Why the intermediate slot: `createPortal(children, container)` unmounts
  * children when `container` changes. React treats a different container as
- * a different mount point. To preserve identity across cross-card moves
+ * a different mount point. To preserve identity across cross-stack moves
  * (the whole point of Step 11.6.1a), the portal's container must be stable.
  *
  * The slot (`display: contents`) adds no layout box; its children render as
@@ -23,9 +23,9 @@ import { createPortal } from "react-dom";
 import * as registry from "./card-content-registry";
 
 export interface CardPortalProps {
-  /** The cardId whose content element should host this portal's DOM output. */
-  hostCardId: string;
-  /** The content to render into the host card's content element. */
+  /** The stackId whose content element should host this portal's DOM output. */
+  hostStackId: string;
+  /** The content to render into the host stack's content element. */
   children: React.ReactNode;
 }
 
@@ -42,23 +42,23 @@ function createSlot(): HTMLDivElement {
 }
 
 /**
- * Portal children into the host card's content element via a stable slot.
+ * Portal children into the host stack's content element via a stable slot.
  *
  * Lifecycle:
  *   1. On mount: create slot (detached from DOM), portal children into it.
  *   2. useLayoutEffect attaches slot to the current host element (if any).
- *   3. On hostCardId change: cleanup removes slot from old host; new effect
+ *   3. On hostStackId change: cleanup removes slot from old host; new effect
  *      attaches slot to new host. Children stay mounted throughout.
- *   4. Registry updates (same hostCardId, different element): subscriber
+ *   4. Registry updates (same hostStackId, different element): subscriber
  *      callback re-attaches the slot. Children stay mounted.
  *   5. On unmount: slot is removed from whatever host it was last attached to.
  */
-export function CardPortal({ hostCardId, children }: CardPortalProps): React.ReactElement {
+export function CardPortal({ hostStackId, children }: CardPortalProps): React.ReactElement {
   const [slot] = useState(createSlot);
 
   useLayoutEffect(() => {
     function attachToCurrentHost() {
-      const host = registry.getElement(hostCardId);
+      const host = registry.getElement(hostStackId);
       if (!host) {
         // No host registered — detach slot so the orphan DOM is not visible.
         if (slot.parentNode) slot.parentNode.removeChild(slot);
@@ -69,13 +69,13 @@ export function CardPortal({ hostCardId, children }: CardPortalProps): React.Rea
     }
 
     attachToCurrentHost();
-    const unsubscribe = registry.subscribe(hostCardId, attachToCurrentHost);
+    const unsubscribe = registry.subscribe(hostStackId, attachToCurrentHost);
 
     return () => {
       unsubscribe();
       if (slot.parentNode) slot.parentNode.removeChild(slot);
     };
-  }, [hostCardId, slot]);
+  }, [hostStackId, slot]);
 
   return createPortal(children, slot) as React.ReactElement;
 }

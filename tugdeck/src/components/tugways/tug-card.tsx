@@ -25,7 +25,7 @@ import "./tug-card.css";
 import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
-import type { TabItem } from "../../layout-tree";
+import type { CardState } from "../../layout-tree";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
@@ -345,9 +345,13 @@ export interface TugcardMeta {
  * Props for the Tugcard composition component.
  */
 export interface TugcardProps {
-  /** Unique card instance ID. Passed to the responder chain. */
-  cardId: string;
-  /** Title, optional icon, and closable flag. Overridden by active tab metadata when tabs.length > 1. */
+  /**
+   * Unique stack instance ID. Tugcard is the chrome UI for a stack — a group
+   * of one or more cards under a shared frame — so this id identifies the
+   * stack, not any individual card. Passed to the responder chain.
+   */
+  stackId: string;
+  /** Title, optional icon, and closable flag. Overridden by active card metadata when cards.length > 1. */
   meta: TugcardMeta;
   /** Feed IDs to subscribe to. Empty array = feedless card (children mount immediately). */
   feedIds: readonly FeedIdValue[];
@@ -382,12 +386,12 @@ export interface TugcardProps {
   /** Card-specific content components. */
   children: React.ReactNode;
 
-  // ---- Tab props ----
+  // ---- Card props ----
 
-  /** All tabs on this card. When provided and length > 1, the tab bar appears. */
-  tabs?: TabItem[];
-  /** The currently active tab id. Required when tabs is provided. */
-  activeTabId?: string;
+  /** All cards in this stack. When provided and length > 1, the tab bar appears. */
+  cards?: readonly CardState[];
+  /** The currently active card id. Required when cards is provided. */
+  activeCardId?: string;
 
   /**
    * Card-level title prefix. When non-empty, the header displays
@@ -426,7 +430,7 @@ const AUTO_SAVE_DEBOUNCE_MS = 1000;
  * ```
  */
 export function Tugcard({
-  cardId,
+  stackId,
   meta,
   feedIds,
   decode,
@@ -438,12 +442,12 @@ export function Tugcard({
   collapsed = false,
   onCollapse,
   children,
-  tabs,
-  activeTabId,
+  cards,
+  activeCardId,
   cardTitle,
   acceptedFamilies,
 }: TugcardProps) {
-  // Access the DeckManager store for tab state read/write.
+  // Access the DeckManager store for per-card state read/write.
   const store = useDeckManager();
 
   // ---------------------------------------------------------------------------
@@ -485,83 +489,82 @@ export function Tugcard({
   // Register the content area as a selection boundary with SelectionGuard.
   // Uses useLayoutEffect (Rule of Tug #3) so the boundary is available when
   // Tugcard's selection-restore useLayoutEffect fires. ([D02])
-  useSelectionBoundary(cardId, contentRef);
+  useSelectionBoundary(stackId, contentRef);
 
   // ---------------------------------------------------------------------------
-  // Tab state refs (for stable responder actions, Rule of Tug #5)
+  // Card state refs (for stable responder actions, Rule of Tug #5)
   // ---------------------------------------------------------------------------
 
   // Responder actions are registered once at mount via useLayoutEffect inside
   // useResponder. The closures must never go stale. Use refs that are updated
   // every render so the closures always read the current values.
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
 
-  const activeTabIdRef = useRef(activeTabId);
-  activeTabIdRef.current = activeTabId;
+  const activeCardIdRef = useRef(activeCardId);
+  activeCardIdRef.current = activeCardId;
 
-  // Tab-select side effect: save the OUTGOING tab's state before
-  // switching, then commit the new active tab to the store. The outgoing
-  // tab's save is triggered via `store.invokeSaveCallback(outgoingTabId)`;
-  // each TabContentHost registers its save under its own tabId so the
-  // right per-tab bag is captured even when multiple tabs coexist on a
-  // card (Piece 1.iii). Called from the `selectTab` chain handler below;
-  // also called via dispatch from `previousTab` / `nextTab` handlers, which
-  // route through the chain so this side effect runs in exactly one place
-  // ([D01], #lifecycle-flow).
+  // Card-select side effect: save the OUTGOING card's state before
+  // switching, then commit the new active card to the store. The outgoing
+  // card's save is triggered via `store.invokeSaveCallback(outgoingCardId)`;
+  // each CardContentHost registers its save under its own cardId so the
+  // right per-card bag is captured even when multiple cards coexist in a
+  // stack. Called from the `selectTab` chain handler below; also called via
+  // dispatch from `previousTab` / `nextTab` handlers, which route through
+  // the chain so this side effect runs in exactly one place ([D01],
+  // #lifecycle-flow).
   const performSelectCard = useCallback(
-    (newTabId: string) => {
-      const outgoingTabId = activeTabIdRef.current;
-      if (outgoingTabId) {
-        store.invokeSaveCallback(outgoingTabId);
+    (newCardId: string) => {
+      const outgoingCardId = activeCardIdRef.current;
+      if (outgoingCardId) {
+        store.invokeSaveCallback(outgoingCardId);
       }
-      store.setActiveCardInStack(cardId, newTabId);
+      store.setActiveCardInStack(stackId, newCardId);
     },
-    [store, cardId],
+    [store, stackId],
   );
 
-  // Register this card's content element with the card-content-registry so
-  // CardPortal consumers can route their DOM output into it. Used by the
-  // portal-based tab-content hosting path (Step 11.6.1a Piece 1). The
-  // content area is empty in the React tree after Piece 1.ii — `children`
-  // is a `TabContentHost` whose context providers wrap the content factory.
+  // Register this stack's content element with the card-content-registry so
+  // CardPortal consumers can route their DOM output into it. The content
+  // area is empty in the React tree — `children` is a `CardContentHost`
+  // portaled into this div by `CardPortal`.
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    cardContentRegistry.register(cardId, el);
+    cardContentRegistry.register(stackId, el);
     return () => {
-      cardContentRegistry.unregister(cardId);
+      cardContentRegistry.unregister(stackId);
     };
-  }, [cardId]);
+  }, [stackId]);
 
-  // Register the card's root element with tab-card-root-registry so
-  // TabContentHost (which lives at the deck level in the React tree and
+  // Register this stack's root element with stack-root-registry so
+  // CardContentHost (which lives at the deck level in the React tree and
   // therefore cannot see TugcardPortalContext directly) can re-provide
   // that context with the correct element. Re-registered whenever cardEl
   // changes (rootRefCallback's state-setter causes one extra render with
   // the element populated).
   useLayoutEffect(() => {
     if (!cardEl) return;
-    stackRootRegistry.register(cardId, cardEl);
+    stackRootRegistry.register(stackId, cardEl);
     return () => {
-      stackRootRegistry.unregister(cardId);
+      stackRootRegistry.unregister(stackId);
     };
-  }, [cardId, cardEl]);
+  }, [stackId, cardEl]);
 
   // ---------------------------------------------------------------------------
   // Responder registration (D07)
   // ---------------------------------------------------------------------------
 
   const handleClose = useCallback(() => {
-    // Multi-tab: close the active tab. Single tab: close the card.
-    const currentTabs = tabsRef.current;
-    const currentActiveId = activeTabIdRef.current;
-    if (currentTabs && currentTabs.length > 1 && currentActiveId) {
-      store.removeCard(cardId, currentActiveId);
+    // Multi-card stack: close the active card. Single-card: close the stack.
+    const currentCards = cardsRef.current;
+    const currentActiveId = activeCardIdRef.current;
+    if (currentCards && currentCards.length > 1 && currentActiveId) {
+      store.removeCard(stackId, currentActiveId);
     } else {
       onClose?.();
     }
-  }, [onClose, store, cardId]);
+  }, [onClose, store, stackId]);
 
   // selectAll is NOT handled at the card level. Content components
   // (tug-input, tug-textarea, tug-prompt-input, tug-markdown-view)
@@ -582,30 +585,30 @@ export function Tugcard({
   //
   // Both handlers no-op when there's nothing to switch to.
   const handlePreviousTab = useCallback(() => {
-    const currentTabs = tabsRef.current;
-    const currentActiveId = activeTabIdRef.current;
-    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId) return;
-    const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
+    const currentCards = cardsRef.current;
+    const currentActiveId = activeCardIdRef.current;
+    if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
+    const idx = currentCards.findIndex((c) => c.id === currentActiveId);
     if (idx === -1) return;
-    const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
+    const prevIdx = (idx - 1 + currentCards.length) % currentCards.length;
     manager.sendToFirstResponder({
       action: TUG_ACTIONS.SELECT_TAB,
-      value: currentTabs[prevIdx].id,
+      value: currentCards[prevIdx].id,
       sender: keyboardTabNavSenderId,
       phase: "discrete",
     });
   }, [manager, keyboardTabNavSenderId]);
 
   const handleNextTab = useCallback(() => {
-    const currentTabs = tabsRef.current;
-    const currentActiveId = activeTabIdRef.current;
-    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId) return;
-    const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
+    const currentCards = cardsRef.current;
+    const currentActiveId = activeCardIdRef.current;
+    if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
+    const idx = currentCards.findIndex((c) => c.id === currentActiveId);
     if (idx === -1) return;
-    const nextIdx = (idx + 1) % currentTabs.length;
+    const nextIdx = (idx + 1) % currentCards.length;
     manager.sendToFirstResponder({
       action: TUG_ACTIONS.SELECT_TAB,
-      value: currentTabs[nextIdx].id,
+      value: currentCards[nextIdx].id,
       sender: keyboardTabNavSenderId,
       phase: "discrete",
     });
@@ -621,13 +624,13 @@ export function Tugcard({
   // action handler runs in exactly one place. [A3 / R4, #lifecycle-flow]
   const handleJumpToTab = useCallback(
     (oneBasedIndex: number) => {
-      const currentTabs = tabsRef.current;
-      if (!currentTabs || currentTabs.length === 0) return;
-      if (oneBasedIndex < 1 || oneBasedIndex > currentTabs.length) return;
-      const targetTab = currentTabs[oneBasedIndex - 1];
+      const currentCards = cardsRef.current;
+      if (!currentCards || currentCards.length === 0) return;
+      if (oneBasedIndex < 1 || oneBasedIndex > currentCards.length) return;
+      const targetCard = currentCards[oneBasedIndex - 1];
       manager.sendToFirstResponder({
         action: TUG_ACTIONS.SELECT_TAB,
-        value: targetTab.id,
+        value: targetCard.id,
         sender: keyboardTabNavSenderId,
         phase: "discrete",
       });
@@ -636,7 +639,7 @@ export function Tugcard({
   );
 
   const { ResponderScope, responderRef } = useResponder({
-    id: cardId,
+    id: stackId,
     kind: "card",
     actions: {
       [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => handleClose(),
@@ -660,17 +663,17 @@ export function Tugcard({
       },
       [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.removeCard(cardId, event.value);
+        store.removeCard(stackId, event.value);
       },
       // add-tab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
       // after the A2.5 tug-popup-button migration. Payload is
-      // `value: componentId`. This card's id plus the incoming
-      // componentId are the arguments to store.addTab, completing the
-      // chain-native tab-add flow. Distinct from the global
+      // `value: componentId`. This stack's id plus the incoming
+      // componentId are the arguments to store.addCardToStack, completing
+      // the chain-native card-add flow. Distinct from the global
       // add-tab-to-active-card action handled by deck-canvas.
       [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.addCardToStack(cardId, event.value);
+        store.addCardToStack(stackId, event.value);
       },
       // Stubs: minimize, toggle-menu, find are no-ops until implemented.
       // `find` logs because ⌘F is bound in keybinding-map.ts and a user
@@ -685,27 +688,27 @@ export function Tugcard({
       },
       // setProperty is handled by the per-card responder inside
       // CardContentHost (registered with id=cardId). Tugcard no longer
-      // participates — the registry indirection was retired in Piece 1.iii
-      // when CardContentHost got its own responder scope.
+      // participates — the registry indirection was retired when
+      // CardContentHost got its own responder scope.
     },
   });
 
   // ---------------------------------------------------------------------------
-  // Resolve header metadata from active tab ([D05])
+  // Resolve header metadata from active card ([D05])
   // ---------------------------------------------------------------------------
 
-  // When multiple tabs are present, the header title/icon follow the active tab.
-  const hasMultipleTabs = tabs !== undefined && tabs.length > 1;
-  const activeTab = hasMultipleTabs && activeTabId
-    ? tabs.find((t) => t.id === activeTabId)
+  // When multiple cards are present, the header title/icon follow the active card.
+  const hasMultipleCards = cards !== undefined && cards.length > 1;
+  const activeCard = hasMultipleCards && activeCardId
+    ? cards.find((c) => c.id === activeCardId)
     : undefined;
-  const activeTabRegistration = activeTab
-    ? getRegistration(activeTab.componentId)
+  const activeCardRegistration = activeCard
+    ? getRegistration(activeCard.componentId)
     : undefined;
 
-  // Effective metadata for the header: active tab registration wins, else meta prop.
-  const effectiveMeta: TugcardMeta = activeTabRegistration
-    ? activeTabRegistration.defaultMeta
+  // Effective metadata for the header: active card registration wins, else meta prop.
+  const effectiveMeta: TugcardMeta = activeCardRegistration
+    ? activeCardRegistration.defaultMeta
     : meta;
 
   // Compose the header display title: when cardTitle is non-empty, prefix it.
@@ -718,16 +721,16 @@ export function Tugcard({
   // Build accessory slot content ([D03])
   // ---------------------------------------------------------------------------
 
-  // When tabs.length > 1, render TugTabBar in the accessory slot.
-  // When tabs.length <= 1, use the original accessory prop (or null).
-  // All tab interactions — select, close, add — flow through this
-  // card's responder via the chain. No callback prop forwarding.
-  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs
+  // When cards.length > 1, render TugTabBar in the accessory slot.
+  // When cards.length <= 1, use the original accessory prop (or null).
+  // All card-bar interactions — select, close, add — flow through this
+  // stack's responder via the chain. No callback prop forwarding.
+  const resolvedAccessory: React.ReactNode | null = hasMultipleCards
     ? (
         <TugTabBar
-          cardId={cardId}
-          tabs={tabs}
-          activeTabId={activeTabId!}
+          stackId={stackId}
+          cards={cards}
+          activeCardId={activeCardId!}
           acceptedFamilies={acceptedFamilies}
         />
       )
@@ -800,7 +803,7 @@ export function Tugcard({
       ref={rootRefCallback}
       className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
       data-slot="tug-card"
-      data-card-id={cardId}
+      data-card-id={stackId}
       data-collapsed={collapsed ? "true" : "false"}
     >
       {/* CardTitleBar: title bar with controls and collapse support */}
@@ -838,7 +841,7 @@ export function Tugcard({
             ref={accessoryRef}
             className="tugcard-accessory"
             data-testid="tugcard-accessory"
-            data-card-id={cardId}
+            data-card-id={stackId}
             style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
           >
             {resolvedAccessory}

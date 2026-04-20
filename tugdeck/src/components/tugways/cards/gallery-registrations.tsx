@@ -24,7 +24,7 @@ import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import type { TabItem } from "@/layout-tree";
+import type { CardState } from "@/layout-tree";
 import { GalleryPushButton } from "./gallery-push-button";
 import { GalleryChainActions } from "./gallery-chain-actions";
 import { GalleryMutation } from "./gallery-mutation";
@@ -89,7 +89,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
-export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
+export const GALLERY_DEFAULT_TABS: readonly CardState[] = [
   { id: "template", componentId: "gallery-buttons",  title: "TugPushButton", closable: true },
   { id: "template", componentId: "gallery-input",    title: "TugInput",      closable: true },
   { id: "template", componentId: "gallery-checkbox", title: "TugCheckbox",   closable: true },

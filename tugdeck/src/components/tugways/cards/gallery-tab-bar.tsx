@@ -10,7 +10,7 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { getRegistration } from "@/card-registry";
-import type { TabItem } from "@/layout-tree";
+import type { CardState } from "@/layout-tree";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
  * reasonably sized card without requiring the user to add tabs manually.
  * Defined at module scope to avoid recreation on each render.
  */
-const DEMO_INITIAL_TABS: readonly TabItem[] = [
+const DEMO_INITIAL_TABS: readonly CardState[] = [
   { id: "demo-tab-1", componentId: "hello", title: "Hello",    closable: true },
   { id: "demo-tab-2", componentId: "hello", title: "World",    closable: true },
   { id: "demo-tab-3", componentId: "hello", title: "Tugways",  closable: true },
@@ -47,7 +47,7 @@ const DEMO_INITIAL_TABS: readonly TabItem[] = [
  * Tab select, close, and add are wired to local state for full interactivity.
  */
 export function TugTabBarDemo() {
-  const [tabs, setTabs] = useState<TabItem[]>(() => DEMO_INITIAL_TABS.map((t) => ({ ...t })));
+  const [tabs, setTabs] = useState<CardState[]>(() => DEMO_INITIAL_TABS.map((t) => ({ ...t })));
   const [activeTabId, setActiveTabId] = useState<string>(DEMO_INITIAL_TABS[0].id);
   const [lastSelected, setLastSelected] = useState<string | null>(null);
   const [overflowStage, setOverflowStage] = useState<"none" | "collapsed" | "overflow">("none");
@@ -91,7 +91,7 @@ export function TugTabBarDemo() {
     const resolvedComponentId = registration ? componentId : "hello";
     const resolvedTitle =
       registration?.defaultMeta.title ?? `Tab ${n}`;
-    const newTab: TabItem = {
+    const newTab: CardState = {
       id: `demo-tab-new-${n}`,
       componentId: resolvedComponentId,
       title: resolvedTitle,
@@ -109,7 +109,7 @@ export function TugTabBarDemo() {
 
   /** Add five tabs at once to quickly trigger overflow. */
   const handleAddFive = () => {
-    const newTabs: TabItem[] = Array.from({ length: 5 }, () => {
+    const newTabs: CardState[] = Array.from({ length: 5 }, () => {
       const n = nextTabIndexRef.current++;
       return {
         id: `demo-tab-new-${n}`,
@@ -145,9 +145,9 @@ export function TugTabBarDemo() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
       <TugTabBar
-        cardId="gallery-demo-card"
-        tabs={tabs}
-        activeTabId={activeTabId}
+        stackId="gallery-demo-card"
+        cards={tabs}
+        activeCardId={activeTabId}
         senderId={tabBarId}
         onOverflowChange={handleOverflowChange}
       />

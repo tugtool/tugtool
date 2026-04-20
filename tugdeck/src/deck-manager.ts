@@ -1,12 +1,14 @@
 /**
  * DeckManager -- orchestrates card state and the React render pipeline.
  *
- * Phase 5: Rebuilt with card registry integration, addCard / removeCard /
- * moveCard / focusCard, stable bound callbacks, and cascade positioning.
+ * Operates against the two-table model: `deckState.cards` (content
+ * identities) and `deckState.stacks` (visual frames). Every public mutator
+ * keeps the two tables in sync, preserving the invariants documented in
+ * `layout-tree.ts` (no orphan cards, no empty stacks, activeCardId ∈ cardIds).
  *
- * Phase 5a2: DeckManager is now a subscribable store conforming to the
- * useSyncExternalStore contract. One root.render() at construction time;
- * all subsequent state changes call notify() instead of render().
+ * DeckManager is a subscribable store conforming to the `useSyncExternalStore`
+ * contract. One `root.render()` at construction time; all subsequent state
+ * changes call `notify()` instead of render().
  *
  * **Authoritative references:**
  * - [D01] DeckManager is a subscribable store with one root.render() at mount
@@ -22,20 +24,20 @@
  * - Each state-mutating method assigns `this.deckState = { ...this.deckState }`
  *   (shallow copy) before calling `notify()` so React sees a new reference.
  * - `subscribe`, `getSnapshot`, and `getVersion` are arrow properties for
- *   stable identity and auto-bound `this` -- safe to pass directly to
- *   `useSyncExternalStore` without `.bind()`.
+ *   stable identity and auto-bound `this`.
  * - The constructor calls `this.reactRoot.render()` exactly once, wrapping the
- *   tree with `DeckManagerContext.Provider`. There is no private `render()` method.
- * - Card positions cascade: each new card offsets (30, 30) from the previous.
- *   When the card's right or bottom edge would exceed canvas bounds, the
- *   cascade counter resets to 0.
- * - Layout persistence uses the settings API only. No localStorage.
- * - Cards with unregistered componentIds are filtered out at load time
- *   (in loadLayout and applyLayout). deckState.cards contains only
- *   renderable cards that have registered factories in the card registry.
+ *   tree with `DeckManagerContext.Provider`.
+ * - Stack positions cascade: each new stack offsets (30, 30) from the previous.
+ * - Cards whose componentId is not registered in the card registry are
+ *   filtered out at load time (see `filterRegisteredCards`).
  */
 
-import { type DeckState, type CardState, type TabItem, type TabStateBag } from "./layout-tree";
+import {
+  type DeckState,
+  type CardState,
+  type CardStackState,
+  type CardStateBag,
+} from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy } from "./card-registry";
 import { TugConnection } from "./connection";
@@ -74,29 +76,29 @@ import {
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
 
-/** Cascade step between consecutive new cards (pixels) */
+/** Cascade step between consecutive new stacks (pixels) */
 const CASCADE_STEP = 30;
 
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
 
-  /** Current canvas state */
+  /** Current canvas state (two-table shape). */
   private deckState: DeckState;
 
   /** Debounce timer for layout saves */
   private saveTimer: number | null = null;
 
-  // ---- Phase 5f: Tab state cache (Spec S03, [D01], [D06]) ----
+  // ---- Phase 5f: Per-card state cache (Spec S03, [D01], [D06]) ----
 
-  /** In-memory cache of tab state bags. Primary read source during a session. */
-  private tabStateCache: Map<string, TabStateBag> = new Map();
+  /** In-memory cache of per-card state bags. Primary read source during a session. */
+  private cardStateCache: Map<string, CardStateBag> = new Map();
 
-  /** Debounce timer for tab state saves (separate from layout save timer). */
-  private tabStateSaveTimer: number | null = null;
+  /** Debounce timer for per-card state saves (separate from layout save timer). */
+  private cardStateSaveTimer: number | null = null;
 
-  /** Set of tab IDs with unsaved (dirty) tab state bags. Used for flush-on-destroy. */
-  private dirtyTabIds: Set<string> = new Set();
+  /** Set of card IDs with unsaved (dirty) state bags. Used for flush-on-destroy. */
+  private dirtyCardIds: Set<string> = new Set();
 
   // ---- Phase 5f3: Save callbacks for close-time state flush (Spec S01, [D01]) ----
 
@@ -107,152 +109,80 @@ export class DeckManager implements IDeckManagerStore {
    */
   private saveCallbacks: Map<string, () => void> = new Map();
 
-  /**
-   * Bound handler for the document visibilitychange event.
-   * Stored as an arrow property for stable identity so removeEventListener
-   * in destroy() can unregister the exact same function reference.
-   */
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
       if (this.stateFlushed) return;
       this.saveCallbacks.forEach((cb) => cb());
-      // Normal async fetch — page stays alive during app backgrounding.
-      // Reload teardown is handled by the stateFlushed guard above (Swift
-      // saves via `window.tugdeck.saveState()` before navigation starts).
-      this.flushDirtyTabStates();
+      this.flushDirtyCardStates();
     }
   };
 
-  /**
-   * Set to true by prepareForReload() so the beforeunload handler can skip
-   * the redundant keepalive flush (which fails in WKWebView during navigation).
-   */
   private reloadPending = false;
 
-  /**
-   * Set to true by saveAndFlushSync() (called from `window.tugdeck.saveState()`).
-   * Tells visibilitychange and beforeunload handlers to skip — state was
-   * already persisted before the navigation/teardown started.
-   */
   private stateFlushed = false;
 
-  /**
-   * Bound handler for the window beforeunload event.
-   * Last-resort safety net: uses sync XHR to flush state before the
-   * page unloads. Skipped when state was already saved by a prior path
-   * (prepareForReload or `window.tugdeck.saveState()`).
-   */
   private readonly handleBeforeUnload = (): void => {
     if (this.reloadPending || this.stateFlushed) return;
-    // Flush any pending debounced layout save immediately
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
       this.saveLayout();
     }
     this.saveCallbacks.forEach((cb) => cb());
-    // Sync XHR — the page is being torn down. Async fetch/keepalive
-    // fails in WKWebView during navigation.
-    this.flushDirtyTabStates({ sync: true });
+    this.flushDirtyCardStates({ sync: true });
   };
 
   // ---- Phase 5f: Initial focused card ID for reload restoration ([D03]) ----
 
-  /**
-   * The card ID that was focused when the deck was last saved to tugbank.
-   * Set from the constructor parameter; read by DeckCanvas on mount to call
-   * makeFirstResponder; cleared after DeckCanvas reads it.
-   * DeckManager cannot access the responder chain directly (plain class).
-   */
   public initialFocusedCardId: string | undefined;
 
   /** Single React root for the canvas */
   private reactRoot: Root | null = null;
 
-  /**
-   * Pre-fetched layout from the settings API (passed in from main.tsx).
-   * Consumed once by loadLayout(); null thereafter.
-   */
   private initialLayout: object | null;
 
-  /** Active theme at construction time -- passed to TugThemeProvider as initialTheme. */
   private initialTheme: ThemeName;
 
-  /**
-   * Cascade index for new card positioning. Incremented by 1 on each addCard
-   * call. Reset to 0 when the next cascaded position would overflow canvas bounds.
-   */
   private cascadeIndex: number = 0;
 
   // ---- Subscribable store state (useSyncExternalStore contract) ----
 
-  /** Set of subscriber callbacks registered via subscribe(). */
   private subscribers: Set<() => void> = new Set();
 
-  /** Monotonically increasing state version, incremented on every notify(). */
   private stateVersion: number = 0;
 
-  // ---- Stable bound callbacks (bound once in constructor, never recreated) ----
+  // ---- Stable bound callbacks ----
 
-  /** Stable bound callback: update a stack's position/size on drag-end/resize-end. */
   public handleStackMoved: (
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
 
-  /** Stable bound callback: remove a card. */
   public handleCardClosed: (id: string) => void;
 
-  /**
-   * Card-activation lifecycle. Single source of truth for "which
-   * card is the user in." All activation paths route through
-   * `activateCard`; observers subscribe via `observeCardDidActivate`.
-   */
   public readonly cardLifecycle: CardLifecycle;
 
-  /**
-   * App-lifecycle. Parallel to `cardLifecycle`, driven by the Swift
-   * `NSApplicationDelegate` callbacks. Step 4 of the lifecycle-
-   * delegates plan constructs this; Step 5 routes control-frame
-   * `app-lifecycle` events into it via `action-dispatch.ts`.
-   */
   public readonly appLifecycle: AppLifecycle;
 
-  /**
-   * Handle for the installed app → card cascade (Step 7). Disposed in
-   * `destroy()` so test teardowns and HMR releases the observer
-   * subscriptions.
-   */
   private readonly lifecycleCascade: LifecycleCascadeHandle;
 
-  /** Stable bound callback: add a card to an existing stack. */
   public addCardToStack: (stackId: string, componentId: string) => string | null;
 
-  /** Stable bound callback: remove a card from a stack. */
   public removeCard: (stackId: string, cardId: string) => void;
 
-  /** Stable bound callback: set the active card in a stack. */
   public setActiveCardInStack: (stackId: string, cardId: string) => void;
 
-  /** Stable bound callback: reorder a card within its stack. */
   public reorderCardInStack: (stackId: string, fromIndex: number, toIndex: number) => void;
 
-  /** Stable bound callback: detach a card into a new single-card stack. */
   public detachCard: (stackId: string, cardId: string, position: { x: number; y: number }) => string | null;
 
-  /** Stable bound callback: move a card from its source stack into a target stack. */
   public moveCardToStack: (sourceStackId: string, cardId: string, targetStackId: string, insertAtIndex: number) => void;
 
-  /** Stable bound callback: toggle the collapsed state of a stack. */
   public toggleStackCollapse: (stackId: string) => void;
 
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
-  /**
-   * Subscribe to state changes. Returns an unsubscribe function.
-   * Arrow property for stable identity and auto-bound `this`.
-   */
   public subscribe = (callback: () => void): (() => void) => {
     this.subscribers.add(callback);
     return () => {
@@ -260,36 +190,25 @@ export class DeckManager implements IDeckManagerStore {
     };
   };
 
-  /**
-   * Return the current DeckState snapshot.
-   * Arrow property for stable identity and auto-bound `this`.
-   */
   public getSnapshot = (): DeckState => this.deckState;
 
-  /**
-   * Return the current state version (monotonically increasing integer).
-   * Arrow property for stable identity and auto-bound `this`.
-   */
   public getVersion = (): number => this.stateVersion;
 
   // ---- CardLifecycleStore contract ----
 
   /**
-   * The id of the currently-focused card (top of z-order). `null`
-   * when the deck has no cards. Derived from deckState — no
-   * separate state field. Required by `CardLifecycleStore`.
+   * The id of the currently-focused card (top of z-order). `null` when the
+   * deck has no cards. Derived from deckState: the last stack in `stacks` is
+   * the top of z-order, and its `activeCardId` is the focused card.
    */
   public getFocusedCardId = (): string | null => {
-    const cards = this.deckState.cards;
-    return cards.length > 0 ? cards[cards.length - 1].id : null;
+    const stacks = this.deckState.stacks;
+    if (stacks.length === 0) return null;
+    return stacks[stacks.length - 1].activeCardId;
   };
 
   // ---- CardLifecycle pass-throughs ----
 
-  /**
-   * Activate a card. Thin pass-through to `cardLifecycle.activateCard`.
-   * See `CardLifecycle.activateCard` for the full contract.
-   */
   public activateCard = (
     cardId: string,
     knownPreviousActive?: string | null,
@@ -297,53 +216,32 @@ export class DeckManager implements IDeckManagerStore {
     this.cardLifecycle.activateCard(cardId, knownPreviousActive);
   };
 
-  /**
-   * Subscribe to card CONSTRUCTION events. Pass-through to
-   * `cardLifecycle.observeCardDidFinishConstruction`.
-   */
   public observeCardDidFinishConstruction = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
     this.cardLifecycle.observeCardDidFinishConstruction(cardId, callback);
 
-  /**
-   * Subscribe to card ACTIVATION events. Pass-through to
-   * `cardLifecycle.observeCardDidActivate`.
-   */
   public observeCardDidActivate = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) => this.cardLifecycle.observeCardDidActivate(cardId, callback);
 
-  /**
-   * Subscribe to card DEACTIVATION events. Pass-through to
-   * `cardLifecycle.observeCardDidDeactivate`.
-   */
   public observeCardDidDeactivate = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
     this.cardLifecycle.observeCardDidDeactivate(cardId, callback);
 
-  /**
-   * Subscribe to card DESTRUCTION events. Pass-through to
-   * `cardLifecycle.observeCardWillBeginDestruction`.
-   */
   public observeCardWillBeginDestruction = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
     this.cardLifecycle.observeCardWillBeginDestruction(cardId, callback);
 
-  /** Currently-active card id. Thin pass-through. */
   public getActiveCardId = (): string | null =>
     this.cardLifecycle.getActiveCardId();
 
-  /**
-   * Late-bind the responder chain manager to the card lifecycle.
-   * Called by `ResponderChainProvider`'s mount effect.
-   */
   public attachResponderChainManager = (
     manager: CardLifecycleManager | null,
   ): void => {
@@ -355,7 +253,7 @@ export class DeckManager implements IDeckManagerStore {
     connection: TugConnection,
     initialLayout?: object,
     initialTheme?: ThemeName,
-    initialTabStates?: Map<string, TabStateBag>,
+    initialCardStates?: Map<string, CardStateBag>,
     initialFocusedCardId?: string,
   ) {
     this.container = container;
@@ -363,43 +261,22 @@ export class DeckManager implements IDeckManagerStore {
     this.initialLayout = initialLayout ?? null;
     this.initialTheme = initialTheme ?? BASE_THEME_NAME;
 
-    // Phase 5f: populate tab state cache from pre-fetched tugbank data.
-    if (initialTabStates) {
-      this.tabStateCache = new Map(initialTabStates);
+    if (initialCardStates) {
+      this.cardStateCache = new Map(initialCardStates);
     }
 
-    // Phase 5f: store focused card ID for DeckCanvas to read on mount.
     this.initialFocusedCardId = initialFocusedCardId;
 
-    // Canvas container needs position:relative for absolutely-positioned children
     container.style.position = "relative";
 
-    // Create the single React root
     this.reactRoot = createRoot(container);
 
-    // Bind callbacks once -- stable identity, safe to pass directly to the store interface.
     this.handleStackMoved = this.moveStack.bind(this);
     this.handleCardClosed = this._closeStack.bind(this);
-    // Construct the card lifecycle. The store end is this deck manager
-    // (we implement CardLifecycleStore via focusCard + getFocusedCardId).
-    // The responder-chain manager is attached later by
-    // ResponderChainProvider's mount effect (late binding).
     this.cardLifecycle = new CardLifecycle(this);
     registerCardLifecycle(this.cardLifecycle);
-    // Construct the app lifecycle in parallel. No constructor args —
-    // app events are singular (one app) and carry no per-target id.
-    // Step 5 of the lifecycle-delegates plan wires Swift
-    // `NSApplicationDelegate` events here via the `app-lifecycle`
-    // control frame; Step 7 adds a cascade layer coupling this to
-    // `cardLifecycle`.
     this.appLifecycle = new AppLifecycle();
     registerAppLifecycle(this.appLifecycle);
-    // Wire the app → card cascade now that both lifecycles exist.
-    // On `applicationWillResignActive` / `applicationWillHide`, the
-    // active card fires will/didDeactivate; on
-    // `applicationDidBecomeActive` / `applicationDidUnhide` it fires
-    // will/didActivate. Idempotent across resign+hide and
-    // become-active+unhide pairs. See `lib/lifecycle-cascade.ts`.
     this.lifecycleCascade = installLifecycleCascade(
       this.cardLifecycle,
       this.appLifecycle,
@@ -412,33 +289,17 @@ export class DeckManager implements IDeckManagerStore {
     this.moveCardToStack = this._moveCardToStack.bind(this);
     this.toggleStackCollapse = this._toggleStackCollapse.bind(this);
 
-    // Load or build the initial canvas state.
-    // subscribers, stateVersion, handleCard*, and deckState must all be initialized
-    // before root.render() executes: React may synchronously flush the first render
-    // and call subscribe/getSnapshot during it.
     this.deckState = this.loadLayout();
 
-    // Fire CONSTRUCTION for every card loaded from the saved layout
-    // so the lifecycle's `constructedCards` set matches reality and
-    // later-subscribing delegates receive initial-sync correctly.
-    // Must happen BEFORE `reactRoot.render()` so the constructed-set
-    // is populated by the time card components mount and subscribe.
-    // No observers are attached yet at this point, so the fires
-    // record state without producing side effects. Initial activation
-    // (of `initialFocusedCardId`, if any) is handled downstream by
-    // `DeckCanvas`'s mount effect, which calls `activateCard(id, null)`.
+    // Fire CONSTRUCTION for every card loaded from the saved layout so the
+    // lifecycle's `constructedCards` set matches reality and later-subscribing
+    // delegates receive initial-sync correctly.
     for (const card of this.deckState.cards) {
       this.cardLifecycle.notifyCardDidFinishConstruction(card.id);
     }
 
-    // Push the initial card list to the Swift host so the View menu
-    // is populated before the user triggers any state changes.
     this.pushCardListToHost();
 
-    // Single root.render() -- the only call that ever executes.
-    // DeckManagerContext.Provider wraps DeckCanvas so it can access the store
-    // via useDeckManager(). DeckCanvas no longer receives deckState/callback props;
-    // it reads them from the store via useSyncExternalStore.
     this.reactRoot.render(
       React.createElement(
         TugThemeProvider,
@@ -482,25 +343,13 @@ export class DeckManager implements IDeckManagerStore {
       ),
     );
 
-    // Listen for window resize (kept for future phases)
     window.addEventListener("resize", this.handleResize);
-
-    // Phase 5f3: listen for page-hide events to flush all registered card states
-    // before the browser discards the page. visibilitychange covers the common
-    // case (tab switch, window minimize); beforeunload is the backup.
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
   }
 
   // ---- Store notification ----
 
-  /**
-   * Increment stateVersion and fire all subscriber callbacks.
-   *
-   * Called by every state-mutating method after updating this.deckState.
-   * The shallow copy of deckState is always performed by the calling method
-   * before notify() runs -- notify() does not copy again.
-   */
   private notify(): void {
     this.stateVersion += 1;
     this.subscribers.forEach((cb) => cb());
@@ -508,8 +357,8 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Push the current card list (id, title, focused state) to the Swift host
-   * via WKScriptMessage so the View menu can build a dynamic card list.
+   * Push the current stack list (id, title, focused state) to the Swift host
+   * via WKScriptMessage so the View menu can build a dynamic stack list.
    * No-op when running outside a WKWebView (browser dev mode).
    */
   private pushCardListToHost(): void {
@@ -518,53 +367,42 @@ export class DeckManager implements IDeckManagerStore {
     const handler = messageHandlers?.cardList as { postMessage: (v: unknown) => void } | undefined;
     if (!handler) return;
 
-    const cards = this.deckState.cards;
-    const focusedId = cards.length > 0 ? cards[cards.length - 1].id : null;
-    const list = cards.map((c) => {
-      // Resolve display title: card-level title, or active tab title, or first tab title.
-      const activeTab = c.tabs.find((t) => t.id === c.activeTabId);
-      const title = c.title || activeTab?.title || c.tabs[0]?.title || "Untitled";
-      return { id: c.id, title, focused: c.id === focusedId, tabCount: c.tabs.length };
+    const stacks = this.deckState.stacks;
+    const cardsById = new Map<string, CardState>();
+    for (const c of this.deckState.cards) cardsById.set(c.id, c);
+    const focusedStack = stacks.length > 0 ? stacks[stacks.length - 1] : null;
+    const focusedId = focusedStack ? focusedStack.id : null;
+    const list = stacks.map((s) => {
+      const activeCard = cardsById.get(s.activeCardId);
+      const firstCard = cardsById.get(s.cardIds[0]);
+      const title = s.title || activeCard?.title || firstCard?.title || "Untitled";
+      return { id: s.id, title, focused: s.id === focusedId, tabCount: s.cardIds.length };
     }).reverse();
     handler.postMessage(list);
   }
 
-  /**
-   * Notify subscribers to pick up any external state changes.
-   * There is no render() method -- all state changes flow
-   * through notify() -> useSyncExternalStore -> synchronous React update.
-   */
   refresh(): void {
     this.notify();
   }
 
-  /**
-   * Return the current canvas state.
-   * Convenience alias for getSnapshot() -- kept for backward compatibility
-   * with action-dispatch.ts and existing tests.
-   */
   getDeckState(): DeckState {
     return this.getSnapshot();
   }
 
-  /**
-   * Send a control frame to the server.
-   */
   sendControlFrame(action: string, params?: Record<string, unknown>): void {
     this.connection.sendControlFrame(action, params);
   }
 
-  // ---- Card management (Spec S05) ----
+  // ---- Card / stack management (Spec S05) ----
 
   /**
-   * Add a new card from the registry.
+   * Add a new card from the registry, wrapped in a new single-card stack at
+   * the cascaded position. Returns the generated card id, or null if no
+   * registration is found for `componentId`.
    *
-   * Looks up `componentId` in the card registry. If not found, logs a warning
-   * and returns null. Otherwise creates a new CardState with a cascaded position
-   * and the registration's preferred size (from CardSizePolicy), appends it to
-   * deckState, notifies subscribers, and schedules a save.
-   *
-   * @returns The generated card ID, or null if the component is not registered.
+   * If the registration carries `defaultTabs`, the stack is seeded with one
+   * card per template (fresh UUIDs); otherwise a single card is created from
+   * `defaultMeta`.
    */
   addCard(componentId: string): string | null {
     const registration = getRegistration(componentId);
@@ -576,98 +414,109 @@ export class DeckManager implements IDeckManagerStore {
       return null;
     }
 
-    const cardId = crypto.randomUUID();
+    const stackId = crypto.randomUUID();
     const sizePolicy = getSizePolicy(componentId);
     const position = this.nextCascadePosition(sizePolicy.preferred);
 
-    let tabs: TabItem[];
-    let activeTabId: string;
-
+    const seededCards: CardState[] = [];
     if (registration.defaultTabs && registration.defaultTabs.length > 0) {
-      // Use defaultTabs as templates: copy componentId, title, closable but assign fresh UUIDs.
-      tabs = registration.defaultTabs.map((template) => ({
-        id: crypto.randomUUID(),
-        componentId: template.componentId,
-        title: template.title,
-        closable: template.closable,
-      }));
-      activeTabId = tabs[0].id;
+      for (const template of registration.defaultTabs) {
+        seededCards.push({
+          id: crypto.randomUUID(),
+          componentId: template.componentId,
+          title: template.title,
+          closable: template.closable,
+        });
+      }
     } else {
-      const tabId = crypto.randomUUID();
-      const tab: TabItem = {
-        id: tabId,
+      seededCards.push({
+        id: crypto.randomUUID(),
         componentId,
         title: registration.defaultMeta.title,
         closable: registration.defaultMeta.closable !== false,
-      };
-      tabs = [tab];
-      activeTabId = tabId;
+      });
     }
 
-    const card: CardState = {
-      id: cardId,
+    const firstCardId = seededCards[0].id;
+    const stack: CardStackState = {
+      id: stackId,
       position,
       size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
-      tabs,
-      activeTabId,
+      cardIds: seededCards.map((c) => c.id),
+      activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
     };
 
-    // Capture the previously-active card BEFORE the append. The
-    // append moves the store's "top-of-stack" pointer to the new
-    // card; without this snapshot, the activation call below would
-    // see same-card and skip the transition, leaving the old card
-    // never deactivated.
     const previouslyActive = this.cardLifecycle.getActiveCardId();
 
-    this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
+    this.deckState = {
+      ...this.deckState,
+      cards: [...this.deckState.cards, ...seededCards],
+      stacks: [...this.deckState.stacks, stack],
+      activeStackId: stackId,
+    };
     this.notify();
     this.scheduleSave();
-    // Fire CONSTRUCTION after the store update and notify. Observers
-    // reading state in their callback see the card present.
-    this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
-    // Activate the newly-added card — fires will/didDeactivate on
-    // the previously-active card (if any) and will/didActivate on
-    // this card. `previouslyActive` is passed explicitly because
-    // the store has already moved on (see note above).
-    this.cardLifecycle.activateCard(cardId, previouslyActive);
-    return cardId;
+    for (const c of seededCards) {
+      this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
+    }
+    this.cardLifecycle.activateCard(firstCardId, previouslyActive);
+    return firstCardId;
   }
 
   /**
-   * Remove a card from the canvas by card ID.
-   *
-   * Lifecycle order (all synchronous), per the lifecycle-delegates
-   * plan:
-   *   1. If the card was active:
-   *      a. Fire WILL-DEACTIVATE.
-   *      b. Fire DID-DEACTIVATE.
-   *   2. Fire WILL-BEGIN-DESTRUCTION — subscribers can still read
-   *      card state.
-   *   3. Remove from store and notify subscribers / schedule save.
-   *   4. If step 1 fired and a remaining card is now top-of-stack,
-   *      activate it (fires will/didActivate for the new top). Pass
-   *      `null` as the known-previous — the closing card's
-   *      deactivation already fired in step 1, so the transition
-   *      should emit activation events only.
+   * Close a stack by id. Fires will/didDeactivate on the active card if the
+   * stack currently owns the active card; fires willBeginDestruction on
+   * every card in the stack; removes the stack and all its cards; activates
+   * the new top-of-deck if the closed stack was active.
    */
-  _closeStack(cardId: string): void {
-    const wasActive = this.cardLifecycle.getActiveCardId() === cardId;
-    if (wasActive) {
-      this.cardLifecycle.notifyCardWillDeactivate(cardId);
-      this.cardLifecycle.notifyCardDidDeactivate(cardId);
+  _closeStack(id: string): void {
+    // Accept either a stack id or a card id: tests and legacy call sites
+    // still pass cardIds (from `addCard`'s return value) when asking the
+    // deck to "close this card". Resolve to the host stack id so the
+    // two-table invariants hold.
+    let stack = this.deckState.stacks.find((s) => s.id === id);
+    if (!stack) {
+      stack = this.deckState.stacks.find((s) => s.cardIds.includes(id));
     }
-    this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
+    if (!stack) return;
+    const stackId = stack.id;
+
+    const activeCardId = this.cardLifecycle.getActiveCardId();
+    const wasActive =
+      activeCardId !== null && stack.cardIds.includes(activeCardId);
+
+    if (wasActive && activeCardId) {
+      this.cardLifecycle.notifyCardWillDeactivate(activeCardId);
+      this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
+    }
+    for (const cid of stack.cardIds) {
+      this.cardLifecycle.notifyCardWillBeginDestruction(cid);
+    }
+
+    const cardIdSet = new Set(stack.cardIds);
+    const newStacks = this.deckState.stacks.filter((s) => s.id !== stackId);
+    const newCards = this.deckState.cards.filter((c) => !cardIdSet.has(c.id));
+    const newActiveStackId =
+      this.deckState.activeStackId === stackId
+        ? newStacks.length > 0
+          ? newStacks[newStacks.length - 1].id
+          : undefined
+        : this.deckState.activeStackId;
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.filter((c) => c.id !== cardId),
+      cards: newCards,
+      stacks: newStacks,
+      ...(newActiveStackId !== undefined
+        ? { activeStackId: newActiveStackId }
+        : { activeStackId: undefined }),
     };
     this.notify();
     this.scheduleSave();
 
     if (wasActive) {
-      const newTop = this.cardLifecycle.getActiveCardId();
+      const newTop = this.getFocusedCardId();
       if (newTop !== null) {
         this.cardLifecycle.activateCard(newTop, null);
       }
@@ -675,154 +524,150 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Update a card's position and size (called on drag-end / resize-end).
+   * Update a stack's position and size (called on drag-end / resize-end).
    *
-   * Fires will/did lifecycle events on the transitions that actually
-   * occurred:
-   *   - Pure drag: `cardWillMove` → store update → `cardDidMove`.
-   *   - Pure edge resize: `cardWillResize` → store update → `cardDidResize`.
-   *   - Corner-handle resize (moves origin AND changes size): both pairs fire.
-   *   - Identity commit (same position and size): neither pair fires.
+   * Fires will/did lifecycle events for move/resize on the **active card** of
+   * the stack (stacks, not cards, own position/size — but the active card is
+   * the observable subject).
    */
   moveStack(
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ): void {
-    const existing = this.deckState.cards.find((c) => c.id === id);
-    const positionChanged = existing !== undefined
-      ? existing.position.x !== position.x || existing.position.y !== position.y
-      : false;
-    const sizeChanged = existing !== undefined
-      ? existing.size.width !== size.width || existing.size.height !== size.height
-      : false;
+    // Accept either a stack id or a card id: legacy call sites (including
+    // tests written before the two-table split) still pass cardIds. Resolve
+    // to the host stack id so the right frame moves.
+    let existing = this.deckState.stacks.find((s) => s.id === id);
+    if (!existing) {
+      existing = this.deckState.stacks.find((s) => s.cardIds.includes(id));
+    }
+    if (!existing) return;
+    const stackId = existing.id;
+    const positionChanged =
+      existing.position.x !== position.x || existing.position.y !== position.y;
+    const sizeChanged =
+      existing.size.width !== size.width ||
+      existing.size.height !== size.height;
 
-    if (positionChanged) this.cardLifecycle.notifyCardWillMove(id);
-    if (sizeChanged) this.cardLifecycle.notifyCardWillResize(id);
+    const activeCardId = existing.activeCardId;
+    if (positionChanged) this.cardLifecycle.notifyCardWillMove(activeCardId);
+    if (sizeChanged) this.cardLifecycle.notifyCardWillResize(activeCardId);
 
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) =>
-        c.id === id ? { ...c, position, size } : c,
+      stacks: this.deckState.stacks.map((s) =>
+        s.id === stackId ? { ...s, position, size } : s,
       ),
     };
     this.notify();
 
-    if (positionChanged) this.cardLifecycle.notifyCardDidMove(id);
-    if (sizeChanged) this.cardLifecycle.notifyCardDidResize(id);
+    if (positionChanged) this.cardLifecycle.notifyCardDidMove(activeCardId);
+    if (sizeChanged) this.cardLifecycle.notifyCardDidResize(activeCardId);
 
     this.scheduleSave();
   }
 
   /**
-   * Bring a card to front by moving it to the end of the cards array.
-   * End-of-array = highest z-index by render order.
+   * Bring a card to front by moving its host stack to the end of the
+   * `stacks` array. End-of-array = highest z-index by render order.
    *
-   * Phase 5f: persists the focused card ID to tugbank (fire-and-forget) before
-   * the early-return guard, so that clicking an already-focused card or a
-   * single-card deck still updates the reload restoration pointer ([D03]).
-   * Also calls scheduleSave() so z-order changes are persisted to the layout
-   * blob, ensuring on reload that the last-focused card is already at the end
-   * of the array (highest z-index) without z-order correction.
+   * Persists `focusedCardId` to tugbank (fire-and-forget) on every call so
+   * clicking an already-focused card still updates the reload restoration
+   * pointer. Also calls scheduleSave() so z-order changes land in the layout
+   * blob.
    */
   focusCard(cardId: string): void {
-    const idx = this.deckState.cards.findIndex((c) => c.id === cardId);
+    const stacks = this.deckState.stacks;
+    const hostStackIndex = stacks.findIndex((s) => s.cardIds.includes(cardId));
 
-    // Phase 5f: persist focused card ID for reload restoration.
-    // PUT is placed BEFORE the early-return guard so that clicking an already-
-    // focused card (or a single-card deck) still persists the ID ([D03]).
-    if (idx !== -1) {
+    if (hostStackIndex !== -1) {
       putFocusedCardId(cardId);
     }
 
-    if (idx === -1 || idx === this.deckState.cards.length - 1) {
-      // Card not found or already the top-most -- no z-order change needed.
-      // scheduleSave is still called when the card is already top-most so that
-      // the focused card ID PUT above is not lost if the app closes quickly.
-      if (idx !== -1) {
+    if (hostStackIndex === -1 || hostStackIndex === stacks.length - 1) {
+      if (hostStackIndex !== -1) {
         this.scheduleSave();
       }
       return;
     }
-    const cards = [...this.deckState.cards];
-    const [focused] = cards.splice(idx, 1);
-    cards.push(focused);
-    this.deckState = { ...this.deckState, cards };
+    const newStacks = [...stacks];
+    const [focused] = newStacks.splice(hostStackIndex, 1);
+    newStacks.push(focused);
+    this.deckState = {
+      ...this.deckState,
+      stacks: newStacks,
+      activeStackId: focused.id,
+    };
     this.notify();
-    // Phase 5f: persist z-order change so reload reflects the correct focus order.
     this.scheduleSave();
   }
 
-  // ---- Arrange cards (cascade / tile) ----
+  // ---- Arrange (cascade / tile) ----
 
   /**
-   * Rearrange all cards on the canvas.
+   * Rearrange all stacks on the canvas.
    *
    * - `cascade`: diagonal cascade from top-left, each offset by CASCADE_STEP.
-   *   Uses each card's preferred size from its size policy.
-   * - `tile`: grid layout filling the canvas. Computes rows/cols to approximate
-   *   each card's preferred aspect ratio. Respects min sizes.
+   * - `tile`: grid layout filling the canvas.
    */
   arrangeCards(mode: "cascade" | "tile"): void {
-    const cards = this.deckState.cards;
-    if (cards.length === 0) return;
+    const stacks = this.deckState.stacks;
+    if (stacks.length === 0) return;
 
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
 
-    let arranged: CardState[];
+    const cardsById = new Map<string, CardState>();
+    for (const c of this.deckState.cards) cardsById.set(c.id, c);
+
+    let arranged: CardStackState[];
 
     if (mode === "cascade") {
       const ORIGIN = 10;
-      arranged = cards.map((card, i) => {
+      arranged = stacks.map((stack, i) => {
         const x = ORIGIN + CASCADE_STEP * i;
         const y = ORIGIN + CASCADE_STEP * i;
-        // Use the card's current size (don't resize on cascade).
-        return { ...card, position: { x, y } };
+        return { ...stack, position: { x, y } };
       });
     } else {
-      // Tile: compute grid dimensions.
-      const n = cards.length;
+      const n = stacks.length;
       const cols = Math.ceil(Math.sqrt(n));
       const rows = Math.ceil(n / cols);
       const GAP = 5;
       const tileW = Math.floor((canvasWidth - GAP * (cols + 1)) / cols);
       const tileH = Math.floor((canvasHeight - GAP * (rows + 1)) / rows);
 
-      arranged = cards.map((card, i) => {
+      arranged = stacks.map((stack, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = GAP + col * (tileW + GAP);
         const y = GAP + row * (tileH + GAP);
 
-        // Clamp tile size to the card's min size from its size policy.
-        const activeComponentId =
-          card.tabs.find((t) => t.id === card.activeTabId)?.componentId ??
-          card.tabs[0]?.componentId;
-        const policy = activeComponentId ? getSizePolicy(activeComponentId) : undefined;
+        const activeCard = cardsById.get(stack.activeCardId);
+        const fallbackCard =
+          activeCard ?? cardsById.get(stack.cardIds[0]);
+        const componentId = fallbackCard?.componentId;
+        const policy = componentId ? getSizePolicy(componentId) : undefined;
         const minW = policy?.min.width ?? 250;
         const minH = policy?.min.height ?? 180;
         const width = Math.max(minW, tileW);
         const height = Math.max(minH, tileH);
 
         return {
-          ...card,
+          ...stack,
           position: { x, y },
           size: { width, height },
         };
       });
     }
 
-    // Diff per-card changes so the lifecycle fires move / resize events
-    // on exactly the cards that actually moved / resized. Mirrors the
-    // pattern in `moveCard`. All `will` events fire before the state
-    // commit; all `did` events fire after.
     const changes: { id: string; positionChanged: boolean; sizeChanged: boolean }[] = [];
-    for (let i = 0; i < cards.length; i++) {
-      const before = cards[i];
+    for (let i = 0; i < stacks.length; i++) {
+      const before = stacks[i];
       const after = arranged[i];
       changes.push({
-        id: after.id,
+        id: after.activeCardId,
         positionChanged:
           before.position.x !== after.position.x ||
           before.position.y !== after.position.y,
@@ -837,7 +682,7 @@ export class DeckManager implements IDeckManagerStore {
       if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
     }
 
-    this.deckState = { ...this.deckState, cards: arranged };
+    this.deckState = { ...this.deckState, stacks: arranged };
     this.notify();
 
     for (const ch of changes) {
@@ -848,515 +693,417 @@ export class DeckManager implements IDeckManagerStore {
     this.scheduleSave();
   }
 
-  // ---- Phase 5f: Tab state cache API (Spec S03, [D01], [D06]) ----
+  // ---- Per-card state cache API (Spec S03, [D01], [D06]) ----
 
-  /**
-   * Read a tab state bag from the in-memory cache.
-   * Returns undefined if the tab has no cached state.
-   */
-  getCardState(tabId: string): TabStateBag | undefined {
-    return this.tabStateCache.get(tabId);
+  getCardState(cardId: string): CardStateBag | undefined {
+    return this.cardStateCache.get(cardId);
   }
 
-  /**
-   * Write a tab state bag to the in-memory cache (synchronous) and schedule
-   * a debounced tugbank write (fire-and-forget).
-   *
-   * The tab ID is tracked in dirtyTabIds so destroy() can flush pending writes.
-   */
-  setCardState(tabId: string, bag: TabStateBag): void {
-    this.tabStateCache.set(tabId, bag);
-    this.dirtyTabIds.add(tabId);
+  setCardState(cardId: string, bag: CardStateBag): void {
+    this.cardStateCache.set(cardId, bag);
+    this.dirtyCardIds.add(cardId);
 
-    if (this.tabStateSaveTimer !== null) {
-      window.clearTimeout(this.tabStateSaveTimer);
+    if (this.cardStateSaveTimer !== null) {
+      window.clearTimeout(this.cardStateSaveTimer);
     }
-    this.tabStateSaveTimer = window.setTimeout(() => {
-      this.flushDirtyTabStates();
-      this.tabStateSaveTimer = null;
+    this.cardStateSaveTimer = window.setTimeout(() => {
+      this.flushDirtyCardStates();
+      this.cardStateSaveTimer = null;
     }, SAVE_DEBOUNCE_MS);
   }
 
   /**
-   * Write all dirty tab state bags to tugbank and clear the dirty set.
-   * Called by the debounce timer and by destroy() to flush pending writes.
+   * Write all dirty per-card state bags to tugbank and clear the dirty set.
    *
-   * Returns a Promise that resolves when all writes complete. Callers that
-   * need to wait (e.g. prepareForReload) can await it.
-   *
-   * The optional `options.keepalive` flag is forwarded to putTabState so the
-   * browser dispatches the fetch even during page teardown (beforeunload path).
+   * The underlying tugbank row prefix is still `tabstate/{id}` (unchanged
+   * external wire format — cleanup is out of scope for Piece 2). `putTabState`
+   * uses the cardId, which is numerically identical to the former tabId.
    */
-  private flushDirtyTabStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+  private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
     const promises: Promise<void>[] = [];
-    for (const tabId of this.dirtyTabIds) {
-      const bag = this.tabStateCache.get(tabId);
+    for (const cardId of this.dirtyCardIds) {
+      const bag = this.cardStateCache.get(cardId);
       if (bag !== undefined) {
-        promises.push(putTabState(tabId, bag, options));
+        promises.push(putTabState(cardId, bag, options));
       }
     }
-    this.dirtyTabIds.clear();
+    this.dirtyCardIds.clear();
     return Promise.all(promises).then(() => {});
   }
 
-  // ---- Phase 5f3: Save callback registration (Spec S01, [D01]) ----
+  // ---- Save callback registration (Spec S01, [D01]) ----
 
-  /**
-   * Register a save callback associated with `id` (typically a cardId).
-   *
-   * The callback is invoked by DeckManager on visibilitychange (document.hidden)
-   * and beforeunload so each Tugcard can capture its current state before the
-   * page is discarded. Tugcard registers via useLayoutEffect (Rule #3).
-   */
   registerSaveCallback(id: string, callback: () => void): void {
     this.saveCallbacks.set(id, callback);
   }
 
-  /**
-   * Unregister the save callback for `id`.
-   * Called in the cleanup of the useLayoutEffect that registered it.
-   */
   unregisterSaveCallback(id: string): void {
     this.saveCallbacks.delete(id);
   }
 
-  /**
-   * Invoke the save callback registered under `id`, if any. Used by callers
-   * that need to capture per-tab state synchronously at a specific moment
-   * (e.g., Tugcard's `selectTab` handler saves the outgoing tab's state
-   * before committing the new active tab). No-op when no callback is
-   * registered for the id.
-   */
   invokeSaveCallback(id: string): void {
     this.saveCallbacks.get(id)?.();
   }
 
-  /**
-   * Save all card states and flush to tugbank synchronously.
-   *
-   * Called by the native app (Swift) via `window.tugdeck.saveState()` before
-   * terminating the WebView. WKWebView does not fire visibilitychange or
-   * beforeunload on app quit, so this is the only way to persist state on exit.
-   * Uses synchronous XHR so the native side can safely tear down after
-   * evaluateJavaScript completes.
-   */
   saveAndFlushSync(): void {
     this.saveCallbacks.forEach((cb) => cb());
-    this.flushDirtyTabStates({ sync: true });
+    this.flushDirtyCardStates({ sync: true });
     this.stateFlushed = true;
   }
 
-  /**
-   * Save all card states and flush to tugbank asynchronously.
-   *
-   * Called on app deactivation (backgrounding) when the app and tugcast are
-   * still running. Uses normal async fetch — no need for sync XHR since
-   * nothing is being torn down.
-   */
   saveAndFlush(): void {
     this.saveCallbacks.forEach((cb) => cb());
-    this.flushDirtyTabStates();
+    this.flushDirtyCardStates();
   }
 
-  /**
-   * Save all card states, flush to tugbank with a normal (non-keepalive) fetch,
-   * and set reloadPending so the beforeunload handler skips its redundant
-   * keepalive flush.
-   *
-   * Called by the "reload" action handler in action-dispatch.ts immediately
-   * before location.reload(). This avoids the WKWebView CORS error that occurs
-   * when a keepalive fetch is dispatched during page navigation.
-   */
   async prepareForReload(): Promise<void> {
-    // Flush any pending debounced layout save and await the PUT so tugbank
-    // has the latest layout before the page reloads and re-fetches it.
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     await this.saveLayout();
     this.saveCallbacks.forEach((cb) => cb());
-    await this.flushDirtyTabStates();
+    await this.flushDirtyCardStates();
     this.reloadPending = true;
   }
 
-  // ---- Tab management (Spec S03) ----
+  /**
+   * Resolve a stack id from an input that may be either a stack id or a card
+   * id. Tests written against the single-table API still pass card ids into
+   * stack-targeted mutators; production call sites pass stack ids directly.
+   * Returns `null` if neither interpretation matches a live stack.
+   */
+  private resolveStackId(id: string): string | null {
+    const direct = this.deckState.stacks.find((s) => s.id === id);
+    if (direct) return direct.id;
+    const host = this.deckState.stacks.find((s) => s.cardIds.includes(id));
+    return host ? host.id : null;
+  }
+
+  // ---- Stack/card mutators (Spec S03) ----
 
   /**
-   * Add a new tab to an existing card.
-   *
-   * Looks up `componentId` in the card registry. Creates a new `TabItem` with
-   * a random UUID id, appends it to the card's `tabs` array, sets it as
-   * `activeTabId`, shallow-copies `deckState`, notifies subscribers, and
-   * schedules a save.
-   *
-   * @returns The new tab id, or null if the card or registration is not found.
+   * Add a new card to an existing stack. Creates a fresh card, appends its id
+   * to the stack's `cardIds`, and sets it as the stack's `activeCardId`.
    */
-  private _addCardToStack(cardId: string, componentId: string): string | null {
-    const card = this.deckState.cards.find((c) => c.id === cardId);
-    if (!card) {
-      console.warn(
-        `[DeckManager] addTab: card "${cardId}" not found.`,
-      );
+  private _addCardToStack(stackIdInput: string, componentId: string): string | null {
+    const stackId = this.resolveStackId(stackIdInput);
+    if (!stackId) {
+      console.warn(`[DeckManager] addCardToStack: stack "${stackIdInput}" not found.`);
       return null;
     }
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return null;
     const registration = getRegistration(componentId);
     if (!registration) {
       console.warn(
-        `[DeckManager] addTab: no registration found for componentId "${componentId}".`,
+        `[DeckManager] addCardToStack: no registration found for componentId "${componentId}".`,
       );
       return null;
     }
 
-    const tabId = crypto.randomUUID();
-    const tab: TabItem = {
-      id: tabId,
+    const cardId = crypto.randomUUID();
+    const newCard: CardState = {
+      id: cardId,
       componentId,
       title: registration.defaultMeta.title,
       closable: registration.defaultMeta.closable !== false,
     };
 
-    const updatedCard = {
-      ...card,
-      tabs: [...card.tabs, tab],
-      activeTabId: tabId,
+    const updatedStack: CardStackState = {
+      ...stack,
+      cardIds: [...stack.cardIds, cardId],
+      activeCardId: cardId,
     };
 
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+      cards: [...this.deckState.cards, newCard],
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
-    return tabId;
+    return cardId;
   }
 
   /**
-   * Remove a tab from a card.
+   * Remove a card from a stack.
    *
-   * If the removed tab was active, activates the previous tab (or first tab if
-   * the removed tab was first). If only one tab remains after removal, the card
-   * stays with that tab. If the last tab is removed, the card is removed entirely.
+   * If the card is the only one in the stack, closes the whole stack via
+   * `_closeStack`. Otherwise removes the card from `deckState.cards` and from
+   * the stack's `cardIds`, reassigning `activeCardId` if needed.
    */
-  private _removeCard(cardId: string, tabId: string): void {
-    const card = this.deckState.cards.find((c) => c.id === cardId);
-    if (!card) return;
+  private _removeCard(stackIdInput: string, cardId: string): void {
+    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return;
 
-    const tabIndex = card.tabs.findIndex((t) => t.id === tabId);
-    if (tabIndex === -1) return;
+    const cardIndex = stack.cardIds.indexOf(cardId);
+    if (cardIndex === -1) return;
 
-    // If this is the last card in the stack, close the whole stack.
-    if (card.tabs.length === 1) {
-      this._closeStack(cardId);
+    if (stack.cardIds.length === 1) {
+      this._closeStack(stackId);
       return;
     }
 
-    const newTabs = card.tabs.filter((t) => t.id !== tabId);
+    const newCardIds = stack.cardIds.filter((id) => id !== cardId);
 
-    // Determine the new active tab.
-    let newActiveTabId = card.activeTabId;
-    if (card.activeTabId === tabId) {
-      // Activate previous tab, or first tab if removed was first.
-      const newIndex = tabIndex > 0 ? tabIndex - 1 : 0;
-      newActiveTabId = newTabs[newIndex].id;
+    let newActiveCardId = stack.activeCardId;
+    if (stack.activeCardId === cardId) {
+      const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
+      newActiveCardId = newCardIds[newIndex];
     }
 
-    const updatedCard = { ...card, tabs: newTabs, activeTabId: newActiveTabId };
+    const updatedStack: CardStackState = {
+      ...stack,
+      cardIds: newCardIds,
+      activeCardId: newActiveCardId,
+    };
 
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+      cards: this.deckState.cards.filter((c) => c.id !== cardId),
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
   }
 
   /**
-   * Set the active tab on a card.
-   *
-   * No-op if the tabId is not in the card's tabs array.
+   * Set the active card in a stack. No-op if the cardId is not in the stack.
    */
-  private _setActiveCardInStack(cardId: string, tabId: string): void {
-    const card = this.deckState.cards.find((c) => c.id === cardId);
-    if (!card) return;
-    if (!card.tabs.some((t) => t.id === tabId)) return;
-    if (card.activeTabId === tabId) return;
+  private _setActiveCardInStack(stackIdInput: string, cardId: string): void {
+    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return;
+    if (!stack.cardIds.includes(cardId)) return;
+    if (stack.activeCardId === cardId) return;
 
-    const updatedCard = { ...card, activeTabId: tabId };
+    const updatedStack: CardStackState = { ...stack, activeCardId: cardId };
 
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
   }
 
-  // ---- Tab drag methods (Spec S01, S02, S03) ----
-
   /**
-   * Pure helper: removes a tab from a card within a cards array.
-   *
-   * Handles active-tab fallback when the removed tab was active.
-   * Removes the card entirely if the tab was the last one.
-   * Returns the updated cards array and the removed TabItem (or null if not found).
-   *
-   * Does NOT call notify() or scheduleSave() -- callers are responsible.
+   * Reorder a card within its stack.
    */
-  private _spliceTabFromCards(
-    cards: CardState[],
-    cardId: string,
-    tabId: string,
-  ): { updatedCards: CardState[]; removedTab: TabItem | null } {
-    const cardIndex = cards.findIndex((c) => c.id === cardId);
-    if (cardIndex === -1) {
-      return { updatedCards: cards, removedTab: null };
-    }
+  private _reorderCardInStack(stackIdInput: string, fromIndex: number, toIndex: number): void {
+    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return;
 
-    const card = cards[cardIndex];
-    const tabIndex = card.tabs.findIndex((t) => t.id === tabId);
-    if (tabIndex === -1) {
-      return { updatedCards: cards, removedTab: null };
-    }
-
-    const removedTab = card.tabs[tabIndex];
-
-    // If this is the last tab, remove the card entirely.
-    if (card.tabs.length === 1) {
-      const updatedCards = cards.filter((c) => c.id !== cardId);
-      return { updatedCards, removedTab };
-    }
-
-    const newTabs = card.tabs.filter((t) => t.id !== tabId);
-
-    // Determine the new active tab.
-    let newActiveTabId = card.activeTabId;
-    if (card.activeTabId === tabId) {
-      const newIndex = tabIndex > 0 ? tabIndex - 1 : 0;
-      newActiveTabId = newTabs[newIndex].id;
-    }
-
-    const updatedCard = { ...card, tabs: newTabs, activeTabId: newActiveTabId };
-    const updatedCards = cards.map((c) => (c.id === cardId ? updatedCard : c));
-    return { updatedCards, removedTab };
-  }
-
-  /**
-   * Reorder a tab within a card's tabs array.
-   *
-   * Moves the tab at fromIndex to toIndex. No-op if the card is not found,
-   * indices are out of bounds, or fromIndex === toIndex.
-   */
-  private _reorderCardInStack(cardId: string, fromIndex: number, toIndex: number): void {
-    const card = this.deckState.cards.find((c) => c.id === cardId);
-    if (!card) return;
-
-    const len = card.tabs.length;
+    const len = stack.cardIds.length;
     if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) return;
     if (fromIndex === toIndex) return;
 
-    const newTabs = [...card.tabs];
-    const [moved] = newTabs.splice(fromIndex, 1);
-    newTabs.splice(toIndex, 0, moved);
+    const newCardIds = [...stack.cardIds];
+    const [moved] = newCardIds.splice(fromIndex, 1);
+    newCardIds.splice(toIndex, 0, moved);
 
-    const updatedCard = { ...card, tabs: newTabs };
+    const updatedStack: CardStackState = { ...stack, cardIds: newCardIds };
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
   }
 
   /**
-   * Detach a tab from its card and create a new single-tab card at the given position.
+   * Detach a card from its source stack into a new single-card stack at the
+   * clamped position. If the source stack becomes empty, close it (via
+   * `_closeStack`). Returns the new stack's id.
    *
-   * Returns the new card's id, or null if:
-   * - the source card or tab is not found
-   * - the tab is the last tab on the card (last-tab guard)
-   *
-   * The new card is appended to the end of the cards array (highest z-index).
-   * Position is clamped to canvas bounds.
-   * Exactly one notify() and scheduleSave() per call.
+   * Unlike the pre-Card/CardStack implementation, card identity is preserved:
+   * the card object moves from the source stack's `cardIds` into the new
+   * stack's `cardIds`. Tugcast sessions, portal DOM, and React state survive.
    */
   private _detachCard(
+    stackIdInput: string,
     cardId: string,
-    tabId: string,
     position: { x: number; y: number },
   ): string | null {
+    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return null;
+    if (!stack.cardIds.includes(cardId)) return null;
+
+    // Last-card guard: cannot detach the only card (that's just moving the
+    // stack, not detaching).
+    if (stack.cardIds.length === 1) return null;
+
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return null;
 
-    const tab = card.tabs.find((t) => t.id === tabId);
-    if (!tab) return null;
+    const sizePolicy = getSizePolicy(card.componentId);
 
-    // Last-tab guard: cannot detach the only tab.
-    if (card.tabs.length === 1) return null;
-
-    // Remove tab from source card.
-    const { updatedCards, removedTab } = this._spliceTabFromCards(
-      this.deckState.cards,
-      cardId,
-      tabId,
-    );
-
-    if (!removedTab) return null;
-
-    // Look up size policy for the detached tab's component type.
-    const tabSizePolicy = getSizePolicy(removedTab.componentId);
-
-    // Finder-style position clamping: title bar must stay reachable.
     const TITLE_BAR_VISIBLE_MIN_X = 100;
     const TITLE_BAR_HEIGHT = 36;
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
     const clampedX = Math.max(
-      -(tabSizePolicy.preferred.width - TITLE_BAR_VISIBLE_MIN_X),
+      -(sizePolicy.preferred.width - TITLE_BAR_VISIBLE_MIN_X),
       Math.min(position.x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X),
     );
     const clampedY = Math.max(0, Math.min(position.y, canvasHeight - TITLE_BAR_HEIGHT));
 
-    // Create the new card.
-    const newCardId = crypto.randomUUID();
-    const newCard: CardState = {
-      id: newCardId,
+    const newStackId = crypto.randomUUID();
+    const newStack: CardStackState = {
+      id: newStackId,
       position: { x: clampedX, y: clampedY },
-      size: { width: tabSizePolicy.preferred.width, height: tabSizePolicy.preferred.height },
-      tabs: [removedTab],
-      activeTabId: removedTab.id,
-      // Detached cards lose the card-level title (they are generic containers).
+      size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
+      cardIds: [cardId],
+      activeCardId: cardId,
       title: "",
-      // Inherit acceptsFamilies from the source card so the type picker shows
-      // the correct families (e.g. a detached gallery tab keeps ["developer"]).
-      acceptsFamilies: card.acceptsFamilies,
+      acceptsFamilies: stack.acceptsFamilies,
     };
 
-    // Capture the previously-active card BEFORE the mutation. The
-    // append moves top-of-stack to the new card; without this
-    // snapshot the activation below would same-card-bail.
+    const cardIndex = stack.cardIds.indexOf(cardId);
+    const remainingCardIds = stack.cardIds.filter((id) => id !== cardId);
+    let newSourceActiveCardId = stack.activeCardId;
+    if (stack.activeCardId === cardId) {
+      const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
+      newSourceActiveCardId = remainingCardIds[newIndex];
+    }
+    const updatedSourceStack: CardStackState = {
+      ...stack,
+      cardIds: remainingCardIds,
+      activeCardId: newSourceActiveCardId,
+    };
+
     const previouslyActive = this.cardLifecycle.getActiveCardId();
 
-    // Append new card to end (highest z-index).
     this.deckState = {
       ...this.deckState,
-      cards: [...updatedCards, newCard],
+      stacks: [
+        ...this.deckState.stacks.map((s) =>
+          s.id === stackId ? updatedSourceStack : s,
+        ),
+        newStack,
+      ],
+      activeStackId: newStackId,
     };
     this.notify();
     this.scheduleSave();
 
-    // Fire construction for the newly-created card, then activate it
-    // through the full lifecycle — mirrors `addCard`'s pattern.
-    this.cardLifecycle.notifyCardDidFinishConstruction(newCardId);
-    this.cardLifecycle.activateCard(newCardId, previouslyActive);
+    // Card identity is preserved across detach — no construction event.
+    this.cardLifecycle.activateCard(cardId, previouslyActive);
 
-    return newCardId;
+    return newStackId;
   }
 
   /**
-   * Move a tab from sourceCardId to targetCardId, inserting at insertAtIndex.
+   * Move a card from its source stack to a target stack at `insertAtIndex`.
    *
-   * No-op if sourceCardId === targetCardId.
-   * The merged tab becomes the active tab on the target card.
-   * If the source card has only one tab, the source card is removed.
-   * Exactly one notify() and scheduleSave() per call.
+   * Card identity is preserved. If the source stack becomes empty (it had
+   * only this card), the source stack is closed.
    */
   private _moveCardToStack(
-    sourceCardId: string,
-    tabId: string,
-    targetCardId: string,
+    sourceStackIdInput: string,
+    cardId: string,
+    targetStackIdInput: string,
     insertAtIndex: number,
   ): void {
-    // No-op: same card merge is meaningless (use reorderTab instead).
-    if (sourceCardId === targetCardId) return;
+    const sourceStackId =
+      this.resolveStackId(sourceStackIdInput) ?? sourceStackIdInput;
+    const targetStackId =
+      this.resolveStackId(targetStackIdInput) ?? targetStackIdInput;
+    if (sourceStackId === targetStackId) return;
 
-    const sourceCard = this.deckState.cards.find((c) => c.id === sourceCardId);
-    if (!sourceCard) return;
+    const sourceStack = this.deckState.stacks.find((s) => s.id === sourceStackId);
+    if (!sourceStack || !sourceStack.cardIds.includes(cardId)) return;
 
-    const tab = sourceCard.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
+    const targetStack = this.deckState.stacks.find((s) => s.id === targetStackId);
+    if (!targetStack) return;
 
-    const targetCard = this.deckState.cards.find((c) => c.id === targetCardId);
-    if (!targetCard) return;
-
-    // The splice will destroy the source card iff it had only one tab
-    // (i.e., this merge moves the tab away, leaving the source empty).
-    // Detect that case up front so we can fire lifecycle events for the
-    // destruction. Must compute BEFORE the splice so `sourceCard.tabs`
-    // still reflects the pre-splice state.
-    const sourceWillBeDestroyed = sourceCard.tabs.length === 1;
+    const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
+    const activeCardId = this.cardLifecycle.getActiveCardId();
     const sourceWasActive =
       sourceWillBeDestroyed &&
-      this.cardLifecycle.getActiveCardId() === sourceCardId;
+      activeCardId !== null &&
+      sourceStack.cardIds.includes(activeCardId);
 
-    // Fire will/didDeactivate on the source card if it was active and
-    // will be destroyed by the splice. Fire willBeginDestruction if
-    // the source will be destroyed at all. All must fire BEFORE the
-    // store mutation so observers can still read the source's state.
-    if (sourceWasActive) {
-      this.cardLifecycle.notifyCardWillDeactivate(sourceCardId);
-      this.cardLifecycle.notifyCardDidDeactivate(sourceCardId);
+    if (sourceWasActive && activeCardId) {
+      this.cardLifecycle.notifyCardWillDeactivate(activeCardId);
+      this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
     }
     if (sourceWillBeDestroyed) {
-      this.cardLifecycle.notifyCardWillBeginDestruction(sourceCardId);
+      this.cardLifecycle.notifyCardWillBeginDestruction(sourceStackId);
     }
 
-    // Remove tab from source card.
-    const { updatedCards, removedTab } = this._spliceTabFromCards(
-      this.deckState.cards,
-      sourceCardId,
-      tabId,
+    // Remove from source.
+    const cardIndex = sourceStack.cardIds.indexOf(cardId);
+    const remainingSourceCardIds = sourceStack.cardIds.filter((id) => id !== cardId);
+
+    let intermediateStacks = this.deckState.stacks;
+    if (remainingSourceCardIds.length === 0) {
+      intermediateStacks = intermediateStacks.filter((s) => s.id !== sourceStackId);
+    } else {
+      let newSourceActiveCardId = sourceStack.activeCardId;
+      if (sourceStack.activeCardId === cardId) {
+        const newIndex = cardIndex > 0 ? cardIndex - 1 : 0;
+        newSourceActiveCardId = remainingSourceCardIds[newIndex];
+      }
+      const updatedSourceStack: CardStackState = {
+        ...sourceStack,
+        cardIds: remainingSourceCardIds,
+        activeCardId: newSourceActiveCardId,
+      };
+      intermediateStacks = intermediateStacks.map((s) =>
+        s.id === sourceStackId ? updatedSourceStack : s,
+      );
+    }
+
+    // Insert into target (target may or may not still be in intermediateStacks
+    // — if source was destroyed, the remaining stacks array is a superset of
+    // [targetStack]; if not, both are present).
+    const clampedIndex = Math.max(0, Math.min(insertAtIndex, targetStack.cardIds.length));
+    const newTargetCardIds = [...targetStack.cardIds];
+    newTargetCardIds.splice(clampedIndex, 0, cardId);
+    const updatedTargetStack: CardStackState = {
+      ...targetStack,
+      cardIds: newTargetCardIds,
+      activeCardId: cardId,
+    };
+    const finalStacks = intermediateStacks.map((s) =>
+      s.id === targetStackId ? updatedTargetStack : s,
     );
-
-    if (!removedTab) return;
-
-    // Clamp insertAtIndex to valid range [0, targetTabs.length].
-    const clampedIndex = Math.max(0, Math.min(insertAtIndex, targetCard.tabs.length));
-
-    // Insert tab into target card.
-    const finalCards = updatedCards.map((c) => {
-      if (c.id !== targetCardId) return c;
-      const newTabs = [...c.tabs];
-      newTabs.splice(clampedIndex, 0, removedTab);
-      return { ...c, tabs: newTabs, activeTabId: removedTab.id };
-    });
-
-    this.deckState = { ...this.deckState, cards: finalCards };
-    this.notify();
-    this.scheduleSave();
-
-    // If the source was active and has been destroyed, activate the
-    // target as the new home for the merged tab. The source's
-    // deactivation already fired above, so pass `null` as the
-    // known-previous — the transition emits activation-only.
-    if (sourceWasActive) {
-      this.cardLifecycle.activateCard(targetCardId, null);
-    }
-  }
-
-  // ---- Collapse management (Step 3) ----
-
-  /**
-   * Toggle the collapsed state of a card.
-   *
-   * When collapsing (collapsed was falsy): sets `collapsed: true` in CardState.
-   * When expanding (collapsed was true): removes the `collapsed` field (or sets
-   * it to undefined, treated as false per layout-tree.ts comment).
-   *
-   * Notifies subscribers and schedules a save so collapsed state is persisted.
-   * No-op if the card is not found.
-   */
-  private _toggleStackCollapse(cardId: string): void {
-    const card = this.deckState.cards.find((c) => c.id === cardId);
-    if (!card) return;
-
-    const nowCollapsed = !card.collapsed;
-    const updatedCard = nowCollapsed
-      ? { ...card, collapsed: true as const }
-      : { ...card, collapsed: undefined };
 
     this.deckState = {
       ...this.deckState,
-      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+      stacks: finalStacks,
+      ...(sourceWillBeDestroyed && this.deckState.activeStackId === sourceStackId
+        ? { activeStackId: targetStackId }
+        : {}),
+    };
+    this.notify();
+    this.scheduleSave();
+
+    if (sourceWasActive) {
+      this.cardLifecycle.activateCard(cardId, null);
+    }
+  }
+
+  // ---- Collapse management ----
+
+  private _toggleStackCollapse(stackIdInput: string): void {
+    const stackId = this.resolveStackId(stackIdInput) ?? stackIdInput;
+    const stack = this.deckState.stacks.find((s) => s.id === stackId);
+    if (!stack) return;
+
+    const nowCollapsed = !stack.collapsed;
+    const updatedStack: CardStackState = nowCollapsed
+      ? { ...stack, collapsed: true as const }
+      : { ...stack, collapsed: undefined };
+
+    this.deckState = {
+      ...this.deckState,
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
@@ -1364,26 +1111,15 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Cascade positioning ----
 
-  /**
-   * Compute the next cascade position for a new card.
-   *
-   * Offsets by (CASCADE_STEP * cascadeIndex, CASCADE_STEP * cascadeIndex).
-   * If the card's right or bottom edge would exceed canvas bounds, resets
-   * the cascade counter to 0 and returns the origin.
-   *
-   * @param cardSize - The preferred width/height of the card being placed.
-   */
-  private nextCascadePosition(cardSize: { width: number; height: number }): { x: number; y: number } {
+  private nextCascadePosition(stackSize: { width: number; height: number }): { x: number; y: number } {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
 
-    // Start cascade offset from the canvas edge so the first card has breathing
-    // room and is never placed inside the resize-clamping padding zone.
     const CASCADE_ORIGIN = 10;
     const x = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
     const y = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
 
-    if (x + cardSize.width > canvasWidth || y + cardSize.height > canvasHeight) {
+    if (x + stackSize.width > canvasWidth || y + stackSize.height > canvasHeight) {
       this.cascadeIndex = 0;
       return { x: CASCADE_ORIGIN, y: CASCADE_ORIGIN };
     }
@@ -1394,13 +1130,7 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Resize Handling ----
 
-  /**
-   * Called on reconnect (connection.onOpen) and window resize.
-   * Arrow property for stable identity so add/removeEventListener match.
-   */
-  handleResize = (): void => {
-    // Kept for connection.onOpen() compatibility.
-  };
+  handleResize = (): void => {};
 
   // ---- Layout Persistence ----
 
@@ -1410,7 +1140,6 @@ export class DeckManager implements IDeckManagerStore {
 
     let state: DeckState | null = null;
 
-    // Use pre-fetched layout from the settings API if available.
     if (this.initialLayout !== null) {
       try {
         const json = JSON.stringify(this.initialLayout);
@@ -1444,69 +1173,78 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Filter out cards whose tabs have unregistered componentIds.
+   * Filter out cards whose componentIds are not registered and, as a result,
+   * any stacks that lose all their cards.
    *
-   * Called by loadLayout() and applyLayout() so that deckState.cards only
-   * contains renderable cards. This is the single filtering gate -- downstream
-   * code (DeckCanvas, cycleCard, responder chain) can trust that every card
-   * in deckState has at least one tab with a registered factory.
-   *
-   * For each card:
-   * - Unregistered tabs are removed from the tabs array.
-   * - If all tabs are removed, the card is dropped entirely.
-   * - If the active tab was removed, activeTabId falls back to the first
-   *   remaining registered tab.
+   * For each card: if `componentId` is not registered, drop the card.
+   * For each stack: if all its cardIds now point to dropped cards, drop the
+   * stack. Otherwise rewrite `cardIds` to reference only remaining cards and
+   * fall `activeCardId` back to the first surviving card id.
    */
   private filterRegisteredCards(state: DeckState): DeckState {
     let changed = false;
-    const filtered: CardState[] = [];
 
+    const keptCards: CardState[] = [];
+    const droppedCardIds = new Set<string>();
     for (const card of state.cards) {
-      // Filter out tabs with unregistered componentIds.
-      const registeredTabs = card.tabs.filter((tab) => {
-        if (!tab.componentId || !getRegistration(tab.componentId)) {
-          console.warn(
-            `[DeckManager] filterRegisteredCards: dropping tab "${tab.id}" ` +
-              `from card "${card.id}" -- unregistered componentId "${tab.componentId ?? "(none)"}".`,
-          );
-          changed = true;
-          return false;
-        }
-        return true;
-      });
-
-      // If all tabs were removed, drop the card entirely.
-      if (registeredTabs.length === 0) {
+      if (!card.componentId || !getRegistration(card.componentId)) {
         console.warn(
-          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" -- all tabs unregistered.`,
+          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" — ` +
+            `unregistered componentId "${card.componentId ?? "(none)"}".`,
+        );
+        droppedCardIds.add(card.id);
+        changed = true;
+        continue;
+      }
+      keptCards.push(card);
+    }
+
+    const keptStacks: CardStackState[] = [];
+    for (const stack of state.stacks) {
+      const survivingCardIds = stack.cardIds.filter(
+        (id) => !droppedCardIds.has(id),
+      );
+      if (survivingCardIds.length === 0) {
+        console.warn(
+          `[DeckManager] filterRegisteredCards: dropping stack "${stack.id}" — ` +
+            `all cards had unregistered componentIds.`,
         );
         changed = true;
         continue;
       }
-
-      // If the active tab was removed, fall back to the first remaining tab.
-      let activeTabId = card.activeTabId;
-      if (!registeredTabs.some((t) => t.id === activeTabId)) {
-        activeTabId = registeredTabs[0].id;
+      let activeCardId = stack.activeCardId;
+      if (!survivingCardIds.includes(activeCardId)) {
+        activeCardId = survivingCardIds[0];
         changed = true;
       }
-
-      if (registeredTabs.length !== card.tabs.length || activeTabId !== card.activeTabId) {
-        filtered.push({ ...card, tabs: registeredTabs, activeTabId });
+      if (
+        survivingCardIds.length !== stack.cardIds.length ||
+        activeCardId !== stack.activeCardId
+      ) {
+        keptStacks.push({ ...stack, cardIds: survivingCardIds, activeCardId });
       } else {
-        filtered.push(card);
+        keptStacks.push(stack);
       }
     }
 
-    if (changed) {
-      return { ...state, cards: filtered };
-    }
-    return state;
+    if (!changed) return state;
+
+    const keptStackIds = new Set(keptStacks.map((s) => s.id));
+    const activeStackId =
+      state.activeStackId !== undefined && keptStackIds.has(state.activeStackId)
+        ? state.activeStackId
+        : undefined;
+
+    return {
+      ...state,
+      cards: keptCards,
+      stacks: keptStacks,
+      ...(activeStackId !== undefined ? { activeStackId } : { activeStackId: undefined }),
+    };
   }
 
   /**
    * Apply an external DeckState, notify subscribers, and schedule a save.
-   * Cards with unregistered componentIds are filtered out.
    */
   applyLayout(deckState: DeckState): void {
     this.deckState = this.filterRegisteredCards(deckState);
@@ -1515,20 +1253,16 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   destroy(): void {
-    // Phase 5f: flush pending layout save before clearing the timer.
-    // The pre-existing destroy() cancelled the timer without writing, silently
-    // losing layout changes made within the debounce window. Fixed here.
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
       this.saveLayout();
     }
 
-    // Phase 5f: flush pending tab state saves before clearing the timer.
-    if (this.tabStateSaveTimer !== null) {
-      window.clearTimeout(this.tabStateSaveTimer);
-      this.tabStateSaveTimer = null;
-      this.flushDirtyTabStates();
+    if (this.cardStateSaveTimer !== null) {
+      window.clearTimeout(this.cardStateSaveTimer);
+      this.cardStateSaveTimer = null;
+      this.flushDirtyCardStates();
     }
 
     if (this.reactRoot) {
@@ -1537,11 +1271,9 @@ export class DeckManager implements IDeckManagerStore {
     }
     window.removeEventListener("resize", this.handleResize);
 
-    // Phase 5f3: remove close-time event listeners.
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
 
-    // Release the app → card cascade subscriptions.
     this.lifecycleCascade.dispose();
   }
 }

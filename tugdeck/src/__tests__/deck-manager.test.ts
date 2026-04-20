@@ -88,6 +88,60 @@ function makeRegistration(componentId: string, title = "Test Card"): CardRegistr
   };
 }
 
+/**
+ * Test helper: view a deck "by stack", combining each stack with a rehydrated
+ * `tabs` array (one entry per card in the stack's cardIds) and `activeTabId`.
+ * Legacy assertions against `.tabs[*].componentId`, `.tabs[*].title`,
+ * `.activeTabId`, `.position`, `.size`, `.collapsed`, `.acceptsFamilies`,
+ * `.title` all map onto this view with their original meaning. `.id` is the
+ * first card id (matching `addCard`'s return value for a fresh single-card
+ * stack); `.stackId` is the stack identifier.
+ */
+interface LegacyCardView {
+  id: string;
+  stackId: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  tabs: import("../layout-tree").CardState[];
+  activeTabId: string;
+  title: string;
+  acceptsFamilies: readonly string[];
+  collapsed?: boolean;
+}
+
+function legacyCards(state: import("../layout-tree").DeckState): LegacyCardView[] {
+  const byId = new Map(state.cards.map((c) => [c.id, c]));
+  return state.stacks.map((s) => ({
+    id: s.cardIds[0] ?? s.id,
+    stackId: s.id,
+    position: s.position,
+    size: s.size,
+    tabs: s.cardIds.map((cid) => byId.get(cid)).filter((c): c is NonNullable<typeof c> => c !== undefined),
+    activeTabId: s.activeCardId,
+    title: s.title,
+    acceptsFamilies: s.acceptsFamilies,
+    collapsed: s.collapsed,
+  }));
+}
+
+/**
+ * Find a stack view by any id — input is treated as legacy "card id" (what
+ * `addCard` returned, preserved via the first cardId), or the stack id, or
+ * any card within the stack. Returns undefined if nothing matches.
+ *
+ * Handy for tests written before the two-table split that kept reusing the
+ * addCard return value across operations where identity moves between
+ * stacks.
+ */
+function findStack(
+  state: import("../layout-tree").DeckState,
+  id: string,
+): LegacyCardView | undefined {
+  return legacyCards(state).find(
+    (c) => c.stackId === id || c.id === id || c.tabs.some((t) => t.id === id),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
@@ -125,7 +179,7 @@ describe("DeckManager.addCard – registered component", () => {
     const state = manager.getDeckState();
     expect(state.cards.length).toBe(1);
 
-    const card = state.cards[0];
+    const card = legacyCards(state)[0];
     expect(card.id).toBe(cardId!);
     expect(card.size.width).toBe(400);
     expect(card.size.height).toBe(300);
@@ -146,7 +200,7 @@ describe("DeckManager.addCard – registered component", () => {
   it("tab title comes from registration.defaultMeta.title", () => {
     registerCard(makeRegistration("terminal", "Terminal Window"));
     manager.addCard("terminal");
-    const card = manager.getDeckState().cards[0];
+    const card = legacyCards(manager.getDeckState())[0];
     expect(card.tabs[0].title).toBe("Terminal Window");
   });
 
@@ -157,7 +211,7 @@ describe("DeckManager.addCard – registered component", () => {
       contentFactory: () => null,
     });
     manager.addCard("sticky");
-    const card = manager.getDeckState().cards[0];
+    const card = legacyCards(manager.getDeckState())[0];
     expect(card.tabs[0].closable).toBe(false);
   });
 
@@ -354,7 +408,7 @@ describe("DeckManager.moveCard", () => {
 
     manager.moveStack(cardId, { x: 150, y: 200 }, { width: 500, height: 400 });
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.position.x).toBe(150);
     expect(card.position.y).toBe(200);
     expect(card.size.width).toBe(500);
@@ -367,13 +421,13 @@ describe("DeckManager.moveCard", () => {
     const id1 = manager.addCard("hello") as string;
     const id2 = manager.addCard("terminal") as string;
 
-    const originalCard2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
+    const originalCard2 = legacyCards(manager.getDeckState()).find((c) => c.id === id2)!;
     const originalPos2 = { ...originalCard2.position };
     const originalSize2 = { ...originalCard2.size };
 
     manager.moveStack(id1, { x: 999, y: 888 }, { width: 777, height: 666 });
 
-    const card2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
+    const card2 = legacyCards(manager.getDeckState()).find((c) => c.id === id2)!;
     expect(card2.position.x).toBe(originalPos2.x);
     expect(card2.position.y).toBe(originalPos2.y);
     expect(card2.size.width).toBe(originalSize2.width);
@@ -383,7 +437,7 @@ describe("DeckManager.moveCard", () => {
   it("fires cardWillMove/cardDidMove only when position changes", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(cardId, () =>
@@ -410,7 +464,7 @@ describe("DeckManager.moveCard", () => {
   it("fires cardWillResize/cardDidResize only when size changes", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(cardId, () =>
@@ -437,7 +491,7 @@ describe("DeckManager.moveCard", () => {
   it("fires both pairs when a corner-handle resize changes position AND size", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(cardId, () =>
@@ -467,7 +521,7 @@ describe("DeckManager.moveCard", () => {
   it("fires neither pair on an identity moveCard (same position AND size)", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(cardId, () => log.push("m"));
@@ -499,7 +553,7 @@ describe("DeckManager.arrangeCards", () => {
     // addCard lays out the cards in cascade positions already. Move
     // one card off the cascade so arrangeCards("cascade") actually
     // changes its position; the other two stay put.
-    const card2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
+    const card2 = legacyCards(manager.getDeckState()).find((c) => c.id === id2)!;
     manager.moveStack(id2, { x: 500, y: 500 }, card2.size);
 
     const log: string[] = [];
@@ -563,7 +617,7 @@ describe("DeckManager.focusCard", () => {
 
     manager.focusCard(id1);
 
-    const cards = manager.getDeckState().cards;
+    const cards = legacyCards(manager.getDeckState());
     expect(cards.length).toBe(3);
     expect(cards[cards.length - 1].id).toBe(id1);
     expect(cards[0].id).toBe(id2);
@@ -606,7 +660,7 @@ describe("DeckManager.addCard – cascade positioning", () => {
     const id2 = manager.addCard("hello") as string;
     const id3 = manager.addCard("hello") as string;
 
-    const cards = manager.getDeckState().cards;
+    const cards = legacyCards(manager.getDeckState());
     const c1 = cards.find((c) => c.id === id1)!;
     const c2 = cards.find((c) => c.id === id2)!;
     const c3 = cards.find((c) => c.id === id3)!;
@@ -636,7 +690,7 @@ describe("DeckManager.addCard – cascade positioning", () => {
       manager.addCard("hello");
     }
 
-    const cards = manager.getDeckState().cards;
+    const cards = legacyCards(manager.getDeckState());
     expect(cards.length).toBe(NUM_CARDS);
 
     // The cascade must have reset at some point. Verify this by finding a card
@@ -864,7 +918,7 @@ describe("DeckManager.addTab", () => {
   it("creates a new tab with correct componentId and title from registration", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const initialTabCount = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length;
+    const initialTabCount = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.length;
     expect(initialTabCount).toBe(1);
 
     registerCard(makeRegistration("terminal", "Terminal"));
@@ -873,7 +927,7 @@ describe("DeckManager.addTab", () => {
     expect(newTabId).not.toBeNull();
     expect(typeof newTabId).toBe("string");
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.tabs.length).toBe(2);
     const newTab = card.tabs.find((t) => t.id === newTabId)!;
     expect(newTab.componentId).toBe("terminal");
@@ -887,7 +941,7 @@ describe("DeckManager.addTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
     const newTabId = manager.addCardToStack(cardId, "terminal");
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.activeTabId).toBe(newTabId!);
   });
 
@@ -935,16 +989,16 @@ describe("DeckManager.removeTab", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
-    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId;
+    const firstTabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.activeTabId;
 
     // Add a second tab and make it active
     const secondTabId = manager.addCardToStack(cardId, "terminal") as string;
-    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId).toBe(secondTabId);
+    expect(legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.activeTabId).toBe(secondTabId);
 
     // Remove the second (active) tab -- should activate the previous (first) tab
     manager.removeCard(cardId, secondTabId);
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.tabs.length).toBe(1);
     expect(card.activeTabId).toBe(firstTabId);
   });
@@ -953,7 +1007,9 @@ describe("DeckManager.removeTab", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
-    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const stackView = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
+    const stackId = stackView.stackId;
+    const firstTabId = stackView.tabs[0].id;
 
     // Add a second tab (it becomes active)
     const secondTabId = manager.addCardToStack(cardId, "terminal") as string;
@@ -962,7 +1018,7 @@ describe("DeckManager.removeTab", () => {
     manager.setActiveCardInStack(cardId, firstTabId);
     manager.removeCard(cardId, firstTabId);
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.stackId === stackId)!;
     expect(card.tabs.length).toBe(1);
     expect(card.activeTabId).toBe(secondTabId);
   });
@@ -970,21 +1026,21 @@ describe("DeckManager.removeTab", () => {
   it("removes the card entirely when the last tab is removed", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
 
     manager.removeCard(cardId, tabId);
 
-    expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
+    expect(legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)).toBeUndefined();
   });
 
   it("is a no-op for a non-existent tabId", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length;
+    const tabsBefore = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.length;
 
     manager.removeCard(cardId, "nonexistent-tab-id");
 
-    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length).toBe(tabsBefore);
+    expect(legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.length).toBe(tabsBefore);
   });
 
   it("is a no-op for a non-existent cardId", () => {
@@ -1033,22 +1089,23 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
 
     manager.applyLayout({
       cards: [
+        { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+        { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+      ],
+      stacks: [
         {
           id: cardId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
-          tabs: [
-            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
-            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
-          ],
-          activeTabId: helloTabId,
+          cardIds: [helloTabId, ghostTabId],
+          activeCardId: helloTabId,
           title: "",
           acceptsFamilies: ["standard"],
         },
       ],
     });
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    const card = legacyCards(manager.getDeckState()).find((c) => c.stackId === cardId);
     expect(card).toBeDefined();
     expect(card!.tabs.length).toBe(1);
     expect(card!.tabs[0].id).toBe(helloTabId);
@@ -1066,21 +1123,22 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
 
     manager.applyLayout({
       cards: [
+        { id: tabId, componentId: "totally-unknown", title: "Unknown", closable: true },
+      ],
+      stacks: [
         {
           id: cardId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
-          tabs: [
-            { id: tabId, componentId: "totally-unknown", title: "Unknown", closable: true },
-          ],
-          activeTabId: tabId,
+          cardIds: [tabId],
+          activeCardId: tabId,
           title: "",
           acceptsFamilies: ["standard"],
         },
       ],
     });
 
-    expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
+    expect(legacyCards(manager.getDeckState()).find((c) => c.stackId === cardId)).toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
@@ -1097,22 +1155,23 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
     // Active tab is the unregistered "ghost" tab.
     manager.applyLayout({
       cards: [
+        { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+        { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+      ],
+      stacks: [
         {
           id: cardId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
-          tabs: [
-            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
-            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
-          ],
-          activeTabId: ghostTabId,
+          cardIds: [helloTabId, ghostTabId],
+          activeCardId: ghostTabId,
           title: "",
           acceptsFamilies: ["standard"],
         },
       ],
     });
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    const card = legacyCards(manager.getDeckState()).find((c) => c.stackId === cardId);
     expect(card).toBeDefined();
     // Only the hello tab survives; activeTabId falls back to it.
     expect(card!.tabs.length).toBe(1);
@@ -1129,7 +1188,7 @@ describe("DeckManager.setActiveTab", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
-    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const firstTabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
 
     // Add second tab (becomes active)
     manager.addCardToStack(cardId, "terminal");
@@ -1137,20 +1196,20 @@ describe("DeckManager.setActiveTab", () => {
     // Switch back to first tab
     manager.setActiveCardInStack(cardId, firstTabId);
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.activeTabId).toBe(firstTabId);
   });
 
   it("is a no-op for an invalid tabId (not in tabs array)", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     const originalActiveTabId = card.activeTabId;
     const versionBefore = manager.getVersion();
 
     manager.setActiveCardInStack(cardId, "nonexistent-tab-id");
 
-    const cardAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const cardAfter = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(cardAfter.activeTabId).toBe(originalActiveTabId);
     expect(manager.getVersion()).toBe(versionBefore);
   });
@@ -1158,7 +1217,7 @@ describe("DeckManager.setActiveTab", () => {
   it("is a no-op when the tab is already active", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
     const versionBefore = manager.getVersion();
 
     manager.setActiveCardInStack(cardId, tabId);
@@ -1170,7 +1229,7 @@ describe("DeckManager.setActiveTab", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
-    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const firstTabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
     manager.addCardToStack(cardId, "terminal");
 
     let callCount = 0;
@@ -1192,14 +1251,14 @@ describe("DeckManager.reorderTab", () => {
     registerCard(makeRegistration("git", "Git"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
     const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
     const tab3Id = manager.addCardToStack(cardId, "git") as string;
 
     // Initial order: [tab1, tab2, tab3]
     manager.reorderCardInStack(cardId, 0, 2);
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.tabs[0].id).toBe(tab2Id);
     expect(card.tabs[1].id).toBe(tab3Id);
     expect(card.tabs[2].id).toBe(tab1Id);
@@ -1212,12 +1271,12 @@ describe("DeckManager.reorderTab", () => {
     const cardId = manager.addCard("hello") as string;
     manager.addCardToStack(cardId, "terminal");
 
-    const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const before = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
     manager.reorderCardInStack(cardId, 0, 0);
 
-    const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const after = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     expect(after).toEqual(before);
     // No-op means no notify was fired (version unchanged)
     expect(manager.getVersion()).toBe(versionBefore);
@@ -1236,7 +1295,7 @@ describe("DeckManager.reorderTab", () => {
     const cardId = manager.addCard("hello") as string;
     manager.addCardToStack(cardId, "terminal");
 
-    const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const before = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
     // fromIndex out of bounds
@@ -1247,7 +1306,7 @@ describe("DeckManager.reorderTab", () => {
     manager.reorderCardInStack(cardId, 0, 5);
     expect(manager.getVersion()).toBe(versionBefore);
 
-    const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const after = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     expect(after).toEqual(before);
   });
 });
@@ -1271,14 +1330,14 @@ describe("DeckManager.detachTab", () => {
 
     const state = manager.getDeckState();
 
-    // Source card should still exist with only 1 tab
-    const sourceCard = state.cards.find((c) => c.id === cardId);
+    // Source stack should still exist with only 1 card
+    const sourceCard = legacyCards(state).find((c) => c.id === cardId);
     expect(sourceCard).toBeDefined();
     expect(sourceCard!.tabs.length).toBe(1);
     expect(sourceCard!.tabs.some((t) => t.id === tab2Id)).toBe(false);
 
-    // New card should have the detached tab
-    const newCard = state.cards.find((c) => c.id === newCardId);
+    // New stack should carry the detached card
+    const newCard = legacyCards(state).find((c) => c.stackId === newCardId);
     expect(newCard).toBeDefined();
     expect(newCard!.tabs.length).toBe(1);
     expect(newCard!.tabs[0].id).toBe(tab2Id);
@@ -1290,13 +1349,13 @@ describe("DeckManager.detachTab", () => {
   it("T6: returns null when card has only one tab (last-tab guard)", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tabId = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
 
     const result = manager.detachCard(cardId, tabId, { x: 100, y: 100 });
 
     expect(result).toBeNull();
     // Card should still have 1 tab
-    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length).toBe(1);
+    expect(legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.length).toBe(1);
   });
 
   it("T7: handles two-tab card: source transitions to single-tab after detach", () => {
@@ -1304,7 +1363,7 @@ describe("DeckManager.detachTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
     const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
     const newCardId = manager.detachCard(cardId, tab2Id, { x: 200, y: 200 });
@@ -1312,7 +1371,7 @@ describe("DeckManager.detachTab", () => {
     expect(newCardId).not.toBeNull();
 
     const state = manager.getDeckState();
-    const sourceCard = state.cards.find((c) => c.id === cardId);
+    const sourceCard = legacyCards(state).find((c) => c.id === cardId);
     expect(sourceCard).toBeDefined();
     expect(sourceCard!.tabs.length).toBe(1);
     expect(sourceCard!.tabs[0].id).toBe(tab1Id);
@@ -1331,13 +1390,16 @@ describe("DeckManager.detachTab", () => {
     const cardId = manager.addCard("hello") as string;
     const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
-    const cardsBefore = manager.getDeckState().cards.length;
-    const newCardId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 }) as string;
+    // Under the two-table model, `detachCard` moves an existing card into a
+    // new single-card stack. Stack count grows by one; card count holds
+    // steady (identity preserved). Compare stack counts here.
+    const stacksBefore = manager.getDeckState().stacks.length;
+    const newStackId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 }) as string;
 
-    const cards = manager.getDeckState().cards;
-    expect(cards.length).toBe(cardsBefore + 1);
-    // New card should be the last in the array
-    expect(cards[cards.length - 1].id).toBe(newCardId);
+    const stacks = manager.getDeckState().stacks;
+    expect(stacks.length).toBe(stacksBefore + 1);
+    // New stack should be the last in the array (highest z-index).
+    expect(stacks[stacks.length - 1].id).toBe(newStackId);
   });
 
   it("detached card position is clamped with Finder-style rules", () => {
@@ -1348,9 +1410,9 @@ describe("DeckManager.detachTab", () => {
     const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
     // Position far outside canvas bounds (canvas is 1280x800 in tests)
-    const newCardId = manager.detachCard(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
+    const newStackId = manager.detachCard(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
 
-    const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
+    const newCard = legacyCards(manager.getDeckState()).find((c) => c.stackId === newStackId)!;
     // Finder-style: x clamped to canvasWidth - 100 = 1180, y clamped to canvasHeight - 36 = 764
     expect(newCard.position.x).toBe(1280 - 100);
     expect(newCard.position.y).toBe(800 - 36);
@@ -1391,7 +1453,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     const cardId = manager.addCard("gallery-host");
     expect(cardId).not.toBeNull();
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card).toBeDefined();
 
     // Should have 2 tabs matching the defaultTabs templates
@@ -1423,7 +1485,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     const cardId = manager.addCard("hello");
     expect(cardId).not.toBeNull();
 
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const card = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!;
     expect(card.tabs.length).toBe(1);
     expect(card.title).toBe("");
     expect(card.acceptsFamilies).toEqual(["standard"]);
@@ -1443,10 +1505,10 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     // Add a second tab so we can detach (last-tab guard)
     const tab2Id = manager.addCardToStack(cardId, "hello") as string;
 
-    const newCardId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 });
-    expect(newCardId).not.toBeNull();
+    const newStackId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 });
+    expect(newStackId).not.toBeNull();
 
-    const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
+    const newCard = legacyCards(manager.getDeckState()).find((c) => c.stackId === newStackId)!;
     expect(newCard).toBeDefined();
     // Detached card loses the card-level title
     expect(newCard.title).toBe("");
@@ -1454,43 +1516,34 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     expect(newCard.acceptsFamilies).toEqual(["developer"]);
   });
 
-  it("fires construction + full activation transition on the detached card (H-A3)", () => {
+  it("preserves card identity across detach — no construction event (H-A3)", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    manager.addCardToStack(cardId, "hello"); // enable detach (last-tab guard)
+    const tab2Id = manager.addCardToStack(cardId, "hello") as string;
+
+    // Switch active back to the first card so the detached card (tab2) is
+    // non-active — mimicking the production pattern where the user explicitly
+    // chooses which card to detach.
+    manager.setActiveCardInStack(cardId, cardId);
+    // Re-sync the lifecycle's active-card pointer to match.
+    manager.activateCard(cardId);
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
       log.push(`construct:${id}`),
     );
-    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
-      log.push(`willDeact:${id}`),
-    );
-    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
-      log.push(`didDeact:${id}`),
-    );
-    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
-      log.push(`willAct:${id}`),
-    );
-    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
-      log.push(`didAct:${id}`),
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`willDestroy:${id}`),
     );
     log.length = 0; // clear initial-sync
 
-    const card = manager.getDeckState().cards[0];
-    const tabToDetach = card.tabs[1];
-    const newCardId = manager.detachCard(cardId, tabToDetach.id, {
-      x: 200,
-      y: 200,
-    }) as string;
+    const stack = legacyCards(manager.getDeckState())[0];
+    manager.detachCard(stack.stackId, tab2Id, { x: 200, y: 200 });
 
-    expect(log).toEqual([
-      `construct:${newCardId}`,
-      `willDeact:${cardId}`,
-      `willAct:${newCardId}`,
-      `didDeact:${cardId}`,
-      `didAct:${newCardId}`,
-    ]);
+    // Card identity is preserved across detach, so no CONSTRUCTION event
+    // fires on the detached card and no DESTRUCTION event fires on the
+    // source stack (the source keeps the other card). The log stays empty.
+    expect(log).toEqual([]);
   });
 });
 
@@ -1506,22 +1559,24 @@ describe("DeckManager.mergeTab", () => {
 
     // Create two cards
     const card1Id = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.id === card1Id)!.tabs[0].id;
     manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("git") as string;
-    const tab3Id = manager.getDeckState().cards.find((c) => c.id === card2Id)!.tabs[0].id;
+    const tab3Id = legacyCards(manager.getDeckState()).find((c) => c.id === card2Id)!.tabs[0].id;
     // card2 needs 2 tabs so it doesn't get removed
     manager.addCardToStack(card2Id, "terminal");
 
     // Merge first tab of card1 into card2 at index 0
+    const targetStackId = findStack(manager.getDeckState(), card2Id)!.stackId;
+    const sourceStackId = findStack(manager.getDeckState(), card1Id)!.stackId;
     manager.moveCardToStack(card1Id, tab1Id, card2Id, 0);
 
     const state = manager.getDeckState();
-    const targetCard = state.cards.find((c) => c.id === card2Id)!;
+    const targetCard = legacyCards(state).find((c) => c.stackId === targetStackId)!;
     expect(targetCard.tabs[0].id).toBe(tab1Id);
-    // Source card should still exist (it had 2 tabs, now 1)
-    const sourceCard = state.cards.find((c) => c.id === card1Id);
+    // Source stack should still exist (it had 2 cards, now 1).
+    const sourceCard = legacyCards(state).find((c) => c.stackId === sourceStackId);
     expect(sourceCard).toBeDefined();
     expect(sourceCard!.tabs.some((t) => t.id === tab1Id)).toBe(false);
   });
@@ -1533,18 +1588,20 @@ describe("DeckManager.mergeTab", () => {
 
     // Create source card with 1 tab
     const sourceCardId = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === sourceCardId)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.id === sourceCardId)!.tabs[0].id;
 
     // Create target card with 1 tab (also needs 2 to stay alive, but the merge adds one)
     const targetCardId = manager.addCard("terminal") as string;
 
+    const sourceStackId = findStack(manager.getDeckState(), sourceCardId)!.stackId;
+    const targetStackId = findStack(manager.getDeckState(), targetCardId)!.stackId;
     manager.moveCardToStack(sourceCardId, tab1Id, targetCardId, 0);
 
     const state = manager.getDeckState();
-    // Source card should be gone
-    expect(state.cards.find((c) => c.id === sourceCardId)).toBeUndefined();
-    // Target card should have the merged tab
-    const targetCard = state.cards.find((c) => c.id === targetCardId)!;
+    // Source stack should be gone (single-card stack closed when its card moved).
+    expect(legacyCards(state).find((c) => c.stackId === sourceStackId)).toBeUndefined();
+    // Target stack should carry the merged card.
+    const targetCard = legacyCards(state).find((c) => c.stackId === targetStackId)!;
     expect(targetCard.tabs.some((t) => t.id === tab1Id)).toBe(true);
   });
 
@@ -1553,14 +1610,15 @@ describe("DeckManager.mergeTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const card1Id = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.id === card1Id)!.tabs[0].id;
     manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("hello") as string;
 
+    const targetStackId = findStack(manager.getDeckState(), card2Id)!.stackId;
     manager.moveCardToStack(card1Id, tab1Id, card2Id, 0);
 
-    const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
+    const targetCard = legacyCards(manager.getDeckState()).find((c) => c.stackId === targetStackId)!;
     expect(targetCard.activeTabId).toBe(tab1Id);
   });
 
@@ -1569,14 +1627,15 @@ describe("DeckManager.mergeTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const card1Id = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.id === card1Id)!.tabs[0].id;
     manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("hello") as string;
+    const targetStackId = findStack(manager.getDeckState(), card2Id)!.stackId;
     // card2 has 1 tab; insertAtIndex of 999 should be clamped to 1 (tabs.length)
     manager.moveCardToStack(card1Id, tab1Id, card2Id, 999);
 
-    const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
+    const targetCard = legacyCards(manager.getDeckState()).find((c) => c.stackId === targetStackId)!;
     // Merged tab should appear at end (index 1)
     expect(targetCard.tabs[targetCard.tabs.length - 1].id).toBe(tab1Id);
   });
@@ -1586,16 +1645,16 @@ describe("DeckManager.mergeTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tab1Id = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs[0].id;
     manager.addCardToStack(cardId, "terminal");
 
-    const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const tabsBefore = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
     manager.moveCardToStack(cardId, tab1Id, cardId, 0);
 
     expect(manager.getVersion()).toBe(versionBefore);
-    const tabsAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const tabsAfter = legacyCards(manager.getDeckState()).find((c) => c.tabs.some((t) => t.id === cardId) || c.id === cardId)!.tabs.map((t) => t.id);
     expect(tabsAfter).toEqual(tabsBefore);
   });
 
@@ -1605,12 +1664,16 @@ describe("DeckManager.mergeTab", () => {
     const srcId = manager.addCard("hello") as string;
     const tgtId = manager.addCard("terminal") as string;
     // tgt is top of stack (active). Manually activate src so src is
-    // active and has exactly one tab.
+    // active and has exactly one card.
     manager.activateCard(srcId);
 
-    const srcCard = manager.getDeckState().cards.find((c) => c.id === srcId)!;
+    const srcCard = legacyCards(manager.getDeckState()).find((c) => c.id === srcId)!;
     expect(srcCard.tabs.length).toBe(1);
     const tabId = srcCard.tabs[0].id;
+    // Under the two-table model, destruction fires on the stack id (the
+    // "frame" that's going away); card identity is preserved and moves to
+    // the target.
+    const srcStackId = srcCard.stackId;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
@@ -1632,14 +1695,20 @@ describe("DeckManager.mergeTab", () => {
 
     manager.moveCardToStack(srcId, tabId, tgtId, 0);
 
+    // Deactivation fires on the source card identity; destruction fires on
+    // the source stack identity; activation lands on the merged card in
+    // its new home — which, because it was the only card moving, is
+    // `tabId` (= `srcId` pre-split). The target's active-card pointer was
+    // on `tgtId` before the merge and flips to `tabId` as part of the
+    // merge's `activeCardId = cardId` update.
     expect(log).toEqual([
       `willDeact:${srcId}`,
       `didDeact:${srcId}`,
-      `willDestroy:${srcId}`,
-      `willAct:${tgtId}`,
-      `didAct:${tgtId}`,
+      `willDestroy:${srcStackId}`,
+      `willAct:${tabId}`,
+      `didAct:${tabId}`,
     ]);
-    expect(manager.getDeckState().cards.find((c) => c.id === srcId)).toBeUndefined();
+    expect(legacyCards(manager.getDeckState()).find((c) => c.stackId === srcStackId)).toBeUndefined();
   });
 
   it("fires destruction only (no activation) when a non-active single-tab source is merged (H-A4)", () => {
@@ -1649,8 +1718,9 @@ describe("DeckManager.mergeTab", () => {
     const tgtId = manager.addCard("terminal") as string;
     // tgt is active (top-of-stack), src is single-tab but not active.
 
-    const srcCard = manager.getDeckState().cards.find((c) => c.id === srcId)!;
+    const srcCard = legacyCards(manager.getDeckState()).find((c) => c.id === srcId)!;
     const tabId = srcCard.tabs[0].id;
+    const srcStackId = srcCard.stackId;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
@@ -1672,9 +1742,9 @@ describe("DeckManager.mergeTab", () => {
 
     manager.moveCardToStack(srcId, tabId, tgtId, 0);
 
-    // Source destroyed but wasn't active — no deactivate/activate
-    // transition. Only destruction fires.
-    expect(log).toEqual([`willDestroy:${srcId}`]);
+    // Source stack destroyed but its sole card wasn't active — no deactivate
+    // / activate transition. Only stack destruction fires.
+    expect(log).toEqual([`willDestroy:${srcStackId}`]);
   });
 });
 

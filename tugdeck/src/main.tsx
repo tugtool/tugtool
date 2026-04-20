@@ -102,17 +102,20 @@ if (!container) {
   registerTideCard();
   registerGalleryCards();
 
-  // Extract tab IDs from the loaded layout and read tab states from cache.
-  let tabStates = new Map<string, import("./layout-tree").TabStateBag>();
+  // Extract card IDs from the loaded layout and read per-card state bags
+  // from cache. Card ids are numerically equal to the former tab ids, so
+  // tugbank's `tabstate/{id}` rows remain addressable without a data-layer
+  // migration.
+  let tabStates = new Map<string, import("./layout-tree").CardStateBag>();
   if (layout !== null) {
     try {
       const parsed = deserialize(JSON.stringify(layout), 0, 0);
-      const tabIds = parsed.cards.flatMap((c) => c.tabs.map((t) => t.id));
-      if (tabIds.length > 0) {
-        tabStates = readTabStates(tugbankClient, tabIds);
+      const cardIds = parsed.cards.map((c) => c.id);
+      if (cardIds.length > 0) {
+        tabStates = readTabStates(tugbankClient, cardIds);
       }
     } catch (e) {
-      console.warn("[main] failed to read tab states, continuing without", e);
+      console.warn("[main] failed to read per-card states, continuing without", e);
     }
   }
 

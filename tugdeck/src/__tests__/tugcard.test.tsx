@@ -32,7 +32,7 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { registerCard, _resetForTest } from "@/card-registry";
-import type { TabItem } from "@/layout-tree";
+import type { CardState } from "@/layout-tree";
 import type { FeedIdValue } from "@/protocol";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager, makeMockStore } from "./mock-deck-manager-store";
@@ -98,7 +98,7 @@ function renderWithManagerAndStore(
 
 /** Minimal valid Tugcard props for a feedless card. */
 const defaultProps = {
-  cardId: "card-test-1",
+  stackId: "card-test-1",
   meta: { title: "Test Card" },
   feedIds: [] as readonly FeedIdValue[],
 } as const;
@@ -308,7 +308,7 @@ describe("Tugcard – onMinSizeChange", () => {
 describe("Tugcard – responder registration", () => {
   it("T15: registers as a responder node with close, minimize, toggleMenu, find actions", () => {
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-responder-test">
+      <Tugcard {...defaultProps} stackId="card-responder-test">
         <div>content</div>
       </Tugcard>
     );
@@ -323,7 +323,7 @@ describe("Tugcard – responder registration", () => {
   it("dispatching close through the chain calls onClose", () => {
     const onClose = mock(() => {});
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-close-test" onClose={onClose}>
+      <Tugcard {...defaultProps} stackId="card-close-test" onClose={onClose}>
         <div>content</div>
       </Tugcard>
     );
@@ -358,7 +358,7 @@ describe("Tugcard – feedless card", () => {
 // ---------------------------------------------------------------------------
 
 /** Build a TabItem for use in tests. */
-function makeTab(id: string, componentId: string, title: string, closable = true): TabItem {
+function makeTab(id: string, componentId: string, title: string, closable = true): CardState {
   return { id, componentId, title, closable };
 }
 
@@ -387,8 +387,8 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
     const { container } = renderInChain(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div data-testid="active-content">Hello content</div>
       </Tugcard>
@@ -417,8 +417,8 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
     const { container } = renderInChain(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -446,8 +446,8 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
       <Tugcard
         {...defaultProps}
         meta={{ title: "Original Title" }}
-        tabs={tabs}
-        activeTabId="tab-2"
+        cards={tabs}
+        activeCardId="tab-2"
       >
         <div>content</div>
       </Tugcard>
@@ -468,8 +468,8 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
       <Tugcard
         {...defaultProps}
         meta={{ title: "Original Title" }}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -496,8 +496,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManager(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -520,8 +520,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>,
@@ -538,7 +538,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
 
     expect(setActiveCalls.length).toBe(1);
     expect(setActiveCalls[0].tabId).toBe("tab-2");
-    expect(setActiveCalls[0].cardId).toBe(defaultProps.cardId);
+    expect(setActiveCalls[0].cardId).toBe(defaultProps.stackId);
   });
 
   it("previousTab dispatches setActiveTab with the previous tab id, wrapping around (A2.3)", () => {
@@ -554,8 +554,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>,
@@ -595,8 +595,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>,
@@ -617,7 +617,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     });
     expect(setActiveCalls.length).toBe(1);
     expect(setActiveCalls[0].tabId).toBe("tab-2");
-    expect(setActiveCalls[0].cardId).toBe(defaultProps.cardId);
+    expect(setActiveCalls[0].cardId).toBe(defaultProps.stackId);
 
     // ⌘3 → 1-based index 3 → tab-3
     act(() => {
@@ -644,8 +644,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>,
@@ -679,8 +679,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>,
@@ -721,8 +721,8 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
       <Tugcard
         {...defaultProps}
         cardTitle="Component Gallery"
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -746,8 +746,8 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
       <Tugcard
         {...defaultProps}
         // cardTitle intentionally omitted
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -771,8 +771,8 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
       <Tugcard
         {...defaultProps}
         cardTitle=""
-        tabs={tabs}
-        activeTabId="tab-1"
+        cards={tabs}
+        activeCardId="tab-1"
       >
         <div>content</div>
       </Tugcard>
@@ -796,8 +796,8 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
       <Tugcard
         {...defaultProps}
         cardTitle="Component Gallery"
-        tabs={tabs}
-        activeTabId="tab-2"
+        cards={tabs}
+        activeCardId="tab-2"
       >
         <div>content</div>
       </Tugcard>
@@ -842,7 +842,7 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
   it("renders without error when no PropertyStore is registered", () => {
     // No card content calls usePropertyStore -- setProperty should be no-op
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-no-store">
+      <Tugcard {...defaultProps} stackId="card-no-store">
         <div>no store here</div>
       </Tugcard>
     );
@@ -875,8 +875,8 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     });
 
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-with-store">
-        <CardContentHost tabId="tab-with-store" hostCardId="card-with-store" componentId="property-test" />
+      <Tugcard {...defaultProps} stackId="card-with-store">
+        <CardContentHost cardId="tab-with-store" hostStackId="card-with-store" componentId="property-test" />
       </Tugcard>
     );
 
@@ -918,8 +918,8 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     });
 
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-default-source">
-        <CardContentHost tabId="tab-default-source" hostCardId="card-default-source" componentId="property-default-source" />
+      <Tugcard {...defaultProps} stackId="card-default-source">
+        <CardContentHost cardId="tab-default-source" hostStackId="card-default-source" componentId="property-default-source" />
       </Tugcard>
     );
 
@@ -958,8 +958,8 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-sf4-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-sf4-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-sf4-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-sf4-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const store = makeMockStore();
     const setTabStateSpy = spyOn(store, "setCardState");
@@ -974,11 +974,11 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-sf4"
-              tabs={[tab1, tab2]}
-              activeTabId={tab1.id}
+              stackId="card-sf4"
+              cards={[tab1, tab2]}
+              activeCardId={tab1.id}
                   >
-              <CardContentHost tabId={tab1.id} hostCardId="card-sf4" componentId="hello" />
+              <CardContentHost cardId={tab1.id} hostStackId="card-sf4" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1013,8 +1013,8 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-sg-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-sg-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-sg-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-sg-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const savedSel = { anchorPath: [0, 1], anchorOffset: 3, focusPath: [0, 1], focusOffset: 5 };
     // selectionGuard is a module-level singleton; spy on it directly.
@@ -1035,11 +1035,11 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-sg"
-              tabs={[tab1, tab2]}
-              activeTabId={tab1.id}
+              stackId="card-sg"
+              cards={[tab1, tab2]}
+              activeCardId={tab1.id}
                   >
-              <CardContentHost tabId={tab1.id} hostCardId="card-sg" componentId="hello" />
+              <CardContentHost cardId={tab1.id} hostStackId="card-sg" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1084,8 +1084,8 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-rs-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-rs-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-rs-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-rs-2", componentId: "hello", title: "Tab 2", closable: true };
 
     // Pre-load tab2 state into the mock store so activation restores it.
     const store = makeMockStore();
@@ -1104,9 +1104,9 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-rs"
-              tabs={[tab1, tab2]}
-              activeTabId={currentTab}
+              stackId="card-rs"
+              cards={[tab1, tab2]}
+              activeCardId={currentTab}
                   >
               <div>content</div>
             </Tugcard>
@@ -1144,8 +1144,8 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-rsel-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-rsel-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-rsel-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-rsel-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const savedSel = { anchorPath: [0], anchorOffset: 1, focusPath: [0], focusOffset: 3 };
     const store = makeMockStore();
@@ -1164,11 +1164,11 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-rsel"
-              tabs={[tab1, tab2]}
-              activeTabId={currentTab}
+              stackId="card-rsel"
+              cards={[tab1, tab2]}
+              activeCardId={currentTab}
                   >
-              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-rsel" componentId="hello" />
+              <CardContentHost key={currentTab} cardId={currentTab} hostStackId="card-rsel" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1199,8 +1199,8 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-rcb-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-rcb-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-rcb-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-rcb-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const savedContent = { count: 42, text: "restored" };
     const store = makeMockStore();
@@ -1233,11 +1233,11 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-rcb"
-              tabs={[tab1, tab2]}
-              activeTabId={currentTab}
+              stackId="card-rcb"
+              cards={[tab1, tab2]}
+              activeCardId={currentTab}
                   >
-              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-rcb" componentId="persistent-rcb" />
+              <CardContentHost key={currentTab} cardId={currentTab} hostStackId="card-rcb" componentId="persistent-rcb" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1286,8 +1286,8 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       contentFactory: () => <div>Hello</div>,
     });
 
-    const tab1: TabItem = { id: "tab-t01-1", componentId: "hello", title: "Tab 1", closable: true };
-    const tab2: TabItem = { id: "tab-t01-2", componentId: "hello", title: "Tab 2", closable: true };
+    const tab1: CardState = { id: "tab-t01-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: CardState = { id: "tab-t01-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const savedContent = { text: "T01 content" };
     const store = makeMockStore();
@@ -1331,11 +1331,11 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-t01"
-              tabs={[tab1, tab2]}
-              activeTabId={currentTab}
+              stackId="card-t01"
+              cards={[tab1, tab2]}
+              activeCardId={currentTab}
                   >
-              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t01" componentId="persistent-t01" />
+              <CardContentHost key={currentTab} cardId={currentTab} hostStackId="card-t01" componentId="persistent-t01" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1426,10 +1426,10 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-t02"
-              activeTabId={currentTab}
+              stackId="card-t02"
+              activeCardId={currentTab}
             >
-              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t02" componentId="persistent-t02" />
+              <CardContentHost key={currentTab} cardId={currentTab} hostStackId="card-t02" componentId="persistent-t02" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1486,8 +1486,8 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-t03"
-              activeTabId={currentTab}
+              stackId="card-t03"
+              activeCardId={currentTab}
             >
               {/* No useTugcardPersistence registration — direct-apply fallback path. */}
               <div data-testid="t03-static">static content</div>
@@ -1560,10 +1560,10 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-t04"
-              activeTabId={currentTab}
+              stackId="card-t04"
+              activeCardId={currentTab}
             >
-              <CardContentHost key={currentTab} tabId={currentTab} hostCardId="card-t04" componentId="persistent-t04" />
+              <CardContentHost key={currentTab} cardId={currentTab} hostStackId="card-t04" componentId="persistent-t04" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1631,9 +1631,9 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
             <TugTooltipProvider>
             <Tugcard
               {...defaultProps}
-              cardId="card-t07"
+              stackId="card-t07"
             >
-              <CardContentHost tabId="tab-t07" hostCardId="card-t07" componentId="hello" />
+              <CardContentHost cardId="tab-t07" hostStackId="card-t07" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>

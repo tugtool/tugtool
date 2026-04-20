@@ -17,7 +17,7 @@
  */
 
 import React, { useCallback, useRef, useState } from "react";
-import type { CardState } from "@/layout-tree";
+import type { CardStackState } from "@/layout-tree";
 import type { CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
@@ -99,7 +99,7 @@ export interface StackFrameInjectedProps {
   onDragStart: (event: React.PointerEvent) => void;
   /** Tugcard calls this to report its computed minimum size to StackFrame. */
   onMinSizeChange: (size: { width: number; height: number }) => void;
-  /** Whether the card is currently collapsed. Forwarded from cardState.collapsed. */
+  /** Whether the stack is currently collapsed. Forwarded from stackState.collapsed. */
   collapsed: boolean;
   /** Called when the user toggles collapse. StackFrame forwards to onCardCollapsed. */
   onCollapse: () => void;
@@ -109,8 +109,8 @@ export interface StackFrameInjectedProps {
  * Props for the StackFrame component.
  */
 export interface StackFrameProps {
-  /** Card position, size, and id from DeckState. */
-  cardState: CardState;
+  /** Stack position, size, id, and collapsed state from DeckState. */
+  stackState: CardStackState;
   /**
    * Render function that receives injected callbacks and returns the Tugcard.
    * The factory closure (from the card registry) is responsible for wiring
@@ -139,10 +139,10 @@ export interface StackFrameProps {
    */
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
   /**
-   * The id of the active tab on this card. Used by the merge hit-test in
-   * onPointerUp to determine which tab gets merged into the target card.
+   * The id of the active card in this stack. Used by the merge hit-test in
+   * onPointerUp to determine which card gets merged into the target stack.
    */
-  activeTabId?: string;
+  activeCardId?: string;
   /** CSS z-index for stacking order. */
   zIndex: number;
   /** Whether this card is the focused (topmost) card. Drives visual focus styles. */
@@ -177,19 +177,19 @@ const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
  * StackFrame -- positions, drags, resizes, and stacks a single card on the canvas.
  */
 export function StackFrame({
-  cardState,
+  stackState,
   renderContent,
   onCardMoved,
   onCardFocused,
   sizePolicy: sizePolicyProp,
   onCardMerged,
-  activeTabId,
+  activeCardId,
   zIndex,
   isFocused,
   onCardCollapsed,
 }: StackFrameProps) {
-  const { id, position, size } = cardState;
-  const collapsed = cardState.collapsed === true;
+  const { id, position, size } = stackState;
+  const collapsed = stackState.collapsed === true;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
   const frameRef = useRef<HTMLDivElement>(null);
@@ -518,7 +518,7 @@ export function StackFrame({
         }
 
         // Hit-test tab bars for merge on drop. [D45]
-        if (onCardMerged && activeTabId) {
+        if (onCardMerged && activeCardId) {
           const cx = e.clientX;
           const cy = e.clientY;
           for (const entry of dragTabBarCache.current) {
@@ -569,9 +569,9 @@ export function StackFrame({
       frame.addEventListener("pointerup", onPointerUp);
     },
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
-    // onCardMerged, and activeTabId are stable or handled via closure capture.
+    // onCardMerged, and activeCardId are stable or handled via closure capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y],
+    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y],
   );
 
   // ---------------------------------------------------------------------------

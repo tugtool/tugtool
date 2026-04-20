@@ -24,7 +24,7 @@ import { render, fireEvent, act, cleanup } from "@testing-library/react";
 import { CardTitleBar, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/tug-card";
 import { StackFrame } from "@/components/chrome/stack-frame";
 import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
-import type { CardState } from "@/layout-tree";
+import type { CardStackState } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { DeckManager } from "@/deck-manager";
 import { _resetForTest, registerCard } from "@/card-registry";
@@ -35,13 +35,13 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCardState(overrides: Partial<CardState> = {}): CardState {
+function makeStackState(overrides: Partial<CardStackState> = {}): CardStackState {
   return {
     id: "card-1",
     position: { x: 0, y: 0 },
     size: { width: 300, height: 200 },
-    tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
-    activeTabId: "tab-1",
+    cardIds: ["tab-1"],
+    activeCardId: "tab-1",
     title: "",
     acceptsFamilies: ["standard"],
     ...overrides,
@@ -63,7 +63,7 @@ function makeMockConnection() {
  */
 const mockStore: IDeckManagerStore = {
   subscribe: (_cb: () => void) => () => {},
-  getSnapshot: () => ({ cards: [] }),
+  getSnapshot: () => ({ cards: [], stacks: [] }),
   getVersion: () => 0,
   handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
   handleCardClosed: (_id: string) => {},
@@ -81,7 +81,7 @@ const mockStore: IDeckManagerStore = {
   detachCard: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
   moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
   getCardState: (_tabId: string) => undefined,
-  setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+  setCardState: (_tabId: string, _bag: import("@/layout-tree").CardStateBag) => {},
   initialFocusedCardId: undefined,
   registerSaveCallback: (_id: string, _callback: () => void) => {},
   unregisterSaveCallback: (_id: string) => {},
@@ -301,13 +301,13 @@ describe("CardTitleBar – renders title and icon", () => {
 describe("StackFrame – resize handles hidden when collapsed", () => {
   afterEach(() => cleanup());
 
-  it("T-CH05: resize handle elements absent when cardState.collapsed=true", () => {
-    const collapsedState = makeCardState({ collapsed: true });
+  it("T-CH05: resize handle elements absent when stackState.collapsed=true", () => {
+    const collapsedState = makeStackState({ collapsed: true });
     const { container } = render(
       <ResponderChainProvider>
         <StackFrame
 
-          cardState={collapsedState}
+          stackState={collapsedState}
           renderContent={(injected: StackFrameInjectedProps) => (
             <div data-testid="card-content">
               <button onClick={() => {}} data-testid="close-trigger">Close</button>
@@ -326,13 +326,13 @@ describe("StackFrame – resize handles hidden when collapsed", () => {
     expect(handles.length).toBe(0);
   });
 
-  it("resize handle elements present when cardState.collapsed=false", () => {
-    const expandedState = makeCardState({ collapsed: false });
+  it("resize handle elements present when stackState.collapsed=false", () => {
+    const expandedState = makeStackState({ collapsed: false });
     const { container } = render(
       <ResponderChainProvider>
         <StackFrame
 
-          cardState={expandedState}
+          stackState={expandedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
           onCardClosed={() => {}}
@@ -347,12 +347,12 @@ describe("StackFrame – resize handles hidden when collapsed", () => {
   });
 
   it("StackFrame uses CARD_TITLE_BAR_HEIGHT + 2 for height when collapsed", () => {
-    const collapsedState = makeCardState({ collapsed: true });
+    const collapsedState = makeStackState({ collapsed: true });
     const { getByTestId } = render(
       <ResponderChainProvider>
         <StackFrame
 
-          cardState={collapsedState}
+          stackState={collapsedState}
           renderContent={() => <div />}
           onCardMoved={() => {}}
           onCardClosed={() => {}}
@@ -393,30 +393,41 @@ describe("DeckManager – toggleCardCollapse", () => {
     cleanup();
   });
 
+  function hostStackId(state: import("@/layout-tree").DeckState, cardId: string): string {
+    const s = state.stacks.find((st) => st.cardIds.includes(cardId));
+    if (!s) throw new Error(`no host stack for card ${cardId}`);
+    return s.id;
+  }
+
   it("T-CH09: toggleCardCollapse sets collapsed=true on first call", () => {
     const cardId = manager.addCard("hello")!;
-    const before = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const stackId = hostStackId(manager.getDeckState(), cardId);
+    const beforeState = manager.getDeckState();
+    const before = beforeState.stacks.find((s) => s.id === stackId)!;
     expect(before.collapsed).toBeFalsy();
 
-    act(() => { manager.toggleStackCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(stackId); });
 
-    const after = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const afterState = manager.getDeckState();
+    const after = afterState.stacks.find((s) => s.id === stackId)!;
     expect(after.collapsed).toBe(true);
   });
 
   it("toggleCardCollapse restores collapsed=undefined on second call", () => {
     const cardId = manager.addCard("hello")!;
-    act(() => { manager.toggleStackCollapse(cardId); });
-    act(() => { manager.toggleStackCollapse(cardId); });
-    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
-    expect(card.collapsed).toBeFalsy();
+    const stackId = hostStackId(manager.getDeckState(), cardId);
+    act(() => { manager.toggleStackCollapse(stackId); });
+    act(() => { manager.toggleStackCollapse(stackId); });
+    const stack = manager.getDeckState().stacks.find((s) => s.id === stackId)!;
+    expect(stack.collapsed).toBeFalsy();
   });
 
   it("toggleCardCollapse notifies subscribers", () => {
     const cardId = manager.addCard("hello")!;
+    const stackId = hostStackId(manager.getDeckState(), cardId);
     let notified = false;
     manager.subscribe(() => { notified = true; });
-    act(() => { manager.toggleStackCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(stackId); });
     expect(notified).toBe(true);
   });
 });
@@ -428,24 +439,22 @@ describe("DeckManager – toggleCardCollapse", () => {
 describe("Serialization – collapsed state round-trip", () => {
   it("T-CH10: collapsed=true is preserved through serialize/deserialize", () => {
     const state = {
-      cards: [
-        makeCardState({ id: "c1", collapsed: true }),
-      ],
+      cards: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
+      stacks: [makeStackState({ id: "c1", collapsed: true })],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);
-    expect(restored.cards[0].collapsed).toBe(true);
+    expect(restored.stacks[0].collapsed).toBe(true);
   });
 
   it("collapsed=false (undefined) is preserved through serialize/deserialize", () => {
     const state = {
-      cards: [
-        makeCardState({ id: "c1" }), // no collapsed field
-      ],
+      cards: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
+      stacks: [makeStackState({ id: "c1" })],
     };
     const serialized = JSON.stringify(serialize(state));
     const restored = deserialize(serialized, 1200, 900);
     // collapsed was never set, should remain falsy
-    expect(restored.cards[0].collapsed).toBeFalsy();
+    expect(restored.stacks[0].collapsed).toBeFalsy();
   });
 });

@@ -67,7 +67,7 @@ import { Tugcard } from "@/components/tugways/tug-card";
 import { StackFrame } from "./stack-frame";
 import { CardContentHost } from "./card-content-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
-import type { CardState } from "@/layout-tree";
+import type { CardStackState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
@@ -108,64 +108,73 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // variable below.
   const store = useDeckManager();
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const stacks = deckState.stacks;
   const cards = deckState.cards;
 
   // ---------------------------------------------------------------------------
   // Stable render order
   // ---------------------------------------------------------------------------
-  // Cards are rendered in a stable order (sorted by ID) so that focusCard
+  // Stacks are rendered in a stable order (sorted by ID) so that focusCard
   // reordering the store array only changes z-index values -- React never
   // calls insertBefore to move DOM nodes. This preserves the browser's
   // pointer->click event sequence when clicking interactive elements on
-  // unfocused cards (the synchronous onCardFocused on pointerdown updates
-  // z-index before click fires, so the card is already focused).
+  // unfocused stacks (the synchronous onCardFocused on pointerdown updates
+  // z-index before click fires, so the stack is already focused).
   //
-  // Z-index comes from each card's position in the *store* array (focus
+  // Z-index comes from each stack's position in the *store* array (focus
   // order), not from the stable render order.
 
-  const { sortedCards, zIndexMap } = useMemo(() => {
+  const { sortedStacks, zIndexMap } = useMemo(() => {
     const map = new Map<string, number>();
-    cards.forEach((card, i) => map.set(card.id, CARD_ZINDEX_BASE + i));
-    const sorted = [...cards].sort((a, b) => a.id.localeCompare(b.id));
-    return { sortedCards: sorted, zIndexMap: map };
-  }, [cards]);
+    stacks.forEach((stack, i) => map.set(stack.id, CARD_ZINDEX_BASE + i));
+    const sorted = [...stacks].sort((a, b) => a.id.localeCompare(b.id));
+    return { sortedStacks: sorted, zIndexMap: map };
+  }, [stacks]);
+
+  // Build a cardId → hostStackId map so `CardContentHost` can look up its
+  // host stack without re-scanning the stacks array on every render.
+  const hostStackIdByCardId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of stacks) {
+      for (const cid of s.cardIds) map.set(cid, s.id);
+    }
+    return map;
+  }, [stacks]);
 
   // ---------------------------------------------------------------------------
   // Visual focus
   // ---------------------------------------------------------------------------
-  // Focus is derived from z-order: the last card in the array is the focused
-  // card. A `deselected` flag allows explicitly clearing focus (canvas click)
-  // without changing z-order.
+  // Focus is derived from z-order: the last stack in the array is the focused
+  // stack, and its activeCardId is the focused card. A `deselected` flag
+  // allows explicitly clearing focus (canvas click) without changing z-order.
 
   const [deselected, setDeselected] = useState(false);
 
-  // Focused card: last in array (highest z-index), unless explicitly deselected.
-  const focusedCardId = deselected ? null : (cards.length > 0 ? cards[cards.length - 1].id : null);
+  const focusedStackId = deselected
+    ? null
+    : stacks.length > 0
+      ? stacks[stacks.length - 1].id
+      : null;
 
   // ---------------------------------------------------------------------------
   // Refs for cycleCard closure (registered once on mount via useResponder)
   // ---------------------------------------------------------------------------
   // cycleCard is captured at mount time and never re-registered. All mutable
   // state it accesses must be via refs or stable values.
-  // store.handleCardFocused is stable (bound once in DeckManager constructor),
-  // so it can be called directly from the closure without a ref.
 
-  const cardsRef = useRef<readonly CardState[]>(cards);
-  cardsRef.current = cards;
+  const stacksRef = useRef<readonly CardStackState[]>(stacks);
+  stacksRef.current = stacks;
 
   /**
-   * galleryCardIdRef tracks the ID of the currently-open gallery card.
+   * galleryStackIdRef tracks the ID of the stack that currently hosts the
+   * gallery card.
    *
    * showComponentGallery reads this ref to determine whether to create a new
-   * gallery card or focus the existing one ([D07] show-only semantics).
-   * The onClose callback for gallery cards clears this ref so that the next
-   * showComponentGallery dispatch creates a fresh gallery card.
-   *
-   * [D05] Focus logic in DeckCanvas
-   * [D06] Remove floating panel infrastructure
-   * [D07] Show-only semantics (never close via showComponentGallery)
+   * gallery card or focus the existing one ([D07] show-only semantics). The
+   * onClose callback for the gallery stack clears this ref so the next
+   * showComponentGallery dispatch creates a fresh gallery stack.
    */
-  const galleryCardIdRef = useRef<string | null>(null);
+  const galleryStackIdRef = useRef<string | null>(null);
 
   /**
    * containerRef: ref to the positioning wrapper div that card frames and snap guides
@@ -243,12 +252,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     canHandle: () => true,
     actions: {
       [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
-        const c = cardsRef.current;
-        if (c.length < 2) return;
-        const nextId = c[0].id; // bottom card rotates to top
-        // Single activation entry point: updates z-order, promotes
-        // the key responder, fires deselect-clear + selection-guard
-        // + tide-card focus via the observer pipe.
+        const s = stacksRef.current;
+        if (s.length < 2) return;
+        // Bottom stack rotates to top — activate its active card.
+        const nextId = s[0].activeCardId;
         store.activateCard(nextId);
       },
       [TUG_ACTIONS.RESET_LAYOUT]: (_event: ActionEvent) => {
@@ -270,22 +277,31 @@ export function DeckCanvas(_props: DeckCanvasProps) {
        * gallery takes responder focus immediately ([D05]).
        */
       [TUG_ACTIONS.SHOW_COMPONENT_GALLERY]: (_event: ActionEvent) => {
-        const existingId = galleryCardIdRef.current;
-        const c = cardsRef.current;
+        const existingStackId = galleryStackIdRef.current;
+        const s = stacksRef.current;
 
-        // Check whether the tracked gallery card still exists in the store
-        const existingCard = existingId ? c.find((card) => card.id === existingId) : null;
+        // Check whether the tracked gallery stack still exists in the store.
+        const existingStack = existingStackId
+          ? s.find((stack) => stack.id === existingStackId)
+          : null;
 
-        if (existingCard) {
-          // Gallery card already exists -- activate it ([D07] show-only,
-          // never close). activateCard replaces the former three-line
-          // sequence (focusCard + setDeselected + makeFirstResponder).
-          store.activateCard(existingCard.id);
+        if (existingStack) {
+          // Gallery stack already exists -- activate its active card
+          // ([D07] show-only, never close).
+          store.activateCard(existingStack.activeCardId);
         } else {
-          // No gallery card -- create one and activate.
+          // No gallery stack -- create one and activate the seeded card.
           const newId = store.addCard("gallery-buttons");
           if (newId) {
-            galleryCardIdRef.current = newId;
+            // `addCard` returns the first seeded card id; look up its host
+            // stack in the fresh snapshot and remember it for subsequent
+            // show-only dispatches. Fall back to treating `newId` itself as
+            // a stack id for test harnesses that return one.
+            const snapshot = store.getSnapshot();
+            const hostStack =
+              snapshot.stacks.find((st) => st.cardIds.includes(newId)) ??
+              snapshot.stacks.find((st) => st.id === newId);
+            if (hostStack) galleryStackIdRef.current = hostStack.id;
             store.activateCard(newId);
           }
         }
@@ -299,10 +315,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // [D06] Add-tab action uses DeckManager + responder chain
       // [D09] Add-tab routed as DeckCanvas responder action
       [TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD]: (_event: ActionEvent) => {
-        const c = cardsRef.current;
-        if (c.length === 0) return;
-        const focusedCard = c[c.length - 1]; // topmost card
-        store.addCardToStack(focusedCard.id, "hello");
+        const s = stacksRef.current;
+        if (s.length === 0) return;
+        const activeStackId = s[s.length - 1].id; // topmost stack
+        store.addCardToStack(activeStackId, "hello");
       },
     },
   });
@@ -336,7 +352,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     store.initialFocusedCardId = undefined;
 
     const snapshot = store.getSnapshot();
-    const cardExists = snapshot.cards.some((c) => c.id === focusedCardId);
+    const cardExists = snapshot.cards.some(
+      (c) => c.id === focusedCardId,
+    );
     if (!cardExists) return;
 
     // Pass `null` as known-previous: the app just launched, no card
@@ -395,19 +413,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
-      {/* StackFrames (Spec S06, S07): one per card in deckState.cards.
+      {/* StackFrames: one per stack in deckState.stacks.
           Rendered in stable ID order (no DOM reordering on focus change).
-          Z-index from store array position (first = lowest). Cards with
-          unregistered componentIds are skipped with a warning. */}
-      {sortedCards.map((cardState) => {
-        // Resolve active componentId: prefer the active tab, fall back to first tab.
-        // This ensures the correct registration is used for header title/icon (D05).
-        const componentId =
-          cardState.tabs.find((t) => t.id === cardState.activeTabId)?.componentId ??
-          cardState.tabs[0]?.componentId;
+          Z-index from store array position (first = lowest). Stacks whose
+          active card's componentId is unregistered are skipped with a
+          warning. */}
+      {sortedStacks.map((stackState) => {
+        const cardsById = new Map(cards.map((c) => [c.id, c]));
+        const activeCard = cardsById.get(stackState.activeCardId);
+        const fallbackCard =
+          activeCard ?? cardsById.get(stackState.cardIds[0]);
+        const componentId = fallbackCard?.componentId;
         if (!componentId) {
           console.warn(
-            `[DeckCanvas] card "${cardState.id}" has no tabs -- skipping render.`,
+            `[DeckCanvas] stack "${stackState.id}" has no active card -- skipping render.`,
           );
           return null;
         }
@@ -415,72 +434,71 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const registration = getRegistration(componentId);
         if (!registration) {
           console.warn(
-            `[DeckCanvas] card "${cardState.id}" references unregistered componentId "${componentId}" -- skipping render.`,
+            `[DeckCanvas] stack "${stackState.id}" references unregistered componentId "${componentId}" -- skipping render.`,
           );
           return null;
         }
 
         /**
-         * onClose wrapper: when the closed card matches galleryCardIdRef.current,
-         * clear the ref to null. This ensures that the next showComponentGallery
-         * dispatch creates a fresh gallery card rather than looking for a card
-         * that no longer exists (defense-in-depth, [D07]).
+         * onClose wrapper: when the closed stack matches
+         * galleryStackIdRef.current, clear the ref to null so the next
+         * showComponentGallery dispatch creates a fresh gallery stack.
          */
         const handleClose = () => {
-          if (galleryCardIdRef.current === cardState.id) {
-            galleryCardIdRef.current = null;
+          if (galleryStackIdRef.current === stackState.id) {
+            galleryStackIdRef.current = null;
           }
-          // Card-type-agnostic per [L10]: tell the deck to remove the
-          // card. Per-card-type cleanup (e.g. tide's `close_session`
-          // wire frame) is wired at module scope in `main.tsx` —
-          // CardServicesStore subscribes to deck-manager and reacts
-          // to card-removal transitions on its own.
-          store.handleCardClosed(cardState.id);
+          store.handleCardClosed(stackState.id);
         };
+
+        const stackCards = stackState.cardIds
+          .map((cid) => cardsById.get(cid))
+          .filter((c): c is NonNullable<typeof c> => c !== undefined);
+        const hasMultipleCards = stackCards.length > 1;
 
         return (
           <StackFrame
-            key={cardState.id}
-            cardState={cardState}
+            key={stackState.id}
+            stackState={stackState}
             sizePolicy={getSizePolicy(componentId)}
-            zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
-            isFocused={cardState.id === focusedCardId}
+            zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
+            isFocused={stackState.id === focusedStackId}
             onCardMoved={store.handleStackMoved}
             onCardClosed={handleClose}
             onCardFocused={handleCardActivate}
             onCardCollapsed={(id) => store.toggleStackCollapse(id)}
-            onCardMerged={(sourceCardId, targetCardId, insertIndex) => {
-              // Resolve the active tab id from the source card at commit time.
-              // store.mergeTab takes (sourceCardId, tabId, targetCardId, insertAtIndex).
-              // [D45]
+            onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
+              // Resolve the active card id from the source stack at commit time.
               const snapshot = store.getSnapshot();
-              const sourceCard = snapshot.cards.find((c) => c.id === sourceCardId);
-              if (!sourceCard) return;
-              const tabId = sourceCard.activeTabId;
-              store.moveCardToStack(sourceCardId, tabId, targetCardId, insertIndex);
+              const sourceStack = snapshot.stacks.find(
+                (s) => s.id === sourceStackId,
+              );
+              if (!sourceStack) return;
+              store.moveCardToStack(
+                sourceStackId,
+                sourceStack.activeCardId,
+                targetStackId,
+                insertIndex,
+              );
             }}
-            activeTabId={cardState.activeTabId}
+            activeCardId={stackState.activeCardId}
             renderContent={(injected) => {
-              // Tugcard renders card chrome only after Piece 1.iii: title
-              // bar, tab bar (when multi-tab), and the content div. The
-              // content div is the portal target for CardContentHost DOM
-              // (see the flat CardContentHost list below). Tugcard's
-              // `children` prop is unused in the DeckCanvas render path.
-              const hasMultipleTabs = cardState.tabs.length > 1;
               return (
                 <Tugcard
-                  cardId={cardState.id}
+                  stackId={stackState.id}
                   meta={registration.defaultMeta}
                   feedIds={registration.defaultFeedIds ?? []}
-                  tabs={hasMultipleTabs ? cardState.tabs : undefined}
-                  activeTabId={cardState.activeTabId}
+                  cards={hasMultipleCards ? stackCards : undefined}
+                  activeCardId={stackState.activeCardId}
                   onClose={handleClose}
                   onDragStart={injected.onDragStart}
                   onMinSizeChange={injected.onMinSizeChange}
                   collapsed={injected.collapsed}
                   onCollapse={injected.onCollapse}
-                  cardTitle={hasMultipleTabs ? cardState.title : undefined}
-                  acceptedFamilies={hasMultipleTabs ? cardState.acceptsFamilies : undefined}
+                  cardTitle={hasMultipleCards ? stackState.title : undefined}
+                  acceptedFamilies={
+                    hasMultipleCards ? stackState.acceptsFamilies : undefined
+                  }
                 >
                   {null}
                 </Tugcard>
@@ -490,24 +508,27 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         );
       })}
 
-      {/* Flat tab-content list: every tab across every card is mounted
-          exactly once and routes its DOM via portal into its host card's
-          content div. React keys by tabId so React preserves component
-          identity when tabs move between cards (detach / merge) — the
-          crux of Piece 1.iii. Non-active tabs render with `display: none`
-          so they stay alive without affecting layout. Content factories
-          and contexts live in CardContentHost; see card-content-host.tsx. */}
-      {cards.flatMap((cardState) =>
-        cardState.tabs.map((tab) => (
+      {/* Flat card-content list: every card is mounted exactly once and
+          routes its DOM via portal into its host stack's content div. React
+          keys by cardId so React preserves component identity when a card
+          moves between stacks (detach / merge). Non-active cards render
+          with `display: none` so they stay alive without affecting layout.
+          Content factories and contexts live in CardContentHost; see
+          card-content-host.tsx. */}
+      {cards.map((card) => {
+        const hostStackId = hostStackIdByCardId.get(card.id);
+        if (!hostStackId) return null;
+        const hostStack = stacks.find((s) => s.id === hostStackId);
+        return (
           <CardContentHost
-            key={tab.id}
-            tabId={tab.id}
-            hostCardId={cardState.id}
-            componentId={tab.componentId}
-            isActive={tab.id === cardState.activeTabId}
+            key={card.id}
+            cardId={card.id}
+            hostStackId={hostStackId}
+            componentId={card.componentId}
+            isActive={hostStack?.activeCardId === card.id}
           />
-        )),
-      )}
+        );
+      })}
       </div>
       </div>
     </ResponderScope>

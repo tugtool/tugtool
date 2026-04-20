@@ -1,8 +1,8 @@
 /**
  * CardContentHost — renders a card's content component and owns the
- * per-card-content state (PropertyStore registration, persistence
- * callbacks, dirty/auto-save, per-card save callback, content-restore
- * effect, scroll/selection listeners, FeedStore subscriptions).
+ * per-card state (PropertyStore registration, persistence callbacks,
+ * dirty/auto-save, per-card save callback, content-restore effect,
+ * scroll/selection listeners, FeedStore subscriptions).
  *
  * The component lives at the deck level in the React tree; its DOM output
  * is portaled into the host stack's content `<div>` via `CardPortal`, so
@@ -38,7 +38,7 @@ import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
 import { getConnection } from "../../lib/connection-singleton";
 import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
 import type { PropertyStore } from "../tugways/property-store";
-import type { TabStateBag } from "../../layout-tree";
+import type { CardStateBag } from "../../layout-tree";
 import * as cardContentRegistry from "./card-content-registry";
 import * as stackRootRegistry from "./stack-root-registry";
 import { CardPortal } from "./card-portal";
@@ -46,31 +46,29 @@ import { CardPortal } from "./card-portal";
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
 export interface CardContentHostProps {
-  /** Stable identity of this tab (aka the card's content identity). */
-  tabId: string;
-  /** The card currently hosting this tab. Used to locate the content element and for the workspace binding. */
-  hostCardId: string;
-  /** The registry componentId that produces this tab's content via `contentFactory`. */
+  /** Stable identity of this card — survives cross-stack moves. */
+  cardId: string;
+  /** The stack currently hosting this card. Used to locate the content element and for the workspace binding. */
+  hostStackId: string;
+  /** The registry componentId that produces this card's content via `contentFactory`. */
   componentId: string;
   /**
-   * Whether this tab is the active tab within its host card. When false, the
-   * content mounts and stays alive but is hidden via `display: none` so that
-   * identity (React state, session connections, scroll position) survives
-   * across tab switches and cross-card moves. Defaults to `true`; callers
-   * that render all tabs concurrently (DeckCanvas after Piece 1.iii) pass
-   * the correct flag.
+   * Whether this card is the active card within its host stack. When false,
+   * the content mounts and stays alive but is hidden via `display: none` so
+   * that identity (React state, session connections, scroll position)
+   * survives across card switches and cross-stack moves. Defaults to `true`.
    */
   isActive?: boolean;
 }
 
 /**
- * Look up the host card's content element from the registry, reactively:
+ * Look up the host stack's content element from the registry, reactively:
  * re-fires when the element is registered, replaced, or unregistered.
  */
-function useHostContentElement(hostCardId: string): HTMLDivElement | null {
+function useHostContentElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => cardContentRegistry.subscribe(hostCardId, cb),
-    () => cardContentRegistry.getElement(hostCardId),
+    (cb) => cardContentRegistry.subscribe(hostStackId, cb),
+    () => cardContentRegistry.getElement(hostStackId),
     () => null,
   );
 }
@@ -82,24 +80,24 @@ function useHostContentElement(hostCardId: string): HTMLDivElement | null {
  * portal into it, and CardContentHost cannot consume the provider
  * directly because it lives outside Tugcard's React tree.
  */
-function useHostStackRootElement(hostCardId: string): HTMLDivElement | null {
+function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => stackRootRegistry.subscribe(hostCardId, cb),
-    () => stackRootRegistry.getElement(hostCardId),
+    (cb) => stackRootRegistry.subscribe(hostStackId, cb),
+    () => stackRootRegistry.getElement(hostStackId),
     () => null,
   );
 }
 
-export function CardContentHost({ tabId, hostCardId, componentId, isActive = true }: CardContentHostProps): React.ReactElement | null {
+export function CardContentHost({ cardId, hostStackId, componentId, isActive = true }: CardContentHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
-  const hostContentEl = useHostContentElement(hostCardId);
-  const hostCardRootEl = useHostStackRootElement(hostCardId);
+  const hostContentEl = useHostContentElement(hostStackId);
+  const hostCardRootEl = useHostStackRootElement(hostStackId);
 
   // ---- PropertyStore registration ----
   //
   // The card content's PropertyStore is held in a ref and consumed by the
-  // tab-level responder's `setProperty` handler below. No registry
+  // card-level responder's `setProperty` handler below. No registry
   // indirection — sendToTarget(cardId) resolves to this responder directly.
   const propertyStoreRef = useRef<PropertyStore | null>(null);
   const registerPropertyStore = useCallback(
@@ -118,37 +116,37 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
     [],
   );
 
-  // ---- saveCurrentTabState (keyed by our tabId) ----
+  // ---- saveCurrentCardState (keyed by our cardId) ----
   //
   // Written fresh every render so closures captured by registered callbacks
-  // never go stale — mirrors the pattern Tugcard used before this lift.
-  const saveCurrentTabStateRef = useRef<() => void>(() => {});
-  saveCurrentTabStateRef.current = () => {
+  // never go stale.
+  const saveCurrentCardStateRef = useRef<() => void>(() => {});
+  saveCurrentCardStateRef.current = () => {
     const contentEl = hostContentEl;
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
       : undefined;
 
-    const selection = selectionGuard.saveSelection(hostCardId);
+    const selection = selectionGuard.saveSelection(hostStackId);
     const content = persistenceCallbacksRef.current?.onSave();
 
-    const bag: TabStateBag = {
+    const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
     };
 
-    store.setCardState(tabId, bag);
+    store.setCardState(cardId, bag);
   };
 
-  // ---- Register save callback keyed by tabId ----
+  // ---- Register save callback keyed by cardId ----
   useLayoutEffect(() => {
-    store.registerSaveCallback(tabId, () => saveCurrentTabStateRef.current());
+    store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {
-      store.unregisterSaveCallback(tabId);
+      store.unregisterSaveCallback(cardId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, store]);
+  }, [cardId, store]);
 
   // ---- Auto-save debounce ----
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -158,11 +156,11 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
     }
     autoSaveTimerRef.current = window.setTimeout(() => {
       autoSaveTimerRef.current = null;
-      saveCurrentTabStateRef.current();
+      saveCurrentCardStateRef.current();
     }, AUTO_SAVE_DEBOUNCE_MS);
   }, []);
 
-  // ---- Scroll + selectionchange listeners (on host card's content element) ----
+  // ---- Scroll + selectionchange listeners (on host stack's content element) ----
   useEffect(() => {
     const contentEl = hostContentEl;
     if (!contentEl) return;
@@ -190,11 +188,11 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
     };
   }, [hostContentEl, markDirty]);
 
-  // ---- Content restore on mount (replicates Tugcard's former restore path) ----
+  // ---- Content restore on mount ----
   const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
   const pendingSelectionRef = useRef<SavedSelection | null>(null);
   useLayoutEffect(() => {
-    const bag = store.getCardState(tabId);
+    const bag = store.getCardState(cardId);
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
     const contentEl = hostContentEl;
@@ -223,7 +221,7 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
           contentEl.style.visibility = "";
         }
         if (pendingSelectionRef.current != null) {
-          selectionGuard.restoreSelection(hostCardId, pendingSelectionRef.current);
+          selectionGuard.restoreSelection(hostStackId, pendingSelectionRef.current);
         }
         pendingScrollRef.current = null;
         pendingSelectionRef.current = null;
@@ -248,15 +246,15 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
         contentEl.scrollTop = bag.scroll.y;
       }
       if (bag.selection != null) {
-        selectionGuard.restoreSelection(hostCardId, bag.selection);
+        selectionGuard.restoreSelection(hostStackId, bag.selection);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, hostCardId]);
+  }, [cardId, hostStackId]);
 
   // ---- Feed store (per componentId's feedIds, filtered by workspace) ----
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
-  const workspaceKey = useCardWorkspaceKey(hostCardId);
+  const workspaceKey = useCardWorkspaceKey(hostStackId);
   const workspaceFilter: FeedStoreFilter = useMemo(
     () =>
       workspaceKey
@@ -299,15 +297,15 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
 
   const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
-  // ---- Tab-level responder (handles setProperty routed by tabId) ----
+  // ---- Card-level responder (handles setProperty routed by cardId) ----
   //
   // Gallery cards (observable-props) dispatch `setProperty` via
   // `manager.sendToTarget(cardId, ...)`, where `cardId` is the stable id
-  // passed to their `contentFactory` — which, post-Piece 1.iii, is
-  // `tabId`. Register a responder with id=tabId here so those dispatches
-  // resolve to this host and write through to the content's PropertyStore.
+  // passed to their `contentFactory`. Register a responder with id=cardId
+  // here so those dispatches resolve to this host and write through to the
+  // content's PropertyStore.
   const { ResponderScope, responderRef } = useResponder({
-    id: tabId,
+    id: cardId,
     actions: {
       [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
         const ps = propertyStoreRef.current;
@@ -327,19 +325,19 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
   }
 
   // DOM output routes through `CardPortal` so children land inside the host
-  // card's `tugcard-content` div. The portal's stable-slot pattern preserves
-  // identity when the portal re-roots to a different host card — the
+  // stack's `tugcard-content` div. The portal's stable-slot pattern preserves
+  // identity when the portal re-roots to a different host stack — the
   // mechanism that keeps tide card sessions alive across detach/merge.
   //
-  // Non-active tabs within a card are hidden via `display: none` on the
-  // wrapper so all tabs remain mounted (identity survives tab switches too)
-  // without affecting layout.
+  // Non-active cards within a stack are hidden via `display: none` on the
+  // wrapper so every card remains mounted (identity survives card switches
+  // too) without affecting layout.
   return (
-    <CardPortal hostCardId={hostCardId}>
+    <CardPortal hostStackId={hostStackId}>
       <div
         ref={responderRef}
         data-card-content-host
-        data-tab-id={tabId}
+        data-tab-id={cardId}
         style={{
           display: isActive ? "contents" : "none",
         }}
@@ -351,13 +349,13 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
                 <TugcardPersistenceContext value={registerPersistenceCallbacks}>
                   <TugcardDirtyContext value={markDirty}>
                     {feedsReady ? (
-                      // Pass `tabId` as the stable identity for content.
+                      // Pass `cardId` as the stable identity for content.
                       // Consumers (tide, gallery observable-props) key their
                       // per-content state (session bindings, property stores,
-                      // responder target ids) off this value. `tabId` survives
-                      // detach/merge; `hostCardId` changes when the tab moves
+                      // responder target ids) off this value. `cardId` survives
+                      // detach/merge; `hostStackId` changes when the card moves
                       // between stacks.
-                      registration.contentFactory(tabId)
+                      registration.contentFactory(cardId)
                     ) : (
                       <div className="tugcard-loading" data-testid="tugcard-loading">
                         Loading...

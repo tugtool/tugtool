@@ -22,7 +22,7 @@ import "./tug-tab-bar.css";
 import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { icons } from "lucide-react";
-import type { TabItem } from "@/layout-tree";
+import type { CardState } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
@@ -44,13 +44,14 @@ import {
  * Props for TugTabBar.
  */
 export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div">, "role"> {
-  /** Unique card instance ID. Stamped as data-card-id on the bar div so the
-   *  TabDragCoordinator's hit-test cache can locate this bar at drag-start. */
-  cardId: string;
-  /** All tabs on this card. */
-  tabs: TabItem[];
-  /** The currently active tab id. */
-  activeTabId: string;
+  /** Unique stack instance ID. Stamped as data-card-id on the bar div (legacy
+   *  DOM attribute name kept as-is) so the CardDragCoordinator's hit-test
+   *  cache can locate this bar at drag-start. */
+  stackId: string;
+  /** All cards in this stack. */
+  cards: readonly CardState[];
+  /** The currently active card id. */
+  activeCardId: string;
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via `useId()`
    * if omitted. Parent responders disambiguate multi-tab-bar scenarios by
@@ -117,20 +118,20 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
  * Measurement timing is mitigated by useLayoutEffect. [L03]
  *
  * @param barRef    Ref to the tab bar container div.
- * @param tabs      Ordered array of tab items.
- * @param activeTabId ID of the currently active tab.
+ * @param cards     Ordered array of cards in the enclosing stack.
+ * @param activeCardId ID of the currently active card.
  * @param onOverflowChange Optional callback invoked when overflow stage or count changes.
- * @returns {{ overflowTabs: TabItem[] }} Tabs currently in the overflow dropdown.
+ * @returns {{ overflowTabs: CardState[] }} Cards currently in the overflow dropdown.
  */
 function useTabOverflow(
   barRef: React.RefObject<HTMLDivElement | null>,
-  tabs: TabItem[],
-  activeTabId: string,
+  cards: readonly CardState[],
+  activeCardId: string,
   onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void,
-): { overflowTabs: TabItem[] } {
+): { overflowTabs: CardState[] } {
   // overflowTabs is structural-zone state: it controls whether the overflow
   // dropdown button is rendered and what items it contains. [D02]
-  const [overflowTabs, setOverflowTabs] = useState<TabItem[]>([]);
+  const [overflowTabs, setOverflowTabs] = useState<CardState[]>([]);
 
   // Stable reference to the last overflow tab IDs string, used to avoid
   // unnecessary React state updates when the set hasn't changed.
@@ -151,7 +152,7 @@ function useTabOverflow(
 
   // Serialised title key for dependency tracking -- triggers re-measurement
   // when any tab title changes.
-  const titleKey = tabs.map((t) => t.title).join("|");
+  const titleKey = cards.map((c) => c.title).join("|");
 
   useLayoutEffect(() => {
     const bar = barRef.current;
@@ -225,7 +226,7 @@ function useTabOverflow(
       const result = computeOverflow(
         measurements,
         containerWidth,
-        activeTabId,
+        activeCardId,
         overflowButtonWidth,
         addButtonWidth,
       );
@@ -277,12 +278,12 @@ function useTabOverflow(
         if (newOverflowIdsKey !== prevOverflowIdsKey) {
           lastOverflowIdsRef.current = newOverflowIdsKey;
 
-          // Map overflow IDs back to TabItem objects, preserving order.
-          const overflowTabItems = result.overflowIds
-            .map((id) => tabs.find((t) => t.id === id))
-            .filter((t): t is TabItem => t !== undefined);
+          // Map overflow IDs back to CardState objects, preserving order.
+          const overflowCards = result.overflowIds
+            .map((id) => cards.find((c) => c.id === id))
+            .filter((c): c is CardState => c !== undefined);
 
-          setOverflowTabs(overflowTabItems);
+          setOverflowTabs(overflowCards);
         }
 
         // Notify optional observer whenever stage OR overflow count changes.
@@ -319,7 +320,7 @@ function useTabOverflow(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabs.length, activeTabId, titleKey]);
+  }, [cards.length, activeCardId, titleKey]);
 
   return { overflowTabs };
 }
@@ -333,13 +334,13 @@ function useTabOverflow(
  * stable cloned-child path; TabView holds no React state of its own.
  */
 interface TabViewProps {
-  tab: TabItem;
+  tab: CardState;
   isActive: boolean;
   iconNode: React.ReactNode;
-  cardId: string;
+  stackId: string;
   totalTabs: number;
-  onSelect: (tabId: string) => void;
-  onClose: (tabId: string) => void;
+  onSelect: (cardId: string) => void;
+  onClose: (cardId: string) => void;
 }
 
 /**
@@ -365,7 +366,7 @@ function TabView({
   tab,
   isActive,
   iconNode,
-  cardId,
+  stackId,
   totalTabs,
   onSelect,
   onClose,
@@ -405,7 +406,7 @@ function TabView({
     function onDocumentMove(e: PointerEvent) {
       if (exceedsDragThreshold(startX, startY, e.clientX, e.clientY)) {
         cleanup();
-        cardDragCoordinator.startDrag(e, tabElement, cardId, tab.id, totalTabs);
+        cardDragCoordinator.startDrag(e, tabElement, stackId, tab.id, totalTabs);
       }
     }
 
@@ -491,9 +492,9 @@ function TabView({
  */
 export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(function TugTabBar(
   {
-    cardId,
-    tabs,
-    activeTabId,
+    stackId,
+    cards,
+    activeCardId,
     senderId,
     acceptedFamilies,
     onOverflowChange,
@@ -510,10 +511,10 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   const fallbackSenderId = useId();
   const effectiveSenderId = senderId ?? fallbackSenderId;
   const dispatchSelectTab = useCallback(
-    (tabId: string) => {
+    (cardId: string) => {
       controlDispatch({
         action: TUG_ACTIONS.SELECT_TAB,
-        value: tabId,
+        value: cardId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
@@ -521,10 +522,10 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     [controlDispatch, effectiveSenderId],
   );
   const dispatchCloseTab = useCallback(
-    (tabId: string) => {
+    (cardId: string) => {
       controlDispatch({
         action: TUG_ACTIONS.CLOSE_TAB,
-        value: tabId,
+        value: cardId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
@@ -557,7 +558,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
 
   // Overflow hook: attaches ResizeObserver, applies appearance-zone DOM
   // attributes, returns structural-zone overflowTabs for dropdown rendering.
-  const { overflowTabs } = useTabOverflow(barRef, tabs, activeTabId, onOverflowChange);
+  const { overflowTabs } = useTabOverflow(barRef, cards, activeCardId, onOverflowChange);
 
   // Resolve effective families: default to ["standard"] when prop is omitted.
   const effectiveFamilies = acceptedFamilies ?? ["standard"];
@@ -647,8 +648,8 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   // card's responder updates activeTabId, triggering re-render, and the
   // ResizeObserver recomputes overflow with the new active tab visible.
   const handleOverflowSelect = useCallback(
-    (tabId: string) => {
-      dispatchSelectTab(tabId);
+    (cardId: string) => {
+      dispatchSelectTab(cardId);
     },
     [dispatchSelectTab],
   );
@@ -660,20 +661,20 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       role="tablist"
       data-slot="tug-tab-bar"
       data-testid="tug-tab-bar"
-      data-card-id={cardId}
+      data-card-id={stackId}
       {...rest}
     >
-      {tabs.map((tab) => {
-        const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
+      {cards.map((card) => {
+        const iconName = getAllRegistrations().get(card.componentId)?.defaultMeta.icon;
         const iconNode = renderIcon(iconName);
         return (
           <TabView
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === activeTabId}
+            key={card.id}
+            tab={card}
+            isActive={card.id === activeCardId}
             iconNode={iconNode}
-            cardId={cardId}
-            totalTabs={tabs.length}
+            stackId={stackId}
+            totalTabs={cards.length}
             onSelect={dispatchSelectTab}
             onClose={dispatchCloseTab}
           />

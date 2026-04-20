@@ -1,16 +1,16 @@
 /**
- * Identity-preservation tests for Step 11.6.1a Piece 1.iii.
+ * Identity-preservation tests for the two-table Card/CardStack model.
  *
- * After TabContentHost flipped to render via CardPortal at deck level, tab
- * content must mount exactly once and survive every card-level operation
- * that preserves tab identity: setActiveCardInStack (in-card tab switch), detachCard
- * (cross-card move to new card), moveCardToStack (cross-card move to existing card).
- * addCardToStack creates a genuinely new tab so a new mount is expected; existing
- * tabs on the same card must not re-mount.
+ * CardContentHost renders via CardPortal at deck level, so card content must
+ * mount exactly once and survive every deck operation that preserves card
+ * identity: setActiveCardInStack (in-stack card switch), detachCard
+ * (cross-stack move to new stack), moveCardToStack (cross-stack move to
+ * existing stack). addCardToStack creates a genuinely new card so a new mount
+ * is expected; existing cards on the same stack must not re-mount.
  *
  * Probe strategy: a single module-level counter tracks total mount/unmount
  * of Probe instances. Identity preservation == mount count stays flat (or
- * grows only when a genuinely new tab enters the deck).
+ * grows only when a genuinely new card enters the deck).
  */
 import "./setup-rtl";
 
@@ -21,16 +21,12 @@ import { render, act, cleanup } from "@testing-library/react";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import * as registry from "@/components/chrome/card-content-registry";
 import { registerCard, _resetForTest } from "@/card-registry";
-import type { CardState, TabItem, DeckState } from "@/layout-tree";
+import type { CardState, CardStackState, DeckState, CardStateBag } from "@/layout-tree";
 import { DeckManagerContext } from "@/deck-manager-context";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 
-// Module-level probe counters: one pair of (mount, unmount) across all Probe
-// instances in the current test. Incremented on mount, decremented on
-// unmount. `mountTotal` is a monotonic counter (never decremented) used to
-// verify that no NEW mounts occurred across an operation.
 const probeStats = { aliveMount: 0, aliveUnmount: 0, mountTotal: 0 };
 
 function Probe({ cardId }: { cardId: string }) {
@@ -45,7 +41,8 @@ function Probe({ cardId }: { cardId: string }) {
 }
 
 /**
- * Minimal subscribable store that supports the mutations under test.
+ * Minimal subscribable store that supports the mutations under test, against
+ * the two-table model.
  */
 class Store implements IDeckManagerStore {
   private state: DeckState;
@@ -53,7 +50,7 @@ class Store implements IDeckManagerStore {
   private version = 0;
   public initialFocusedCardId: string | undefined = undefined;
   private saveCallbacks = new Map<string, () => void>();
-  private tabStates = new Map<string, import("@/layout-tree").TabStateBag>();
+  private cardStates = new Map<string, CardStateBag>();
 
   constructor(initial: DeckState) {
     this.state = initial;
@@ -72,8 +69,15 @@ class Store implements IDeckManagerStore {
   getVersion = (): number => this.version;
 
   handleStackMoved = (): void => {};
-  handleCardClosed = (id: string): void => {
-    this.state = { cards: this.state.cards.filter((c) => c.id !== id) };
+  handleCardClosed = (stackId: string): void => {
+    const stack = this.state.stacks.find((s) => s.id === stackId);
+    if (!stack) return;
+    const dropped = new Set(stack.cardIds);
+    this.state = {
+      ...this.state,
+      stacks: this.state.stacks.filter((s) => s.id !== stackId),
+      cards: this.state.cards.filter((c) => !dropped.has(c.id)),
+    };
     this.notify();
   };
 
@@ -85,90 +89,99 @@ class Store implements IDeckManagerStore {
   getActiveCardId = (): string | null => null;
   addCard = (): string | null => null;
 
-  addCardToStack = (cardId: string, componentId: string): string | null => {
-    const newTabId = `tab-${Math.random().toString(36).slice(2, 8)}`;
-    const newTab: TabItem = { id: newTabId, componentId, title: "Added", closable: true };
+  addCardToStack = (stackId: string, componentId: string): string | null => {
+    const newCardId = `card-${Math.random().toString(36).slice(2, 8)}`;
+    const newCard: CardState = { id: newCardId, componentId, title: "Added", closable: true };
     this.state = {
-      cards: this.state.cards.map((c) =>
-        c.id === cardId ? { ...c, tabs: [...c.tabs, newTab], activeTabId: newTabId } : c,
+      ...this.state,
+      cards: [...this.state.cards, newCard],
+      stacks: this.state.stacks.map((s) =>
+        s.id === stackId
+          ? { ...s, cardIds: [...s.cardIds, newCardId], activeCardId: newCardId }
+          : s,
       ),
     };
     this.notify();
-    return newTabId;
+    return newCardId;
   };
 
   removeCard = (): void => {};
 
-  setActiveCardInStack = (cardId: string, tabId: string): void => {
+  setActiveCardInStack = (stackId: string, cardId: string): void => {
     this.state = {
-      cards: this.state.cards.map((c) => (c.id === cardId ? { ...c, activeTabId: tabId } : c)),
+      ...this.state,
+      stacks: this.state.stacks.map((s) =>
+        s.id === stackId ? { ...s, activeCardId: cardId } : s,
+      ),
     };
     this.notify();
   };
 
   reorderCardInStack = (): void => {};
 
-  detachCard = (cardId: string, tabId: string, position: { x: number; y: number }): string | null => {
-    const card = this.state.cards.find((c) => c.id === cardId);
-    if (!card) return null;
-    const tab = card.tabs.find((t) => t.id === tabId);
-    if (!tab) return null;
-    const newCardId = `card-${Math.random().toString(36).slice(2, 8)}`;
-    const newCard: CardState = {
-      id: newCardId,
+  detachCard = (stackId: string, cardId: string, position: { x: number; y: number }): string | null => {
+    const stack = this.state.stacks.find((s) => s.id === stackId);
+    if (!stack || !stack.cardIds.includes(cardId)) return null;
+    const newStackId = `stack-${Math.random().toString(36).slice(2, 8)}`;
+    const remainingCardIds = stack.cardIds.filter((id) => id !== cardId);
+    const newStack: CardStackState = {
+      id: newStackId,
       position,
       size: { width: 400, height: 300 },
-      tabs: [tab],
-      activeTabId: tab.id,
+      cardIds: [cardId],
+      activeCardId: cardId,
       title: "",
-      acceptsFamilies: card.acceptsFamilies,
+      acceptsFamilies: stack.acceptsFamilies,
     };
-    const remainingTabs = card.tabs.filter((t) => t.id !== tabId);
-    const updatedSource: CardState = {
-      ...card,
-      tabs: remainingTabs,
-      activeTabId: remainingTabs.length > 0 ? remainingTabs[0].id : card.activeTabId,
+    const updatedSource: CardStackState = {
+      ...stack,
+      cardIds: remainingCardIds,
+      activeCardId: remainingCardIds[0] ?? stack.activeCardId,
     };
     this.state = {
-      cards: [
-        ...this.state.cards.map((c) => (c.id === cardId ? updatedSource : c)),
-        newCard,
+      ...this.state,
+      stacks: [
+        ...this.state.stacks.map((s) => (s.id === stackId ? updatedSource : s)),
+        newStack,
       ],
     };
     this.notify();
-    return newCardId;
+    return newStackId;
   };
 
-  moveCardToStack = (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number): void => {
-    const source = this.state.cards.find((c) => c.id === sourceCardId);
-    const target = this.state.cards.find((c) => c.id === targetCardId);
-    if (!source || !target) return;
-    const tab = source.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-    const newSourceTabs = source.tabs.filter((t) => t.id !== tabId);
-    const newTargetTabs = [...target.tabs];
-    newTargetTabs.splice(insertAtIndex, 0, tab);
-    const updatedSource: CardState = {
+  moveCardToStack = (sourceStackId: string, cardId: string, targetStackId: string, insertAtIndex: number): void => {
+    const source = this.state.stacks.find((s) => s.id === sourceStackId);
+    const target = this.state.stacks.find((s) => s.id === targetStackId);
+    if (!source || !target || !source.cardIds.includes(cardId)) return;
+    const newSourceCardIds = source.cardIds.filter((id) => id !== cardId);
+    const newTargetCardIds = [...target.cardIds];
+    newTargetCardIds.splice(insertAtIndex, 0, cardId);
+    const updatedSource: CardStackState = {
       ...source,
-      tabs: newSourceTabs,
-      activeTabId: newSourceTabs.length > 0 ? newSourceTabs[0].id : source.activeTabId,
+      cardIds: newSourceCardIds,
+      activeCardId: newSourceCardIds[0] ?? source.activeCardId,
     };
-    const updatedTarget: CardState = { ...target, tabs: newTargetTabs, activeTabId: tab.id };
+    const updatedTarget: CardStackState = {
+      ...target,
+      cardIds: newTargetCardIds,
+      activeCardId: cardId,
+    };
     this.state = {
-      cards: this.state.cards
-        .map((c) => {
-          if (c.id === sourceCardId) return updatedSource;
-          if (c.id === targetCardId) return updatedTarget;
-          return c;
+      ...this.state,
+      stacks: this.state.stacks
+        .map((s) => {
+          if (s.id === sourceStackId) return updatedSource;
+          if (s.id === targetStackId) return updatedTarget;
+          return s;
         })
-        .filter((c) => c.tabs.length > 0),
+        .filter((s) => s.cardIds.length > 0),
     };
     this.notify();
   };
 
-  getCardState = (id: string) => this.tabStates.get(id);
-  setCardState = (id: string, bag: import("@/layout-tree").TabStateBag): void => {
-    this.tabStates.set(id, bag);
+  getCardState = (id: string) => this.cardStates.get(id);
+  setCardState = (id: string, bag: CardStateBag): void => {
+    this.cardStates.set(id, bag);
   };
 
   registerSaveCallback = (id: string, cb: () => void): void => {
@@ -200,7 +213,24 @@ function renderDeck(store: Store) {
   return container;
 }
 
-describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
+function makeStack(
+  id: string,
+  cards: CardState[],
+  activeIndex = 0,
+  position = { x: 0, y: 0 },
+): CardStackState {
+  return {
+    id,
+    position,
+    size: { width: 400, height: 300 },
+    cardIds: cards.map((c) => c.id),
+    activeCardId: cards[activeIndex].id,
+    title: "",
+    acceptsFamilies: ["standard"],
+  };
+}
+
+describe("Card content identity preservation (two-table model)", () => {
   beforeEach(() => {
     probeStats.aliveMount = 0;
     probeStats.aliveUnmount = 0;
@@ -222,127 +252,82 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     cleanup();
   });
 
-  it("setActiveCardInStack does not unmount either tab's content", () => {
-    const card: CardState = {
-      id: "card-B",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [
-        { id: "tab-x", componentId: "probe-hello", title: "X", closable: true },
-        { id: "tab-y", componentId: "probe-other", title: "Y", closable: true },
-      ],
-      activeTabId: "tab-x",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-    const store = new Store({ cards: [card] });
+  it("setActiveCardInStack does not unmount either card's content", () => {
+    const cX: CardState = { id: "card-x", componentId: "probe-hello", title: "X", closable: true };
+    const cY: CardState = { id: "card-y", componentId: "probe-other", title: "Y", closable: true };
+    const stack = makeStack("stack-B", [cX, cY], 0);
+    const store = new Store({ cards: [cX, cY], stacks: [stack] });
     renderDeck(store);
 
-    // Two tabs → two Probe mounts on initial render; neither has unmounted.
+    // Two cards in the stack → two Probe mounts on initial render.
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.setActiveCardInStack("card-B", "tab-y");
+      store.setActiveCardInStack("stack-B", "card-y");
     });
 
-    // Tab switch must not mount or unmount anything.
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("addCardToStack mounts the new tab's content without unmounting the existing tab", () => {
-    const card: CardState = {
-      id: "card-A",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [{ id: "tab-orig", componentId: "probe-hello", title: "Orig", closable: true }],
-      activeTabId: "tab-orig",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-    const store = new Store({ cards: [card] });
+  it("addCardToStack mounts the new card's content without unmounting the existing card", () => {
+    const cOrig: CardState = { id: "card-orig", componentId: "probe-hello", title: "Orig", closable: true };
+    const stack = makeStack("stack-A", [cOrig]);
+    const store = new Store({ cards: [cOrig], stacks: [stack] });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(1);
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.addCardToStack("card-A", "probe-other");
+      store.addCardToStack("stack-A", "probe-other");
     });
 
-    // The new tab mounts (mountTotal becomes 2). The original tab's content
-    // must not have unmounted — identity preserved across the add.
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("detachCard preserves the moved tab's content identity (no mount, no unmount)", () => {
-    const card: CardState = {
-      id: "card-C",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [
-        { id: "tab-stay", componentId: "probe-hello", title: "Stay", closable: true },
-        { id: "tab-move", componentId: "probe-other", title: "Move", closable: true },
-      ],
-      activeTabId: "tab-stay",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-    const store = new Store({ cards: [card] });
+  it("detachCard preserves the moved card's content identity (no mount, no unmount)", () => {
+    const cStay: CardState = { id: "card-stay", componentId: "probe-hello", title: "Stay", closable: true };
+    const cMove: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
+    const stack = makeStack("stack-C", [cStay, cMove], 0);
+    const store = new Store({ cards: [cStay, cMove], stacks: [stack] });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.detachCard("card-C", "tab-move", { x: 300, y: 300 });
+      store.detachCard("stack-C", "card-move", { x: 300, y: 300 });
     });
 
-    // Detach creates a new CardStack containing the moved tab. The moved
-    // tab's Probe must stay mounted — React reconciles the flat deck-level
-    // TabContentHost list by tabId, and the portal re-roots the DOM into
-    // the new host card. No mount, no unmount.
+    // Detach creates a new stack containing the moved card. The moved card's
+    // Probe must stay mounted — React reconciles the flat deck-level
+    // CardContentHost list by cardId, and the portal re-roots the DOM into
+    // the new host stack.
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("moveCardToStack preserves the moved tab's content identity", () => {
-    const cardA: CardState = {
-      id: "card-src",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [
-        { id: "tab-src-1", componentId: "probe-hello", title: "Src", closable: true },
-        { id: "tab-move", componentId: "probe-other", title: "Move", closable: true },
-      ],
-      activeTabId: "tab-move",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-    const cardB: CardState = {
-      id: "card-tgt",
-      position: { x: 500, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [{ id: "tab-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true }],
-      activeTabId: "tab-tgt-1",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-    const store = new Store({ cards: [cardA, cardB] });
+  it("moveCardToStack preserves the moved card's content identity", () => {
+    const srcA: CardState = { id: "card-src-1", componentId: "probe-hello", title: "Src", closable: true };
+    const mv: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
+    const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
+    const stackSrc = makeStack("stack-src", [srcA, mv], 1);
+    const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
+    const store = new Store({ cards: [srcA, mv, tgt], stacks: [stackSrc, stackTgt] });
     renderDeck(store);
 
-    // 3 total tabs → 3 mounts.
+    // 3 total cards → 3 mounts.
     expect(probeStats.mountTotal).toBe(3);
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.moveCardToStack("card-src", "tab-move", "card-tgt", 1);
+      store.moveCardToStack("stack-src", "card-move", "stack-tgt", 1);
     });
 
-    // Merge leaves total tab count at 3 (tab-move moved, not created). No
-    // mount, no unmount — identity preserved.
+    // Card count unchanged; identity preserved.
     expect(probeStats.mountTotal).toBe(3);
     expect(probeStats.aliveUnmount).toBe(0);
   });

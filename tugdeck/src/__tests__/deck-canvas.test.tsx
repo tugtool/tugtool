@@ -39,7 +39,7 @@ import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { registerHelloWorldCard } from "@/components/tugways/cards/hello-world-card";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
-import type { CardState, DeckState, TabItem } from "@/layout-tree";
+import type { CardState, CardStackState, DeckState } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { TugAction } from "@/components/tugways/action-vocabulary";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -78,7 +78,7 @@ function makeMockConnection() {
  *
  * Override individual fields with spies for tests that need callback assertions.
  */
-function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
+function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckManagerStore {
   return {
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
@@ -100,7 +100,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
     // Phase 5f additions
     getCardState: (_tabId: string) => undefined,
-    setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+    setCardState: (_tabId: string, _bag: import("@/layout-tree").CardStateBag) => {},
     initialFocusedCardId: undefined,
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
@@ -156,8 +156,35 @@ function fireKeydown(options: {
 
 // ---- Card registry helpers ----
 
-/** Build a minimal CardState for a given componentId. */
-function makeCardState(id: string, componentId: string): CardState {
+/**
+ * Legacy card-view used by this test file: a value shaped like the
+ * pre-two-table `CardState` (with `tabs`, `activeTabId`, `position`, `size`,
+ * `acceptsFamilies`, `title`, `collapsed`). `makeDeckState` below explodes
+ * each of these into a Card + CardStack pair in the deck state.
+ */
+/** Legacy-shape per-tab entry. Carries the same fields the pre-split `TabItem`
+ *  type did, kept local to this test file so assertions can use named
+ *  variables without reaching for `any`. */
+interface TabItem {
+  id: string;
+  componentId: string;
+  title: string;
+  closable: boolean;
+}
+
+interface LegacyCardShape {
+  id: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  tabs: TabItem[];
+  activeTabId: string;
+  title: string;
+  acceptsFamilies: readonly string[];
+  collapsed?: boolean;
+}
+
+/** Build a legacy-shape card with one tab. The test pipeline explodes it into a stack+card pair. */
+function makeCardState(id: string, componentId: string): LegacyCardShape {
   return {
     id,
     position: { x: 0, y: 0 },
@@ -169,9 +196,32 @@ function makeCardState(id: string, componentId: string): CardState {
   };
 }
 
-/** Build a DeckState from an array of CardState. */
-function makeDeckState(cards: CardState[]): DeckState {
-  return { cards };
+/** Build a DeckState from an array of legacy-shape cards. Each legacy card
+ *  becomes a stack whose `cardIds` is its tab ids. */
+function makeDeckState(legacyCards: LegacyCardShape[]): DeckState {
+  const cards: CardState[] = [];
+  const stacks: CardStackState[] = [];
+  for (const legacy of legacyCards) {
+    for (const t of legacy.tabs) {
+      cards.push({
+        id: t.id,
+        componentId: t.componentId,
+        title: t.title,
+        closable: t.closable,
+      });
+    }
+    stacks.push({
+      id: legacy.id,
+      position: legacy.position,
+      size: legacy.size,
+      cardIds: legacy.tabs.map((t) => t.id),
+      activeCardId: legacy.activeTabId,
+      title: legacy.title,
+      acceptsFamilies: legacy.acceptsFamilies,
+      ...(legacy.collapsed === true ? { collapsed: true } : {}),
+    });
+  }
+  return { cards, stacks };
 }
 
 // ============================================================================
@@ -416,13 +466,13 @@ describe("DeckCanvas – showComponentGallery action", () => {
     const focusedIds: string[] = [];
 
     // ReactiveStore so cards array updates after addCard
-    const reactiveStore = new ReactiveStore({ cards: [] });
+    const reactiveStore = new ReactiveStore({ cards: [], stacks: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
       // Simulate adding the card to store state
-      reactiveStore.setState({
-        cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
-      });
+      reactiveStore.setState(
+        makeDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]),
+      );
       return GALLERY_CARD_ID;
     };
     reactiveStore.activateCard = (id: string) => {
@@ -576,7 +626,7 @@ describe("DeckCanvas – T26: empty store renders no cards", () => {
   });
 
   it("renders no CardFrame elements when store returns deckState with empty cards", () => {
-    const store = makeMockStore({ cards: [] });
+    const store = makeMockStore({ cards: [], stacks: [] });
     let container!: HTMLElement;
     act(() => {
       ({ container } = renderDeckCanvasWithStore(store));
@@ -663,7 +713,7 @@ class ReactiveStore implements IDeckManagerStore {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
-  constructor(initial: DeckState = { cards: [] }) {
+  constructor(initial: DeckState = { cards: [], stacks: [] }) {
     this._state = initial;
   }
 
@@ -703,8 +753,8 @@ class ReactiveStore implements IDeckManagerStore {
   detachCard = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
   moveCardToStack = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
   // Phase 5f additions
-  getCardState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
-  setCardState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
+  getCardState = (_tabId: string): import("@/layout-tree").CardStateBag | undefined => undefined;
+  setCardState = (_tabId: string, _bag: import("@/layout-tree").CardStateBag): void => {};
   initialFocusedCardId: string | undefined = undefined;
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
@@ -738,7 +788,7 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
     });
 
     const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
-    const singleTabCard: CardState = {
+    const singleTabCard: LegacyCardShape = {
       id: "card-a",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -748,7 +798,7 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       acceptsFamilies: ["standard"],
     };
 
-    const store = new ReactiveStore({ cards: [singleTabCard] });
+    const store = new ReactiveStore(makeDeckState([singleTabCard]));
 
     let container!: HTMLElement;
     act(() => {
@@ -767,13 +817,11 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
     // Add a second tab
     const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
     act(() => {
-      store.setState({
-        cards: [{
-          ...singleTabCard,
-          tabs: [tab1, tab2],
-          activeTabId: "tab-2",
-        }],
-      });
+      store.setState(makeDeckState([{
+        ...singleTabCard,
+        tabs: [tab1, tab2],
+        activeTabId: "tab-2",
+      }]));
     });
 
     // Two tabs: tab bar must now be visible
@@ -802,7 +850,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
     const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
     const tab2: TabItem = { id: "tab-2", componentId: "terminal", title: "Terminal", closable: true };
 
-    const multiTabCard: CardState = {
+    const multiTabCard: LegacyCardShape = {
       id: "card-multi",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -812,7 +860,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       acceptsFamilies: ["standard"],
     };
 
-    const store = new ReactiveStore({ cards: [multiTabCard] });
+    const store = new ReactiveStore(makeDeckState([multiTabCard]));
 
     let container!: HTMLElement;
     act(() => {
@@ -850,9 +898,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
 
     // Switch active tab to terminal
     act(() => {
-      store.setState({
-        cards: [{ ...multiTabCard, activeTabId: "tab-2" }],
-      });
+      store.setState(makeDeckState([{ ...multiTabCard, activeTabId: "tab-2" }]));
     });
 
     // Both remain in the DOM; visibility flips.
@@ -878,7 +924,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
     const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
     const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
 
-    const multiTabCard: CardState = {
+    const multiTabCard: LegacyCardShape = {
       id: "card-close-test",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -889,7 +935,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
     };
 
     const closedIds: string[] = [];
-    const store = new ReactiveStore({ cards: [multiTabCard] });
+    const store = new ReactiveStore(makeDeckState([multiTabCard]));
     store.handleCardClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
@@ -1047,7 +1093,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     }
 
     const addTabCalls: Array<unknown> = [];
-    const store = makeMockStore({ cards: [] });
+    const store = makeMockStore({ cards: [], stacks: [] });
     store.addCardToStack = (cardId, componentId) => {
       addTabCalls.push({ cardId, componentId });
       return null;
@@ -1191,7 +1237,7 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
     // the component that sets data-card-id on .tugcard-accessory. [D05, Spec S07]
     registerHelloWorldCard();
 
-    const singleTabCard: CardState = {
+    const singleTabCard: LegacyCardShape = {
       id: "single-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -1233,7 +1279,7 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: CardState = {
+    const multiTabCard: LegacyCardShape = {
       id: "titled-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -1265,7 +1311,7 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: CardState = {
+    const multiTabCard: LegacyCardShape = {
       id: "untitled-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -1306,7 +1352,7 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
       defaultMeta: { title: "Hello", closable: true },
     });
 
-    const multiTabCard: CardState = {
+    const multiTabCard: LegacyCardShape = {
       id: "multi-card",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },

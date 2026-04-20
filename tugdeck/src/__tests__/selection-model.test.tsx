@@ -72,7 +72,7 @@ beforeEach(() => {
 describe("T13 – Tugcard does not handle selectAll", () => {
   it("canHandle('select-all') returns false — card does not own selectAll", () => {
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t13">
+      <Tugcard {...defaultProps} stackId="card-t13">
         <div>content</div>
       </Tugcard>
     );
@@ -86,7 +86,7 @@ describe("T13 – Tugcard does not handle selectAll", () => {
 
   it("pre-existing card actions are still registered", () => {
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t13b">
+      <Tugcard {...defaultProps} stackId="card-t13b">
         <div>content</div>
       </Tugcard>
     );
@@ -105,7 +105,7 @@ describe("T13 – Tugcard does not handle selectAll", () => {
 describe("T14 – selectAll dispatch is unhandled at card level", () => {
   it("dispatch('select-all') does not throw when no content component handles it", () => {
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t14">
+      <Tugcard {...defaultProps} stackId="card-t14">
         <div>content</div>
       </Tugcard>
     );
@@ -130,7 +130,7 @@ describe("T15 – Tugcard registers content area with SelectionGuard", () => {
     // saveSelection returns null only because there is no active selection --
     // this is the correct "registered but no selection" state.
     renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t15">
+      <Tugcard {...defaultProps} stackId="card-t15">
         <div>content</div>
       </Tugcard>
     );
@@ -143,13 +143,13 @@ describe("T15 – Tugcard registers content area with SelectionGuard", () => {
     let unmount!: () => void;
 
     renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t15-unmount">
+      <Tugcard {...defaultProps} stackId="card-t15-unmount">
         <div>content</div>
       </Tugcard>
     );
     // Grab the unmount from the original render -- we need to call it
     const result = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t15-unmount2">
+      <Tugcard {...defaultProps} stackId="card-t15-unmount2">
         <div>content</div>
       </Tugcard>
     );
@@ -167,7 +167,7 @@ describe("T15 – Tugcard registers content area with SelectionGuard", () => {
   it("content area element passed to SelectionGuard is the tugcard-content div", () => {
     let container!: HTMLElement;
     const result = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t15-elem">
+      <Tugcard {...defaultProps} stackId="card-t15-elem">
         <div data-testid="inner">text</div>
       </Tugcard>
     );
@@ -212,7 +212,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <Tugcard {...defaultProps} cardId="card-t15a">
+        <Tugcard {...defaultProps} stackId="card-t15a">
           <div
             contentEditable
             data-tug-select="custom"
@@ -243,7 +243,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <Tugcard {...defaultProps} cardId="card-t15a-sel">
+        <Tugcard {...defaultProps} stackId="card-t15a-sel">
           <div
             contentEditable
             data-tug-select="custom"
@@ -289,7 +289,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <Tugcard {...defaultProps} cardId="card-t15a-noclip">
+        <Tugcard {...defaultProps} stackId="card-t15a-noclip">
           <div
             contentEditable
             data-tug-select="custom"
@@ -334,7 +334,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
   it("dispatching close through the chain still calls onClose", () => {
     const onClose = mock(() => {});
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t16-close" onClose={onClose}>
+      <Tugcard {...defaultProps} stackId="card-t16-close" onClose={onClose}>
         <div>content</div>
       </Tugcard>
     );
@@ -348,7 +348,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
 
   it("all original responder actions are still registered (selectAll is NOT)", () => {
     const { manager } = renderWithManager(
-      <Tugcard {...defaultProps} cardId="card-t16-all">
+      <Tugcard {...defaultProps} stackId="card-t16-all">
         <div>content</div>
       </Tugcard>
     );

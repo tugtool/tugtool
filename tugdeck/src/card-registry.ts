@@ -23,7 +23,7 @@
 
 import type React from "react";
 import type { FeedIdValue } from "./protocol";
-import type { TabItem } from "./layout-tree";
+import type { CardState } from "./layout-tree";
 import type { FeedStoreFilter } from "./lib/feed-store";
 
 /**
@@ -100,12 +100,16 @@ export interface CardRegistration {
   /** Families this card can host in its type picker. Defaults to `["standard"]`. */
   acceptsFamilies?: readonly string[];
   /**
-   * Default tabs to create when addCard is called with this registration.
-   * Each entry is a template: `componentId`, `title`, and `closable` are copied,
-   * but a fresh UUID is assigned as the tab `id`. When omitted, a single tab
-   * is created from `defaultMeta`.
+   * Default cards to seed a new stack with when `addCard` is called against
+   * this registration. Each entry is a template: `componentId`, `title`, and
+   * `closable` are copied, but a fresh UUID is assigned as the card `id`.
+   * When omitted, a single card is created from `defaultMeta`.
+   *
+   * The legacy name reflects the pre-Card/CardStack vocabulary; the field is
+   * kept so gallery registrations can continue to seed their multi-card
+   * starter stacks without a churny rename.
    */
-  defaultTabs?: readonly TabItem[];
+  defaultTabs?: readonly CardState[];
   /** Default card-level title (e.g. "Component Gallery"). Defaults to `""`. */
   defaultTitle?: string;
   /** Size policy for this card type. Falls back to DEFAULT_SIZE_POLICY when omitted. */

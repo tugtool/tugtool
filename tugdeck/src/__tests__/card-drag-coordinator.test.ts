@@ -39,7 +39,7 @@ function makeMockStore() {
   };
   return {
     subscribe: () => () => {},
-    getSnapshot: () => ({ cards: [] }),
+    getSnapshot: () => ({ cards: [], stacks: [] }),
     getVersion: () => 0,
     handleStackMoved: () => {},
     handleCardClosed: () => {},
@@ -450,7 +450,7 @@ describe("CardDragCoordinator – mode transitions (T16)", () => {
     expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
     const mergeTarget = cardDragCoordinator._testOnly_getCurrentMergeTarget();
     expect(mergeTarget).not.toBeNull();
-    expect(mergeTarget!.cardId).toBe("tgt");
+    expect(mergeTarget!.stackId).toBe("tgt");
 
     // data-drop-target should be set on the target bar element.
     expect(tgtBar.getAttribute("data-drop-target")).toBe("true");
@@ -473,7 +473,7 @@ describe("CardDragCoordinator – mode transitions (T16)", () => {
     expect(cardDragCoordinator._testOnly_getCurrentMode()).toBe("merge");
     const mergeTarget = cardDragCoordinator._testOnly_getCurrentMergeTarget();
     expect(mergeTarget).not.toBeNull();
-    expect(mergeTarget!.cardId).toBe("single");
+    expect(mergeTarget!.stackId).toBe("single");
 
     // data-drop-target should be set on the accessory element (not the frame).
     expect(singleAccessory.getAttribute("data-drop-target")).toBe("true");

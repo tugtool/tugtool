@@ -18,18 +18,18 @@ import { render, fireEvent, act } from "@testing-library/react";
 
 import { StackFrame } from "@/components/chrome/stack-frame";
 import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
-import type { CardState } from "@/layout-tree";
+import type { CardStackState } from "@/layout-tree";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCardState(overrides: Partial<CardState> = {}): CardState {
+function makeStackState(overrides: Partial<CardStackState> = {}): CardStackState {
   return {
     id: "card-1",
     position: { x: 100, y: 200 },
     size: { width: 400, height: 300 },
-    tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
-    activeTabId: "tab-1",
+    cardIds: ["tab-1"],
+    activeCardId: "tab-1",
     title: "",
     acceptsFamilies: ["standard"],
     ...overrides,
@@ -64,7 +64,7 @@ function makeRenderContent(
 }
 
 const defaultProps = {
-  cardState: makeCardState(),
+  stackState: makeStackState(),
   onCardMoved: mock(() => {}),
   onCardClosed: mock(() => {}),
   onCardFocused: mock(() => {}),
@@ -78,7 +78,7 @@ const defaultProps = {
 
 describe("StackFrame – position and size", () => {
   it("T16: renders with correct position and size from cardState", () => {
-    const cardState = makeCardState({
+    const stackState = makeStackState({
       position: { x: 50, y: 75 },
       size: { width: 350, height: 250 },
     });
@@ -86,7 +86,7 @@ describe("StackFrame – position and size", () => {
     const { container } = render(
       <StackFrame
         {...defaultProps}
-        cardState={cardState}
+        stackState={stackState}
         renderContent={makeRenderContent()}
       />
     );
@@ -140,12 +140,12 @@ describe("StackFrame – zIndex", () => {
 describe("StackFrame – onCardFocused", () => {
   it("T18: calls onCardFocused with cardId on pointer-down anywhere in the frame", () => {
     const onCardFocused = mock((_id: string) => {});
-    const cardState = makeCardState({ id: "focus-test-card" });
+    const stackState = makeStackState({ id: "focus-test-card" });
 
     const { container } = render(
       <StackFrame
         {...defaultProps}
-        cardState={cardState}
+        stackState={stackState}
         onCardFocused={onCardFocused}
         renderContent={makeRenderContent()}
       />
@@ -189,14 +189,14 @@ describe("StackFrame – onCardFocused", () => {
 describe("StackFrame – onCardClosed", () => {
   it("T19: calls onCardClosed with cardId when renderContent triggers onClose", () => {
     const onCardClosed = mock((_id: string) => {});
-    const cardState = makeCardState({ id: "close-test-card" });
+    const stackState = makeStackState({ id: "close-test-card" });
 
     // The factory wires onClose → onCardClosed(id). Simulate this in the test
     // renderContent by calling onCardClosed directly on close trigger.
     const { container } = render(
       <StackFrame
         {...defaultProps}
-        cardState={cardState}
+        stackState={stackState}
         onCardClosed={onCardClosed}
         renderContent={() => (
           <button
@@ -229,7 +229,7 @@ describe("StackFrame – min-size clamping", () => {
     const onCardMoved = mock(
       (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {}
     );
-    const cardState = makeCardState({
+    const stackState = makeStackState({
       id: "resize-clamp-test",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -238,7 +238,7 @@ describe("StackFrame – min-size clamping", () => {
     const { container } = render(
       <StackFrame
         {...defaultProps}
-        cardState={cardState}
+        stackState={stackState}
         onCardMoved={onCardMoved}
         renderContent={makeRenderContent({ captureRef: injectedRef })}
       />

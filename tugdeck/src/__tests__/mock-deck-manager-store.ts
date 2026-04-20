@@ -20,19 +20,19 @@
 
 import React from "react";
 import type { IDeckManagerStore } from "../deck-manager-store";
-import type { DeckState, TabStateBag } from "../layout-tree";
+import type { DeckState, CardStateBag } from "../layout-tree";
 import { DeckManagerContext } from "../deck-manager-context";
 
 /** Build a minimal no-op DeckManager store mock suitable for unit tests. */
 export function makeMockStore(
   overrides?: Partial<IDeckManagerStore>,
 ): IDeckManagerStore {
-  const tabStateCache = new Map<string, TabStateBag>();
+  const cardStateCache = new Map<string, CardStateBag>();
   const saveCallbacks = new Map<string, () => void>();
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
-    getSnapshot: (): DeckState => ({ cards: [] }),
+    getSnapshot: (): DeckState => ({ cards: [], stacks: [] }),
     getVersion: () => 0,
     handleStackMoved: () => {},
     handleCardClosed: () => {},
@@ -49,9 +49,9 @@ export function makeMockStore(
     reorderCardInStack: () => {},
     detachCard: () => null,
     moveCardToStack: () => {},
-    getCardState: (id: string) => tabStateCache.get(id),
-    setCardState: (id: string, bag: TabStateBag) => {
-      tabStateCache.set(id, bag);
+    getCardState: (id: string) => cardStateCache.get(id),
+    setCardState: (id: string, bag: CardStateBag) => {
+      cardStateCache.set(id, bag);
     },
     initialFocusedCardId: undefined,
     // Save callbacks are actually wired so CardContentHost's registered

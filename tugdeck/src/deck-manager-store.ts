@@ -11,7 +11,7 @@
  * - Spec S01: IDeckManagerStore interface
  */
 
-import type { DeckState, TabStateBag } from "./layout-tree";
+import type { DeckState, CardStateBag } from "./layout-tree";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
 
 /**
@@ -178,14 +178,14 @@ export interface IDeckManagerStore {
    * `undefined` when there is no cached state for the card.
    * (Renamed from `getTabState`.)
    */
-  getCardState: (cardId: string) => TabStateBag | undefined;
+  getCardState: (cardId: string) => CardStateBag | undefined;
 
   /**
    * Write a per-card state bag to the in-memory cache and schedule a
    * debounced tugbank write (fire-and-forget). (Renamed from
    * `setTabState`.)
    */
-  setCardState: (cardId: string, bag: TabStateBag) => void;
+  setCardState: (cardId: string, bag: CardStateBag) => void;
 
   /**
    * The card ID that was focused when the deck was last saved to tugbank.

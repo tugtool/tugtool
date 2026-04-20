@@ -70,7 +70,7 @@ beforeEach(() => {
  * Build a minimal mock IDeckManagerStore for e2e tests.
  * DeckCanvas requires a DeckManagerContext.Provider since Phase 5a2.
  */
-function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
+function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckManagerStore {
   return {
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
@@ -92,7 +92,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
     // Phase 5f additions
     getCardState: (_tabId: string) => undefined,
-    setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+    setCardState: (_tabId: string, _bag: import("@/layout-tree").CardStateBag) => {},
     initialFocusedCardId: undefined,
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
@@ -103,8 +103,18 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
   };
 }
 
-/** Build a minimal CardState for a given componentId. */
-function makeCardState(id: string, componentId: string): CardState {
+/** Build a minimal legacy-shape card (single tab). `buildDeckState` below
+ *  expands each into a Card + CardStack pair. */
+interface LegacyCard {
+  id: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  tabs: Array<{ id: string; componentId: string; title: string; closable: boolean }>;
+  activeTabId: string;
+  title: string;
+  acceptsFamilies: readonly string[];
+}
+function makeCardState(id: string, componentId: string): LegacyCard {
   return {
     id,
     position: { x: 0, y: 0 },
@@ -116,6 +126,25 @@ function makeCardState(id: string, componentId: string): CardState {
   };
 }
 
+function buildDeckState(legacyCards: LegacyCard[]): DeckState {
+  const cards: CardState[] = [];
+  const stacks = legacyCards.map((lc) => {
+    for (const t of lc.tabs) {
+      cards.push({ id: t.id, componentId: t.componentId, title: t.title, closable: t.closable });
+    }
+    return {
+      id: lc.id,
+      position: lc.position,
+      size: lc.size,
+      cardIds: lc.tabs.map((t) => t.id),
+      activeCardId: lc.activeTabId,
+      title: lc.title,
+      acceptsFamilies: lc.acceptsFamilies,
+    };
+  });
+  return { cards, stacks };
+}
+
 /**
  * A minimal reactive IDeckManagerStore for e2e tests that need store.subscribe
  * notifications.
@@ -125,7 +154,7 @@ class ReactiveStore implements IDeckManagerStore {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
-  constructor(initial: DeckState = { cards: [] }) {
+  constructor(initial: DeckState = { cards: [], stacks: [] }) {
     this._state = initial;
   }
 
@@ -165,8 +194,8 @@ class ReactiveStore implements IDeckManagerStore {
   detachCard = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
   moveCardToStack = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
   // Phase 5f additions
-  getCardState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
-  setCardState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
+  getCardState = (_tabId: string): import("@/layout-tree").CardStateBag | undefined => undefined;
+  setCardState = (_tabId: string, _bag: import("@/layout-tree").CardStateBag): void => {};
   initialFocusedCardId: string | undefined = undefined;
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
@@ -221,12 +250,10 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
     const GALLERY_CARD_ID = "e2e-gallery-card-uuid";
     const addCardCalls: string[] = [];
 
-    const reactiveStore = new ReactiveStore({ cards: [] });
+    const reactiveStore = new ReactiveStore({ cards: [], stacks: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
-      reactiveStore.setState({
-        cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
-      });
+      reactiveStore.setState(buildDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]));
       return GALLERY_CARD_ID;
     };
 
@@ -289,12 +316,10 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
     const addCardCalls: string[] = [];
     const focusedIds: string[] = [];
 
-    const reactiveStore = new ReactiveStore({ cards: [] });
+    const reactiveStore = new ReactiveStore({ cards: [], stacks: [] });
     reactiveStore.addCard = (componentId: string) => {
       addCardCalls.push(componentId);
-      reactiveStore.setState({
-        cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
-      });
+      reactiveStore.setState(buildDeckState([makeCardState(GALLERY_CARD_ID, "gallery-buttons")]));
       return GALLERY_CARD_ID;
     };
     reactiveStore.activateCard = (id: string) => {

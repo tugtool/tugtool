@@ -74,10 +74,10 @@ function renderObservableProps(cardId = "obs-int-card") {
     ({ container } = render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId={`${cardId}-stack`} meta={{ title: "Test" }} feedIds={[]}>
+          <Tugcard stackId={`${cardId}-stack`} meta={{ title: "Test" }} feedIds={[]}>
             <CardContentHost
-              tabId={cardId}
-              hostCardId={`${cardId}-stack`}
+              cardId={cardId}
+              hostStackId={`${cardId}-stack`}
               componentId="gallery-observable-props"
             />
           </Tugcard>

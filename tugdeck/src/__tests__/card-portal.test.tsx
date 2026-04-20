@@ -50,7 +50,7 @@ describe("CardPortal", () => {
     const host = makeDiv();
     registry.register("card-1", host);
     render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <div data-testid="portal-child">hello</div>
       </CardPortal>,
     );
@@ -63,7 +63,7 @@ describe("CardPortal", () => {
     const registeredHost = makeDiv();
     registry.register("other-card", registeredHost);
     render(
-      <CardPortal hostCardId="missing">
+      <CardPortal hostStackId="missing">
         <div data-testid="portal-child">hello</div>
       </CardPortal>,
     );
@@ -75,7 +75,7 @@ describe("CardPortal", () => {
     const host2 = makeDiv();
     registry.register("card-1", host1);
     render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <div data-testid="portal-child">hello</div>
       </CardPortal>,
     );
@@ -93,7 +93,7 @@ describe("CardPortal", () => {
     const counters = { mount: 0, unmount: 0 };
     registry.register("card-1", host1);
     render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <Probe counters={counters} label="probe" />
       </CardPortal>,
     );
@@ -114,19 +114,19 @@ describe("CardPortal", () => {
 
     const counters = { mount: 0, unmount: 0 };
 
-    function Shell({ hostCardId }: { hostCardId: string }) {
+    function Shell({ hostStackId }: { hostStackId: string }) {
       return (
-        <CardPortal hostCardId={hostCardId}>
+        <CardPortal hostStackId={hostStackId}>
           <Probe counters={counters} label="probe" />
         </CardPortal>
       );
     }
 
-    const { rerender } = render(<Shell hostCardId="card-A" />);
+    const { rerender } = render(<Shell hostStackId="card-A" />);
     expect(counters.mount).toBe(1);
     expect(hostA.querySelector('[data-testid="probe"]')).not.toBeNull();
 
-    rerender(<Shell hostCardId="card-B" />);
+    rerender(<Shell hostStackId="card-B" />);
     expect(counters.mount).toBe(1);
     expect(counters.unmount).toBe(0);
     expect(hostA.querySelector('[data-testid="probe"]')).toBeNull();
@@ -136,7 +136,7 @@ describe("CardPortal", () => {
   it("becomes visible when the host registers mid-mount", () => {
     const host = makeDiv();
     render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <div data-testid="portal-child">hello</div>
       </CardPortal>,
     );
@@ -153,7 +153,7 @@ describe("CardPortal", () => {
     registry.register("card-1", host);
     const counters = { mount: 0, unmount: 0 };
     render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <Probe counters={counters} label="probe" />
       </CardPortal>,
     );
@@ -179,7 +179,7 @@ describe("CardPortal", () => {
     registry.register("card-1", host);
     const counters = { mount: 0, unmount: 0 };
     const { unmount } = render(
-      <CardPortal hostCardId="card-1">
+      <CardPortal hostStackId="card-1">
         <Probe counters={counters} label="probe" />
       </CardPortal>,
     );

@@ -1,8 +1,21 @@
 /**
- * Canvas data model for the card system.
+ * Canvas data model for the card system (two-table shape).
  *
- * DeckState holds a flat array of CardState values.
- * Each card has a position, size, tabs, and an active tab ID.
+ * DeckState holds two flat arrays:
+ *   - `cards`: the content identities — id, componentId, title, closable,
+ *     plus an optional persistence bag.
+ *   - `stacks`: the visual frames — position, size, ordered cardIds, the
+ *     active card in the stack, collapsed, acceptsFamilies, title.
+ *
+ * Invariants:
+ *   1. Every `cardIds` entry in every stack references a real card (by id) in
+ *      `deckState.cards`.
+ *   2. Each card appears in exactly one stack's `cardIds` (no orphans, no
+ *      duplicates).
+ *   3. No stack has an empty `cardIds` array — closing the last card of a
+ *      stack closes the stack.
+ *   4. Each stack's `activeCardId` is a member of that stack's `cardIds`.
+ *   5. `activeStackId`, when set, references a real stack in `stacks`.
  *
  * Spec S01: Canvas Data Model Types
  */
@@ -11,52 +24,84 @@ import type { SavedSelection } from "./components/tugways/selection-guard";
 
 // ---- Types (Spec S01) ----
 
-export interface TabItem {
-  id: string; // unique card instance ID
-  componentId: string; // "terminal" | "git" | "files" | "stats" | "code"
-  title: string;
-  closable: boolean;
-}
-
 /**
- * Per-tab state bag for scroll position, text selection, and card content state.
+ * Per-card state bag for scroll position, text selection, and card content
+ * state.
  *
- * Stored in DeckManager's in-memory cache (primary read source during a session)
- * and in tugbank under dev.tugtool.deck.tabstate/{tabId} (durable backing store).
+ * Stored in DeckManager's in-memory cache (primary read source during a
+ * session) and in tugbank under `dev.tugtool.deck.tabstate/{cardId}` (durable
+ * backing store). The tugbank row prefix retains the historical `tabstate/`
+ * name so existing persisted bags remain readable; `cardId` IS the former
+ * `tabId` (identity was preserved when the two-table model landed).
  *
- * Spec S01: TabStateBag type ([D01])
+ * Spec S01: CardStateBag type ([D01])
  */
-export interface TabStateBag {
+export interface CardStateBag {
   scroll?: { x: number; y: number };
   selection?: SavedSelection | null;
   content?: unknown;
 }
 
+/** Deprecated alias for {@link CardStateBag}. Kept so the tugbank settings API
+ *  and any external call sites that still import the old name continue to
+ *  type-check. New code should use {@link CardStateBag}. */
+export type TabStateBag = CardStateBag;
+
+/**
+ * A card — the content identity that survives cross-stack moves.
+ *
+ * A card knows its componentId, title, and whether it is closable. Position,
+ * size, and active-ness are properties of the enclosing stack, not the card.
+ * An optional `state` bag carries per-content persistence.
+ */
 export interface CardState {
+  id: string;
+  componentId: string;
+  title: string;
+  closable: boolean;
+  state?: CardStateBag;
+}
+
+/**
+ * A card stack — the visual frame containing one or more cards.
+ *
+ * Stacks own position, size, collapsed, acceptsFamilies, and the ordered list
+ * of cardIds they contain. Exactly one of the cardIds is the stack's
+ * `activeCardId`, which is the card whose content is visible in the stack.
+ */
+export interface CardStackState {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
-  tabs: TabItem[];
-  activeTabId: string;
-  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic cards. */
+  /** Ordered list of card ids belonging to this stack. */
+  cardIds: readonly string[];
+  /** The currently-active card in the stack. Must be in `cardIds`. */
+  activeCardId: string;
+  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic stacks. */
   title: string;
-  /** Families of card types this card can host in its type picker. Defaults to ["standard"]. */
+  /** Families of card types this stack can host in its type picker. Defaults to ["standard"]. */
   acceptsFamilies: readonly string[];
   /**
-   * Whether the card is collapsed (title bar only, content hidden).
-   * Missing/undefined is treated as false. No UI in Phase 5f — field established for Phase 8a.
-   * ([D04])
+   * Whether the stack is collapsed (title bar only, content hidden).
+   * Missing/undefined is treated as false. ([D04])
    */
   collapsed?: boolean;
 }
 
+/**
+ * The deck's full state.
+ *
+ * - `cards` holds every card identity in the deck.
+ * - `stacks` holds every stack frame; each stack's `cardIds` partitions
+ *   `cards`.
+ * - `activeStackId` identifies the deck's currently-active stack, if any.
+ * - `focusedCardId` records the card focused when the deck was last saved
+ *   (reload restoration only; not runtime focus inference). Persisted
+ *   separately to tugbank via settings-api, not in the layout blob. ([D03])
+ */
 export interface DeckState {
-  cards: CardState[];
-  /**
-   * The ID of the card that was focused when the deck was last saved.
-   * Used only for reload restoration (not runtime focus inference).
-   * Persisted separately to tugbank via settings-api, not in the layout blob.
-   * ([D03])
-   */
+  cards: readonly CardState[];
+  stacks: readonly CardStackState[];
+  activeStackId?: string;
   focusedCardId?: string;
 }

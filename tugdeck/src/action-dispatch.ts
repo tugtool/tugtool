@@ -298,13 +298,29 @@ export function initActionDispatch(
   // lifecycle) so selecting a card from the View menu fires the full
   // will/didDeactivate + will/didActivate transition and promotes the
   // responder chain. `focusCard` alone would only reorder z-order.
+  //
+  // The `cardId` wire name on the View menu payload refers — post the
+  // Card/CardStack rename — to a stack id in the current deck: the View
+  // menu list is emitted from `pushCardListToHost`, which ships stack ids
+  // under that key for backward compatibility with Swift. We resolve the
+  // stack's active card id and activate that.
   registerAction("focus-card", (payload) => {
-    const cardId = payload.cardId;
-    if (typeof cardId !== "string") {
+    const id = payload.cardId;
+    if (typeof id !== "string") {
       console.warn("focus-card: missing or invalid cardId", payload);
       return;
     }
-    deckManager.activateCard(cardId);
+    const snapshot = deckManager.getSnapshot();
+    const stack = snapshot.stacks.find((s) => s.id === id);
+    if (stack) {
+      deckManager.activateCard(stack.activeCardId);
+      return;
+    }
+    // Fallback: treat `id` as a card id (old semantic).
+    const hostStack = snapshot.stacks.find((s) => s.cardIds.includes(id));
+    if (hostStack) {
+      deckManager.activateCard(id);
+    }
   });
 
   // show-card: Add a card by componentId (Spec S08)

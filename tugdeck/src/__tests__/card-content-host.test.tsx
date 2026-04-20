@@ -52,7 +52,7 @@ describe("CardContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainProvider>
-          <CardContentHost tabId="tab-1" hostCardId="card-1" componentId="content-host-hello" />
+          <CardContentHost cardId="tab-1" hostStackId="card-1" componentId="content-host-hello" />
         </ResponderChainProvider>,
       ),
     );
@@ -69,7 +69,7 @@ describe("CardContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainProvider>
-          <CardContentHost tabId="tab-1" hostCardId="card-1" componentId="not-registered" />
+          <CardContentHost cardId="tab-1" hostStackId="card-1" componentId="not-registered" />
         </ResponderChainProvider>,
       ),
     );
@@ -88,7 +88,7 @@ describe("CardContentHost", () => {
     const { unmount } = render(
       withDeckManager(
         <ResponderChainProvider>
-          <CardContentHost tabId="my-tab" hostCardId="my-card" componentId="content-host-hello" />
+          <CardContentHost cardId="my-tab" hostStackId="my-card" componentId="content-host-hello" />
         </ResponderChainProvider>,
         store,
       ),
@@ -145,7 +145,7 @@ describe("CardContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <CardContentHost tabId="prop-tab" hostCardId="prop-card" componentId="content-host-prop" />
+          <CardContentHost cardId="prop-tab" hostStackId="prop-card" componentId="content-host-prop" />
         </ResponderChainContext.Provider>,
       ),
     );
@@ -188,7 +188,7 @@ describe("CardContentHost", () => {
     render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <CardContentHost tabId="no-prop-tab" hostCardId="no-prop-card" componentId="no-prop" />
+          <CardContentHost cardId="no-prop-tab" hostStackId="no-prop-card" componentId="no-prop" />
         </ResponderChainContext.Provider>,
       ),
     );
