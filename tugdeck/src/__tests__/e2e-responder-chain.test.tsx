@@ -97,6 +97,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
     unregisterSaveCallback: (_id: string) => {},
+    invokeSaveCallback: (_id: string) => {},
     // Collapse toggle
     toggleCardCollapse: (_id: string) => {},
   };
@@ -170,6 +171,7 @@ class ReactiveStore implements IDeckManagerStore {
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
   unregisterSaveCallback = (_id: string): void => {};
+  invokeSaveCallback = (_id: string): void => {};
   // Collapse toggle
   toggleCardCollapse = (_id: string): void => {};
 

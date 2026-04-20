@@ -26,6 +26,7 @@ import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:te
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { Tugcard } from "@/components/tugways/tug-card";
+import { TabContentHost } from "@/components/chrome/tab-content-host";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
@@ -835,6 +836,9 @@ function MakePropertyCardContent({
 }
 
 describe("Tugcard – setProperty action (Phase 5d4)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
   it("renders without error when no PropertyStore is registered", () => {
     // No card content calls usePropertyStore -- setProperty should be no-op
     const { manager } = renderWithManager(
@@ -864,9 +868,15 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     const storeRef = React.createRef<PropertyStore | null>() as React.MutableRefObject<PropertyStore | null>;
     storeRef.current = null;
 
+    registerCard({
+      componentId: "property-test",
+      defaultMeta: { title: "Test", closable: true },
+      contentFactory: () => <MakePropertyCardContent storeOutRef={storeRef} />,
+    });
+
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-with-store">
-        <MakePropertyCardContent storeOutRef={storeRef} />
+        <TabContentHost tabId="tab-with-store" hostCardId="card-with-store" componentId="property-test" />
       </Tugcard>
     );
 
@@ -900,9 +910,15 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
     const storeRef = React.createRef<PropertyStore | null>() as React.MutableRefObject<PropertyStore | null>;
     storeRef.current = null;
 
+    registerCard({
+      componentId: "property-default-source",
+      defaultMeta: { title: "Test", closable: true },
+      contentFactory: () => <MakePropertyCardContent storeOutRef={storeRef} />,
+    });
+
     const { manager } = renderWithManager(
       <Tugcard {...defaultProps} cardId="card-default-source">
-        <MakePropertyCardContent storeOutRef={storeRef} />
+        <TabContentHost tabId="tab-default-source" hostCardId="card-default-source" componentId="property-default-source" />
       </Tugcard>
     );
 
@@ -961,7 +977,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
                   >
-              <div>content</div>
+              <TabContentHost tabId={tab1.id} hostCardId="card-sf4" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1022,7 +1038,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
                   >
-              <div>content</div>
+              <TabContentHost tabId={tab1.id} hostCardId="card-sg" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1057,7 +1073,8 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
 // ---------------------------------------------------------------------------
 
 describe("Tugcard – tab activation restores state from store cache (Phase 5f Step 5)", () => {
-  afterEach(() => { cleanup(); _resetForTest(); });
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("after tab activation, scroll position is set on the content area", () => {
     registerCard({
@@ -1150,7 +1167,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <div>content</div>
+              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-rsel" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1200,6 +1217,12 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       return <div>persistent child</div>;
     }
 
+    registerCard({
+      componentId: "persistent-rcb",
+      defaultMeta: { title: "RCB", closable: true },
+      contentFactory: () => <PersistentChild />,
+    });
+
     let rerender!: ReturnType<typeof render>["rerender"];
 
     function TestCard({ currentTab }: { currentTab: string }) {
@@ -1213,7 +1236,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <PersistentChild />
+              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-rcb" componentId="persistent-rcb" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1241,7 +1264,8 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
 // ---------------------------------------------------------------------------
 
 describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
-  afterEach(() => { cleanup(); _resetForTest(); });
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   /**
    * T01: Persist path with scroll+content.
@@ -1290,6 +1314,12 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return <div data-testid="t01-content">{_restoredText}</div>;
     }
 
+    registerCard({
+      componentId: "persistent-t01",
+      defaultMeta: { title: "T01", closable: true },
+      contentFactory: () => <PersistentChild />,
+    });
+
     let rerender!: ReturnType<typeof render>["rerender"];
     let container!: HTMLElement;
 
@@ -1304,7 +1334,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
                   >
-              <PersistentChild />
+              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t01" componentId="persistent-t01" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1378,6 +1408,12 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return <div data-testid="t02-content">{_text}</div>;
     }
 
+    registerCard({
+      componentId: "persistent-t02",
+      defaultMeta: { title: "T02", closable: true },
+      contentFactory: () => <PersistentChild />,
+    });
+
     const prevTabId = "tab-t02-prev";
     let container!: HTMLElement;
     let rerender!: ReturnType<typeof render>["rerender"];
@@ -1392,7 +1428,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t02"
               activeTabId={currentTab}
             >
-              <PersistentChild />
+              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t02" componentId="persistent-t02" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1506,6 +1542,12 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
       return <div data-testid="t04-content">persistent child</div>;
     }
 
+    registerCard({
+      componentId: "persistent-t04",
+      defaultMeta: { title: "T04", closable: true },
+      contentFactory: () => <PersistentChild />,
+    });
+
     const prevTabId = "tab-t04-prev";
     let container!: HTMLElement;
     let rerender!: ReturnType<typeof render>["rerender"];
@@ -1520,7 +1562,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t04"
               activeTabId={currentTab}
             >
-              <PersistentChild />
+              <TabContentHost key={currentTab} tabId={currentTab} hostCardId="card-t04" componentId="persistent-t04" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1558,13 +1600,21 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
 // ---------------------------------------------------------------------------
 
 describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
-  afterEach(() => { cleanup(); _resetForTest(); });
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   /**
-   * T07: mounting a Tugcard calls store.registerSaveCallback with the card ID
-   * and a function; unmounting calls store.unregisterSaveCallback.
+   * T07: mounting a Tugcard + TabContentHost registers a save callback keyed
+   * by the tab's id; unmounting unregisters it. Registration moved from
+   * Tugcard to TabContentHost in the 11.6.1a Piece 1.ii refactor.
    */
   it("T07: mounting registers save callback; unmounting unregisters it", () => {
+    registerCard({
+      componentId: "hello",
+      defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
+    });
+
     const store = makeMockStore();
     const registerSpy = spyOn(store, "registerSaveCallback");
     const unregisterSpy = spyOn(store, "unregisterSaveCallback");
@@ -1582,7 +1632,7 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
               {...defaultProps}
               cardId="card-t07"
             >
-              <div>content</div>
+              <TabContentHost tabId="tab-t07" hostCardId="card-t07" componentId="hello" />
             </Tugcard>
             </TugTooltipProvider>
           </ResponderChainProvider>
@@ -1591,13 +1641,13 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
       unmountFn = result.unmount;
     });
 
-    // registerSaveCallback must have been called with the cardId and a function.
+    // registerSaveCallback must have been called with the tabId and a function.
     expect(registerSpy).toHaveBeenCalled();
     const calls = registerSpy.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    // First arg is cardId, second is a function wrapper.
+    // First arg is the tabId (TabContentHost keys by tab), second is a function wrapper.
     const [registeredId, registeredCb] = calls[calls.length - 1] as [string, () => void];
-    expect(registeredId).toBe("card-t07");
+    expect(registeredId).toBe("tab-t07");
     expect(typeof registeredCb).toBe("function");
 
     // unregisterSaveCallback must NOT have been called yet.
@@ -1608,11 +1658,11 @@ describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
       unmountFn();
     });
 
-    // unregisterSaveCallback must have been called with the cardId.
+    // unregisterSaveCallback must have been called with the tabId.
     expect(unregisterSpy).toHaveBeenCalled();
     const unregCalls = unregisterSpy.mock.calls;
     expect(unregCalls.length).toBeGreaterThan(0);
-    expect(unregCalls[unregCalls.length - 1][0]).toBe("card-t07");
+    expect(unregCalls[unregCalls.length - 1][0]).toBe("tab-t07");
   });
 });
 

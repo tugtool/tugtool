@@ -85,6 +85,7 @@ const mockStore: IDeckManagerStore = {
   initialFocusedCardId: undefined,
   registerSaveCallback: (_id: string, _callback: () => void) => {},
   unregisterSaveCallback: (_id: string) => {},
+  invokeSaveCallback: (_id: string) => {},
   toggleCardCollapse: (_id: string) => {},
 };
 

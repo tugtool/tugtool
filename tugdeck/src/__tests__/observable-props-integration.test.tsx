@@ -37,6 +37,7 @@ import { registerGalleryCards } from "@/components/tugways/cards/gallery-registr
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
+import { TabContentHost } from "@/components/chrome/tab-content-host";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -74,13 +75,18 @@ function renderObservableProps(cardId = "obs-int-card") {
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
           <Tugcard cardId={cardId} meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservableProps cardId={cardId} />
+            <TabContentHost
+              tabId={`${cardId}-tab`}
+              hostCardId={cardId}
+              componentId="gallery-observable-props"
+            />
           </Tugcard>
         </ResponderChainContext.Provider>
       )
     ));
   });
-  // Flush useLayoutEffect hooks (usePropertyStore registration, useResponder).
+  // Flush useLayoutEffect hooks (usePropertyStore registration, useResponder,
+  // TabContentHost's PropertyStore publication to the registry, etc.).
   act(() => {});
   return { container, manager };
 }

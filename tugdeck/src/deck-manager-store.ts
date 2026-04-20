@@ -188,6 +188,14 @@ export interface IDeckManagerStore {
   unregisterSaveCallback: (id: string) => void;
 
   /**
+   * Invoke the save callback registered under the given ID, if any. Used by
+   * callers that need to trigger a specific save synchronously (e.g., save
+   * outgoing tab's state before switching to a new active tab). No-op when
+   * no callback is registered.
+   */
+  invokeSaveCallback: (id: string) => void;
+
+  /**
    * Toggle the collapsed state of a card.
    *
    * When collapsing: sets `collapsed: true` in CardState. The CardFrame will

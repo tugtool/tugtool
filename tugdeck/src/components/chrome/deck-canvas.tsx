@@ -65,6 +65,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { CardFrame } from "./card-frame";
+import { TabContentHost } from "./tab-content-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -461,11 +462,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             activeTabId={cardState.activeTabId}
             renderContent={(injected) => {
               // Unified rendering path: DeckCanvas always constructs Tugcard
-              // directly with all props. contentFactory provides the card-specific
-              // content. This ensures every card — single-tab or multi-tab — gets
-              // the same props (activeTabId, onClose, etc.) without cloneElement
-              // injection or factory indirection.
+              // directly with all props. The TabContentHost for the active
+              // tab is passed as children — it wraps `registration.contentFactory`
+              // with per-tab context providers (feed data, property store,
+              // persistence, dirty marker) that used to live in Tugcard.
+              // See components/chrome/tab-content-host.tsx.
               const hasMultipleTabs = cardState.tabs.length > 1;
+              const activeTab = cardState.tabs.find((t) => t.id === cardState.activeTabId);
+              const activeComponentId = activeTab?.componentId ?? componentId;
               return (
                 <Tugcard
                   cardId={cardState.id}
@@ -481,7 +485,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                   cardTitle={hasMultipleTabs ? cardState.title : undefined}
                   acceptedFamilies={hasMultipleTabs ? cardState.acceptsFamilies : undefined}
                 >
-                  {registration.contentFactory(cardState.id)}
+                  {activeTab ? (
+                    <TabContentHost
+                      key={activeTab.id}
+                      tabId={activeTab.id}
+                      hostCardId={cardState.id}
+                      componentId={activeComponentId}
+                    />
+                  ) : null}
                 </Tugcard>
               );
             }}

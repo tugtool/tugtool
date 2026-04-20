@@ -22,30 +22,21 @@
  */
 
 import "./tug-card.css";
-import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
-import type { TabItem, TabStateBag } from "../../layout-tree";
-import { selectionGuard } from "./selection-guard";
-import type { SavedSelection } from "./selection-guard";
+import type { TabItem } from "../../layout-tree";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TugTabBar } from "./tug-tab-bar";
-import { TugcardPropertyContext } from "./hooks/use-property-store";
-import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
-import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
 import { TugButton } from "./internal/tug-button";
-import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
-import { getConnection } from "../../lib/connection-singleton";
-import { useCardWorkspaceKey } from "./hooks/use-card-workspace-key";
-import { presentWorkspaceKey } from "../../card-registry";
 import * as cardContentRegistry from "../chrome/card-content-registry";
+import * as tabPropertyStoreRegistry from "../chrome/tab-property-store-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -319,7 +310,7 @@ export const TugcardPortalContext = createContext<HTMLDivElement | null>(null);
  *
  * null when rendered outside a Tugcard.
  */
-const TugcardDirtyContext = createContext<(() => void) | null>(null);
+export const TugcardDirtyContext = createContext<(() => void) | null>(null);
 
 /**
  * Hook for card content to signal a state change worth persisting.
@@ -497,46 +488,6 @@ export function Tugcard({
   useSelectionBoundary(cardId, contentRef);
 
   // ---------------------------------------------------------------------------
-  // PropertyStore registration ([D01], [D04])
-  // ---------------------------------------------------------------------------
-
-  // Holds the PropertyStore registered by card content via usePropertyStore.
-  // Set via TugcardPropertyContext registration callback; read by setProperty
-  // action handler. Null when card content has not called usePropertyStore.
-  const propertyStoreRef = useRef<PropertyStore | null>(null);
-
-  // Stable registration callback provided to TugcardPropertyContext. Card
-  // content calls this in useLayoutEffect via usePropertyStore() to install
-  // the store before any events fire. [D01]
-  //
-  // useCallback with [] keeps the reference stable across re-renders so
-  // TugcardPropertyContext does not unnecessarily re-trigger consumers.
-  // The setProperty responder reads propertyStoreRef.current directly,
-  // which is always current because propertyStoreRef is a ref (Rule #5).
-  const registerPropertyStore = useCallback((ps: PropertyStore) => {
-    propertyStoreRef.current = ps;
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Persistence callbacks ([D02])
-  // ---------------------------------------------------------------------------
-
-  // Holds the save/restore callbacks registered by card content via
-  // useTugcardPersistence. null when no card content has registered.
-  // Read synchronously in saveCurrentTabState (Rule #5 — ref).
-  const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
-
-  // Stable registration callback provided to TugcardPersistenceContext.
-  // Card content calls this in useLayoutEffect via useTugcardPersistence.
-  // useCallback with [] keeps the reference stable across re-renders.
-  const registerPersistenceCallbacks = useCallback(
-    (callbacks: TugcardPersistenceCallbacks) => {
-      persistenceCallbacksRef.current = callbacks;
-    },
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
   // Tab state refs (for stable responder actions, Rule of Tug #5)
   // ---------------------------------------------------------------------------
 
@@ -549,76 +500,31 @@ export function Tugcard({
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
-  // ---------------------------------------------------------------------------
-  // saveCurrentTabState helper ([D01], #lifecycle-flow)
-  // ---------------------------------------------------------------------------
-
-  // Stored in a ref so that handleTabSelect, handlePreviousTab, and handleNextTab
-  // can all call it from stable closures without going stale (Rule #5).
-  //
-  // Captures scroll position, selection, and card content state for the current
-  // active tab and writes them to the DeckManager tab state cache.
-  const saveCurrentTabStateRef = useRef<(() => void) | null>(null);
-  saveCurrentTabStateRef.current = () => {
-    const tabId = activeTabIdRef.current;
-    if (!tabId) return;
-
-    const contentEl = contentRef.current;
-    const scroll = contentEl
-      ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
-      : undefined;
-
-    const selection = selectionGuard.saveSelection(cardId);
-
-    const content = persistenceCallbacksRef.current?.onSave();
-
-    const bag: TabStateBag = {
-      ...(scroll !== undefined ? { scroll } : {}),
-      ...(selection !== null ? { selection } : {}),
-      ...(content !== undefined ? { content } : {}),
-    };
-
-    store.setTabState(tabId, bag);
-  };
-
   // Tab-select side effect: save the OUTGOING tab's state before
-  // switching, then commit the new active tab to the store. Called from
-  // the `selectTab` chain handler below; also called via dispatch from
-  // `previousTab` / `nextTab` handlers, which now route through the chain
-  // so this side effect runs in exactly one place ([D01], #lifecycle-flow).
+  // switching, then commit the new active tab to the store. The outgoing
+  // tab's save is triggered via `store.invokeSaveCallback(outgoingTabId)`;
+  // each TabContentHost registers its save under its own tabId so the
+  // right per-tab bag is captured even when multiple tabs coexist on a
+  // card (Piece 1.iii). Called from the `selectTab` chain handler below;
+  // also called via dispatch from `previousTab` / `nextTab` handlers, which
+  // route through the chain so this side effect runs in exactly one place
+  // ([D01], #lifecycle-flow).
   const performSelectTab = useCallback(
     (newTabId: string) => {
-      // Save full state for the OLD active tab before unmounting it.
-      saveCurrentTabStateRef.current?.();
-      // Commit the new active tab through the store, triggering re-render.
+      const outgoingTabId = activeTabIdRef.current;
+      if (outgoingTabId) {
+        store.invokeSaveCallback(outgoingTabId);
+      }
       store.setActiveTab(cardId, newTabId);
     },
     [store, cardId],
   );
 
-  // Register a stable save callback with DeckManager ([D01]).
-  //
-  // Wraps saveCurrentTabStateRef.current so DeckManager can call it on
-  // visibilitychange and beforeunload. The wrapper dereferences
-  // saveCurrentTabStateRef.current at call time — NOT at registration time — because
-  // saveCurrentTabStateRef.current is reassigned every render (it captures inline
-  // closures). Passing saveCurrentTabStateRef.current directly would snapshot the
-  // initial render's closure and go stale.
-  //
-  // useLayoutEffect follows Rule of Tugways #3 (registrations that events depend on).
-  // Cleanup calls unregisterSaveCallback so the callback is removed when Tugcard unmounts.
-  useLayoutEffect(() => {
-    store.registerSaveCallback(cardId, () => saveCurrentTabStateRef.current?.());
-    return () => {
-      store.unregisterSaveCallback(cardId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, store]);
-
   // Register this card's content element with the card-content-registry so
   // CardPortal consumers can route their DOM output into it. Used by the
-  // portal-based tab-content hosting path (Step 11.6.1a Piece 1). Piece 1.i
-  // only establishes the registration — nothing reads it yet.
+  // portal-based tab-content hosting path (Step 11.6.1a Piece 1). The
+  // content area is empty in the React tree after Piece 1.ii — `children`
+  // is a `TabContentHost` whose context providers wrap the content factory.
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
@@ -627,175 +533,6 @@ export function Tugcard({
       cardContentRegistry.unregister(cardId);
     };
   }, [cardId]);
-
-  // ---------------------------------------------------------------------------
-  // Auto-save: debounced tab state persistence on scroll, selection, and
-  // content changes. Saves scroll position, selection, and card content state
-  // to tugbank via the existing saveCurrentTabState mechanism.
-  // ---------------------------------------------------------------------------
-
-  const autoSaveTimerRef = useRef<number | null>(null);
-
-  // Stable markDirty callback: schedule a debounced save. Used by:
-  //   - scroll listener (below)
-  //   - selectionchange listener (below)
-  //   - card content via useTugcardDirty() (contentchange)
-  const markDirty = useCallback(() => {
-    if (autoSaveTimerRef.current !== null) {
-      window.clearTimeout(autoSaveTimerRef.current);
-    }
-    autoSaveTimerRef.current = window.setTimeout(() => {
-      autoSaveTimerRef.current = null;
-      saveCurrentTabStateRef.current?.();
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, []);
-
-  // Install scroll and selectionchange listeners. Both funnel into markDirty.
-  useEffect(() => {
-    const contentEl = contentRef.current;
-
-    // Scroll: listen on the content area element.
-    const handleScroll = () => markDirty();
-    contentEl?.addEventListener("scroll", handleScroll, { passive: true });
-
-    // Selection: listen on document, filter to this card's boundary.
-    const handleSelectionChange = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const anchor = sel.anchorNode;
-      if (anchor && contentEl?.contains(anchor)) {
-        markDirty();
-      }
-    };
-    document.addEventListener("selectionchange", handleSelectionChange);
-
-    return () => {
-      contentEl?.removeEventListener("scroll", handleScroll);
-      document.removeEventListener("selectionchange", handleSelectionChange);
-      if (autoSaveTimerRef.current !== null) {
-        window.clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, [markDirty, cardId]);
-
-  // Pending scroll/selection refs for the onContentReady callback path.
-  // Tugcard stores the values to restore here before calling onRestore, then reads
-  // them in the onContentReady callback (after child DOM commits). ([D04])
-  const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
-  const pendingSelectionRef = useRef<SavedSelection | null>(null);
-
-  // Activation restore — deterministic child-driven ready callback. ([D78], [D79])
-  //
-  // Two paths:
-  //
-  //   PERSIST PATH (card content registered useTugcardPersistence AND bag.content exists):
-  //     The child's onRestore calls setState, which triggers a re-render. The child's
-  //     own no-deps useLayoutEffect (in useTugcardPersistence) fires after that commit
-  //     and calls the onContentReady callback we write here. At that point, the DOM
-  //     reflects the restored content and scroll/selection can be applied safely.
-  //     visibility:hidden is applied only when bag.scroll exists to suppress the
-  //     one-frame wrong-scroll-position flash. Content-only restores skip hiding. ([D04])
-  //
-  //   DIRECT-APPLY FALLBACK (no persistence registered, OR bag.content undefined):
-  //     No child re-render is triggered, so the DOM is already stable. Scroll and
-  //     selection are applied directly in the effect body without hiding. ([D04])
-  //
-  // Cleanup resets pending refs, clears the restorePendingRef flag (cancels a stale
-  // pending callback on rapid tab switch), and restores visibility if hidden. ([D05])
-  useLayoutEffect(() => {
-    if (!activeTabId) return;
-    const bag = store.getTabState(activeTabId);
-
-    // Early return if no bag or nothing to restore.
-    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
-
-    const contentEl = contentRef.current;
-
-    // Determine whether the persist path applies:
-    // - callbacks object must be registered (card content called useTugcardPersistence), AND
-    // - restorePendingRef must be present (guards against the no-op cleanup re-registration
-    //   which writes a callbacks pair without restorePendingRef), AND
-    // - bag.content must exist (no content to restore means no child setState to wait for).
-    const hasPersistence =
-      persistenceCallbacksRef.current !== null &&
-      persistenceCallbacksRef.current.restorePendingRef !== undefined &&
-      bag.content !== undefined;
-
-    if (hasPersistence) {
-      // --- PERSIST PATH ---
-      // Store pending scroll and selection for the onContentReady callback.
-      pendingScrollRef.current = bag.scroll ?? null;
-      pendingSelectionRef.current = bag.selection ?? null;
-
-      // Flash suppression: hide content only when scroll state exists.
-      // Content-only restores (no scroll) have no wrong-scroll-position flash.
-      let didHide = false;
-      if (contentEl && bag.scroll !== undefined) {
-        contentEl.style.visibility = "hidden";
-        didHide = true;
-      }
-
-      // Write the onContentReady callback into the callbacks object.
-      // The child's no-deps useLayoutEffect (in useTugcardPersistence) will call
-      // this after the child's DOM commits. ([D01], [D02])
-      persistenceCallbacksRef.current!.onContentReady = () => {
-        // Apply scroll from pending ref (DOM height is now stable after child commit).
-        if (contentEl && pendingScrollRef.current !== null) {
-          contentEl.scrollLeft = pendingScrollRef.current.x;
-          contentEl.scrollTop = pendingScrollRef.current.y;
-        }
-
-        // Restore visibility before applying selection — browsers may not render
-        // the selection highlight if set while visibility:hidden.
-        if (didHide && contentEl) {
-          contentEl.style.visibility = "";
-        }
-
-        // Apply selection after scroll and unhide.
-        if (pendingSelectionRef.current != null) {
-          selectionGuard.restoreSelection(cardId, pendingSelectionRef.current);
-        }
-
-        // Clear pending refs after applying.
-        pendingScrollRef.current = null;
-        pendingSelectionRef.current = null;
-      };
-
-      // Set the flag so the child's no-deps useLayoutEffect fires the callback.
-      // Must be set AFTER writing onContentReady (both are read in one effect).
-      persistenceCallbacksRef.current!.restorePendingRef!.current = true;
-
-      // Trigger the child's setState (causes re-render → child useLayoutEffect fires).
-      persistenceCallbacksRef.current!.onRestore(bag.content!);
-
-      // Cleanup: cancel pending callback on rapid tab switch. ([D05])
-      return () => {
-        if (persistenceCallbacksRef.current?.restorePendingRef) {
-          persistenceCallbacksRef.current.restorePendingRef.current = false;
-        }
-        pendingScrollRef.current = null;
-        pendingSelectionRef.current = null;
-        if (didHide && contentEl) {
-          contentEl.style.visibility = "";
-        }
-      };
-    } else {
-      // --- DIRECT-APPLY FALLBACK ---
-      // No persistence registered, or bag.content is undefined (no child setState).
-      // The DOM is already stable — apply scroll and selection directly.
-      // No visibility hiding needed. ([D04])
-      if (contentEl && bag.scroll !== undefined) {
-        contentEl.scrollLeft = bag.scroll.x;
-        contentEl.scrollTop = bag.scroll.y;
-      }
-      if (bag.selection != null) {
-        selectionGuard.restoreSelection(cardId, bag.selection);
-      }
-      // No cleanup needed: nothing was hidden, no pending state set.
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, cardId]);
 
   // ---------------------------------------------------------------------------
   // Responder registration (D07)
@@ -932,15 +669,17 @@ export function Tugcard({
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
         console.info("find: stub — no find UI implemented yet");
       },
-      // Route incoming set-property actions to the registered PropertyStore.
+      // Route incoming set-property actions to the PropertyStore published
+      // by the active tab's TabContentHost via tab-property-store-registry.
       // Payload shape: { path: string, value: unknown, source?: string }.
-      // No-op when no PropertyStore is registered (card does not support inspection).
+      // No-op when no PropertyStore is registered (card content does not
+      // support inspection, or no active tab has registered one yet).
       [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
-        const store = propertyStoreRef.current;
-        if (!store) return;
+        const ps = tabPropertyStoreRegistry.get(cardId);
+        if (!ps) return;
         const payload = event.value as { path: string; value: unknown; source?: string } | undefined;
         if (!payload || typeof payload.path !== "string") return;
-        store.set(payload.path, payload.value, payload.source ?? "inspector");
+        ps.set(payload.path, payload.value, payload.source ?? "inspector");
       },
     },
   });
@@ -1020,86 +759,11 @@ export function Tugcard({
     onMinSizeChange?.({ width: totalMinWidth, height: totalMinHeight });
   }, [onMinSizeChange, totalMinWidth, totalMinHeight]);
 
-  // ---------------------------------------------------------------------------
-  // Feed state — L02: external WebSocket data via useSyncExternalStore only
-  // ---------------------------------------------------------------------------
-
-  // Per-card workspace binding (Spec S10). `workspaceKey` is undefined until
-  // the `spawn_session_ok` CONTROL ack populates the binding store; during
-  // that unbound window we fall back to `presentWorkspaceKey` (boolean
-  // presence check) so feedframes aren't held until binding lands. Once the
-  // key is known, the filter tightens to an exact value match.
-  const workspaceKey = useCardWorkspaceKey(cardId);
-  const workspaceFilter: FeedStoreFilter = useMemo(
-    () =>
-      workspaceKey
-        ? (_feedId, decoded) =>
-            typeof decoded === "object" &&
-            decoded !== null &&
-            "workspace_key" in decoded &&
-            (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
-        : presentWorkspaceKey,
-    [workspaceKey],
-  );
-
-  // Create FeedStore once on mount (via ref). The store subscribes to each
-  // feedId via connection.onFrame() and decodes payloads. Disposed on unmount.
-  const feedStoreRef = useRef<FeedStore | null>(null);
-  if (feedStoreRef.current === null && feedIds.length > 0) {
-    const conn = getConnection();
-    if (conn !== null) {
-      // Adapt the per-card decode prop (feedId, bytes) => unknown to the
-      // FeedStore's simpler (payload) => unknown signature. We need one store
-      // per card with consistent feedIds at mount time; the feedIds list is
-      // fixed at registration time so this is stable.
-      //
-      // Because FeedStore.onFrame callbacks are keyed per feedId we use a
-      // wrapper that routes each feedId through the prop decoder when provided.
-      if (decode) {
-        // Per-feedId decoders: create one store per feedId, then merge — but
-        // that complicates the map. Instead, create a single store with the
-        // default decoder and let the card-level decode prop override. For now,
-        // we pass a unified decoder that ignores the per-id routing and uses the
-        // prop for the first feedId. This is sufficient for current use cases
-        // (single-feed cards like GitCard).
-        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload), workspaceFilter);
-      } else {
-        feedStoreRef.current = new FeedStore(conn, feedIds, undefined, workspaceFilter);
-      }
-    }
-  }
-
-  // Re-install the workspace filter on the existing FeedStore whenever the
-  // memoized predicate identity changes (i.e., when `workspaceKey` flips
-  // from undefined → bound, or between bound values). The FeedStore itself
-  // is constructed once per card; only the filter is reactive.
-  useEffect(() => {
-    feedStoreRef.current?.setFilter(workspaceFilter);
-  }, [workspaceFilter]);
-
-  // Stable no-op subscribe and empty snapshot for feedless cards.
-  // The empty map must be a stable reference so useSyncExternalStore does not
-  // trigger infinite re-renders when getSnapshot returns a new object each call.
-  const noopSubscribe = useRef((_listener: () => void) => () => {}).current;
-  const emptyMapRef = useRef(new Map<number, unknown>());
-  const emptySnapshot = useRef(() => emptyMapRef.current).current;
-
-  // Subscribe to FeedStore via useSyncExternalStore (L02).
-  const feedData = useSyncExternalStore(
-    feedStoreRef.current?.subscribe ?? noopSubscribe,
-    feedStoreRef.current?.getSnapshot ?? emptySnapshot,
-  );
-
-  // Dispose FeedStore on unmount.
-  useEffect(() => {
-    return () => {
-      feedStoreRef.current?.dispose();
-      feedStoreRef.current = null;
-    };
-  }, []);
-
-  // Feed readiness: feedless cards are always ready; feed cards wait for first frame.
-  const feedsReady = feedIds.length === 0 || feedData.size > 0;
+  // Feed subscriptions, property store, persistence, and dirty tracking
+  // are owned by the active tab's TabContentHost (passed in as `children`).
+  // Tugcard itself holds only card-level chrome and responder actions;
+  // per-tab-content concerns live inside the host component rendered into
+  // the content area below. See `components/chrome/tab-content-host.tsx`.
 
   // ---------------------------------------------------------------------------
   // Collapse callback (forwarded from CardFrame via onCollapse prop)
@@ -1174,27 +838,13 @@ export function Tugcard({
             {resolvedAccessory}
           </div>
 
-          {/* Content area: flex-grow, overflow auto */}
+          {/* Content area: flex-grow, overflow auto. Per-tab-content context
+              providers (feed data, property store, persistence, dirty-mark)
+              are provided by the TabContentHost passed as `children` from
+              DeckCanvas. This div remains the registered portal target for
+              card-content-registry (see the useLayoutEffect above). */}
           <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
-            <TugcardDataProvider feedData={feedData}>
-              {/* Provide PropertyStore registration callback to card content.
-                  Card content calls usePropertyStore() which reads this context and
-                  calls registerPropertyStore in useLayoutEffect. [D01] */}
-              <TugcardPropertyContext value={registerPropertyStore}>
-                {/* Provide persistence registration callback to card content.
-                    Card content calls useTugcardPersistence() which reads this
-                    context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
-                <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-                  <TugcardDirtyContext value={markDirty}>
-                    {feedsReady ? children : (
-                      <div className="tugcard-loading" data-testid="tugcard-loading">
-                        Loading...
-                      </div>
-                    )}
-                  </TugcardDirtyContext>
-                </TugcardPersistenceContext>
-              </TugcardPropertyContext>
-            </TugcardDataProvider>
+            {children}
           </div>
         </ResponderScope>
       </div>

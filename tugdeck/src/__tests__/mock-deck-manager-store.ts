@@ -28,6 +28,7 @@ export function makeMockStore(
   overrides?: Partial<IDeckManagerStore>,
 ): IDeckManagerStore {
   const tabStateCache = new Map<string, TabStateBag>();
+  const saveCallbacks = new Map<string, () => void>();
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
@@ -53,9 +54,19 @@ export function makeMockStore(
       tabStateCache.set(tabId, bag);
     },
     initialFocusedCardId: undefined,
-    // Phase 5f3: no-op stubs; tests that need to inspect these can spyOn them.
-    registerSaveCallback: () => {},
-    unregisterSaveCallback: () => {},
+    // Phase 5f3: save callbacks are actually wired so TabContentHost's
+    // registered per-tab callback fires on invokeSaveCallback. Tests that
+    // spy on register/unregister still see the calls; tests that rely on
+    // invokeSaveCallback triggering the registered function also work.
+    registerSaveCallback: (id: string, callback: () => void) => {
+      saveCallbacks.set(id, callback);
+    },
+    unregisterSaveCallback: (id: string) => {
+      saveCallbacks.delete(id);
+    },
+    invokeSaveCallback: (id: string) => {
+      saveCallbacks.get(id)?.();
+    },
     // Step 3: collapse toggle no-op stub.
     toggleCardCollapse: () => {},
   };

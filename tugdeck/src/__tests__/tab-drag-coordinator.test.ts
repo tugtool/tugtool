@@ -75,6 +75,7 @@ function makeMockStore() {
     // Phase 5f3 additions
     registerSaveCallback: () => {},
     unregisterSaveCallback: () => {},
+    invokeSaveCallback: () => {},
     // Collapse toggle
     toggleCardCollapse: () => {},
     _calls: calls,

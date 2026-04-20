@@ -921,6 +921,17 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
+   * Invoke the save callback registered under `id`, if any. Used by callers
+   * that need to capture per-tab state synchronously at a specific moment
+   * (e.g., Tugcard's `selectTab` handler saves the outgoing tab's state
+   * before committing the new active tab). No-op when no callback is
+   * registered for the id.
+   */
+  invokeSaveCallback(id: string): void {
+    this.saveCallbacks.get(id)?.();
+  }
+
+  /**
    * Save all card states and flush to tugbank synchronously.
    *
    * Called by the native app (Swift) via `window.tugdeck.saveState()` before
