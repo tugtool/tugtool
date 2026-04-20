@@ -43,10 +43,8 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useLayoutEffect,
   useRef,
-  useState,
 } from "react";
 
 /**
@@ -252,6 +250,37 @@ export interface TugAppDelegate {
   applicationDidUnhide?(): void;
 }
 
+// ---- MessageChannel-based delegate drain queue ----
+//
+// Same mechanism as `card-lifecycle.ts`. See that file's banner for
+// the full rationale; this module keeps its own queue so the two
+// delegate paths don't interleave on a shared message port.
+
+type AppDelegateCall = () => void;
+const appDelegateQueue: AppDelegateCall[] = [];
+const appDelegateChannel: MessageChannel =
+  typeof MessageChannel !== "undefined" ? new MessageChannel() : (null as unknown as MessageChannel);
+
+if (appDelegateChannel !== null) {
+  appDelegateChannel.port1.onmessage = (): void => {
+    const pending = appDelegateQueue.splice(0);
+    for (const fn of pending) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("[AppLifecycle] delegate callback threw:", err);
+      }
+    }
+  };
+}
+
+function scheduleAppDelegateCall(fn: AppDelegateCall): void {
+  appDelegateQueue.push(fn);
+  if (appDelegateChannel !== null) {
+    appDelegateChannel.port2.postMessage(null);
+  }
+}
+
 /**
  * `useAppDelegate` — subscribe a React component to app-lifecycle
  * events as a delegate.
@@ -260,11 +289,10 @@ export interface TugAppDelegate {
  *   - Subscriptions install in `useLayoutEffect` (L03).
  *   - One subscription per event channel is installed unconditionally;
  *     routing to a delegate method happens at drain time.
- *   - The observer callbacks enqueue event names into a ref and bump
- *     a state counter.
- *   - A `useEffect` (post-paint) drains the queue and invokes the
- *     matching delegate method — if present — in React's determin-
- *     istic post-commit phase, outside any browser pointer gesture.
+ *   - Observer callbacks enqueue closures onto the module-scope
+ *     `MessageChannel` drain queue. The drain runs as the next
+ *     macrotask, escaping WebKit's gesture focus-lock and independent
+ *     of React's commit scheduling. See the reliability study for why.
  *
  * The delegate object is held in a ref so inline literals don't
  * re-install the subscription on every render.
@@ -279,17 +307,18 @@ export function useAppDelegate(delegate: TugAppDelegate): void {
     delegateRef.current = delegate;
   }, [delegate]);
 
-  // Pending event buffer + seq counter. Observer fires enqueue into
-  // the ref and increment the counter to schedule a re-render; the
-  // post-paint useEffect drains the buffer in order.
-  const pendingRef = useRef<AppEventName[]>([]);
-  const [seq, setSeq] = useState(0);
-
   useLayoutEffect(() => {
     if (lifecycle === null) return;
-    const enqueue = (event: AppEventName) => {
-      pendingRef.current.push(event);
-      setSeq((s) => s + 1);
+    const enqueue = (event: AppEventName): void => {
+      scheduleAppDelegateCall(() => {
+        const fn = delegateRef.current[event];
+        if (fn === undefined) return;
+        try {
+          fn();
+        } catch (err) {
+          console.error(`useAppDelegate ${event} threw:`, err);
+        }
+      });
     };
     const unsubs: Array<() => void> = [
       lifecycle.observeApplicationWillBecomeActive(() =>
@@ -319,20 +348,4 @@ export function useAppDelegate(delegate: TugAppDelegate): void {
       for (const unsub of unsubs) unsub();
     };
   }, [lifecycle]);
-
-  useEffect(() => {
-    if (seq === 0) return;
-    const pending = pendingRef.current;
-    pendingRef.current = [];
-    const d = delegateRef.current;
-    for (const event of pending) {
-      const fn = d[event];
-      if (fn === undefined) continue;
-      try {
-        fn();
-      } catch (err) {
-        console.error(`useAppDelegate ${event} threw:`, err);
-      }
-    }
-  }, [seq]);
 }

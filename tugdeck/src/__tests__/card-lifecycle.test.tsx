@@ -73,9 +73,11 @@ function makeLifecycle(initialActive: string | null = null) {
 // ---------------------------------------------------------------------------
 
 /**
- * Flush pending deferred callbacks so any observer notifications
- * scheduled via `deferToNextMacrotask` inside `activateCard` have
- * fired before the test asserts on them.
+ * Wait one macrotask so the MessageChannel drain that `useCardDelegate`
+ * schedules has a chance to fire. `setTimeout(0)` is a macrotask and
+ * in practice drains after the MessageChannel port's `onmessage` has
+ * already flushed the queue, so this is the canonical "let deferred
+ * delegate callbacks run" barrier.
  */
 async function flushDeferred(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -467,7 +469,7 @@ function wrapperFor(
 }
 
 describe("useCardDelegate", () => {
-  it("T-CL-HOOK-01: cardDidActivate fires initial sync when the card is already active at mount", () => {
+  it("T-CL-HOOK-01: cardDidActivate fires initial sync when the card is already active at mount", async () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
@@ -478,11 +480,14 @@ describe("useCardDelegate", () => {
         }),
       { wrapper: wrapperFor(lifecycle) },
     );
+    // Initial-sync enqueues the delegate call to the MessageChannel
+    // drain queue; the macrotask fires after the current task.
+    await flushDeferred();
 
     expect(calls).toEqual(["card-A"]);
   });
 
-  it("T-CL-HOOK-02: cardDidActivate does not fire initial sync when the card is not the active one", () => {
+  it("T-CL-HOOK-02: cardDidActivate does not fire initial sync when the card is not the active one", async () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
@@ -493,6 +498,7 @@ describe("useCardDelegate", () => {
         }),
       { wrapper: wrapperFor(lifecycle) },
     );
+    await flushDeferred();
 
     expect(calls).toEqual([]);
   });
@@ -550,10 +556,11 @@ describe("useCardDelegate", () => {
     expect(calls).toEqual([]);
   });
 
-  it("T-CL-HOOK-06: inline delegate re-renders don't re-install the subscription", () => {
-    // If the subscription were re-installed on each render, the initial-
-    // sync would fire on every render; with the delegate-ref pattern it
-    // fires exactly once at mount.
+  it("T-CL-HOOK-06: inline delegate re-renders don't re-install the subscription", async () => {
+    // Proof that the subscription installs once and isn't torn down /
+    // re-installed on every render: drain the first initial-sync (sees
+    // tag=1), then re-render twice, drain again — no new events fire,
+    // because no new initial-sync runs.
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
@@ -567,14 +574,18 @@ describe("useCardDelegate", () => {
         wrapper: wrapperFor(lifecycle),
       },
     );
+    // Drain mount's initial-sync. The delegate ref still points at
+    // tag=1's closure at drain time.
+    await flushDeferred();
+    expect(calls).toEqual(["1:card-A"]);
 
     // Force re-renders with fresh delegate-object identities.
     rerender({ tag: 2 });
     rerender({ tag: 3 });
+    await flushDeferred();
 
-    // Only the first (mount) subscription's initial sync fires. The
-    // delegate ref updates so the most-recent closure would receive
-    // later activations, but there are none here.
+    // No new subscriptions, so no new initial-syncs — call log is
+    // unchanged after re-renders.
     expect(calls).toEqual(["1:card-A"]);
   });
 
@@ -635,6 +646,35 @@ describe("useCardDelegate", () => {
     await flushDeferred();
 
     expect(calls).toEqual(["card-A"]);
+  });
+
+  it("T-CL-HOOK-09: cardWillBeginDestruction delegate fires even when the hosting component unmounts (H1)", async () => {
+    // Resolution of hole H1 in the lifecycle-delegate-reliability
+    // study: under the old setState+useEffect deferral, an unmount
+    // between fire and drain dropped the destruction callback. Under
+    // the MessageChannel drain, the queued closure captures the
+    // delegate ref directly and survives unmount.
+    const { lifecycle } = makeLifecycle();
+    const calls: string[] = [];
+
+    const { unmount } = renderHook(
+      () =>
+        useCardDelegate("card-A", {
+          cardWillBeginDestruction: (id) => calls.push(`destroy:${id}`),
+        }),
+      { wrapper: wrapperFor(lifecycle) },
+    );
+
+    // Synchronously: fire destruction, then unmount the component.
+    // The observer subscription is torn down by the unmount, but the
+    // queued delegate closure has already captured the delegate ref.
+    act(() => {
+      lifecycle.notifyCardWillBeginDestruction("card-A");
+      unmount();
+    });
+    await flushDeferred();
+
+    expect(calls).toEqual(["destroy:card-A"]);
   });
 });
 

@@ -48,10 +48,8 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useLayoutEffect,
   useRef,
-  useState,
 } from "react";
 
 /**
@@ -197,8 +195,17 @@ export class CardLifecycle {
 
   /**
    * Fire DESTRUCTION for `cardId`. Called by the deck right BEFORE
-   * removing the card from the store so subscribers can read state.
-   * Also removes the card from the constructed-set.
+   * removing the card from the store so synchronous observers can
+   * read state. Also removes the card from the constructed-set.
+   *
+   * Important timing caveat for `useCardDelegate` consumers: the
+   * React delegate hook defers callbacks through a MessageChannel
+   * drain queue (see `scheduleDelegateCall`), which runs as the next
+   * macrotask. Between the synchronous fire and the deferred drain,
+   * the deck removes the card from its store. Delegate callbacks
+   * that need the card's pre-destruction state must capture it
+   * synchronously in an observer, not from within the deferred
+   * `cardWillBeginDestruction` delegate method.
    */
   notifyCardWillBeginDestruction(cardId: string): void {
     console.log(`[CardLifecycle] cardWillBeginDestruction id=${cardId}`);
@@ -449,9 +456,48 @@ type CardDelegateMethodName =
   | "cardDidDeactivate"
   | "cardWillBeginDestruction";
 
-interface PendingDelegateEvent {
-  readonly method: CardDelegateMethodName;
-  readonly cardId: string;
+// ---- MessageChannel-based delegate drain queue ----
+//
+// Per the lifecycle-delegate-reliability study, delegate callbacks
+// defer through a module-scope `MessageChannel` rather than through
+// React's `setState → useEffect` commit cycle. The MessageChannel
+// drain:
+//
+//   - Runs as a macrotask (escapes WebKit's gesture focus-lock).
+//   - Skips the 4 ms setTimeout clamp and timer-throttling in
+//     background tabs.
+//   - Is not entangled with React's commit scheduling; closures queued
+//     here survive component unmount (the dying card's own
+//     `cardWillBeginDestruction` delegate fires reliably — hole H1
+//     closed).
+//
+// The queue is snapshot+cleared on each drain so callbacks that enqueue
+// further work run on the next drain, preserving order within a tick
+// and preventing runaway reentrant drains.
+
+type DelegateCall = () => void;
+const delegateQueue: DelegateCall[] = [];
+const delegateChannel: MessageChannel =
+  typeof MessageChannel !== "undefined" ? new MessageChannel() : (null as unknown as MessageChannel);
+
+if (delegateChannel !== null) {
+  delegateChannel.port1.onmessage = (): void => {
+    const pending = delegateQueue.splice(0);
+    for (const fn of pending) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("[CardLifecycle] delegate callback threw:", err);
+      }
+    }
+  };
+}
+
+function scheduleDelegateCall(fn: DelegateCall): void {
+  delegateQueue.push(fn);
+  if (delegateChannel !== null) {
+    delegateChannel.port2.postMessage(null);
+  }
 }
 
 /**
@@ -463,18 +509,15 @@ interface PendingDelegateEvent {
  *     dependent setup is ready before events fire). One subscription
  *     per observer channel is installed unconditionally; routing to
  *     a delegate method happens at drain time.
- *   - The observer callbacks enqueue `{ method, cardId }` tuples
- *     into a ref and bump a state counter.
- *   - A `useEffect` (post-paint) drains the queue and invokes the
- *     matching delegate method — if present — in React's determin-
- *     istic post-commit phase, outside any browser pointer gesture.
- *     This is what lets the delegate callback (typically
- *     `entryDelegate.focus()`) succeed: by the time `useEffect`
- *     runs, WebKit's gesture focus-lock on `preventDefault()`-ed
- *     mousedowns has released.
+ *   - Observer callbacks enqueue a closure onto the module-scope
+ *     `MessageChannel`-backed delegate queue. The drain runs as a
+ *     macrotask after the current task completes — past WebKit's
+ *     gesture focus-lock, independent of React's commit scheduler.
+ *   - The closure captures the delegate ref directly, so the
+ *     callback survives component unmount between fire and drain.
  *
  * The delegate object is held in a ref so inline literals don't
- * re-install the subscription on every render. The four observer
+ * re-install the subscription on every render. The six observer
  * subscriptions install once per `(lifecycle, cardId)` pair.
  */
 export function useCardDelegate(
@@ -490,17 +533,21 @@ export function useCardDelegate(
     delegateRef.current = delegate;
   }, [delegate]);
 
-  // Pending event buffer + seq counter. Observer fires enqueue into
-  // the ref and increment the counter to schedule a re-render; the
-  // post-paint useEffect drains the buffer in order.
-  const pendingRef = useRef<PendingDelegateEvent[]>([]);
-  const [seq, setSeq] = useState(0);
-
   useLayoutEffect(() => {
     if (lifecycle === null) return;
-    const enqueue = (method: CardDelegateMethodName, eventCardId: string) => {
-      pendingRef.current.push({ method, cardId: eventCardId });
-      setSeq((s) => s + 1);
+    const enqueue = (
+      method: CardDelegateMethodName,
+      eventCardId: string,
+    ): void => {
+      scheduleDelegateCall(() => {
+        const fn = delegateRef.current[method];
+        if (fn === undefined) return;
+        try {
+          fn(eventCardId);
+        } catch (err) {
+          console.error(`useCardDelegate ${method} threw:`, err);
+        }
+      });
     };
     const unsubs = [
       lifecycle.observeCardDidFinishConstruction(cardId, (id) =>
@@ -526,21 +573,5 @@ export function useCardDelegate(
       for (const unsub of unsubs) unsub();
     };
   }, [lifecycle, cardId]);
-
-  useEffect(() => {
-    if (seq === 0) return;
-    const pending = pendingRef.current;
-    pendingRef.current = [];
-    const d = delegateRef.current;
-    for (const event of pending) {
-      const fn = d[event.method];
-      if (fn === undefined) continue;
-      try {
-        fn(event.cardId);
-      } catch (err) {
-        console.error(`useCardDelegate ${event.method} threw:`, err);
-      }
-    }
-  }, [seq]);
 }
 
