@@ -177,7 +177,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // guard notification, lifecycle observer broadcast) lives in
   // `deck.activateCard`. Deck-canvas only contributes its local
   // `setDeselected(false)` React state, subscribed below via
-  // `observeCardActivation` (wildcard) so every activation path
+  // `observeCardDidActivate` (wildcard) so every activation path
   // — pointerdown, CYCLE_CARD, SHOW_COMPONENT_GALLERY, initial load —
   // clears the canvas deselect flag uniformly.
   const handleCardActivate = useCallback(
@@ -189,10 +189,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   // Deck-canvas-local reaction to any card activation: clear the
   // canvas-background-click deselect flag. Subscribed on mount; the
-  // initial-sync in observeCardActivation fires for the currently-
+  // initial-sync in observeCardDidActivate fires for the currently-
   // active card so the startup state is consistent.
   useLayoutEffect(() => {
-    return store.observeCardActivation(null, () => {
+    return store.observeCardDidActivate(null, () => {
       setDeselected(false);
     });
   }, [store]);

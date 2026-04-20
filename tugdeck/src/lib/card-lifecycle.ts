@@ -37,7 +37,7 @@
  *       - `store.getFocusedCardId() === cardId`
  *       - `manager.getKeyCard() === cardId`
  *       - every direct observer has been notified.
- *   - `notifyDestruction(cardId)` fires BEFORE the store removes the
+ *   - `notifyCardWillBeginDestruction(cardId)` fires BEFORE the store removes the
  *     card. Subscribers can read state.
  *   - When a close happens on the active card, deactivation fires
  *     before destruction, both sync, then the deck removes.
@@ -154,9 +154,9 @@ export class CardLifecycle {
     }
     if (wasActive !== cardId) {
       if (wasActive !== null) {
-        this.notifyDeactivation(wasActive);
+        this.notifyCardDidDeactivate(wasActive);
       }
-      this.notifyActivation(cardId);
+      this.notifyCardDidActivate(cardId);
     }
   }
 
@@ -167,7 +167,7 @@ export class CardLifecycle {
    * card has been added to the store. Records the card in the
    * constructed-set so late-subscribing hooks receive initial-sync.
    */
-  notifyConstruction(cardId: string): void {
+  notifyCardDidFinishConstruction(cardId: string): void {
     this.constructedCards.add(cardId);
     this.fire(this.constructionSubs, cardId);
   }
@@ -177,7 +177,7 @@ export class CardLifecycle {
    * removing the card from the store so subscribers can read state.
    * Also removes the card from the constructed-set.
    */
-  notifyDestruction(cardId: string): void {
+  notifyCardWillBeginDestruction(cardId: string): void {
     this.fire(this.destructionSubs, cardId);
     this.constructedCards.delete(cardId);
   }
@@ -187,7 +187,7 @@ export class CardLifecycle {
    * `activateCard` on transitions, and from the deck when removing
    * the active card (before firing destruction).
    */
-  notifyDeactivation(cardId: string): void {
+  notifyCardDidDeactivate(cardId: string): void {
     this.fire(this.deactivationSubs, cardId);
   }
 
@@ -200,7 +200,7 @@ export class CardLifecycle {
    * This lets a hook-calling card body receive its own construction
    * event even though the hook subscribes after construction fired.
    */
-  observeCardConstruction(
+  observeCardDidFinishConstruction(
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): () => void {
@@ -225,7 +225,7 @@ export class CardLifecycle {
    * if the card is already active when you subscribe, your callback
    * fires right now.
    */
-  observeCardActivation(
+  observeCardDidActivate(
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): () => void {
@@ -242,7 +242,7 @@ export class CardLifecycle {
    * is strictly a transition event; there is no sensible "currently
    * deactivated" state to replay.
    */
-  observeCardDeactivation(
+  observeCardDidDeactivate(
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): () => void {
@@ -253,7 +253,7 @@ export class CardLifecycle {
    * Subscribe to DESTRUCTION events. No initial-sync — destruction
    * is a one-shot terminal event fired right before removal.
    */
-  observeCardDestruction(
+  observeCardWillBeginDestruction(
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): () => void {
@@ -289,7 +289,7 @@ export class CardLifecycle {
     }
   }
 
-  private notifyActivation(cardId: string): void {
+  private notifyCardDidActivate(cardId: string): void {
     this.fire(this.activationSubs, cardId);
   }
 
@@ -412,25 +412,25 @@ const observeConstruction = (
   lifecycle: CardLifecycle,
   cardId: string,
   cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardConstruction(cardId, cb);
+): (() => void) => lifecycle.observeCardDidFinishConstruction(cardId, cb);
 
 const observeActivation = (
   lifecycle: CardLifecycle,
   cardId: string,
   cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardActivation(cardId, cb);
+): (() => void) => lifecycle.observeCardDidActivate(cardId, cb);
 
 const observeDeactivation = (
   lifecycle: CardLifecycle,
   cardId: string,
   cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardDeactivation(cardId, cb);
+): (() => void) => lifecycle.observeCardDidDeactivate(cardId, cb);
 
 const observeDestruction = (
   lifecycle: CardLifecycle,
   cardId: string,
   cb: CardLifecycleObserver,
-): (() => void) => lifecycle.observeCardDestruction(cardId, cb);
+): (() => void) => lifecycle.observeCardWillBeginDestruction(cardId, cb);
 
 /**
  * Subscribe to CONSTRUCTION of `cardId`. For a hook called from a
@@ -439,7 +439,7 @@ const observeDestruction = (
  * Wildcard hooks (if cardId is dynamic) fire for each currently-
  * constructed card on subscribe and once per subsequent new card.
  */
-export function useOnCardConstruction(
+export function useOnCardDidFinishConstruction(
   cardId: string,
   callback: CardLifecycleObserver,
 ): void {
@@ -452,11 +452,11 @@ export function useOnCardConstruction(
  * activation. No-op when no lifecycle is provided.
  *
  * Typical use:
- *     useOnCardActivation(cardId, () => {
+ *     useOnCardDidActivate(cardId, () => {
  *       entryDelegateRef.current?.focus();
  *     });
  */
-export function useOnCardActivation(
+export function useOnCardDidActivate(
   cardId: string,
   callback: CardLifecycleObserver,
 ): void {
@@ -468,7 +468,7 @@ export function useOnCardActivation(
  * active status — either another card became active, or this card
  * is closing while active. No initial-sync.
  */
-export function useOnCardDeactivation(
+export function useOnCardDidDeactivate(
   cardId: string,
   callback: CardLifecycleObserver,
 ): void {
@@ -480,7 +480,7 @@ export function useOnCardDeactivation(
  * right before the card is removed from the deck. Subscribers can
  * still read state. No initial-sync.
  */
-export function useOnCardDestruction(
+export function useOnCardWillBeginDestruction(
   cardId: string,
   callback: CardLifecycleObserver,
 ): void {

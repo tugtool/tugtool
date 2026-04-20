@@ -4,9 +4,9 @@
  * Pins the Step 5.5 invariant:
  *   - activateCard(id) updates both state systems (store + responder
  *     chain) and notifies observers, synchronously.
- *   - observeCardActivation fires on transitions only, plus initial
+ *   - observeCardDidActivate fires on transitions only, plus initial
  *     sync for current active on subscribe.
- *   - useOnCardActivation wires both ends through a React context.
+ *   - useOnCardDidActivate wires both ends through a React context.
  *
  * Plain mocks stand in for DeckManager and ResponderChainManager so
  * the tests run without any deck / responder infrastructure.
@@ -20,7 +20,7 @@ import { renderHook, act } from "@testing-library/react";
 import {
   CardLifecycle,
   CardLifecycleContext,
-  useOnCardActivation,
+  useOnCardDidActivate,
   type CardLifecycleObserver,
   type CardLifecycleManager,
   type CardLifecycleStore,
@@ -86,7 +86,7 @@ describe("CardLifecycle.activateCard", () => {
   it("T-CL-01: focuses the store, promotes the key responder, notifies observers", async () => {
     const { lifecycle, store, manager } = makeLifecycle();
     const calls: string[] = [];
-    lifecycle.observeCardActivation("card-A", (id) => calls.push(id));
+    lifecycle.observeCardDidActivate("card-A", (id) => calls.push(id));
 
     lifecycle.activateCard("card-A");
 
@@ -116,10 +116,10 @@ describe("CardLifecycle.activateCard", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
     // Wildcard plus specific — both must stay silent on re-activation.
-    const unsubWild = lifecycle.observeCardActivation(null, (id) =>
+    const unsubWild = lifecycle.observeCardDidActivate(null, (id) =>
       calls.push(`wild:${id}`),
     );
-    const unsubSpecific = lifecycle.observeCardActivation("card-A", (id) =>
+    const unsubSpecific = lifecycle.observeCardDidActivate("card-A", (id) =>
       calls.push(`specific:${id}`),
     );
     // The subscribe-time initial sync counts as two calls; clear them.
@@ -137,11 +137,11 @@ describe("CardLifecycle.activateCard", () => {
   it("T-CL-04: cross-card activation fires transition on both wildcard and matching specific observers", async () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
-    lifecycle.observeCardActivation(null, (id) => calls.push(`wild:${id}`));
-    lifecycle.observeCardActivation("card-B", (id) =>
+    lifecycle.observeCardDidActivate(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardDidActivate("card-B", (id) =>
       calls.push(`specific-B:${id}`),
     );
-    lifecycle.observeCardActivation("card-C", (id) =>
+    lifecycle.observeCardDidActivate("card-C", (id) =>
       calls.push(`specific-C:${id}`),
     );
     calls.length = 0;
@@ -155,7 +155,7 @@ describe("CardLifecycle.activateCard", () => {
   it("T-CL-DEACT-01: cross-card activation fires DEACTIVATION for the previous card, synchronously", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const deactivations: string[] = [];
-    lifecycle.observeCardDeactivation("card-A", (id) =>
+    lifecycle.observeCardDidDeactivate("card-A", (id) =>
       deactivations.push(id),
     );
 
@@ -168,7 +168,7 @@ describe("CardLifecycle.activateCard", () => {
   it("T-CL-DEACT-02: activating with no prior active does not fire deactivation", () => {
     const { lifecycle } = makeLifecycle(null);
     const deactivations: string[] = [];
-    lifecycle.observeCardDeactivation(null, (id) => deactivations.push(id));
+    lifecycle.observeCardDidDeactivate(null, (id) => deactivations.push(id));
 
     lifecycle.activateCard("card-A");
 
@@ -178,7 +178,7 @@ describe("CardLifecycle.activateCard", () => {
   it("T-CL-DEACT-03: same-card re-activation does not fire deactivation", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const deactivations: string[] = [];
-    lifecycle.observeCardDeactivation(null, (id) => deactivations.push(id));
+    lifecycle.observeCardDidDeactivate(null, (id) => deactivations.push(id));
 
     lifecycle.activateCard("card-A");
 
@@ -190,19 +190,19 @@ describe("CardLifecycle.activateCard", () => {
 // Construction / Destruction
 // ---------------------------------------------------------------------------
 
-describe("CardLifecycle.notifyConstruction", () => {
-  it("T-CL-CON-01: notifyConstruction fires matching + wildcard observers (deferred)", async () => {
+describe("CardLifecycle.notifyCardDidFinishConstruction", () => {
+  it("T-CL-CON-01: notifyCardDidFinishConstruction fires matching + wildcard observers (deferred)", async () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
-    lifecycle.observeCardConstruction(null, (id) => calls.push(`wild:${id}`));
-    lifecycle.observeCardConstruction("card-A", (id) =>
+    lifecycle.observeCardDidFinishConstruction(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardDidFinishConstruction("card-A", (id) =>
       calls.push(`specific:${id}`),
     );
     // Initial-sync fires for both subscribers on subscribe (deferred).
     await flushDeferred();
     calls.length = 0;
 
-    lifecycle.notifyConstruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
     await flushDeferred();
 
     expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
@@ -210,11 +210,11 @@ describe("CardLifecycle.notifyConstruction", () => {
 
   it("T-CL-CON-02: late subscriber receives initial-sync for already-constructed card (deferred)", async () => {
     const { lifecycle } = makeLifecycle();
-    lifecycle.notifyConstruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
     await flushDeferred();
 
     const calls: string[] = [];
-    lifecycle.observeCardConstruction("card-A", (id) => calls.push(id));
+    lifecycle.observeCardDidFinishConstruction("card-A", (id) => calls.push(id));
     await flushDeferred();
 
     // Initial-sync: fires for the already-constructed card on subscribe.
@@ -223,12 +223,12 @@ describe("CardLifecycle.notifyConstruction", () => {
 
   it("T-CL-CON-03: wildcard subscriber receives initial-sync for every currently-constructed card (deferred)", async () => {
     const { lifecycle } = makeLifecycle();
-    lifecycle.notifyConstruction("card-A");
-    lifecycle.notifyConstruction("card-B");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-B");
     await flushDeferred();
 
     const calls: string[] = [];
-    lifecycle.observeCardConstruction(null, (id) => calls.push(id));
+    lifecycle.observeCardDidFinishConstruction(null, (id) => calls.push(id));
     await flushDeferred();
 
     expect(calls.sort()).toEqual(["card-A", "card-B"]);
@@ -236,56 +236,56 @@ describe("CardLifecycle.notifyConstruction", () => {
 
   it("T-CL-CON-04: destroyed cards are removed from the constructed-set and do not initial-sync", async () => {
     const { lifecycle } = makeLifecycle();
-    lifecycle.notifyConstruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
     await flushDeferred();
-    lifecycle.notifyDestruction("card-A");
+    lifecycle.notifyCardWillBeginDestruction("card-A");
 
     const calls: string[] = [];
-    lifecycle.observeCardConstruction("card-A", (id) => calls.push(id));
+    lifecycle.observeCardDidFinishConstruction("card-A", (id) => calls.push(id));
     await flushDeferred();
 
     expect(calls).toEqual([]);
   });
 });
 
-describe("CardLifecycle.notifyDestruction", () => {
-  it("T-CL-DES-01: notifyDestruction fires matching + wildcard observers synchronously", () => {
+describe("CardLifecycle.notifyCardWillBeginDestruction", () => {
+  it("T-CL-DES-01: notifyCardWillBeginDestruction fires matching + wildcard observers synchronously", () => {
     const { lifecycle } = makeLifecycle();
-    lifecycle.notifyConstruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
     const calls: string[] = [];
-    lifecycle.observeCardDestruction(null, (id) => calls.push(`wild:${id}`));
-    lifecycle.observeCardDestruction("card-A", (id) =>
+    lifecycle.observeCardWillBeginDestruction(null, (id) => calls.push(`wild:${id}`));
+    lifecycle.observeCardWillBeginDestruction("card-A", (id) =>
       calls.push(`specific:${id}`),
     );
 
-    lifecycle.notifyDestruction("card-A");
+    lifecycle.notifyCardWillBeginDestruction("card-A");
 
     expect(calls).toEqual(["wild:card-A", "specific:card-A"]);
   });
 
   it("T-CL-DES-02: destruction observers have no initial-sync", () => {
     const { lifecycle } = makeLifecycle();
-    lifecycle.notifyConstruction("card-A");
-    lifecycle.notifyDestruction("card-A");
+    lifecycle.notifyCardDidFinishConstruction("card-A");
+    lifecycle.notifyCardWillBeginDestruction("card-A");
 
     const calls: string[] = [];
     // Subscribing after destruction completed — no replay.
-    lifecycle.observeCardDestruction("card-A", (id) => calls.push(id));
+    lifecycle.observeCardWillBeginDestruction("card-A", (id) => calls.push(id));
 
     expect(calls).toEqual([]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// observeCardActivation
+// observeCardDidActivate
 // ---------------------------------------------------------------------------
 
-describe("CardLifecycle.observeCardActivation", () => {
+describe("CardLifecycle.observeCardDidActivate", () => {
   it("T-CL-05: fires synchronously on subscribe if the card is already active", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
-    lifecycle.observeCardActivation("card-A", (id) => calls.push(id));
+    lifecycle.observeCardDidActivate("card-A", (id) => calls.push(id));
 
     expect(calls).toEqual(["card-A"]);
   });
@@ -294,7 +294,7 @@ describe("CardLifecycle.observeCardActivation", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
-    lifecycle.observeCardActivation(null, (id) => calls.push(id));
+    lifecycle.observeCardDidActivate(null, (id) => calls.push(id));
 
     expect(calls).toEqual(["card-A"]);
   });
@@ -303,8 +303,8 @@ describe("CardLifecycle.observeCardActivation", () => {
     const { lifecycle } = makeLifecycle(null);
     const calls: string[] = [];
 
-    lifecycle.observeCardActivation(null, (id) => calls.push(id));
-    lifecycle.observeCardActivation("card-A", (id) => calls.push(id));
+    lifecycle.observeCardDidActivate(null, (id) => calls.push(id));
+    lifecycle.observeCardDidActivate("card-A", (id) => calls.push(id));
 
     expect(calls).toEqual([]);
   });
@@ -313,7 +313,7 @@ describe("CardLifecycle.observeCardActivation", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
-    lifecycle.observeCardActivation("card-B", (id) => calls.push(id));
+    lifecycle.observeCardDidActivate("card-B", (id) => calls.push(id));
 
     expect(calls).toEqual([]);
   });
@@ -321,7 +321,7 @@ describe("CardLifecycle.observeCardActivation", () => {
   it("T-CL-09: unsubscribe stops future callbacks", async () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
-    const unsub = lifecycle.observeCardActivation("card-A", (id) =>
+    const unsub = lifecycle.observeCardDidActivate("card-A", (id) =>
       calls.push(id),
     );
 
@@ -340,10 +340,10 @@ describe("CardLifecycle.observeCardActivation", () => {
     console.error = () => {};
 
     try {
-      lifecycle.observeCardActivation(null, () => {
+      lifecycle.observeCardDidActivate(null, () => {
         throw new Error("boom");
       });
-      lifecycle.observeCardActivation(null, (id) => calls.push(id));
+      lifecycle.observeCardDidActivate(null, (id) => calls.push(id));
 
       lifecycle.activateCard("card-A");
       await flushDeferred();
@@ -369,7 +369,7 @@ describe("CardLifecycle.getActiveCardId", () => {
 });
 
 // ---------------------------------------------------------------------------
-// useOnCardActivation
+// useOnCardDidActivate
 // ---------------------------------------------------------------------------
 
 function wrapperFor(
@@ -384,13 +384,13 @@ function wrapperFor(
   };
 }
 
-describe("useOnCardActivation", () => {
+describe("useOnCardDidActivate", () => {
   it("T-CL-HOOK-01: fires initial sync when the card is already active at mount", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
     const cb: CardLifecycleObserver = (id) => calls.push(id);
 
-    renderHook(() => useOnCardActivation("card-A", cb), {
+    renderHook(() => useOnCardDidActivate("card-A", cb), {
       wrapper: wrapperFor(lifecycle),
     });
 
@@ -401,7 +401,7 @@ describe("useOnCardActivation", () => {
     const { lifecycle } = makeLifecycle("card-A");
     const calls: string[] = [];
 
-    renderHook(() => useOnCardActivation("card-B", (id) => calls.push(id)), {
+    renderHook(() => useOnCardDidActivate("card-B", (id) => calls.push(id)), {
       wrapper: wrapperFor(lifecycle),
     });
 
@@ -412,7 +412,7 @@ describe("useOnCardActivation", () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
 
-    renderHook(() => useOnCardActivation("card-A", (id) => calls.push(id)), {
+    renderHook(() => useOnCardDidActivate("card-A", (id) => calls.push(id)), {
       wrapper: wrapperFor(lifecycle),
     });
 
@@ -428,7 +428,7 @@ describe("useOnCardActivation", () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
     const { unmount } = renderHook(
-      () => useOnCardActivation("card-A", (id) => calls.push(id)),
+      () => useOnCardDidActivate("card-A", (id) => calls.push(id)),
       { wrapper: wrapperFor(lifecycle) },
     );
 
@@ -445,7 +445,7 @@ describe("useOnCardActivation", () => {
     // No wrapper — useCardLifecycle returns null; subscription is skipped.
     const calls: string[] = [];
     expect(() => {
-      renderHook(() => useOnCardActivation("card-A", (id) => calls.push(id)));
+      renderHook(() => useOnCardDidActivate("card-A", (id) => calls.push(id)));
     }).not.toThrow();
     expect(calls).toEqual([]);
   });
@@ -459,7 +459,7 @@ describe("useOnCardActivation", () => {
 
     const { rerender } = renderHook(
       ({ tag }: { tag: number }) =>
-        useOnCardActivation("card-A", (id) => calls.push(`${tag}:${id}`)),
+        useOnCardDidActivate("card-A", (id) => calls.push(`${tag}:${id}`)),
       {
         initialProps: { tag: 1 },
         wrapper: wrapperFor(lifecycle),

@@ -328,7 +328,7 @@ class SelectionGuard {
    * so they exist before any React effects fire.
    */
   attach(lifecycle?: {
-    observeCardActivation: (
+    observeCardDidActivate: (
       cardId: string | null,
       callback: (cardId: string) => void,
     ) => () => void;
@@ -353,7 +353,7 @@ class SelectionGuard {
     // callback immediately for the currently-active card, so the
     // old explicit-effect path is no longer needed in DeckCanvas.
     if (lifecycle) {
-      this.lifecycleUnsubscribe = lifecycle.observeCardActivation(
+      this.lifecycleUnsubscribe = lifecycle.observeCardDidActivate(
         null,
         (cardId) => this.activateCard(cardId),
       );

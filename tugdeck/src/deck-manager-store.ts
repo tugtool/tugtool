@@ -62,7 +62,7 @@ export interface IDeckManagerStore {
    * `deck.addCard` completes; initial-sync fires for each
    * already-constructed card matching the subscription.
    */
-  observeCardConstruction: (
+  observeCardDidFinishConstruction: (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ) => () => void;
@@ -73,7 +73,7 @@ export interface IDeckManagerStore {
    * Fires synchronously on subscribe if the subscription matches
    * the currently-active card. Returns an unsubscribe function.
    */
-  observeCardActivation: (
+  observeCardDidActivate: (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ) => () => void;
@@ -83,7 +83,7 @@ export interface IDeckManagerStore {
    * active status, either to a subsequent activation or to closure
    * while active. No initial-sync.
    */
-  observeCardDeactivation: (
+  observeCardDidDeactivate: (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ) => () => void;
@@ -93,7 +93,7 @@ export interface IDeckManagerStore {
    * right before the card is removed from the deck. Subscribers can
    * still read state. No initial-sync.
    */
-  observeCardDestruction: (
+  observeCardWillBeginDestruction: (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ) => () => void;

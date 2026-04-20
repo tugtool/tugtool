@@ -198,7 +198,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Card-activation lifecycle. Single source of truth for "which
    * card is the user in." All activation paths route through
-   * `activateCard`; observers subscribe via `observeCardActivation`.
+   * `activateCard`; observers subscribe via `observeCardDidActivate`.
    */
   public readonly cardLifecycle: CardLifecycle;
 
@@ -272,42 +272,42 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Subscribe to card CONSTRUCTION events. Pass-through to
-   * `cardLifecycle.observeCardConstruction`.
+   * `cardLifecycle.observeCardDidFinishConstruction`.
    */
-  public observeCardConstruction = (
+  public observeCardDidFinishConstruction = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
-    this.cardLifecycle.observeCardConstruction(cardId, callback);
+    this.cardLifecycle.observeCardDidFinishConstruction(cardId, callback);
 
   /**
    * Subscribe to card ACTIVATION events. Pass-through to
-   * `cardLifecycle.observeCardActivation`.
+   * `cardLifecycle.observeCardDidActivate`.
    */
-  public observeCardActivation = (
+  public observeCardDidActivate = (
     cardId: string | null,
     callback: CardLifecycleObserver,
-  ): (() => void) => this.cardLifecycle.observeCardActivation(cardId, callback);
+  ): (() => void) => this.cardLifecycle.observeCardDidActivate(cardId, callback);
 
   /**
    * Subscribe to card DEACTIVATION events. Pass-through to
-   * `cardLifecycle.observeCardDeactivation`.
+   * `cardLifecycle.observeCardDidDeactivate`.
    */
-  public observeCardDeactivation = (
+  public observeCardDidDeactivate = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
-    this.cardLifecycle.observeCardDeactivation(cardId, callback);
+    this.cardLifecycle.observeCardDidDeactivate(cardId, callback);
 
   /**
    * Subscribe to card DESTRUCTION events. Pass-through to
-   * `cardLifecycle.observeCardDestruction`.
+   * `cardLifecycle.observeCardWillBeginDestruction`.
    */
-  public observeCardDestruction = (
+  public observeCardWillBeginDestruction = (
     cardId: string | null,
     callback: CardLifecycleObserver,
   ): (() => void) =>
-    this.cardLifecycle.observeCardDestruction(cardId, callback);
+    this.cardLifecycle.observeCardWillBeginDestruction(cardId, callback);
 
   /** Currently-active card id. Thin pass-through. */
   public getActiveCardId = (): string | null =>
@@ -557,7 +557,7 @@ export class DeckManager implements IDeckManagerStore {
     this.scheduleSave();
     // Fire CONSTRUCTION after the store update and notify. Observers
     // reading state in their callback see the card present.
-    this.cardLifecycle.notifyConstruction(cardId);
+    this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
     return cardId;
   }
 
@@ -571,9 +571,9 @@ export class DeckManager implements IDeckManagerStore {
    */
   removeCard(cardId: string): void {
     if (this.cardLifecycle.getActiveCardId() === cardId) {
-      this.cardLifecycle.notifyDeactivation(cardId);
+      this.cardLifecycle.notifyCardDidDeactivate(cardId);
     }
-    this.cardLifecycle.notifyDestruction(cardId);
+    this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),

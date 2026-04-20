@@ -45,8 +45,8 @@ import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import type { ActionEvent } from "../responder-chain";
 import {
-  useOnCardActivation,
-  useOnCardConstruction,
+  useOnCardDidActivate,
+  useOnCardDidFinishConstruction,
 } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
@@ -818,10 +818,10 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // Selection has been cleared (e.g., by the selection guard).
   // Double-firing on a first-mount-into-active card is harmless;
   // missing either moment would leave the user unable to type.
-  useOnCardConstruction(cardId, () => {
+  useOnCardDidFinishConstruction(cardId, () => {
     entryDelegateRef.current?.focus();
   });
-  useOnCardActivation(cardId, () => {
+  useOnCardDidActivate(cardId, () => {
     entryDelegateRef.current?.focus();
   });
 

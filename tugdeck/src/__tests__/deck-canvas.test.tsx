@@ -86,10 +86,10 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     activateCard: (_id: string) => {},
-    observeCardConstruction: () => () => {},
-    observeCardActivation: () => () => {},
-    observeCardDeactivation: () => () => {},
-    observeCardDestruction: () => () => {},
+    observeCardDidFinishConstruction: () => () => {},
+    observeCardDidActivate: () => () => {},
+    observeCardDidDeactivate: () => () => {},
+    observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: (_componentId: string) => null,
     addTab: (_cardId: string, _componentId: string) => null,
@@ -674,19 +674,19 @@ class ReactiveStore implements IDeckManagerStore {
   handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
   activateCard = (_id: string): void => {};
-  observeCardConstruction = (
+  observeCardDidFinishConstruction = (
     _cardId: string | null,
     _callback: (cardId: string) => void,
   ): (() => void) => () => {};
-  observeCardActivation = (
+  observeCardDidActivate = (
     _cardId: string | null,
     _callback: (cardId: string) => void,
   ): (() => void) => () => {};
-  observeCardDeactivation = (
+  observeCardDidDeactivate = (
     _cardId: string | null,
     _callback: (cardId: string) => void,
   ): (() => void) => () => {};
-  observeCardDestruction = (
+  observeCardWillBeginDestruction = (
     _cardId: string | null,
     _callback: (cardId: string) => void,
   ): (() => void) => () => {};
