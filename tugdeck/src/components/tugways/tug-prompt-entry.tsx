@@ -373,6 +373,8 @@ export interface TugPromptEntryProps {
 export interface TugPromptEntryDelegate {
   /** Move keyboard focus to the underlying input's editor element. */
   focus(): void;
+  /** Remove keyboard focus from the underlying input's editor element. */
+  blur(): void;
   /** Clear the input's content. */
   clear(): void;
   /**
@@ -842,6 +844,9 @@ export const TugPromptEntry = React.forwardRef<
     () => ({
       focus() {
         promptInputRef.current?.focus();
+      },
+      blur() {
+        promptInputRef.current?.blur();
       },
       clear() {
         promptInputRef.current?.clear();

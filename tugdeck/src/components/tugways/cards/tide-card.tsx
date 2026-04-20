@@ -805,8 +805,14 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   //     Guarantees a caret the moment the editor appears.
   //
   //   - Activation: fires on every path that makes this card the
-  //     active card — click, Ctrl+`, programmatic activation. By
-  //     definition the card is active when this fires.
+  //     active card — click, Ctrl+`, programmatic activation, and
+  //     post-close-of-active (auto-activate new top). By definition
+  //     the card is active when this fires.
+  //
+  //   - Will-deactivate: fires when this card is about to lose
+  //     active status (another card is being activated, including
+  //     via new-card creation). Blur the editor here so the caret
+  //     doesn't linger on a background card.
   //
   //   - Move / Resize: fires whenever this card's geometry commits.
   //     Cmd-drag and Cmd-resize move/resize a card WITHOUT activating
@@ -816,13 +822,14 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   //     background-card Cmd-drag does not steal focus from whatever
   //     card the user is actually working in.
   //
-  // All paths route through `entryDelegate.focus()`, which is
+  // The focus paths route through `entryDelegate.focus()`, which is
   // idempotent if the editor already holds focus and places a caret
   // if the Selection has been cleared (e.g., by the selection guard).
   const cardLifecycle = useCardLifecycle();
   useCardDelegate(cardId, {
     cardDidFinishConstruction: () => entryDelegateRef.current?.focus(),
     cardDidActivate: () => entryDelegateRef.current?.focus(),
+    cardWillDeactivate: () => entryDelegateRef.current?.blur(),
     cardDidMove: () => {
       if (cardLifecycle?.getActiveCardId() !== cardId) return;
       entryDelegateRef.current?.focus();

@@ -598,12 +598,24 @@ export class DeckManager implements IDeckManagerStore {
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
     };
 
+    // Capture the previously-active card BEFORE the append. The
+    // append moves the store's "top-of-stack" pointer to the new
+    // card; without this snapshot, the activation call below would
+    // see same-card and skip the transition, leaving the old card
+    // never deactivated.
+    const previouslyActive = this.cardLifecycle.getActiveCardId();
+
     this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
     this.notify();
     this.scheduleSave();
     // Fire CONSTRUCTION after the store update and notify. Observers
     // reading state in their callback see the card present.
     this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
+    // Activate the newly-added card — fires will/didDeactivate on
+    // the previously-active card (if any) and will/didActivate on
+    // this card. `previouslyActive` is passed explicitly because
+    // the store has already moved on (see note above).
+    this.cardLifecycle.activateCard(cardId, previouslyActive);
     return cardId;
   }
 
@@ -618,9 +630,15 @@ export class DeckManager implements IDeckManagerStore {
    *   2. Fire WILL-BEGIN-DESTRUCTION — subscribers can still read
    *      card state.
    *   3. Remove from store and notify subscribers / schedule save.
+   *   4. If step 1 fired and a remaining card is now top-of-stack,
+   *      activate it (fires will/didActivate for the new top). Pass
+   *      `null` as the known-previous — the closing card's
+   *      deactivation already fired in step 1, so the transition
+   *      should emit activation events only.
    */
   removeCard(cardId: string): void {
-    if (this.cardLifecycle.getActiveCardId() === cardId) {
+    const wasActive = this.cardLifecycle.getActiveCardId() === cardId;
+    if (wasActive) {
       this.cardLifecycle.notifyCardWillDeactivate(cardId);
       this.cardLifecycle.notifyCardDidDeactivate(cardId);
     }
@@ -631,6 +649,13 @@ export class DeckManager implements IDeckManagerStore {
     };
     this.notify();
     this.scheduleSave();
+
+    if (wasActive) {
+      const newTop = this.cardLifecycle.getActiveCardId();
+      if (newTop !== null) {
+        this.cardLifecycle.activateCard(newTop, null);
+      }
+    }
   }
 
   /**

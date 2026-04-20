@@ -152,9 +152,24 @@ export class CardLifecycle {
    * useEffect so focus work runs outside the gesture.
    *
    * Same-card re-activation is silent on all four channels.
+   *
+   * `knownPreviousActive` is an escape hatch for callers that have
+   * already mutated the store before calling `activateCard` (e.g.,
+   * `DeckManager.addCard` appends the new card to the end of the
+   * array, which changes the store's notion of "top-of-stack" to
+   * the new card before any lifecycle event has fired; passing the
+   * pre-append active id explicitly lets the transition compute
+   * against the *pre*-mutation state). When omitted, the store is
+   * read as usual.
    */
-  activateCard(cardId: string): void {
-    const wasActive = this.store.getFocusedCardId();
+  activateCard(
+    cardId: string,
+    knownPreviousActive?: string | null,
+  ): void {
+    const wasActive =
+      knownPreviousActive !== undefined
+        ? knownPreviousActive
+        : this.store.getFocusedCardId();
     if (wasActive === cardId) {
       // Same-card re-activation: no will/did fires, but still flow
       // through the store (z-order is a no-op; the focused-card-id

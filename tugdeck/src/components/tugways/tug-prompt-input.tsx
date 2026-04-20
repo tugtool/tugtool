@@ -468,6 +468,11 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         }
         root.focus();
       },
+      blur() {
+        const engine = engineRef.current;
+        if (!engine) return;
+        engine.root.blur();
+      },
       get isTypeaheadActive() { return engineRef.current?.isTypeaheadActive ?? false; },
       acceptTypeahead(index?: number) { engineRef.current?.acceptTypeahead(index); },
       cancelTypeahead() { engineRef.current?.cancelTypeahead(); },

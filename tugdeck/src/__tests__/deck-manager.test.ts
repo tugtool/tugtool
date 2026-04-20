@@ -159,6 +159,46 @@ describe("DeckManager.addCard – registered component", () => {
     const card = manager.getDeckState().cards[0];
     expect(card.tabs[0].closable).toBe(false);
   });
+
+  it("fires construction + full activation transition on each new card", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
+      log.push(`construct:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+
+    // First card: construction + activation only (no prior active).
+    const id1 = manager.addCard("hello") as string;
+    // Second card: construction, then deactivate old + activate new.
+    const id2 = manager.addCard("terminal") as string;
+
+    expect(log).toEqual([
+      // First card
+      `construct:${id1}`,
+      `willActivate:${id1}`,
+      `didActivate:${id1}`,
+      // Second card
+      `construct:${id2}`,
+      `willDeactivate:${id1}`,
+      `willActivate:${id2}`,
+      `didDeactivate:${id1}`,
+      `didActivate:${id2}`,
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -215,6 +255,90 @@ describe("DeckManager.removeCard", () => {
 
     manager.removeCard("nonexistent-id");
     expect(manager.getDeckState().cards.length).toBe(1);
+  });
+
+  it("fires will/didActivate on the new top-of-stack when the active card closes", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const id1 = manager.addCard("hello") as string;
+    const id2 = manager.addCard("terminal") as string;
+    // id2 is now the active card (last in array). Closing id2 should
+    // deactivate it, destroy it, and activate id1 as the new top.
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`willDestroy:${id}`),
+    );
+    // Drop the initial-sync fire from observeCardDidActivate (id2 is
+    // already active at subscribe time).
+    log.length = 0;
+
+    manager.removeCard(id2);
+
+    expect(log).toEqual([
+      `willDeactivate:${id2}`,
+      `didDeactivate:${id2}`,
+      `willDestroy:${id2}`,
+      `willActivate:${id1}`,
+      `didActivate:${id1}`,
+    ]);
+  });
+
+  it("fires no activation when the last card closes (nothing left to activate)", () => {
+    registerCard(makeRegistration("hello"));
+    const id1 = manager.addCard("hello") as string;
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+    log.length = 0; // drop observeCardDidActivate initial-sync
+
+    manager.removeCard(id1);
+
+    expect(log).toEqual([]);
+  });
+
+  it("fires no activation when a non-active card closes", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const id1 = manager.addCard("hello") as string;
+    manager.addCard("terminal"); // id2 is active
+    // Close id1 (not active). id2 should stay active without any
+    // activation events firing.
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+    log.length = 0; // drop observeCardDidActivate initial-sync
+
+    manager.removeCard(id1);
+
+    expect(log).toEqual([]);
   });
 });
 

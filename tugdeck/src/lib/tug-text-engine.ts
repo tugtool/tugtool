@@ -99,6 +99,8 @@ export interface TugTextInputDelegate {
 
   // --- Focus ---
   focus(): void;
+  /** Remove keyboard focus from the editor element. */
+  blur(): void;
 
   // --- Typeahead ---
   readonly isTypeaheadActive: boolean;
