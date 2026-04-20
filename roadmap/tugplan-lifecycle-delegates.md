@@ -796,35 +796,79 @@ The original single-commit framing of Piece 1 under-scoped the work. `Tugcard` w
 - Verification: `bun x tsc --noEmit` clean; `bun test` green; new identity-preservation tests pass. **Effect: the detach focus bug's root cause (content unmount) is resolved; tide's WebSocket survives every card operation. In-card tab switches also preserve identity.**
 - Data model unchanged throughout Pieces 1.i–1.iii. No API rename. Commit boundary is additive + targeted render refactor.
 
-*Piece 2 — Data-model rename and store API rewrite (single atomic commit).*
-- `tugdeck/src/layout-tree.ts`: rename existing `CardState` → `CardStackState`; change field `tabs: TabItem[]` → `cardIds: string[]`; `activeTabId` → `activeCardId`. Introduce a new `CardState { id, componentId, title, closable, state?: TabStateBag }`. Update `DeckState` to `{ cards: CardState[]; stacks: CardStackState[]; activeStackId?: string; focusedCardId?: string }`. Document invariants in JSDoc.
-- `tugdeck/src/deck-manager.ts`: rewrite internals against the two-table model. Rename the public mutators: `addTab` → `addCardToStack`, `detachTab` → `detachCard`, `mergeTab` → `moveCardToStack`, `setActiveTab` → `setActiveCardInStack`, `reorderTab` → `reorderCardInStack`, `toggleCardCollapse` → `toggleStackCollapse`. `getTabState` / `setTabState` → `getCardState` / `setCardState` (the id being keyed is now `cardId`, which IS the former `tabId`; tugbank storage keys unchanged so no tabstate-data migration needed). `addCard(componentId)` keeps its name and public shape (creates a Card, wraps it in a new Stack of 1, makes the Stack active, returns the cardId). `handleCardClosed(cardId)` keeps its name (removes a Card; if its Stack becomes empty, removes the Stack). `handleCardMoved` keeps its name but the `id` it accepts is now a `stackId` (stacks own position/size, not cards).
-- `tugdeck/src/deck-manager-store.ts`: rewrite `IDeckManagerStore` to match. Keep the `activateCard(cardId, knownPreviousActive?)` signature intact in this piece (11.6.1b removes `knownPreviousActive`).
-- `tugdeck/src/components/chrome/card-frame.tsx`: prop type now carries `CardStackState` (rename the prop if helpful; still register by the stack's id in the registry, so `CardPortal`'s `hostCardId` becomes `hostStackId` at every callsite).
-- `tugdeck/src/components/chrome/card-portal.tsx`: rename `hostCardId` → `hostStackId`; `tabId` → `cardId`.
-- `tugdeck/src/components/chrome/deck-canvas.tsx`: render stacks as chrome; render the flat card list as portals using `deckState.cards`.
-- `tugdeck/src/action-dispatch.ts`: `new-tab-on-active-card` routes to `addCardToStack(activeStackId, componentId)`. `focus-card` still accepts a cardId publicly; internally looks up the host stack and activates.
-- `tugdeck/src/tab-drag-coordinator.ts`: route reorder/detach/merge to the new methods. Rename variables so `tabId`-as-content-identity reads as `cardId`.
-- `tugdeck/src/main.tsx` and any other callers: propagate the rename.
-- `tugdeck/src/serialization.ts`: emit `version: 2` blobs. On load: if blob lacks `version` or has `version !== 2`, run the v1→v2 migration described in the main Work section. Preserve all tab ids as card ids, all card ids as stack ids. Preserve tugbank tabstate row keys by keeping cardId === former tabId.
-- `tugdeck/src/__tests__/*`: mechanical rename of call sites. Add a `serialization.test.ts` case (or extend existing) for the v1→v2 migration: hand-authored v1 blob loads into an expected v2 DeckState; save round-trip writes `version: 2`.
-- **Do NOT delete existing tests.** Every test must be migrated to the new API, not removed. If a test becomes meaningless under the new model, explain in a short comment and leave the assertion in place operating on the new equivalent.
-- Verification: `bun x tsc --noEmit` clean; `bun test` green with a test count ≥ baseline (Piece 1 end-state baseline, not further reduced). Manual check that every `addTab` / `detachTab` / `mergeTab` / `setActiveTab` / `reorderTab` call in the codebase is gone.
+*Piece 2 — Full Card / CardStack rename: data model + store API + chrome (single atomic commit).*
 
-*Piece 3 — Rename `CardFrame` component and file to `StackFrame` / `stack-frame.tsx`.*
-- `tugdeck/src/components/chrome/card-frame.tsx` → `tugdeck/src/components/chrome/stack-frame.tsx`. `CardFrame` export → `StackFrame`. Prop names `card` / `cardState` → `stack` / `stackState`. `CardFrameProps` → `StackFrameProps`.
-- Update every import site.
-- Update every test file that references `CardFrame`.
-- Pure rename commit. Behavior unchanged.
-- Verification: `bun x tsc --noEmit` clean; `bun test` green.
+The original plan split the chrome rename (`CardFrame` → `StackFrame`) into its own subsequent piece. Piece 1.iii pulled some of the terminology forward (contentFactory now receives a stable card-identity value, gallery dispatches target it, TugcardPortalContext is bridged per card root), which left the codebase in a half-renamed state. Keeping the chrome in its own commit would prolong that limbo. Piece 2 below folds the chrome rename in — one atomic commit takes the repo from "tab/card" mixed vocabulary to the final "card/stack" vocabulary.
 
-*Piece 4 — Portal DOM containment test + additional identity-preservation coverage.*
+**Data model (`tugdeck/src/layout-tree.ts`):**
+- Rename existing `CardState` (frame+tabs+position+size) → `CardStackState`. Change field `tabs: TabItem[]` → `cardIds: string[]`; `activeTabId` → `activeCardId`. Keep `position`, `size`, `collapsed`, `acceptsFamilies`, `title`.
+- Introduce a new `CardState { id, componentId, title, closable, state?: TabStateBag }`. This is the former `TabItem` with the per-content persistence bag folded in (optional).
+- Update `DeckState` to `{ cards: CardState[]; stacks: CardStackState[]; activeStackId?: string; focusedCardId?: string }`. Document invariants in JSDoc (no orphan cards, no empty stacks, `activeCardId ∈ cardIds`, `activeStackId` references a real stack).
+- `TabItem` is removed. No deprecation shim — callers are updated in the same commit.
+
+**Store API (`tugdeck/src/deck-manager.ts`, `tugdeck/src/deck-manager-store.ts`):**
+- Rewrite `DeckManager` internals against the two-table model (`this.deckState.cards` + `this.deckState.stacks`).
+- Rename public mutators:
+  - `addTab(cardId, componentId)` → `addCardToStack(stackId, componentId)` — creates a new `Card`, appends its id to the stack's `cardIds`, sets it as `activeCardId`. No stack created. Returns the new cardId.
+  - `detachTab(cardId, tabId, position)` → `detachCard(cardId, position)` — removes the card from its current stack, creates a new single-card stack at `position`, makes it active. Returns the new stackId. No card construction/destruction — identity is preserved.
+  - `mergeTab(srcCard, tabId, tgtCard, idx)` → `moveCardToStack(cardId, targetStackId, insertAtIndex)` — moves a card between stacks. If the source stack becomes empty, remove it.
+  - `setActiveTab(cardId, tabId)` → `setActiveCardInStack(stackId, cardId)`.
+  - `reorderTab(cardId, fromIdx, toIdx)` → `reorderCardInStack(stackId, fromIdx, toIdx)`.
+  - `toggleCardCollapse(cardId)` → `toggleStackCollapse(stackId)`.
+  - `getTabState(tabId)` / `setTabState(tabId, bag)` → `getCardState(cardId)` / `setCardState(cardId, bag)`. **The key (`cardId`) IS the former `tabId`**, so tugbank's existing `tabstate/{id}` rows remain readable without data migration. (We may rename the tugbank row prefix in a separate cleanup; out of scope here.)
+  - `addCard(componentId)` keeps its signature — creates a new `Card`, wraps in a new `CardStack` of 1, makes it the active stack. Returns the new cardId.
+  - `handleCardClosed(cardId)` keeps its signature — removes the card from its stack; if the stack becomes empty, removes the stack.
+  - `handleCardMoved(id, position, size)` keeps its signature, but the `id` is now a `stackId` (stacks own position/size). Rename parameter in the interface for clarity.
+  - `activateCard(cardId, knownPreviousActive?)` signature unchanged. Implementation looks up the host stack and makes that stack active with the card as its active card. (11.6.1b removes `knownPreviousActive`.)
+  - `invokeSaveCallback(id)` unchanged — `id` is now always a cardId.
+
+**Chrome + portals (`tugdeck/src/components/chrome/`):**
+- `card-frame.tsx` → `stack-frame.tsx`. `CardFrame` export → `StackFrame`. Prop `cardState: CardState` → `stackState: CardStackState`. `CardFrameProps` → `StackFrameProps`. `CardFrameInjectedProps` stays (still injected into `Tugcard`'s render via `renderContent`). Update every import site.
+- `tab-content-host.tsx` → `card-content-host.tsx`. `TabContentHost` → `CardContentHost`. Props: `tabId` → `cardId`; `hostCardId` → `hostStackId`; `componentId` unchanged; `isActive` unchanged. All internal references renamed (`tabId` identifiers become `cardId`; `hostCardId` becomes `hostStackId`).
+- `card-content-registry.ts` — the element this registers IS the stack's content `<div>`. Rename keys/docs from `cardId` to `stackId`. File name stays (registry is about card CONTENT divs — i.e., where cards land inside a stack; the "card-content" in the file name is accurate even in the new vocabulary).
+- `tab-card-root-registry.ts` → `stack-root-registry.ts`. Keys renamed `cardId` → `stackId`.
+- `tab-property-store-registry.ts` — **delete**. Piece 1.iii's refactor made it unreachable (the card-level `setProperty` responder was superseded by the tab-level responder inside `TabContentHost`, now `CardContentHost`). Remove all references.
+- `card-portal.tsx` — rename prop `hostCardId` → `hostStackId`. Variables and docs updated.
+- `deck-canvas.tsx` — iterate `deckState.stacks` for chrome (`<StackFrame stackState={stack} ...>`); iterate `deckState.cards` for content (`<CardContentHost cardId={card.id} hostStackId={lookupHostStackId(card.id)} componentId={card.componentId} isActive={stack.activeCardId === card.id} />`). Sort render-order by stackId (stable DOM order).
+
+**Action dispatch & coordinators (`tugdeck/src/`):**
+- `action-dispatch.ts`: `new-tab-on-active-card` → dispatches `addCardToStack(activeStackId, componentId)`. `focus-card` continues to accept a cardId publicly; internally looks up the host stack and activates. Comments updated to drop "tab" vocabulary.
+- `tab-drag-coordinator.ts` → `card-drag-coordinator.ts`. Routes reorder/detach/merge to the new store methods. Internal identifiers (`tabId`, `fromTabId`, etc.) become `cardId` / `fromCardId`. Drop-zone queries still use DOM-level attributes like `data-tab-bar` (these are visual affordances of multi-card stacks; rename to `data-stack-tab-bar` or leave as-is if it would cascade too far — judgment call at edit time, note it in the commit message).
+- `main.tsx`: propagate any rename (imports, card-registry access).
+- `card-session-binding-store.ts`, `card-services-store.ts`: unchanged API. The key was always "cardId" semantically; now that `cardId` is the stable card identity, the existing keying is correct.
+
+**Tide card (`tugdeck/src/components/tugways/cards/tide-card.tsx`):**
+- Rename `useTideCardServices(cardId)` — unchanged name and signature; the `cardId` argument is now the stable card identity (what we've been passing since Piece 1.iii). Consumers unchanged.
+- Clean up any lingering `tabId` references in comments.
+
+**Persistence migration (`tugdeck/src/serialization.ts`):**
+- Emit `version: 2` blobs with shape `{ version: 2, cards: [...], stacks: [...], activeStackId, focusedCardId }`.
+- Load path: detect missing `version` or `version !== 2` → run v1→v2 migration. Legacy shape:
+  ```
+  { cards: [{ id, position, size, tabs: [{ id, componentId, ... }], activeTabId, collapsed, acceptsFamilies, title }] }
+  ```
+  Migration: each legacy card becomes a stack (keep stack id === legacy card id); each legacy tab becomes a card (keep card id === legacy tab id). Stack's `cardIds` = ordered legacy tab ids; `activeCardId` = legacy `activeTabId`. `focusedCardId` in the legacy blob is already the card identity (= former tabId), so it carries across unchanged.
+- The tugbank `tabstate/{id}` rows reference former `tabId` values, which are now `cardId` values. Keying is preserved.
+
+**Tests (`tugdeck/src/__tests__/*`):**
+- Mechanical rename across every call site: `addTab` → `addCardToStack`, `detachTab` → `detachCard`, `mergeTab` → `moveCardToStack`, `setActiveTab` → `setActiveCardInStack`, `reorderTab` → `reorderCardInStack`, `toggleCardCollapse` → `toggleStackCollapse`, `getTabState`/`setTabState` → `getCardState`/`setCardState`.
+- Mock stores (`mock-deck-manager-store.ts`, inline mocks in deck-canvas / e2e / card-header / tab-drag-coordinator tests) updated to expose the new API.
+- File renames: `tab-content-host.test.tsx` → `card-content-host.test.tsx`. `tab-identity-preservation.test.tsx` → `card-identity-preservation.test.tsx`.
+- `serialization.test.ts`: add a v1→v2 migration round-trip test (hand-authored v1 blob loads into an expected v2 `DeckState`; save writes `version: 2`).
+- **Do NOT delete existing tests.** If a test becomes meaningless under the new model, migrate its assertion to the equivalent new semantics with a short comment; do not remove the coverage.
+
+**Verification:**
+- `bun x tsc --noEmit` clean.
+- `bun test` green with a test count ≥ the pre-Piece-2 baseline. No regressions.
+- Grep sweep: no occurrence of `addTab`, `detachTab`, `mergeTab`, `setActiveTab`, `reorderTab`, `TabItem`, `TabContentHost`, `CardFrame` (as a component) in `tugdeck/src/`. `tabId` may still appear as a variable name in legacy comments or in `tugbank` row prefixes; surface any remaining occurrences in the commit message.
+
+*Piece 3 — Portal DOM containment test + additional identity-preservation coverage.*
 - Add a test that asserts, after `moveCardToStack`, the moved card's rendered root element is contained within the destination stack's content div (via `document.getElementById` or a ref-based query; use whichever pattern the existing tests use).
-- Add tests covering the invariants listed in the main Work section: no orphan cards, no stacks with empty cardIds, every activeCardId ∈ cardIds, activeStackId references a real stack. One test per invariant, exercised through a mutation that would break the invariant if the implementation is wrong.
+- Add tests covering the invariants listed in the Data model section above: no orphan cards, no stacks with empty `cardIds`, every `activeCardId ∈ cardIds`, `activeStackId` references a real stack. One test per invariant, exercised through a mutation that would break the invariant if the implementation is wrong.
 - Verification: `bun x tsc --noEmit` clean; `bun test` green with at least 4 new tests (1 containment + 3 invariant).
 
-*Piece 5 — Manual smoke and step close.*
-- Run tugdeck in dev (HMR). Execute the manual smoke checklist from the main Verification block. If any step fails, identify which of Pieces 1–4 regressed and fix before declaring done.
+*Piece 4 — Manual smoke and step close.*
+- Run tugdeck in dev (HMR). Execute the manual smoke checklist from the main Verification block. If any step fails, identify which of Pieces 1–3 regressed and fix before declaring done.
 - Update this step's section header in the plan to reflect completion (status note at the end of the Work block).
 - No code change in this piece.
 
