@@ -178,20 +178,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    func applicationDidResignActive(_ notification: Notification) {
-        // Route through the `app-lifecycle` control frame so tugdeck's
-        // AppLifecycle singleton dispatches to every registered observer
-        // (selection-guard dim, deck.saveAndFlush, etc.) via one unified
-        // pipe. Step 6 of the lifecycle-delegates plan adds the six
-        // other NSApplicationDelegate notifications sending the same
-        // frame shape with different `event` strings.
-        NSLog("AppDelegate: applicationDidResignActive")
-        processManager.sendControl("app-lifecycle", params: ["event": "didResignActive"])
+    // MARK: - App lifecycle (NSApplicationDelegate)
+    //
+    // All eight notifications route through a single `app-lifecycle`
+    // control frame. The tugdeck-side `AppLifecycle` singleton
+    // dispatches to every registered observer (selection-guard dim /
+    // restore, deck.saveAndFlush on resign, the cascade layer added
+    // in Step 7, etc.). Uniform shape: `params: ["event": "<name>"]`.
+
+    func applicationWillBecomeActive(_ notification: Notification) {
+        NSLog("AppDelegate: applicationWillBecomeActive")
+        processManager.sendControl("app-lifecycle", params: ["event": "willBecomeActive"])
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         NSLog("AppDelegate: applicationDidBecomeActive")
         processManager.sendControl("app-lifecycle", params: ["event": "didBecomeActive"])
+    }
+
+    func applicationWillResignActive(_ notification: Notification) {
+        NSLog("AppDelegate: applicationWillResignActive")
+        processManager.sendControl("app-lifecycle", params: ["event": "willResignActive"])
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        NSLog("AppDelegate: applicationDidResignActive")
+        processManager.sendControl("app-lifecycle", params: ["event": "didResignActive"])
+    }
+
+    func applicationWillHide(_ notification: Notification) {
+        NSLog("AppDelegate: applicationWillHide")
+        processManager.sendControl("app-lifecycle", params: ["event": "willHide"])
+    }
+
+    func applicationDidHide(_ notification: Notification) {
+        NSLog("AppDelegate: applicationDidHide")
+        processManager.sendControl("app-lifecycle", params: ["event": "didHide"])
+    }
+
+    func applicationWillUnhide(_ notification: Notification) {
+        NSLog("AppDelegate: applicationWillUnhide")
+        processManager.sendControl("app-lifecycle", params: ["event": "willUnhide"])
+    }
+
+    func applicationDidUnhide(_ notification: Notification) {
+        NSLog("AppDelegate: applicationDidUnhide")
+        processManager.sendControl("app-lifecycle", params: ["event": "didUnhide"])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
