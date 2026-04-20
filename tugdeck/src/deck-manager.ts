@@ -194,8 +194,8 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Stable bound callbacks (bound once in constructor, never recreated) ----
 
-  /** Stable bound callback: update card position/size on drag-end/resize-end. */
-  public handleCardMoved: (
+  /** Stable bound callback: update a stack's position/size on drag-end/resize-end. */
+  public handleStackMoved: (
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
@@ -226,26 +226,26 @@ export class DeckManager implements IDeckManagerStore {
    */
   private readonly lifecycleCascade: LifecycleCascadeHandle;
 
-  /** Stable bound callback: add a tab to an existing card. */
-  public addTab: (cardId: string, componentId: string) => string | null;
+  /** Stable bound callback: add a card to an existing stack. */
+  public addCardToStack: (stackId: string, componentId: string) => string | null;
 
-  /** Stable bound callback: remove a tab from a card. */
-  public removeTab: (cardId: string, tabId: string) => void;
+  /** Stable bound callback: remove a card from a stack. */
+  public removeCard: (stackId: string, cardId: string) => void;
 
-  /** Stable bound callback: set the active tab on a card. */
-  public setActiveTab: (cardId: string, tabId: string) => void;
+  /** Stable bound callback: set the active card in a stack. */
+  public setActiveCardInStack: (stackId: string, cardId: string) => void;
 
-  /** Stable bound callback: reorder a tab within a card. */
-  public reorderTab: (cardId: string, fromIndex: number, toIndex: number) => void;
+  /** Stable bound callback: reorder a card within its stack. */
+  public reorderCardInStack: (stackId: string, fromIndex: number, toIndex: number) => void;
 
-  /** Stable bound callback: detach a tab into a new single-tab card. */
-  public detachTab: (cardId: string, tabId: string, position: { x: number; y: number }) => string | null;
+  /** Stable bound callback: detach a card into a new single-card stack. */
+  public detachCard: (stackId: string, cardId: string, position: { x: number; y: number }) => string | null;
 
-  /** Stable bound callback: merge a tab from one card into another. */
-  public mergeTab: (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number) => void;
+  /** Stable bound callback: move a card from its source stack into a target stack. */
+  public moveCardToStack: (sourceStackId: string, cardId: string, targetStackId: string, insertAtIndex: number) => void;
 
-  /** Stable bound callback: toggle the collapsed state of a card. */
-  public toggleCardCollapse: (cardId: string) => void;
+  /** Stable bound callback: toggle the collapsed state of a stack. */
+  public toggleStackCollapse: (stackId: string) => void;
 
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
@@ -378,8 +378,8 @@ export class DeckManager implements IDeckManagerStore {
     this.reactRoot = createRoot(container);
 
     // Bind callbacks once -- stable identity, safe to pass directly to the store interface.
-    this.handleCardMoved = this.moveCard.bind(this);
-    this.handleCardClosed = this.removeCard.bind(this);
+    this.handleStackMoved = this.moveStack.bind(this);
+    this.handleCardClosed = this._closeStack.bind(this);
     // Construct the card lifecycle. The store end is this deck manager
     // (we implement CardLifecycleStore via focusCard + getFocusedCardId).
     // The responder-chain manager is attached later by
@@ -404,13 +404,13 @@ export class DeckManager implements IDeckManagerStore {
       this.cardLifecycle,
       this.appLifecycle,
     );
-    this.addTab = this._addTab.bind(this);
-    this.removeTab = this._removeTab.bind(this);
-    this.setActiveTab = this._setActiveTab.bind(this);
-    this.reorderTab = this._reorderTab.bind(this);
-    this.detachTab = this._detachTab.bind(this);
-    this.mergeTab = this._mergeTab.bind(this);
-    this.toggleCardCollapse = this._toggleCardCollapse.bind(this);
+    this.addCardToStack = this._addCardToStack.bind(this);
+    this.removeCard = this._removeCard.bind(this);
+    this.setActiveCardInStack = this._setActiveCardInStack.bind(this);
+    this.reorderCardInStack = this._reorderCardInStack.bind(this);
+    this.detachCard = this._detachCard.bind(this);
+    this.moveCardToStack = this._moveCardToStack.bind(this);
+    this.toggleStackCollapse = this._toggleStackCollapse.bind(this);
 
     // Load or build the initial canvas state.
     // subscribers, stateVersion, handleCard*, and deckState must all be initialized
@@ -652,7 +652,7 @@ export class DeckManager implements IDeckManagerStore {
    *      deactivation already fired in step 1, so the transition
    *      should emit activation events only.
    */
-  removeCard(cardId: string): void {
+  _closeStack(cardId: string): void {
     const wasActive = this.cardLifecycle.getActiveCardId() === cardId;
     if (wasActive) {
       this.cardLifecycle.notifyCardWillDeactivate(cardId);
@@ -684,7 +684,7 @@ export class DeckManager implements IDeckManagerStore {
    *   - Corner-handle resize (moves origin AND changes size): both pairs fire.
    *   - Identity commit (same position and size): neither pair fires.
    */
-  moveCard(
+  moveStack(
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
@@ -854,7 +854,7 @@ export class DeckManager implements IDeckManagerStore {
    * Read a tab state bag from the in-memory cache.
    * Returns undefined if the tab has no cached state.
    */
-  getTabState(tabId: string): TabStateBag | undefined {
+  getCardState(tabId: string): TabStateBag | undefined {
     return this.tabStateCache.get(tabId);
   }
 
@@ -864,7 +864,7 @@ export class DeckManager implements IDeckManagerStore {
    *
    * The tab ID is tracked in dirtyTabIds so destroy() can flush pending writes.
    */
-  setTabState(tabId: string, bag: TabStateBag): void {
+  setCardState(tabId: string, bag: TabStateBag): void {
     this.tabStateCache.set(tabId, bag);
     this.dirtyTabIds.add(tabId);
 
@@ -992,7 +992,7 @@ export class DeckManager implements IDeckManagerStore {
    *
    * @returns The new tab id, or null if the card or registration is not found.
    */
-  private _addTab(cardId: string, componentId: string): string | null {
+  private _addCardToStack(cardId: string, componentId: string): string | null {
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) {
       console.warn(
@@ -1038,16 +1038,16 @@ export class DeckManager implements IDeckManagerStore {
    * the removed tab was first). If only one tab remains after removal, the card
    * stays with that tab. If the last tab is removed, the card is removed entirely.
    */
-  private _removeTab(cardId: string, tabId: string): void {
+  private _removeCard(cardId: string, tabId: string): void {
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return;
 
     const tabIndex = card.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return;
 
-    // If this is the last tab, remove the card entirely.
+    // If this is the last card in the stack, close the whole stack.
     if (card.tabs.length === 1) {
-      this.removeCard(cardId);
+      this._closeStack(cardId);
       return;
     }
 
@@ -1076,7 +1076,7 @@ export class DeckManager implements IDeckManagerStore {
    *
    * No-op if the tabId is not in the card's tabs array.
    */
-  private _setActiveTab(cardId: string, tabId: string): void {
+  private _setActiveCardInStack(cardId: string, tabId: string): void {
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return;
     if (!card.tabs.some((t) => t.id === tabId)) return;
@@ -1147,7 +1147,7 @@ export class DeckManager implements IDeckManagerStore {
    * Moves the tab at fromIndex to toIndex. No-op if the card is not found,
    * indices are out of bounds, or fromIndex === toIndex.
    */
-  private _reorderTab(cardId: string, fromIndex: number, toIndex: number): void {
+  private _reorderCardInStack(cardId: string, fromIndex: number, toIndex: number): void {
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return;
 
@@ -1179,7 +1179,7 @@ export class DeckManager implements IDeckManagerStore {
    * Position is clamped to canvas bounds.
    * Exactly one notify() and scheduleSave() per call.
    */
-  private _detachTab(
+  private _detachCard(
     cardId: string,
     tabId: string,
     position: { x: number; y: number },
@@ -1260,7 +1260,7 @@ export class DeckManager implements IDeckManagerStore {
    * If the source card has only one tab, the source card is removed.
    * Exactly one notify() and scheduleSave() per call.
    */
-  private _mergeTab(
+  private _moveCardToStack(
     sourceCardId: string,
     tabId: string,
     targetCardId: string,
@@ -1345,7 +1345,7 @@ export class DeckManager implements IDeckManagerStore {
    * Notifies subscribers and schedules a save so collapsed state is persisted.
    * No-op if the card is not found.
    */
-  private _toggleCardCollapse(cardId: string): void {
+  private _toggleStackCollapse(cardId: string): void {
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return;
 

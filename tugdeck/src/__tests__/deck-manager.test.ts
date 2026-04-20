@@ -231,7 +231,7 @@ describe("DeckManager.removeCard", () => {
     const cardId = manager.addCard("hello") as string;
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.removeCard(cardId);
+    manager.handleCardClosed(cardId);
     expect(manager.getDeckState().cards.length).toBe(0);
   });
 
@@ -242,7 +242,7 @@ describe("DeckManager.removeCard", () => {
     const id2 = manager.addCard("terminal") as string;
     expect(manager.getDeckState().cards.length).toBe(2);
 
-    manager.removeCard(id1);
+    manager.handleCardClosed(id1);
 
     const remaining = manager.getDeckState().cards;
     expect(remaining.length).toBe(1);
@@ -254,7 +254,7 @@ describe("DeckManager.removeCard", () => {
     manager.addCard("hello");
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.removeCard("nonexistent-id");
+    manager.handleCardClosed("nonexistent-id");
     expect(manager.getDeckState().cards.length).toBe(1);
   });
 
@@ -286,7 +286,7 @@ describe("DeckManager.removeCard", () => {
     // already active at subscribe time).
     log.length = 0;
 
-    manager.removeCard(id2);
+    manager.handleCardClosed(id2);
 
     expect(log).toEqual([
       `willDeactivate:${id2}`,
@@ -310,7 +310,7 @@ describe("DeckManager.removeCard", () => {
     );
     log.length = 0; // drop observeCardDidActivate initial-sync
 
-    manager.removeCard(id1);
+    manager.handleCardClosed(id1);
 
     expect(log).toEqual([]);
   });
@@ -337,7 +337,7 @@ describe("DeckManager.removeCard", () => {
     );
     log.length = 0; // drop observeCardDidActivate initial-sync
 
-    manager.removeCard(id1);
+    manager.handleCardClosed(id1);
 
     expect(log).toEqual([]);
   });
@@ -352,7 +352,7 @@ describe("DeckManager.moveCard", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
 
-    manager.moveCard(cardId, { x: 150, y: 200 }, { width: 500, height: 400 });
+    manager.moveStack(cardId, { x: 150, y: 200 }, { width: 500, height: 400 });
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.position.x).toBe(150);
@@ -371,7 +371,7 @@ describe("DeckManager.moveCard", () => {
     const originalPos2 = { ...originalCard2.position };
     const originalSize2 = { ...originalCard2.size };
 
-    manager.moveCard(id1, { x: 999, y: 888 }, { width: 777, height: 666 });
+    manager.moveStack(id1, { x: 999, y: 888 }, { width: 777, height: 666 });
 
     const card2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
     expect(card2.position.x).toBe(originalPos2.x);
@@ -398,7 +398,7 @@ describe("DeckManager.moveCard", () => {
     );
 
     // Pure drag: position changes, size stays the same.
-    manager.moveCard(
+    manager.moveStack(
       cardId,
       { x: card.position.x + 100, y: card.position.y + 50 },
       { width: card.size.width, height: card.size.height },
@@ -425,7 +425,7 @@ describe("DeckManager.moveCard", () => {
     );
 
     // Pure edge resize: size changes, position stays.
-    manager.moveCard(
+    manager.moveStack(
       cardId,
       { x: card.position.x, y: card.position.y },
       { width: card.size.width + 50, height: card.size.height + 30 },
@@ -452,7 +452,7 @@ describe("DeckManager.moveCard", () => {
     );
 
     // Top-left handle drag: origin moves, size changes.
-    manager.moveCard(
+    manager.moveStack(
       cardId,
       { x: card.position.x + 20, y: card.position.y + 20 },
       { width: card.size.width - 20, height: card.size.height - 20 },
@@ -475,7 +475,7 @@ describe("DeckManager.moveCard", () => {
     manager.cardLifecycle.observeCardWillResize(cardId, () => log.push("r"));
     manager.cardLifecycle.observeCardDidResize(cardId, () => log.push("R"));
 
-    manager.moveCard(
+    manager.moveStack(
       cardId,
       { x: card.position.x, y: card.position.y },
       { width: card.size.width, height: card.size.height },
@@ -500,7 +500,7 @@ describe("DeckManager.arrangeCards", () => {
     // one card off the cascade so arrangeCards("cascade") actually
     // changes its position; the other two stay put.
     const card2 = manager.getDeckState().cards.find((c) => c.id === id2)!;
-    manager.moveCard(id2, { x: 500, y: 500 }, card2.size);
+    manager.moveStack(id2, { x: 500, y: 500 }, card2.size);
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(null, (id) =>
@@ -759,7 +759,7 @@ describe("DeckManager store API – getVersion", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const v1 = manager.getVersion();
-    manager.removeCard(cardId);
+    manager.handleCardClosed(cardId);
     expect(manager.getVersion()).toBe(v1 + 1);
   });
 
@@ -767,7 +767,7 @@ describe("DeckManager store API – getVersion", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const v1 = manager.getVersion();
-    manager.moveCard(cardId, { x: 10, y: 20 }, { width: 300, height: 200 });
+    manager.moveStack(cardId, { x: 10, y: 20 }, { width: 300, height: 200 });
     expect(manager.getVersion()).toBe(v1 + 1);
   });
 
@@ -819,7 +819,7 @@ describe("DeckManager store API – subscriber callback timing", () => {
     const cardId = manager.addCard("hello") as string;
     let fired = false;
     manager.subscribe(() => { fired = true; });
-    manager.removeCard(cardId);
+    manager.handleCardClosed(cardId);
     expect(fired).toBe(true);
   });
 
@@ -828,7 +828,7 @@ describe("DeckManager store API – subscriber callback timing", () => {
     const cardId = manager.addCard("hello") as string;
     let fired = false;
     manager.subscribe(() => { fired = true; });
-    manager.moveCard(cardId, { x: 5, y: 10 }, { width: 300, height: 200 });
+    manager.moveStack(cardId, { x: 5, y: 10 }, { width: 300, height: 200 });
     expect(fired).toBe(true);
   });
 
@@ -868,7 +868,7 @@ describe("DeckManager.addTab", () => {
     expect(initialTabCount).toBe(1);
 
     registerCard(makeRegistration("terminal", "Terminal"));
-    const newTabId = manager.addTab(cardId, "terminal");
+    const newTabId = manager.addCardToStack(cardId, "terminal");
 
     expect(newTabId).not.toBeNull();
     expect(typeof newTabId).toBe("string");
@@ -885,7 +885,7 @@ describe("DeckManager.addTab", () => {
     const cardId = manager.addCard("hello") as string;
 
     registerCard(makeRegistration("terminal", "Terminal"));
-    const newTabId = manager.addTab(cardId, "terminal");
+    const newTabId = manager.addCardToStack(cardId, "terminal");
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.activeTabId).toBe(newTabId!);
@@ -896,7 +896,7 @@ describe("DeckManager.addTab", () => {
     const cardId = manager.addCard("hello") as string;
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = manager.addTab(cardId, "nonexistent");
+    const result = manager.addCardToStack(cardId, "nonexistent");
 
     expect(result).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
@@ -906,7 +906,7 @@ describe("DeckManager.addTab", () => {
   it("returns null for non-existent cardId", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = manager.addTab("nonexistent-card-id", "hello");
+    const result = manager.addCardToStack("nonexistent-card-id", "hello");
 
     expect(result).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
@@ -920,7 +920,7 @@ describe("DeckManager.addTab", () => {
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     expect(callCount).toBe(1);
   });
@@ -938,11 +938,11 @@ describe("DeckManager.removeTab", () => {
     const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId;
 
     // Add a second tab and make it active
-    const secondTabId = manager.addTab(cardId, "terminal") as string;
+    const secondTabId = manager.addCardToStack(cardId, "terminal") as string;
     expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId).toBe(secondTabId);
 
     // Remove the second (active) tab -- should activate the previous (first) tab
-    manager.removeTab(cardId, secondTabId);
+    manager.removeCard(cardId, secondTabId);
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.tabs.length).toBe(1);
@@ -956,11 +956,11 @@ describe("DeckManager.removeTab", () => {
     const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
 
     // Add a second tab (it becomes active)
-    const secondTabId = manager.addTab(cardId, "terminal") as string;
+    const secondTabId = manager.addCardToStack(cardId, "terminal") as string;
 
     // Make first tab active, then remove it
-    manager.setActiveTab(cardId, firstTabId);
-    manager.removeTab(cardId, firstTabId);
+    manager.setActiveCardInStack(cardId, firstTabId);
+    manager.removeCard(cardId, firstTabId);
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.tabs.length).toBe(1);
@@ -972,7 +972,7 @@ describe("DeckManager.removeTab", () => {
     const cardId = manager.addCard("hello") as string;
     const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
 
-    manager.removeTab(cardId, tabId);
+    manager.removeCard(cardId, tabId);
 
     expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
   });
@@ -982,7 +982,7 @@ describe("DeckManager.removeTab", () => {
     const cardId = manager.addCard("hello") as string;
     const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length;
 
-    manager.removeTab(cardId, "nonexistent-tab-id");
+    manager.removeCard(cardId, "nonexistent-tab-id");
 
     expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length).toBe(tabsBefore);
   });
@@ -990,7 +990,7 @@ describe("DeckManager.removeTab", () => {
   it("is a no-op for a non-existent cardId", () => {
     const cardCountBefore = manager.getDeckState().cards.length;
 
-    manager.removeTab("nonexistent-card-id", "some-tab-id");
+    manager.removeCard("nonexistent-card-id", "some-tab-id");
 
     expect(manager.getDeckState().cards.length).toBe(cardCountBefore);
   });
@@ -999,11 +999,11 @@ describe("DeckManager.removeTab", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
-    const secondTabId = manager.addTab(cardId, "terminal") as string;
+    const secondTabId = manager.addCardToStack(cardId, "terminal") as string;
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.removeTab(cardId, secondTabId);
+    manager.removeCard(cardId, secondTabId);
 
     expect(callCount).toBe(1);
   });
@@ -1132,10 +1132,10 @@ describe("DeckManager.setActiveTab", () => {
     const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
 
     // Add second tab (becomes active)
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     // Switch back to first tab
-    manager.setActiveTab(cardId, firstTabId);
+    manager.setActiveCardInStack(cardId, firstTabId);
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.activeTabId).toBe(firstTabId);
@@ -1148,7 +1148,7 @@ describe("DeckManager.setActiveTab", () => {
     const originalActiveTabId = card.activeTabId;
     const versionBefore = manager.getVersion();
 
-    manager.setActiveTab(cardId, "nonexistent-tab-id");
+    manager.setActiveCardInStack(cardId, "nonexistent-tab-id");
 
     const cardAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(cardAfter.activeTabId).toBe(originalActiveTabId);
@@ -1161,7 +1161,7 @@ describe("DeckManager.setActiveTab", () => {
     const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
     const versionBefore = manager.getVersion();
 
-    manager.setActiveTab(cardId, tabId);
+    manager.setActiveCardInStack(cardId, tabId);
 
     expect(manager.getVersion()).toBe(versionBefore);
   });
@@ -1171,11 +1171,11 @@ describe("DeckManager.setActiveTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
     const cardId = manager.addCard("hello") as string;
     const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.setActiveTab(cardId, firstTabId);
+    manager.setActiveCardInStack(cardId, firstTabId);
 
     expect(callCount).toBe(1);
   });
@@ -1193,11 +1193,11 @@ describe("DeckManager.reorderTab", () => {
 
     const cardId = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
-    const tab2Id = manager.addTab(cardId, "terminal") as string;
-    const tab3Id = manager.addTab(cardId, "git") as string;
+    const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
+    const tab3Id = manager.addCardToStack(cardId, "git") as string;
 
     // Initial order: [tab1, tab2, tab3]
-    manager.reorderTab(cardId, 0, 2);
+    manager.reorderCardInStack(cardId, 0, 2);
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.tabs[0].id).toBe(tab2Id);
@@ -1210,12 +1210,12 @@ describe("DeckManager.reorderTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
-    manager.reorderTab(cardId, 0, 0);
+    manager.reorderCardInStack(cardId, 0, 0);
 
     const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     expect(after).toEqual(before);
@@ -1225,7 +1225,7 @@ describe("DeckManager.reorderTab", () => {
 
   it("T3: no-op when card not found", () => {
     const versionBefore = manager.getVersion();
-    manager.reorderTab("nonexistent-card", 0, 1);
+    manager.reorderCardInStack("nonexistent-card", 0, 1);
     expect(manager.getVersion()).toBe(versionBefore);
   });
 
@@ -1234,17 +1234,17 @@ describe("DeckManager.reorderTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
     // fromIndex out of bounds
-    manager.reorderTab(cardId, -1, 1);
+    manager.reorderCardInStack(cardId, -1, 1);
     expect(manager.getVersion()).toBe(versionBefore);
 
     // toIndex out of bounds
-    manager.reorderTab(cardId, 0, 5);
+    manager.reorderCardInStack(cardId, 0, 5);
     expect(manager.getVersion()).toBe(versionBefore);
 
     const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
@@ -1262,9 +1262,9 @@ describe("DeckManager.detachTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab2Id = manager.addTab(cardId, "terminal") as string;
+    const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
-    const newCardId = manager.detachTab(cardId, tab2Id, { x: 100, y: 150 });
+    const newCardId = manager.detachCard(cardId, tab2Id, { x: 100, y: 150 });
 
     expect(newCardId).not.toBeNull();
     expect(typeof newCardId).toBe("string");
@@ -1292,7 +1292,7 @@ describe("DeckManager.detachTab", () => {
     const cardId = manager.addCard("hello") as string;
     const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
 
-    const result = manager.detachTab(cardId, tabId, { x: 100, y: 100 });
+    const result = manager.detachCard(cardId, tabId, { x: 100, y: 100 });
 
     expect(result).toBeNull();
     // Card should still have 1 tab
@@ -1305,9 +1305,9 @@ describe("DeckManager.detachTab", () => {
 
     const cardId = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
-    const tab2Id = manager.addTab(cardId, "terminal") as string;
+    const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
-    const newCardId = manager.detachTab(cardId, tab2Id, { x: 200, y: 200 });
+    const newCardId = manager.detachCard(cardId, tab2Id, { x: 200, y: 200 });
 
     expect(newCardId).not.toBeNull();
 
@@ -1320,7 +1320,7 @@ describe("DeckManager.detachTab", () => {
   });
 
   it("T8: returns null when card not found", () => {
-    const result = manager.detachTab("nonexistent-card", "some-tab", { x: 0, y: 0 });
+    const result = manager.detachCard("nonexistent-card", "some-tab", { x: 0, y: 0 });
     expect(result).toBeNull();
   });
 
@@ -1329,10 +1329,10 @@ describe("DeckManager.detachTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab2Id = manager.addTab(cardId, "terminal") as string;
+    const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
     const cardsBefore = manager.getDeckState().cards.length;
-    const newCardId = manager.detachTab(cardId, tab2Id, { x: 50, y: 50 }) as string;
+    const newCardId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 }) as string;
 
     const cards = manager.getDeckState().cards;
     expect(cards.length).toBe(cardsBefore + 1);
@@ -1345,10 +1345,10 @@ describe("DeckManager.detachTab", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const cardId = manager.addCard("hello") as string;
-    const tab2Id = manager.addTab(cardId, "terminal") as string;
+    const tab2Id = manager.addCardToStack(cardId, "terminal") as string;
 
     // Position far outside canvas bounds (canvas is 1280x800 in tests)
-    const newCardId = manager.detachTab(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
+    const newCardId = manager.detachCard(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
 
     const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
     // Finder-style: x clamped to canvasWidth - 100 = 1180, y clamped to canvasHeight - 36 = 764
@@ -1441,9 +1441,9 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     const cardId = manager.addCard("gallery-host") as string;
 
     // Add a second tab so we can detach (last-tab guard)
-    const tab2Id = manager.addTab(cardId, "hello") as string;
+    const tab2Id = manager.addCardToStack(cardId, "hello") as string;
 
-    const newCardId = manager.detachTab(cardId, tab2Id, { x: 50, y: 50 });
+    const newCardId = manager.detachCard(cardId, tab2Id, { x: 50, y: 50 });
     expect(newCardId).not.toBeNull();
 
     const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
@@ -1457,7 +1457,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
   it("fires construction + full activation transition on the detached card (H-A3)", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    manager.addTab(cardId, "hello"); // enable detach (last-tab guard)
+    manager.addCardToStack(cardId, "hello"); // enable detach (last-tab guard)
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
@@ -1479,7 +1479,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
 
     const card = manager.getDeckState().cards[0];
     const tabToDetach = card.tabs[1];
-    const newCardId = manager.detachTab(cardId, tabToDetach.id, {
+    const newCardId = manager.detachCard(cardId, tabToDetach.id, {
       x: 200,
       y: 200,
     }) as string;
@@ -1507,15 +1507,15 @@ describe("DeckManager.mergeTab", () => {
     // Create two cards
     const card1Id = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
-    manager.addTab(card1Id, "terminal");
+    manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("git") as string;
     const tab3Id = manager.getDeckState().cards.find((c) => c.id === card2Id)!.tabs[0].id;
     // card2 needs 2 tabs so it doesn't get removed
-    manager.addTab(card2Id, "terminal");
+    manager.addCardToStack(card2Id, "terminal");
 
     // Merge first tab of card1 into card2 at index 0
-    manager.mergeTab(card1Id, tab1Id, card2Id, 0);
+    manager.moveCardToStack(card1Id, tab1Id, card2Id, 0);
 
     const state = manager.getDeckState();
     const targetCard = state.cards.find((c) => c.id === card2Id)!;
@@ -1538,7 +1538,7 @@ describe("DeckManager.mergeTab", () => {
     // Create target card with 1 tab (also needs 2 to stay alive, but the merge adds one)
     const targetCardId = manager.addCard("terminal") as string;
 
-    manager.mergeTab(sourceCardId, tab1Id, targetCardId, 0);
+    manager.moveCardToStack(sourceCardId, tab1Id, targetCardId, 0);
 
     const state = manager.getDeckState();
     // Source card should be gone
@@ -1554,11 +1554,11 @@ describe("DeckManager.mergeTab", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
-    manager.addTab(card1Id, "terminal");
+    manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("hello") as string;
 
-    manager.mergeTab(card1Id, tab1Id, card2Id, 0);
+    manager.moveCardToStack(card1Id, tab1Id, card2Id, 0);
 
     const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
     expect(targetCard.activeTabId).toBe(tab1Id);
@@ -1570,11 +1570,11 @@ describe("DeckManager.mergeTab", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
-    manager.addTab(card1Id, "terminal");
+    manager.addCardToStack(card1Id, "terminal");
 
     const card2Id = manager.addCard("hello") as string;
     // card2 has 1 tab; insertAtIndex of 999 should be clamped to 1 (tabs.length)
-    manager.mergeTab(card1Id, tab1Id, card2Id, 999);
+    manager.moveCardToStack(card1Id, tab1Id, card2Id, 999);
 
     const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
     // Merged tab should appear at end (index 1)
@@ -1587,12 +1587,12 @@ describe("DeckManager.mergeTab", () => {
 
     const cardId = manager.addCard("hello") as string;
     const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
-    manager.addTab(cardId, "terminal");
+    manager.addCardToStack(cardId, "terminal");
 
     const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     const versionBefore = manager.getVersion();
 
-    manager.mergeTab(cardId, tab1Id, cardId, 0);
+    manager.moveCardToStack(cardId, tab1Id, cardId, 0);
 
     expect(manager.getVersion()).toBe(versionBefore);
     const tabsAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
@@ -1630,7 +1630,7 @@ describe("DeckManager.mergeTab", () => {
     );
     log.length = 0; // clear initial-sync
 
-    manager.mergeTab(srcId, tabId, tgtId, 0);
+    manager.moveCardToStack(srcId, tabId, tgtId, 0);
 
     expect(log).toEqual([
       `willDeact:${srcId}`,
@@ -1670,7 +1670,7 @@ describe("DeckManager.mergeTab", () => {
     );
     log.length = 0;
 
-    manager.mergeTab(srcId, tabId, tgtId, 0);
+    manager.moveCardToStack(srcId, tabId, tgtId, 0);
 
     // Source destroyed but wasn't active — no deactivate/activate
     // transition. Only destruction fires.
@@ -1684,13 +1684,13 @@ describe("DeckManager.mergeTab", () => {
 
 describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
   it("getTabState returns undefined for unknown tab ID", () => {
-    expect(manager.getTabState("unknown-tab-id")).toBeUndefined();
+    expect(manager.getCardState("unknown-tab-id")).toBeUndefined();
   });
 
   it("setTabState followed by getTabState returns the saved bag", () => {
     const bag = { scroll: { x: 10, y: 50 }, content: { key: "value" } };
-    manager.setTabState("tab-abc", bag);
-    const retrieved = manager.getTabState("tab-abc");
+    manager.setCardState("tab-abc", bag);
+    const retrieved = manager.getCardState("tab-abc");
     expect(retrieved).toBeDefined();
     expect(retrieved?.scroll?.x).toBe(10);
     expect(retrieved?.scroll?.y).toBe(50);
@@ -1698,18 +1698,18 @@ describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
   });
 
   it("setTabState overwrites an existing entry", () => {
-    manager.setTabState("tab-xyz", { scroll: { x: 0, y: 0 } });
-    manager.setTabState("tab-xyz", { scroll: { x: 99, y: 77 } });
-    const retrieved = manager.getTabState("tab-xyz");
+    manager.setCardState("tab-xyz", { scroll: { x: 0, y: 0 } });
+    manager.setCardState("tab-xyz", { scroll: { x: 99, y: 77 } });
+    const retrieved = manager.getCardState("tab-xyz");
     expect(retrieved?.scroll?.x).toBe(99);
     expect(retrieved?.scroll?.y).toBe(77);
   });
 
   it("getTabState with different tab IDs returns independent entries", () => {
-    manager.setTabState("tab-1", { scroll: { x: 1, y: 1 } });
-    manager.setTabState("tab-2", { scroll: { x: 2, y: 2 } });
-    expect(manager.getTabState("tab-1")?.scroll?.x).toBe(1);
-    expect(manager.getTabState("tab-2")?.scroll?.x).toBe(2);
+    manager.setCardState("tab-1", { scroll: { x: 1, y: 1 } });
+    manager.setCardState("tab-2", { scroll: { x: 2, y: 2 } });
+    expect(manager.getCardState("tab-1")?.scroll?.x).toBe(1);
+    expect(manager.getCardState("tab-2")?.scroll?.x).toBe(2);
   });
 
   it("constructor accepts initialTabStates and populates cache", () => {
@@ -1723,9 +1723,9 @@ describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
     const conn2 = makeMockConnection();
     const mgr2 = new DeckManager(c2, conn2, undefined, undefined, initialMap);
     try {
-      expect(mgr2.getTabState("tab-init-1")?.scroll?.x).toBe(5);
-      expect(mgr2.getTabState("tab-init-2")?.content).toBe("saved");
-      expect(mgr2.getTabState("tab-init-3")).toBeUndefined();
+      expect(mgr2.getCardState("tab-init-1")?.scroll?.x).toBe(5);
+      expect(mgr2.getCardState("tab-init-2")?.content).toBe("saved");
+      expect(mgr2.getCardState("tab-init-3")).toBeUndefined();
     } finally {
       mgr2.destroy();
       c2.remove();
@@ -1864,7 +1864,7 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     manager.registerSaveCallback("card-b", () => calls.push("card-b"));
 
     // Mark a tab as dirty so flush sends a PUT.
-    manager.setTabState("tab-x", { scroll: { x: 1, y: 2 } });
+    manager.setCardState("tab-x", { scroll: { x: 1, y: 2 } });
 
     const fetchedUrls: string[] = [];
     const fetchInits: RequestInit[] = [];
@@ -1917,7 +1917,7 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     manager.registerSaveCallback("card-e", () => calls.push("card-e"));
 
     // Mark a tab as dirty.
-    manager.setTabState("tab-z", { scroll: { x: 5, y: 10 } });
+    manager.setCardState("tab-z", { scroll: { x: 5, y: 10 } });
 
     const fetchedInits: RequestInit[] = [];
     globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {

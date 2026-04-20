@@ -324,7 +324,7 @@ export function initActionDispatch(
   // Trivial adapter — Control-frame name and chain-action name are
   // identical (TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD). DeckCanvas's
   // registered handler reads the focused card from its cardsRef and
-  // calls store.addTab(). ([D06], [D09])
+  // calls store.addCardToStack(). ([D06], [D09])
   registerAction(TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });

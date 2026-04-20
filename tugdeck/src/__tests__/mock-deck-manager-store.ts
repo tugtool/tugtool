@@ -34,7 +34,7 @@ export function makeMockStore(
     subscribe: () => () => {},
     getSnapshot: (): DeckState => ({ cards: [] }),
     getVersion: () => 0,
-    handleCardMoved: () => {},
+    handleStackMoved: () => {},
     handleCardClosed: () => {},
     activateCard: () => {},
     observeCardDidFinishConstruction: () => () => {},
@@ -43,20 +43,20 @@ export function makeMockStore(
     observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: () => null,
-    addTab: () => null,
-    removeTab: () => {},
-    setActiveTab: () => {},
-    reorderTab: () => {},
-    detachTab: () => null,
-    mergeTab: () => {},
-    getTabState: (tabId: string) => tabStateCache.get(tabId),
-    setTabState: (tabId: string, bag: TabStateBag) => {
-      tabStateCache.set(tabId, bag);
+    addCardToStack: () => null,
+    removeCard: () => {},
+    setActiveCardInStack: () => {},
+    reorderCardInStack: () => {},
+    detachCard: () => null,
+    moveCardToStack: () => {},
+    getCardState: (id: string) => tabStateCache.get(id),
+    setCardState: (id: string, bag: TabStateBag) => {
+      tabStateCache.set(id, bag);
     },
     initialFocusedCardId: undefined,
-    // Phase 5f3: save callbacks are actually wired so TabContentHost's
-    // registered per-tab callback fires on invokeSaveCallback. Tests that
-    // spy on register/unregister still see the calls; tests that rely on
+    // Save callbacks are actually wired so CardContentHost's registered
+    // per-card callback fires on invokeSaveCallback. Tests that spy on
+    // register/unregister still see the calls; tests that rely on
     // invokeSaveCallback triggering the registered function also work.
     registerSaveCallback: (id: string, callback: () => void) => {
       saveCallbacks.set(id, callback);
@@ -67,8 +67,7 @@ export function makeMockStore(
     invokeSaveCallback: (id: string) => {
       saveCallbacks.get(id)?.();
     },
-    // Step 3: collapse toggle no-op stub.
-    toggleCardCollapse: () => {},
+    toggleStackCollapse: () => {},
   };
 
   return { ...base, ...overrides };

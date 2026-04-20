@@ -509,13 +509,13 @@ export function Tugcard({
   // also called via dispatch from `previousTab` / `nextTab` handlers, which
   // route through the chain so this side effect runs in exactly one place
   // ([D01], #lifecycle-flow).
-  const performSelectTab = useCallback(
+  const performSelectCard = useCallback(
     (newTabId: string) => {
       const outgoingTabId = activeTabIdRef.current;
       if (outgoingTabId) {
         store.invokeSaveCallback(outgoingTabId);
       }
-      store.setActiveTab(cardId, newTabId);
+      store.setActiveCardInStack(cardId, newTabId);
     },
     [store, cardId],
   );
@@ -557,7 +557,7 @@ export function Tugcard({
     const currentTabs = tabsRef.current;
     const currentActiveId = activeTabIdRef.current;
     if (currentTabs && currentTabs.length > 1 && currentActiveId) {
-      store.removeTab(cardId, currentActiveId);
+      store.removeCard(cardId, currentActiveId);
     } else {
       onClose?.();
     }
@@ -574,7 +574,7 @@ export function Tugcard({
   // go stale, Rule #5), compute the target tab id, and dispatch
   // `selectTab` through the responder chain. The dispatch walks to this
   // same Tugcard responder (single handler invocation, no infinite loop)
-  // and runs `performSelectTab` via the `selectTab` action handler
+  // and runs `performSelectCard` via the `selectTab` action handler
   // below — so the save-state side effect still happens exactly once,
   // AND keyboard-driven switches become observable in the dispatch log
   // and to `observeDispatch` subscribers, matching click-driven and
@@ -656,11 +656,11 @@ export function Tugcard({
       // save-current-tab-state side effect.
       [TUG_ACTIONS.SELECT_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        performSelectTab(event.value);
+        performSelectCard(event.value);
       },
       [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.removeTab(cardId, event.value);
+        store.removeCard(cardId, event.value);
       },
       // add-tab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
       // after the A2.5 tug-popup-button migration. Payload is
@@ -670,7 +670,7 @@ export function Tugcard({
       // add-tab-to-active-card action handled by deck-canvas.
       [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.addTab(cardId, event.value);
+        store.addCardToStack(cardId, event.value);
       },
       // Stubs: minimize, toggle-menu, find are no-ops until implemented.
       // `find` logs because ⌘F is bound in keybinding-map.ts and a user

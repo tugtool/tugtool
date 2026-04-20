@@ -74,7 +74,7 @@ function makeMockConnection() {
  * - getSnapshot() returning the supplied DeckState (default: empty cards)
  * - subscribe() returning a no-op unsubscribe
  * - getVersion() returning 0
- * - no-op handleCardMoved, handleCardClosed, handleCardFocused
+ * - no-op handleStackMoved, handleCardClosed, handleCardFocused
  *
  * Override individual fields with spies for tests that need callback assertions.
  */
@@ -83,7 +83,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
     getVersion: () => 0,
-    handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+    handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     activateCard: (_id: string) => {},
     observeCardDidFinishConstruction: () => () => {},
@@ -92,22 +92,22 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: (_componentId: string) => null,
-    addTab: (_cardId: string, _componentId: string) => null,
-    removeTab: (_cardId: string, _tabId: string) => {},
-    setActiveTab: (_cardId: string, _tabId: string) => {},
-    reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
-    detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
-    mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+    addCardToStack: (_cardId: string, _componentId: string) => null,
+    removeCard: (_cardId: string, _tabId: string) => {},
+    setActiveCardInStack: (_cardId: string, _tabId: string) => {},
+    reorderCardInStack: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
+    detachCard: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
+    moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
     // Phase 5f additions
-    getTabState: (_tabId: string) => undefined,
-    setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+    getCardState: (_tabId: string) => undefined,
+    setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
     initialFocusedCardId: undefined,
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
     unregisterSaveCallback: (_id: string) => {},
     invokeSaveCallback: (_id: string) => {},
     // Collapse toggle (added in Step 3 of the collapse feature)
-    toggleCardCollapse: (_id: string) => {},
+    toggleStackCollapse: (_id: string) => {},
   };
 }
 
@@ -675,7 +675,7 @@ class ReactiveStore implements IDeckManagerStore {
   getSnapshot = (): DeckState => this._state;
   getVersion = (): number => this._version;
 
-  handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
+  handleStackMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
   activateCard = (_id: string): void => {};
   observeCardDidFinishConstruction = (
@@ -696,22 +696,22 @@ class ReactiveStore implements IDeckManagerStore {
   ): (() => void) => () => {};
   getActiveCardId = (): string | null => null;
   addCard = (_componentId: string): string | null => null;
-  addTab = (_cardId: string, _componentId: string): string | null => null;
-  removeTab = (_cardId: string, _tabId: string): void => {};
-  setActiveTab = (_cardId: string, _tabId: string): void => {};
-  reorderTab = (_cardId: string, _fromIndex: number, _toIndex: number): void => {};
-  detachTab = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
-  mergeTab = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
+  addCardToStack = (_cardId: string, _componentId: string): string | null => null;
+  removeCard = (_cardId: string, _tabId: string): void => {};
+  setActiveCardInStack = (_cardId: string, _tabId: string): void => {};
+  reorderCardInStack = (_cardId: string, _fromIndex: number, _toIndex: number): void => {};
+  detachCard = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
+  moveCardToStack = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
   // Phase 5f additions
-  getTabState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
-  setTabState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
+  getCardState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
+  setCardState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
   initialFocusedCardId: string | undefined = undefined;
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
   unregisterSaveCallback = (_id: string): void => {};
   invokeSaveCallback = (_id: string): void => {};
   // Collapse toggle (added in Step 3 of the collapse feature)
-  toggleCardCollapse = (_id: string): void => {};
+  toggleStackCollapse = (_id: string): void => {};
 
   /** Update state and notify subscribers (triggers useSyncExternalStore re-render). */
   setState(next: DeckState): void {
@@ -785,7 +785,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("setActiveTab changes which contentFactory content is rendered", () => {
+  it("setActiveCardInStack changes which contentFactory content is rendered", () => {
     registerCard({
       componentId: "hello",
       contentFactory: (_cardId: string) =>
@@ -993,7 +993,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     expect(manager!.canHandle("add-tab-to-active-card")).toBe(true);
   });
 
-  it("dispatching addTabToActiveCard with a focused card calls store.addTab with the card id and 'hello'", () => {
+  it("dispatching addTabToActiveCard with a focused card calls store.addCardToStack with the card id and 'hello'", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -1012,7 +1012,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
     const addTabCalls: Array<{ cardId: string; componentId: string }> = [];
     const card = makeCardState("focused-card", "hello");
     const store = makeMockStore(makeDeckState([card]));
-    store.addTab = (cardId, componentId) => {
+    store.addCardToStack = (cardId, componentId) => {
       addTabCalls.push({ cardId, componentId });
       return null;
     };
@@ -1048,7 +1048,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
 
     const addTabCalls: Array<unknown> = [];
     const store = makeMockStore({ cards: [] });
-    store.addTab = (cardId, componentId) => {
+    store.addCardToStack = (cardId, componentId) => {
       addTabCalls.push({ cardId, componentId });
       return null;
     };
@@ -1108,12 +1108,12 @@ describe("DeckCanvas – T19: coordinator.init receives store on mount", () => {
   });
 });
 
-describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode", () => {
+describe("DeckCanvas – T20: coordinator calls detachCard on drop in detach mode", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("T20: DeckManager.detachTab is callable via coordinator after DeckCanvas init", async () => {
-    // Test that detachTab on the store is reachable via the coordinator after
+  it("T20: DeckManager.detachCard is callable via coordinator after DeckCanvas init", async () => {
+    // Test that detachCard on the store is reachable via the coordinator after
     // DeckCanvas mounts and calls coordinator.init(store).
     const { cardDragCoordinator } = await import("@/card-drag-coordinator");
 
@@ -1126,7 +1126,7 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
 
     const detachCalls: Array<{ cardId: string; tabId: string }> = [];
     const store = makeMockStore();
-    store.detachTab = (cardId, tabId, _pos) => {
+    store.detachCard = (cardId, tabId, _pos) => {
       detachCalls.push({ cardId, tabId });
       return "new-card-id";
     };
@@ -1135,9 +1135,9 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
       renderDeckCanvasWithStore(store);
     });
 
-    // After mount, coordinator has the store. Calling detachTab via the store
+    // After mount, coordinator has the store. Calling detachCard via the store
     // reference verifies the wiring is correct.
-    store.detachTab("card-a", "tab-1", { x: 100, y: 100 });
+    store.detachCard("card-a", "tab-1", { x: 100, y: 100 });
 
     expect(detachCalls.length).toBe(1);
     expect(detachCalls[0].cardId).toBe("card-a");
@@ -1147,11 +1147,11 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
   });
 });
 
-describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode", () => {
+describe("DeckCanvas – T21: coordinator calls moveCardToStack on drop in merge mode", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("T21: DeckManager.mergeTab is callable via coordinator after DeckCanvas init", async () => {
+  it("T21: DeckManager.moveCardToStack is callable via coordinator after DeckCanvas init", async () => {
     const { cardDragCoordinator } = await import("@/card-drag-coordinator");
 
     registerCard({
@@ -1163,7 +1163,7 @@ describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode",
 
     const mergeCalls: Array<{ sourceCardId: string; tabId: string; targetCardId: string }> = [];
     const store = makeMockStore();
-    store.mergeTab = (sourceCardId, tabId, targetCardId, _insertAtIndex) => {
+    store.moveCardToStack = (sourceCardId, tabId, targetCardId, _insertAtIndex) => {
       mergeCalls.push({ sourceCardId, tabId, targetCardId });
     };
 
@@ -1171,7 +1171,7 @@ describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode",
       renderDeckCanvasWithStore(store);
     });
 
-    store.mergeTab("card-src", "tab-1", "card-tgt", 0);
+    store.moveCardToStack("card-src", "tab-1", "card-tgt", 0);
 
     expect(mergeCalls.length).toBe(1);
     expect(mergeCalls[0].sourceCardId).toBe("card-src");

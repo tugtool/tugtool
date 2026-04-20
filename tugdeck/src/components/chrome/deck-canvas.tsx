@@ -302,7 +302,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const c = cardsRef.current;
         if (c.length === 0) return;
         const focusedCard = c[c.length - 1]; // topmost card
-        store.addTab(focusedCard.id, "hello");
+        store.addCardToStack(focusedCard.id, "hello");
       },
     },
   });
@@ -445,10 +445,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}
-            onCardMoved={store.handleCardMoved}
+            onCardMoved={store.handleStackMoved}
             onCardClosed={handleClose}
             onCardFocused={handleCardActivate}
-            onCardCollapsed={(id) => store.toggleCardCollapse(id)}
+            onCardCollapsed={(id) => store.toggleStackCollapse(id)}
             onCardMerged={(sourceCardId, targetCardId, insertIndex) => {
               // Resolve the active tab id from the source card at commit time.
               // store.mergeTab takes (sourceCardId, tabId, targetCardId, insertAtIndex).
@@ -457,7 +457,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               const sourceCard = snapshot.cards.find((c) => c.id === sourceCardId);
               if (!sourceCard) return;
               const tabId = sourceCard.activeTabId;
-              store.mergeTab(sourceCardId, tabId, targetCardId, insertIndex);
+              store.moveCardToStack(sourceCardId, tabId, targetCardId, insertIndex);
             }}
             activeTabId={cardState.activeTabId}
             renderContent={(injected) => {

@@ -3,9 +3,9 @@
  *
  * After TabContentHost flipped to render via CardPortal at deck level, tab
  * content must mount exactly once and survive every card-level operation
- * that preserves tab identity: setActiveTab (in-card tab switch), detachTab
- * (cross-card move to new card), mergeTab (cross-card move to existing card).
- * addTab creates a genuinely new tab so a new mount is expected; existing
+ * that preserves tab identity: setActiveCardInStack (in-card tab switch), detachCard
+ * (cross-card move to new card), moveCardToStack (cross-card move to existing card).
+ * addCardToStack creates a genuinely new tab so a new mount is expected; existing
  * tabs on the same card must not re-mount.
  *
  * Probe strategy: a single module-level counter tracks total mount/unmount
@@ -71,7 +71,7 @@ class Store implements IDeckManagerStore {
   getSnapshot = (): DeckState => this.state;
   getVersion = (): number => this.version;
 
-  handleCardMoved = (): void => {};
+  handleStackMoved = (): void => {};
   handleCardClosed = (id: string): void => {
     this.state = { cards: this.state.cards.filter((c) => c.id !== id) };
     this.notify();
@@ -85,7 +85,7 @@ class Store implements IDeckManagerStore {
   getActiveCardId = (): string | null => null;
   addCard = (): string | null => null;
 
-  addTab = (cardId: string, componentId: string): string | null => {
+  addCardToStack = (cardId: string, componentId: string): string | null => {
     const newTabId = `tab-${Math.random().toString(36).slice(2, 8)}`;
     const newTab: TabItem = { id: newTabId, componentId, title: "Added", closable: true };
     this.state = {
@@ -97,18 +97,18 @@ class Store implements IDeckManagerStore {
     return newTabId;
   };
 
-  removeTab = (): void => {};
+  removeCard = (): void => {};
 
-  setActiveTab = (cardId: string, tabId: string): void => {
+  setActiveCardInStack = (cardId: string, tabId: string): void => {
     this.state = {
       cards: this.state.cards.map((c) => (c.id === cardId ? { ...c, activeTabId: tabId } : c)),
     };
     this.notify();
   };
 
-  reorderTab = (): void => {};
+  reorderCardInStack = (): void => {};
 
-  detachTab = (cardId: string, tabId: string, position: { x: number; y: number }): string | null => {
+  detachCard = (cardId: string, tabId: string, position: { x: number; y: number }): string | null => {
     const card = this.state.cards.find((c) => c.id === cardId);
     if (!card) return null;
     const tab = card.tabs.find((t) => t.id === tabId);
@@ -139,7 +139,7 @@ class Store implements IDeckManagerStore {
     return newCardId;
   };
 
-  mergeTab = (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number): void => {
+  moveCardToStack = (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number): void => {
     const source = this.state.cards.find((c) => c.id === sourceCardId);
     const target = this.state.cards.find((c) => c.id === targetCardId);
     if (!source || !target) return;
@@ -166,8 +166,8 @@ class Store implements IDeckManagerStore {
     this.notify();
   };
 
-  getTabState = (id: string) => this.tabStates.get(id);
-  setTabState = (id: string, bag: import("@/layout-tree").TabStateBag): void => {
+  getCardState = (id: string) => this.tabStates.get(id);
+  setCardState = (id: string, bag: import("@/layout-tree").TabStateBag): void => {
     this.tabStates.set(id, bag);
   };
 
@@ -181,7 +181,7 @@ class Store implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   };
 
-  toggleCardCollapse = (): void => {};
+  toggleStackCollapse = (): void => {};
 }
 
 function renderDeck(store: Store) {
@@ -222,7 +222,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     cleanup();
   });
 
-  it("setActiveTab does not unmount either tab's content", () => {
+  it("setActiveCardInStack does not unmount either tab's content", () => {
     const card: CardState = {
       id: "card-B",
       position: { x: 0, y: 0 },
@@ -243,7 +243,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.setActiveTab("card-B", "tab-y");
+      store.setActiveCardInStack("card-B", "tab-y");
     });
 
     // Tab switch must not mount or unmount anything.
@@ -251,7 +251,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("addTab mounts the new tab's content without unmounting the existing tab", () => {
+  it("addCardToStack mounts the new tab's content without unmounting the existing tab", () => {
     const card: CardState = {
       id: "card-A",
       position: { x: 0, y: 0 },
@@ -268,7 +268,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.addTab("card-A", "probe-other");
+      store.addCardToStack("card-A", "probe-other");
     });
 
     // The new tab mounts (mountTotal becomes 2). The original tab's content
@@ -277,7 +277,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("detachTab preserves the moved tab's content identity (no mount, no unmount)", () => {
+  it("detachCard preserves the moved tab's content identity (no mount, no unmount)", () => {
     const card: CardState = {
       id: "card-C",
       position: { x: 0, y: 0 },
@@ -297,7 +297,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.detachTab("card-C", "tab-move", { x: 300, y: 300 });
+      store.detachCard("card-C", "tab-move", { x: 300, y: 300 });
     });
 
     // Detach creates a new CardStack containing the moved tab. The moved
@@ -308,7 +308,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("mergeTab preserves the moved tab's content identity", () => {
+  it("moveCardToStack preserves the moved tab's content identity", () => {
     const cardA: CardState = {
       id: "card-src",
       position: { x: 0, y: 0 },
@@ -338,7 +338,7 @@ describe("Tab content identity preservation (Step 11.6.1a Piece 1.iii)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.mergeTab("card-src", "tab-move", "card-tgt", 1);
+      store.moveCardToStack("card-src", "tab-move", "card-tgt", 1);
     });
 
     // Merge leaves total tab count at 3 (tab-move moved, not created). No

@@ -405,7 +405,7 @@ class CardDragCoordinator {
           if (reorderIndex > fromIndex) {
             toIndex = reorderIndex - 1;
           }
-          store.reorderTab(sourceCardId, fromIndex, toIndex);
+          store.reorderCardInStack(sourceCardId, fromIndex, toIndex);
         }
       }
     } else if (mode === "detach") {
@@ -416,9 +416,9 @@ class CardDragCoordinator {
         x = dropX - containerRect.left;
         y = dropY - containerRect.top;
       }
-      store.detachTab(sourceCardId, sourceTabId, { x, y });
+      store.detachCard(sourceCardId, sourceTabId, { x, y });
     } else if (mode === "merge" && mergeTarget) {
-      store.mergeTab(sourceCardId, sourceTabId, mergeTarget.cardId, mergeTarget.insertIndex);
+      store.moveCardToStack(sourceCardId, sourceTabId, mergeTarget.cardId, mergeTarget.insertIndex);
     }
   }
 

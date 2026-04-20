@@ -526,7 +526,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         <div>content</div>
       </Tugcard>,
       {
-        setActiveTab: (cardId: string, tabId: string) => {
+        setActiveCardInStack: (cardId: string, tabId: string) => {
           setActiveCalls.push({ cardId, tabId });
         },
       },
@@ -560,7 +560,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         <div>content</div>
       </Tugcard>,
       {
-        setActiveTab: (cardId: string, tabId: string) => {
+        setActiveCardInStack: (cardId: string, tabId: string) => {
           setActiveCalls.push({ cardId, tabId });
         },
       },
@@ -601,7 +601,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         <div>content</div>
       </Tugcard>,
       {
-        setActiveTab: (cardId: string, tabId: string) => {
+        setActiveCardInStack: (cardId: string, tabId: string) => {
           setActiveCalls.push({ cardId, tabId });
         },
       },
@@ -650,7 +650,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         <div>content</div>
       </Tugcard>,
       {
-        setActiveTab: (cardId: string, tabId: string) => {
+        setActiveCardInStack: (cardId: string, tabId: string) => {
           setActiveCalls.push({ cardId, tabId });
         },
       },
@@ -685,7 +685,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         <div>content</div>
       </Tugcard>,
       {
-        setActiveTab: (cardId: string, tabId: string) => {
+        setActiveCardInStack: (cardId: string, tabId: string) => {
           setActiveCalls.push({ cardId, tabId });
         },
       },
@@ -962,7 +962,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
     const tab2: TabItem = { id: "tab-sf4-2", componentId: "hello", title: "Tab 2", closable: true };
 
     const store = makeMockStore();
-    const setTabStateSpy = spyOn(store, "setTabState");
+    const setTabStateSpy = spyOn(store, "setCardState");
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
 
@@ -1023,7 +1023,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
     );
 
     const store = makeMockStore();
-    const setTabStateSpy = spyOn(store, "setTabState");
+    const setTabStateSpy = spyOn(store, "setCardState");
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
 
@@ -1089,7 +1089,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
 
     // Pre-load tab2 state into the mock store so activation restores it.
     const store = makeMockStore();
-    store.setTabState(tab2.id, { scroll: { x: 42, y: 77 } });
+    store.setCardState(tab2.id, { scroll: { x: 42, y: 77 } });
 
     // Track activeTabId as a React-controlled value.
     let activeTabId = tab1.id;
@@ -1129,7 +1129,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     // After activation, the useLayoutEffect should have set scroll on the content div.
     // In happy-dom scrollLeft/scrollTop setters may be no-ops, but we verify the
     // getTabState path was called by confirming the bag exists in the store.
-    const bag = store.getTabState(tab2.id);
+    const bag = store.getCardState(tab2.id);
     expect(bag).toBeDefined();
     expect(bag?.scroll).toEqual({ x: 42, y: 77 });
   });
@@ -1149,7 +1149,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
 
     const savedSel = { anchorPath: [0], anchorOffset: 1, focusPath: [0], focusOffset: 3 };
     const store = makeMockStore();
-    store.setTabState(tab2.id, { selection: savedSel as import("@/components/tugways/selection-guard").SavedSelection });
+    store.setCardState(tab2.id, { selection: savedSel as import("@/components/tugways/selection-guard").SavedSelection });
 
     const restoreSelSpy = spyOn(selectionGuard, "restoreSelection").mockImplementation(() => {});
 
@@ -1204,7 +1204,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
 
     const savedContent = { count: 42, text: "restored" };
     const store = makeMockStore();
-    store.setTabState(tab2.id, { content: savedContent });
+    store.setCardState(tab2.id, { content: savedContent });
 
     const onRestore = mock((_state: unknown) => {});
 
@@ -1292,7 +1292,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     const savedContent = { text: "T01 content" };
     const store = makeMockStore();
     // Tab 2 has both content and scroll — triggers persist path with hiding.
-    store.setTabState(tab2.id, { content: savedContent, scroll: { x: 0, y: 50 } });
+    store.setCardState(tab2.id, { content: savedContent, scroll: { x: 0, y: 50 } });
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
 
@@ -1387,7 +1387,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     const store = makeMockStore();
     const activeTabId = "tab-t02-only";
     // Content only — no scroll, no selection.
-    store.setTabState(activeTabId, { content: savedContent });
+    store.setCardState(activeTabId, { content: savedContent });
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
 
@@ -1471,7 +1471,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     const store = makeMockStore();
     const activeTabId = "tab-t03-active";
     // Saved scroll only — no content, no persistence registered.
-    store.setTabState(activeTabId, { scroll: { x: 10, y: 200 } });
+    store.setCardState(activeTabId, { scroll: { x: 10, y: 200 } });
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
 
@@ -1512,7 +1512,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     // visibility:hidden must never have been applied — direct-apply path skips hiding.
     expect(contentAreaEl.style.visibility).not.toBe("hidden");
     // Verify the bag is available in the store (the effect ran and the path executed).
-    expect(store.getTabState(activeTabId)?.scroll).toEqual({ x: 10, y: 200 });
+    expect(store.getCardState(activeTabId)?.scroll).toEqual({ x: 10, y: 200 });
   });
 
   /**
@@ -1527,7 +1527,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     const store = makeMockStore();
     const activeTabId = "tab-t04-active";
     // Selection only — no content, no scroll.
-    store.setTabState(activeTabId, {
+    store.setCardState(activeTabId, {
       selection: savedSel as import("@/components/tugways/selection-guard").SavedSelection,
     });
 

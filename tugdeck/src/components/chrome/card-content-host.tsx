@@ -138,7 +138,7 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
       ...(content !== undefined ? { content } : {}),
     };
 
-    store.setTabState(tabId, bag);
+    store.setCardState(tabId, bag);
   };
 
   // ---- Register save callback keyed by tabId ----
@@ -194,7 +194,7 @@ export function CardContentHost({ tabId, hostCardId, componentId, isActive = tru
   const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
   const pendingSelectionRef = useRef<SavedSelection | null>(null);
   useLayoutEffect(() => {
-    const bag = store.getTabState(tabId);
+    const bag = store.getCardState(tabId);
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
     const contentEl = hostContentEl;

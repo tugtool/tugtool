@@ -33,15 +33,15 @@ import {
  */
 function makeMockStore() {
   const calls: Record<string, unknown[][]> = {
-    reorderTab: [],
-    detachTab: [],
-    mergeTab: [],
+    reorderCardInStack: [],
+    detachCard: [],
+    moveCardToStack: [],
   };
   return {
     subscribe: () => () => {},
     getSnapshot: () => ({ cards: [] }),
     getVersion: () => 0,
-    handleCardMoved: () => {},
+    handleStackMoved: () => {},
     handleCardClosed: () => {},
     activateCard: () => {},
     observeCardDidFinishConstruction: () => () => {},
@@ -50,34 +50,34 @@ function makeMockStore() {
     observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: () => null,
-    addTab: () => null,
-    removeTab: () => {},
-    setActiveTab: () => {},
-    reorderTab: (cardId: string, fromIndex: number, toIndex: number) => {
-      calls.reorderTab.push([cardId, fromIndex, toIndex]);
+    addCardToStack: () => null,
+    removeCard: () => {},
+    setActiveCardInStack: () => {},
+    reorderCardInStack: (cardId: string, fromIndex: number, toIndex: number) => {
+      calls.reorderCardInStack.push([cardId, fromIndex, toIndex]);
     },
-    detachTab: (cardId: string, tabId: string, position: { x: number; y: number }) => {
-      calls.detachTab.push([cardId, tabId, position]);
+    detachCard: (cardId: string, tabId: string, position: { x: number; y: number }) => {
+      calls.detachCard.push([cardId, tabId, position]);
       return "new-card-id";
     },
-    mergeTab: (
+    moveCardToStack: (
       sourceCardId: string,
       tabId: string,
       targetCardId: string,
       insertAtIndex: number,
     ) => {
-      calls.mergeTab.push([sourceCardId, tabId, targetCardId, insertAtIndex]);
+      calls.moveCardToStack.push([sourceCardId, tabId, targetCardId, insertAtIndex]);
     },
     // Phase 5f additions
-    getTabState: () => undefined,
-    setTabState: () => {},
+    getCardState: () => undefined,
+    setCardState: () => {},
     initialFocusedCardId: undefined,
     // Phase 5f3 additions
     registerSaveCallback: () => {},
     unregisterSaveCallback: () => {},
     invokeSaveCallback: () => {},
     // Collapse toggle
-    toggleCardCollapse: () => {},
+    toggleStackCollapse: () => {},
     _calls: calls,
   };
 }
@@ -594,9 +594,9 @@ describe("CardDragCoordinator – pointercancel does not commit (Issue 1 fix)", 
     srcTabEl.dispatchEvent(cancelEvent);
 
     // DeckManager must NOT have been called.
-    expect(store._calls.detachTab.length).toBe(0);
-    expect(store._calls.mergeTab.length).toBe(0);
-    expect(store._calls.reorderTab.length).toBe(0);
+    expect(store._calls.detachCard.length).toBe(0);
+    expect(store._calls.moveCardToStack.length).toBe(0);
+    expect(store._calls.reorderCardInStack.length).toBe(0);
 
     // Visual cleanup: data-dragging should be removed.
     expect(srcTabEl.getAttribute("data-dragging")).toBeNull();
@@ -622,7 +622,7 @@ describe("CardDragCoordinator – pointercancel does not commit (Issue 1 fix)", 
     const cancelEvent = new Event("pointercancel");
     srcTabEl.dispatchEvent(cancelEvent);
 
-    expect(store._calls.mergeTab.length).toBe(0);
+    expect(store._calls.moveCardToStack.length).toBe(0);
     expect(srcTabEl.getAttribute("data-dragging")).toBeNull();
   });
 });

@@ -75,7 +75,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     subscribe: (_cb: () => void) => () => {},
     getSnapshot: () => deckState,
     getVersion: () => 0,
-    handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+    handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     activateCard: (_id: string) => {},
     observeCardDidFinishConstruction: () => () => {},
@@ -84,22 +84,22 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: (_componentId: string) => null,
-    addTab: (_cardId: string, _componentId: string) => null,
-    removeTab: (_cardId: string, _tabId: string) => {},
-    setActiveTab: (_cardId: string, _tabId: string) => {},
-    reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
-    detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
-    mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+    addCardToStack: (_cardId: string, _componentId: string) => null,
+    removeCard: (_cardId: string, _tabId: string) => {},
+    setActiveCardInStack: (_cardId: string, _tabId: string) => {},
+    reorderCardInStack: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
+    detachCard: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
+    moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
     // Phase 5f additions
-    getTabState: (_tabId: string) => undefined,
-    setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+    getCardState: (_tabId: string) => undefined,
+    setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
     initialFocusedCardId: undefined,
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
     unregisterSaveCallback: (_id: string) => {},
     invokeSaveCallback: (_id: string) => {},
     // Collapse toggle
-    toggleCardCollapse: (_id: string) => {},
+    toggleStackCollapse: (_id: string) => {},
   };
 }
 
@@ -137,7 +137,7 @@ class ReactiveStore implements IDeckManagerStore {
   getSnapshot = (): DeckState => this._state;
   getVersion = (): number => this._version;
 
-  handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
+  handleStackMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
   activateCard = (_id: string): void => {};
   observeCardDidFinishConstruction = (
@@ -158,22 +158,22 @@ class ReactiveStore implements IDeckManagerStore {
   ): (() => void) => () => {};
   getActiveCardId = (): string | null => null;
   addCard = (_componentId: string): string | null => null;
-  addTab = (_cardId: string, _componentId: string): string | null => null;
-  removeTab = (_cardId: string, _tabId: string): void => {};
-  setActiveTab = (_cardId: string, _tabId: string): void => {};
-  reorderTab = (_cardId: string, _fromIndex: number, _toIndex: number): void => {};
-  detachTab = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
-  mergeTab = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
+  addCardToStack = (_cardId: string, _componentId: string): string | null => null;
+  removeCard = (_cardId: string, _tabId: string): void => {};
+  setActiveCardInStack = (_cardId: string, _tabId: string): void => {};
+  reorderCardInStack = (_cardId: string, _fromIndex: number, _toIndex: number): void => {};
+  detachCard = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
+  moveCardToStack = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
   // Phase 5f additions
-  getTabState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
-  setTabState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
+  getCardState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
+  setCardState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
   initialFocusedCardId: string | undefined = undefined;
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
   unregisterSaveCallback = (_id: string): void => {};
   invokeSaveCallback = (_id: string): void => {};
   // Collapse toggle
-  toggleCardCollapse = (_id: string): void => {};
+  toggleStackCollapse = (_id: string): void => {};
 
   setState(next: DeckState): void {
     this._state = next;

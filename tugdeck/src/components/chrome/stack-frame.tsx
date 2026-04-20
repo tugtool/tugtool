@@ -150,7 +150,7 @@ export interface StackFrameProps {
   /**
    * Called when the user toggles collapse on the card header.
    * StackFrame passes this as onCollapse to the Tugcard via renderContent.
-   * DeckCanvas wires this to store.toggleCardCollapse(id).
+   * DeckCanvas wires this to store.toggleStackCollapse(id).
    */
   onCardCollapsed?: (id: string) => void;
   /**

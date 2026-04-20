@@ -65,7 +65,7 @@ const mockStore: IDeckManagerStore = {
   subscribe: (_cb: () => void) => () => {},
   getSnapshot: () => ({ cards: [] }),
   getVersion: () => 0,
-  handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+  handleStackMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
   handleCardClosed: (_id: string) => {},
   activateCard: (_id: string) => {},
   observeCardDidFinishConstruction: () => () => {},
@@ -74,19 +74,19 @@ const mockStore: IDeckManagerStore = {
   observeCardWillBeginDestruction: () => () => {},
   getActiveCardId: () => null,
   addCard: (_componentId: string) => null,
-  addTab: (_cardId: string, _componentId: string) => null,
-  removeTab: (_cardId: string, _tabId: string) => {},
-  setActiveTab: (_cardId: string, _tabId: string) => {},
-  reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
-  detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
-  mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
-  getTabState: (_tabId: string) => undefined,
-  setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+  addCardToStack: (_cardId: string, _componentId: string) => null,
+  removeCard: (_cardId: string, _tabId: string) => {},
+  setActiveCardInStack: (_cardId: string, _tabId: string) => {},
+  reorderCardInStack: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
+  detachCard: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
+  moveCardToStack: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+  getCardState: (_tabId: string) => undefined,
+  setCardState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
   initialFocusedCardId: undefined,
   registerSaveCallback: (_id: string, _callback: () => void) => {},
   unregisterSaveCallback: (_id: string) => {},
   invokeSaveCallback: (_id: string) => {},
-  toggleCardCollapse: (_id: string) => {},
+  toggleStackCollapse: (_id: string) => {},
 };
 
 // ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ describe("DeckManager – toggleCardCollapse", () => {
     const before = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(before.collapsed).toBeFalsy();
 
-    act(() => { manager.toggleCardCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(cardId); });
 
     const after = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(after.collapsed).toBe(true);
@@ -406,8 +406,8 @@ describe("DeckManager – toggleCardCollapse", () => {
 
   it("toggleCardCollapse restores collapsed=undefined on second call", () => {
     const cardId = manager.addCard("hello")!;
-    act(() => { manager.toggleCardCollapse(cardId); });
-    act(() => { manager.toggleCardCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(cardId); });
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card.collapsed).toBeFalsy();
   });
@@ -416,7 +416,7 @@ describe("DeckManager – toggleCardCollapse", () => {
     const cardId = manager.addCard("hello")!;
     let notified = false;
     manager.subscribe(() => { notified = true; });
-    act(() => { manager.toggleCardCollapse(cardId); });
+    act(() => { manager.toggleStackCollapse(cardId); });
     expect(notified).toBe(true);
   });
 });

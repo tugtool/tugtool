@@ -101,16 +101,16 @@ describe("CardContentHost", () => {
       store.invokeSaveCallback("my-tab");
     });
     // getTabState should now return the empty bag written by the host.
-    expect(store.getTabState("my-tab")).toEqual({});
+    expect(store.getCardState("my-tab")).toEqual({});
 
     unmount();
     // After unmount, invoking the callback is a no-op (nothing registered).
-    const priorSize = Object.keys(store.getTabState("my-tab") ?? {}).length;
+    const priorSize = Object.keys(store.getCardState("my-tab") ?? {}).length;
     act(() => {
       store.invokeSaveCallback("my-tab");
     });
     // Bag is unchanged (no-op).
-    expect(Object.keys(store.getTabState("my-tab") ?? {}).length).toBe(priorSize);
+    expect(Object.keys(store.getCardState("my-tab") ?? {}).length).toBe(priorSize);
   });
 
   it("setProperty dispatched to the card responder reaches the registered PropertyStore", async () => {
