@@ -258,11 +258,19 @@ class SelectionGuard {
   private boundSelectStart: (e: Event) => void;
 
   // CardLifecycle subscription — installed on attach() when a
-  // lifecycle is provided. Replaces the deck-canvas-side
+  // card lifecycle is provided. Replaces the deck-canvas-side
   // `useLayoutEffect(() => selectionGuard.activateCard(focusedCardId), ...)`
   // so the guard reacts to activations via one subscription rather
   // than two coupled effects on opposite sides of the tree.
   private lifecycleUnsubscribe: (() => void) | null = null;
+
+  // AppLifecycle subscriptions — installed on attach() when an app
+  // lifecycle is provided. Step 5 of the lifecycle-delegates plan
+  // replaces the old window-global RPC functions with delegate
+  // subscriptions that fire the same dim/restore logic from the
+  // `applicationDidResignActive` / `applicationDidBecomeActive`
+  // events. An array of disposers so detach() can release all at once.
+  private appLifecycleUnsubscribers: Array<() => void> = [];
 
   constructor() {
     this.boundPointerDown = this.handlePointerDown.bind(this);
@@ -326,13 +334,28 @@ class SelectionGuard {
    *
    * CSS Custom Highlights are created eagerly in the constructor (not here)
    * so they exist before any React effects fire.
+   *
+   * @param cardLifecycle - optional card lifecycle to subscribe to for
+   *   activation events (drives the highlight bookkeeping). Tests that
+   *   exercise the guard in isolation pass nothing.
+   * @param appLifecycle - optional app lifecycle to subscribe to for
+   *   resign/become-active events (drives selection dim/restore).
+   *   Added in Step 5 of the lifecycle-delegates plan; replaces the
+   *   imperative `deactivateApp()` / `activateApp()` public entry
+   *   points that were called from window-global RPC functions.
    */
-  attach(lifecycle?: {
-    observeCardDidActivate: (
-      cardId: string | null,
-      callback: (cardId: string) => void,
-    ) => () => void;
-  } | null): void {
+  attach(
+    cardLifecycle?: {
+      observeCardDidActivate: (
+        cardId: string | null,
+        callback: (cardId: string) => void,
+      ) => () => void;
+    } | null,
+    appLifecycle?: {
+      observeApplicationDidResignActive: (cb: () => void) => () => void;
+      observeApplicationDidBecomeActive: (cb: () => void) => () => void;
+    } | null,
+  ): void {
     document.addEventListener("pointerdown", this.boundPointerDown, { capture: true });
     document.addEventListener("pointermove", this.boundPointerMove, { capture: true });
     document.addEventListener("pointerup", this.boundPointerUp, { capture: true });
@@ -352,10 +375,27 @@ class SelectionGuard {
     // flips the highlight bookkeeping. Initial-sync fires the
     // callback immediately for the currently-active card, so the
     // old explicit-effect path is no longer needed in DeckCanvas.
-    if (lifecycle) {
-      this.lifecycleUnsubscribe = lifecycle.observeCardDidActivate(
+    if (cardLifecycle) {
+      this.lifecycleUnsubscribe = cardLifecycle.observeCardDidActivate(
         null,
         (cardId) => this.activateCard(cardId),
+      );
+    }
+
+    // App-lifecycle subscriptions. The guard is the sole consumer of
+    // these events today; more delegates may attach later. Kept as
+    // observer registrations rather than a `TugAppDelegate` object
+    // because the guard is a non-React singleton and the hook-side
+    // deferral is unnecessary here (selection dim/restore has no
+    // focus-lock interaction to escape).
+    if (appLifecycle) {
+      this.appLifecycleUnsubscribers.push(
+        appLifecycle.observeApplicationDidResignActive(() =>
+          this.handleApplicationDidResignActive(),
+        ),
+        appLifecycle.observeApplicationDidBecomeActive(() =>
+          this.handleApplicationDidBecomeActive(),
+        ),
       );
     }
   }
@@ -387,6 +427,9 @@ class SelectionGuard {
       this.lifecycleUnsubscribe();
       this.lifecycleUnsubscribe = null;
     }
+
+    for (const unsub of this.appLifecycleUnsubscribers) unsub();
+    this.appLifecycleUnsubscribers = [];
   }
 
   // ---- Card activation (highlight management) ----
@@ -476,14 +519,15 @@ class SelectionGuard {
   private deactivatedCardId: string | null = null;
 
   /**
-   * Dim the active card's selection when the app loses focus.
+   * Handle `applicationDidResignActive`: dim the active card's
+   * selection by cloning its DOM Selection Range into the
+   * inactive-selection highlight and clearing the browser Selection.
    *
-   * Clones the active card's DOM Selection Range into inactive-selection
-   * so it renders dimmed. Clears the browser Selection.
-   *
-   * Called from the native app via window.__tugdeckAppDeactivated().
+   * Invoked by the observer subscription installed in `attach()`.
+   * Not a public entry point — the app-lifecycle delegate is the
+   * single path into this behavior.
    */
-  deactivateApp(): void {
+  private handleApplicationDidResignActive(): void {
     if (!this.inactiveHighlight) return;
 
     this.deactivatedCardId = this.activeCardId_highlight;
@@ -507,14 +551,13 @@ class SelectionGuard {
   }
 
   /**
-   * Restore the active card's selection when the app regains focus.
+   * Handle `applicationDidBecomeActive`: restore the active card's
+   * selection from the saved Range in inactive-selection and remove
+   * it from the dim highlight.
    *
-   * Restores the browser Selection from the saved Range in inactive-selection
-   * and removes it from the inactive highlight.
-   *
-   * Called from the native app via window.__tugdeckAppActivated().
+   * Invoked by the observer subscription installed in `attach()`.
    */
-  activateApp(): void {
+  private handleApplicationDidBecomeActive(): void {
     if (!this.inactiveHighlight) return;
     if (!this.deactivatedCardId) return;
 

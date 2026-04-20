@@ -16,7 +16,7 @@
  * Per the lifecycle-delegates plan, these events are driven by the
  * Swift `NSApplicationDelegate` methods of the same name. Step 6
  * wires all eight in `tugapp/Sources/AppDelegate.swift`; Step 5
- * replaces the two existing `window.__tugdeckApp*` globals with a
+ * replaces the two pre-existing window-global RPC functions with a
  * single `app-lifecycle` control frame routed through
  * `action-dispatch.ts`.
  *

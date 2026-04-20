@@ -27,6 +27,7 @@ import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
+import { getAppLifecycle } from "../../lib/app-lifecycle";
 
 // ---- Fallback context menu ----
 
@@ -130,9 +131,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // the provider. CSS Highlight objects are created eagerly in the
     // SelectionGuard constructor (not here) so they exist before any React
     // effects fire. attach() only installs event listeners. ([D02])
-    // Passing the lifecycle subscribes the guard to activation events
-    // (wildcard, initial-sync on attach); detach() unsubscribes.
-    selectionGuard.attach(lifecycle);
+    // Passing the card lifecycle subscribes the guard to activation events
+    // (wildcard, initial-sync on attach); detach() unsubscribes. Passing
+    // the app lifecycle subscribes the guard to
+    // applicationDidResignActive / applicationDidBecomeActive so it can
+    // dim / restore the selection highlight across app background/foreground.
+    const appLifecycle = getAppLifecycle();
+    selectionGuard.attach(lifecycle, appLifecycle);
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {

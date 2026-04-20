@@ -25,7 +25,6 @@ import { registerTideCard } from "./components/tugways/cards/tide-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
-import { selectionGuard } from "./components/tugways/selection-guard";
 import { deserialize } from "./serialization";
 
 // Determine WebSocket URL from current page location
@@ -169,19 +168,14 @@ if (!container) {
     deck.saveAndFlushSync();
   };
 
-  // App deactivation: save all card states to tugbank and dim all selections.
-  // Called by Swift via applicationDidResignActive. Uses normal async fetch
-  // (not sync) because the app and tugcast are still running.
-  (window as unknown as Record<string, unknown>).__tugdeckAppDeactivated = () => {
-    deck.saveAndFlush();
-    selectionGuard.deactivateApp();
-  };
-
-  // App activation: restore the active card's selection highlight.
-  // Called by Swift via applicationDidBecomeActive.
-  (window as unknown as Record<string, unknown>).__tugdeckAppActivated = () => {
-    selectionGuard.activateApp();
-  };
+  // App lifecycle (willBecomeActive / didBecomeActive / willResignActive /
+  // didResignActive / willHide / didHide / willUnhide / didUnhide): these
+  // events are delivered via the `app-lifecycle` control frame (registered
+  // in action-dispatch.ts) rather than ad-hoc window globals. Side effects
+  // like `deck.saveAndFlush()` on resign-active and the selection-guard
+  // dim/restore are wired as direct subscriptions on `AppLifecycle` —
+  // action-dispatch.ts owns the save wire; selection-guard subscribes via
+  // its own `attach(cardLifecycle, appLifecycle)` path.
 
   // Expose a reconnect trigger so the native app can force an immediate
   // WebSocket reconnection after silent re-authentication on tugcast restart.

@@ -179,13 +179,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidResignActive(_ notification: Notification) {
-        // Save all card states and dim selections when the app loses focus.
-        window.evaluateJavaScript("window.__tugdeckAppDeactivated?.()")
+        // Route through the `app-lifecycle` control frame so tugdeck's
+        // AppLifecycle singleton dispatches to every registered observer
+        // (selection-guard dim, deck.saveAndFlush, etc.) via one unified
+        // pipe. Step 6 of the lifecycle-delegates plan adds the six
+        // other NSApplicationDelegate notifications sending the same
+        // frame shape with different `event` strings.
+        NSLog("AppDelegate: applicationDidResignActive")
+        processManager.sendControl("app-lifecycle", params: ["event": "didResignActive"])
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        // Restore the active card's selection highlight when the app regains focus.
-        window.evaluateJavaScript("window.__tugdeckAppActivated?.()")
+        NSLog("AppDelegate: applicationDidBecomeActive")
+        processManager.sendControl("app-lifecycle", params: ["event": "didBecomeActive"])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

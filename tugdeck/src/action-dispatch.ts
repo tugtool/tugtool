@@ -44,6 +44,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
+import { getAppLifecycle } from "./lib/app-lifecycle";
 
 /**
  * Ordered list of all shipped themes.
@@ -398,4 +399,73 @@ export function initActionDispatch(
       sessionMode: sessionModeResolved,
     });
   });
+
+  // app-lifecycle: route macOS `NSApplicationDelegate` events into the
+  // `AppLifecycle` singleton. The Swift side sends a control frame with
+  // `action: "app-lifecycle"` and `event: "<willBecomeActive|didBecomeActive|
+  // willResignActive|didResignActive|willHide|didHide|willUnhide|didUnhide>"`;
+  // this handler dispatches to the matching `notifyApplication*` method.
+  //
+  // This control-frame path replaces the pre-Step-5 ad-hoc window
+  // globals so the app lifecycle is a single unified pipe rather
+  // than a set of one-off RPC functions.
+  registerAction("app-lifecycle", (payload) => {
+    const event = payload.event;
+    if (typeof event !== "string") {
+      console.warn("app-lifecycle: missing or invalid event", payload);
+      return;
+    }
+    const lifecycle = getAppLifecycle();
+    if (lifecycle === null) {
+      console.warn(
+        `app-lifecycle: AppLifecycle not registered yet (event=${event})`,
+      );
+      return;
+    }
+    switch (event) {
+      case "willBecomeActive":
+        lifecycle.notifyApplicationWillBecomeActive();
+        break;
+      case "didBecomeActive":
+        lifecycle.notifyApplicationDidBecomeActive();
+        break;
+      case "willResignActive":
+        lifecycle.notifyApplicationWillResignActive();
+        break;
+      case "didResignActive":
+        lifecycle.notifyApplicationDidResignActive();
+        break;
+      case "willHide":
+        lifecycle.notifyApplicationWillHide();
+        break;
+      case "didHide":
+        lifecycle.notifyApplicationDidHide();
+        break;
+      case "willUnhide":
+        lifecycle.notifyApplicationWillUnhide();
+        break;
+      case "didUnhide":
+        lifecycle.notifyApplicationDidUnhide();
+        break;
+      default:
+        console.warn(`app-lifecycle: unknown event ${event}`);
+    }
+  });
+
+  // Save all card states when the app resigns active (backgrounded).
+  // Pre-Step-5 this lived in a window-global RPC function; it now
+  // rides on the app-lifecycle delegate protocol as a direct
+  // subscription. `getAppLifecycle()` is guaranteed non-null here
+  // because `DeckManager` registers the lifecycle before
+  // `initActionDispatch` is called.
+  const appLifecycle = getAppLifecycle();
+  if (appLifecycle !== null) {
+    appLifecycle.observeApplicationDidResignActive(() => {
+      deckManager.saveAndFlush();
+    });
+  } else {
+    console.warn(
+      "initActionDispatch: AppLifecycle not registered; save-on-resign wire skipped",
+    );
+  }
 }
