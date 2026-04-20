@@ -66,6 +66,10 @@ import {
   AppLifecycleContext,
   registerAppLifecycle,
 } from "./lib/app-lifecycle";
+import {
+  installLifecycleCascade,
+  type LifecycleCascadeHandle,
+} from "./lib/lifecycle-cascade";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -214,6 +218,13 @@ export class DeckManager implements IDeckManagerStore {
    * `app-lifecycle` events into it via `action-dispatch.ts`.
    */
   public readonly appLifecycle: AppLifecycle;
+
+  /**
+   * Handle for the installed app → card cascade (Step 7). Disposed in
+   * `destroy()` so test teardowns and HMR releases the observer
+   * subscriptions.
+   */
+  private readonly lifecycleCascade: LifecycleCascadeHandle;
 
   /** Stable bound callback: add a tab to an existing card. */
   public addTab: (cardId: string, componentId: string) => string | null;
@@ -380,6 +391,16 @@ export class DeckManager implements IDeckManagerStore {
     // `cardLifecycle`.
     this.appLifecycle = new AppLifecycle();
     registerAppLifecycle(this.appLifecycle);
+    // Wire the app → card cascade now that both lifecycles exist.
+    // On `applicationWillResignActive` / `applicationWillHide`, the
+    // active card fires will/didDeactivate; on
+    // `applicationDidBecomeActive` / `applicationDidUnhide` it fires
+    // will/didActivate. Idempotent across resign+hide and
+    // become-active+unhide pairs. See `lib/lifecycle-cascade.ts`.
+    this.lifecycleCascade = installLifecycleCascade(
+      this.cardLifecycle,
+      this.appLifecycle,
+    );
     this.addTab = this._addTab.bind(this);
     this.removeTab = this._removeTab.bind(this);
     this.setActiveTab = this._setActiveTab.bind(this);
@@ -1374,5 +1395,8 @@ export class DeckManager implements IDeckManagerStore {
     // Phase 5f3: remove close-time event listeners.
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
+
+    // Release the app → card cascade subscriptions.
+    this.lifecycleCascade.dispose();
   }
 }
