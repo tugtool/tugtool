@@ -94,7 +94,9 @@ export class CardLifecycle {
   // than a single tagged set) so iteration in notify is straight-
   // forward and subscribers of different types don't interleave.
   private readonly constructionSubs: Set<Subscription> = new Set();
+  private readonly willActivateSubs: Set<Subscription> = new Set();
   private readonly activationSubs: Set<Subscription> = new Set();
+  private readonly willDeactivateSubs: Set<Subscription> = new Set();
   private readonly deactivationSubs: Set<Subscription> = new Set();
   private readonly destructionSubs: Set<Subscription> = new Set();
 
@@ -133,31 +135,51 @@ export class CardLifecycle {
    * Activate `cardId`. The only sanctioned way to change which card
    * is active.
    *
-   * Synchronously:
-   *   1. `store.focusCard(cardId)` — z-order update.
-   *   2. If `manager.getKeyCard() !== cardId`, promote `cardId` via
-   *      `manager.makeFirstResponder(cardId)`.
-   *   3. If the activation changed which card is active:
-   *      a. Fire DEACTIVATION on the previous card (if any).
-   *      b. Fire ACTIVATION on the new card.
-   *      Both are synchronous at this layer; React-integrated
-   *      subscribers defer their user callback to React's post-
-   *      commit useEffect so focus work runs outside the gesture.
+   * Fires the four lifecycle events in D3 order when the active card
+   * changes (A → B):
+   *   1. `cardWillDeactivate(A)` — preparation: A can stash state
+   *      before the transition commits.
+   *   2. `cardWillActivate(B)` — preparation: B can arm itself.
+   *   3. Store + responder-chain update: `store.focusCard(B)` and,
+   *      if needed, `manager.makeFirstResponder(B)`.
+   *   4. `cardDidDeactivate(A)` — reaction: A reacts to the fact.
+   *   5. `cardDidActivate(B)` — reaction: B reacts to the fact.
    *
-   * Same-card re-activation is silent on both channels.
+   * All five phases are synchronous at this layer. React-integrated
+   * subscribers defer their user callback to React's post-commit
+   * useEffect so focus work runs outside the gesture.
+   *
+   * Same-card re-activation is silent on all four channels.
    */
   activateCard(cardId: string): void {
     const wasActive = this.store.getFocusedCardId();
+    if (wasActive === cardId) {
+      // Same-card re-activation: no will/did fires, but still flow
+      // through the store (z-order is a no-op; the focused-card-id
+      // pointer is refreshed) and ensure the responder chain matches
+      // in case it drifted.
+      this.store.focusCard(cardId);
+      if (this.manager !== null && this.manager.getKeyCard() !== cardId) {
+        this.manager.makeFirstResponder(cardId);
+      }
+      return;
+    }
+    // Phase 1–2: preparation callbacks — all fire before any state
+    // change, per D3 ordering.
+    if (wasActive !== null) {
+      this.notifyCardWillDeactivate(wasActive);
+    }
+    this.notifyCardWillActivate(cardId);
+    // Phase 3: commit the state transition atomically.
     this.store.focusCard(cardId);
     if (this.manager !== null && this.manager.getKeyCard() !== cardId) {
       this.manager.makeFirstResponder(cardId);
     }
-    if (wasActive !== cardId) {
-      if (wasActive !== null) {
-        this.notifyCardDidDeactivate(wasActive);
-      }
-      this.notifyCardDidActivate(cardId);
+    // Phase 4–5: reaction callbacks.
+    if (wasActive !== null) {
+      this.notifyCardDidDeactivate(wasActive);
     }
+    this.notifyCardDidActivate(cardId);
   }
 
   // ---- Public notify entry points (called by DeckManager) ----
@@ -183,9 +205,39 @@ export class CardLifecycle {
   }
 
   /**
-   * Fire DEACTIVATION for `cardId`. Called internally from
-   * `activateCard` on transitions, and from the deck when removing
-   * the active card (before firing destruction).
+   * Fire WILL-ACTIVATE for `cardId`. Preparation phase: subscribers
+   * can prime state before the store transition commits. Called
+   * from `activateCard` in the will-phase of a card switch.
+   */
+  notifyCardWillActivate(cardId: string): void {
+    this.fire(this.willActivateSubs, cardId);
+  }
+
+  /**
+   * Fire DID-ACTIVATE for `cardId`. Reaction phase: the store and
+   * responder chain already reflect the new active card. Called
+   * from `activateCard` after the transition commits, and from the
+   * cascade layer when the app returns to the foreground.
+   */
+  notifyCardDidActivate(cardId: string): void {
+    this.fire(this.activationSubs, cardId);
+  }
+
+  /**
+   * Fire WILL-DEACTIVATE for `cardId`. Preparation phase: subscribers
+   * can stash state before the store transition commits. Called
+   * from `activateCard` in the will-phase of a card switch, and from
+   * `removeCard` before closing an active card.
+   */
+  notifyCardWillDeactivate(cardId: string): void {
+    this.fire(this.willDeactivateSubs, cardId);
+  }
+
+  /**
+   * Fire DID-DEACTIVATE for `cardId`. Reaction phase: the card has
+   * lost active status. Called from `activateCard` after the
+   * transition commits, and from `removeCard` after will-deactivate
+   * on an active card.
    */
   notifyCardDidDeactivate(cardId: string): void {
     this.fire(this.deactivationSubs, cardId);
@@ -216,7 +268,19 @@ export class CardLifecycle {
   }
 
   /**
-   * Subscribe to ACTIVATION events.
+   * Subscribe to WILL-ACTIVATE events. No initial-sync — will-
+   * activate is strictly a pre-transition event with no
+   * "currently about to activate" state.
+   */
+  observeCardWillActivate(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.willActivateSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to DID-ACTIVATE events.
    *
    * Initial-sync fires synchronously on subscribe when the current
    * active card already matches the subscription (wildcard matches
@@ -238,7 +302,18 @@ export class CardLifecycle {
   }
 
   /**
-   * Subscribe to DEACTIVATION events. No initial-sync — deactivation
+   * Subscribe to WILL-DEACTIVATE events. No initial-sync — will-
+   * deactivate is strictly a pre-transition event.
+   */
+  observeCardWillDeactivate(
+    cardId: string | null,
+    callback: CardLifecycleObserver,
+  ): () => void {
+    return this.subscribe(this.willDeactivateSubs, cardId, callback);
+  }
+
+  /**
+   * Subscribe to DID-DEACTIVATE events. No initial-sync — deactivation
    * is strictly a transition event; there is no sensible "currently
    * deactivated" state to replay.
    */
@@ -287,10 +362,6 @@ export class CardLifecycle {
         this.safeInvoke(sub.callback, cardId);
       }
     }
-  }
-
-  private notifyCardDidActivate(cardId: string): void {
-    this.fire(this.activationSubs, cardId);
   }
 
   private safeInvoke(cb: CardLifecycleObserver, cardId: string): void {
@@ -346,11 +417,9 @@ export function useCardLifecycle(): CardLifecycle | null {
  * Apple-style: a single object with optional methods, supplied to
  * `useCardDelegate(cardId, delegate)`. Missing methods are no-ops.
  *
- * The two `will` variants for activate/deactivate are declared here
- * now but are not yet wired to a notify source — Step 3 of the
- * lifecycle-delegates plan adds `notifyCardWillActivate` /
- * `notifyCardWillDeactivate` and the corresponding observers and
- * extends `useCardDelegate` to install those subscriptions.
+ * Ordering on a card switch A → B (per D3 of the lifecycle-delegates
+ * plan): `cardAWillDeactivate` → `cardBWillActivate` → (store +
+ * responder updates) → `cardADidDeactivate` → `cardBDidActivate`.
  */
 export interface TugCardDelegate {
   cardDidFinishConstruction?(cardId: string): void;
@@ -368,7 +437,9 @@ export interface TugCardDelegate {
  */
 type CardDelegateMethodName =
   | "cardDidFinishConstruction"
+  | "cardWillActivate"
   | "cardDidActivate"
+  | "cardWillDeactivate"
   | "cardDidDeactivate"
   | "cardWillBeginDestruction";
 
@@ -429,8 +500,14 @@ export function useCardDelegate(
       lifecycle.observeCardDidFinishConstruction(cardId, (id) =>
         enqueue("cardDidFinishConstruction", id),
       ),
+      lifecycle.observeCardWillActivate(cardId, (id) =>
+        enqueue("cardWillActivate", id),
+      ),
       lifecycle.observeCardDidActivate(cardId, (id) =>
         enqueue("cardDidActivate", id),
+      ),
+      lifecycle.observeCardWillDeactivate(cardId, (id) =>
+        enqueue("cardWillDeactivate", id),
       ),
       lifecycle.observeCardDidDeactivate(cardId, (id) =>
         enqueue("cardDidDeactivate", id),

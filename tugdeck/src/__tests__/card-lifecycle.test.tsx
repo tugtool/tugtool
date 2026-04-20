@@ -183,6 +183,89 @@ describe("CardLifecycle.activateCard", () => {
 
     expect(deactivations).toEqual([]);
   });
+
+  it("T-CL-ORDER-01: A→B switch fires will/did events in D3 order", () => {
+    // Per D3 of the lifecycle-delegates plan, activating card B while
+    // card A is active fires:
+    //   1. cardAWillDeactivate
+    //   2. cardBWillActivate
+    //   3. (store + responder chain update)
+    //   4. cardADidDeactivate
+    //   5. cardBDidActivate
+    const { lifecycle, store } = makeLifecycle("card-A");
+    const log: string[] = [];
+
+    lifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    lifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    lifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+    lifecycle.observeCardDidActivate(null, (id) => {
+      // Record store state at didActivate time to confirm the store
+      // transition happened BEFORE the did-phase.
+      log.push(`didActivate:${id}@store=${store.state.focused}`);
+    });
+    // Clear initial-sync noise from observeCardDidActivate.
+    log.length = 0;
+
+    lifecycle.activateCard("card-B");
+
+    expect(log).toEqual([
+      "willDeactivate:card-A",
+      "willActivate:card-B",
+      "didDeactivate:card-A",
+      "didActivate:card-B@store=card-B",
+    ]);
+  });
+
+  it("T-CL-ORDER-02: same-card re-activation is silent on all four will/did channels", () => {
+    const { lifecycle } = makeLifecycle("card-A");
+    const log: string[] = [];
+
+    lifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    lifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    lifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+    lifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+    log.length = 0;
+
+    lifecycle.activateCard("card-A");
+
+    expect(log).toEqual([]);
+  });
+
+  it("T-CL-ORDER-03: first activation (no prior) skips deactivation phases", () => {
+    const { lifecycle } = makeLifecycle(null);
+    const log: string[] = [];
+
+    lifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeactivate:${id}`),
+    );
+    lifecycle.observeCardWillActivate(null, (id) =>
+      log.push(`willActivate:${id}`),
+    );
+    lifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeactivate:${id}`),
+    );
+    lifecycle.observeCardDidActivate(null, (id) =>
+      log.push(`didActivate:${id}`),
+    );
+
+    lifecycle.activateCard("card-A");
+
+    expect(log).toEqual(["willActivate:card-A", "didActivate:card-A"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -495,7 +578,7 @@ describe("useCardDelegate", () => {
     expect(calls).toEqual(["1:card-A"]);
   });
 
-  it("T-CL-HOOK-07: routes to the right method by event type", async () => {
+  it("T-CL-HOOK-07: routes to the right method by event type (all six channels)", async () => {
     const { lifecycle } = makeLifecycle();
     const calls: string[] = [];
 
@@ -503,8 +586,10 @@ describe("useCardDelegate", () => {
       () =>
         useCardDelegate("card-A", {
           cardDidFinishConstruction: (id) => calls.push(`construct:${id}`),
-          cardDidActivate: (id) => calls.push(`activate:${id}`),
-          cardDidDeactivate: (id) => calls.push(`deactivate:${id}`),
+          cardWillActivate: (id) => calls.push(`willActivate:${id}`),
+          cardDidActivate: (id) => calls.push(`didActivate:${id}`),
+          cardWillDeactivate: (id) => calls.push(`willDeactivate:${id}`),
+          cardDidDeactivate: (id) => calls.push(`didDeactivate:${id}`),
           cardWillBeginDestruction: (id) => calls.push(`destroy:${id}`),
         }),
       { wrapper: wrapperFor(lifecycle) },
@@ -512,16 +597,18 @@ describe("useCardDelegate", () => {
 
     act(() => {
       lifecycle.notifyCardDidFinishConstruction("card-A");
-      lifecycle.activateCard("card-A");
-      lifecycle.activateCard("card-B");
+      lifecycle.activateCard("card-A"); // first activation: no deactivate phase
+      lifecycle.activateCard("card-B"); // switch: deactivates A, activates B (B ignored by delegate)
       lifecycle.notifyCardWillBeginDestruction("card-A");
     });
     await flushDeferred();
 
     expect(calls).toEqual([
       "construct:card-A",
-      "activate:card-A",
-      "deactivate:card-A",
+      "willActivate:card-A",
+      "didActivate:card-A",
+      "willDeactivate:card-A",
+      "didDeactivate:card-A",
       "destroy:card-A",
     ]);
   });

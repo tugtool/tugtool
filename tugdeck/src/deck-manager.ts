@@ -564,13 +564,18 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Remove a card from the canvas by card ID.
    *
-   * Lifecycle order (all synchronous):
-   *   1. If the card was active, fire DEACTIVATION.
-   *   2. Fire DESTRUCTION — subscribers can still read card state.
+   * Lifecycle order (all synchronous), per the lifecycle-delegates
+   * plan:
+   *   1. If the card was active:
+   *      a. Fire WILL-DEACTIVATE.
+   *      b. Fire DID-DEACTIVATE.
+   *   2. Fire WILL-BEGIN-DESTRUCTION — subscribers can still read
+   *      card state.
    *   3. Remove from store and notify subscribers / schedule save.
    */
   removeCard(cardId: string): void {
     if (this.cardLifecycle.getActiveCardId() === cardId) {
+      this.cardLifecycle.notifyCardWillDeactivate(cardId);
       this.cardLifecycle.notifyCardDidDeactivate(cardId);
     }
     this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
