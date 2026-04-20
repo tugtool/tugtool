@@ -190,6 +190,7 @@ export class CardLifecycle {
    * constructed-set so late-subscribing hooks receive initial-sync.
    */
   notifyCardDidFinishConstruction(cardId: string): void {
+    console.log(`[CardLifecycle] cardDidFinishConstruction id=${cardId}`);
     this.constructedCards.add(cardId);
     this.fire(this.constructionSubs, cardId);
   }
@@ -200,6 +201,7 @@ export class CardLifecycle {
    * Also removes the card from the constructed-set.
    */
   notifyCardWillBeginDestruction(cardId: string): void {
+    console.log(`[CardLifecycle] cardWillBeginDestruction id=${cardId}`);
     this.fire(this.destructionSubs, cardId);
     this.constructedCards.delete(cardId);
   }
@@ -210,6 +212,7 @@ export class CardLifecycle {
    * from `activateCard` in the will-phase of a card switch.
    */
   notifyCardWillActivate(cardId: string): void {
+    console.log(`[CardLifecycle] cardWillActivate id=${cardId}`);
     this.fire(this.willActivateSubs, cardId);
   }
 
@@ -220,6 +223,7 @@ export class CardLifecycle {
    * cascade layer when the app returns to the foreground.
    */
   notifyCardDidActivate(cardId: string): void {
+    console.log(`[CardLifecycle] cardDidActivate id=${cardId}`);
     this.fire(this.activationSubs, cardId);
   }
 
@@ -230,6 +234,7 @@ export class CardLifecycle {
    * `removeCard` before closing an active card.
    */
   notifyCardWillDeactivate(cardId: string): void {
+    console.log(`[CardLifecycle] cardWillDeactivate id=${cardId}`);
     this.fire(this.willDeactivateSubs, cardId);
   }
 
@@ -240,6 +245,7 @@ export class CardLifecycle {
    * on an active card.
    */
   notifyCardDidDeactivate(cardId: string): void {
+    console.log(`[CardLifecycle] cardDidDeactivate id=${cardId}`);
     this.fire(this.deactivationSubs, cardId);
   }
 

@@ -58,12 +58,15 @@ export function installLifecycleCascade(
 
   // ---- Deactivation cascade (resign-active OR hide) ----
 
-  const deactivateIfNeeded = (): void => {
+  const deactivateIfNeeded = (trigger: string): void => {
     // Idempotent: if a prior will-event in the same cycle already
     // fired the cascade, the second will-event is a no-op.
     if (deactivatedByAppCardId !== null) return;
     const activeId = cardLifecycle.getActiveCardId();
     if (activeId === null) return;
+    console.log(
+      `[CardLifecycle] cascade from ${trigger} → cardWillDeactivate/cardDidDeactivate id=${activeId}`,
+    );
     deactivatedByAppCardId = activeId;
     cardLifecycle.notifyCardWillDeactivate(activeId);
     cardLifecycle.notifyCardDidDeactivate(activeId);
@@ -71,9 +74,12 @@ export function installLifecycleCascade(
 
   // ---- Reactivation cascade (become-active OR unhide) ----
 
-  const reactivateIfNeeded = (): void => {
+  const reactivateIfNeeded = (trigger: string): void => {
     const cardId = deactivatedByAppCardId;
     if (cardId === null) return;
+    console.log(
+      `[CardLifecycle] cascade from ${trigger} → cardWillActivate/cardDidActivate id=${cardId}`,
+    );
     // Clear the guard BEFORE firing, so observers that trigger
     // nested app events during the cascade don't see a stale flag.
     deactivatedByAppCardId = null;
@@ -84,10 +90,18 @@ export function installLifecycleCascade(
   // ---- Subscribe ----
 
   const unsubs: Array<() => void> = [
-    appLifecycle.observeApplicationWillResignActive(deactivateIfNeeded),
-    appLifecycle.observeApplicationWillHide(deactivateIfNeeded),
-    appLifecycle.observeApplicationDidBecomeActive(reactivateIfNeeded),
-    appLifecycle.observeApplicationDidUnhide(reactivateIfNeeded),
+    appLifecycle.observeApplicationWillResignActive(() =>
+      deactivateIfNeeded("applicationWillResignActive"),
+    ),
+    appLifecycle.observeApplicationWillHide(() =>
+      deactivateIfNeeded("applicationWillHide"),
+    ),
+    appLifecycle.observeApplicationDidBecomeActive(() =>
+      reactivateIfNeeded("applicationDidBecomeActive"),
+    ),
+    appLifecycle.observeApplicationDidUnhide(() =>
+      reactivateIfNeeded("applicationDidUnhide"),
+    ),
   ];
 
   return {

@@ -93,34 +93,42 @@ export class AppLifecycle {
   // them to drive card-lifecycle cascades.
 
   notifyApplicationWillBecomeActive(): void {
+    console.log("[AppLifecycle] applicationWillBecomeActive");
     this.fire("applicationWillBecomeActive");
   }
 
   notifyApplicationDidBecomeActive(): void {
+    console.log("[AppLifecycle] applicationDidBecomeActive");
     this.fire("applicationDidBecomeActive");
   }
 
   notifyApplicationWillResignActive(): void {
+    console.log("[AppLifecycle] applicationWillResignActive");
     this.fire("applicationWillResignActive");
   }
 
   notifyApplicationDidResignActive(): void {
+    console.log("[AppLifecycle] applicationDidResignActive");
     this.fire("applicationDidResignActive");
   }
 
   notifyApplicationWillHide(): void {
+    console.log("[AppLifecycle] applicationWillHide");
     this.fire("applicationWillHide");
   }
 
   notifyApplicationDidHide(): void {
+    console.log("[AppLifecycle] applicationDidHide");
     this.fire("applicationDidHide");
   }
 
   notifyApplicationWillUnhide(): void {
+    console.log("[AppLifecycle] applicationWillUnhide");
     this.fire("applicationWillUnhide");
   }
 
   notifyApplicationDidUnhide(): void {
+    console.log("[AppLifecycle] applicationDidUnhide");
     this.fire("applicationDidUnhide");
   }
 
