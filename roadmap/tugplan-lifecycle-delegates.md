@@ -13,7 +13,7 @@ The work is staged rename-first, then API-shape, then app-lifecycle wiring, then
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Last updated | 2026-04-20 |
 | Predecessor | [tugplan-tide-card-polish.md §Step 5.5](./tugplan-tide-card-polish.md) (unified card-activation lifecycle) |
@@ -1296,6 +1296,51 @@ useCardDelegate(cardId, {
 **Verification:**
 - Walkthrough section in the plan file names each law and the code location that satisfies it.
 - Full build matrix green: `bun run check`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+
+**Status: complete (2026-04-20).** See the Tuglaws Walkthrough below. Build matrix green at HEAD: `bun run check` (tsc) clean, `bun test` 2292/2292 pass, `bun run audit:tokens lint` zero violations, `cargo nextest run` 1146/1146 pass.
+
+---
+
+### Tuglaws Walkthrough {#tuglaws-walkthrough}
+
+Post-implementation conformance check against the Tuglaws this plan explicitly targets. Each law names the code location that satisfies it and the behavior being anchored.
+
+**L02 — External state enters React through `useSyncExternalStore` only.**
+
+The lifecycle delegate hooks do NOT mirror lifecycle events into React state. `useCardDelegate` (`tugdeck/src/lib/card-lifecycle.ts:683`) and `useAppDelegate` (`tugdeck/src/lib/app-lifecycle.ts:320`) subscribe via `cardLifecycle.observe*` / `appLifecycle.observe*` and enqueue user callbacks through a module-level `MessageChannel` drain queue (`tugdeck/src/lib/card-lifecycle.ts:616–650`). No `setState` is called to represent "did this event fire yet" — delegate invocation is a side effect, not a rendered value. The decision to use `MessageChannel` over `setState → useEffect` is documented at `card-lifecycle.ts:616`.
+
+Deck store consumers (`useDeckManager` + `useSyncExternalStore` on `IDeckManagerStore.subscribe` / `getSnapshot`) remain the sole route for external deck state into React — unchanged from pre-plan.
+
+**L03 — Use `useLayoutEffect` for registrations that events depend on.**
+
+Every delegate subscription installs in `useLayoutEffect`:
+- `useCardDelegate` subscription: `tugdeck/src/lib/card-lifecycle.ts:693`.
+- `useCardDelegate` delegate-ref sync (for L07 below): `tugdeck/src/lib/card-lifecycle.ts:689`.
+- `useAppDelegate` subscription: `tugdeck/src/lib/app-lifecycle.ts:326`.
+- `useAppDelegate` delegate-ref sync: `tugdeck/src/lib/app-lifecycle.ts:330`.
+- `CardPortal` slot attachment (content registry subscription): `tugdeck/src/components/chrome/card-portal.tsx:59`.
+
+Each of these runs before the browser paints the commit so that event handlers exist before any dispatched event can observe them.
+
+**L06 — Appearance changes go through CSS and DOM, never React state.**
+
+- Tide prompt focus/blur (`tugdeck/src/components/tugways/cards/tide-card.tsx:842–843`): `cardDidActivate` calls `entryDelegateRef.current?.focus()`, `cardWillDeactivate` calls `entryDelegateRef.current?.blur()`. Direct DOM invocation on the editor ref — no `setState`, no `useState`.
+- Selection guard inactive-card highlights (`tugdeck/src/components/tugways/selection-guard.ts:187–221`): CSS Custom Highlight API. The store observation drives `Highlight.add/delete` calls directly, not React state.
+- Stack collapse (`tugdeck/src/deck-manager.ts:_toggleStackCollapse`): flips `CardState.collapsed` in the store; `CardFrame` reads the flag and overrides rendered height via CSS. No React state mirrors the collapse bit; the JSDoc at the method explicitly pins this as an appearance-zone transition and notes that no `cardWillResize` / `cardDidResize` fires.
+
+**L07 — Delegate callbacks read current state via refs, not closures.**
+
+Both lifecycle hooks keep the user-provided delegate object in a ref and re-read at fire time:
+- `useCardDelegate`: `delegateRef = useRef(delegate)` at `card-lifecycle.ts:688` plus a `useLayoutEffect` at `:689` that keeps the ref current. The enqueue closure at `:700` dispatches with `delegateRef.current[method]`, so a caller passing an inline object on every render gets the latest handler without re-subscribing.
+- `useAppDelegate`: same pattern at `app-lifecycle.ts:325–331`.
+
+This also means the delegate-ref sync fires before subscribers re-run, guaranteeing observers see the newest handlers (L03 + L07 pair).
+
+**L22 — Store observers drive DOM writes directly, not through React's render cycle.**
+
+- Card content registry (`tugdeck/src/components/chrome/card-content-registry.ts:22`) self-documents as appearance-zone infrastructure outside the React render tree. It's a module-level `Map<stackId, HTMLDivElement>` with a subscriber set.
+- `CardPortal` (`tugdeck/src/components/chrome/card-portal.tsx`) subscribes to registry changes and re-parents its slot with `host.appendChild(slot)` on every host change. Identity-preserving DOM move, no React re-render.
+- Lifecycle-cascade (`tugdeck/src/lib/lifecycle-cascade.ts`) fires `cardLifecycle.notifyCard*` on app hide/unhide; tide-card's delegate (L06 above) resolves this to direct `focus()`/`blur()` DOM calls. Zero React state mutations participate in the cascade-to-focus path.
 
 ---
 
