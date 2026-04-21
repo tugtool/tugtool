@@ -46,7 +46,7 @@
  *
  * Spec S03 (#s03-deckcanvas-shape), [D03] Keep disconnect banner
  * Spec S04 (#s04-canvas-props), Spec S04 (#s04-gallery-panel), Spec S05 (#s05-gallery-action)
- * Spec S06 (#deckcanvas-props), Spec S07 (#tugcard-visual-stack)
+ * Spec S06 (#deckcanvas-props), Spec S07 (#pane-visual-stack)
  * [D01] DeckManager is a subscribable store with one root.render() at mount
  * [D04] DeckCanvas reads state from store, not props
  * [D05] Focus logic in DeckCanvas

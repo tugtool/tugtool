@@ -106,13 +106,13 @@
 | 3 | `--tugx-pane-title-bar-icon-active` | `icon-active` | `--tugx-pane-title-bar-bg-active` | `tab-bg-active` | `ui-component` | Title icon when pane focused |
 | 4 | `--tugx-pane-title-bar-icon-inactive` | `fg-subtle` | `--tugx-pane-title-bar-bg-inactive` | `tab-bg-inactive` | `ui-component` | Title icon when pane unfocused |
 | 5 | `--tug-base-fg-default` | `fg-default` | `--tug-base-surface-default` | `surface-default` | `body-text` | Card content area text (tug-pane-content background) |
-| 6 | `--tug-base-fg-muted` | `fg-muted` | `--tug-base-surface-default` | `surface-default` | `subdued-text` | .tugcard-loading placeholder text |
+| 6 | `--tug-base-fg-muted` | `fg-muted` | `--tug-base-surface-default` | `surface-default` | `subdued-text` | .tug-pane-loading placeholder text |
 | 7 | `--tug-base-selection-fg` | `selection-fg` | `--tug-base-selection-bg` | `selection-bg` | `body-text` | Selected text (CSS Custom Highlight API, active card) |
 
 **Notes:**
-- Pairing #1 (title foreground on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tug-pane[data-focused="true"] .tugcard-title` sets `color: var(--tugx-pane-title-fg-active)` on the active title bar surface `--tugx-pane-title-bar-bg-active`.
-- Card icon hover (`fg-muted` on `tab-bg-active`) also occurs when title bar controls hover — ghost-option TugButtons inside `.card-title-bar-controls` render on the active title bar background.
-- Collapsed state: `.tugcard--collapsed` background uses `tab-bg-inactive`/`tab-bg-active` — title icon and text render on those surfaces.
+- Pairing #1 (title foreground on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tug-pane[data-focused="true"] .tug-pane-title` sets `color: var(--tugx-pane-title-fg-active)` on the active title bar surface `--tugx-pane-title-bar-bg-active`.
+- Card icon hover (`fg-muted` on `tab-bg-active`) also occurs when title bar controls hover — ghost-option TugButtons inside `.tug-pane-title-bar-controls` render on the active title bar background.
+- Collapsed state: `.tug-pane-chrome--collapsed` background uses `tab-bg-inactive`/`tab-bg-active` — title icon and text render on those surfaces.
 
 ---
 
@@ -556,7 +556,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 
 ### Confirmed Gap: Card Title Bar (fg-default on tab-bg-active)
 
-**GAP CONFIRMED.** Focused `.tugcard-title` sets `color: var(--tugx-pane-title-fg-active)` on `.tugcard-title-bar` with `background-color: var(--tugx-pane-title-bar-bg-active)` — contrast is between the tug7 title text and titlebar surfaces.
+**GAP CONFIRMED.** Focused `.tug-pane-title` sets `color: var(--tugx-pane-title-fg-active)` on `.tug-pane-title-bar` with `background-color: var(--tugx-pane-title-bar-bg-active)` — contrast is between the tug7 title text and titlebar surfaces.
 
 This produces the pairing: **`fg-default` on `tab-bg-active`** with role `body-text`.
 

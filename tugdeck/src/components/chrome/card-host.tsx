@@ -368,7 +368,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
                       // between windows.
                       registration.contentFactory(cardId)
                     ) : (
-                      <div className="tugcard-loading" data-testid="tugcard-loading">
+                      <div className="tug-pane-loading" data-testid="tug-pane-loading">
                         Loading...
                       </div>
                     )}

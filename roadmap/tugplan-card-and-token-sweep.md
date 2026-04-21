@@ -26,7 +26,7 @@
 
 The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `windowId` / `.tug-window*` everywhere a Tug-authored identifier carried "window." Two surfaces survived that sweep by design — both are straightforward to clean up now that the vocabulary is stable:
 
-1. **Tugcard fossils (code identifiers).** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone; **Steps 1–4** renamed the remaining `Tugcard*` / `useTugcard*` hooks and types to `Card*` (`CardMeta`, `CardData*`, `useCardData`, `CardPersistence*`, `useCardPersistence`, `useCardDirty`). Residual `.tugcard*` **CSS class** names stay per [D03] — a deliberate scope boundary, not forgotten fossils.
+1. **Tugcard fossils (code identifiers).** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone; **Steps 1–4** renamed the remaining `Tugcard*` / `useTugcard*` hooks and types to `Card*` (`CardMeta`, `CardData*`, `useCardData`, `CardPersistence*`, `useCardPersistence`, `useCardDirty`). **Step 10** additionally renamed every `.tugcard*` / `.card-title-bar-controls` CSS class to `.tug-pane-*` (see [D03]) so the Pane-chrome vocabulary is self-consistent at every layer.
 
    These surfaces describe **card-level** state (metadata, feed data, persistence, dirty bit). The plain `Card*` word matches sibling types (`CardState`, `CardStateBag`, `CardLifecycle`, `CardHost`) that already drop the `Tug` prefix for card-model types.
 
@@ -66,7 +66,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 8. **Done (Step 7).** CSS control tokens: `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*` (was `--tugx-card-control-*`).
 8a. **Done (Step 7a).** Content-dim / accessory / findbar → `--tugx-pane-content-dim-*`, `--tugx-pane-accessory-*`, `--tugx-pane-findbar-*`.
 9. **Done (Step 8).** Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
-10. Author `tuglaws/pane-model.md` + add entry to `tuglaws/tuglaws.md` laws list.
+10. **Done (Step 10).** `tuglaws/pane-model.md` authored; registered as **L25** in `tuglaws/tuglaws.md`; L09/L10/D15/D31/responder-chain prose swept to current vocabulary.
 11. Integration checkpoint.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -117,18 +117,29 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - Keeping `--tugx-card-title-bar-*` while the selector is `.tug-pane[data-focused="true"] .tugcard-title-bar` creates a gratuitous name mismatch that a reader has to mentally reconcile.
 - The existing `--tug7-*` theme primitives stay put — those are theme-author names, not component-state names.
 
-**Implications:** The naming rule at the token layer is: `--tugx-pane-*` for pane chrome, `--tugx-card-*` reserved for card content if any such tokens ever arise (none today). Class selectors like `.tugcard`, `.tugcard-title-bar`, `.tugcard-icon` stay for now — they're decided in [D03].
+**Implications:** The naming rule at the token layer is: `--tugx-pane-*` for pane chrome, `--tugx-card-*` reserved for card content if any such tokens ever arise (none today). Class selectors on Pane chrome match: `.tug-pane-*` (see [D03]).
 
-#### [D03] `.tugcard`, `.tugcard-title-bar`, `.tugcard-icon` CSS class names are out of scope (DECIDED) {#d03-class-scope}
+#### [D03] CSS class names on Pane chrome use the `.tug-pane-*` prefix (DECIDED; originally deferred, completed in Step 10) {#d03-class-scope}
 
-**Decision:** The CSS *class* names `.tugcard`, `.tugcard-title-bar`, `.tugcard-title`, `.tugcard-icon`, `.tugcard-accessory`, `.card-title-bar-controls`, `.tugcard-loading` stay untouched.
+**Decision:** Rename every `.tugcard*` / `.card-title-bar-controls` CSS class to a `.tug-pane-*` equivalent, in lockstep with the token and component renames. Mapping:
 
-**Rationale:**
-- This plan is about token names and hook/type names, not about class names.
-- Class renames cascade through tests, render snapshots, and any documentation that names the selectors. That's a larger, separate sweep.
-- The class names are a coherent surface on their own: `.tugcard*` describes the card chrome rendered inside a pane. A future plan can decide whether to align them to `.tug-pane-*` or to a `.card-*` convention — that's a vocabulary decision worth making deliberately, not as a ride-along on token work.
+| Old | New |
+|---|---|
+| `.tugcard` | `.tug-pane-chrome` |
+| `.tugcard--collapsed` | `.tug-pane-chrome--collapsed` |
+| `.tugcard-body` | `.tug-pane-body` |
+| `.tugcard-title-bar` | `.tug-pane-title-bar` |
+| `.tugcard-title` | `.tug-pane-title` |
+| `.tugcard-icon` | `.tug-pane-icon` |
+| `.tugcard-accessory` | `.tug-pane-accessory` |
+| `.tugcard-loading` | `.tug-pane-loading` |
+| `.card-title-bar-controls` | `.tug-pane-title-bar-controls` |
 
-**Implications:** Post-plan, expect a residual asymmetry: the `.tugcard*` selectors will read `--tugx-pane-title-bar-*` tokens. Document this in `pane-model.md` so the next reader knows the state is deliberate.
+`data-testid` values, `querySelector` strings, and prose references were updated in the same pass.
+
+**Rationale:** Component name, token family, and CSS class prefix must all agree. Leaving `.tugcard*` in place would have required `pane-model.md` to document-around the asymmetry — a tuglaws document records best practice, not bustage.
+
+**Implications:** The Pane-chrome vocabulary is now self-consistent: `TugPane` component → `.tug-pane-*` class prefix → `--tugx-pane-*` token prefix → `data-pane-id` DOM marker.
 
 #### [D04] Banner tokens `--tugx-card-banner-*` → `--tugx-pane-banner-*` (DECIDED) {#d04-banner-tokens}
 
@@ -537,13 +548,15 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - A "Related / history" section records why `Tugcard` → `TugWindow` → `TugPane` happened so future readers see the provenance.
 
 **Tasks:**
-- [ ] Draft the law file.
-- [ ] Register in `tuglaws.md`.
-- [ ] Cross-link from existing laws that reference pane / card vocabulary (selection-model, responder-chain, framework-architecture L09 if it still mentions old vocabulary).
+- [x] Draft the law file.
+- [x] Register in `tuglaws.md` (added as **L25** in the Component Architecture section, cross-referencing L09–L12).
+- [x] Cross-link from existing laws referencing pane / card vocabulary: `tuglaws.md` L09/L10 rewritten around TugPane; `design-decisions.md` D15/D31 rewritten; `responder-chain.md` prose swept ("card chrome" → "pane chrome").
+- [x] **Overturn [D03] and rename `.tugcard*` CSS classes to `.tug-pane-*`** across `tug-pane.css`, `tug-pane.tsx`, `card-host.tsx`, `tug-sheet.{tsx,css}`, `tug-pane-banner.{tsx,css}`, `chrome.css`, `tug-tab-bar.css`, `card-drag-coordinator.ts`, `pane-root-registry.ts`, `deck-canvas.tsx`, `theme-pairings.ts`, `tug-prompt-input.tsx`, `use-property-store.ts`; `data-testid` values and `querySelector` strings updated; test files + pairing/renders-on docs swept.
 
 **Checkpoint:**
-- [ ] Doc reads coherently; every identifier it cites exists at head under the cited name.
-- [ ] `rg "TugPane|CardState|CardHost|data-pane-id|data-card-id" tuglaws/pane-model.md` shows the expected cross-references.
+- [x] Doc reads coherently; every identifier it cites exists at head under the cited name.
+- [x] `rg "TugPane|CardState|CardHost|data-pane-id|data-card-id" tuglaws/pane-model.md` shows the expected cross-references.
+- [x] `rg "tugcard|card-title-bar-controls" tugdeck/src tugdeck/styles tugdeck/docs tuglaws` returns zero matches.
 
 ---
 
@@ -579,7 +592,6 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] `.tugcard*` CSS class name cleanup (see [D03]) — separate decision about whether to align to `.tug-pane-*` or a `.card-*` convention.
 - [ ] `TugPane` internal decomposition into `usePaneDrag`, `usePaneResize`, `usePaneTabBar` — audit P6.
 - [ ] `--tug7-*` theme primitive naming review — theme-author vocabulary cleanup.
 

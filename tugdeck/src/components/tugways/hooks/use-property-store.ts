@@ -45,7 +45,7 @@ import type { PropertyDescriptor } from "../property-store";
  * Registration callback type. `CardHost` provides this callback so that card
  * content can register its PropertyStore.
  *
- * Spec S05 (#s05-tugcard-property-context)
+ * Spec S05 (#s05-pane-property-context)
  */
 export type PropertyStoreRegistrar = (store: PropertyStore) => void;
 
@@ -60,7 +60,7 @@ export type PropertyStoreRegistrar = (store: PropertyStore) => void;
  * throwing -- the registration call is simply skipped.
  *
  * [D01] Context callback registration for PropertyStore
- * Spec S05 (#s05-tugcard-property-context)
+ * Spec S05 (#s05-pane-property-context)
  */
 export const CardPropertyContext = createContext<PropertyStoreRegistrar | null>(null);
 

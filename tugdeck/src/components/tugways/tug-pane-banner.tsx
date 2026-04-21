@@ -2,7 +2,7 @@
  * TugPaneBanner — Card-scoped modal banner for card-level error / attention states.
  *
  * Combines TugBanner's visual language (strip at top + detail panel) with
- * TugSheet's scoping mechanics (portal into the card, `inert` on .tugcard-body,
+ * TugSheet's scoping mechanics (portal into the card, `inert` on .tug-pane-body,
  * positioned below the title bar). Unlike TugBanner, TugPaneBanner does not
  * block the app — only the card it's mounted in. Other cards on the deck remain
  * fully interactive.
@@ -16,7 +16,7 @@
  *
  * Both variants slide the strip down from the title-bar edge on enter and
  * reverse on exit; the error variant additionally fades the detail panel.
- * `inert` is applied to `.tugcard-body` while the banner is mounted and
+ * `inert` is applied to `.tug-pane-body` while the banner is mounted and
  * released only after the exit animation's `.finished` so interaction
  * returns in sync with the visuals.
  *
@@ -86,7 +86,7 @@ export interface TugPaneBannerProps {
   /** Pinned footer content for the detail panel (error variant only). */
   footer?: React.ReactNode;
   /**
-   * Disables the `inert` application on `.tugcard-body` — for gallery demos
+   * Disables the `inert` application on `.tug-pane-body` — for gallery demos
    * that render the banner inside a preview without blocking interaction.
    * The visual strip and detail panel still render normally.
    * @default false
@@ -156,7 +156,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     useLayoutEffect(() => {
       if (contained) return;
       if (!cardEl) return;
-      const body = cardEl.querySelector(".tugcard-body");
+      const body = cardEl.querySelector(".tug-pane-body");
       if (!body) return;
       if (mounted) {
         body.setAttribute("inert", "");
@@ -225,7 +225,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
 
     if (!mounted) return null;
     // Contained mode (gallery demos) renders inline inside the caller's
-    // positioned parent; no portal, no .tugcard-body lookup. Real usage
+    // positioned parent; no portal, no .tug-pane-body lookup. Real usage
     // requires a portal target from TugPanePortalContext.
     if (!contained && !cardEl) return null;
 

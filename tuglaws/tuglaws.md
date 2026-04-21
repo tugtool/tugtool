@@ -50,9 +50,9 @@ The test: *can the user end the interaction with a result that was never committ
 
 **L19. Every component follows the component authoring guide.** File structure, module docstring, props interface, `data-slot`, `@tug-pairings`, `@tug-renders-on`, and CSS organization are not suggestions — they are the contract. A component that deviates from [component-authoring.md](component-authoring.md) is incomplete. [D05, D06]
 
-**L09. Tugcard composes chrome; CardFrame owns geometry.** Cards never set their own position, size, or z-index. CardFrame handles drag, resize, and stacking. Tugcard handles header, icon, accessory, and content. [D15, D31]
+**L09. TugPane composes chrome and owns geometry; Cards never set their own position, size, or z-order.** TugPane handles drag, resize, stacking, title bar, tabs, accessory, and content region. Cards supply content identity only. (Historical: `Tugcard` / `CardFrame` were merged into `TugPane` — see [pane-model.md](pane-model.md) for the current model and the rename history.) [D15, D31]
 
-**L10. One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to components. CardFrame owns geometry. Tugcard owns chrome. Card content owns domain logic. Don't reach across layers. [D05, D15]
+**L10. One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to Panes. TugPane owns geometry and chrome. CardHost bridges per-card context to the registered content factory. Card content owns domain logic. Don't reach across layers. [D05, D15]
 
 **L11. Controls emit actions; responders own state that actions operate on.** A *control* translates a user gesture into a typed intent and dispatches it into the chain — the state that handlers will modify lives elsewhere (a parent, a store, a separate component). A *responder* owns persistent semantic state that actions mutate over time and registers handlers for the actions that mutate it. Responders have a stable identity in the chain so the first-responder promotion mechanism can address them.
 
@@ -67,6 +67,8 @@ A single component may be both an emitter and a responder for the same action. A
 The full chain mechanism — `ActionEvent`, the dispatch walk, first-responder promotion, the four dispatch shapes, `observeDispatch`, the keyboard pipeline, and the registration hooks — is documented in [responder-chain.md](responder-chain.md). Read that document before writing a component that participates in the chain.
 
 **L12. Selection stays inside card boundaries.** `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D34, D35, D36, D37, D38]
+
+**L25. Deck → Pane → Card is the canonical canvas hierarchy.** A Deck holds Panes; a Pane holds Cards; a Card holds one content component. Position, size, z-order, drag, resize, and chrome are Pane responsibilities; content identity (`componentId`, `title`, `state`) is a Card responsibility. Tabs are a UI affordance for multi-card Panes, not a separate data concept. `TugPane*` names components that render Pane chrome; `Card*` (no `Tug` prefix) names Card-model types and hooks; `--tugx-pane-*` names Pane-chrome tokens; `data-pane-id` and `data-card-id` mark the DOM. Full specification, wire contract, and rename history in [pane-model.md](pane-model.md). [L09, L10, L11, L12]
 
 ---
 

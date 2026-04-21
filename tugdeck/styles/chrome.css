@@ -65,17 +65,17 @@
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
-/* ---- Set membership: squared corners; clip-path on .tugcard controls shadow edges ---- */
+/* ---- Set membership: squared corners; clip-path on .tug-pane-chrome controls shadow edges ---- */
 /*
  * Cards in a set have their corners squared so adjacent cards form a seamless group.
- * clip-path: inset() on .tugcard (set inline by updateSetAppearance()) suppresses shadow on
+ * clip-path: inset() on .tug-pane-chrome (set inline by updateSetAppearance()) suppresses shadow on
  * interior (shared) edges while showing shadow on exterior edges. [D01, D02, D04, D08]
  * The data-in-set attribute is applied by updateSetAppearance() after each move/resize. [D08]
  */
 .tug-pane[data-in-set="true"] {
   border-radius: 0;
 }
-.tug-pane[data-in-set="true"] .tugcard {
+.tug-pane[data-in-set="true"] .tug-pane-chrome {
   border-radius: 0;
 }
 

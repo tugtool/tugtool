@@ -31,7 +31,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | File | Rules needing annotation | Count |
 |------|--------------------------|-------|
 | tug-button.css | 25 svg/color rules — all button variants set `color` on SVG sub-selectors without bg | 25 |
-| tug-pane.css | `.tugcard-loading`, `.tugcard-title`, `.tug-pane[data-focused="true"] .tugcard-title`, `.tug-pane[data-focused="true"] .tugcard-icon`, `.tug-pane[data-focused="false"] .tugcard-icon` | 5 |
+| tug-pane.css | `.tug-pane-loading`, `.tug-pane-title`, `.tug-pane[data-focused="true"] .tug-pane-title`, `.tug-pane[data-focused="true"] .tug-pane-icon`, `.tug-pane[data-focused="false"] .tug-pane-icon` | 5 |
 | tug-tab.css | `.tug-tab`, `.tug-tab-bar .tug-tab-add`, `.tug-tab-bar .tug-tab-overflow-btn` | 3 |
 | tug-menu.css | `.tug-dropdown-item` plus 6 svg sub-selectors for open-state buttons | 7 |
 | tug-badge.css | 10 outlined/ghost variant rules (bg=transparent) | 10 |
@@ -134,18 +134,18 @@ icon is the same background as its parent button state.
 
 ### tug-pane.css — 5 annotations
 
-(Split title row: default `.tugcard-title` vs focused `.tug-pane[data-focused="true"] .tugcard-title`.)
+(Split title row: default `.tug-pane-title` vs focused `.tug-pane[data-focused="true"] .tug-pane-title`.)
 
 | Selector | Property | Element token | Rendering surface |
 |----------|----------|---------------|-------------------|
-| `.tugcard-loading` | `color` | `--tug-base-fg-muted` | `--tug-base-surface-default` |
-| `.tugcard-title` | `color` | `--tugx-pane-title-fg-inactive` | `--tug-base-tab-bg-inactive` |
-| `.tug-pane[data-focused="true"] .tugcard-title` | `color` | `--tugx-pane-title-fg-active` | `--tug-base-tab-bg-active` |
-| `.tug-pane[data-focused="true"] .tugcard-icon` | `color` | `--tugx-pane-title-bar-icon-active` | `--tug-base-tab-bg-active` |
-| `.tug-pane[data-focused="false"] .tugcard-icon` | `color` | `--tugx-pane-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
+| `.tug-pane-loading` | `color` | `--tug-base-fg-muted` | `--tug-base-surface-default` |
+| `.tug-pane-title` | `color` | `--tugx-pane-title-fg-inactive` | `--tug-base-tab-bg-inactive` |
+| `.tug-pane[data-focused="true"] .tug-pane-title` | `color` | `--tugx-pane-title-fg-active` | `--tug-base-tab-bg-active` |
+| `.tug-pane[data-focused="true"] .tug-pane-icon` | `color` | `--tugx-pane-title-bar-icon-active` | `--tug-base-tab-bg-active` |
+| `.tug-pane[data-focused="false"] .tug-pane-icon` | `color` | `--tugx-pane-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
 
-> `.tugcard-accessory` has `background-color: var(--tug-base-surface-default)` in the same rule → strategy 1, no annotation needed.
-> `.tugcard-title-bar ::selection` and `.tugcard-title-bar::selection` use `color: inherit` — no specific token → no annotation needed.
+> `.tug-pane-accessory` has `background-color: var(--tug-base-surface-default)` in the same rule → strategy 1, no annotation needed.
+> `.tug-pane-title-bar ::selection` and `.tug-pane-title-bar::selection` use `color: inherit` — no specific token → no annotation needed.
 
 ---
 
@@ -456,7 +456,7 @@ The following rules render on different surfaces depending on state. They requir
 
 | File | Selector | Surfaces |
 |------|----------|---------|
-| tug-pane.css | `.tugcard-title` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
+| tug-pane.css | `.tug-pane-title` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
 
 ---
 
@@ -495,7 +495,7 @@ Per the plan [D02], these files have alias chains requiring flattening:
 - [x] All 23 files surveyed using static analysis (not heuristic tool output)
 - [x] Total distinct rules needing annotation: **143**
 - [x] Each identified rule has a proposed surface token
-- [x] Multi-surface rules identified: 1 (`.tugcard-title`)
+- [x] Multi-surface rules identified: 1 (`.tug-pane-title`)
 - [x] Total vs estimate: 143 vs ~130 estimate. Higher because the estimate did not account for
       button SVG sub-selectors (25 rules) or the 6 tug-menu.css open-state SVG rules. Count is
       well below Risk R01 threshold (160), so no batching of annotation work is required.

@@ -19,7 +19,7 @@
  *   S4. Rapid sequential restores (each gets its own callback)
  *   S5. No false fires: re-renders from non-restore setState don't trigger it
  *   S6. Multiple independent hooks in sibling components
- *   S7. Full persistence context indirection (mirrors real tugcard pattern)
+ *   S7. Full persistence context indirection (mirrors real tug-pane-chrome pattern)
  *   S8. Nested content: hook is in parent wrapper, setState is in grandchild
  *   S9. Content with no onRestore (static) — no false ready signal
  *   S10. Parent applies scroll in the callback — DOM measurements are valid
@@ -387,7 +387,7 @@ describe("S6: Independent sibling components", () => {
 });
 
 // ===========================================================================
-// S7: Full persistence context indirection (mirrors real tugcard)
+// S7: Full persistence context indirection (mirrors real tug-pane-chrome)
 // ===========================================================================
 
 describe("S7: Persistence context indirection", () => {

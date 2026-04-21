@@ -51,15 +51,15 @@ import {
 /**
  * Render UI inside both a ResponderChainManager and a
  * TugPanePortalContext with a mock card element attached to
- * document.body. The `.tugcard-body` child satisfies the inert-
+ * document.body. The `.tug-pane-body` child satisfies the inert-
  * attribute lifecycle effect in TugSheetContent.
  */
 function renderWithChainAndCard(ui: React.ReactElement) {
   const manager = new ResponderChainManager();
   const cardEl = document.createElement("div");
-  cardEl.className = "tugcard";
+  cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
-  cardBody.className = "tugcard-body";
+  cardBody.className = "tug-pane-body";
   cardEl.appendChild(cardBody);
   document.body.appendChild(cardEl);
 
@@ -98,7 +98,7 @@ function getSheetContent(): HTMLElement | null {
 afterEach(() => {
   cleanup();
   // Remove any card elements left in the body by individual tests.
-  document.querySelectorAll(".tugcard").forEach((el) => {
+  document.querySelectorAll(".tug-pane-chrome").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 });

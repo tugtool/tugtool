@@ -137,23 +137,23 @@ export function CardTitleBar({
 
   return (
     <div
-      className="tugcard-title-bar"
+      className="tug-pane-title-bar"
       data-slot="tug-pane-title-bar"
       onPointerDown={handleTitleBarPointerDown}
       onDoubleClick={handleTitleBarDoubleClick}
-      data-testid="tugcard-title-bar"
+      data-testid="tug-pane-title-bar"
     >
       {IconComponent && (
-        <span className="tugcard-icon" data-testid="tugcard-icon">
+        <span className="tug-pane-icon" data-testid="tug-pane-icon">
           {React.createElement(IconComponent)}
         </span>
       )}
 
-      <span className="tugcard-title" data-testid="tugcard-title">
+      <span className="tug-pane-title" data-testid="tug-pane-title">
         {title}
       </span>
 
-      <div className="card-title-bar-controls" data-testid="card-title-bar-controls">
+      <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
         <TugButton
           subtype="icon"
           emphasis="ghost"
@@ -162,7 +162,7 @@ export function CardTitleBar({
           icon={<Ellipsis />}
           onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
           aria-label="Card menu"
-          data-testid="card-title-bar-menu-button"
+          data-testid="tug-pane-title-bar-menu-button"
         />
 
         <TugButton
@@ -175,7 +175,7 @@ export function CardTitleBar({
           onClick={handleCollapseClick}
           aria-label={collapsed ? "Expand card" : "Collapse card"}
           aria-expanded={!collapsed}
-          data-testid="card-title-bar-collapse-button"
+          data-testid="tug-pane-title-bar-collapse-button"
         />
 
         {closable && (
@@ -190,7 +190,7 @@ export function CardTitleBar({
             onPointerUp={handleClosePointerUp}
             onClick={handleCloseClick}
             aria-label="Close card"
-            data-testid="tugcard-close-button"
+            data-testid="tug-pane-close-button"
           />
         )}
       </div>
@@ -204,7 +204,7 @@ export function CardTitleBar({
 
 /**
  * React context: the pane frame's root element (`HTMLDivElement`, the
- * `.tugcard` host). Sheet and tooltip layers portal here so overlays attach
+ * `.tug-pane-chrome` host). Sheet and tooltip layers portal here so overlays attach
  * inside the pane's chrome. Card content outside the `TugPane` tree
  * (e.g. `CardHost`) re-bridges this via `pane-root-registry`.
  */
@@ -287,7 +287,7 @@ const TITLE_BAR_VISIBLE_MIN_Y = CARD_TITLE_BAR_HEIGHT;
 
 const SNAP_GAP_PX = 5;
 
-/** Height of the title bar chrome inside `.tugcard-body` (below the outer frame). */
+/** Height of the title bar chrome inside `.tug-pane-body` (below the outer frame). */
 const HEADER_HEIGHT_PX = 28;
 const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, height: 60 };
 
@@ -1197,7 +1197,7 @@ export function TugPane({
       <TugPanePortalContext value={cardEl}>
         <div
           ref={rootRefCallback}
-          className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
+          className={collapsed ? "tug-pane-chrome tug-pane-chrome--collapsed" : "tug-pane-chrome"}
           data-slot="tug-pane"
           data-pane-id={stackId}
           data-collapsed={collapsed ? "true" : "false"}
@@ -1212,12 +1212,12 @@ export function TugPane({
             onDragStart={handleDragStart}
           />
 
-          <div className="tugcard-body" data-testid="tugcard-body">
+          <div className="tug-pane-body" data-testid="tug-pane-body">
             <ResponderScope>
               <div
                 ref={accessoryRef}
-                className="tugcard-accessory"
-                data-testid="tugcard-accessory"
+                className="tug-pane-accessory"
+                data-testid="tug-pane-accessory"
                 data-pane-id={stackId}
                 style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
               >

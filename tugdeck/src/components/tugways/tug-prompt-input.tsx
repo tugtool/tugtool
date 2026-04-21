@@ -326,7 +326,7 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
 // ---- Persistence helper ----
 
 /**
- * Internal component that registers tugcard persistence for TugPromptInput.
+ * Internal component that registers tug-pane-chrome persistence for TugPromptInput.
  * Conditionally rendered (only when persistState=true) so the hook isn't
  * called for test harness editors, avoiding registration collisions.
  *

@@ -144,7 +144,7 @@ describe("TugPane – onStackActivated", () => {
     expect(onStackActivated.mock.calls[0][0]).toBe("focus-test-stack");
   });
 
-  it("also fires onStackActivated when pointer-down hits inner chrome (tugcard body)", () => {
+  it("also fires onStackActivated when pointer-down hits inner chrome (tug-pane-chrome body)", () => {
     const onStackActivated = mock((_id: string) => {});
 
     const { container } = render(
@@ -156,7 +156,7 @@ describe("TugPane – onStackActivated", () => {
       )
     );
 
-    const body = container.querySelector("[data-testid='tugcard-body']") as HTMLElement;
+    const body = container.querySelector("[data-testid='tug-pane-body']") as HTMLElement;
     act(() => {
       fireEvent.pointerDown(body);
     });
@@ -184,7 +184,7 @@ describe("TugPane – onClose", () => {
       )
     );
 
-    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']") as HTMLElement;
+    const closeBtn = container.querySelector("[data-testid='tug-pane-close-button']") as HTMLElement;
     act(() => {
       fireEvent.click(closeBtn);
     });

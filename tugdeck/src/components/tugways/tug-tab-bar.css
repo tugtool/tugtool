@@ -328,7 +328,7 @@ body {
 /* Drop-target highlight on single-tab card accessory divs.
    Reveals a visible drop zone for cards with no tab bar.
    [D05] */
-.tugcard-accessory[data-drop-target="true"] {
+.tug-pane-accessory[data-drop-target="true"] {
   min-height: var(--tug-chrome-height);
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
   border-bottom: 2px solid var(--tug7-element-global-fill-normal-accent-rest);

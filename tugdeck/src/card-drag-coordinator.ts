@@ -269,7 +269,7 @@ class CardDragCoordinator {
    *   excluding the source card.
    * Tier 2: allPaneFrameRects -- all .tug-pane[data-pane-id] elements whose
    *   pane id is NOT present in allTabBarRects (i.e., single-tab panes).
-   *   The accessoryElement is the matching .tugcard-accessory[data-pane-id]
+   *   The accessoryElement is the matching .tug-pane-accessory[data-pane-id]
    *   inside each such pane frame, used for drop-target visual feedback.
    *
    * [Spec S04]
@@ -300,7 +300,7 @@ class CardDragCoordinator {
       if (!paneId || paneId === sourcePaneId || tabBarPaneIds.has(paneId)) return;
 
       // Resolve the accessory div for drop-target visual feedback. [D05]
-      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-pane-id="${paneId}"]`);
+      const accessory = el.querySelector<HTMLElement>(`.tug-pane-accessory[data-pane-id="${paneId}"]`);
       if (!accessory) return;
 
       this.allPaneFrameRects.push({

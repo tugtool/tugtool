@@ -20,7 +20,7 @@ Every component in a card falls into one of three categories, declared via the `
 
 ## Rules
 
-**Rule 1: Only selectable components set `user-select: text`.** Copyable and chrome components inherit `user-select: none` from the body. No container element (`.tugcard-content`, `.tug-sheet`, etc.) sets `user-select: text` on behalf of its children.
+**Rule 1: Only selectable components set `user-select: text`.** Copyable and chrome components inherit `user-select: none` from the body. No container element (`.tug-pane-chrome-content`, `.tug-sheet`, etc.) sets `user-select: text` on behalf of its children.
 
 **Rule 2: Select-all is always scoped to the first responder.** When ⌘A is dispatched through the responder chain, it is handled by the focused selectable component. The card does not handle `selectAll` — if no selectable component is focused, the action is unhandled (no-op).
 
@@ -145,7 +145,7 @@ On card switch (`activateCard`):
 
 ### Registration
 
-Cards register via `useSelectionBoundary(cardId, contentRef)` → `selectionGuard.registerBoundary(cardId, element)` in `useLayoutEffect`. The boundary element is `.tugcard-content`.
+Cards register via `useSelectionBoundary(cardId, contentRef)` → `selectionGuard.registerBoundary(cardId, element)` in `useLayoutEffect`. The boundary element is `.tug-pane-chrome-content`.
 
 ### Save/Restore for Tab Switches
 

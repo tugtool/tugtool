@@ -62,7 +62,7 @@
 
 **D08.** TugButton has two modes: *direct-action* (`onClick` prop) and *chain-action* (`action` prop dispatches into responder chain). [L11]
 
-**D15.** Tugcard is composition, not inheritance. It assembles chrome (header, icon, accessory, content) around card content provided by the caller. [L09]
+**D15.** TugPane is composition, not inheritance. It assembles chrome (title bar, tab strip, accessory, content region) around the active Card's content, rendered via `CardHost`. [L09]
 
 **D16.** Card data access via `useCardData()` hook, not render props.
 
@@ -116,7 +116,7 @@
 
 **D30.** Tab bar visible only when card has multiple tabs.
 
-**D31.** Tabs are a Tugcard composition feature (chrome layer), not a CardFrame feature (geometry layer). [L09, L10]
+**D31.** Tabs are a TugPane chrome feature — a UI affordance that appears when a Pane holds more than one Card. Not a data concept. [L09, L10, L25]
 
 **D44.** Progressive tab overflow: three stages — all visible, inactive tabs collapse to icon-only, overflow into dropdown.
 
@@ -146,7 +146,7 @@
 
 **D56.** Border collapse: snap positions offset by border width so adjacent cards share a single visual line.
 
-**D57.** Interior set shadows hidden via `clip-path: inset()` on `.tugcard`. Exterior edges extend by `SHADOW_EXTEND_PX`.
+**D57.** Interior set shadows hidden via `clip-path: inset()` on `.tug-pane-chrome`. Exterior edges extend by `SHADOW_EXTEND_PX`.
 
 **D58.** Active/inactive shadow tokens: `--tug-card-shadow-active` (focused) and `--tug-card-shadow-inactive` (unfocused).
 

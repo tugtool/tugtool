@@ -286,7 +286,7 @@ export interface TugSheetContentProps {
  * TugSheetContent — the sheet panel, overlay, focus scope, and portal logic.
  *
  * Portals into the pane root element (from TugPanePortalContext). Sets `inert`
- * on `.tugcard-body` for card-scoped modality. Restores focus to the trigger
+ * on `.tug-pane-body` for card-scoped modality. Restores focus to the trigger
  * element on close.
  */
 export function TugSheetContent({
@@ -431,10 +431,10 @@ export function TugSheetContent({
   // Track trigger element for focus restoration on close.
   const triggerElRef = useRef<Element | null>(null);
 
-  // Inertness management: set/remove `inert` on .tugcard-body synchronized with open state [L03].
+  // Inertness management: set/remove `inert` on .tug-pane-body synchronized with open state [L03].
   useLayoutEffect(() => {
     if (!cardEl) return;
-    const body = cardEl.querySelector(".tugcard-body");
+    const body = cardEl.querySelector(".tug-pane-body");
     if (!body) return;
 
     if (open) {

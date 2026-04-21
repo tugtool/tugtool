@@ -110,16 +110,16 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
 
 /**
  * Render TideCardContent inside a ResponderChainProvider and a mock
- * TugPanePortalContext. The portal target is a detached `.tugcard`
- * element with a `.tugcard-body` child (required by TugSheet's inert
+ * TugPanePortalContext. The portal target is a detached `.tug-pane-chrome`
+ * element with a `.tug-pane-body` child (required by TugSheet's inert
  * lifecycle effect). The element is attached to document.body so
  * portaled content (the picker sheet) is queryable via the DOM.
  */
 function renderTideCard(cardId: string) {
   const cardEl = document.createElement("div");
-  cardEl.className = "tugcard";
+  cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
-  cardBody.className = "tugcard-body";
+  cardBody.className = "tug-pane-body";
   cardEl.appendChild(cardBody);
   document.body.appendChild(cardEl);
 
@@ -165,7 +165,7 @@ afterEach(() => {
   for (const domain of Object.keys(tugbankStore)) {
     delete tugbankStore[domain];
   }
-  document.querySelectorAll(".tugcard").forEach((el) => {
+  document.querySelectorAll(".tug-pane-chrome").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 });

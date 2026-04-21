@@ -81,9 +81,9 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
 
 function renderTideCard(cardId: string) {
   const cardEl = document.createElement("div");
-  cardEl.className = "tugcard";
+  cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
-  cardBody.className = "tugcard-body";
+  cardBody.className = "tug-pane-body";
   cardEl.appendChild(cardBody);
   document.body.appendChild(cardEl);
 
@@ -128,7 +128,7 @@ function resolveAllWaapiAnimations() {
 afterEach(() => {
   cleanup();
   cardSessionBindingStore.clearBinding(CARD_ID);
-  document.querySelectorAll(".tugcard").forEach((el) => {
+  document.querySelectorAll(".tug-pane-chrome").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
   const mock = (global as unknown as {

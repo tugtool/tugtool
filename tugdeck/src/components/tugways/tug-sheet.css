@@ -32,7 +32,7 @@ body {
 .tug-sheet-overlay {
   /* @tug-renders-on: --tugx-sheet-overlay-bg */
   background-color: var(--tugx-sheet-overlay-bg);
-  /* Scoped to the card — absolute positioning within .tugcard */
+  /* Scoped to the card — absolute positioning within .tug-pane-chrome */
   position: absolute;
   inset: 0;
   /* Sit below the card title bar */

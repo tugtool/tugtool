@@ -1786,7 +1786,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // --- Card title bar / tab chrome (tug-pane.css, tug-tab.css) ---
   // These pairings cover the title-bar foreground token (fg-default) used by other
   // title-bar elements (icons, labels) on the tab-bar backgrounds. The card
-  // title itself (.tugcard-title) now uses its own dedicated token
+  // title itself (.tug-pane-title) now uses its own dedicated token
   // (element-card-title-normal-plain-rest) — see Step 7 additions below.
   {
     element: "--tug7-element-global-text-normal-default-rest",
@@ -2205,7 +2205,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Card title token pairings (Step 7 additions)
-  // element-card-title-normal-plain-rest renders as .tugcard-title text
+  // element-card-title-normal-plain-rest renders as .tug-pane-title text
   // on both active and inactive tab-bar backgrounds (tug-pane.css [D06]).
   // =========================================================================
   {

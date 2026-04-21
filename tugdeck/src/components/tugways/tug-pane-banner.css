@@ -16,7 +16,7 @@
 /**
  * tug-pane-banner.css — styles for TugPaneBanner.
  *
- * Pane-scoped modal banner. Positioned absolutely inside `.tugcard`, clipped
+ * Pane-scoped modal banner. Positioned absolutely inside `.tug-pane-chrome`, clipped
  * below the title bar via `top: var(--tug-chrome-height)` — same technique
  * as .tug-sheet-clip so chrome height stays consistent across pane-modal
  * surfaces.
@@ -50,7 +50,7 @@ body {
   --tugx-pane-banner-backdrop-bg:   var(--tug7-surface-overlay-primary-normal-dim-rest);
 }
 
-/* ---- Banner root — absolute within .tugcard, below title bar ---- */
+/* ---- Banner root — absolute within .tug-pane-chrome, below title bar ---- */
 
 .tug-pane-banner {
   position: absolute;

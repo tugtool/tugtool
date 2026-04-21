@@ -23,9 +23,9 @@ import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 
 function renderInCard(ui: React.ReactElement) {
   const cardEl = document.createElement("div");
-  cardEl.className = "tugcard";
+  cardEl.className = "tug-pane-chrome";
   const cardBody = document.createElement("div");
-  cardBody.className = "tugcard-body";
+  cardBody.className = "tug-pane-body";
   cardEl.appendChild(cardBody);
   document.body.appendChild(cardEl);
 
@@ -58,7 +58,7 @@ function resolveAllWaapiAnimations() {
 
 afterEach(() => {
   cleanup();
-  document.querySelectorAll(".tugcard").forEach((el) => {
+  document.querySelectorAll(".tug-pane-chrome").forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
   const mock = (global as unknown as {
@@ -93,7 +93,7 @@ describe("TugPaneBanner — mount + props", () => {
     // Visible → mounted (one layout-effect round to set mounted=true).
     act(() => {
       rerender(
-        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
           <TugPaneBanner visible={true} message="m" />
         </TugPanePortalContext.Provider>,
       );
@@ -104,7 +104,7 @@ describe("TugPaneBanner — mount + props", () => {
     // animation; only after .finished resolves does it unmount.
     act(() => {
       rerender(
-        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
           <TugPaneBanner visible={false} message="m" />
         </TugPanePortalContext.Provider>,
       );
@@ -143,10 +143,10 @@ describe("TugPaneBanner — mount + props", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. inert appears on .tugcard-body when visible=true; disappears on exit
+  // 4. inert appears on .tug-pane-body when visible=true; disappears on exit
   // -------------------------------------------------------------------------
 
-  it("T-CARDBANNER-04: inert on .tugcard-body while mounted; released after exit animation", async () => {
+  it("T-CARDBANNER-04: inert on .tug-pane-body while mounted; released after exit animation", async () => {
     const { cardBody, rerender, cleanupCard } = renderInCard(
       <TugPaneBanner visible={true} message="m" />,
     );
@@ -154,7 +154,7 @@ describe("TugPaneBanner — mount + props", () => {
 
     act(() => {
       rerender(
-        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
           <TugPaneBanner visible={false} message="m" />
         </TugPanePortalContext.Provider>,
       );
@@ -176,7 +176,7 @@ describe("TugPaneBanner — mount + props", () => {
   // 5. contained=true skips inert application
   // -------------------------------------------------------------------------
 
-  it("T-CARDBANNER-05: contained=true leaves .tugcard-body interactive", () => {
+  it("T-CARDBANNER-05: contained=true leaves .tug-pane-body interactive", () => {
     const { cardBody, cleanupCard } = renderInCard(
       <TugPaneBanner visible={true} contained={true} message="m" />,
     );
@@ -220,7 +220,7 @@ describe("TugPaneBanner — mount + props", () => {
 
     act(() => {
       rerender(
-        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tug-pane-chrome")!}>
           <TugPaneBanner visible={true} tone="default" message="m" />
         </TugPanePortalContext.Provider>,
       );

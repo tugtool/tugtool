@@ -175,7 +175,7 @@ The *first responder* is the node the walk starts from. Exactly one node (or non
 
 The first responder is promoted in four ways, in rough order of how often you'll see each:
 
-1. **Pointer down.** A document-level capture-phase `pointerdown` listener installed by `ResponderChainProvider` walks from `event.target` up through DOM ancestors, looking for an element with `data-responder-id` whose value is a registered node. The innermost match becomes first responder. Click inside the editor → editor promotes. Click on the card chrome → card promotes. **Exception:** controls marked with `data-tug-focus="refuse"` (buttons, checkboxes, switches, sliders, etc.) are skipped — the first responder does not change when a focus-refusing control is clicked. See [Focus acceptance](#focus-acceptance) below.
+1. **Pointer down.** A document-level capture-phase `pointerdown` listener installed by `ResponderChainProvider` walks from `event.target` up through DOM ancestors, looking for an element with `data-responder-id` whose value is a registered node. The innermost match becomes first responder. Click inside the editor → editor promotes. Click on the pane chrome → pane promotes. **Exception:** controls marked with `data-tug-focus="refuse"` (buttons, checkboxes, switches, sliders, etc.) are skipped — the first responder does not change when a focus-refusing control is clicked. See [Focus acceptance](#focus-acceptance) below.
 
 2. **Focus in.** The same walk on a document-level capture-phase `focusin` listener. Needed because keyboard-only users reach responders via Tab, programmatic `.focus()`, or the browser's initial focus restoration on page load — none of which fire a pointerdown. `focusin` bubbles (unlike `focus`), so one listener catches every descendant.
 
