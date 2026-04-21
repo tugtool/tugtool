@@ -996,6 +996,12 @@ Each commit: `bun x tsc --noEmit` clean, `bun test` green with test count ≥ po
 - Do not delete tests. If a test is meaningless under the new model, migrate it rather than remove it.
 - If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
 
+**Status: complete (2026-04-20).** Manual smoke passed. Commit trail:
+- Piece 1 — portal identity preservation: `0c01760f`, `f4d3ae7c`, `45029359`, `cf936610`
+- Piece 2 — Card/CardStack rename + data-model split: `4fb3695e`, `4d1191f0`, `8f63ef3a`, `a629f490`, `64ee223d`
+- Piece 2.5 — audit & regression cleanup: `2d9f2590`, `821c96d1`, `35cdaada`, `193599d2`, `abebba83`
+- Piece 3 — portal containment + invariant tests: `f922022c`
+
 #### Step 11.6.1b — First-responder `cardDidActivate` semantics + remove card-level focus duplication {#step-11-6-1b}
 
 **Motivation:** With 11.6.1a in place, card identity is preserved across all movement operations. The last piece is making `cardDidActivate` / `cardWillDeactivate` fire on the right transitions: not just when a stack becomes the active stack, but whenever **the composite bit "this card is the first responder"** changes.
