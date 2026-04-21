@@ -39,13 +39,13 @@ const NAMED_GRAY_NAMES = new Set(Object.keys(NAMED_GRAYS));
 // ---------------------------------------------------------------------------
 
 const TUGX_SHORT_NAMES = new Set<string>([
-  // pane chrome (tug-pane.css); trailing "card-*" entries are transitional until those token families rename too
-  "card-accessory-bg",
-  "card-accessory-border",
-  "card-content-dim-desat-amount",
-  "card-content-dim-desat-color",
-  "card-content-dim-wash-blend",
-  "card-content-dim-wash-color",
+  // pane chrome aliases (tug-pane.css)
+  "pane-accessory-bg",
+  "pane-accessory-border",
+  "pane-content-dim-desat-amount",
+  "pane-content-dim-desat-color",
+  "pane-content-dim-wash-blend",
+  "pane-content-dim-wash-color",
   "pane-control-off-bg-active",
   "pane-control-off-bg-hover",
   "pane-control-off-bg-rest",
@@ -64,10 +64,10 @@ const TUGX_SHORT_NAMES = new Set<string>([
   "pane-control-on-fg-active",
   "pane-control-on-fg-hover",
   "pane-control-on-fg-rest",
-  "card-findbar-bg",
-  "card-findbar-border",
-  "card-findbar-match",
-  "card-findbar-match-active",
+  "pane-findbar-bg",
+  "pane-findbar-border",
+  "pane-findbar-match",
+  "pane-findbar-match-active",
   "pane-bg",
   "pane-border",
   "pane-dim-overlay",

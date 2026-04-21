@@ -87,19 +87,19 @@ body {
   --tugx-pane-control-off-border-hover: var(--tug7-element-card-border-normal-muted-hover);
   --tugx-pane-control-off-border-active: var(--tug7-element-card-border-normal-muted-active);
 
-  /* --- Card Inactive Content Overlay (two layers) --- */
-  --tugx-card-content-dim-desat-color: var(--tug7-effect-card-desat-normal-dim-inactive);
-  --tugx-card-content-dim-desat-amount: var(--tug7-effect-card-desat-normal-amount-inactive);
-  --tugx-card-content-dim-wash-color: var(--tug7-effect-card-wash-normal-dim-inactive);
-  --tugx-card-content-dim-wash-blend: var(--tug7-effect-card-wash-normal-blend-inactive);
+  /* --- Pane inactive content overlay (two layers; ::before/::after on .tugcard) --- */
+  --tugx-pane-content-dim-desat-color: var(--tug7-effect-card-desat-normal-dim-inactive);
+  --tugx-pane-content-dim-desat-amount: var(--tug7-effect-card-desat-normal-amount-inactive);
+  --tugx-pane-content-dim-wash-color: var(--tug7-effect-card-wash-normal-dim-inactive);
+  --tugx-pane-content-dim-wash-blend: var(--tug7-effect-card-wash-normal-blend-inactive);
 
-  /* --- Card Accessory / Findbar --- */
-  --tugx-card-accessory-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
-  --tugx-card-accessory-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-card-findbar-bg: var(--tug7-surface-field-primary-normal-plain-focus);
-  --tugx-card-findbar-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-card-findbar-match: var(--tug7-surface-card-primary-normal-findmatch-rest);
-  --tugx-card-findbar-match-active: var(--tug7-surface-card-primary-normal-findmatch-active);
+  /* --- Pane accessory / findbar (aliases for chrome that uses these surfaces) --- */
+  --tugx-pane-accessory-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
+  --tugx-pane-accessory-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-findbar-bg: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-pane-findbar-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-findbar-match: var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-pane-findbar-match-active: var(--tug7-surface-card-primary-normal-findmatch-active);
 }
 
 /* ============================================================================
@@ -363,25 +363,25 @@ body {
 /* Layer 1: partial saturation reduction — desaturates colored content.
    Opacity controls the strength: 0 = no effect, 1 = full desaturation.
    Positioned on .tugcard (not .tug-pane-content) so the overlay covers the
-   full card bounds and does not scroll with content. */
+   full pane chrome bounds and does not scroll with content. */
 .tug-pane[data-focused="false"] .tugcard::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-color: var(--tugx-card-content-dim-desat-color);
+  background-color: var(--tugx-pane-content-dim-desat-color);
   mix-blend-mode: saturation;
-  opacity: var(--tugx-card-content-dim-desat-amount);
+  opacity: var(--tugx-pane-content-dim-desat-amount);
   pointer-events: none;
   z-index: 10;
 }
 
-/* Layer 2: lightness wash — dims achromatic content (screen for dark, multiply for light) */
+/* Layer 2: lightness wash — dims achromatic content when the pane is unfocused */
 .tug-pane[data-focused="false"] .tugcard::after {
   content: "";
   position: absolute;
   inset: 0;
-  background-color: var(--tugx-card-content-dim-wash-color);
-  mix-blend-mode: var(--tugx-card-content-dim-wash-blend);
+  background-color: var(--tugx-pane-content-dim-wash-color);
+  mix-blend-mode: var(--tugx-pane-content-dim-wash-blend);
   pointer-events: none;
   z-index: 11;
 }

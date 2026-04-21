@@ -64,7 +64,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 6. **Done (Step 5).** CSS frame tokens → `--tugx-pane-bg`, `--tugx-pane-border`, `--tugx-pane-shadow-active|inactive`, `--tugx-pane-dim-overlay`.
 7. **Done (Step 6).** Title-bar chrome: `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*` (and docs swept for legacy `--tug-card-title-bar-*` names). No non-`x` `--tug-pane-title-bar-*` definers in source — pairing docs use the `--tugx-*` aliases that `tug-pane.css` defines.
 8. **Done (Step 7).** CSS control tokens: `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*` (was `--tugx-card-control-*`).
-8a. Pane content-dim / accessory / findbar tokens (`--tugx-card-content-dim-*`, `--tugx-card-accessory-*`, `--tugx-card-findbar-*`) → `--tugx-pane-*`. Surfaced by Step 0 ([Appendix A.3](#appendix-a)).
+8a. **Done (Step 7a).** Content-dim / accessory / findbar → `--tugx-pane-content-dim-*`, `--tugx-pane-accessory-*`, `--tugx-pane-findbar-*`.
 9. Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
 10. Author `tuglaws/pane-model.md` + add entry to `tuglaws/tuglaws.md` laws list.
 11. Integration checkpoint.
@@ -421,9 +421,10 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 **References:** [D02] Pane tokens. Surfaced by the Step 0 audit ([Appendix A.3](#appendix-a)) — these tokens describe pane chrome despite the `card-` prefix (the inactive-pane dim effect, the pane's accessory strip, the pane-scoped findbar).
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/tug-pane.css` — definitions (lines 91–102) + consumers (lines 371–384 for content-dim; accessory/findbar consumers within the same file where applicable).
-- Any JSDoc `@tug-pairings` header rows that name these tokens.
-- `tugdeck/docs/pairing-audit-results.md` — update if referenced.
+- `tugdeck/src/components/tugways/tug-pane.css` — definitions in `body {}` + `::before`/`::after` inactive dim consumers; accessory/findbar aliases are defined for future chrome (`.tugcard-accessory` still uses `--tugx-pane-bg` / `--tugx-pane-border`).
+- `tugdeck/scripts/token-classify.ts` — `pane-content-dim-*`, `pane-accessory-*`, `pane-findbar-*` short names.
+- Any JSDoc `@tug-pairings` header rows that name these tokens (none today beyond `tug-pane.css` body).
+- `tugdeck/docs/pairing-audit-results.md` — update if referenced (no hits).
 
 **Token rename:**
 
@@ -441,13 +442,13 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 | `--tugx-card-findbar-match-active` | `--tugx-pane-findbar-match-active` |
 
 **Tasks:**
-- [ ] Rename definitions + every consumer.
-- [ ] Update `@tug-pairings` block and `docs/pairing-audit-results.md` as applicable.
+- [x] Rename definitions + every consumer.
+- [x] Update `@tug-pairings` block and `docs/pairing-audit-results.md` as applicable (no pairing-audit rows named these tokens).
 
 **Checkpoint:**
-- [ ] tsc / tests / tokens-lint all green.
-- [ ] `rg "--tugx-card-content-dim-|--tugx-card-accessory-|--tugx-card-findbar-" tugdeck` returns zero matches.
-- [ ] Manual smoke: inactive-pane dim overlay renders; accessory + findbar render where they appear (findbar in gallery/tide cards).
+- [x] tsc / tests / tokens-lint all green.
+- [x] `rg "--tugx-card-content-dim-|--tugx-card-accessory-|--tugx-card-findbar-" tugdeck` returns zero matches.
+- [x] Manual smoke: inactive-pane dim overlay renders; accessory + findbar render where they appear (findbar in gallery/tide cards).
 
 ---
 
@@ -661,17 +662,17 @@ Non-CSS informational surfaces (docs + scripts):
 - `--tugx-pane-control-off-bg-rest` / `-hover` / `-active`
 - `--tugx-pane-control-off-border-rest` / `-hover` / `-active`
 
-**Step 7a — Content-dim / accessory / findbar tokens (10)** — previously out of the plan's enumeration; all pane-chrome despite the `card-` prefix:
-- `--tugx-card-content-dim-desat-color`
-- `--tugx-card-content-dim-desat-amount`
-- `--tugx-card-content-dim-wash-color`
-- `--tugx-card-content-dim-wash-blend`
-- `--tugx-card-accessory-bg`
-- `--tugx-card-accessory-border`
-- `--tugx-card-findbar-bg`
-- `--tugx-card-findbar-border`
-- `--tugx-card-findbar-match`
-- `--tugx-card-findbar-match-active`
+**Step 7a — Content-dim / accessory / findbar tokens (10):** ✓ `--tugx-pane-*`
+- `--tugx-pane-content-dim-desat-color`
+- `--tugx-pane-content-dim-desat-amount`
+- `--tugx-pane-content-dim-wash-color`
+- `--tugx-pane-content-dim-wash-blend`
+- `--tugx-pane-accessory-bg`
+- `--tugx-pane-accessory-border`
+- `--tugx-pane-findbar-bg`
+- `--tugx-pane-findbar-border`
+- `--tugx-pane-findbar-match`
+- `--tugx-pane-findbar-match-active`
 
 **Step 8 — Banner tokens (7):**
 - `--tugx-card-banner-strip-bg`
@@ -682,4 +683,4 @@ Non-CSS informational surfaces (docs + scripts):
 - `--tugx-card-banner-detail-border`
 - `--tugx-card-banner-backdrop-bg`
 
-**Totals:** 5 frame + 9 title-bar + 18 control + 10 content-dim/accessory/findbar + 7 banner = **49 `--tugx-card-*` tokens in source CSS**.
+**Totals (naming):** 5 frame + 9 title-bar + 18 control + 10 content-dim/accessory/findbar use **`--tugx-pane-*`** after Steps 5–7a. **7** `--tugx-card-banner-*` tokens remain in source until Step 8 (`tug-pane-banner.css`).
