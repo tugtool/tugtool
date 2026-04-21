@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
-import * as registry from "@/components/chrome/card-content-registry";
+import * as windowContentRegistry from "@/components/chrome/window-content-registry";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { CardState, TugWindowState, DeckState, CardStateBag } from "@/layout-tree";
 import { DeckManagerContext } from "@/deck-manager-context";
@@ -237,7 +237,7 @@ describe("Card content identity preservation (two-table model)", () => {
     probeStats.aliveMount = 0;
     probeStats.aliveUnmount = 0;
     probeStats.mountTotal = 0;
-    registry._resetForTests();
+    windowContentRegistry._resetForTests();
     _resetForTest();
     registerCard({
       componentId: "probe-hello",
@@ -347,8 +347,8 @@ describe("Card content identity preservation (two-table model)", () => {
     // content element, not the target's.
     const movedProbeBefore = document.querySelector('[data-testid="probe-card-move"]');
     expect(movedProbeBefore).not.toBeNull();
-    const sourceHostBefore = registry.getElement("stack-src");
-    const targetHostBefore = registry.getElement("stack-tgt");
+    const sourceHostBefore = windowContentRegistry.getElement("stack-src");
+    const targetHostBefore = windowContentRegistry.getElement("stack-tgt");
     expect(sourceHostBefore).not.toBeNull();
     expect(targetHostBefore).not.toBeNull();
     expect(sourceHostBefore!.contains(movedProbeBefore!)).toBe(true);
@@ -363,7 +363,7 @@ describe("Card content identity preservation (two-table model)", () => {
     // DOM node (identity) — query the same probe element.
     const movedProbeAfter = document.querySelector('[data-testid="probe-card-move"]');
     expect(movedProbeAfter).toBe(movedProbeBefore);
-    const targetHostAfter = registry.getElement("stack-tgt");
+    const targetHostAfter = windowContentRegistry.getElement("stack-tgt");
     expect(targetHostAfter).not.toBeNull();
     expect(targetHostAfter!.contains(movedProbeAfter!)).toBe(true);
   });

@@ -1,12 +1,12 @@
 /**
  * CardPortal — renders `children` into a stable intermediate "slot" DOM
- * element, and moves that slot between host stack content elements via
- * `appendChild` as the portal's `hostStackId` (or the registered host element
- * for that id) changes.
+ * element, and moves that slot between host window content elements via
+ * `appendChild` as the portal's `hostStackId` (window id; or the registered
+ * host element for that id) changes.
  *
  * Why the intermediate slot: `createPortal(children, container)` unmounts
  * children when `container` changes. React treats a different container as
- * a different mount point. To preserve identity across cross-stack moves
+ * a different mount point. To preserve identity across cross-window moves
  * (the whole point of Step 11.6.1a), the portal's container must be stable.
  *
  * The slot (`display: contents`) adds no layout box; its children render as
@@ -20,12 +20,12 @@
 
 import { useState, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import * as registry from "./card-content-registry";
+import * as windowContentRegistry from "./window-content-registry";
 
 export interface CardPortalProps {
-  /** The stackId whose content element should host this portal's DOM output. */
+  /** The window id whose content element should host this portal's DOM output. */
   hostStackId: string;
-  /** The content to render into the host stack's content element. */
+  /** The content to render into the host window's content element. */
   children: React.ReactNode;
 }
 
@@ -42,7 +42,7 @@ function createSlot(): HTMLDivElement {
 }
 
 /**
- * Portal children into the host stack's content element via a stable slot.
+ * Portal children into the host window's content element via a stable slot.
  *
  * Lifecycle:
  *   1. On mount: create slot (detached from DOM), portal children into it.
@@ -58,7 +58,7 @@ export function CardPortal({ hostStackId, children }: CardPortalProps): React.Re
 
   useLayoutEffect(() => {
     function attachToCurrentHost() {
-      const host = registry.getElement(hostStackId);
+      const host = windowContentRegistry.getElement(hostStackId);
       if (!host) {
         // No host registered — detach slot so the orphan DOM is not visible.
         if (slot.parentNode) slot.parentNode.removeChild(slot);
@@ -69,7 +69,7 @@ export function CardPortal({ hostStackId, children }: CardPortalProps): React.Re
     }
 
     attachToCurrentHost();
-    const unsubscribe = registry.subscribe(hostStackId, attachToCurrentHost);
+    const unsubscribe = windowContentRegistry.subscribe(hostStackId, attachToCurrentHost);
 
     return () => {
       unsubscribe();

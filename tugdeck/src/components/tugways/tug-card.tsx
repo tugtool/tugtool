@@ -35,8 +35,8 @@ import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TugTabBar } from "./tug-tab-bar";
 import { useDeckManager } from "../../deck-manager-context";
 import { TugButton } from "./internal/tug-button";
-import * as cardContentRegistry from "../chrome/card-content-registry";
-import * as stackRootRegistry from "../chrome/stack-root-registry";
+import * as windowContentRegistry from "../chrome/window-content-registry";
+import * as windowRootRegistry from "../chrome/window-root-registry";
 
 // ===========================================================================
 // CardTitleBar
@@ -524,20 +524,20 @@ export function Tugcard({
     [store, stackId],
   );
 
-  // Register this stack's content element with the card-content-registry so
+  // Register this window's content element with window-content-registry so
   // CardPortal consumers can route their DOM output into it. The content
   // area is empty in the React tree — `children` is a `CardContentHost`
   // portaled into this div by `CardPortal`.
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    cardContentRegistry.register(stackId, el);
+    windowContentRegistry.register(stackId, el);
     return () => {
-      cardContentRegistry.unregister(stackId);
+      windowContentRegistry.unregister(stackId);
     };
   }, [stackId]);
 
-  // Register this stack's root element with stack-root-registry so
+  // Register this window's root element with window-root-registry so
   // CardContentHost (which lives at the deck level in the React tree and
   // therefore cannot see TugcardPortalContext directly) can re-provide
   // that context with the correct element. Re-registered whenever cardEl
@@ -545,9 +545,9 @@ export function Tugcard({
   // the element populated).
   useLayoutEffect(() => {
     if (!cardEl) return;
-    stackRootRegistry.register(stackId, cardEl);
+    windowRootRegistry.register(stackId, cardEl);
     return () => {
-      stackRootRegistry.unregister(stackId);
+      windowRootRegistry.unregister(stackId);
     };
   }, [stackId, cardEl]);
 
@@ -851,7 +851,7 @@ export function Tugcard({
               providers (feed data, property store, persistence, dirty-mark)
               are provided by the TabContentHost passed as `children` from
               DeckCanvas. This div remains the registered portal target for
-              card-content-registry (see the useLayoutEffect above). */}
+              window-content-registry (see the useLayoutEffect above). */}
           <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
             {children}
           </div>

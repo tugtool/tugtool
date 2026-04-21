@@ -299,19 +299,19 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Consumers: `card-portal.tsx`, `card-content-host.tsx`, `tug-card.tsx`, tests.
 
 **Tasks:**
-- [ ] Rename both files.
-- [ ] Rename keys: every `stackId` parameter in `register`/`unregister`/`getElement`/`subscribe` → `windowId`.
-- [ ] Update JSDoc to reference windows, not stacks.
-- [ ] Update every import.
+- [x] Rename both files.
+- [x] Rename keys: every `stackId` parameter in `register`/`unregister`/`getElement`/`subscribe` → `windowId`.
+- [x] Update JSDoc to reference windows, not stacks.
+- [x] Update every import.
 
 **Tests:**
-- [ ] `card-content-registry.test.ts` renamed to `window-content-registry.test.ts`; tests pass.
-- [ ] `card-portal.test.tsx` passes.
+- [x] `card-content-registry.test.ts` renamed to `window-content-registry.test.ts`; tests pass.
+- [x] `card-portal.test.tsx` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "card-content-registry|stack-root-registry" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "card-content-registry|stack-root-registry" tugdeck/src` returns zero matches.
 
 ---
 

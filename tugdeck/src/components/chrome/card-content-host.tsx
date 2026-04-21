@@ -5,16 +5,16 @@
  * scroll/selection listeners, FeedStore subscriptions).
  *
  * The component lives at the deck level in the React tree; its DOM output
- * is portaled into the host stack's content `<div>` via `CardPortal`, so
- * React-tree position (and therefore identity) is stable across cross-stack
+ * is portaled into the host window's content `<div>` via `CardPortal`, so
+ * React-tree position (and therefore identity) is stable across cross-window
  * moves — the mechanism that preserves tide card sessions across detach /
- * merge / stack-to-stack moves.
+ * merge / window-to-window moves.
  *
  * Render shape: wraps `registration.contentFactory(cardId)` in the four
  * per-content context providers (`TugcardDataProvider`,
  * `TugcardPropertyContext`, `TugcardPersistenceContext`,
  * `TugcardDirtyContext`) plus a re-bridged `TugcardPortalContext`
- * (looked up from `stack-root-registry`) and a responder scope keyed by
+ * (looked up from `window-root-registry`) and a responder scope keyed by
  * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
  * resolve here.
  *
@@ -39,21 +39,21 @@ import { getConnection } from "../../lib/connection-singleton";
 import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
 import type { PropertyStore } from "../tugways/property-store";
 import type { CardStateBag } from "../../layout-tree";
-import * as cardContentRegistry from "./card-content-registry";
-import * as stackRootRegistry from "./stack-root-registry";
+import * as windowContentRegistry from "./window-content-registry";
+import * as windowRootRegistry from "./window-root-registry";
 import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
 export interface CardContentHostProps {
-  /** Stable identity of this card — survives cross-stack moves. */
+  /** Stable identity of this card — survives cross-window moves. */
   cardId: string;
-  /** The stack currently hosting this card. Used to locate the content element and for the workspace binding. */
+  /** The window currently hosting this card. Used to locate the content element and for the workspace binding. */
   hostStackId: string;
   /** The registry componentId that produces this card's content via `contentFactory`. */
   componentId: string;
   /**
-   * Whether this card is the active card within its host stack. When false,
+   * Whether this card is the active card within its host window. When false,
    * the content mounts and stays alive but is hidden via `display: none` so
    * that identity (React state, session connections, scroll position)
    * survives across card switches and cross-stack moves. Defaults to `true`.
@@ -62,28 +62,28 @@ export interface CardContentHostProps {
 }
 
 /**
- * Look up the host stack's content element from the registry, reactively:
+ * Look up the host window's content element from the registry, reactively:
  * re-fires when the element is registered, replaced, or unregistered.
  */
 function useHostContentElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => cardContentRegistry.subscribe(hostStackId, cb),
-    () => cardContentRegistry.getElement(hostStackId),
+    (cb) => windowContentRegistry.subscribe(hostStackId, cb),
+    () => windowContentRegistry.getElement(hostStackId),
     () => null,
   );
 }
 
 /**
- * Look up the host stack's root element from the stack-root-registry,
+ * Look up the host window's root element from `window-root-registry`,
  * reactively. Used to bridge `TugcardPortalContext` — card content needs
- * access to its host stack's root `<div>` for sheets and tooltips that
+ * access to its host window's root `<div>` for sheets and tooltips that
  * portal into it, and CardContentHost cannot consume the provider
  * directly because it lives outside Tugcard's React tree.
  */
 function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => stackRootRegistry.subscribe(hostStackId, cb),
-    () => stackRootRegistry.getElement(hostStackId),
+    (cb) => windowRootRegistry.subscribe(hostStackId, cb),
+    () => windowRootRegistry.getElement(hostStackId),
     () => null,
   );
 }
@@ -305,10 +305,10 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
   // here so those dispatches resolve to this host and write through to the
   // content's PropertyStore.
   // CardContentHost is rendered at the deck level in the React tree
-  // (flat `cards.map` in DeckCanvas) and portaled into its host stack's
+  // (flat `cards.map` in DeckCanvas) and portaled into its host window's
   // content div via CardPortal. Without an explicit parentId override
   // the responder node's parent would follow the React tree — pointing
-  // at `deck-canvas` rather than at the host stack's tug-card — and
+  // at `deck-canvas` rather than at the host window's tug-card — and
   // the chain walk from `firstResponderId = cardId` would skip every
   // tug-card handler. Passing `parentId: hostStackId` re-parents the
   // chain to match the portaled DOM layout so `NEXT_TAB` /
@@ -336,11 +336,11 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
   }
 
   // DOM output routes through `CardPortal` so children land inside the host
-  // stack's `tugcard-content` div. The portal's stable-slot pattern preserves
-  // identity when the portal re-roots to a different host stack — the
+  // window's `tugcard-content` div. The portal's stable-slot pattern preserves
+  // identity when the portal re-roots to a different host window — the
   // mechanism that keeps tide card sessions alive across detach/merge.
   //
-  // Non-active cards within a stack are hidden via `display: none` on the
+  // Non-active cards within a window are hidden via `display: none` on the
   // wrapper so every card remains mounted (identity survives card switches
   // too) without affecting layout.
   return (
@@ -365,7 +365,7 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
                       // per-content state (session bindings, property stores,
                       // responder target ids) off this value. `cardId` survives
                       // detach/merge; `hostStackId` changes when the card moves
-                      // between stacks.
+                      // between windows.
                       registration.contentFactory(cardId)
                     ) : (
                       <div className="tugcard-loading" data-testid="tugcard-loading">
