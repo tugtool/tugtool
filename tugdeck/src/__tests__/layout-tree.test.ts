@@ -89,7 +89,7 @@ describe("buildDefaultLayout", () => {
 
 // ---- serialize / deserialize tests (v3 wire format) ----
 
-describe("serialize and deserialize (v3)", () => {
+describe("serialize and deserialize (v4 wire)", () => {
   test("round-trip preserves a single-card stack", () => {
     const card: CardState = {
       id: "card-known-1",
@@ -151,12 +151,12 @@ describe("serialize and deserialize (v3)", () => {
     expect(restored.cards.find((c) => c.id === "card-mt-3")?.closable).toBe(false);
   });
 
-  test("serialize emits version: 3", () => {
+  test("serialize emits version: 4", () => {
     const out = serialize({ cards: [], panes: [] }) as { version: number };
-    expect(out.version).toBe(3);
+    expect(out.version).toBe(4);
   });
 
-  test("v3 round-trip: serialize → deserialize → serialize is stable", () => {
+  test("v4 round-trip: serialize → deserialize → serialize is stable", () => {
     const card: CardState = {
       id: "c1",
       componentId: "terminal",
@@ -190,9 +190,9 @@ describe("serialize and deserialize (v3)", () => {
   });
 });
 
-// ---- v2 wire → v3 (field rename migration on load) ----
+// ---- v2 wire → v4 (via v3 pre-v4 field names on load) ----
 
-describe("v2 → v3 migration", () => {
+describe("v2 → v4 migration", () => {
   test("hand-authored v2 blob deserializes to the same DeckState as equivalent v3 blob", () => {
     const v2 = {
       version: 2 as const,
@@ -231,6 +231,37 @@ describe("v2 → v3 migration", () => {
     };
     expect(deserialize(JSON.stringify(v2), 1920, 1080)).toEqual(
       deserialize(JSON.stringify(v3), 1920, 1080),
+    );
+  });
+
+  test("hand-authored v3 blob (pre-v4 on-disk shape) deserializes to the same DeckState as equivalent v4 blob", () => {
+    const v3 = {
+      version: 3 as const,
+      cards: [
+        { id: "c1", componentId: "hello", title: "C1", closable: true },
+        { id: "c2", componentId: "hello", title: "C2", closable: true },
+      ],
+      windows: [
+        {
+          id: "s1",
+          position: { x: 10, y: 20 },
+          size: { width: 400, height: 300 },
+          cardIds: ["c1", "c2"],
+          activeCardId: "c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activeWindowId: "s1",
+    };
+    const v4 = {
+      version: 4 as const,
+      cards: v3.cards,
+      panes: v3.windows,
+      activePaneId: "s1",
+    };
+    expect(deserialize(JSON.stringify(v3), 1920, 1080)).toEqual(
+      deserialize(JSON.stringify(v4), 1920, 1080),
     );
   });
 });
@@ -293,7 +324,7 @@ describe("v1 → two-table migration", () => {
     expect(restored.cards.find((c) => c.id === "t3")?.closable).toBe(false);
   });
 
-  test("v1 → two-table round-trip: hand-authored v1 loads, save emits version: 3", () => {
+  test("v1 → two-table round-trip: hand-authored v1 loads, save emits version: 4", () => {
     const v1 = {
       version: 5,
       cards: [
@@ -321,7 +352,7 @@ describe("v1 → two-table migration", () => {
       version: number;
       focusedCardId?: string;
     };
-    expect(saved.version).toBe(3);
+    expect(saved.version).toBe(4);
     expect(saved.focusedCardId).toBeUndefined();
   });
 
@@ -383,11 +414,11 @@ describe("DeckState focusedCardId persistence", () => {
     expect("focusedCardId" in blob).toBe(false);
   });
 
-  test("parseV3 ignores focusedCardId if present in a v3 blob", () => {
+  test("parseV4 ignores focusedCardId if present in a v4 blob", () => {
     const withFocused = {
-      version: 3,
+      version: 4,
       cards: [],
-      windows: [],
+      panes: [],
       focusedCardId: "card-abc",
     };
     const restored = deserialize(JSON.stringify(withFocused), 1920, 1080);
@@ -494,6 +525,13 @@ describe("deserialize edge cases", () => {
     expect(result.panes.length).toBe(0);
   });
 
+  test("deserialize with version:4 data falls back to buildDefaultLayout", () => {
+    const json = JSON.stringify({ version: 4, root: {}, floating: [] });
+    const result = deserialize(json, 1200, 800);
+    expect(result.cards.length).toBe(0);
+    expect(result.panes.length).toBe(0);
+  });
+
   test("deserialize clamps stack positions with Finder-style rules", () => {
     const v2 = {
       version: 2,
@@ -585,9 +623,9 @@ describe("collapsed field serialization", () => {
       collapsed: true,
     };
     const serialized = serialize({ cards: [card], panes: [stack] }) as {
-      windows: Array<{ collapsed?: boolean }>;
+      panes: Array<{ collapsed?: boolean }>;
     };
-    expect(serialized.windows[0].collapsed).toBe(true);
+    expect(serialized.panes[0].collapsed).toBe(true);
   });
 });
 

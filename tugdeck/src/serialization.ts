@@ -1,24 +1,26 @@
 /**
  * Serialization, deserialization, and default layout for DeckState.
  *
- * **Current wire format:** `version: 3` with on-disk keys
- * `{ version: 3, cards, windows, activeWindowId? }`. In-memory {@link DeckState}
- * uses `panes` / `activePaneId`; {@link serialize} maps those fields to the
- * historical v3 wire names. `focusedCardId` is persisted separately via
- * `putFocusedCardId` and is not part of the layout blob.
+ * **Current wire format:** `version: 4` with on-disk keys
+ * `{ version: 4, cards, panes, activePaneId? }`. `focusedCardId` is persisted
+ * separately via `putFocusedCardId` and is not part of the layout blob.
+ *
+ * **Pre-v4 on-disk shape (migrated on load):** `version: 3` used `windows` and
+ * `activeWindowId` instead of `panes` / `activePaneId`. Those blobs are normalized
+ * by {@link migrateV3ToV4} before the same parsing and clamping as v4.
  *
  * **Load path:**
- * - `version === 3` — parsed by {@link parseV3} (reads `windows` / `activeWindowId`
- *   from JSON, emits `DeckState` with `panes` / `activePaneId`).
- * - `version === 2` — legacy two-table blob (`stacks`, `activeStackId`); migrated
- *   in place via {@link migrateV2ToV3} then parsed like v3.
+ * - `version === 4` — parsed by {@link parseV4}.
+ * - `version === 3` — {@link migrateV3ToV4} (field rename only) then {@link parseV4}.
+ * - `version === 2` — legacy two-table blob (`stacks`, `activeStackId`); {@link migrateV2ToV4}
+ *   bridges to pre-v4 v3 wire names, then {@link migrateV3ToV4} → {@link parseV4}.
  * - Missing `version` or other legacy shapes — if `cards` is an array, the
  *   historical single-table blob (`version: 5`, `cards[].tabs[]`, etc.) is
  *   migrated by {@link migrateV1ToDeckState}. Unrelated shapes (e.g. stray
- *   `version: 3` objects without valid `cards`/`windows`) fall through to
+ *   `version: 4` objects without valid `cards`/`panes`) fall through to
  *   {@link buildDefaultLayout}.
  *
- * Legacy card ids become window ids; legacy tab ids become card ids — identity
+ * Legacy card ids become pane ids; legacy tab ids become card ids — identity
  * is preserved so tugbank's `tabstate/{id}` rows remain addressable.
  */
 
@@ -36,7 +38,7 @@ const TITLE_BAR_HEIGHT = 36;
 // ---- Serialize ----
 
 /**
- * Serialize a DeckState to the v3 wire format for settings API persistence.
+ * Serialize a DeckState to the v4 wire format for settings API persistence.
  *
  * Returns a plain object. Caller should JSON.stringify before writing.
  *
@@ -47,11 +49,11 @@ const TITLE_BAR_HEIGHT = 36;
  */
 export function serialize(deckState: DeckState): object {
   return {
-    version: 3,
+    version: 4,
     cards: deckState.cards,
-    windows: deckState.panes,
+    panes: deckState.panes,
     ...(deckState.activePaneId !== undefined
-      ? { activeWindowId: deckState.activePaneId }
+      ? { activePaneId: deckState.activePaneId }
       : {}),
   };
 }
@@ -61,12 +63,14 @@ export function serialize(deckState: DeckState): object {
 /**
  * Deserialize a JSON string to a DeckState.
  *
- * Accepts `version: 3` two-table blobs, migrates `version: 2` blobs (rename
- * only), or migrates legacy single-table blobs (`version: 5` or missing
- * `version` with `cards[].tabs[]`) to the two-table model. Any blob the
- * parser cannot make sense of falls back to {@link buildDefaultLayout}.
+ * Accepts `version: 4` two-table blobs, migrates `version: 3` blobs (field
+ * rename to v4 keys), migrates `version: 2` blobs (stacks → windows naming
+ * then through the v3→v4 path), or migrates legacy single-table blobs
+ * (`version: 5` or missing `version` with `cards[].tabs[]`) to the two-table
+ * model. Any blob the parser cannot make sense of falls back to
+ * {@link buildDefaultLayout}.
  *
- * Enforces 100px minimum sizes and clamps window positions to canvas bounds.
+ * Enforces 100px minimum sizes and clamps pane positions to canvas bounds.
  */
 export function deserialize(
   json: string,
@@ -76,18 +80,22 @@ export function deserialize(
   try {
     const raw = JSON.parse(json) as Record<string, unknown>;
 
+    if (raw["version"] === 4) {
+      return parseV4(raw, canvasWidth, canvasHeight);
+    }
+
     if (raw["version"] === 3) {
-      return parseV3(raw, canvasWidth, canvasHeight);
+      return parseV4(migrateV3ToV4(raw), canvasWidth, canvasHeight);
     }
 
     if (raw["version"] === 2) {
-      return migrateV2ToV3(raw, canvasWidth, canvasHeight);
+      return migrateV2ToV4(raw, canvasWidth, canvasHeight);
     }
 
-    // Legacy shape: missing version or any non-2/3 version. The historical v5
+    // Legacy shape: missing version or any non-2/3/4 version. The historical v5
     // single-table shape (and any blob that still carries a `cards[].tabs`
-    // structure) gets migrated in place. Unrelated shapes (e.g. version 3
-    // placeholder objects without valid `cards`/`windows`) fall through to
+    // structure) gets migrated in place. Unrelated shapes (e.g. version 4
+    // placeholder objects without valid `cards`/`panes`) fall through to
     // the default layout via the `cards` Array check inside migrate or here.
     if (Array.isArray(raw["cards"])) {
       return migrateV1ToDeckState(raw, canvasWidth, canvasHeight);
@@ -99,21 +107,43 @@ export function deserialize(
   }
 }
 
-// ---- Internal: v3 parser ----
+// ---- Internal: v3 → v4 (field rename on the wire object) ----
 
 /**
- * Parse a `version: 3` layout blob into {@link DeckState}.
- * Ignores unknown top-level keys (including legacy `focusedCardId`).
- * On-disk keys remain `windows` / `activeWindowId` until the v4 wire-format migration.
+ * Convert a pre-v4 `version: 3` blob (`windows`, `activeWindowId`) into a
+ * v4-shaped record (`panes`, `activePaneId`) for {@link parseV4}. Other keys
+ * such as `focusedCardId` are preserved so parseV4 can ignore them as today.
  */
-function parseV3(
+function migrateV3ToV4(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    version: 4,
+    cards: raw["cards"],
+    panes: raw["windows"],
+  };
+  const rawActive = raw["activeWindowId"];
+  if (typeof rawActive === "string") {
+    out["activePaneId"] = rawActive;
+  }
+  if ("focusedCardId" in raw) {
+    out["focusedCardId"] = raw["focusedCardId"];
+  }
+  return out;
+}
+
+// ---- Internal: v4 parser ----
+
+/**
+ * Parse a `version: 4` layout blob into {@link DeckState}.
+ * Ignores unknown top-level keys (including legacy `focusedCardId`).
+ */
+function parseV4(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
 ): DeckState {
   const rawCards = raw["cards"];
-  const rawWindows = raw["windows"];
-  if (!Array.isArray(rawCards) || !Array.isArray(rawWindows)) {
+  const rawPanes = raw["panes"];
+  if (!Array.isArray(rawCards) || !Array.isArray(rawPanes)) {
     return buildDefaultLayout();
   }
 
@@ -145,7 +175,7 @@ function parseV3(
   }
 
   const panes: TugPaneState[] = [];
-  for (const w of rawWindows) {
+  for (const w of rawPanes) {
     if (!w || typeof w !== "object") continue;
     const win = w as Record<string, unknown>;
     const id = win["id"];
@@ -212,11 +242,11 @@ function parseV3(
   }
   const filteredCards = cards.filter((c) => referencedCardIds.has(c.id));
 
-  const rawActiveWindowId = raw["activeWindowId"];
+  const rawActivePaneId = raw["activePaneId"];
   const activePaneId =
-    typeof rawActiveWindowId === "string" &&
-    panes.some((pane) => pane.id === rawActiveWindowId)
-      ? rawActiveWindowId
+    typeof rawActivePaneId === "string" &&
+    panes.some((pane) => pane.id === rawActivePaneId)
+      ? rawActivePaneId
       : undefined;
 
   return {
@@ -227,16 +257,18 @@ function parseV3(
 }
 
 /**
- * Migrate a v2 two-table blob (`stacks`, `activeStackId`) to the v3 field
- * names and parse. Semantics are unchanged — this is a pure key rename on the
- * wire object before the same validation and clamping as v3.
+ * Migrate a v2 two-table blob (`stacks`, `activeStackId`) to the pre-v4 v3
+ * wire field names, then through {@link migrateV3ToV4} and {@link parseV4}.
+ * Semantics are unchanged — key renames on the wire object before the same
+ * validation and clamping as v4.
  */
-function migrateV2ToV3(
+function migrateV2ToV4(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
 ): DeckState {
   const bridged: Record<string, unknown> = {
+    version: 3,
     cards: raw["cards"],
     windows: raw["stacks"],
   };
@@ -244,7 +276,7 @@ function migrateV2ToV3(
   if (typeof rawActive === "string") {
     bridged["activeWindowId"] = rawActive;
   }
-  return parseV3(bridged, canvasWidth, canvasHeight);
+  return parseV4(migrateV3ToV4(bridged), canvasWidth, canvasHeight);
 }
 
 // ---- Internal: legacy single-table → two-table ----
@@ -258,8 +290,8 @@ function migrateV2ToV3(
  * { id, position, size, tabs: [{ id, componentId, title, closable }],
  *   activeTabId, collapsed?, acceptsFamilies?, title? }
  * ```
- * Migration: each legacy card becomes a window (same id); each legacy tab
- * becomes a card (same id). Window `cardIds` = ordered legacy tab ids;
+ * Migration: each legacy card becomes a pane (same id); each legacy tab
+ * becomes a card (same id). Pane `cardIds` = ordered legacy tab ids;
  * `activeCardId` = legacy `activeTabId` (falls back to first tab id).
  * `focusedCardId` in the legacy blob is already the card identity (= former
  * tabId) and carries across unchanged.

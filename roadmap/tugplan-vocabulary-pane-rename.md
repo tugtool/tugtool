@@ -251,22 +251,22 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Tests — new round-trip asserting v3 blobs load, v4 blobs round-trip, v2 and v1 chain through.
 
 **Tasks:**
-- [ ] Rename `parseV3` → `parseV4` and update the serialized field names read (`panes`, `activePaneId`).
-- [ ] Add `migrateV3ToV4` that converts on-wire `windows` → `panes` and `activeWindowId` → `activePaneId`.
-- [ ] `serialize()` emits `version: 4`.
-- [ ] `deserialize()` dispatch: `version === 4` → `parseV4`; `version === 3` → `migrateV3ToV4` → parseV4 shape; `version === 2` → `migrateV2ToV3` → `migrateV3ToV4` (or a direct v2-to-v4 shortcut if the implementer prefers test clarity over chain mechanics); v1 chains through as today.
-- [ ] Update JSDoc on any residue reference to historical `windows` / `activeWindowId` on-wire shapes to read: "pre-v4 on-disk shape; migrated on load."
+- [x] Rename `parseV3` → `parseV4` and update the serialized field names read (`panes`, `activePaneId`).
+- [x] Add `migrateV3ToV4` that converts on-wire `windows` → `panes` and `activeWindowId` → `activePaneId`.
+- [x] `serialize()` emits `version: 4`.
+- [x] `deserialize()` dispatch: `version === 4` → `parseV4`; `version === 3` → `migrateV3ToV4` → parseV4 shape; `version === 2` → `migrateV2ToV4` (v2 wire → v3 field names → `migrateV3ToV4` → `parseV4`); v1 chains through as today.
+- [x] Update JSDoc on any residue reference to historical `windows` / `activeWindowId` on-wire shapes to read: "pre-v4 on-disk shape; migrated on load."
 
 **Tests:**
-- [ ] Round-trip: v4 blob → deserialize → serialize → identical shape.
-- [ ] Migration: hand-authored v3 blob → deserialize → expected v4 DeckState (new field names, everything else preserved).
-- [ ] Existing v2 migration test still passes (chains through v4).
-- [ ] Existing v1 migration test still passes.
+- [x] Round-trip: v4 blob → deserialize → serialize → identical shape.
+- [x] Migration: hand-authored v3 blob → deserialize → expected v4 DeckState (new field names, everything else preserved).
+- [x] Existing v2 migration test still passes (chains through v4).
+- [x] Existing v1 migration test still passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green (existing + 2 new).
-- [ ] `rg "parseV3|version === 3" tugdeck/src` returns only the migration-dispatch branch (not a parse branch).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (existing + 2 new).
+- [x] `rg "parseV3|version === 3" tugdeck/src` returns only the migration-dispatch branch (not a parse branch).
 
 ---
 
