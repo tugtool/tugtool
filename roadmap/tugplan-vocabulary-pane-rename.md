@@ -369,17 +369,17 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 | `CardPersistenceContext` | unchanged |
 
 **Tasks:**
-- [ ] Rename the portal context export at its definition site.
-- [ ] Update every consumer import and Provider usage.
-- [ ] Update JSDoc: `TugPanePortalContext` provides the pane's root element (used by sheet/tooltip portals that need to attach inside the pane's frame).
+- [x] Rename the portal context export at its definition site.
+- [x] Update every consumer import and Provider usage.
+- [x] Update JSDoc: `TugPanePortalContext` provides the pane's root element (used by sheet/tooltip portals that need to attach inside the pane's frame).
 
 **Tests:**
-- [ ] Every existing test that mounts a card body (tide, gallery, etc.) continues to pass.
+- [x] Every existing test that mounts a card body (tide, gallery, etc.) continues to pass.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "TugWindowPortalContext" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "TugWindowPortalContext" tugdeck/src` returns zero matches.
 
 ---
 

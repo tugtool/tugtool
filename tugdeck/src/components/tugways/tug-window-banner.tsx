@@ -51,7 +51,7 @@ import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { icons } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { TugWindowPortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-window";
 import { group } from "@/components/tugways/tug-animator";
 
 /* ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ export const TugWindowBanner = React.forwardRef<HTMLDivElement, TugWindowBannerP
     },
     ref,
   ) {
-    const cardEl = useContext(TugWindowPortalContext);
+    const cardEl = useContext(TugPanePortalContext);
 
     const rootRef = useRef<HTMLDivElement | null>(null);
     const stripRef = useRef<HTMLDivElement | null>(null);
@@ -226,7 +226,7 @@ export const TugWindowBanner = React.forwardRef<HTMLDivElement, TugWindowBannerP
     if (!mounted) return null;
     // Contained mode (gallery demos) renders inline inside the caller's
     // positioned parent; no portal, no .tugcard-body lookup. Real usage
-    // requires a portal target from TugWindowPortalContext.
+    // requires a portal target from TugPanePortalContext.
     if (!contained && !cardEl) return null;
 
     // Shared strip markup used by both variants.

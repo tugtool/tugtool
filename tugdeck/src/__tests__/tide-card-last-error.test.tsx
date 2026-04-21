@@ -64,7 +64,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugWindowPortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-window";
 
 const CARD_ID = "tide-6-test";
 const SESSION_ID = "sess-6-1";
@@ -89,9 +89,9 @@ function renderTideCard(cardId: string) {
 
   const rtl = render(
     <ResponderChainProvider>
-      <TugWindowPortalContext value={cardEl}>
+      <TugPanePortalContext value={cardEl}>
         <TideCardContent cardId={cardId} />
-      </TugWindowPortalContext>
+      </TugPanePortalContext>
     </ResponderChainProvider>,
   );
 

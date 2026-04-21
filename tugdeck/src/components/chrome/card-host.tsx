@@ -13,7 +13,7 @@
  * Render shape: wraps `registration.contentFactory(cardId)` in the four
  * per-content context providers (`TugcardDataProvider`,
  * `CardPropertyContext`, `CardPersistenceContext`,
- * `CardDirtyContext`) plus a re-bridged `TugWindowPortalContext`
+ * `CardDirtyContext`) plus a re-bridged `TugPanePortalContext`
  * (looked up from `pane-root-registry`) and a responder scope keyed by
  * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
  * resolve here.
@@ -26,7 +26,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
-import { CardDirtyContext, TugWindowPortalContext } from "./tug-window";
+import { CardDirtyContext, TugPanePortalContext } from "./tug-window";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
@@ -75,7 +75,7 @@ function useHostContentElement(hostStackId: string): HTMLDivElement | null {
 
 /**
  * Look up the host pane's root element from `pane-root-registry`,
- * reactively. Used to bridge `TugWindowPortalContext` — card content needs
+ * reactively. Used to bridge `TugPanePortalContext` — card content needs
  * access to its host pane's root `<div>` for sheets and tooltips that
  * portal into it, and CardHost cannot consume the provider
  * directly because it lives outside the pane's React tree.
@@ -353,7 +353,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           display: isActive ? "contents" : "none",
         }}
       >
-        <TugWindowPortalContext value={hostCardRootEl}>
+        <TugPanePortalContext value={hostCardRootEl}>
           <ResponderScope>
             <TugcardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
@@ -377,7 +377,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
               </CardPropertyContext>
             </TugcardDataProvider>
           </ResponderScope>
-        </TugWindowPortalContext>
+        </TugPanePortalContext>
       </div>
     </CardPortal>
   );

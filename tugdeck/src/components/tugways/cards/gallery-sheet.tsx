@@ -3,7 +3,7 @@
  *
  * Shows TugSheet in four modes: basic compound API with a form, sheet with
  * optional description, imperative ref-based API, and rich scrollable content.
- * TugSheet portals into the gallery card via TugWindowPortalContext — the sheet
+ * TugSheet portals into the gallery card via TugPanePortalContext — the sheet
  * drops from the title bar as a window shade, exactly as it does in production.
  *
  * @module components/tugways/cards/gallery-sheet

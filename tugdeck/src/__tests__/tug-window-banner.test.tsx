@@ -15,7 +15,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, cleanup, act, waitFor } from "@testing-library/react";
 
 import { TugWindowBanner } from "@/components/tugways/tug-window-banner";
-import { TugWindowPortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-window";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,9 +30,9 @@ function renderInCard(ui: React.ReactElement) {
   document.body.appendChild(cardEl);
 
   const result = render(
-    <TugWindowPortalContext.Provider value={cardEl}>
+    <TugPanePortalContext.Provider value={cardEl}>
       {ui}
-    </TugWindowPortalContext.Provider>,
+    </TugPanePortalContext.Provider>,
   );
 
   return {
@@ -93,9 +93,9 @@ describe("TugWindowBanner — mount + props", () => {
     // Visible → mounted (one layout-effect round to set mounted=true).
     act(() => {
       rerender(
-        <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
           <TugWindowBanner visible={true} message="m" />
-        </TugWindowPortalContext.Provider>,
+        </TugPanePortalContext.Provider>,
       );
     });
     expect(getBanner()).not.toBeNull();
@@ -104,9 +104,9 @@ describe("TugWindowBanner — mount + props", () => {
     // animation; only after .finished resolves does it unmount.
     act(() => {
       rerender(
-        <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
           <TugWindowBanner visible={false} message="m" />
-        </TugWindowPortalContext.Provider>,
+        </TugPanePortalContext.Provider>,
       );
     });
     expect(getBanner()).not.toBeNull();
@@ -154,9 +154,9 @@ describe("TugWindowBanner — mount + props", () => {
 
     act(() => {
       rerender(
-        <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
           <TugWindowBanner visible={false} message="m" />
-        </TugWindowPortalContext.Provider>,
+        </TugPanePortalContext.Provider>,
       );
     });
     // Still inert during exit animation.
@@ -220,9 +220,9 @@ describe("TugWindowBanner — mount + props", () => {
 
     act(() => {
       rerender(
-        <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
+        <TugPanePortalContext.Provider value={document.querySelector(".tugcard")!}>
           <TugWindowBanner visible={true} tone="default" message="m" />
-        </TugWindowPortalContext.Provider>,
+        </TugPanePortalContext.Provider>,
       );
     });
     expect(getBanner()!.getAttribute("data-tone")).toBe("default");

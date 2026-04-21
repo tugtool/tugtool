@@ -202,7 +202,13 @@ export function CardTitleBar({
 // Portal + dirty contexts (card content consumes these)
 // ===========================================================================
 
-export const TugWindowPortalContext = createContext<HTMLDivElement | null>(null);
+/**
+ * React context: the pane frame's root element (`HTMLDivElement`, the
+ * `.tugcard` host). Sheet and tooltip layers portal here so overlays attach
+ * inside the pane's chrome. Card content outside the `TugWindow` tree
+ * (e.g. `CardHost`) re-bridges this via `pane-root-registry`.
+ */
+export const TugPanePortalContext = createContext<HTMLDivElement | null>(null);
 
 export const CardDirtyContext = createContext<(() => void) | null>(null);
 
@@ -1183,7 +1189,7 @@ export function TugWindow({
         />
       ))}
 
-      <TugWindowPortalContext value={cardEl}>
+      <TugPanePortalContext value={cardEl}>
         <div
           ref={rootRefCallback}
           className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
@@ -1221,7 +1227,7 @@ export function TugWindow({
             </ResponderScope>
           </div>
         </div>
-      </TugWindowPortalContext>
+      </TugPanePortalContext>
     </div>
   );
 }
