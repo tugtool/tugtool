@@ -127,8 +127,9 @@ export class DeckStateInvariantError extends Error {
  *   4. every `pane.activeCardId` is a member of that pane's `cardIds`;
  *   5. when `state.activePaneId` is set, it references a real pane.
  *
- * Called unconditionally from `DeckManager.applyLayout` (before notify) and
- * from `DeckManager.notify` in dev/test builds only.
+ * Called from `DeckManager.notify` in dev/test builds only — guarded by
+ * `isDevEnv()` so production builds pay no cost. Violations surface at the
+ * mutation site that produced them rather than downstream.
  */
 export function validateDeckState(state: DeckState): void {
   const cardIds = new Set<string>();

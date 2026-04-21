@@ -1066,6 +1066,24 @@ describe("DeckManager.removeCard", () => {
 // ---------------------------------------------------------------------------
 
 describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
+  // These tests exercise `filterRegisteredCards` through the production
+  // entry point it exists for: `loadLayout` on a fresh DeckManager
+  // constructed with a v4 `initialLayout` blob that contains cards whose
+  // componentIds are not in the registry. Each test builds its own
+  // manager so the seeded layout is what the constructor loads.
+
+  /** Tear down the shared manager; tests below create their own. */
+  function replaceSharedManagerWithSeeded(
+    initialLayout: object,
+  ): DeckManager {
+    manager.destroy();
+    container.remove();
+    container = makeContainer();
+    connection = makeMockConnection();
+    manager = new DeckManager(container, connection, initialLayout);
+    return manager;
+  }
+
   it("keeps only registered cards from a stack with mixed registered/unregistered cards", () => {
     // Register only "hello"; "ghost" is intentionally not registered.
     registerCard(makeRegistration("hello", "Hello"));
@@ -1076,7 +1094,8 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     const helloCardId = crypto.randomUUID();
     const ghostCardId = crypto.randomUUID();
 
-    manager.applyLayout({
+    replaceSharedManagerWithSeeded({
+      version: 4,
       cards: [
         { id: helloCardId, componentId: "hello", title: "Hello", closable: true },
         { id: ghostCardId, componentId: "ghost", title: "Ghost", closable: true },
@@ -1111,7 +1130,8 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     const paneId = crypto.randomUUID();
     const cardId = crypto.randomUUID();
 
-    manager.applyLayout({
+    replaceSharedManagerWithSeeded({
+      version: 4,
       cards: [
         { id: cardId, componentId: "totally-unknown", title: "Unknown", closable: true },
       ],
@@ -1145,7 +1165,8 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     const ghostCardId = crypto.randomUUID();
 
     // Active card is the unregistered "ghost" card.
-    manager.applyLayout({
+    replaceSharedManagerWithSeeded({
+      version: 4,
       cards: [
         { id: helloCardId, componentId: "hello", title: "Hello", closable: true },
         { id: ghostCardId, componentId: "ghost", title: "Ghost", closable: true },

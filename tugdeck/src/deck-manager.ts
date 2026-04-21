@@ -1508,32 +1508,6 @@ export class DeckManager implements IDeckManagerStore {
     };
   }
 
-  /**
-   * Apply an external DeckState, notify subscribers, and schedule a save.
-   *
-   * Validates the two-table invariants **unconditionally** after
-   * filtering — `applyLayout` is the external-input gate, and bad shapes
-   * must fail loudly in every build, not just dev.
-   *
-   * @deprecated Test-only today (H-A7). Fires no lifecycle events: no
-   *   `cardDidFinishConstruction` for cards that appear in the new
-   *   state, no `cardWillBeginDestruction` for cards that disappear,
-   *   no first-responder flip even when the new state changes the
-   *   composite bit. If a production caller ever needs to swap the
-   *   deck state wholesale, replace this method with a diff-based
-   *   implementation that drives the changes through
-   *   `addCardToPane` / `removeCard` / `_setFirstResponder` so the
-   *   lifecycle stays consistent. Do not reuse `applyLayout` as-is —
-   *   adding one more caller to the event-free path compounds the
-   *   drift risk.
-   */
-  applyLayout(deckState: DeckState): void {
-    this.deckState = this.filterRegisteredCards(deckState);
-    validateDeckState(this.deckState);
-    this.notify();
-    this.scheduleSave();
-  }
-
   destroy(): void {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
