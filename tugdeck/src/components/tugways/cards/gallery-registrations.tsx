@@ -542,7 +542,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-card-banner",
     contentFactory: (_cardId) => <GalleryCardBanner />,
-    defaultMeta: { title: "TugWindowBanner", icon: "CircleAlert", closable: true },
+    defaultMeta: { title: "TugPaneBanner", icon: "CircleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

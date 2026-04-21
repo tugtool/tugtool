@@ -1,20 +1,20 @@
 /**
- * gallery-card-banner.tsx — TugWindowBanner demo tab for the Component Gallery.
+ * gallery-card-banner.tsx — TugPaneBanner demo tab for the Component Gallery.
  *
- * Shows TugWindowBanner in all modes: error variant with TugAlert-style detail
+ * Shows TugPaneBanner in all modes: error variant with TugAlert-style detail
  * panel (icon + title + message + dismiss action) across the three tones
  * (danger, caution, default), and status variant as a strip-only attention
  * bar.
  *
  * All demos use the `contained` prop so the banner renders inline inside
  * the mini-viewport instead of portaling into the gallery card's body and
- * applying `inert`. See tug-window-banner.tsx — contained mode skips both.
+ * applying `inert`. See tug-pane-banner.tsx — contained mode skips both.
  *
  * @module components/tugways/cards/gallery-card-banner
  */
 
 import React from "react";
-import { TugWindowBanner } from "@/components/tugways/tug-window-banner";
+import { TugPaneBanner } from "@/components/tugways/tug-pane-banner";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -89,7 +89,7 @@ export function GalleryCardBanner() {
         </div>
         <div style={miniViewport}>
           <MiniContent />
-          <TugWindowBanner
+          <TugPaneBanner
             contained
             visible={dangerVisible}
             variant="error"
@@ -113,7 +113,7 @@ export function GalleryCardBanner() {
               The card can&apos;t reach its session. Dismiss to continue;
               close and reopen the card to retry.
             </p>
-          </TugWindowBanner>
+          </TugPaneBanner>
         </div>
       </div>
 
@@ -134,7 +134,7 @@ export function GalleryCardBanner() {
         </div>
         <div style={miniViewport}>
           <MiniContent />
-          <TugWindowBanner
+          <TugPaneBanner
             contained
             visible={cautionVisible}
             variant="error"
@@ -159,7 +159,7 @@ export function GalleryCardBanner() {
               continue with reduced fidelity, or restart the card for a
               clean run.
             </p>
-          </TugWindowBanner>
+          </TugPaneBanner>
         </div>
       </div>
 
@@ -180,7 +180,7 @@ export function GalleryCardBanner() {
         </div>
         <div style={miniViewport}>
           <MiniContent />
-          <TugWindowBanner
+          <TugPaneBanner
             contained
             visible={defaultVisible}
             variant="error"
@@ -203,7 +203,7 @@ export function GalleryCardBanner() {
               The card stopped syncing while you were away. Cached content
               is shown; changes will resume when the connection returns.
             </p>
-          </TugWindowBanner>
+          </TugPaneBanner>
         </div>
       </div>
 
@@ -227,7 +227,7 @@ export function GalleryCardBanner() {
         </div>
         <div style={miniViewportShort}>
           <MiniContent />
-          <TugWindowBanner
+          <TugPaneBanner
             contained
             visible={statusVisible}
             variant="status"

@@ -1,9 +1,9 @@
 /**
- * TugWindowBanner — Card-scoped modal banner for card-level error / attention states.
+ * TugPaneBanner — Card-scoped modal banner for card-level error / attention states.
  *
  * Combines TugBanner's visual language (strip at top + detail panel) with
  * TugSheet's scoping mechanics (portal into the card, `inert` on .tugcard-body,
- * positioned below the title bar). Unlike TugBanner, TugWindowBanner does not
+ * positioned below the title bar). Unlike TugBanner, TugPaneBanner does not
  * block the app — only the card it's mounted in. Other cards on the deck remain
  * fully interactive.
  *
@@ -38,7 +38,7 @@
  *       [L20] token sovereignty (composes consumer-supplied footer controls)
  */
 
-import "./tug-window-banner.css";
+import "./tug-pane-banner.css";
 
 import React, {
   useCallback,
@@ -58,7 +58,7 @@ import { group } from "@/components/tugways/tug-animator";
  * Props
  * ---------------------------------------------------------------------------*/
 
-export interface TugWindowBannerProps {
+export interface TugPaneBannerProps {
   /** Whether the banner is shown. @selector [data-visible="true"] | [data-visible="false"] */
   visible: boolean;
   /** Layout variant. @selector [data-variant="error"] | [data-variant="status"] @default "error" */
@@ -97,11 +97,11 @@ export interface TugWindowBannerProps {
 }
 
 /* ---------------------------------------------------------------------------
- * TugWindowBanner
+ * TugPaneBanner
  * ---------------------------------------------------------------------------*/
 
-export const TugWindowBanner = React.forwardRef<HTMLDivElement, TugWindowBannerProps>(
-  function TugWindowBanner(
+export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps>(
+  function TugPaneBanner(
     {
       visible,
       variant = "error",
@@ -231,30 +231,30 @@ export const TugWindowBanner = React.forwardRef<HTMLDivElement, TugWindowBannerP
 
     // Shared strip markup used by both variants.
     const strip = (
-      <div ref={stripRef} className="tug-window-banner-strip">
+      <div ref={stripRef} className="tug-pane-banner-strip">
         {icon && (
-          <span className="tug-window-banner-icon" aria-hidden="true">
+          <span className="tug-pane-banner-icon" aria-hidden="true">
             <BannerIcon name={icon} />
           </span>
         )}
-        {label && <span className="tug-window-banner-label">{label}</span>}
-        <span className="tug-window-banner-message">{message}</span>
+        {label && <span className="tug-pane-banner-label">{label}</span>}
+        <span className="tug-pane-banner-message">{message}</span>
       </div>
     );
 
     const statusContent = (
       <div
         ref={setRef}
-        data-slot="tug-window-banner"
+        data-slot="tug-pane-banner"
         data-variant="status"
         data-visible={String(visible)}
         data-tone={tone}
         data-contained={contained ? "true" : undefined}
         role="status"
         aria-live="polite"
-        className={cn("tug-window-banner", className)}
+        className={cn("tug-pane-banner", className)}
       >
-        <div className="tug-window-banner-clip">{strip}</div>
+        <div className="tug-pane-banner-clip">{strip}</div>
       </div>
     );
 
@@ -262,35 +262,35 @@ export const TugWindowBanner = React.forwardRef<HTMLDivElement, TugWindowBannerP
       <FocusScopeRadix.FocusScope trapped={visible} loop>
         <div
           ref={setRef}
-          data-slot="tug-window-banner"
+          data-slot="tug-pane-banner"
           data-variant="error"
           data-visible={String(visible)}
           data-tone={tone}
           data-contained={contained ? "true" : undefined}
           role="alert"
           aria-live="assertive"
-          className={cn("tug-window-banner", className)}
+          className={cn("tug-pane-banner", className)}
         >
-          <div className="tug-window-banner-clip">
+          <div className="tug-pane-banner-clip">
             {strip}
-            <div ref={detailRef} className="tug-window-banner-detail-panel">
-              <div className="tug-window-banner-detail-body">
+            <div ref={detailRef} className="tug-pane-banner-detail-panel">
+              <div className="tug-pane-banner-detail-body">
                 {detailIcon && (
-                  <div className="tug-window-banner-detail-icon" aria-hidden="true">
+                  <div className="tug-pane-banner-detail-icon" aria-hidden="true">
                     <DetailIcon name={detailIcon} />
                   </div>
                 )}
-                <div className="tug-window-banner-detail-text">
+                <div className="tug-pane-banner-detail-text">
                   {detailTitle && (
-                    <h2 className="tug-window-banner-detail-title">{detailTitle}</h2>
+                    <h2 className="tug-pane-banner-detail-title">{detailTitle}</h2>
                   )}
                   {children !== undefined && (
-                    <div className="tug-window-banner-detail-message">{children}</div>
+                    <div className="tug-pane-banner-detail-message">{children}</div>
                   )}
                 </div>
               </div>
               {footer !== undefined && (
-                <div className="tug-window-banner-detail-actions">{footer}</div>
+                <div className="tug-pane-banner-detail-actions">{footer}</div>
               )}
             </div>
           </div>

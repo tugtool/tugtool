@@ -470,29 +470,29 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - DOM slot: `data-slot="tug-window-banner"` → `data-slot="tug-pane-banner"`.
 - Consumers: `tide-card.tsx` (import + JSX), `gallery-card-banner.tsx` (import + JSDoc + 4 JSX sites), `gallery-registrations.tsx` (registered-card title string), `__tests__/tide-card-last-error.test.tsx` (imports + `data-slot` selector + describe label).
 
-**Note:** CSS custom-property token names are unaffected — they already use `--tugx-card-banner-*` (the `card-banner` prefix is independent of the component name).
+**No token churn.** The CSS custom properties on these selectors are named `--tugx-card-banner-*` — they don't contain the word "window," so the theme files don't need edits.
 
 **Tasks:**
-- [ ] Rename three files (`.tsx`, `.css`, `.test.tsx`) — use `git mv` so history tracks.
-- [ ] Rename component + props export at its definition site.
-- [ ] Rename every CSS selector in the CSS file.
-- [ ] Rename every JSX `className` and `data-slot` reference in the component.
-- [ ] Rename the CSS side-effect import inside the component (`./tug-window-banner.css` → `./tug-pane-banner.css`).
-- [ ] Update every consumer import + JSX usage.
-- [ ] Update `gallery-registrations.tsx` registered-card `defaultMeta.title` if it reads "TugWindowBanner."
-- [ ] Update tuglaws and any doc references (`rg "TugWindowBanner|tug-window-banner" tuglaws tugdeck/docs` should return zero).
+- [x] Rename three files (`.tsx`, `.css`, `.test.tsx`) — use `git mv` so history tracks.
+- [x] Rename component + props export at its definition site.
+- [x] Rename every CSS selector in the CSS file.
+- [x] Rename every JSX `className` and `data-slot` reference in the component.
+- [x] Rename the CSS side-effect import inside the component (`./tug-window-banner.css` → `./tug-pane-banner.css`).
+- [x] Update every consumer import + JSX usage.
+- [x] Update `gallery-registrations.tsx` registered-card `defaultMeta.title` if it reads "TugWindowBanner."
+- [x] Update tuglaws and any doc references (`rg "TugWindowBanner|tug-window-banner" tuglaws tugdeck/docs` should return zero).
 
 **Tests:**
-- [ ] `tug-pane-banner.test.tsx` passes (describe labels + imports updated; `[data-slot]` selector updated).
-- [ ] `tide-card-last-error.test.tsx` passes (locator uses new `data-slot`).
-- [ ] Gallery tab smoke: open the gallery card, pick the `TugPaneBanner` demo — error / status / contained variants all render.
+- [x] `tug-pane-banner.test.tsx` passes (describe labels + imports updated; `[data-slot]` selector updated).
+- [x] `tide-card-last-error.test.tsx` passes (locator uses new `data-slot`).
+- [x] Gallery tab smoke: open the gallery card, pick the `TugPaneBanner` demo — error / status / contained variants all render.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green (count unchanged).
-- [ ] `bun run audit:tokens lint` zero violations.
-- [ ] `rg "TugWindowBanner|tug-window-banner|\\.tug-window-banner" tugdeck tuglaws` returns zero matches.
-- [ ] Plan-wide grep `rg "\\.tug-window\\b" tugdeck` now returns zero matches (no banner false-positives).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (count unchanged).
+- [x] `bun run audit:tokens lint` zero violations.
+- [x] `rg "TugWindowBanner|tug-window-banner|\\.tug-window-banner" tugdeck tuglaws` returns zero matches.
+- [x] Plan-wide grep `rg "\\.tug-window\\b" tugdeck` now returns zero matches (no banner false-positives).
 
 ---
 

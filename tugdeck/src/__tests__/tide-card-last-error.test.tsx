@@ -1,9 +1,9 @@
 /**
- * TideCardContent — lastError banner integration (TugWindowBanner adoption).
+ * TideCardContent — lastError banner integration (TugPaneBanner adoption).
  *
  * Drives `CodeSessionStore` through real error transitions by dispatching
  * SESSION_STATE frames on a MockTugConnection, then asserts the rendered
- * TugWindowBanner appears, dismisses, and re-raises on new errors.
+ * TugPaneBanner appears, dismisses, and re-raises on new errors.
  *
  * Banner unmount is deferred to the exit animation's `.finished` — tests
  * drive the WAAPI mock to completion to deterministically observe the
@@ -107,13 +107,13 @@ function dispatchSessionErrored(detail: string): void {
   });
 }
 
-/** Locate the portaled TugWindowBanner via its `data-slot` anchor. */
+/** Locate the portaled TugPaneBanner via its `data-slot` anchor. */
 function queryBannerEl(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-slot=\"tug-window-banner\"]");
+  return document.querySelector<HTMLElement>("[data-slot=\"tug-pane-banner\"]");
 }
 function getBannerEl(): HTMLElement {
   const el = queryBannerEl();
-  if (el === null) throw new Error("tug-window-banner not in the DOM");
+  if (el === null) throw new Error("tug-pane-banner not in the DOM");
   return el;
 }
 
@@ -137,7 +137,7 @@ afterEach(() => {
   mock.reset();
 });
 
-describe("TideCardContent — lastError TugWindowBanner", () => {
+describe("TideCardContent — lastError TugPaneBanner", () => {
   it("T-TIDE-LASTERR-01: renders the banner when lastError becomes non-null", () => {
     const { queryByTestId } = renderTideCard(CARD_ID);
 

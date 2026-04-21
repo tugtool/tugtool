@@ -29,7 +29,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugMarkdownView } from "../tug-markdown-view";
-import { TugWindowBanner } from "../tug-window-banner";
+import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
@@ -1207,7 +1207,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
-      <TugWindowBanner
+      <TugPaneBanner
         visible={bannerError !== null}
         variant="error"
         tone="danger"
@@ -1228,7 +1228,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
         }
       >
         <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
-      </TugWindowBanner>
+      </TugPaneBanner>
       </div>
     </CardContentResponderScope>
   );
