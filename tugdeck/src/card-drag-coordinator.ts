@@ -60,7 +60,7 @@ interface TabBarEntry {
   barElement: HTMLElement;
 }
 
-interface StackFrameEntry {
+interface WindowFrameEntry {
   windowId: string;
   rect: DOMRect;
   accessoryElement: HTMLElement;
@@ -108,7 +108,7 @@ class CardDragCoordinator {
    * All single-tab window frame rects at drag-start.
    * These are `.tug-window` frames whose window id is NOT in allTabBarRects.
    */
-  private allStackFrameRects: StackFrameEntry[] = [];
+  private allWindowFrameRects: WindowFrameEntry[] = [];
 
   /** Ghost element appended to #deck-container during drag. */
   private ghostElement: HTMLDivElement | null = null;
@@ -267,7 +267,7 @@ class CardDragCoordinator {
    *
    * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-window-id] elements
    *   excluding the source card.
-   * Tier 2: allStackFrameRects -- all .tug-window[data-window-id] elements whose
+   * Tier 2: allWindowFrameRects -- all .tug-window[data-window-id] elements whose
    *   window id is NOT present in allTabBarRects (i.e., single-tab windows).
    *   The accessoryElement is the matching .tugcard-accessory[data-window-id]
    *   inside each such window frame, used for drop-target visual feedback.
@@ -293,7 +293,7 @@ class CardDragCoordinator {
 
     // Tier 2: single-card frames (not in the tab bar set).
     const frameElements = document.querySelectorAll<HTMLElement>(".tug-window[data-window-id]");
-    this.allStackFrameRects = [];
+    this.allWindowFrameRects = [];
 
     frameElements.forEach((el) => {
       const sid = el.getAttribute("data-window-id");
@@ -303,7 +303,7 @@ class CardDragCoordinator {
       const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-window-id="${sid}"]`);
       if (!accessory) return;
 
-      this.allStackFrameRects.push({
+      this.allWindowFrameRects.push({
         windowId: sid,
         rect: el.getBoundingClientRect(),
         accessoryElement: accessory,
@@ -467,7 +467,7 @@ class CardDragCoordinator {
     }
 
     // Check tier-2: single-card stack frames. [D05]
-    for (const entry of this.allStackFrameRects) {
+    for (const entry of this.allWindowFrameRects) {
       if (this.pointInRect(cx, cy, entry.rect)) {
         this.setMode("merge");
         this.setDropTarget(entry.accessoryElement);
@@ -740,7 +740,7 @@ class CardDragCoordinator {
     for (const entry of this.allTabBarRects) {
       entry.barElement.removeAttribute("data-drop-target");
     }
-    for (const entry of this.allStackFrameRects) {
+    for (const entry of this.allWindowFrameRects) {
       entry.accessoryElement.removeAttribute("data-drop-target");
     }
 
@@ -752,7 +752,7 @@ class CardDragCoordinator {
     this.sourceBarRect = null;
     this.containerRect = null;
     this.allTabBarRects = [];
-    this.allStackFrameRects = [];
+    this.allWindowFrameRects = [];
     this.currentMergeTarget = null;
     this.currentDropTargetElement = null;
     this.currentMode = "reorder";
