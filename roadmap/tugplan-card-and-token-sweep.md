@@ -63,7 +63,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-card-persistence.test.tsx` **done (Step 3)**.
 6. **Done (Step 5).** CSS frame tokens → `--tugx-pane-bg`, `--tugx-pane-border`, `--tugx-pane-shadow-active|inactive`, `--tugx-pane-dim-overlay`.
 7. **Done (Step 6).** Title-bar chrome: `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*` (and docs swept for legacy `--tug-card-title-bar-*` names). No non-`x` `--tug-pane-title-bar-*` definers in source — pairing docs use the `--tugx-*` aliases that `tug-pane.css` defines.
-8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
+8. **Done (Step 7).** CSS control tokens: `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*` (was `--tugx-card-control-*`).
 8a. Pane content-dim / accessory / findbar tokens (`--tugx-card-content-dim-*`, `--tugx-card-accessory-*`, `--tugx-card-findbar-*`) → `--tugx-pane-*`. Surfaced by Step 0 ([Appendix A.3](#appendix-a)).
 9. Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
 10. Author `tuglaws/pane-model.md` + add entry to `tuglaws/tuglaws.md` laws list.
@@ -389,6 +389,8 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 **References:** [D02] Pane tokens
 
+**Artifacts:** `tug-pane.css` (18 aliases in `body {}` + `.card-title-bar-controls` rules); `scripts/token-classify.ts` (`pane-control-*` short names).
+
 **Token rename:**
 
 | Today | New |
@@ -400,13 +402,13 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 | (any others surfaced by Step 0) | |
 
 **Tasks:**
-- [ ] Rename definitions + every consumer.
-- [ ] Update JSDoc + docs/pairing-audit-results.md.
+- [x] Rename definitions + every consumer.
+- [x] Update JSDoc + docs/pairing-audit-results.md (no pairing-audit rows cited `--tugx-card-control-*`; `token-classify` allowlist updated).
 
 **Checkpoint:**
-- [ ] tsc / tests / tokens-lint all green.
-- [ ] `rg "--tugx-card-control-" tugdeck` returns zero matches.
-- [ ] Manual smoke: close button + collapse chevron render correctly in active / inactive panes.
+- [x] tsc / tests / tokens-lint all green.
+- [x] `rg "--tugx-card-control-" tugdeck` returns zero matches.
+- [x] Manual smoke: close button + collapse chevron render correctly in active / inactive panes.
 
 ---
 
@@ -651,13 +653,13 @@ Non-CSS informational surfaces (docs + scripts):
 
 (Legacy `--tug-card-title-bar-*` names were docs-only; pairing + renders surveys now cite the `--tugx-pane-*` aliases.)
 
-**Step 7 — Control tokens (18):** On/off × fg/bg/border × rest/hover/active.
-- `--tugx-card-control-on-fg-rest` / `-hover` / `-active`
-- `--tugx-card-control-on-bg-rest` / `-hover` / `-active`
-- `--tugx-card-control-on-border-rest` / `-hover` / `-active`
-- `--tugx-card-control-off-fg-rest` / `-hover` / `-active`
-- `--tugx-card-control-off-bg-rest` / `-hover` / `-active`
-- `--tugx-card-control-off-border-rest` / `-hover` / `-active`
+**Step 7 — Control tokens (18):** ✓ `--tugx-pane-control-*` — On/off × fg/bg/border × rest/hover/active.
+- `--tugx-pane-control-on-fg-rest` / `-hover` / `-active`
+- `--tugx-pane-control-on-bg-rest` / `-hover` / `-active`
+- `--tugx-pane-control-on-border-rest` / `-hover` / `-active`
+- `--tugx-pane-control-off-fg-rest` / `-hover` / `-active`
+- `--tugx-pane-control-off-bg-rest` / `-hover` / `-active`
+- `--tugx-pane-control-off-border-rest` / `-hover` / `-active`
 
 **Step 7a — Content-dim / accessory / findbar tokens (10)** — previously out of the plan's enumeration; all pane-chrome despite the `card-` prefix:
 - `--tugx-card-content-dim-desat-color`
