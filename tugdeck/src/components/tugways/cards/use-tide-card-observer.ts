@@ -42,9 +42,16 @@ export function useTideCardObserver(
         card_id: cardId,
         message: err.message,
       });
+      // Carry the stale `(tugSessionId, projectDir)` so the picker's
+      // Retry button can re-fire `spawn_session(mode=resume)` against
+      // the same session. Read before clearing — `clearBinding` wipes
+      // the entry we're about to reference.
+      const binding = cardSessionBindingStore.getBinding(cardId);
       pickerNoticeStore.set(cardId, {
         category: "resume_failed",
         message: err.message,
+        staleTugSessionId: binding?.tugSessionId,
+        staleProjectDir: binding?.projectDir,
       });
       cardSessionBindingStore.clearBinding(cardId);
     });

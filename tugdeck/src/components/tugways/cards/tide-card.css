@@ -48,6 +48,83 @@
   min-width: 0;
 }
 
+/* ─── Restoring placeholder (tide-session-restore in-flight) ─── */
+
+/* Card-body-filling container that holds the restoring panel
+   centered. Rendered by `TideRestoring` while a persisted session is
+   being re-asserted through `spawn_session(mode=resume)` — replaces
+   the picker for cards with a pending restore so no half-dismissed
+   sheet flashes when the ack arrives. */
+.tide-card-restoring-backdrop {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tug-space-lg, 16px);
+  box-sizing: border-box;
+}
+
+/* Inner panel — borrows the visual weight of TugAlert content but
+   inline rather than modal. Max-width so it reads as a focused
+   status rather than sprawling to fill large cards. */
+.tide-card-restoring-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md, 12px);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--tug-space-lg, 16px);
+  background-color: var(--tugx-alert-bg, var(--tug7-element-global-surface-neutral-muted-rest));
+  color: var(--tugx-alert-fg, var(--tug7-element-global-text-normal-strong-rest));
+  border: 1px solid var(--tugx-alert-border, var(--tug7-element-global-stroke-neutral-muted-rest));
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+}
+
+.tide-card-restoring-title {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.tide-card-restoring-project {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  opacity: 0.8;
+  /* Long paths truncate with ellipsis rather than wrap arbitrarily. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--tug-font-family-mono, ui-monospace, monospace);
+}
+
+/* Footer row: spinner pinned left, Cancel button pinned right. */
+.tide-card-restoring-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--tug-space-md, 12px);
+  margin-top: var(--tug-space-sm, 8px);
+}
+
+.tide-card-restoring-spinner {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Retry button on a picker notice (S3/S5). Sits below the notice
+   message so the click target is obvious. */
+.tide-card-picker-notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--tug-space-xs, 4px);
+}
+
 /* Form content inside the picker sheet. */
 .tide-card-picker-form {
   display: flex;

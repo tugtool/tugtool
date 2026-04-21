@@ -11,6 +11,7 @@ import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
+import { restoreTideSessions } from "./lib/tide-session-restore";
 import { readLayout, readTheme, readTabStates, readDeckState } from "./settings-api";
 import { getThemeSetter } from "./action-dispatch";
 import {
@@ -156,6 +157,15 @@ if (!container) {
   // user-close gestures flow through deck-manager.removeCard, and the
   // services store reacts on its own.
   cardServicesStore.attachDeckManager(deck);
+
+  // Re-assert session bindings for tide cards that were alive before
+  // this page reload. The tugbank cache is already populated (we awaited
+  // `tugbankClient.ready()` above) and the deck layout is materialized;
+  // `restoreTideSessions` reads per-card records from tugbank and emits
+  // `spawn_session(mode=resume)` for each. The server's ack populates
+  // `cardSessionBindingStore`, which flips each card from picker to
+  // bound body before `cardDidActivate` fires for any of them.
+  restoreTideSessions(deck, tugbankClient, connection);
 
   // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
   // When an external process writes to tugbank (e.g., `tugbank write ... theme harmony`),

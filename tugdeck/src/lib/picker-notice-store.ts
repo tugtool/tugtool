@@ -11,16 +11,38 @@
  * Not persisted — a reload should not surface a stale notice.
  */
 
+/**
+ * Notice categories surfaced by the Tide picker when it re-presents
+ * itself after a failed, canceled, or timed-out restore.
+ *
+ * - `resume_failed` — tugcast emitted `SESSION_STATE: errored` for a
+ *   restoring session, or the post-binding observer tripped on a
+ *   resume failure.
+ * - `restore_canceled` — user clicked Cancel in `TideRestoring`.
+ * - `restore_timed_out` — restore-registry timeout elapsed without
+ *   either a binding or an errored response.
+ *
+ * All three categories are retryable (the picker renders a Retry
+ * button when `staleTugSessionId` + `staleProjectDir` are populated),
+ * but each surfaces different copy to the user.
+ */
+export type PickerNoticeCategory =
+  | "resume_failed"
+  | "restore_canceled"
+  | "restore_timed_out";
+
 export interface PickerNotice {
-  /**
-   * What kind of notice this is. Currently only `resume_failed`;
-   * future failure modes extend this union.
-   */
-  category: "resume_failed";
+  category: PickerNoticeCategory;
   /** Human-readable reason from the underlying cause. */
   message: string;
-  /** The session id that was attempted, if known. */
-  staleSessionId?: string;
+  /**
+   * The tug-session-id we were trying to restore, carried through so
+   * the Retry button can re-fire `spawn_session(mode=resume)` against
+   * the same session.
+   */
+  staleTugSessionId?: string;
+  /** The project path associated with the stale session, for Retry. */
+  staleProjectDir?: string;
 }
 
 class PickerNoticeStore {

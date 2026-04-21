@@ -59,6 +59,12 @@ import {
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
 import { sendSpawnSession } from "@/lib/session-lifecycle";
+import { TugProgress } from "../tug-progress";
+import {
+  tideRestoreRegistry,
+  cancelTideRestore,
+  fireRestore,
+} from "@/lib/tide-session-restore";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
@@ -265,10 +271,86 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
 
 export function TideCardContent({ cardId }: TideCardContentProps) {
   const services = useTideCardServices(cardId);
-  if (services === null) {
-    return <TideProjectPicker cardId={cardId} />;
+  // Subscribe to the restore registry so `TideRestoring` mounts as
+  // soon as `restoreTideSessions` fires a `spawn_session(resume)` for
+  // this card, and unmounts the moment the binding lands (registry
+  // entry cleared via the cardSessionBindingStore subscriber inside
+  // `tide-session-restore`).
+  const restoreMap = useSyncExternalStore(
+    tideRestoreRegistry.subscribe,
+    tideRestoreRegistry.getSnapshot,
+  );
+  if (services !== null) {
+    return <TideCardBody cardId={cardId} services={services} />;
   }
-  return <TideCardBody cardId={cardId} services={services} />;
+  const expectation = restoreMap.get(cardId);
+  if (expectation !== undefined) {
+    return (
+      <TideRestoring
+        cardId={cardId}
+        projectDir={expectation.projectDir}
+      />
+    );
+  }
+  return <TideProjectPicker cardId={cardId} />;
+}
+
+// ---------------------------------------------------------------------------
+// TideRestoring — in-flight restore placeholder
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders inline in the card body while `tide-session-restore` has a
+ * pending restore expectation for this card. Replaces the project
+ * picker so the picker sheet never gets a chance to half-drop during
+ * the restore → binding hand-off. The Cancel button clears the
+ * expectation and drops to the picker with a `restore_canceled`
+ * notice; server state is preserved so the next reload will retry.
+ */
+function TideRestoring({
+  cardId,
+  projectDir,
+}: {
+  cardId: string;
+  projectDir: string;
+}) {
+  const handleCancel = useCallback(() => {
+    cancelTideRestore(cardId);
+  }, [cardId]);
+  return (
+    <div
+      className="tide-card-restoring-backdrop"
+      data-slot="tide-card-restoring"
+      data-testid="tide-card-restoring"
+    >
+      <div className="tide-card-restoring-panel" role="status" aria-live="polite">
+        <h2 className="tide-card-restoring-title">Restoring session</h2>
+        <p
+          className="tide-card-restoring-project"
+          title={projectDir}
+          data-testid="tide-card-restoring-project"
+        >
+          {projectDir}
+        </p>
+        <div className="tide-card-restoring-footer">
+          <span className="tide-card-restoring-spinner">
+            <TugProgress
+              variant="spinner"
+              size="sm"
+              aria-label={`Restoring session from ${projectDir}`}
+            />
+          </span>
+          <TugPushButton
+            emphasis="outlined"
+            onClick={handleCancel}
+            data-testid="tide-card-restoring-cancel"
+          >
+            Cancel
+          </TugPushButton>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +412,18 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   const presentSheet = useCallback(() => {
     if (shownRef.current) return;
     shownRef.current = true;
+    // The notice carries retry context (`stale{TugSessionId,ProjectDir}`)
+    // only for the three retryable categories. When present, the
+    // picker renders a Retry button that re-fires the restore and
+    // closes the sheet; "retry" is treated like "open" in `onClosed`
+    // below (no CLOSE dispatch — the card stays mounted so
+    // `TideCardContent` can flip to `TideRestoring`).
+    const noticeForRetry = noticeRef.current;
+    const retryTugSessionId = noticeForRetry?.staleTugSessionId;
+    const retryProjectDir = noticeForRetry?.staleProjectDir;
+    const canRetry =
+      retryTugSessionId !== undefined && retryProjectDir !== undefined;
+
     void showSheet({
       title: "Open Project",
       content: (close) => (
@@ -351,15 +445,39 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
             close("open");
           }}
           onCancel={() => close("cancel")}
+          onRetryRestore={
+            canRetry
+              ? () => {
+                  const connection = getConnection();
+                  if (!connection) {
+                    console.warn(
+                      "TideProjectPicker: connection unavailable for retry",
+                    );
+                    return;
+                  }
+                  fireRestore(
+                    cardId,
+                    retryTugSessionId as string,
+                    retryProjectDir as string,
+                    connection,
+                  );
+                  close("retry");
+                }
+              : null
+          }
         />
       ),
       // Fire after the sheet's exit animation finishes so the card
       // close chains visibly after the sheet has disappeared rather
       // than unmounting underneath it. "open" leaves the card
       // mounted; the binding subscription flips it into the
-      // split-pane body once `spawn_session_ok` arrives.
+      // split-pane body once `spawn_session_ok` arrives. "retry"
+      // leaves the card mounted too — the retry path has already
+      // fired a fresh `fireRestore` which registers a new
+      // expectation, so `TideCardContent` will re-render into
+      // `TideRestoring` and the close-chain must not fire.
       onClosed: (result) => {
-        if (result === "open") return;
+        if (result === "open" || result === "retry") return;
         manager?.sendToFirstResponder({
           action: TUG_ACTIONS.CLOSE,
           sender: senderId,
@@ -389,10 +507,10 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
 interface TideProjectPickerFormProps {
   /**
    * Notice surfaced above the form when the picker is re-presented
-   * after a session failure (e.g. a resume that didn't take). The
-   * notice carries the reason so the user sees it in the same picker
-   * that lets them choose what to do next. `null` when the picker is
-   * opening fresh.
+   * after a session failure (e.g. a resume that didn't take, a
+   * canceled restore, or a restore timeout). The notice carries the
+   * reason so the user sees it in the same picker that lets them
+   * choose what to do next. `null` when the picker is opening fresh.
    */
   notice: PickerNotice | null;
   onOpen: (
@@ -401,6 +519,14 @@ interface TideProjectPickerFormProps {
     sessionId: string,
   ) => void;
   onCancel: () => void;
+  /**
+   * Invoked when the user clicks Retry on a notice that carries
+   * `staleTugSessionId` + `staleProjectDir`. Re-fires the restore via
+   * `fireRestore` — the card flips from picker back to
+   * `TideRestoring` and the whole cycle runs again. `null` on a
+   * fresh-picker notice that doesn't carry retry context.
+   */
+  onRetryRestore: (() => void) | null;
 }
 
 /** One entry in the sessions record. */
@@ -505,7 +631,31 @@ const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
 /** Stable empty `SessionRecord[]` reference. */
 const EMPTY_SESSION_RECORDS: ReadonlyArray<SessionRecord> = [];
 
-function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFormProps) {
+/**
+ * Map a picker notice to user-facing copy. `resume_failed` uses a
+ * generic sentence; `restore_canceled` and `restore_timed_out`
+ * include the project path from `staleProjectDir` so the user sees
+ * which card's restore was affected. Falls back to the raw
+ * `notice.message` on unexpected shapes.
+ */
+function noticeText(notice: PickerNotice): string {
+  switch (notice.category) {
+    case "resume_failed":
+      return "Couldn’t resume the previous session — it may have been deleted or is in use elsewhere. Pick a different option below.";
+    case "restore_canceled":
+      return notice.staleProjectDir !== undefined
+        ? `Canceled restoring the previous session for ${notice.staleProjectDir}.`
+        : notice.message;
+    case "restore_timed_out":
+      return notice.staleProjectDir !== undefined
+        ? `Restoring the previous session for ${notice.staleProjectDir} took too long. The server may be unreachable — you can Retry or start a new session below.`
+        : notice.message;
+    default:
+      return notice.message;
+  }
+}
+
+function TideProjectPickerForm({ notice, onOpen, onCancel, onRetryRestore }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // External state from tugbank reaches React via `useSyncExternalStore`
@@ -620,9 +770,18 @@ function TideProjectPickerForm({ notice, onOpen, onCancel }: TideProjectPickerFo
             data-testid="tide-card-picker-notice"
             data-notice-category={notice.category}
           >
-            {notice.category === "resume_failed"
-              ? "Couldn’t resume the previous session — it may have been deleted or is in use elsewhere. Pick a different option below."
-              : notice.message}
+            {noticeText(notice)}
+            {onRetryRestore !== null && (
+              <div className="tide-card-picker-notice-actions">
+                <TugPushButton
+                  emphasis="outlined"
+                  onClick={onRetryRestore}
+                  data-testid="tide-card-picker-notice-retry"
+                >
+                  Retry
+                </TugPushButton>
+              </div>
+            )}
           </div>
         )}
         <label className="tide-card-picker-field">
