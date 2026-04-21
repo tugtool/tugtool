@@ -66,9 +66,9 @@ export const DEFAULT_SIZE_POLICY: CardSizePolicy = {
 /**
  * Metadata describing a card's default appearance and behavior.
  *
- * **Authoritative reference:** Spec S01 TugcardMeta.
+ * **Authoritative reference:** Spec S01 CardMeta.
  */
-export interface TugcardMeta {
+export interface CardMeta {
   title: string;
   icon?: string;
   closable?: boolean;
@@ -92,7 +92,7 @@ export interface CardRegistration {
    */
   contentFactory: (cardId: string) => React.ReactNode;
   /** Default title, icon, and closable for this card type. */
-  defaultMeta: TugcardMeta;
+  defaultMeta: CardMeta;
   /** Default feed IDs. Defaults to `[]` when omitted. */
   defaultFeedIds?: readonly FeedIdValue[];
   /** Card type family (e.g. "standard", "developer"). Defaults to "standard". */

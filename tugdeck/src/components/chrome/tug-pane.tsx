@@ -28,7 +28,7 @@ import React, {
 } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
-import type { CardSizePolicy, TugcardMeta } from "@/card-registry";
+import type { CardMeta, CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
@@ -297,7 +297,7 @@ export interface TugPaneProps {
   /** Window position, size, id, and collapsed state from DeckState. */
   stackState: TugPaneState;
   /** Default metadata for the window (from card registration). */
-  meta: TugcardMeta;
+  meta: CardMeta;
   /**
    * Minimum content area size (below title bar + accessory).
    * Total min-size = header + accessory + this region.
@@ -556,7 +556,7 @@ export function TugPane({
     ? getRegistration(activeCard.componentId)
     : undefined;
 
-  const effectiveMeta: TugcardMeta = activeCardRegistration
+  const effectiveMeta: CardMeta = activeCardRegistration
     ? activeCardRegistration.defaultMeta
     : meta;
 

@@ -26,8 +26,8 @@
 
 The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `windowId` / `.tug-window*` everywhere a Tug-authored identifier carried "window." Two surfaces survived that sweep by design — both are straightforward to clean up now that the vocabulary is stable:
 
-1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but nine identifiers still carry the old name — mostly hooks and contexts that were authored when `Tugcard` existed:
-   - `TugcardMeta` (card-registry)
+1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but eight identifiers still carry the old name — mostly hooks and contexts that were authored when `Tugcard` existed:
+   - `CardMeta` (card-registry; renamed from `TugcardMeta` in Step 1)
    - `TugcardDataContext`, `TugcardDataContextValue`, `TugcardDataProvider`, `useTugcardData` (hooks/use-tugcard-data.ts)
    - `TugcardPersistenceCallbacks`, `UseTugcardPersistenceOptions`, `useTugcardPersistence` (use-tugcard-persistence.tsx)
    - `useTugcardDirty` (tug-pane.tsx)
@@ -61,7 +61,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 #### Scope {#scope}
 
-1. `TugcardMeta` → `CardMeta` (card-registry.ts + all consumers).
+1. **`Done (Step 1).** `CardMeta` (was `TugcardMeta`) — card-registry.ts + all consumers.
 2. `use-tugcard-data.ts` → `use-card-data.ts` with all exports renamed (`TugcardDataContext[Value]` → `CardDataContext[Value]`, `TugcardDataProvider` → `CardDataProvider`, `useTugcardData` → `useCardData`).
 3. `use-tugcard-persistence.tsx` → `use-card-persistence.tsx` with all exports renamed (`useTugcardPersistence` → `useCardPersistence`, `UseTugcardPersistenceOptions` → `UseCardPersistenceOptions`, `TugcardPersistenceCallbacks` → `CardPersistenceCallbacks`).
 4. `useTugcardDirty` → `useCardDirty` (stays in tug-pane.tsx where `CardDirtyContext` is defined).
@@ -218,13 +218,13 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - Every consumer that imports `TugcardMeta` (component metadata readers across tugways cards, deck-canvas, tug-pane, tests).
 
 **Tasks:**
-- [ ] Rename `TugcardMeta` → `CardMeta` at the export.
-- [ ] Update every import + usage site.
-- [ ] Update JSDoc references.
+- [x] Rename `TugcardMeta` → `CardMeta` at the export.
+- [x] Update every import + usage site.
+- [x] Update JSDoc references.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "\bTugcardMeta\b" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "\bTugcardMeta\b" tugdeck/src` returns zero matches.
 
 ---
 
@@ -596,7 +596,7 @@ Definitions (9, as enumerated in Context):
 
 | Identifier | Kind | Definer | Renamed in Step |
 |---|---|---|---|
-| `TugcardMeta` | type | `tugdeck/src/card-registry.ts:71` | 1 |
+| `CardMeta` | type | `tugdeck/src/card-registry.ts:71` | 1 ✓ |
 | `TugcardDataContext` | React context | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:58` | 2 |
 | `TugcardDataContextValue` | type | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:50` | 2 |
 | `TugcardDataProvider` | FC | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:69` | 2 |
