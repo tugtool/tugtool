@@ -53,7 +53,7 @@ export type PropertyStoreRegistrar = (store: PropertyStore) => void;
  * React context that `CardHost` provides with a registration callback.
  *
  * Card content calls usePropertyStore(), which internally calls this callback
- * in useLayoutEffect to install the store. This mirrors the TugcardDataContext
+ * in useLayoutEffect to install the store. This mirrors the CardDataContext
  * pattern.
  *
  * Default value is null so usePropertyStore() works outside a host without

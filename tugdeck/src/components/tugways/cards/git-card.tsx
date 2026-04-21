@@ -2,8 +2,8 @@
  * Git Card — live git status display powered by the tugcast git feed.
  *
  * Renders branch name, ahead/behind indicators, HEAD commit message, and
- * staged/unstaged/untracked file lists. Uses `useTugcardData<GitStatus>()` to
- * read decoded feed data provided by `TugcardDataProvider` in tug-pane.tsx.
+ * staged/unstaged/untracked file lists. Uses `useCardData<GitStatus>()` to
+ * read decoded feed data provided by `CardHost` via `CardDataProvider`.
  *
  * **Laws:** [L02] External state via useSyncExternalStore (handled by TugPane/FeedStore),
  * [L15] CSS tokens for colors, [L19] data-slot annotations.
@@ -16,7 +16,7 @@ import React from "react";
 import { GitBranch, CircleCheck, CircleDot, CircleDashed } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { FeedId } from "@/protocol";
-import { useTugcardData } from "@/components/tugways/hooks/use-tugcard-data";
+import { useCardData } from "@/components/tugways/hooks/use-card-data";
 
 // ---------------------------------------------------------------------------
 // GitStatus schema (matches tugcast-core/src/types.rs)
@@ -121,11 +121,11 @@ function UntrackedList({ files }: { files: string[] }) {
 /**
  * Card-specific content for the Git status card.
  *
- * Reads decoded GitStatus from TugcardDataProvider via useTugcardData.
+ * Reads decoded GitStatus from `CardDataProvider` via `useCardData`.
  * Falls back to "Waiting for git status..." when no data has arrived yet.
  */
 export function GitCardContent() {
-  const data = useTugcardData<GitStatus>();
+  const data = useCardData<GitStatus>();
 
   if (!data) {
     return (

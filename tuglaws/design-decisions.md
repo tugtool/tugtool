@@ -64,7 +64,7 @@
 
 **D15.** Tugcard is composition, not inheritance. It assembles chrome (header, icon, accessory, content) around card content provided by the caller. [L09]
 
-**D16.** Card data access via `useTugcardData()` hook, not render props.
+**D16.** Card data access via `useCardData()` hook, not render props.
 
 **D17.** Cards compute dynamic min-size from content and report via `onMinSizeChange`.
 

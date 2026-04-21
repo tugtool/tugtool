@@ -1,22 +1,22 @@
 /**
- * useTugcardData -- Feed data access hook for card content components.
+ * useCardData -- Feed data access hook for card content components.
  *
  * **Authoritative reference:** design-system-concepts.md [D02] Hooks for data,
- * [D16]; Spec S01 TugcardProps; #d02-hooks-not-render-props.
+ * [D16]; #d02-hooks-not-render-props.
  *
  * ## Design
  *
- * `CardHost` places a `TugcardDataProvider` around card content. The provider
+ * `CardHost` places a `CardDataProvider` around card content. The provider
  * holds a `Map<number, unknown>` of decoded feed payloads keyed by feed ID.
  *
  * Two overloads are provided:
- * - `useTugcardData<T>()`: returns the first feed's decoded value typed as `T`
+ * - `useCardData<T>()`: returns the first feed's decoded value typed as `T`
  *   (single-feed convenience overload).
- * - `useTugcardData()`: returns the full `Map<number, unknown>` for multi-feed
+ * - `useCardData()`: returns the full `Map<number, unknown>` for multi-feed
  *   access.
  *
  * Both overloads return `null` when:
- * - The component is rendered outside a `TugcardDataProvider` (no provider in
+ * - The component is rendered outside a `CardDataProvider` (no provider in
  *   the tree), or
  * - The feed data map is empty (feedless card or feed not yet arrived).
  *
@@ -24,14 +24,14 @@
  *
  * ```tsx
  * // Single-feed convenience (typed)
- * const data = useTugcardData<MyPayloadType>();
+ * const data = useCardData<MyPayloadType>();
  *
  * // Multi-feed access (raw map)
- * const feeds = useTugcardData();
+ * const feeds = useCardData();
  * const payload = feeds?.get(FeedId.CODE_OUTPUT) as MyType | undefined;
  * ```
  *
- * @module hooks/use-tugcard-data
+ * @module hooks/use-card-data
  */
 
 import React, { createContext, useContext } from "react";
@@ -41,13 +41,13 @@ import React, { createContext, useContext } from "react";
 // ---------------------------------------------------------------------------
 
 /**
- * The value stored in `TugcardDataContext`.
+ * The value stored in `CardDataContext`.
  *
- * `null` means the component is either outside a `TugcardDataProvider` or inside a feedless
+ * `null` means the component is either outside a `CardDataProvider` or inside a feedless
  * card (`feedIds=[]`). When non-null the map holds decoded feed payloads keyed
  * by numeric feed ID.
  */
-export type TugcardDataContextValue = { feedData: Map<number, unknown> } | null;
+export type CardDataContextValue = { feedData: Map<number, unknown> } | null;
 
 /**
  * React context holding the current card's feed data.
@@ -55,7 +55,7 @@ export type TugcardDataContextValue = { feedData: Map<number, unknown> } | null;
  * Default value is `null` so hooks rendered outside a provider return `null`
  * rather than throwing.
  */
-export const TugcardDataContext = createContext<TugcardDataContextValue>(null);
+export const CardDataContext = createContext<CardDataContextValue>(null);
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -66,11 +66,11 @@ export const TugcardDataContext = createContext<TugcardDataContextValue>(null);
  *
  * Intended for **internal use by CardHost only** -- not part of the public API.
  */
-export const TugcardDataProvider: React.FC<{
+export const CardDataProvider: React.FC<{
   feedData: Map<number, unknown>;
   children: React.ReactNode;
 }> = ({ feedData, children }) =>
-  React.createElement(TugcardDataContext, { value: { feedData } }, children);
+  React.createElement(CardDataContext, { value: { feedData } }, children);
 
 // ---------------------------------------------------------------------------
 // Hook overloads
@@ -83,7 +83,7 @@ export const TugcardDataProvider: React.FC<{
  * `null` when outside a provider, inside a feedless card, or when the map is
  * empty.
  */
-export function useTugcardData<T>(): T | null;
+export function useCardData<T>(): T | null;
 
 /**
  * Raw multi-feed overload.
@@ -91,7 +91,7 @@ export function useTugcardData<T>(): T | null;
  * Returns the full `Map<number, unknown>` of decoded feed payloads, or `null`
  * when outside a provider or inside a feedless card.
  */
-export function useTugcardData(): Map<number, unknown> | null;
+export function useCardData(): Map<number, unknown> | null;
 
 /**
  * Implementation shared by both overloads.
@@ -102,15 +102,15 @@ export function useTugcardData(): Map<number, unknown> | null;
  * first value cast to `Map<number, unknown>` -- since TypeScript overloads
  * share one runtime body we cannot branch on the presence of a type argument.
  * Callers who need the full map for multi-feed access should call
- * `useTugcardData<Map<number, unknown>>()` or read `TugcardDataContext`
+ * `useCardData<Map<number, unknown>>()` or read `CardDataContext`
  * directly. Phase 6 will revise this when real feed subscription is wired.
  *
  * Returns `null` when:
- * - The component is outside a `TugcardDataProvider` (context value is null)
+ * - The component is outside a `CardDataProvider` (context value is null)
  * - The feed data map is empty (feedless card)
  */
-export function useTugcardData<T = Map<number, unknown>>(): T | null {
-  const ctx = useContext(TugcardDataContext);
+export function useCardData<T = Map<number, unknown>>(): T | null {
+  const ctx = useContext(CardDataContext);
 
   if (ctx === null) {
     return null;

@@ -26,9 +26,9 @@
 
 The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `windowId` / `.tug-window*` everywhere a Tug-authored identifier carried "window." Two surfaces survived that sweep by design — both are straightforward to clean up now that the vocabulary is stable:
 
-1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but eight identifiers still carry the old name — mostly hooks and contexts that were authored when `Tugcard` existed:
+1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but four identifiers still carry the old name — mostly hooks and contexts that were authored when `Tugcard` existed:
    - `CardMeta` (card-registry; renamed from `TugcardMeta` in Step 1)
-   - `TugcardDataContext`, `TugcardDataContextValue`, `TugcardDataProvider`, `useTugcardData` (hooks/use-tugcard-data.ts)
+   - `CardDataContext`, `CardDataContextValue`, `CardDataProvider`, `useCardData` (`hooks/use-card-data.ts`; renamed from `TugcardData*` in Step 2)
    - `TugcardPersistenceCallbacks`, `UseTugcardPersistenceOptions`, `useTugcardPersistence` (use-tugcard-persistence.tsx)
    - `useTugcardDirty` (tug-pane.tsx)
    - 133 consumer references across 17 files
@@ -61,11 +61,11 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 #### Scope {#scope}
 
-1. **`Done (Step 1).** `CardMeta` (was `TugcardMeta`) — card-registry.ts + all consumers.
-2. `use-tugcard-data.ts` → `use-card-data.ts` with all exports renamed (`TugcardDataContext[Value]` → `CardDataContext[Value]`, `TugcardDataProvider` → `CardDataProvider`, `useTugcardData` → `useCardData`).
+1. **Done (Step 1).** `CardMeta` (was `TugcardMeta`) — card-registry.ts + all consumers.
+2. **Done (Step 2).** `use-card-data.ts` with exports `CardDataContext`, `CardDataContextValue`, `CardDataProvider`, `useCardData` (was `use-tugcard-data.ts` / `TugcardData*`).
 3. `use-tugcard-persistence.tsx` → `use-card-persistence.tsx` with all exports renamed (`useTugcardPersistence` → `useCardPersistence`, `UseTugcardPersistenceOptions` → `UseCardPersistenceOptions`, `TugcardPersistenceCallbacks` → `CardPersistenceCallbacks`).
 4. `useTugcardDirty` → `useCardDirty` (stays in tug-pane.tsx where `CardDirtyContext` is defined).
-5. Test file renames: `use-tugcard-data.test.tsx` → `use-card-data.test.tsx`, `use-tugcard-persistence.test.tsx` → `use-card-persistence.test.tsx`.
+5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-tugcard-persistence.test.tsx` → `use-card-persistence.test.tsx` (Step 3).
 6. CSS frame tokens: `--tugx-card-bg`, `--tugx-card-border`, `--tugx-card-shadow-active|inactive`, `--tugx-card-dim-overlay` → `--tugx-pane-*`.
 7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
 8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
@@ -240,18 +240,18 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - File rename: `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts` → `use-card-data.ts`.
 - File rename: `tugdeck/src/__tests__/use-tugcard-data.test.tsx` → `use-card-data.test.tsx`.
 - Export renames: `TugcardDataContext[Value]` → `CardDataContext[Value]`, `TugcardDataProvider` → `CardDataProvider`, `useTugcardData` (all overload signatures) → `useCardData`.
-- Consumers: `card-host.tsx`, card bodies that use `useTugcardData`, tests.
+- Consumers: `card-host.tsx`, `git-card.tsx`, `git-card.test.tsx`, `use-card-data.test.tsx`, hooks barrel `index.ts`, `use-property-store.ts` (comment).
 - Hooks index: `components/tugways/hooks/index.ts` re-export list.
 
 **Tasks:**
-- [ ] `git mv` the source + test files.
-- [ ] Rename every exported symbol at the definition site.
-- [ ] Update every import and usage site.
-- [ ] Update JSDoc.
+- [x] `git mv` the source + test files.
+- [x] Rename every exported symbol at the definition site.
+- [x] Update every import and usage site.
+- [x] Update JSDoc.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "TugcardDataContext|TugcardDataProvider|useTugcardData|use-tugcard-data" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "TugcardDataContext|TugcardDataProvider|useTugcardData|use-tugcard-data" tugdeck/src` returns zero matches.
 
 ---
 
@@ -597,10 +597,10 @@ Definitions (9, as enumerated in Context):
 | Identifier | Kind | Definer | Renamed in Step |
 |---|---|---|---|
 | `CardMeta` | type | `tugdeck/src/card-registry.ts:71` | 1 ✓ |
-| `TugcardDataContext` | React context | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:58` | 2 |
-| `TugcardDataContextValue` | type | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:50` | 2 |
-| `TugcardDataProvider` | FC | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:69` | 2 |
-| `useTugcardData` | hook | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:86,94,112` | 2 |
+| `CardDataContext` | React context | `tugdeck/src/components/tugways/hooks/use-card-data.ts:58` | 2 ✓ |
+| `CardDataContextValue` | type | `tugdeck/src/components/tugways/hooks/use-card-data.ts:50` | 2 ✓ |
+| `CardDataProvider` | FC | `tugdeck/src/components/tugways/hooks/use-card-data.ts:69` | 2 ✓ |
+| `useCardData` | hook | `tugdeck/src/components/tugways/hooks/use-card-data.ts:86,94,112` | 2 ✓ |
 | `TugcardPersistenceCallbacks` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:58` | 3 |
 | `UseTugcardPersistenceOptions` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` | 3 |
 | `useTugcardPersistence` | hook | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:123` | 3 |
@@ -612,9 +612,7 @@ Definitions (9, as enumerated in Context):
 - `tugdeck/src/__tests__/content-ready-spike.test.tsx` — 7 prose mentions of `useTugcardPersistence`.
 - `tugdeck/src/__tests__/react19-commit-timing.test.tsx:477` — 1 comment.
 - `tugdeck/src/components/tugways/tug-tab-bar.tsx:2` — header comment ("TugTabBar — presentational tab strip for multi-tab Tugcards").
-- `tugdeck/src/components/tugways/hooks/use-property-store.ts:56` — comment reference to `TugcardDataContext`.
 - `tugdeck/src/components/tugways/cards/hello-world-card.tsx:5` — JSDoc reference to `TugcardProps`.
-- `tugdeck/src/components/tugways/cards/git-card.tsx:5,6,124` — JSDoc references to `useTugcardData` / `TugcardDataProvider`.
 
 #### A.2 CSS token inventory (authoritative)
 

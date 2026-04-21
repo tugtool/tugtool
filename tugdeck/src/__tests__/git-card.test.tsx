@@ -17,7 +17,7 @@ import React from "react";
 import { describe, it, expect } from "bun:test";
 import { render, act } from "@testing-library/react";
 
-import { TugcardDataProvider } from "@/components/tugways/hooks/use-tugcard-data";
+import { CardDataProvider } from "@/components/tugways/hooks/use-card-data";
 import { GitCardContent } from "@/components/tugways/cards/git-card";
 import { FeedId } from "@/protocol";
 
@@ -61,9 +61,9 @@ function renderWithFeedData(status: GitStatus | null) {
     : new Map<number, unknown>();
 
   return render(
-    <TugcardDataProvider feedData={feedData}>
+    <CardDataProvider feedData={feedData}>
       <GitCardContent />
-    </TugcardDataProvider>
+    </CardDataProvider>
   );
 }
 

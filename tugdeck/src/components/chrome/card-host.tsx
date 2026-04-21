@@ -11,7 +11,7 @@
  * merge / pane-to-pane moves.
  *
  * Render shape: wraps `registration.contentFactory(cardId)` in the four
- * per-content context providers (`TugcardDataProvider`,
+ * per-content context providers (`CardDataProvider`,
  * `CardPropertyContext`, `CardPersistenceContext`,
  * `CardDirtyContext`) plus a re-bridged `TugPanePortalContext`
  * (looked up from `pane-root-registry`) and a responder scope keyed by
@@ -23,7 +23,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
-import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
+import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
@@ -355,7 +355,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       >
         <TugPanePortalContext value={hostCardRootEl}>
           <ResponderScope>
-            <TugcardDataProvider feedData={feedData}>
+            <CardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
                 <CardPersistenceContext value={registerPersistenceCallbacks}>
                   <CardDirtyContext value={markDirty}>
@@ -375,7 +375,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
                   </CardDirtyContext>
                 </CardPersistenceContext>
               </CardPropertyContext>
-            </TugcardDataProvider>
+            </CardDataProvider>
           </ResponderScope>
         </TugPanePortalContext>
       </div>
