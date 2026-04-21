@@ -297,13 +297,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
-        // Close Card/Tab: routes through the web view's responder chain rather than
-        // NSWindow.performClose. The custom selector sends a Control frame that
-        // action-dispatch.ts turns into a `close` chain dispatch, which lands on
-        // tug-card's registered handler. Without the round-trip, AppKit would
-        // swallow ⌘W at the menubar and the WKWebView would never see the keystroke.
-        // Title updates dynamically based on focused card's tab count.
-        closeMenuItem = NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        // Close Card / Close Window: routes through the web view's responder
+        // chain rather than NSWindow.performClose. The custom selector sends a
+        // Control frame that action-dispatch.ts turns into a `close` chain
+        // dispatch, which lands on TugWindow's registered handler. Without the
+        // round-trip, AppKit would swallow ⌘W at the menubar and the WKWebView
+        // would never see the keystroke.
+        //
+        // Title is dynamic (updated by updateCardList on every frontend push):
+        //   multi-card window  → "Close Card"  (closes the active card)
+        //   single-card window → "Close Window" (closes the whole window)
+        // matching the macOS Safari / Finder convention. The initial title
+        // is "Close Window" — before the first card list arrives, any pending
+        // ⌘W best describes the default single-card window state.
+        closeMenuItem = NSMenuItem(title: "Close Window", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
         fileMenu.addItem(closeMenuItem)
 
         // Edit Menu - position 2
@@ -360,7 +367,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addCardToActiveWindow(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Card to Active Window", action: #selector(addCardToActiveWindow(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
         developerMenu.isHidden = !devModeEnabled
@@ -507,10 +514,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateCardList(_ list: [[String: Any]]) {
         cachedCardList = list
 
-        // Update Close menu item title based on the focused stack's card count.
-        let focusedStack = list.first { ($0["focused"] as? Bool) == true }
-        let cardCount = focusedStack?["cardCount"] as? Int ?? 0
-        closeMenuItem?.title = cardCount > 1 ? "Close Tab" : "Close Card"
+        // File ▸ Close Card / Close Window — dynamic label based on the
+        // focused window's card count. Multi-card: ⌘W closes the active card
+        // (window stays). Single-card: ⌘W closes the whole window. Matches
+        // macOS Safari / Finder behavior.
+        let focusedWindow = list.first { ($0["focused"] as? Bool) == true }
+        let cardCount = focusedWindow?["cardCount"] as? Int ?? 0
+        closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Window"
     }
 
     // MARK: - UDS control commands

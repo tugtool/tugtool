@@ -549,12 +549,12 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - `tugapp/Sources/MainMenu.swift` (or wherever the menu is defined) — titles.
 
 **Tasks:**
-- [ ] "Add Tab to Active Card" → "Add Card to Active Window" (or shorter "New Card in Active Window" / "Add Card" — pick the shortest natural phrasing).
-- [ ] "Close Tab" → "Close Card".
-- [ ] Keybindings unchanged.
+- [x] "Add Tab to Active Card" → "Add Card to Active Window" (or shorter "New Card in Active Window" / "Add Card" — pick the shortest natural phrasing).
+- [x] "Close Tab" → "Close Card".
+- [x] Keybindings unchanged.
 
 **Checkpoint:**
-- [ ] Tug.app builds and runs.
+- [x] Tug.app builds and runs.
 - [ ] Manual smoke: File → "Add Card" works; File → "Close Card" works; ⌘T / ⌘W unchanged.
 
 ---
