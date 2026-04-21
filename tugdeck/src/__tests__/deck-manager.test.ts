@@ -2421,5 +2421,48 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getDeckState().stacks.find((s) => s.id === stack1Id)).toBeDefined();
     expect(manager.getDeckState().stacks.find((s) => s.id === stack2Id)).toBeUndefined();
   });
+
+  it("T-11-6-1b-detach-focus: add-then-detach blurs tide and does not refocus it", () => {
+    // Reproducer for the 11.6.1a-motivating detach focus bug. Sequence:
+    //   1. Stack S1 contains tide (FR).
+    //   2. addCardToStack(S1, hello) → hello becomes FR in S1; tide
+    //      deactivates (prompt blurs).
+    //   3. detachCard(S1, hello, pos) → hello moves to a new stack S2
+    //      which becomes the deck's active stack; hello was already FR
+    //      so the composite bit does NOT flip (transition 6, same-bit).
+    //   4. Assertion: no `didAct:tide` fires anywhere in the sequence
+    //      after the initial activation from addCard. Tide's blur from
+    //      step 2 stands; no stray re-focus side effect is issued.
+    registerCard(makeRegistration("tide"));
+    registerCard(makeRegistration("hello"));
+    const tide = manager.addCard("tide") as string;
+    const s1 = hostStack(manager.getDeckState(), tide).id;
+    expect(manager.getFirstResponderCardId()).toBe(tide);
+    const log = attachTransitionLog(manager);
+
+    const hello = manager.addCardToStack(s1, "hello") as string;
+    manager.detachCard(s1, hello, { x: 200, y: 200 });
+
+    // After addCardToStack on the active stack: FR flips tide → hello
+    // (construction fires inside commit). After detachCard: hello is
+    // already FR, new stack becomes active, no flip events. No
+    // `didAct:tide` should appear anywhere.
+    expect(log).toEqual([
+      `willDeact:${tide}`,
+      `willAct:${hello}`,
+      `construct:${hello}`,
+      `didDeact:${tide}`,
+      `didAct:${hello}`,
+    ]);
+    expect(log.some((entry) => entry === `didAct:${tide}`)).toBe(false);
+    expect(manager.getFirstResponderCardId()).toBe(hello);
+
+    // Hello landed in a new stack that is the deck's active stack.
+    const state = manager.getDeckState();
+    const helloStack = state.stacks.find((s) => s.cardIds.includes(hello));
+    expect(helloStack).toBeDefined();
+    expect(helloStack!.id).not.toBe(s1);
+    expect(state.activeStackId).toBe(helloStack!.id);
+  });
 });
 

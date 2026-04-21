@@ -1170,6 +1170,12 @@ useCardDelegate(cardId, {
 - Do not delete tests. If a test is meaningless under the new model, migrate it rather than remove it.
 - If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
 
+**Status: complete (2026-04-20).** Manual smoke passed after the Piece 3 click-to-activate fix. Commit trail:
+- Piece 1 — `_setFirstResponder` + `getFirstResponderCardId`: `ebe67dde`
+- Piece 2 — route FR-flipping mutators through the flip helper: `1735adc8`
+- Piece 3 — tide delegate consolidation + cascade retargeting: `e8968e33`
+- Piece 3 fix-up — drop `focusCard` pre-call in `handleStackActivate` / gallery path (the pre-call pre-mutated `activeStackId`, causing `_setFirstResponder` to short-circuit on click-back-to-stack): `980b4945`
+
 #### Step 11.6.5 — Close out H6–H11 + H-A7/A8/A9 residuals {#step-11-6-5}
 
 **Motivation:** The reliability study's H1–H3 are resolved by Step 11. H4–H5 were resolved incidentally in the 2cdc5fa5 commit (Route addCard/removeCard through activation lifecycle). The remaining holes (H6, H7, H8/H-A9, H9, H10, H11) and three residuals from the 11.6 audit (H-A7, H-A8, H-A9) land in one coordinated cleanup step.
