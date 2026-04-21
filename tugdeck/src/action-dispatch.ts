@@ -302,35 +302,27 @@ export function initActionDispatch(
     deckManager.arrangeCards(mode);
   });
 
-  // focus-card: Bring a card to front by ID.
-  // Swift sends focus-card with cardId: string from the View menu card list.
-  // Routes through `activateCard` (the single entry point for activation
-  // lifecycle) so selecting a card from the View menu fires the full
-  // will/didDeactivate + will/didActivate transition and promotes the
-  // responder chain. `focusCard` alone would only reorder z-order.
+  // focus-card: Bring a stack to front by activating its active card.
   //
-  // The `cardId` wire name on the View menu payload refers — post the
-  // Card/CardStack rename — to a stack id in the current deck: the View
-  // menu list is emitted from `pushCardListToHost`, which ships stack ids
-  // under that key for backward compatibility with Swift. We resolve the
-  // stack's active card id and activate that.
+  // Swift's View menu builds a stack list from `pushCardListToHost` and
+  // emits `focus-card` with `stackId: string` when the user picks an
+  // entry. Routes through `activateCard` on the stack's `activeCardId`
+  // so the menu selection fires the full will/didDeactivate +
+  // will/didActivate transition and promotes the responder chain —
+  // `focusCard` alone would only reorder z-order and skip the lifecycle
+  // events.
   registerAction("focus-card", (payload) => {
-    const id = payload.cardId;
-    if (typeof id !== "string") {
-      console.warn("focus-card: missing or invalid cardId", payload);
+    const stackId = payload.stackId;
+    if (typeof stackId !== "string") {
+      console.warn("focus-card: missing or invalid stackId", payload);
       return;
     }
-    const snapshot = deckManager.getSnapshot();
-    const stack = snapshot.stacks.find((s) => s.id === id);
-    if (stack) {
-      deckManager.activateCard(stack.activeCardId);
+    const stack = deckManager.getSnapshot().stacks.find((s) => s.id === stackId);
+    if (!stack) {
+      console.warn(`focus-card: no stack with id "${stackId}"`);
       return;
     }
-    // Fallback: treat `id` as a card id (old semantic).
-    const hostStack = snapshot.stacks.find((s) => s.cardIds.includes(id));
-    if (hostStack) {
-      deckManager.activateCard(id);
-    }
+    deckManager.activateCard(stack.activeCardId);
   });
 
   // show-card: Add a card by componentId (Spec S08)

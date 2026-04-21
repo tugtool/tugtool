@@ -435,8 +435,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func focusCardFromMenu(_ sender: NSMenuItem) {
-        guard let cardId = sender.representedObject as? String else { return }
-        sendControl("focus-card", params: ["cardId": cardId])
+        guard let stackId = sender.representedObject as? String else { return }
+        sendControl("focus-card", params: ["stackId": stackId])
     }
 
     @objc private func showComponentGallery(_ sender: Any?) {
@@ -737,11 +737,11 @@ extension AppDelegate: NSMenuDelegate {
         if !cachedCardList.isEmpty {
             menu.addItem(NSMenuItem.separator())
             for entry in cachedCardList {
-                guard let cardId = entry["id"] as? String,
+                guard let stackId = entry["id"] as? String,
                       let title = entry["title"] as? String else { continue }
                 let focused = entry["focused"] as? Bool ?? false
                 let item = NSMenuItem(title: title, action: #selector(focusCardFromMenu(_:)), keyEquivalent: "")
-                item.representedObject = cardId
+                item.representedObject = stackId
                 item.state = focused ? .on : .off
                 menu.addItem(item)
             }
