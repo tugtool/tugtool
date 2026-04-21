@@ -1022,7 +1022,7 @@ Transitions that flip the bit (all flow through `activateCard` or internal equiv
 5. `addCardToStack(stackId, componentId)` → new card becomes `stackId`'s active card. If `stackId` was already the deck's active stack, first responder flips from the previous active-card-in-stack to the new one. If not, no flip (new card is active-in-its-stack but its stack is not active in the deck).
 6. `detachCard(cardId, position)` → new stack is created and becomes the deck's active stack, containing only `cardId`. If `cardId` was already first responder, no flip (still first responder). If not, flip to `cardId`. Source stack may also change its active-in-stack card; if source stack is not the deck's active stack after detach, that change does not flip first responder.
 7. `moveCardToStack(cardId, targetStackId, insertAtIndex)` → moved card becomes `targetStackId`'s active card. If `targetStackId` is or becomes the deck's active stack, first responder flips to the moved card. Source stack's active-in-stack change is evaluated the same way.
-8. `handleCardClosed(cardId)` → if the card was first responder, its stack picks a new active card (or is removed); first responder flips (or is cleared if no stack remains).
+8. `removeCard(stackId, cardId)` → if the card was first responder, its stack picks a new active card (and if `cardId` was the sole card, the stack is removed via `handleStackClosed(stackId)`); first responder flips (or is cleared if no stack remains). Also applies to `handleStackClosed(stackId)` called directly on the active stack.
 9. App background / hide (cascade from Step 7) → first responder is cleared temporarily; flip event fires.
 10. App foreground / unhide → first responder is restored; flip event fires.
 
@@ -1060,9 +1060,14 @@ Transitions that flip the bit (all flow through `activateCard` or internal equiv
 - Mutate: remove from source, insert in target, target's `activeCardId = cardId`, source's `activeCardId` may change (pick neighbor) or source may be removed. `activeStackId` may or may not change depending on call-site (if the user dragged the card, activeStackId typically follows to the target).
 - `_setFirstResponder` reconciles.
 
-*handleCardClosed(cardId):*
-- If `cardId` is first responder, pick a new first responder (next card in the same stack, or first card in another stack, or null) and route through `_setFirstResponder(newFR)` BEFORE firing `cardWillBeginDestruction(cardId)`.
-- Then: fire `cardWillBeginDestruction`, mutate state, `notify()`.
+*setActiveCardInStack(stackId, cardId) — the tab-bar click path:*
+- Today (HEAD after 11.6.1a) this is a raw mutator with no lifecycle events. Under 11.6.1b it MUST route through `_setFirstResponder` when `stackId` is the deck's active stack (transition 2 from the Motivation list — tab-bar click in the active stack flips first responder). When `stackId` is NOT the deck's active stack, mutate `stack.activeCardId` and `notify()` only — no first-responder flip (transition 5b's sibling case).
+- **Plan decision:** keep `setActiveCardInStack` as a distinct store method (not folded into `activateCard`). The two paths have different semantics — `activateCard` always makes `cardId` first responder (promotes its stack too); `setActiveCardInStack` does NOT promote the stack. The tab-bar click in an inactive stack's tab bar is a rare but real call site that must preserve this distinction.
+
+*removeCard(stackId, cardId) / handleStackClosed(stackId):*
+- If the removed card (or any card in the closed stack) is first responder, pick a new first responder (next card in the same stack, or first card in another stack, or null) and route through `_setFirstResponder(newFR)` BEFORE firing `cardWillBeginDestruction(cardId)`.
+- Then: fire `cardWillBeginDestruction` on each card being destroyed, mutate state, `notify()`.
+- `handleStackClosed` closes the entire stack (every card in it gets `cardWillBeginDestruction`); `removeCard` handles the per-card case and delegates to `handleStackClosed` when removing the last card would leave an empty stack.
 
 *Cascade (Step 7) reconciliation:*
 - App-resign/hide: cascade already deactivates the first responder. In the new model, it still works unchanged — it calls `cardWillDeactivate` / `cardDidDeactivate` on whatever card is currently first responder.
@@ -1099,8 +1104,9 @@ useCardDelegate(cardId, {
 - T-11-6-1b-06b — `detachCard` when moved card is NOT first responder → flip sequence to moved card.
 - T-11-6-1b-07 — `moveCardToStack` to the active stack → flip sequence.
 - T-11-6-1b-07b — `moveCardToStack` to an inactive stack → no flip.
-- T-11-6-1b-08a — close the first responder (stack has other cards) → flip to a neighbor, then destruction fires.
-- T-11-6-1b-08b — close the first responder (sole card in sole stack) → flip to null, then destruction fires.
+- T-11-6-1b-08a — `removeCard` on the first responder when its stack has other cards → flip to a neighbor, then destruction fires.
+- T-11-6-1b-08b — `removeCard` on the first responder when it is the sole card in the sole stack (triggers `handleStackClosed` internally) → flip to null, then destruction fires.
+- T-11-6-1b-08c — `handleStackClosed` on the active stack with multiple cards → flip to the new top-of-deck stack's active card (or null), then destruction fires for every card in the closed stack.
 - T-11-6-1b-09 — App resigns active → `cardWillDeactivate` / `cardDidDeactivate` on first responder; app becomes active → `cardWillActivate` / `cardDidActivate` on the same card.
 
 *Regression test for the detach focus bug:*
@@ -1122,6 +1128,47 @@ useCardDelegate(cardId, {
 - This step does NOT introduce `cardDidBecomeVisible` / `cardDidBecomeHidden` events for cards that change active-in-stack status without first-responder flipping (transitions 05b, 07b, the source-stack side of 06 and 07). Those transitions are genuinely silent at the delegate layer. If a future card type (e.g., a chart) needs "I just became visible in my stack" as a hook, add a dedicated event then — do not speculate now.
 - The construction focus call in tide-card.tsx is removed. The sequence for `addCard` (standalone) is: construction fires (TideCardBody mounts), then first-responder flips to the new card, then `cardDidActivate` fires (TideCardBody focuses). Construction-with-focus is no longer a coupled pair — two independent events, ordered by the store logic.
 - Session restoration across reload (the deferred "tide card's prompt focus on reload" bug) remains out of scope. This plan's reload flow already activates the focused card via `activateCard(cardId, null)`; the missing piece is that tide's WebSocket doesn't survive reload. A follow-up phase owns session restoration.
+- **`focus-card` wire semantics** (action-dispatch.ts `focus-card` handler). The Swift AppDelegate's View menu emits this action with a payload field named `cardId` that actually carries a *stack* id (a holdover from before the 11.6.1a rename; `pushCardListToHost` ships stack ids under the `cardId` key for back-compat). Renaming the wire to genuinely carry a card id would require AppDelegate coordination (same pattern as the `tabCount` → `cardCount` rename in 11.6.1a Piece 2.5). **Decision: out of scope for 11.6.1b.** The current handler is already correct under the new `_setFirstResponder` plumbing — it resolves the stack, reads `stack.activeCardId`, and calls `activateCard(cardId)`. That single call routes through `_setFirstResponder` and fires the full flip sequence. The wire field is cosmetically misnamed but the behavior is right. A follow-up can rename the wire when other AppDelegate coordination items are batched.
+
+**Piece decomposition (four commits):**
+
+*Piece 1 — Introduce `_setFirstResponder` and simplify `activateCard`.*
+- Add private `_setFirstResponder(newFirstResponderCardId: string | null)` on `DeckManager`. Computes old from `(activeStack?.activeCardId) ?? null`; no-op if unchanged; otherwise fires `cardWillDeactivate(old)` → `cardWillActivate(new)` → commits the `activeStackId` / `activeCardId` mutation → `notify()` → `cardDidDeactivate(old)` → `cardDidActivate(new)`.
+- Expose `getFirstResponderCardId(): string | null` on `IDeckManagerStore` (returns the composite bit).
+- Route `activateCard` and `_closeStack` through `_setFirstResponder`. Drop `knownPreviousActive` parameter from `IDeckManagerStore.activateCard` and its caller at `deck-canvas.tsx:357` (restoration path becomes `activateCard(focusedCardId)`).
+- Files: `tugdeck/src/deck-manager.ts`, `tugdeck/src/deck-manager-store.ts`, `tugdeck/src/components/chrome/deck-canvas.tsx`, mock stores in `__tests__/`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green at existing count. No new behavior on other mutators yet — they still use the pre-11.6.1b paths.
+
+*Piece 2 — Route every first-responder-flipping mutator through `_setFirstResponder`.*
+- `addCardToStack`: after construction, call `_setFirstResponder(newCardId)` iff `stackId === activeStackId` (transition 5a). Else `notify()` only (transition 5b).
+- `setActiveCardInStack(stackId, cardId)`: route through `_setFirstResponder(cardId)` iff `stackId === activeStackId` (transition 2). Else raw mutate + `notify()` (inactive-stack tab switch does not flip).
+- `detachCard`: after the mutation that makes the new stack active, call `_setFirstResponder(cardId)` (no-op if `cardId` was already first responder — transition 6; fires otherwise — transition 6b).
+- `moveCardToStack`: after the mutation, call `_setFirstResponder(cardId)` iff the target stack is/becomes the deck's active stack (transition 7). Else `notify()` only (transition 7b).
+- `removeCard` / `handleStackClosed`: if any destroyed card is first responder, call `_setFirstResponder(newFR)` BEFORE firing `cardWillBeginDestruction`. Picks new FR: next card in same stack, else first card in the new top-of-deck stack, else `null`.
+- Add transition tests T-11-6-1b-01 through T-11-6-1b-08c (covering every transition 1–8 and sub-case).
+- Files: `tugdeck/src/deck-manager.ts`, `tugdeck/src/__tests__/deck-manager.test.ts`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with +12 new tests.
+
+*Piece 3 — Consolidate tide-card delegate + cascade reconciliation + T-09.*
+- `tide-card.tsx`: drop `cardDidFinishConstruction: () => focus()`. Keep `cardDidActivate: () => focus()` and `cardWillDeactivate: () => blur()` as the sole focus-management path. Replace the current `cardLifecycle?.getActiveCardId() !== cardId` guard in `cardDidMove` / `cardDidResize` with `store.getFirstResponderCardId() !== cardId` (the composite bit, not the per-stack active card).
+- Cascade (Step 7) reconciliation: verify app-resign and app-foreground paths drive `_setFirstResponder` correctly (they already deactivate/reactivate the current first responder; verify idempotence under the new plumbing).
+- Add T-11-6-1b-09 (app-resign/foreground fires will/did{de,}activate on first responder).
+- Files: `tugdeck/src/components/tugways/cards/tide-card.tsx`, `tugdeck/src/lib/lifecycle-cascade.ts` (if any change needed; likely none), `tugdeck/src/__tests__/card-lifecycle.test.tsx`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with +1 new test. Manual: prompt focuses on activation, blurs on deactivation, stays put on same-stack neighbor tab-switches, refocuses on move/resize only when tide is first responder.
+
+*Piece 4 — Detach-focus regression test + manual smoke + plan close.*
+- Add T-11-6-1b-detach-focus (the motivating reproducer from 11.6.1a's Motivation): construct deck with tide, `addCardToStack` a Hello card, assert tide blurred; `detachCard(hello)`, assert Hello is first responder and tide did NOT re-focus.
+- Execute manual verification checklist (prompt blur/focus behavior across all transitions from the Motivation list + app hide/background).
+- Update step header status note with commit trail.
+- Files: `tugdeck/src/__tests__/card-lifecycle.test.tsx`, `roadmap/tugplan-lifecycle-delegates.md`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with +1 new test. All manual smoke items pass.
+
+**Rules for executing each piece:**
+- Each piece lands as exactly one commit with a clear commit message.
+- `bun x tsc --noEmit` and `bun test` must pass at HEAD of every piece before moving to the next.
+- Do not edit files outside the piece's stated file list. If an unexpected file needs a change, pause and surface it before editing.
+- Do not delete tests. If a test is meaningless under the new model, migrate it rather than remove it.
+- If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
 
 #### Step 11.6.5 — Close out H6–H11 + H-A7/A8/A9 residuals {#step-11-6-5}
 
