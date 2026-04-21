@@ -27,6 +27,23 @@ import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
 
+/**
+ * `window.tugdeck` — the single namespace the native Swift host uses
+ * for synchronous `evaluateJavaScript` entry points. Only the two
+ * methods installed below live here. Typed via `declare global` so
+ * consumers get IDE autocomplete and so the assignment below is a
+ * straightforward `window.tugdeck = { ... }` rather than a cast
+ * through `Record<string, unknown>`.
+ */
+declare global {
+  interface Window {
+    tugdeck?: {
+      saveState(): void;
+      reconnect(): void;
+    };
+  }
+}
+
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
 
@@ -181,7 +198,7 @@ if (!container) {
   // evaluateJavaScript entry points because they're synchronous
   // Swift-initiated RPCs where a WebSocket round-trip is the wrong
   // timing.
-  (window as unknown as Record<string, unknown>).tugdeck = {
+  window.tugdeck = {
     saveState: () => deck.saveAndFlushSync(),
     reconnect: () => connection.forceReconnect(),
   };
