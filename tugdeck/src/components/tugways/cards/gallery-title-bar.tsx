@@ -110,7 +110,7 @@ export function GalleryTitleBar() {
             border: "1px solid var(--tugx-pane-border)",
             borderRadius: "var(--tug-radius-md)",
             overflow: "hidden",
-            background: "var(--tugx-card-title-bar-bg-inactive)",
+            background: "var(--tugx-pane-title-bar-bg-inactive)",
           }}
           data-testid="gallery-card-title-bar-demo"
         >

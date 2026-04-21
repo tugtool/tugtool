@@ -20,7 +20,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 ```css
 /* @tug-renders-on: --tug-base-surface-default */
 .selector {
-  color: var(--tug-card-title-bar-fg);
+  color: var(--tugx-pane-title-fg-inactive);
 }
 ```
 
@@ -31,7 +31,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | File | Rules needing annotation | Count |
 |------|--------------------------|-------|
 | tug-button.css | 25 svg/color rules — all button variants set `color` on SVG sub-selectors without bg | 25 |
-| tug-pane.css | `.tugcard-loading`, `.tugcard-title`, `.tug-pane[data-focused="true"] .tugcard-icon`, `.tug-pane[data-focused="false"] .tugcard-icon` | 4 |
+| tug-pane.css | `.tugcard-loading`, `.tugcard-title`, `.tug-pane[data-focused="true"] .tugcard-title`, `.tug-pane[data-focused="true"] .tugcard-icon`, `.tug-pane[data-focused="false"] .tugcard-icon` | 5 |
 | tug-tab.css | `.tug-tab`, `.tug-tab-bar .tug-tab-add`, `.tug-tab-bar .tug-tab-overflow-btn` | 3 |
 | tug-menu.css | `.tug-dropdown-item` plus 6 svg sub-selectors for open-state buttons | 7 |
 | tug-badge.css | 10 outlined/ghost variant rules (bg=transparent) | 10 |
@@ -53,14 +53,14 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | cards/gallery-popup-button.css | 9 rules | 9 |
 | cards/gallery-palette-content.css | 9 rules | 9 |
 | cards/gallery-theme-generator-content.css | 32 rules | 32 |
-| **TOTAL** | | **142** |
+| **TOTAL** | | **143** |
 
 > The previous survey captured only 100 distinct rules because it was based solely on the audit
 > tool's "104 unresolved pairings" output — rules that heuristic strategies 2-4 happened to resolve
 > (even if incorrectly) were not counted. This static analysis adds 42 additional rules, primarily
 > in tug-button.css (25 svg sub-selector rules), tug-menu.css (6 additional open-state svg rules),
 > tug-checkbox.css (3 additional rules), and tug-input.css (3 additional validation border-color rules).
-> The total of 142 is above the ~130 estimate but well within the Risk R01 threshold of 160.
+> The total of 143 is above the ~130 estimate but well within the Risk R01 threshold of 160.
 > No batching is required.
 
 ---
@@ -132,16 +132,17 @@ icon is the same background as its parent button state.
 
 ---
 
-### tug-pane.css — 4 annotations
+### tug-pane.css — 5 annotations
 
-(Unchanged from previous survey — these are correctly identified.)
+(Split title row: default `.tugcard-title` vs focused `.tug-pane[data-focused="true"] .tugcard-title`.)
 
 | Selector | Property | Element token | Rendering surface |
 |----------|----------|---------------|-------------------|
 | `.tugcard-loading` | `color` | `--tug-base-fg-muted` | `--tug-base-surface-default` |
-| `.tugcard-title` | `color` | `--tug-card-title-bar-fg` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
-| `.tug-pane[data-focused="true"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-active` | `--tug-base-tab-bg-active` |
-| `.tug-pane[data-focused="false"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
+| `.tugcard-title` | `color` | `--tugx-pane-title-fg-inactive` | `--tug-base-tab-bg-inactive` |
+| `.tug-pane[data-focused="true"] .tugcard-title` | `color` | `--tugx-pane-title-fg-active` | `--tug-base-tab-bg-active` |
+| `.tug-pane[data-focused="true"] .tugcard-icon` | `color` | `--tugx-pane-title-bar-icon-active` | `--tug-base-tab-bg-active` |
+| `.tug-pane[data-focused="false"] .tugcard-icon` | `color` | `--tugx-pane-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
 
 > `.tugcard-accessory` has `background-color: var(--tug-base-surface-default)` in the same rule → strategy 1, no annotation needed.
 > `.tugcard-title-bar ::selection` and `.tugcard-title-bar::selection` use `color: inherit` — no specific token → no annotation needed.
@@ -442,9 +443,9 @@ Most elements render on `--tug-base-surface-default`. Key exceptions noted below
 | cards/gallery-popup-button.css | 9 |
 | cards/gallery-palette-content.css | 9 |
 | cards/gallery-theme-generator-content.css | 32 |
-| **TOTAL** | **142** |
+| **TOTAL** | **143** |
 
-> The total of 142 is above the ~130 estimate but within the Risk R01 threshold of 160.
+> The total of 143 is above the ~130 estimate but within the Risk R01 threshold of 160.
 > No batching is required. The annotation work in Step 2 can proceed file-by-file.
 
 ---
@@ -479,8 +480,8 @@ Per the plan [D02], these files have alias chains requiring flattening:
 | tug-menu.css | `--tug-dropdown-item-icon` | `var(--tug-menu-item-icon)` | exempt |
 | tug-menu.css | `--tug-dropdown-item-icon-danger` | `var(--tug-menu-item-icon-danger)` | exempt |
 | tug-menu.css | `--tug-dropdown-item-chevron` | `var(--tug-menu-item-chevron)` | exempt |
-| tug-tab.css | `--tug-tab-bar-bg` | `var(--tug-card-title-bar-bg-inactive)` | `var(--tug-base-tab-bg-inactive)` |
-| tug-tab.css | `--tug-tab-bg-active` | `var(--tug-card-title-bar-bg-active)` | `var(--tug-base-tab-bg-active)` |
+| tug-tab-bar.css | `--tugx-tab-bar-bg` | `var(--tug7-surface-tab-primary-normal-plain-inactive)` | `var(--tug-base-tab-bg-inactive)` |
+| tug-tab-bar.css | `--tugx-tab-bg-active` | `var(--tug7-surface-tab-primary-normal-plain-active)` | `var(--tug-base-tab-bg-active)` |
 
 > The `--tug-dropdown-*` → `--tug-menu-*` chain (14 entries) is the compat layer documented in [D02]
 > and will be added to `COMPAT_ALIAS_ALLOWLIST` in audit-tokens.ts.
@@ -492,10 +493,10 @@ Per the plan [D02], these files have alias chains requiring flattening:
 ## Checkpoint
 
 - [x] All 23 files surveyed using static analysis (not heuristic tool output)
-- [x] Total distinct rules needing annotation: **142**
+- [x] Total distinct rules needing annotation: **143**
 - [x] Each identified rule has a proposed surface token
 - [x] Multi-surface rules identified: 1 (`.tugcard-title`)
-- [x] Total vs estimate: 142 vs ~130 estimate. Higher because the estimate did not account for
+- [x] Total vs estimate: 143 vs ~130 estimate. Higher because the estimate did not account for
       button SVG sub-selectors (25 rules) or the 6 tug-menu.css open-state SVG rules. Count is
       well below Risk R01 threshold (160), so no batching of annotation work is required.
 - [x] Previous survey errors corrected:

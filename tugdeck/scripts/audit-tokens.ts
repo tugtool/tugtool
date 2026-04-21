@@ -195,7 +195,7 @@ interface CssPairing {
  * Parse body {} blocks in a CSS file to extract component alias → token mappings.
  * Handles both direct base refs and alias-to-alias chains:
  *   --tug-card-bg: var(--tug-surface-overlay);       (direct)
- *   --tug-tab-bar-bg: var(--tug-card-title-bar-bg-inactive);  (alias chain)
+ *   --tug-alias: var(--tugx-pane-title-bar-bg-inactive);  (alias chain)
  */
 function extractAliases(css: string): AliasMap {
   const aliases: AliasMap = {};

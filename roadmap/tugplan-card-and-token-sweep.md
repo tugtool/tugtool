@@ -62,7 +62,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 4. **Done (Step 4).** `useCardDirty` (was `useTugcardDirty`) — `tug-pane.tsx` with `CardDirtyContext`.
 5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-card-persistence.test.tsx` **done (Step 3)**.
 6. **Done (Step 5).** CSS frame tokens → `--tugx-pane-bg`, `--tugx-pane-border`, `--tugx-pane-shadow-active|inactive`, `--tugx-pane-dim-overlay`.
-7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
+7. **Done (Step 6).** Title-bar chrome: `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*` (and docs swept for legacy `--tug-card-title-bar-*` names). No non-`x` `--tug-pane-title-bar-*` definers in source — pairing docs use the `--tugx-*` aliases that `tug-pane.css` defines.
 8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
 8a. Pane content-dim / accessory / findbar tokens (`--tugx-card-content-dim-*`, `--tugx-card-accessory-*`, `--tugx-card-findbar-*`) → `--tugx-pane-*`. Surfaced by Step 0 ([Appendix A.3](#appendix-a)).
 9. Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
@@ -347,6 +347,8 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 **References:** [D02] Pane tokens
 
+**Artifacts:** `tug-pane.css` (definitions + selectors), `gallery-title-bar.tsx`, `docs/pairing-audit-results.md`, `docs/renders-on-survey.md`, `scripts/audit-tokens.ts` (JSDoc example), `scripts/token-classify.ts` (`tugx` short-name allowlist). No `tug-tab-bar.css` edits — tab tokens already resolve from `--tug7-*`; pairing doc corrected.
+
 **Token rename table (starter — confirm against Step 0 audit):**
 
 | Today | New |
@@ -368,14 +370,14 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 | `--tugx-card-title-fg-inactive` | `--tugx-pane-title-fg-inactive` |
 
 **Tasks:**
-- [ ] Rename definitions in `tug-pane.css`.
-- [ ] Rename every consumer (selectors in `tug-pane.css`, `chrome.css`, `tug-tab-bar.css`, any theme aliases).
-- [ ] Update JSDoc pairing table and `docs/pairing-audit-results.md`.
+- [x] Rename definitions in `tug-pane.css`.
+- [x] Rename every consumer (selectors in `tug-pane.css`, `chrome.css`, `tug-tab-bar.css`, any theme aliases).
+- [x] Update JSDoc pairing table and `docs/pairing-audit-results.md`.
 
 **Checkpoint:**
-- [ ] tsc / tests / tokens-lint all green.
-- [ ] `rg "--tug-card-title-bar-|--tugx-card-title-" tugdeck` returns zero matches.
-- [ ] Manual smoke: title bar foreground / icon / background colors correct in active and inactive panes.
+- [x] tsc / tests / tokens-lint all green.
+- [x] `rg "--tug-card-title-bar-|--tugx-card-title-" tugdeck` returns zero matches.
+- [x] Manual smoke: title bar foreground / icon / background colors correct in active and inactive panes.
 
 ---
 
@@ -620,7 +622,7 @@ All live `--tugx-card-*` token definitions are in two files:
 
 Non-CSS-file consumers:
 - `tugdeck/styles/chrome.css:51` — reads `--tugx-pane-dim-overlay`.
-- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx:112,115` — inline-style readers of `--tugx-pane-border` and `--tugx-card-title-bar-bg-inactive` (title-bar token — Step 6).
+- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx:112,115` — inline-style readers of `--tugx-pane-border` and `--tugx-pane-title-bar-bg-inactive`.
 
 Non-CSS informational surfaces (docs + scripts):
 - `tugdeck/scripts/audit-tokens.ts:173,197,198,828` — JSDoc examples (Step 9).
@@ -636,18 +638,18 @@ Non-CSS informational surfaces (docs + scripts):
 - `--tugx-pane-shadow-inactive`
 - `--tugx-pane-dim-overlay`
 
-**Step 6 — Title-bar tokens (9):**
-- `--tugx-card-title-bar-bg-active`
-- `--tugx-card-title-bar-bg-inactive`
-- `--tugx-card-title-bar-bg-collapsed`
-- `--tugx-card-title-bar-divider`
-- `--tugx-card-title-bar-icon-active`
-- `--tugx-card-title-bar-icon-inactive`
-- `--tugx-card-title-bar-icon-hover`
-- `--tugx-card-title-fg-active`
-- `--tugx-card-title-fg-inactive`
+**Step 6 — Title-bar tokens (9):** ✓ renamed to `--tugx-pane-title-bar-*` / `--tugx-pane-title-fg-*`
+- `--tugx-pane-title-bar-bg-active`
+- `--tugx-pane-title-bar-bg-inactive`
+- `--tugx-pane-title-bar-bg-collapsed`
+- `--tugx-pane-title-bar-divider`
+- `--tugx-pane-title-bar-icon-active`
+- `--tugx-pane-title-bar-icon-inactive`
+- `--tugx-pane-title-bar-icon-hover`
+- `--tugx-pane-title-fg-active`
+- `--tugx-pane-title-fg-inactive`
 
-(The plan's Step 6 table also lists non-`x` `--tug-card-title-bar-*` rows. Those are absent from source CSS — rewrite only the doc occurrences in `tugdeck/docs/pairing-audit-results.md`, `tugdeck/docs/renders-on-survey.md`, and `tugdeck/scripts/audit-tokens.ts` JSDoc.)
+(Legacy `--tug-card-title-bar-*` names were docs-only; pairing + renders surveys now cite the `--tugx-pane-*` aliases.)
 
 **Step 7 — Control tokens (18):** On/off × fg/bg/border × rest/hover/active.
 - `--tugx-card-control-on-fg-rest` / `-hover` / `-active`

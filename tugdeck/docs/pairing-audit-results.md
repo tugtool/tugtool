@@ -84,13 +84,14 @@
 
 ### Component Token Definitions (body {})
 
-- `--tug-card-title-bar-bg-active` resolves to `--tug-base-tab-bg-active`
-- `--tug-card-title-bar-bg-inactive` resolves to `--tug-base-tab-bg-inactive`
-- `--tug-card-title-bar-bg-collapsed` resolves to `--tug-base-tab-bg-collapsed`
-- `--tug-card-title-bar-fg` resolves to `--tug-base-fg-default`
-- `--tug-card-title-bar-icon-active` resolves to `--tug-base-icon-active`
-- `--tug-card-title-bar-icon-inactive` resolves to `--tug-base-fg-subtle`
-- `--tug-card-title-bar-icon-hover` resolves to `--tug-base-fg-muted`
+- `--tugx-pane-title-bar-bg-active` resolves to `--tug7-surface-card-primary-normal-titlebar-active` (pairs as `tab-bg-active` in contrast work)
+- `--tugx-pane-title-bar-bg-inactive` resolves to `--tug7-surface-card-primary-normal-titlebar-inactive` (`tab-bg-inactive`)
+- `--tugx-pane-title-bar-bg-collapsed` resolves to `--tug7-surface-card-primary-normal-titlebar-collapsed` (`tab-bg-collapsed`)
+- `--tugx-pane-title-fg-active` resolves to `--tug7-element-card-text-normal-title-active`
+- `--tugx-pane-title-fg-inactive` resolves to `--tug7-element-card-text-normal-title-inactive`
+- `--tugx-pane-title-bar-icon-active` resolves to `--tug7-element-card-icon-normal-title-active` (`icon-active`)
+- `--tugx-pane-title-bar-icon-inactive` resolves to `--tug7-element-card-icon-normal-title-inactive` (`fg-subtle`)
+- `--tugx-pane-title-bar-icon-hover` resolves to `--tug7-element-card-icon-normal-title-hover` (`fg-muted`)
 - `--tugx-pane-bg` resolves to `--tug7-surface-global-primary-normal-overlay-rest`
 - `--tugx-pane-border` resolves to `--tug7-element-global-border-normal-default-rest`
 - `--tugx-pane-shadow-active` / `--tugx-pane-shadow-inactive` — `box-shadow` values using `--tug7-element-global-shadow-normal-md-rest` / `-xs-rest`
@@ -100,31 +101,31 @@
 
 | # | Element (component alias) | Resolved base element | Surface (component alias) | Resolved base surface | Role | Context |
 |---|---|---|---|---|---|---|
-| 1 | `--tug-card-title-bar-fg` | `fg-default` | `--tug-card-title-bar-bg-active` | `tab-bg-active` | `body-text` | Card title text on ACTIVE title bar **[THE GAP]** |
-| 2 | `--tug-card-title-bar-fg` | `fg-default` | `--tug-card-title-bar-bg-inactive` | `tab-bg-inactive` | `body-text` | Card title text on inactive title bar |
-| 3 | `--tug-card-title-bar-icon-active` | `icon-active` | `--tug-card-title-bar-bg-active` | `tab-bg-active` | `ui-component` | Card icon on active title bar |
-| 4 | `--tug-card-title-bar-icon-inactive` | `fg-subtle` | `--tug-card-title-bar-bg-inactive` | `tab-bg-inactive` | `ui-component` | Card icon on inactive title bar |
+| 1 | `--tugx-pane-title-fg-active` | (via tug7 title active) | `--tugx-pane-title-bar-bg-active` | `tab-bg-active` | `body-text` | Title text when pane focused **[THE GAP]** |
+| 2 | `--tugx-pane-title-fg-inactive` | (via tug7 title inactive) | `--tugx-pane-title-bar-bg-inactive` | `tab-bg-inactive` | `body-text` | Title text when pane unfocused |
+| 3 | `--tugx-pane-title-bar-icon-active` | `icon-active` | `--tugx-pane-title-bar-bg-active` | `tab-bg-active` | `ui-component` | Title icon when pane focused |
+| 4 | `--tugx-pane-title-bar-icon-inactive` | `fg-subtle` | `--tugx-pane-title-bar-bg-inactive` | `tab-bg-inactive` | `ui-component` | Title icon when pane unfocused |
 | 5 | `--tug-base-fg-default` | `fg-default` | `--tug-base-surface-default` | `surface-default` | `body-text` | Card content area text (tug-pane-content background) |
 | 6 | `--tug-base-fg-muted` | `fg-muted` | `--tug-base-surface-default` | `surface-default` | `subdued-text` | .tugcard-loading placeholder text |
 | 7 | `--tug-base-selection-fg` | `selection-fg` | `--tug-base-selection-bg` | `selection-bg` | `body-text` | Selected text (CSS Custom Highlight API, active card) |
 
 **Notes:**
-- Pairing #1 (`fg-default` on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tugcard-title` sets `color: var(--tug-card-title-bar-fg)` (resolves to `fg-default`). When `.tug-pane[data-focused="true"]`, `.tugcard-title-bar` background becomes `tab-bg-active`.
+- Pairing #1 (title foreground on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tug-pane[data-focused="true"] .tugcard-title` sets `color: var(--tugx-pane-title-fg-active)` on the active title bar surface `--tugx-pane-title-bar-bg-active`.
 - Card icon hover (`fg-muted` on `tab-bg-active`) also occurs when title bar controls hover — ghost-option TugButtons inside `.card-title-bar-controls` render on the active title bar background.
 - Collapsed state: `.tugcard--collapsed` background uses `tab-bg-inactive`/`tab-bg-active` — title icon and text render on those surfaces.
 
 ---
 
-## File 3: tug-tab.css
+## File 3: tug-tab-bar.css
 
 **Component:** TugTabBar
 
 ### Component Token Definitions (body {})
 
-- `--tug-tab-bar-bg` resolves to `--tug-card-title-bar-bg-inactive` -> `tab-bg-inactive`
+- `--tugx-tab-bar-bg` resolves to `--tug7-surface-tab-primary-normal-plain-inactive` (`tab-bg-inactive`)
 - `--tug-tab-bg-rest` = `transparent`
 - `--tug-tab-bg-hover` resolves to `--tug-base-tab-bg-hover`
-- `--tug-tab-bg-active` resolves to `--tug-card-title-bar-bg-active` -> `tab-bg-active`
+- `--tugx-tab-bg-active` resolves to `--tug7-surface-tab-primary-normal-plain-active` (`tab-bg-active`)
 - `--tug-tab-fg-rest` resolves to `--tug-base-tab-fg-rest`
 - `--tug-tab-fg-hover` resolves to `--tug-base-tab-fg-hover`
 - `--tug-tab-fg-active` resolves to `--tug-base-tab-fg-active`
@@ -555,7 +556,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 
 ### Confirmed Gap: Card Title Bar (fg-default on tab-bg-active)
 
-**GAP CONFIRMED.** The `.tugcard-title` element sets `color: var(--tug-card-title-bar-fg)` which resolves to `--tug-base-fg-default`. When `.tug-pane[data-focused="true"]`, the `.tugcard-title-bar` background becomes `var(--tug-card-title-bar-bg-active)` which resolves to `--tug-base-tab-bg-active`.
+**GAP CONFIRMED.** Focused `.tugcard-title` sets `color: var(--tugx-pane-title-fg-active)` on `.tugcard-title-bar` with `background-color: var(--tugx-pane-title-bar-bg-active)` — contrast is between the tug7 title text and titlebar surfaces.
 
 This produces the pairing: **`fg-default` on `tab-bg-active`** with role `body-text`.
 
