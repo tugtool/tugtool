@@ -12,7 +12,7 @@
 
 Both projects achieved their stated goals. The lifecycle work replaced an ad-hoc four-event pipe with a proper Apple-style delegate protocol, escaped WebKit's gesture focus-lock via a principled MessageChannel drain (researched in a standalone design study), and unified app- and card-lifecycle under one coherent mental model. The portal re-architecture split the data model into Card + CardStack with a portal-backed identity-preserving render pipeline that keeps tide-card WebSocket sessions alive across every movement operation the user can initiate. Tests are green (2292/2292), invariants are enforced in code, and the plan document reads as a record of genuine engineering discipline.
 
-That said, the work is *not* done. The two projects ended up tightly entangled — Step 11.6 onward is effectively a second plan grafted onto the first — and that entanglement left seams that deserve attention before more layers land on top. The composite first-responder bit, the will/did semantics under deferred delivery, the two-helper structure inside DeckManager, and the DOM vocabulary mismatch between `data-card-id` (stackId) and `cardId` (the real card) are the specific places the design gets harder to reason about. None is a bug today; each is where a future bug is most likely to be introduced.
+That said, the work is *not* done. The two projects ended up tightly entangled — Step 11.6 onward is effectively a second plan grafted onto the first — and that entanglement left seams that deserve attention before more layers land on top. The composite first-responder bit, the will/did semantics under deferred delivery, the two-helper structure inside DeckManager, and (before the 2026 vocabulary rename) the DOM vocabulary mismatch between frame id and host `cardId` were the specific places the design got harder to reason about. None was a bug at ship time; each was where a future bug was most likely to be introduced. **Update:** DOM/CSS/registry/wire vocabulary for windows vs cards is now aligned — see [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md) and **§ Vocabulary decisions (2026-04-21)** at the end of this document.
 
 The report is divided by project. A short cross-cutting section at the end collects the issues that straddle both.
 
@@ -131,14 +131,14 @@ In rough priority order:
 
 ### What this project delivered
 
-- Two-table data model: `DeckState.cards` (content identities) + `DeckState.stacks` (visual frames) with documented invariants, a `validateDeckState` helper, and a `v1 → v2` migration that preserves tab-as-card ids so tugbank's `tabstate/{id}` rows remain addressable without data migration.
-- Portal-based content mounting: every card is mounted once at the deck root via `CardContentHost`; its DOM output is portaled into its host stack's content div via `CardPortal` through a stable intermediate "slot" div (`display: contents`) that survives cross-stack re-parenting.
-- `card-content-registry` / `stack-root-registry` — module-level `Map`s that couple chrome (`Tugcard`, rendered inside `StackFrame`) to content (`CardContentHost`, rendered flat at deck root).
-- `CardContentHost` absorbed what used to be inside `Tugcard`: PropertyStore registration, persistence callbacks, dirty/auto-save, save-callback, scroll/selection listeners, FeedStore management, card-level responder. Tugcard becomes pure chrome; content per-card concerns all live in one host.
+- Two-table data model: `DeckState.cards` (content identities) + window/stack frames (serialized as `DeckState.windows` in v3; earlier drafts used `stacks`) with documented invariants, a `validateDeckState` helper, and migrations that preserve tab-as-card ids so tugbank's `tabstate/{id}` rows remain addressable without data migration.
+- Portal-based content mounting: every card is mounted once at the deck root via `CardHost`; its DOM output is portaled into its host window's content div via `CardPortal` through a stable intermediate "slot" div (`display: contents`) that survives cross-window re-parenting.
+- `window-content-registry` / `window-root-registry` — module-level `Map`s that couple chrome (`TugWindow`) to content (`CardHost`, rendered flat at deck root).
+- `CardHost` absorbed what used to be inside the old `Tugcard` shell: PropertyStore registration, persistence callbacks, dirty/auto-save, save-callback, scroll/selection listeners, FeedStore management, card-level responder. Per-card content concerns live in `CardHost`; window chrome lives in `TugWindow`.
 - Identity preservation: mount probe tests assert `mountCount === 1` and `unmountCount === 0` across `addCardToStack` / `detachCard` / `moveCardToStack` / `setActiveCardInStack`. Tide card's `CodeSessionStore` and WebSocket survive every movement operation.
 - DeckManager rewrite to the two-table model: `_addCardToStack`, `_removeCard`, `_detachCard`, `_moveCardToStack`, `_closeStack`, `_setActiveCardInStack`, `_reorderCardInStack`, `_toggleStackCollapse`. Each routes first-responder flips through `_setFirstResponder` or `_flipFirstResponder`. `spliceCardFromStack` extracted to deduplicate the "remove this card, fall active-in-stack to neighbor" pattern.
 - Chrome rename: `CardFrame` → `StackFrame`, `TabContentHost` → `CardContentHost`, `handleCardClosed` → `handleStackClosed`, `onCardFocused` → `onStackActivated`, `onCardClosed` → `onStackClosed`. Test helpers renamed accordingly. Piece 2.5 closed out the critical click-to-activate regression that slipped through Piece 2.
-- Swift wire contract updated: `pushCardListToHost` emits `cardCount` (not `tabCount`); `focus-card` carries `stackId: string`, not `cardId`.
+- Swift wire contract updated: `pushCardListToHost` emits `cardCount` (not `tabCount`); `focus-window` carries `windowId` (see `tugplan-vocabulary-rename.md` Step 11).
 
 ### What works well
 
@@ -169,15 +169,21 @@ This was flagged in Piece 2's "note it in the commit message" out, but the actua
 
 Mechanical; reviewable; the only risk is missed call sites, which `rg` will surface.
 
+**Status — resolved (2026-04-21):** Implemented under [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md) (Steps 8–9, 11–12). Outer deck chrome uses `data-window-id` on the window frame and tab bar (window identity); `CardHost` uses `data-card-id` (card identity). Class names `.tug-window` / `.tug-window-content` replace the old frame/content drift described above. Wire actions `focus-window` + `windowId` and menu copy ("Add Card to Active Window", "Close Card") match the same vocabulary. The audit's original sketch (`data-stack-id`, `.stack-frame`) was superseded by the **window** naming convention chosen in that plan.
+
 **P2 — The content registry is keyed by `stackId` but named `card-content-registry`.**
 
 The file's header acknowledges this: "The file name carries the historical 'card-content' vocabulary even though the key is now `stackId`." Fine in isolation; but paired with P1, this is another place where the lookup semantics aren't self-documenting. The registry is really a stack-content-div registry. Rename the file; renaming by 80 chars of text now saves an hour of "is this keyed by card or stack?" confusion across six months.
 
 Recommended rename: `card-content-registry.ts` → `stack-content-registry.ts` (or `stack-content-div-registry.ts`). Update import sites. The `register/unregister/getElement/subscribe` API stays.
 
+**Status — resolved (2026-04-21):** Registry modules are `window-content-registry.ts` and `window-root-registry.ts` (Step 4 of [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md)); keys are host window ids. The audit's `stack-content-registry` name was not used; **window** was chosen as the public term for the deck frame entity.
+
 **P3 — The `card-frame` CSS class name has not been renamed.**
 
 `StackFrame` renders `<div className="card-frame" data-card-id={id} …>`. CSS selectors in `chrome.css` target `.card-frame`. Drag coordinator selectors target `.card-frame[data-card-id]`. Same vocabulary drift as P1/P2. The rename from `CardFrame` component to `StackFrame` landed; the rename of the CSS class and the matching selectors did not. Complete the rename.
+
+**Status — resolved (2026-04-21):** Frame chrome is `.tug-window` with `data-window-id`; content area `.tug-window-content`; resize handles `.tug-window-resize-*` (Step 9, [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md)). `chrome.css` and `tug-window.css` updated; drag coordinator and tests follow the new selectors.
 
 **P4 — DeckCanvas renders two flat parallel lists that must stay in sync.**
 
@@ -254,14 +260,14 @@ Listed again here because it sits at the intersection of both projects.
 
 In rough priority order:
 
-1. **Rename DOM vocabulary** (P1 / P3): `data-card-id` on `StackFrame` → `data-stack-id`; `data-tab-id` on `CardContentHost` → `data-card-id`; `.card-frame` CSS class → `.stack-frame`. One focused commit; grep-driven.
-2. **Rename `card-content-registry.ts`** → `stack-content-registry.ts` (P2). Registry keys the stack's content div, not a card's.
-3. **Decompose `CardContentHost`** (P6) into per-concern hooks: `useCardPropertyStore`, `useCardPersistence`, `useCardDirtyState`, `useCardContentRestore`, `useCardFeedStore`. Cuts the file roughly in half, makes each concern testable in isolation. Can land incrementally.
+1. **~~Rename DOM vocabulary~~ (P1 / P3) — resolved.** Landed as `TugWindow` / `CardHost` with `data-window-id`, `data-card-id`, `.tug-window`, `.tug-window-content`; see [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md) Steps 8–9.
+2. **~~Rename content/root registries~~ (P2) — resolved.** `window-content-registry.ts` / `window-root-registry.ts` (Step 4); same `register` / `unregister` / `getElement` / `subscribe` API.
+3. **Decompose `CardHost`** (P6; formerly `CardContentHost`) into per-concern hooks: `useCardPropertyStore`, `useCardPersistence`, `useCardDirtyState`, `useCardContentRestore`, `useCardFeedStore`. Cuts the file roughly in half, makes each concern testable in isolation. Can land incrementally.
 4. **Document portal mount-ordering** in `card-portal.tsx` (P4). One paragraph: "children render into a null host until the registry subscriber fires on the next commit; do not assume children are in the DOM on first render."
 5. **Pin stable-render-order invariant with a test** (P8) that clicks an interactive element in a non-focused stack and asserts activation fires first.
-6. **Document `setActiveCardInStack`'s silent path** (P10) in the `CardLifecycle` header. The lifecycle is the unified pipe, with *one documented exception*.
+6. **Document `setActiveCardInWindow`'s silent path** (P10) in the `CardLifecycle` header. The lifecycle is the unified pipe, with *one documented exception*. *(Name at audit time: `setActiveCardInStack`.)*
 7. **Split `registerSaveCallback`'s map by key role** or document the single-role semantic (P7).
-8. **Pin `_closeStack`'s destruction order** in JSDoc (P11).
+8. **Pin `_closeWindow`'s destruction order** in JSDoc (P11). *(Name at audit time: `_closeStack`.)*
 9. **Delete `applyLayout`** (P13 / L7) or replace with a diff-based form.
 
 ---
@@ -301,12 +307,29 @@ Not a code fix, but the shortest path to confidence that the foundation is solid
 
 If only three changes from this audit land before the next major project starts:
 
-1. **DOM vocabulary rename** (Part 2 / P1 + P3). The mismatch costs every reader a confusion tax.
-2. **Delete `applyLayout`** (Part 1 / L7, Part 2 / P13). Deprecated code that violates invariants is strictly worse than either fixing it or removing it.
-3. **Document the will-delegate semantic inversion** (Part 1 / L1). Catches the next author before they write a `cardWill*` handler that reads state.
+1. **Delete `applyLayout`** (Part 1 / L7, Part 2 / P13). Deprecated code that violates invariants is strictly worse than either fixing it or removing it.
+2. **Document the will-delegate semantic inversion** (Part 1 / L1). Catches the next author before they write a `cardWill*` handler that reads state.
+3. **Consolidate `getActiveCardId` and `getFirstResponderCardId`** (Part 1 / L3) — or **share one drain queue** (L2); pick whichever unblocks the next feature first.
+
+**Update:** ~~DOM/CSS/registry vocabulary~~ (Part 2 / P1–P3) is **resolved** — see [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md) and § Vocabulary decisions below.
 
 Everything else is valuable but survivable.
 
 ---
 
-**Bottom line:** the work is real engineering, not just movement. Both projects ship a better foundation than the one they replaced — the lifecycle is properly delegate-shaped, the portal model preserves session identity in ways the old code could not, and the invariants are enforced rather than wished for. The weaknesses are the kind that always accumulate when two projects ship together under pressure: vocabulary drift, near-duplicate helpers, a god-component starting to form, one semantic inversion under deferred delivery. None blocks the next layer. Addressing the top three recommendations before moving on will make the next project noticeably easier to land.
+**Bottom line:** the work is real engineering, not just movement. Both projects ship a better foundation than the one they replaced — the lifecycle is properly delegate-shaped, the portal model preserves session identity in ways the old code could not, and the invariants are enforced rather than wished for. The weaknesses are the kind that always accumulate when two projects ship together under pressure: vocabulary drift, near-duplicate helpers, a god-component starting to form, one semantic inversion under deferred delivery. **Deck/window/card vocabulary drift (P1–P3) is now addressed** — see [`tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md). Remaining items (L1–L10, P4–P13) still reward attention. None blocks the next layer. Addressing the top three *remaining* recommendations before moving on will make the next project noticeably easier to land.
+
+---
+
+## Vocabulary decisions (2026-04-21)
+
+This audit was written while the codebase still used **stack**-centric names (`StackFrame`, `card-content-registry`, `data-card-id` on frames, `focus-card` / `stackId` on the wire). Those issues are tracked as **P1–P3** above and are **resolved** by the dedicated rename plan:
+
+- **Plan:** [`roadmap/tugplan-vocabulary-rename.md`](tugplan-vocabulary-rename.md) — full step list, grep checkpoints, and commit-style headings.
+- **Resolved audit items:**
+  - **P1 (DOM vocabulary):** Window frames use `data-window-id` and `.tug-window` / `.tug-window-content`; card hosts use `data-card-id`; tab bar and drag hit-testing use `data-window-id` for window identity; `selection-guard` walks `data-window-id` / `data-card-id` as appropriate.
+  - **P2 (registry file names):** `window-content-registry` and `window-root-registry` (keys = host window id).
+  - **P3 (CSS):** `.tug-window`, `.tug-window-resize-*`, shared chrome in `chrome.css` / `tug-window.css`.
+- **Also in that plan (cross-references for readers of this audit):** `DeckState` v3 (`windows` / `activeWindowId`), store API `*Window` mutators, `ADD_CARD_TO_ACTIVE_WINDOW`, Swift `focus-window` + `windowId`, menu text for add/close card actions.
+
+Historical paragraphs elsewhere in this document retain **stack** / **StackFrame** / **`CardContentHost`** names where they describe the code as it existed at audit time; use this section and the rename plan as the source of truth for **current** naming.

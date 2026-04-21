@@ -571,12 +571,12 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - `roadmap/lifecycle-and-portal-audit.md` — new section "Vocabulary decisions (2026-04-21)" noting the outcome of this rename and linking to this plan.
 
 **Tasks:**
-- [ ] Append a short section at the end of the audit doc pointing at `tugplan-vocabulary-rename.md` for the detail, and listing the now-resolved audit items (P1: DOM vocabulary, P2: registry file rename, P3: CSS class rename).
-- [ ] Mark P1 / P2 / P3 as resolved in the audit's recommended-follow-up lists.
-- [ ] Leave the other audit items (L1–L10, P4–P13) as open; they are out of scope for this plan.
+- [x] Append a short section at the end of the audit doc pointing at `tugplan-vocabulary-rename.md` for the detail, and listing the now-resolved audit items (P1: DOM vocabulary, P2: registry file rename, P3: CSS class rename).
+- [x] Mark P1 / P2 / P3 as resolved in the audit's recommended-follow-up lists.
+- [x] Leave the other audit items (L1–L10, P4–P13) as open; they are out of scope for this plan.
 
 **Checkpoint:**
-- [ ] Audit doc reads coherently end-to-end.
+- [x] Audit doc reads coherently end-to-end.
 
 ---
 
