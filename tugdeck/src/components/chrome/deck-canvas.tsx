@@ -349,7 +349,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     if (!cardExists) return;
 
     // On mount, route through `activateCard` — `_setFirstResponder`
-    // treats the serialized `activeWindowId` as the pre-existing
+    // treats the layout blob's `activeWindowId` as the pre-existing
     // composite bit and delivers initial-sync to late-mounting
     // lifecycle subscribers via `observeCardDidActivate`'s
     // subscribe-time read of the current focused card.

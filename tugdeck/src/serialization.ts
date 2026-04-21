@@ -1,16 +1,23 @@
 /**
  * Serialization, deserialization, and default layout for DeckState.
  *
- * Emits `version: 2` blobs with the two-table shape
- * `{ version: 2, cards, stacks, activeStackId? }`. `focusedCardId` is
- * persisted separately via `putFocusedCardId` and is not part of the
- * layout blob.
+ * **Current wire format:** `version: 3` with
+ * `{ version: 3, cards, windows, activeWindowId? }`. `focusedCardId` is
+ * persisted separately via `putFocusedCardId` and is not part of the layout
+ * blob.
  *
- * On load, blobs without `version` or with `version !== 2` (including legacy
- * `version: 5`, which used the single-table "one card per frame" shape) are
- * migrated in place to the two-table model. Legacy card ids become stack ids,
- * legacy tab ids become card ids — identity is preserved so tugbank's
- * `tabstate/{id}` rows remain addressable.
+ * **Load path:**
+ * - `version === 3` — parsed by {@link parseV3} (field names match `DeckState`).
+ * - `version === 2` — legacy two-table blob (`stacks`, `activeStackId`); migrated
+ *   in place via {@link migrateV2ToV3} then parsed like v3.
+ * - Missing `version` or other legacy shapes — if `cards` is an array, the
+ *   historical single-table blob (`version: 5`, `cards[].tabs[]`, etc.) is
+ *   migrated by {@link migrateV1ToDeckState}. Unrelated shapes (e.g. stray
+ *   `version: 3` objects without valid `cards`/`windows`) fall through to
+ *   {@link buildDefaultLayout}.
+ *
+ * Legacy card ids become window ids; legacy tab ids become card ids — identity
+ * is preserved so tugbank's `tabstate/{id}` rows remain addressable.
  */
 
 import {
@@ -27,7 +34,7 @@ const TITLE_BAR_HEIGHT = 36;
 // ---- Serialize ----
 
 /**
- * Serialize a DeckState to the v2 format for settings API persistence.
+ * Serialize a DeckState to the v3 wire format for settings API persistence.
  *
  * Returns a plain object. Caller should JSON.stringify before writing.
  *
@@ -38,11 +45,11 @@ const TITLE_BAR_HEIGHT = 36;
  */
 export function serialize(deckState: DeckState): object {
   return {
-    version: 2,
+    version: 3,
     cards: deckState.cards,
-    stacks: deckState.windows,
+    windows: deckState.windows,
     ...(deckState.activeWindowId !== undefined
-      ? { activeStackId: deckState.activeWindowId }
+      ? { activeWindowId: deckState.activeWindowId }
       : {}),
   };
 }
@@ -52,13 +59,12 @@ export function serialize(deckState: DeckState): object {
 /**
  * Deserialize a JSON string to a DeckState.
  *
- * Accepts the current `version: 2` two-table shape or migrates a legacy
- * single-table blob (historically `version: 5`, or any blob missing a
- * `version` field that still contains a `cards[].tabs[]` shape) to the
- * two-table model. Any blob the parser cannot make sense of falls back to
- * `buildDefaultLayout`.
+ * Accepts `version: 3` two-table blobs, migrates `version: 2` blobs (rename
+ * only), or migrates legacy single-table blobs (`version: 5` or missing
+ * `version` with `cards[].tabs[]`) to the two-table model. Any blob the
+ * parser cannot make sense of falls back to {@link buildDefaultLayout}.
  *
- * Enforces 100px minimum sizes and clamps stack positions to canvas bounds.
+ * Enforces 100px minimum sizes and clamps window positions to canvas bounds.
  */
 export function deserialize(
   json: string,
@@ -68,16 +74,21 @@ export function deserialize(
   try {
     const raw = JSON.parse(json) as Record<string, unknown>;
 
-    if (raw["version"] === 2) {
-      return parseV2(raw, canvasWidth, canvasHeight);
+    if (raw["version"] === 3) {
+      return parseV3(raw, canvasWidth, canvasHeight);
     }
 
-    // Legacy shape: missing version or any non-2 version. The historical v5
+    if (raw["version"] === 2) {
+      return migrateV2ToV3(raw, canvasWidth, canvasHeight);
+    }
+
+    // Legacy shape: missing version or any non-2/3 version. The historical v5
     // single-table shape (and any blob that still carries a `cards[].tabs`
     // structure) gets migrated in place. Unrelated shapes (e.g. version 3
-    // trees) fall through to the default layout via the `cards` Array check.
+    // placeholder objects without valid `cards`/`windows`) fall through to
+    // the default layout via the `cards` Array check inside migrate or here.
     if (Array.isArray(raw["cards"])) {
-      return migrateV1ToV2(raw, canvasWidth, canvasHeight);
+      return migrateV1ToDeckState(raw, canvasWidth, canvasHeight);
     }
 
     return buildDefaultLayout();
@@ -86,16 +97,20 @@ export function deserialize(
   }
 }
 
-// ---- Internal: v2 parser ----
+// ---- Internal: v3 parser ----
 
-function parseV2(
+/**
+ * Parse a `version: 3` layout blob into {@link DeckState}.
+ * Ignores unknown top-level keys (including legacy `focusedCardId`).
+ */
+function parseV3(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
 ): DeckState {
   const rawCards = raw["cards"];
-  const rawStacks = raw["stacks"];
-  if (!Array.isArray(rawCards) || !Array.isArray(rawStacks)) {
+  const rawWindows = raw["windows"];
+  if (!Array.isArray(rawCards) || !Array.isArray(rawWindows)) {
     return buildDefaultLayout();
   }
 
@@ -127,13 +142,13 @@ function parseV2(
   }
 
   const windows: TugWindowState[] = [];
-  for (const s of rawStacks) {
-    if (!s || typeof s !== "object") continue;
-    const stack = s as Record<string, unknown>;
-    const id = stack["id"];
-    const pos = stack["position"] as { x: number; y: number } | undefined;
-    const sz = stack["size"] as { width: number; height: number } | undefined;
-    const cardIdsRaw = stack["cardIds"];
+  for (const w of rawWindows) {
+    if (!w || typeof w !== "object") continue;
+    const win = w as Record<string, unknown>;
+    const id = win["id"];
+    const pos = win["position"] as { x: number; y: number } | undefined;
+    const sz = win["size"] as { width: number; height: number } | undefined;
+    const cardIdsRaw = win["cardIds"];
     if (
       typeof id !== "string" ||
       !pos ||
@@ -143,7 +158,6 @@ function parseV2(
     ) {
       continue;
     }
-    // Filter cardIds down to ones that have a matching card entry.
     const cardIds = cardIdsRaw.filter(
       (cid): cid is string => typeof cid === "string" && cardIdSet.has(cid),
     );
@@ -159,21 +173,21 @@ function parseV2(
     );
     y = Math.max(0, Math.min(y, canvasHeight - TITLE_BAR_HEIGHT));
 
-    const rawActiveCardId = stack["activeCardId"];
+    const rawActiveCardId = win["activeCardId"];
     const activeCardId: string =
       typeof rawActiveCardId === "string" && cardIds.includes(rawActiveCardId)
         ? rawActiveCardId
         : cardIds[0];
 
-    const rawTitle = stack["title"];
+    const rawTitle = win["title"];
     const title = typeof rawTitle === "string" ? rawTitle : "";
 
-    const rawAcceptsFamilies = stack["acceptsFamilies"];
+    const rawAcceptsFamilies = win["acceptsFamilies"];
     const acceptsFamilies: readonly string[] = Array.isArray(rawAcceptsFamilies)
       ? (rawAcceptsFamilies as string[])
       : ["standard"];
 
-    const rawCollapsed = stack["collapsed"];
+    const rawCollapsed = win["collapsed"];
     const collapsed =
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
@@ -189,22 +203,18 @@ function parseV2(
     });
   }
 
-  // Drop cards that aren't referenced by any window (orphans).
   const referencedCardIds = new Set<string>();
-  for (const w of windows) {
-    for (const cid of w.cardIds) referencedCardIds.add(cid);
+  for (const win of windows) {
+    for (const cid of win.cardIds) referencedCardIds.add(cid);
   }
   const filteredCards = cards.filter((c) => referencedCardIds.has(c.id));
 
-  const rawActiveStackId = raw["activeStackId"];
+  const rawActiveWindowId = raw["activeWindowId"];
   const activeWindowId =
-    typeof rawActiveStackId === "string" &&
-    windows.some((w) => w.id === rawActiveStackId)
-      ? rawActiveStackId
+    typeof rawActiveWindowId === "string" &&
+    windows.some((win) => win.id === rawActiveWindowId)
+      ? rawActiveWindowId
       : undefined;
-
-  // `focusedCardId` in the raw blob is ignored — that field is persisted
-  // separately via `putFocusedCardId` / `initialFocusedCardId`.
 
   return {
     cards: filteredCards,
@@ -213,24 +223,45 @@ function parseV2(
   };
 }
 
-// ---- Internal: v1 → v2 migration ----
+/**
+ * Migrate a v2 two-table blob (`stacks`, `activeStackId`) to the v3 field
+ * names and parse. Semantics are unchanged — this is a pure key rename on the
+ * wire object before the same validation and clamping as v3.
+ */
+function migrateV2ToV3(
+  raw: Record<string, unknown>,
+  canvasWidth: number,
+  canvasHeight: number,
+): DeckState {
+  const bridged: Record<string, unknown> = {
+    cards: raw["cards"],
+    windows: raw["stacks"],
+  };
+  const rawActive = raw["activeStackId"];
+  if (typeof rawActive === "string") {
+    bridged["activeWindowId"] = rawActive;
+  }
+  return parseV3(bridged, canvasWidth, canvasHeight);
+}
+
+// ---- Internal: legacy single-table → two-table ----
 
 /**
- * Migrate a legacy single-table blob (historically `version: 5`) to the
- * two-table shape.
+ * Migrate a legacy single-table blob (historically `version: 5`) to
+ * {@link DeckState}.
  *
  * Legacy shape per card:
  * ```
  * { id, position, size, tabs: [{ id, componentId, title, closable }],
  *   activeTabId, collapsed?, acceptsFamilies?, title? }
  * ```
- * Migration: each legacy card becomes a stack (same id); each legacy tab
- * becomes a card (same id). Stack's `cardIds` = ordered legacy tab ids;
+ * Migration: each legacy card becomes a window (same id); each legacy tab
+ * becomes a card (same id). Window `cardIds` = ordered legacy tab ids;
  * `activeCardId` = legacy `activeTabId` (falls back to first tab id).
  * `focusedCardId` in the legacy blob is already the card identity (= former
  * tabId) and carries across unchanged.
  */
-function migrateV1ToV2(
+function migrateV1ToDeckState(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
@@ -246,12 +277,12 @@ function migrateV1ToV2(
   for (const c of rawCards) {
     if (!c || typeof c !== "object") continue;
     const legacy = c as Record<string, unknown>;
-    const stackId = legacy["id"];
+    const windowId = legacy["id"];
     const pos = legacy["position"] as { x: number; y: number } | undefined;
     const sz = legacy["size"] as { width: number; height: number } | undefined;
     const rawTabs = legacy["tabs"];
     if (
-      typeof stackId !== "string" ||
+      typeof windowId !== "string" ||
       !pos ||
       !sz ||
       !Array.isArray(rawTabs) ||
@@ -306,7 +337,7 @@ function migrateV1ToV2(
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
     windows.push({
-      id: stackId,
+      id: windowId,
       position: { x, y },
       size: { width, height },
       cardIds,
@@ -316,9 +347,6 @@ function migrateV1ToV2(
       ...(collapsed === true ? { collapsed } : {}),
     });
   }
-
-  // Legacy `focusedCardId` is ignored — reload restoration now reads from
-  // tugbank via the `putFocusedCardId` / `initialFocusedCardId` path.
 
   return { cards, windows };
 }
@@ -331,7 +359,6 @@ function migrateV1ToV2(
  * Returns an empty DeckState. The pre-Phase-5 five-card default layout used
  * component IDs that are not registered in Phase 5. An empty canvas is the
  * correct default until Phase 9 registers real cards.
- *
  */
 export function buildDefaultLayout(): DeckState {
   return { cards: [], windows: [] };

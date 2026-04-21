@@ -87,9 +87,9 @@ describe("buildDefaultLayout", () => {
   });
 });
 
-// ---- serialize / deserialize tests (v2 round-trip) ----
+// ---- serialize / deserialize tests (v3 wire format) ----
 
-describe("serialize and deserialize (v2)", () => {
+describe("serialize and deserialize (v3)", () => {
   test("round-trip preserves a single-card stack", () => {
     const card: CardState = {
       id: "card-known-1",
@@ -151,9 +151,36 @@ describe("serialize and deserialize (v2)", () => {
     expect(restored.cards.find((c) => c.id === "card-mt-3")?.closable).toBe(false);
   });
 
-  test("deserialize emits version: 2", () => {
+  test("serialize emits version: 3", () => {
     const out = serialize({ cards: [], windows: [] }) as { version: number };
-    expect(out.version).toBe(2);
+    expect(out.version).toBe(3);
+  });
+
+  test("v3 round-trip: serialize → deserialize → serialize is stable", () => {
+    const card: CardState = {
+      id: "c1",
+      componentId: "terminal",
+      title: "T",
+      closable: true,
+    };
+    const win: TugWindowState = {
+      id: "w1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      cardIds: ["c1"],
+      activeCardId: "c1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const state: DeckState = {
+      cards: [card],
+      windows: [win],
+      activeWindowId: "w1",
+    };
+    const first = serialize(state);
+    const restored = deserialize(JSON.stringify(first), 1920, 1080);
+    const second = serialize(restored);
+    expect(second).toEqual(first);
   });
 
   test("deserialize with corrupt JSON falls back to buildDefaultLayout", () => {
@@ -163,9 +190,54 @@ describe("serialize and deserialize (v2)", () => {
   });
 });
 
-// ---- v1 → v2 migration ----
+// ---- v2 wire → v3 (field rename migration on load) ----
 
-describe("v1 → v2 migration", () => {
+describe("v2 → v3 migration", () => {
+  test("hand-authored v2 blob deserializes to the same DeckState as equivalent v3 blob", () => {
+    const v2 = {
+      version: 2 as const,
+      cards: [
+        { id: "c1", componentId: "hello", title: "C1", closable: true },
+        { id: "c2", componentId: "hello", title: "C2", closable: true },
+      ],
+      stacks: [
+        {
+          id: "s1",
+          position: { x: 10, y: 20 },
+          size: { width: 400, height: 300 },
+          cardIds: ["c1", "c2"],
+          activeCardId: "c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activeStackId: "s1",
+    };
+    const v3 = {
+      version: 3 as const,
+      cards: v2.cards,
+      windows: [
+        {
+          id: "s1",
+          position: { x: 10, y: 20 },
+          size: { width: 400, height: 300 },
+          cardIds: ["c1", "c2"],
+          activeCardId: "c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activeWindowId: "s1",
+    };
+    expect(deserialize(JSON.stringify(v2), 1920, 1080)).toEqual(
+      deserialize(JSON.stringify(v3), 1920, 1080),
+    );
+  });
+});
+
+// ---- Legacy single-table (v1) migration ----
+
+describe("v1 → two-table migration", () => {
   test("legacy v5 single-card blob migrates to a single-card stack", () => {
     const v1Blob = {
       version: 5,
@@ -221,7 +293,7 @@ describe("v1 → v2 migration", () => {
     expect(restored.cards.find((c) => c.id === "t3")?.closable).toBe(false);
   });
 
-  test("v1 → v2 round-trip: hand-authored v1 loads, save emits version: 2", () => {
+  test("v1 → two-table round-trip: hand-authored v1 loads, save emits version: 3", () => {
     const v1 = {
       version: 5,
       cards: [
@@ -249,7 +321,7 @@ describe("v1 → v2 migration", () => {
       version: number;
       focusedCardId?: string;
     };
-    expect(saved.version).toBe(2);
+    expect(saved.version).toBe(3);
     expect(saved.focusedCardId).toBeUndefined();
   });
 
@@ -311,7 +383,18 @@ describe("DeckState focusedCardId persistence", () => {
     expect("focusedCardId" in blob).toBe(false);
   });
 
-  test("parseV2 ignores focusedCardId if present in a v2 blob", () => {
+  test("parseV3 ignores focusedCardId if present in a v3 blob", () => {
+    const withFocused = {
+      version: 3,
+      cards: [],
+      windows: [],
+      focusedCardId: "card-abc",
+    };
+    const restored = deserialize(JSON.stringify(withFocused), 1920, 1080);
+    expect((restored as { focusedCardId?: string }).focusedCardId).toBeUndefined();
+  });
+
+  test("v2 migration path ignores focusedCardId (not part of DeckState)", () => {
     const withFocused = {
       version: 2,
       cards: [],
@@ -502,9 +585,9 @@ describe("collapsed field serialization", () => {
       collapsed: true,
     };
     const serialized = serialize({ cards: [card], windows: [stack] }) as {
-      stacks: Array<{ collapsed?: boolean }>;
+      windows: Array<{ collapsed?: boolean }>;
     };
-    expect(serialized.stacks[0].collapsed).toBe(true);
+    expect(serialized.windows[0].collapsed).toBe(true);
   });
 });
 

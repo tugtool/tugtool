@@ -181,7 +181,7 @@ describe("useTugcardPersistence – stable registration across re-renders", () =
     expect(getRegistrationCount()).toBe(1);
 
     // Swap the onSave implementation by re-rendering with new closures.
-    const onSaveV2 = mock(() => ({ version: 2 }));
+    const onSaveV2 = mock(() => ({ version: 3 }));
     const onRestoreV2 = mock((_s: unknown) => {});
     currentOnSave = onSaveV2;
     currentOnRestore = onRestoreV2;
@@ -201,8 +201,8 @@ describe("useTugcardPersistence – stable registration across re-renders", () =
     // (because the wrapper reads from refs, not captured closure values).
     const callbacks = getLatestCallbacks()!;
     const result = callbacks.onSave();
-    // The current implementation is v2 (assigned above), so we get version: 2.
-    expect(result).toEqual({ version: 2 });
+    // The mock returns the shape the test assigns (here: layout v3).
+    expect(result).toEqual({ version: 3 });
     expect(onSaveV2).toHaveBeenCalledTimes(1);
     expect(onSaveV1).not.toHaveBeenCalled();
   });

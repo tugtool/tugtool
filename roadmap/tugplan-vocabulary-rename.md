@@ -223,19 +223,19 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Tests — new round-trip asserting v2 blobs load, v3 blobs round-trip.
 
 **Tasks:**
-- [ ] Rename `parseV2` → `parseV3` and update the serialized field names read.
-- [ ] Add `migrateV2ToV3` that converts `stacks` → `windows` and `activeStackId` → `activeWindowId`.
-- [ ] `serialize()` emits `version: 3`.
-- [ ] `deserialize()` dispatch: `version === 3` → `parseV3`; `version === 2` → `migrateV2ToV3` then return the migrated shape; any other non-v3 with an array `cards` → v1 migration chain (same as today).
+- [x] Rename `parseV2` → `parseV3` and update the serialized field names read.
+- [x] Add `migrateV2ToV3` that converts `stacks` → `windows` and `activeStackId` → `activeWindowId`.
+- [x] `serialize()` emits `version: 3`.
+- [x] `deserialize()` dispatch: `version === 3` → `parseV3`; `version === 2` → `migrateV2ToV3` then return the migrated shape; any other non-v3 with an array `cards` → v1 migration chain (same as today).
 
 **Tests:**
-- [ ] Round-trip test: v3 blob → deserialize → serialize → identical shape.
-- [ ] Migration test: hand-authored v2 blob → deserialize → expected v3 DeckState (new field names, everything else preserved).
-- [ ] Existing v1 migration test still passes.
+- [x] Round-trip test: v3 blob → deserialize → serialize → identical shape.
+- [x] Migration test: hand-authored v2 blob → deserialize → expected v3 DeckState (new field names, everything else preserved).
+- [x] Existing v1 migration test still passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green (existing + 2 new).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (existing + 2 new).
 
 ---
 
