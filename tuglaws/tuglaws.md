@@ -50,7 +50,7 @@ The test: *can the user end the interaction with a result that was never committ
 
 **L19. Every component follows the component authoring guide.** File structure, module docstring, props interface, `data-slot`, `@tug-pairings`, `@tug-renders-on`, and CSS organization are not suggestions — they are the contract. A component that deviates from [component-authoring.md](component-authoring.md) is incomplete. [D05, D06]
 
-**L09. TugPane composes chrome and owns geometry; Cards never set their own position, size, or z-order.** TugPane handles drag, resize, stacking, title bar, tabs, accessory, and content region. Cards supply content identity only. (Historical: `Tugcard` / `CardFrame` were merged into `TugPane` — see [pane-model.md](pane-model.md) for the current model and the rename history.) [D15, D31]
+**L09. TugPane composes chrome and owns geometry; Cards never set their own position, size, or z-order.** TugPane handles drag, resize, stacking, title bar, tabs, accessory, and content region. Cards supply content identity only. See [pane-model.md](pane-model.md) for the full Deck → Pane → Card model. [D15, D31, L25]
 
 **L10. One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to Panes. TugPane owns geometry and chrome. CardHost bridges per-card context to the registered content factory. Card content owns domain logic. Don't reach across layers. [D05, D15]
 

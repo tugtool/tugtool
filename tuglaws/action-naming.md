@@ -260,7 +260,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 
 The `close-active-card` Control-frame name (introduced in A3.3) is renamed to `close` during this migration so it matches the chain-action name. The Swift `@objc closeActiveCard(_:)` selector stays (Swift method names follow Swift conventions; only the `sendControl("close")` string changes).
 
-Pane vocabulary (including the **`focus-pane`** wire and **`paneId`** payload key, retitled from the older deck-**window** Control frame so in-canvas containers are not confused with `NSWindow` or the browser `window` global) lives in [`roadmap/tugplan-vocabulary-pane-rename.md`](../roadmap/tugplan-vocabulary-pane-rename.md) Steps 10–11.
+Pane vocabulary: the **`focus-pane`** wire and **`paneId`** payload key name the in-canvas container. The names are Pane-specific so canvas containers are not confused with `NSWindow` or the browser `window` global. See [pane-model.md](pane-model.md) for the full Deck → Pane → Card model.
 
 ---
 

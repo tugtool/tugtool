@@ -87,7 +87,7 @@ export interface CardRegistration {
   componentId: string;
   /**
    * Returns the content component (e.g. `<HelloCardContent />`) without
-   * the window chrome. DeckCanvas uses this
+   * the pane chrome. DeckCanvas uses this
    * to get card-specific content.
    */
   contentFactory: (cardId: string) => React.ReactNode;

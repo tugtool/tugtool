@@ -198,9 +198,9 @@ body {
 }
 
 /*
- * When the card is focused (active), the title bar background switches to the
+ * When the pane is focused (active), the title bar background switches to the
  * active color. TugPane sets data-focused="true" on its container div,
- * which is the ancestor of the window chrome root.
+ * which is the ancestor of the pane chrome root.
  */
 .tug-pane[data-focused="true"] .tug-pane-title-bar {
   background-color: var(--tugx-pane-title-bar-bg-active);

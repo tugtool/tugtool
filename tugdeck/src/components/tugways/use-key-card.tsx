@@ -16,7 +16,7 @@
  * Both hooks are tolerant of being rendered outside a
  * `<ResponderChainProvider>` — they return null / false respectively,
  * matching the existing tolerant-hook convention (see
- * `useOptionalResponder`). This keeps card chrome render code uniform
+ * `useOptionalResponder`). This keeps pane chrome render code uniform
  * across in-provider and standalone test mounts.
  */
 

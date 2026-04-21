@@ -1,7 +1,6 @@
 /**
- * TugPane — deck window chrome and frame: title bar, tabs, content area,
- * drag/resize, z-order, and responder integration. Merged from the former
- * inner card chrome + outer frame split ([D02] merge window).
+ * TugPane — pane chrome and frame: title bar, tabs, content area,
+ * drag/resize, z-order, and responder integration.
  *
  * Responsibilities:
  * - Absolutely-positioned `.tug-pane` at position/size from `stackState`
@@ -296,7 +295,7 @@ const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, hei
 // ---------------------------------------------------------------------------
 
 /**
- * Props for the TugPane component (frame + window chrome).
+ * Props for the TugPane component (frame + pane chrome).
  */
 export interface TugPaneProps {
   /** Window position, size, id, and collapsed state from DeckState. */
