@@ -1272,6 +1272,12 @@ useCardDelegate(cardId, {
 - Do not edit files outside the piece's stated file list. If an unexpected file needs a change, pause and surface it before editing.
 - If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
 
+**Status: complete (2026-04-20).** Commit trail:
+- Piece 1 — cascade subscription hygiene (H6 + H7 + H8/H-A9): `08c4bc95`
+- Piece 2 — dev-mode log gating (H10): `2e56bc24`
+- Piece 3 — typed `window.tugdeck` (H11): `f32ef81a`
+- Piece 4 — documentation bundle (H9 + H-A7 + H-A8): [this commit]
+
 **Note on scope:** This is a hygiene / polish / documentation sweep. No behavior changes on the happy path. Closes out every hole flagged by the reliability study except H1–H5 (already closed) and the standing behavior of H-A7 (deprecated, not deleted).
 
 #### Step 12 — Tuglaws walkthrough and plan close {#step-12}

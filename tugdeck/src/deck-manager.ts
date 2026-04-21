@@ -1341,6 +1341,25 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Collapse management ----
 
+  /**
+   * Flip the stack's `collapsed` flag and notify subscribers (H-A8).
+   *
+   * Collapse/expand is an **appearance-zone** transition per [L06]:
+   * `CardFrame` reads `CardState.collapsed` and overrides the rendered
+   * height to `CARD_TITLE_BAR_HEIGHT` via CSS/DOM when collapsed.
+   * `CardState.size` (the stored geometry) is not touched — restoring
+   * the full height on expand is a pure re-read of the original value.
+   *
+   * Because no data-zone geometry changed, the move/resize lifecycle
+   * events stay silent: `cardWillResize` / `cardDidResize` do NOT fire
+   * on collapse or expand. Subscribers that care about collapse
+   * specifically should subscribe to the deck-manager store directly —
+   * `CardState.collapsed` flips on each toggle and store subscribers
+   * see the transition in their snapshot. Bolting collapse onto the
+   * resize event channel would make `cardDidResize` a false positive
+   * for every card that ever collapsed, which defeats the point of
+   * the delegate.
+   */
   private _toggleStackCollapse(stackId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
@@ -1494,6 +1513,18 @@ export class DeckManager implements IDeckManagerStore {
    * Validates the two-table invariants **unconditionally** after
    * filtering — `applyLayout` is the external-input gate, and bad shapes
    * must fail loudly in every build, not just dev.
+   *
+   * @deprecated Test-only today (H-A7). Fires no lifecycle events: no
+   *   `cardDidFinishConstruction` for cards that appear in the new
+   *   state, no `cardWillBeginDestruction` for cards that disappear,
+   *   no first-responder flip even when the new state changes the
+   *   composite bit. If a production caller ever needs to swap the
+   *   deck state wholesale, replace this method with a diff-based
+   *   implementation that drives the changes through
+   *   `addCardToStack` / `removeCard` / `_setFirstResponder` so the
+   *   lifecycle stays consistent. Do not reuse `applyLayout` as-is —
+   *   adding one more caller to the event-free path compounds the
+   *   drift risk.
    */
   applyLayout(deckState: DeckState): void {
     this.deckState = this.filterRegisteredCards(deckState);

@@ -38,6 +38,17 @@
  * Unlike card events, app events carry no per-target id — the app is
  * singular. Observers receive no argument; the fact of the event is
  * the payload.
+ *
+ * Startup note (H9): app-lifecycle events that fire during startup —
+ * before the JS side has registered the `AppLifecycle` singleton via
+ * `DeckManager` construction — are best-effort. Control frames
+ * dispatched by the Swift host before registration are dropped on the
+ * floor. Consumers should not rely on receiving every app event in
+ * the pre-mount window; the first post-mount `applicationDidBecomeActive`
+ * on user interaction recovers state. If a future use case ever
+ * requires a reliable "fire once at app start" signal, that signal
+ * needs its own out-of-band delivery path — do not bolt it onto the
+ * app-lifecycle channel.
  */
 
 import {
