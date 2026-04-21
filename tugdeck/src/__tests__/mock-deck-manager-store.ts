@@ -56,7 +56,7 @@ export function makeMockStore(
       cardStateCache.set(id, bag);
     },
     initialFocusedCardId: undefined,
-    // Save callbacks are actually wired so CardContentHost's registered
+    // Save callbacks are actually wired so CardHost's registered
     // per-card callback fires on invokeSaveCallback. Tests that spy on
     // register/unregister still see the calls; tests that rely on
     // invokeSaveCallback triggering the registered function also work.

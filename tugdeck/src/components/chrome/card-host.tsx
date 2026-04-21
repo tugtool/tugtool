@@ -1,5 +1,5 @@
 /**
- * CardContentHost — renders a card's content component and owns the
+ * CardHost — renders a card's content component and owns the
  * per-card state (PropertyStore registration, persistence callbacks,
  * dirty/auto-save, per-card save callback, content-restore effect,
  * scroll/selection listeners, FeedStore subscriptions).
@@ -18,7 +18,7 @@
  * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
  * resolve here.
  *
- * @module components/chrome/card-content-host
+ * @module components/chrome/card-host
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
@@ -45,7 +45,7 @@ import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
-export interface CardContentHostProps {
+export interface CardHostProps {
   /** Stable identity of this card — survives cross-window moves. */
   cardId: string;
   /** The window currently hosting this card. Used to locate the content element and for the workspace binding. */
@@ -77,7 +77,7 @@ function useHostContentElement(hostStackId: string): HTMLDivElement | null {
  * Look up the host window's root element from `window-root-registry`,
  * reactively. Used to bridge `TugWindowPortalContext` — card content needs
  * access to its host window's root `<div>` for sheets and tooltips that
- * portal into it, and CardContentHost cannot consume the provider
+ * portal into it, and CardHost cannot consume the provider
  * directly because it lives outside the window's React tree.
  */
 function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
@@ -88,7 +88,7 @@ function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   );
 }
 
-export function CardContentHost({ cardId, hostStackId, componentId, isActive = true }: CardContentHostProps): React.ReactElement | null {
+export function CardHost({ cardId, hostStackId, componentId, isActive = true }: CardHostProps): React.ReactElement | null {
   const store = useDeckManager();
   const registration = getRegistration(componentId);
   const hostContentEl = useHostContentElement(hostStackId);
@@ -304,7 +304,7 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
   // passed to their `contentFactory`. Register a responder with id=cardId
   // here so those dispatches resolve to this host and write through to the
   // content's PropertyStore.
-  // CardContentHost is rendered at the deck level in the React tree
+  // CardHost is rendered at the deck level in the React tree
   // (flat `cards.map` in DeckCanvas) and portaled into its host window's
   // content div via CardPortal. Without an explicit parentId override
   // the responder node's parent would follow the React tree — pointing
@@ -347,7 +347,7 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
     <CardPortal hostStackId={hostStackId}>
       <div
         ref={responderRef}
-        data-card-content-host
+        data-card-host
         data-tab-id={cardId}
         style={{
           display: isActive ? "contents" : "none",

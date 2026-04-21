@@ -27,14 +27,14 @@ import type { CardState } from "./layout-tree";
 import type { FeedStoreFilter } from "./lib/feed-store";
 
 /**
- * Fallback filter used by `CardContentHost` while a card is still unbound — i.e.,
+ * Fallback filter used by `CardHost` while a card is still unbound — i.e.,
  * before the `spawn_session_ok` CONTROL ack has populated
  * `cardSessionBindingStore` with the card's canonical `workspace_key`.
  * Requires only that the field is present; does not match against any
  * specific value. Once `useCardWorkspaceKey(cardId)` returns a bound key,
  * the host switches to an exact value-check predicate.
  *
- * Consumers: `CardContentHost` (via `useCardWorkspaceKey` in card-content-host.tsx) and
+ * Consumers: `CardHost` (via `useCardWorkspaceKey` in card-host.tsx) and
  * `GalleryPromptInput` (see gallery-prompt-input.tsx). See roadmap
  * tugplan-workspace-registry-w2.md Risk R04 (unbound window).
  */
@@ -79,7 +79,7 @@ export interface TugcardMeta {
  *
  * **Authoritative reference:** Spec S02 CardRegistration interface.
  *
- * DeckCanvas renders `CardContentHost` for every card (single-tab and
+ * DeckCanvas renders `CardHost` for every card (single-tab and
  * multi-tab alike) and uses `contentFactory` to get card-specific content.
  */
 export interface CardRegistration {

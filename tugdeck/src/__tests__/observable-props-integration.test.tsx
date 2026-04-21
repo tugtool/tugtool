@@ -37,7 +37,7 @@ import { registerGalleryCards } from "@/components/tugways/cards/gallery-registr
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { TugWindow } from "@/components/chrome/tug-window";
-import { CardContentHost } from "@/components/chrome/card-content-host";
+import { CardHost } from "@/components/chrome/card-host";
 import type { TugWindowState } from "@/layout-tree";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
@@ -66,7 +66,7 @@ function makeStore() {
 
 // ---------------------------------------------------------------------------
 // Helper: render GalleryObservableProps with the same deck layout as DeckCanvas
-// (TugWindow + CardContentHost sibling; content portals into the window).
+// (TugWindow + CardHost sibling; content portals into the window).
 // ---------------------------------------------------------------------------
 
 function renderObservableProps(cardId = "obs-int-card") {
@@ -94,7 +94,7 @@ function renderObservableProps(cardId = "obs-int-card") {
             zIndex={1}
             isFocused={false}
           />
-          <CardContentHost
+          <CardHost
             cardId={cardId}
             hostStackId={stackId}
             componentId="gallery-observable-props"
@@ -492,7 +492,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#ff0000" },
-        // source omitted — CardContentHost setProperty handler defaults it to 'inspector'
+        // source omitted — CardHost setProperty handler defaults it to 'inspector'
       });
     });
 

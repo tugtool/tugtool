@@ -82,7 +82,7 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 #### Dependencies / Prerequisites {#dependencies}
 
 - Green HEAD on main. All tests passing (2292/2292 at start of this plan).
-- No in-flight work on `deck-manager.ts`, `deck-canvas.tsx`, `tug-card.tsx`, `stack-frame.tsx`, `card-content-host.tsx`, or the registries. (Currently the working tree has uncommitted changes in `tide-card.*` and `picker-notice-store.ts` — those are in a different subsystem and should not block this plan, but pre-step cleanup is on Ken.)
+- No in-flight work on `deck-manager.ts`, `deck-canvas.tsx`, `tug-card.tsx`, `stack-frame.tsx`, `card-host.tsx`, or the registries. (Currently the working tree has uncommitted changes in `tide-card.*` and `picker-notice-store.ts` — those are in a different subsystem and should not block this plan, but pre-step cleanup is on Ken.)
 
 #### Constraints {#constraints}
 
@@ -251,7 +251,7 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - `tugdeck/src/deck-manager.ts` — public method + parameter renames.
 - `tugdeck/src/deck-manager-store.ts` — `IDeckManagerStore` interface.
 - `tugdeck/src/__tests__/mock-deck-manager-store.ts` — matching rename.
-- Every consumer: `deck-canvas.tsx`, `card-drag-coordinator.ts`, `action-dispatch.ts`, `tug-card.tsx`, `card-content-host.tsx`, tests.
+- Every consumer: `deck-canvas.tsx`, `card-drag-coordinator.ts`, `action-dispatch.ts`, `tug-card.tsx`, `card-host.tsx`, tests.
 
 **Rename table:**
 
@@ -296,7 +296,7 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 **Artifacts:**
 - File rename: `tugdeck/src/components/chrome/card-content-registry.ts` → `window-content-registry.ts`.
 - File rename: `tugdeck/src/components/chrome/stack-root-registry.ts` → `window-root-registry.ts`.
-- Consumers: `card-portal.tsx`, `card-content-host.tsx`, `tug-card.tsx`, tests.
+- Consumers: `card-portal.tsx`, `card-host.tsx`, `tug-card.tsx`, tests.
 
 **Tasks:**
 - [x] Rename both files.
@@ -433,18 +433,18 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Component export: `CardContentHost` → `CardHost`.
 - Props type: `CardContentHostProps` → `CardHostProps`.
 - Consumer: `deck-canvas.tsx`.
-- Test file rename: `card-content-host.test.tsx` → `card-host.test.tsx`.
+- Tests that imported the host (`observable-props-integration`, `card-identity-preservation`, etc.): imports point at `card-host.tsx`. (No standalone `card-content-host.test.tsx` existed in-tree.)
 
 **Tasks:**
-- [ ] File rename.
-- [ ] Export and prop-type renames.
-- [ ] Update `deck-canvas.tsx` import + JSX.
-- [ ] Update test file + imports.
+- [x] File rename.
+- [x] Export and prop-type renames.
+- [x] Update `deck-canvas.tsx` import + JSX.
+- [x] Update test file + imports.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "CardContentHost|card-content-host" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "CardContentHost|card-content-host" tugdeck/src` returns zero matches.
 
 ---
 

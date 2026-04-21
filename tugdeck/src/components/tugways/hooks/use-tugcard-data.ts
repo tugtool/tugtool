@@ -6,7 +6,7 @@
  *
  * ## Design
  *
- * `CardContentHost` places a `TugcardDataProvider` around card content. The provider
+ * `CardHost` places a `TugcardDataProvider` around card content. The provider
  * holds a `Map<number, unknown>` of decoded feed payloads keyed by feed ID.
  *
  * Two overloads are provided:
@@ -64,7 +64,7 @@ export const TugcardDataContext = createContext<TugcardDataContextValue>(null);
 /**
  * Wraps card children with the current feed data map.
  *
- * Intended for **internal use by CardContentHost only** -- not part of the public API.
+ * Intended for **internal use by CardHost only** -- not part of the public API.
  */
 export const TugcardDataProvider: React.FC<{
   feedData: Map<number, unknown>;

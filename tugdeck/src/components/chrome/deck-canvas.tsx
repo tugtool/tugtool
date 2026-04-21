@@ -62,7 +62,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugWindow } from "./tug-window";
-import { CardContentHost } from "./card-content-host";
+import { CardHost } from "./card-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { TugWindowState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -128,7 +128,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     return { sortedStacks: sorted, zIndexMap: map };
   }, [windows]);
 
-  // Build a cardId → hostStackId map so `CardContentHost` can look up its
+  // Build a cardId → hostStackId map so `CardHost` can look up its
   // host stack without re-scanning the stacks array on every render.
   const hostStackIdByCardId = useMemo(() => {
     const map = new Map<string, string>();
@@ -484,14 +484,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           keys by cardId so React preserves component identity when a card
           moves between stacks (detach / merge). Non-active cards render
           with `display: none` so they stay alive without affecting layout.
-          Content factories and contexts live in CardContentHost; see
-          card-content-host.tsx. */}
+          Content factories and contexts live in CardHost; see
+          card-host.tsx. */}
       {cards.map((card) => {
         const hostStackId = hostStackIdByCardId.get(card.id);
         if (!hostStackId) return null;
         const hostStack = windows.find((s) => s.id === hostStackId);
         return (
-          <CardContentHost
+          <CardHost
             key={card.id}
             cardId={card.id}
             hostStackId={hostStackId}

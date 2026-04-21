@@ -2,7 +2,7 @@
  * use-property-store.ts -- usePropertyStore hook and CardPropertyContext.
  *
  * Provides a React hook for card content components to create and register a
- * PropertyStore with the enclosing card host (`CardContentHost`). Inspectors can then discover,
+ * PropertyStore with `CardHost`. Inspectors can then discover,
  * read, write, and observe properties without importing card internals.
  *
  * Usage:
@@ -42,7 +42,7 @@ import type { PropertyDescriptor } from "../property-store";
 // ---------------------------------------------------------------------------
 
 /**
- * Registration callback type. `CardContentHost` provides this callback so that card
+ * Registration callback type. `CardHost` provides this callback so that card
  * content can register its PropertyStore.
  *
  * Spec S05 (#s05-tugcard-property-context)
@@ -50,7 +50,7 @@ import type { PropertyDescriptor } from "../property-store";
 export type PropertyStoreRegistrar = (store: PropertyStore) => void;
 
 /**
- * React context that `CardContentHost` provides with a registration callback.
+ * React context that `CardHost` provides with a registration callback.
  *
  * Card content calls usePropertyStore(), which internally calls this callback
  * in useLayoutEffect to install the store. This mirrors the TugcardDataContext
@@ -98,7 +98,7 @@ export interface UsePropertyStoreOptions {
  * Create a PropertyStore and register it with the enclosing card host.
  *
  * The store is created once on first render via useRef -- it is stable across
- * re-renders. The store is registered with `CardContentHost` via CardPropertyContext
+ * re-renders. The store is registered with `CardHost` via CardPropertyContext
  * in useLayoutEffect (Rule #3) so it is available before events fire.
  *
  * Returns the stable PropertyStore instance. Card content uses the store

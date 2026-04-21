@@ -6,7 +6,7 @@
  *
  * Without this bridge, card content (e.g., tide's project picker) that
  * relies on portaling sheets or tooltips into the window root loses access
- * to that element when `CardContentHost` moves out of the window's React
+ * to that element when `CardHost` moves out of the window's React
  * tree (Step 11.6.1a Piece 1.iii).
  *
  * Parallel to `window-content-registry` which tracks the inner content div.

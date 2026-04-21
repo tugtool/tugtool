@@ -96,7 +96,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * Override this when the responder's DOM output is portaled out of
    * its React parent, so the chain matches the rendered DOM
    * relationship instead of the React tree. The primary consumer is
-   * `CardContentHost` after 11.6.1a Piece 1 (Card content lives in a
+   * `CardHost` after 11.6.1a Piece 1 (Card content lives in a
    * flat deck-level list in the React tree but is portaled into the
    * host stack's content div) — passing `parentId: hostStackId`
    * re-parents the chain to the stack's tug-window responder so

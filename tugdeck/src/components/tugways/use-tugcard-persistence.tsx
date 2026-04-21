@@ -4,7 +4,7 @@
  * Provides the opt-in card content state persistence mechanism for card content.
  *
  * Card content components call `useTugcardPersistence({ onSave, onRestore })`
- * to register save/restore callbacks with their enclosing CardContentHost. CardContentHost
+ * to register save/restore callbacks with their enclosing CardHost, which
  * calls `onSave` on tab deactivation and `onRestore` on tab activation, using
  * the DeckManager tab state cache as the durable backing store.
  *
@@ -25,14 +25,14 @@ import React, { createContext, useContext, useLayoutEffect, useRef } from "react
  *
  * Generic over T so card content components get type-safe onRestore.
  * Internally stored as TugcardPersistenceCallbacks (erased to unknown)
- * so CardContentHost can treat the content payload as opaque JSON.
+ * so CardHost can treat the content payload as opaque JSON.
  *
  * Spec S05 ([D02])
  */
 export interface UseTugcardPersistenceOptions<T> {
-  /** Called by CardContentHost on tab deactivation. Must return JSON-serializable state. */
+  /** Called by CardHost on tab deactivation. Must return JSON-serializable state. */
   onSave: () => T;
-  /** Called by CardContentHost on tab activation with the previously saved state. */
+  /** Called by CardHost on tab activation with the previously saved state. */
   onRestore: (state: T) => void;
 }
 
@@ -42,14 +42,14 @@ export interface UseTugcardPersistenceOptions<T> {
 
 /**
  * Save/restore callback pair registered by card content components via
- * `useTugcardPersistence`. CardContentHost calls these on tab deactivation/activation.
+ * `useTugcardPersistence`. CardHost calls these on tab deactivation/activation.
  *
  * - `onSave()` is called on deactivation. Returns opaque JSON-serializable state.
  * - `onRestore(state)` is called on activation with the previously saved state.
- * - `onContentReady` is written by CardContentHost into this object before calling
+ * - `onContentReady` is written by CardHost into this object before calling
  *   `onRestore`. The hook's no-deps `useLayoutEffect` fires it after the child's
  *   DOM commits (Rule 11, Rule 12, [D78], [D79]).
- * - `restorePendingRef` is created by the hook and included here so CardContentHost can
+ * - `restorePendingRef` is created by the hook and included here so CardHost can
  *   set it to `true` before calling `onRestore`, signaling that a restore is in
  *   flight. The hook's no-deps `useLayoutEffect` reads this flag. ([D03])
  *
@@ -59,7 +59,7 @@ export interface TugcardPersistenceCallbacks {
   onSave: () => unknown;
   onRestore: (state: unknown) => void;
   /**
-   * Written by CardContentHost before calling `onRestore`. Fired by the hook's
+   * Written by CardHost before calling `onRestore`. Fired by the hook's
    * no-deps `useLayoutEffect` after the child's DOM commits. Optional because
    * existing card content that doesn't need ready signaling is unaffected.
    *
@@ -67,7 +67,7 @@ export interface TugcardPersistenceCallbacks {
    */
   onContentReady?: () => void;
   /**
-   * Ref created by the hook, set to `true` by CardContentHost before calling
+   * Ref created by the hook, set to `true` by CardHost before calling
    * `onRestore`. Read by the hook's no-deps `useLayoutEffect`. Shared via this
    * callbacks object so no new context or side channel is needed. ([D03])
    */
@@ -79,13 +79,13 @@ export interface TugcardPersistenceCallbacks {
 // ---------------------------------------------------------------------------
 
 /**
- * Context provided by CardContentHost to its children.
+ * Context provided by CardHost to its children.
  *
  * The value is a stable registration function. Card content components call
  * `useTugcardPersistence()` which reads this context and registers their
  * save/restore callbacks in `useLayoutEffect` (Rule 3 of Rules of Tugways).
  *
- * null when rendered outside CardContentHost (no-op in useTugcardPersistence).
+ * null when rendered outside CardHost (no-op in useTugcardPersistence).
  *
  * Spec S04 ([D02])
  */
@@ -100,9 +100,9 @@ export const CardPersistenceContext = createContext<
 /**
  * Hook for card content components to opt in to state persistence.
  *
- * On tab deactivation, CardContentHost calls `onSave()` and stores the result in
+ * On tab deactivation, CardHost calls `onSave()` and stores the result in
  * the DeckManager tab state cache (and debounced to tugbank). On tab
- * activation, CardContentHost calls `onRestore(savedState)` with the previously
+ * activation, CardHost calls `onRestore(savedState)` with the previously
  * saved value. If no state was saved, `onRestore` is not called.
  *
  * **Rules of Tugways compliance:**
@@ -121,7 +121,7 @@ export const CardPersistenceContext = createContext<
  * Spec S05 ([D02], [D01], [D02], [D03], #s05-persistence-hook)
  */
 export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T>): void {
-  // Read the registration function from context (null outside CardContentHost).
+  // Read the registration function from context (null outside CardHost).
   const register = useContext(CardPersistenceContext);
 
   // Store the caller's options in refs so the registered wrappers never go
@@ -132,7 +132,7 @@ export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T
   onRestoreRef.current = options.onRestore;
 
   // Ref-flag mechanism ([D02], [D03], Spec S02):
-  // CardContentHost sets restorePendingRef.current = true before calling onRestore.
+  // CardHost sets restorePendingRef.current = true before calling onRestore.
   // The no-deps useLayoutEffect below checks this flag on every commit and
   // fires onContentReady when set. This is the deterministic alternative to
   // requestAnimationFrame (Rule 12, [D79]).
@@ -162,7 +162,7 @@ export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T
     callbacksObjRef.current = callbacks;
 
     // Cleanup: unregister when the card content component unmounts by
-    // registering a no-op pair. CardContentHost will call onSave on cleanup if it
+    // registering a no-op pair. CardHost will call onSave on cleanup if it
     // runs deactivation, but the ref callbacks will still be valid until
     // unmount completes, so this is safe.
     return () => {
@@ -172,7 +172,7 @@ export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T
   }, [register]);
 
   // No-deps useLayoutEffect: fires on every commit of this component.
-  // When restorePendingRef is true (set by CardContentHost's Phase 1 effect before
+  // When restorePendingRef is true (set by CardHost's Phase 1 effect before
   // calling onRestore), the child's setState has now committed to the DOM.
   // Fire onContentReady and reset the flag. ([D01], [D02], Spec S02, Rule 11)
   useLayoutEffect(() => {

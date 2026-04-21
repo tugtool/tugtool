@@ -1,7 +1,7 @@
 /**
  * Identity-preservation tests for the two-table Card/CardStack model.
  *
- * CardContentHost renders via CardPortal at deck level, so card content must
+ * CardHost renders via CardPortal at deck level, so card content must
  * mount exactly once and survive every deck operation that preserves card
  * identity: setActiveCardInWindow (in-stack card switch), detachCard
  * (cross-stack move to new stack), moveCardToWindow (cross-stack move to
@@ -306,7 +306,7 @@ describe("Card content identity preservation (two-table model)", () => {
 
     // Detach creates a new stack containing the moved card. The moved card's
     // Probe must stay mounted — React reconciles the flat deck-level
-    // CardContentHost list by cardId, and the portal re-roots the DOM into
+    // CardHost list by cardId, and the portal re-roots the DOM into
     // the new host stack.
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
