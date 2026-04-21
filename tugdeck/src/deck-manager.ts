@@ -511,29 +511,40 @@ export class DeckManager implements IDeckManagerStore {
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
     };
 
-    const previouslyActive = this.cardLifecycle.getActiveCardId();
+    const oldFR = this.getFirstResponderCardId();
+    const newFR = firstCardId;
 
-    this.deckState = {
-      ...this.deckState,
-      cards: [...this.deckState.cards, ...seededCards],
-      stacks: [...this.deckState.stacks, stack],
-      activeStackId: stackId,
-    };
-    this.notify();
-    this.scheduleSave();
-    for (const c of seededCards) {
-      this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
-    }
-    this.cardLifecycle.activateCard(firstCardId, previouslyActive);
+    // Single-commit flip (transition 4): `oldFR` is snapshotted before
+    // the mutation, so `_flipFirstResponder` fires the correct deactivate
+    // pair even though the commit puts `activeStackId = stackId` (which
+    // would make a state-derived `oldFR` read return `firstCardId`).
+    this._flipFirstResponder(oldFR, newFR, () => {
+      this.deckState = {
+        ...this.deckState,
+        cards: [...this.deckState.cards, ...seededCards],
+        stacks: [...this.deckState.stacks, stack],
+        activeStackId: stackId,
+      };
+      this.notify();
+      this.scheduleSave();
+      for (const c of seededCards) {
+        this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
+      }
+      putFocusedCardId(firstCardId);
+    });
+
     return firstCardId;
   }
 
   /**
-   * Close a stack by id. Fires will/didDeactivate on the first responder
-   * if the stack currently owns it (via `_setFirstResponder` in the
-   * activation half); fires willBeginDestruction on every card in the
-   * stack; removes the stack and all its cards; promotes the new
-   * top-of-deck to first responder when the closed stack was active.
+   * Close a stack by id.
+   *
+   * Plan 11.6.1b ordering: if the closing stack contains the first
+   * responder, flip the composite bit to the new top-of-deck's active
+   * card (or `null` when the deck becomes empty) BEFORE firing
+   * `cardWillBeginDestruction`. Then fire destruction for every card in
+   * the closed stack, mutate to remove the stack and its cards, and
+   * notify.
    */
   _closeStack(stackId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
@@ -543,48 +554,46 @@ export class DeckManager implements IDeckManagerStore {
     const closedContainsOldFR =
       oldFR !== null && stack.cardIds.includes(oldFR);
 
-    // Fire deactivation BEFORE destruction so observers see the
-    // closing card still in state during willDeactivate/didDeactivate.
-    if (closedContainsOldFR && oldFR !== null) {
-      this.cardLifecycle.notifyCardWillDeactivate(oldFR);
-      this.cardLifecycle.notifyCardDidDeactivate(oldFR);
+    // Phase 1: flip the first responder to the new top-of-deck BEFORE
+    // the destruction events. The closed stack is still in state at
+    // this point — `_flipFirstResponder`'s commit just moves
+    // `activeStackId` off the closing stack.
+    if (closedContainsOldFR) {
+      const remainingStacks = this.deckState.stacks.filter(
+        (s) => s.id !== stackId,
+      );
+      const newTopStack =
+        remainingStacks.length > 0
+          ? remainingStacks[remainingStacks.length - 1]
+          : null;
+      const newFR = newTopStack?.activeCardId ?? null;
+      const newActiveStackId = newTopStack?.id;
+      this._flipFirstResponder(oldFR, newFR, () => {
+        this.deckState = {
+          ...this.deckState,
+          ...(newActiveStackId !== undefined
+            ? { activeStackId: newActiveStackId }
+            : { activeStackId: undefined }),
+        };
+        this.notify();
+        this.scheduleSave();
+        if (newFR !== null) putFocusedCardId(newFR);
+      });
     }
+
+    // Phase 2: fire destruction for each card in the closed stack, then
+    // remove the stack and its cards from state.
     for (const cid of stack.cardIds) {
       this.cardLifecycle.notifyCardWillBeginDestruction(cid);
     }
-
     const cardIdSet = new Set(stack.cardIds);
-    const newStacks = this.deckState.stacks.filter((s) => s.id !== stackId);
-    const newCards = this.deckState.cards.filter((c) => !cardIdSet.has(c.id));
-    // Clear activeStackId when closing the active stack; `_setFirstResponder`
-    // re-sets it to the new top-of-deck below. Leaving activeStackId
-    // referencing the closed stack would make `getFirstResponderCardId`
-    // return stale, and clearing it prematurely here lets the subsequent
-    // `_setFirstResponder(newFR)` see `oldFR === null` and fire only the
-    // will/didActivate half (deactivation already fired above).
-    const newActiveStackId =
-      this.deckState.activeStackId === stackId
-        ? undefined
-        : this.deckState.activeStackId;
     this.deckState = {
       ...this.deckState,
-      cards: newCards,
-      stacks: newStacks,
-      ...(newActiveStackId !== undefined
-        ? { activeStackId: newActiveStackId }
-        : { activeStackId: undefined }),
+      cards: this.deckState.cards.filter((c) => !cardIdSet.has(c.id)),
+      stacks: this.deckState.stacks.filter((s) => s.id !== stackId),
     };
     this.notify();
     this.scheduleSave();
-
-    if (closedContainsOldFR) {
-      const newTopStack =
-        newStacks.length > 0 ? newStacks[newStacks.length - 1] : null;
-      const newFR = newTopStack?.activeCardId ?? null;
-      if (newFR !== null) {
-        this._setFirstResponder(newFR);
-      }
-    }
   }
 
   /**
@@ -675,6 +684,41 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     // Did phase — observers read post-mutation state.
+    if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
+    if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
+  }
+
+  /**
+   * Flip the composite first-responder bit from a caller-provided `oldFR`
+   * to `newFR`, running the caller's `commit` in between. The caller is
+   * responsible for all state mutation inside `commit` (including the
+   * changes that take the composite bit from `oldFR` to `newFR`) and for
+   * calling `notify()`/`scheduleSave()`.
+   *
+   * Use this helper instead of `_setFirstResponder` when the mutator
+   * already has composite-bit mutations tangled up with non-composite-bit
+   * mutations (adding/removing cards, reordering stacks) — passing
+   * `oldFR` explicitly lets the helper avoid reading the composite bit
+   * from state that has been partially mutated.
+   *
+   * Ordering:
+   *   will-phase → commit → responder-chain promotion → did-phase.
+   * Same-bit (`oldFR === newFR`) runs `commit` with no lifecycle events
+   * and no responder-chain re-promotion.
+   */
+  private _flipFirstResponder(
+    oldFR: string | null,
+    newFR: string | null,
+    commit: () => void,
+  ): void {
+    if (oldFR === newFR) {
+      commit();
+      return;
+    }
+    if (oldFR !== null) this.cardLifecycle.notifyCardWillDeactivate(oldFR);
+    if (newFR !== null) this.cardLifecycle.notifyCardWillActivate(newFR);
+    commit();
+    if (newFR !== null) this.cardLifecycle.setResponderChainKey(newFR);
     if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
     if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
   }
@@ -921,6 +965,11 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Add a new card to an existing stack. Creates a fresh card, appends its id
    * to the stack's `cardIds`, and sets it as the stack's `activeCardId`.
+   *
+   * Plan 11.6.1b transitions 5a/5b: when `stackId` is the deck's active
+   * stack, the new card becomes first responder (full flip). When it is
+   * not, the new card becomes the stack's active-in-stack but the deck's
+   * composite first-responder bit is unchanged (no lifecycle events).
    */
   private _addCardToStack(stackId: string, componentId: string): string | null {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
@@ -944,19 +993,35 @@ export class DeckManager implements IDeckManagerStore {
       closable: registration.defaultMeta.closable !== false,
     };
 
+    const isActiveStack = stackId === this.deckState.activeStackId;
+    const oldFR = this.getFirstResponderCardId();
+    // Post-mutation the stack's `activeCardId` is always `cardId`; the
+    // composite bit only flips when the stack is the deck's active stack.
+    const newFR = isActiveStack ? cardId : oldFR;
+
     const updatedStack: CardStackState = {
       ...stack,
       cardIds: [...stack.cardIds, cardId],
       activeCardId: cardId,
     };
 
-    this.deckState = {
-      ...this.deckState,
-      cards: [...this.deckState.cards, newCard],
-      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
-    };
-    this.notify();
-    this.scheduleSave();
+    // Single-commit flip. For the inactive-stack case (transition 5b),
+    // `oldFR === newFR`, so `_flipFirstResponder` runs commit only — no
+    // lifecycle events. Construction fires inside commit so it lands
+    // between the will and did phases for transition 5a, and right after
+    // the commit-notify for transition 5b.
+    this._flipFirstResponder(oldFR, newFR, () => {
+      this.deckState = {
+        ...this.deckState,
+        cards: [...this.deckState.cards, newCard],
+        stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
+      };
+      this.notify();
+      this.scheduleSave();
+      this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
+      if (isActiveStack) putFocusedCardId(cardId);
+    });
+
     return cardId;
   }
 
@@ -964,8 +1029,12 @@ export class DeckManager implements IDeckManagerStore {
    * Remove a card from a stack.
    *
    * If the card is the only one in the stack, closes the whole stack via
-   * `_closeStack`. Otherwise removes the card from `deckState.cards` and from
-   * the stack's `cardIds`, reassigning `activeCardId` if needed.
+   * `_closeStack`. Otherwise removes the card from `deckState.cards` and
+   * from the stack's `cardIds`, reassigning `activeCardId` if needed.
+   *
+   * Plan 11.6.1b transition 8a: when the removed card is the first
+   * responder, flip the composite bit to the neighbor (via
+   * `_flipFirstResponder`) BEFORE firing `cardWillBeginDestruction`.
    */
   private _removeCard(stackId: string, cardId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
@@ -977,25 +1046,62 @@ export class DeckManager implements IDeckManagerStore {
       return;
     }
 
+    const oldFR = this.getFirstResponderCardId();
+    const wasRemovingFR = oldFR === cardId;
     const spliced = spliceCardFromStack(stack, cardId);
     // `cardIds.length > 1` above guarantees a survivor → activeCardId !== null.
-    const updatedStack: CardStackState = {
-      ...stack,
-      cardIds: spliced.cardIds,
-      activeCardId: spliced.activeCardId as string,
-    };
+    const newActiveCardId = spliced.activeCardId as string;
 
+    // Phase 1 (FR-removal only): flip composite bit to the neighbor
+    // BEFORE destruction, per plan. Commit updates `stack.activeCardId`
+    // but leaves `cardId` in `stack.cardIds` — destruction in phase 2
+    // removes it. Two commits, two notifies.
+    if (wasRemovingFR) {
+      this._flipFirstResponder(oldFR, newActiveCardId, () => {
+        const flippedStack: CardStackState = {
+          ...stack,
+          activeCardId: newActiveCardId,
+        };
+        this.deckState = {
+          ...this.deckState,
+          stacks: this.deckState.stacks.map((s) =>
+            s.id === stackId ? flippedStack : s,
+          ),
+        };
+        this.notify();
+        this.scheduleSave();
+        putFocusedCardId(newActiveCardId);
+      });
+    }
+
+    // Phase 2: destruction + removal.
+    this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
+    const currentStack =
+      this.deckState.stacks.find((s) => s.id === stackId) ?? stack;
+    const finalStack: CardStackState = {
+      ...currentStack,
+      cardIds: currentStack.cardIds.filter((id) => id !== cardId),
+    };
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
-      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
+      stacks: this.deckState.stacks.map((s) => (s.id === stackId ? finalStack : s)),
     };
     this.notify();
     this.scheduleSave();
   }
 
   /**
-   * Set the active card in a stack. No-op if the cardId is not in the stack.
+   * Set the active card in a stack. No-op if `cardId` is not in the
+   * stack or is already the stack's `activeCardId`.
+   *
+   * Plan 11.6.1b transition 2 vs transition-5b's sibling:
+   *   - When `stackId` is the deck's active stack, flipping the stack's
+   *     active-in-stack card also flips the composite first-responder
+   *     bit. Route through `_setFirstResponder` so lifecycle events fire.
+   *   - When `stackId` is not the deck's active stack, flip the stack's
+   *     active-in-stack card with a raw mutation — no lifecycle events,
+   *     no first-responder change.
    */
   private _setActiveCardInStack(stackId: string, cardId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
@@ -1003,8 +1109,12 @@ export class DeckManager implements IDeckManagerStore {
     if (!stack.cardIds.includes(cardId)) return;
     if (stack.activeCardId === cardId) return;
 
-    const updatedStack: CardStackState = { ...stack, activeCardId: cardId };
+    if (stackId === this.deckState.activeStackId) {
+      this._setFirstResponder(cardId);
+      return;
+    }
 
+    const updatedStack: CardStackState = { ...stack, activeCardId: cardId };
     this.deckState = {
       ...this.deckState,
       stacks: this.deckState.stacks.map((s) => (s.id === stackId ? updatedStack : s)),
@@ -1094,8 +1204,12 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: spliced.activeCardId as string,
     };
 
-    const previouslyActive = this.cardLifecycle.getActiveCardId();
+    const oldFR = this.getFirstResponderCardId();
 
+    // Phase 1: insert the new stack and patch the source, but leave
+    // `activeStackId` unchanged. `_flipFirstResponder` below handles
+    // the composite-bit commit. Card identity is preserved, so no
+    // construction event fires.
     this.deckState = {
       ...this.deckState,
       stacks: [
@@ -1104,13 +1218,19 @@ export class DeckManager implements IDeckManagerStore {
         ),
         newStack,
       ],
-      activeStackId: newStackId,
     };
     this.notify();
     this.scheduleSave();
 
-    // Card identity is preserved across detach — no construction event.
-    this.cardLifecycle.activateCard(cardId, previouslyActive);
+    // Phase 2: flip to `cardId`. Transition 6 (cardId was already FR)
+    // → same-bit, no events. Transition 6b (cardId was not FR) → full
+    // flip. In both cases the commit sets `activeStackId = newStackId`.
+    this._flipFirstResponder(oldFR, cardId, () => {
+      this.deckState = { ...this.deckState, activeStackId: newStackId };
+      this.notify();
+      this.scheduleSave();
+      putFocusedCardId(cardId);
+    });
 
     return newStackId;
   }
@@ -1136,69 +1256,87 @@ export class DeckManager implements IDeckManagerStore {
     if (!targetStack) return;
 
     const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
-    const activeCardId = this.cardLifecycle.getActiveCardId();
-    const sourceWasActive =
-      sourceWillBeDestroyed &&
-      activeCardId !== null &&
-      sourceStack.cardIds.includes(activeCardId);
+    const sourceIsActive = this.deckState.activeStackId === sourceStackId;
 
-    // Merge preserves card identity: the card moves from source to target,
-    // nothing dies. If the source stack empties and is removed, no card is
-    // destroyed — the only card that was in it is the one being merged.
-    // We therefore fire NO `cardWillBeginDestruction` in this path. The old
-    // code fired it with the source *stackId*, which smuggled a stack id
-    // through a card-lifecycle event and confused wildcard observers that
-    // expected every payload to resolve back to a live card.
-    if (sourceWasActive && activeCardId) {
-      this.cardLifecycle.notifyCardWillDeactivate(activeCardId);
-      this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
-    }
+    // Post-move `activeStackId`: shift to target when the source was
+    // active AND will be destroyed (otherwise we'd leave a stale
+    // reference to a removed stack). In every other case `activeStackId`
+    // stays put — plan transition 7 only flips the first responder when
+    // the target is/becomes the active stack.
+    const postMoveActiveStackId =
+      sourceWillBeDestroyed && sourceIsActive
+        ? targetStackId
+        : this.deckState.activeStackId;
 
-    // Remove from source. If the source empties, drop it entirely;
-    // otherwise patch the source stack with the new cardIds/activeCardId.
     const spliced = spliceCardFromStack(sourceStack, cardId);
-    let intermediateStacks = this.deckState.stacks;
-    if (spliced.activeCardId === null) {
-      intermediateStacks = intermediateStacks.filter((s) => s.id !== sourceStackId);
-    } else {
-      const updatedSourceStack: CardStackState = {
-        ...sourceStack,
-        cardIds: spliced.cardIds,
-        activeCardId: spliced.activeCardId,
-      };
-      intermediateStacks = intermediateStacks.map((s) =>
-        s.id === sourceStackId ? updatedSourceStack : s,
+    const oldFR = this.getFirstResponderCardId();
+
+    // Determine the composite first-responder bit after the move.
+    let newFR: string | null;
+    if (postMoveActiveStackId === targetStackId) {
+      // Target is/becomes the active stack → moved card is first responder.
+      newFR = cardId;
+    } else if (
+      postMoveActiveStackId === sourceStackId &&
+      !sourceWillBeDestroyed
+    ) {
+      // Source remains active; its new `activeCardId` depends on whether
+      // the moved card was the source's active-in-stack pre-move.
+      newFR = spliced.activeCardId;
+    } else if (postMoveActiveStackId !== undefined) {
+      const other = this.deckState.stacks.find(
+        (s) => s.id === postMoveActiveStackId,
       );
+      newFR = other?.activeCardId ?? null;
+    } else {
+      newFR = null;
     }
 
-    // Insert into target (target may or may not still be in intermediateStacks
-    // — if source was destroyed, the remaining stacks array is a superset of
-    // [targetStack]; if not, both are present).
-    const clampedIndex = Math.max(0, Math.min(insertAtIndex, targetStack.cardIds.length));
-    const newTargetCardIds = [...targetStack.cardIds];
-    newTargetCardIds.splice(clampedIndex, 0, cardId);
-    const updatedTargetStack: CardStackState = {
-      ...targetStack,
-      cardIds: newTargetCardIds,
-      activeCardId: cardId,
-    };
-    const finalStacks = intermediateStacks.map((s) =>
-      s.id === targetStackId ? updatedTargetStack : s,
-    );
+    // Plan 11.6.1b transition 7 / 7b: flip composite bit iff it changes.
+    // Card identity is preserved across the move, so no destruction event.
+    this._flipFirstResponder(oldFR, newFR, () => {
+      let intermediateStacks: readonly CardStackState[] = this.deckState.stacks;
+      if (spliced.activeCardId === null) {
+        intermediateStacks = intermediateStacks.filter(
+          (s) => s.id !== sourceStackId,
+        );
+      } else {
+        const updatedSourceStack: CardStackState = {
+          ...sourceStack,
+          cardIds: spliced.cardIds,
+          activeCardId: spliced.activeCardId,
+        };
+        intermediateStacks = intermediateStacks.map((s) =>
+          s.id === sourceStackId ? updatedSourceStack : s,
+        );
+      }
 
-    this.deckState = {
-      ...this.deckState,
-      stacks: finalStacks,
-      ...(sourceWillBeDestroyed && this.deckState.activeStackId === sourceStackId
-        ? { activeStackId: targetStackId }
-        : {}),
-    };
-    this.notify();
-    this.scheduleSave();
+      const clampedIndex = Math.max(
+        0,
+        Math.min(insertAtIndex, targetStack.cardIds.length),
+      );
+      const newTargetCardIds = [...targetStack.cardIds];
+      newTargetCardIds.splice(clampedIndex, 0, cardId);
+      const updatedTargetStack: CardStackState = {
+        ...targetStack,
+        cardIds: newTargetCardIds,
+        activeCardId: cardId,
+      };
+      const finalStacks = intermediateStacks.map((s) =>
+        s.id === targetStackId ? updatedTargetStack : s,
+      );
 
-    if (sourceWasActive) {
-      this.cardLifecycle.activateCard(cardId, null);
-    }
+      this.deckState = {
+        ...this.deckState,
+        stacks: finalStacks,
+        ...(postMoveActiveStackId !== undefined
+          ? { activeStackId: postMoveActiveStackId }
+          : { activeStackId: undefined }),
+      };
+      this.notify();
+      this.scheduleSave();
+      if (newFR !== null) putFocusedCardId(newFR);
+    });
   }
 
   // ---- Collapse management ----

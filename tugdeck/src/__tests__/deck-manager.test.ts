@@ -211,15 +211,18 @@ describe("DeckManager.addCard – registered component", () => {
     // Second card: construction, then deactivate old + activate new.
     const id2 = manager.addCard("terminal") as string;
 
+    // Plan 11.6.1b: lifecycle events sandwich a single state commit.
+    // Construction fires inside the commit, between the will and did
+    // phases, so observers see post-mutation state during construction.
     expect(log).toEqual([
       // First card
-      `construct:${id1}`,
       `willActivate:${id1}`,
+      `construct:${id1}`,
       `didActivate:${id1}`,
       // Second card
-      `construct:${id2}`,
       `willDeactivate:${id1}`,
       `willActivate:${id2}`,
+      `construct:${id2}`,
       `didDeactivate:${id1}`,
       `didActivate:${id2}`,
     ]);
@@ -314,12 +317,16 @@ describe("DeckManager.handleStackClosed", () => {
 
     manager.handleStackClosed(stack2Id);
 
+    // Plan 11.6.1b transition 8c: flip the composite first-responder bit
+    // BEFORE firing destruction, so the will/did pair on the old FR and
+    // the will/did pair on the new FR sandwich the composite-bit commit;
+    // `cardWillBeginDestruction` fires last.
     expect(log).toEqual([
       `willDeactivate:${id2}`,
-      `didDeactivate:${id2}`,
-      `willDestroy:${id2}`,
       `willActivate:${id1}`,
+      `didDeactivate:${id2}`,
       `didActivate:${id1}`,
+      `willDestroy:${id2}`,
     ]);
   });
 
@@ -782,13 +789,17 @@ describe("DeckManager store API – getVersion", () => {
     expect(manager.getVersion()).toBe(v0 + 1);
   });
 
-  it("getVersion() increments after handleStackClosed()", () => {
+  it("getVersion() increments twice after handleStackClosed() of the active stack", () => {
+    // Plan 11.6.1b transition 8c: closing the first responder's stack
+    // flips the composite bit (one commit) then fires destruction and
+    // removes the stack (second commit) — two notifies for the active-
+    // stack close path.
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const stackId = hostStack(manager.getDeckState(), cardId).id;
     const v1 = manager.getVersion();
     manager.handleStackClosed(stackId);
-    expect(manager.getVersion()).toBe(v1 + 1);
+    expect(manager.getVersion()).toBe(v1 + 2);
   });
 
   it("getVersion() increments after moveStack()", () => {
@@ -1032,7 +1043,10 @@ describe("DeckManager.removeCard", () => {
     expect(manager.getDeckState().cards.length).toBe(cardCountBefore);
   });
 
-  it("notifies subscribers after removeCard", () => {
+  it("notifies subscribers after removeCard (twice when removing the first responder)", () => {
+    // Plan 11.6.1b transition 8a: removing the first responder flips
+    // the composite bit to a neighbor (one commit) then fires
+    // destruction and removes the card (second commit) — two notifies.
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
@@ -1043,7 +1057,7 @@ describe("DeckManager.removeCard", () => {
     manager.subscribe(() => { callCount += 1; });
     manager.removeCard(stackId, secondCardId);
 
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(2);
   });
 });
 
@@ -1625,21 +1639,23 @@ describe("DeckManager.moveCardToStack", () => {
     expect(cardsAfter).toEqual(cardsBefore);
   });
 
-  it("fires deactivation + target activation on the merged card when an active single-card source is merged", () => {
+  it("fires no card-lifecycle events when the merged card stays first responder across the move", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const srcCardId = manager.addCard("hello") as string;
     const srcStackId = hostStack(manager.getDeckState(), srcCardId).id;
     const tgtCardId = manager.addCard("terminal") as string;
     const tgtStackId = hostStack(manager.getDeckState(), tgtCardId).id;
-    // tgt is top-of-stack (active). Manually activate src so src is active.
+    // tgt is top-of-stack (active). Manually activate src so src is first
+    // responder pre-move.
     manager.activateCard(srcCardId);
 
-    // Card identity is preserved across merge — the card moves from source
-    // to target, so no `cardWillBeginDestruction` fires for this path. The
-    // source *stack* is removed as a side effect of emptying, but a stack
-    // vanishing is not a card-lifecycle event. The test asserts absence of
-    // that spurious destruction signal.
+    // Plan 11.6.1b composite-bit model: merging the active single-card
+    // source into target makes the moved card the new FR of the target
+    // stack, and the post-move `activeStackId` shifts to target. Because
+    // the moved card was already FR, the composite bit does not flip —
+    // no will/did (de)activate events, no destruction event (identity is
+    // preserved across merges).
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
       log.push(`willDeact:${id}`),
@@ -1660,20 +1676,20 @@ describe("DeckManager.moveCardToStack", () => {
 
     manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
 
-    expect(log).toEqual([
-      `willDeact:${srcCardId}`,
-      `didDeact:${srcCardId}`,
-      `willAct:${srcCardId}`,
-      `didAct:${srcCardId}`,
-    ]);
-    // No spurious destruction event in the log.
-    expect(log.some((entry) => entry.startsWith("willDestroy:"))).toBe(false);
-    // Source stack is gone, target survives.
+    expect(log).toEqual([]);
+    // Source stack is gone, target survives; `srcCardId` is target's
+    // active card and the deck's first responder.
     expect(manager.getDeckState().stacks.find((s) => s.id === srcStackId)).toBeUndefined();
     expect(manager.getDeckState().stacks.find((s) => s.id === tgtStackId)).toBeDefined();
+    expect(manager.getFirstResponderCardId()).toBe(srcCardId);
   });
 
-  it("fires no card-lifecycle events when a non-active single-card source is merged", () => {
+  it("flips first responder when merging a non-active single-card source into the active target", () => {
+    // Plan 11.6.1b transition 7: merging a card into the active target
+    // makes the moved card the target's new `activeCardId`, which is the
+    // composite first responder. The FR bit flips from `tgtCardId` to the
+    // moved card. Card identity is preserved across merges, so no
+    // destruction event fires.
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const srcCardId = manager.addCard("hello") as string;
@@ -1702,13 +1718,14 @@ describe("DeckManager.moveCardToStack", () => {
 
     manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
 
-    // Card identity preserved (no destruction); source's sole card was not
-    // active (no deactivation); tgt stays active with its own activeCardId
-    // replaced by the merged card, but the lifecycle's active-card pointer
-    // is still tgtCardId's sibling — the merge does not re-fire activation
-    // events for the moved card because it was not the first responder
-    // before or after.
-    expect(log).toEqual([]);
+    expect(log).toEqual([
+      `willDeact:${tgtCardId}`,
+      `willAct:${srcCardId}`,
+      `didDeact:${tgtCardId}`,
+      `didAct:${srcCardId}`,
+    ]);
+    expect(log.some((entry) => entry.startsWith("willDestroy:"))).toBe(false);
+    expect(manager.getFirstResponderCardId()).toBe(srcCardId);
   });
 });
 
@@ -2107,6 +2124,302 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
     if (state.activeStackId !== undefined) {
       expect(state.stacks.some((s) => s.id === state.activeStackId)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 11.6.1b transition coverage — composite first-responder semantics
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: subscribe every will/did lifecycle channel to a shared log so
+ * tests can assert the full event sequence. Clears initial-sync noise.
+ */
+function attachTransitionLog(mgr: DeckManager): string[] {
+  const log: string[] = [];
+  mgr.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+    log.push(`willDeact:${id}`),
+  );
+  mgr.cardLifecycle.observeCardWillActivate(null, (id) =>
+    log.push(`willAct:${id}`),
+  );
+  mgr.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+    log.push(`didDeact:${id}`),
+  );
+  mgr.cardLifecycle.observeCardDidActivate(null, (id) =>
+    log.push(`didAct:${id}`),
+  );
+  mgr.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+    log.push(`willDestroy:${id}`),
+  );
+  mgr.cardLifecycle.observeCardDidFinishConstruction(null, (id) =>
+    log.push(`construct:${id}`),
+  );
+  log.length = 0;
+  return log;
+}
+
+describe("DeckManager first-responder transitions (11.6.1b)", () => {
+  it("T-11-6-1b-01: clicking a card in an inactive stack fires the full flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const b = manager.addCard("terminal") as string;
+    // b's stack is active (most recent addCard).
+    const log = attachTransitionLog(manager);
+
+    // Activate `a` — its stack is inactive, its card is the stack's
+    // active-in-stack (only card). FR flips from b → a.
+    manager.activateCard(a);
+
+    expect(log).toEqual([
+      `willDeact:${b}`,
+      `willAct:${a}`,
+      `didDeact:${b}`,
+      `didAct:${a}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+  });
+
+  it("T-11-6-1b-02: clicking a tab in the active stack fires the full flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(stackId, "terminal") as string;
+    // After addCardToStack in the active stack, b is FR.
+    expect(manager.getFirstResponderCardId()).toBe(b);
+    const log = attachTransitionLog(manager);
+
+    // Switch active-in-stack back to a. Same stack, different card → flip.
+    manager.setActiveCardInStack(stackId, a);
+
+    expect(log).toEqual([
+      `willDeact:${b}`,
+      `willAct:${a}`,
+      `didDeact:${b}`,
+      `didAct:${a}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+  });
+
+  it("T-11-6-1b-03: tab switch in an inactive stack then stack activation fires one combined flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    registerCard(makeRegistration("git"));
+    const a = manager.addCard("hello") as string;
+    const stack1Id = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(stack1Id, "terminal") as string;
+    const c = manager.addCard("git") as string;
+    // stack1 holds [a, b]; b is active-in-stack1. c's stack is the deck's
+    // active stack, c is FR. Simulate clicking tab `a` in the inactive
+    // stack1: (i) setActiveCardInStack(stack1, a) fires no events
+    // (stack1 is inactive); (ii) activateCard(a) promotes stack1 and
+    // flips FR to a.
+    const log = attachTransitionLog(manager);
+
+    manager.setActiveCardInStack(stack1Id, a);
+    manager.activateCard(a);
+
+    expect(log).toEqual([
+      `willDeact:${c}`,
+      `willAct:${a}`,
+      `didDeact:${c}`,
+      `didAct:${a}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+  });
+
+  it("T-11-6-1b-05a: addCardToStack on the active stack fires construction then full flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), a).id;
+    const log = attachTransitionLog(manager);
+
+    const b = manager.addCardToStack(stackId, "terminal") as string;
+
+    expect(log).toEqual([
+      `willDeact:${a}`,
+      `willAct:${b}`,
+      `construct:${b}`,
+      `didDeact:${a}`,
+      `didAct:${b}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(b);
+  });
+
+  it("T-11-6-1b-05b: addCardToStack on an inactive stack fires construction only, no flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    registerCard(makeRegistration("git"));
+    const a = manager.addCard("hello") as string;
+    const stack1Id = hostStack(manager.getDeckState(), a).id;
+    manager.addCard("terminal"); // stack2 becomes active; its card is FR.
+    const log = attachTransitionLog(manager);
+
+    const newCard = manager.addCardToStack(stack1Id, "git") as string;
+
+    expect(log).toEqual([`construct:${newCard}`]);
+    // FR is still stack2's active card; stack1.activeCardId has flipped
+    // to the newly-added card silently.
+    const stack1 = manager.getDeckState().stacks.find((s) => s.id === stack1Id)!;
+    expect(stack1.activeCardId).toBe(newCard);
+    expect(manager.getFirstResponderCardId()).not.toBe(newCard);
+  });
+
+  it("T-11-6-1b-06: detachCard when the moved card is already FR fires no lifecycle events", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const stack1Id = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(stack1Id, "terminal") as string;
+    // b is FR (active-in-stack1 after addCardToStack, and stack1 is the
+    // deck's active stack).
+    expect(manager.getFirstResponderCardId()).toBe(b);
+    const log = attachTransitionLog(manager);
+
+    manager.detachCard(stack1Id, b, { x: 100, y: 100 });
+
+    expect(log).toEqual([]);
+    expect(manager.getFirstResponderCardId()).toBe(b);
+  });
+
+  it("T-11-6-1b-06b: detachCard when the moved card is NOT FR fires the full flip", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const stack1Id = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(stack1Id, "terminal") as string;
+    // b is FR. Switch back to a so a is FR and b is NOT FR.
+    manager.setActiveCardInStack(stack1Id, a);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+    const log = attachTransitionLog(manager);
+
+    manager.detachCard(stack1Id, b, { x: 100, y: 100 });
+
+    expect(log).toEqual([
+      `willDeact:${a}`,
+      `willAct:${b}`,
+      `didDeact:${a}`,
+      `didAct:${b}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(b);
+  });
+
+  it("T-11-6-1b-07: moveCardToStack into the active stack flips FR to the moved card", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    registerCard(makeRegistration("git"));
+    // source is not active; target is active.
+    const a = manager.addCard("hello") as string;
+    const srcStackId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(srcStackId, "terminal") as string;
+    const c = manager.addCard("git") as string;
+    const tgtStackId = hostStack(manager.getDeckState(), c).id;
+    // tgtStack is active, c is FR. Move b from src to tgt.
+    const log = attachTransitionLog(manager);
+
+    manager.moveCardToStack(srcStackId, b, tgtStackId, 0);
+
+    expect(log).toEqual([
+      `willDeact:${c}`,
+      `willAct:${b}`,
+      `didDeact:${c}`,
+      `didAct:${b}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(b);
+  });
+
+  it("T-11-6-1b-07b: moveCardToStack into an inactive stack fires no flip events", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    registerCard(makeRegistration("git"));
+    const a = manager.addCard("hello") as string;
+    const srcStackId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(srcStackId, "terminal") as string;
+    const c = manager.addCard("git") as string;
+    const tgtStackId = hostStack(manager.getDeckState(), c).id;
+    // tgtStack is active, c is FR. Now activate src so src is active
+    // and tgt is the inactive stack.
+    manager.activateCard(a);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+    const log = attachTransitionLog(manager);
+
+    // Move b from src (active, multi-card) to tgt (inactive). src stays
+    // active with a as its activeCard. tgt's activeCard becomes b but
+    // tgt is not the active stack so no flip.
+    manager.moveCardToStack(srcStackId, b, tgtStackId, 0);
+
+    expect(log).toEqual([]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+  });
+
+  it("T-11-6-1b-08a: removeCard on FR in a multi-card stack flips to neighbor then destroys", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const a = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToStack(stackId, "terminal") as string;
+    // b is FR.
+    expect(manager.getFirstResponderCardId()).toBe(b);
+    const log = attachTransitionLog(manager);
+
+    manager.removeCard(stackId, b);
+
+    expect(log).toEqual([
+      `willDeact:${b}`,
+      `willAct:${a}`,
+      `didDeact:${b}`,
+      `didAct:${a}`,
+      `willDestroy:${b}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+  });
+
+  it("T-11-6-1b-08b: removeCard on the sole card in the sole stack flips to null then destroys", () => {
+    registerCard(makeRegistration("hello"));
+    const a = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), a).id;
+    // a is FR. removeCard delegates to _closeStack for single-card stacks.
+    const log = attachTransitionLog(manager);
+
+    manager.removeCard(stackId, a);
+
+    expect(log).toEqual([
+      `willDeact:${a}`,
+      `didDeact:${a}`,
+      `willDestroy:${a}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBeNull();
+  });
+
+  it("T-11-6-1b-08c: handleStackClosed on an active multi-card stack flips to new top then destroys all", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    registerCard(makeRegistration("git"));
+    const a = manager.addCard("hello") as string;
+    const stack1Id = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCard("terminal") as string;
+    const stack2Id = hostStack(manager.getDeckState(), b).id;
+    const c = manager.addCardToStack(stack2Id, "git") as string;
+    // stack2 is active, c is FR. stack2 has [b, c].
+    expect(manager.getFirstResponderCardId()).toBe(c);
+    const log = attachTransitionLog(manager);
+
+    manager.handleStackClosed(stack2Id);
+
+    expect(log).toEqual([
+      `willDeact:${c}`,
+      `willAct:${a}`,
+      `didDeact:${c}`,
+      `didAct:${a}`,
+      `willDestroy:${b}`,
+      `willDestroy:${c}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(a);
+    expect(manager.getDeckState().stacks.find((s) => s.id === stack1Id)).toBeDefined();
+    expect(manager.getDeckState().stacks.find((s) => s.id === stack2Id)).toBeUndefined();
   });
 });
 
