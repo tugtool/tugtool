@@ -4,7 +4,7 @@
  * inner card chrome + outer frame split ([D02] merge window).
  *
  * Responsibilities:
- * - Absolutely-positioned `.tug-window` at position/size from `stackState`
+ * - Absolutely-positioned `.tug-pane` at position/size from `stackState`
  * - Title bar, accessory / tab bar, and content portal target
  * - Drag: RAF appearance-zone mutation during, `onCardMoved` commit on end
  * - Resize: 8 handles, clamped to min-size, `onCardMoved` on end
@@ -15,7 +15,7 @@
  * @module components/chrome/tug-pane
  */
 
-import "../tugways/tug-window.css";
+import "../tugways/tug-pane.css";
 import React, {
   createContext,
   useCallback,
@@ -224,7 +224,7 @@ function noop(): void {}
 // ---------------------------------------------------------------------------
 
 /**
- * Snapshot all `.tug-window[data-window-id]` elements as canvas-relative Rects.
+ * Snapshot all `.tug-pane[data-window-id]` elements as canvas-relative Rects.
  * Optionally excludes a window by ID.
  */
 function snapshotCardRects(
@@ -232,7 +232,7 @@ function snapshotCardRects(
   excludeId?: string,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  const els = document.querySelectorAll<HTMLElement>(".tug-window[data-window-id]");
+  const els = document.querySelectorAll<HTMLElement>(".tug-pane[data-window-id]");
   els.forEach((el) => {
     const cid = el.getAttribute("data-window-id");
     if (!cid || cid === excludeId) return;
@@ -1164,7 +1164,7 @@ export function TugPane({
   return (
     <div
       ref={frameRef}
-      className="tug-window"
+      className="tug-pane"
       data-testid="tug-window"
       data-window-id={id}
       data-focused={isFocused ? "true" : "false"}
@@ -1184,7 +1184,7 @@ export function TugPane({
       {!collapsed && RESIZE_EDGES.map((edge) => (
         <div
           key={edge}
-          className={`tug-window-resize tug-window-resize-${edge}`}
+          className={`tug-pane-resize tug-pane-resize-${edge}`}
           onPointerDown={(e) => handleResizeStart(edge, e)}
         />
       ))}
@@ -1221,7 +1221,7 @@ export function TugPane({
 
               <div
                 ref={contentRef}
-                className="tug-window-content"
+                className="tug-pane-content"
                 data-testid="tug-window-content"
               />
             </ResponderScope>

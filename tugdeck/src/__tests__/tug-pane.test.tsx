@@ -219,7 +219,7 @@ describe("TugPane – min-size clamping", () => {
       )
     );
 
-    const seHandle = container.querySelector(".tug-window-resize-se") as HTMLElement;
+    const seHandle = container.querySelector(".tug-pane-resize-se") as HTMLElement;
     expect(seHandle).not.toBeNull();
 
     const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
@@ -259,7 +259,7 @@ describe("TugPane – resize handles", () => {
 
     const edges = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
     for (const edge of edges) {
-      const handle = container.querySelector(`.tug-window-resize-${edge}`);
+      const handle = container.querySelector(`.tug-pane-resize-${edge}`);
       expect(handle).not.toBeNull();
     }
   });

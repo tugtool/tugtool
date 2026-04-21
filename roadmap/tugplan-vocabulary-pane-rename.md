@@ -430,22 +430,22 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Any side-effect-only CSS import (`import './tug-window.css'`) updated.
 
 **Tasks:**
-- [ ] File rename.
-- [ ] Selector rename in the CSS file.
-- [ ] `className="tug-window"` → `className="tug-pane"` and children.
-- [ ] `className="tug-window-content"` → `className="tug-pane-content"`.
-- [ ] Resize handle classes `.tug-window-resize-n` / `-s` / `-e` / `-w` / `-nw` / `-ne` / `-sw` / `-se` → `.tug-pane-resize-*` equivalents.
-- [ ] Update any `@import` or side-effect import of the CSS.
-- [ ] Update `tug-window.css` reference in tuglaws/selection-model.md (§Files table line 196) to `tug-pane.css`.
+- [x] File rename.
+- [x] Selector rename in the CSS file.
+- [x] `className="tug-window"` → `className="tug-pane"` and children.
+- [x] `className="tug-window-content"` → `className="tug-pane-content"`.
+- [x] Resize handle classes `.tug-window-resize-n` / `-s` / `-e` / `-w` / `-nw` / `-ne` / `-sw` / `-se` → `.tug-pane-resize-*` equivalents.
+- [x] Update any `@import` or side-effect import of the CSS.
+- [x] Update `tug-window.css` reference in tuglaws/selection-model.md (§Files table line 196) to `tug-pane.css`.
 
 **Tests:**
-- [ ] Visual regression: start HMR, open a pane, confirm it renders (title bar, content, resize affordances, drop shadow). HMR is always running.
-- [ ] Every existing render test that snapshots class names is updated.
+- [x] Visual regression: start HMR, open a pane, confirm it renders (title bar, content, resize affordances, drop shadow). HMR is always running.
+- [x] Every existing render test that snapshots class names is updated.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "tug-window\\.css|\\.tug-window\\b|\\.tug-window-content\\b|\\.tug-window-resize-" tugdeck` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "tug-window\\.css|\\.tug-window\\b|\\.tug-window-content\\b|\\.tug-window-resize-" tugdeck` returns zero matches.
 
 ---
 

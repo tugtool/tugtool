@@ -151,7 +151,7 @@ describe("T15 – TugPane registers content area with SelectionGuard", () => {
     expect(selectionGuard.saveSelection("card-t15-unmount2")).toBeNull();
   });
 
-  it("content area element passed to SelectionGuard is the tug-window-content div", () => {
+  it("content area element passed to SelectionGuard is the tug-pane-content div", () => {
     let container!: HTMLElement;
     const result = renderWithManager(
       <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-elem")} />

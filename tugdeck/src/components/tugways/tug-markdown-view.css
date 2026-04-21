@@ -34,7 +34,7 @@
   /* Smooth scrolling only when not streaming (streaming auto-scrolls directly). */
   scroll-behavior: auto;
 
-  /* Opt in to text selection. Body has user-select: none; .tug-window-content
+  /* Opt in to text selection. Body has user-select: none; .tug-pane-content
      inherits none. This component contains user-selectable content. */
   user-select: text;
   -webkit-user-select: text;
@@ -103,7 +103,7 @@
  * When the scroll container has [data-select-all], all block content is
  * painted with the selection color to indicate a logical select-all that
  * spans the full document (including virtualized blocks not in the DOM).
- * Uses the same selection color tokens as .tug-window-content ::selection.
+ * Uses the same selection color tokens as .tug-pane-content ::selection.
  *
  * No DOM selection is set — the visual is purely CSS-driven via this
  * data attribute. Copy reads from the data model (regionMap.text).

@@ -7,15 +7,15 @@
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
-.tug-window-resize { position: absolute; z-index: 1; user-select: none; }
-.tug-window-resize-n  { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
-.tug-window-resize-s  { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
-.tug-window-resize-e  { right: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
-.tug-window-resize-w  { left: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
-.tug-window-resize-nw { top: -4px; left: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
-.tug-window-resize-ne { top: -4px; right: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
-.tug-window-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
-.tug-window-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
+.tug-pane-resize { position: absolute; z-index: 1; user-select: none; }
+.tug-pane-resize-n  { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.tug-pane-resize-s  { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.tug-pane-resize-e  { right: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.tug-pane-resize-w  { left: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.tug-pane-resize-nw { top: -4px; left: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
+.tug-pane-resize-ne { top: -4px; right: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
+.tug-pane-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
+.tug-pane-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
 /* ---- Card frame: height transition for window-shade collapse [D07] ----
  *
@@ -24,27 +24,27 @@
  * (data-gesture="true") to prevent the browser from interpolating height
  * changes that are driven by pointer position, not collapse state.
  *
- * data-gesture="true" is set on the frame element by TugWindow at
+ * data-gesture="true" is set on the frame element by TugPane at
  * drag-start and resize-start, and cleared at gesture-end.
  */
-.tug-window {
+.tug-pane {
   transition: height var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-.tug-window[data-gesture="true"] {
+.tug-pane[data-gesture="true"] {
   transition: none;
 }
 
 /* ---- Card focus: border-radius on focused, dim overlay on unfocused ---- */
-.tug-window[data-focused="true"] {
+.tug-pane[data-focused="true"] {
   border-radius: var(--tug-radius-md);
 }
 
-.tug-window[data-focused="false"] {
+.tug-pane[data-focused="false"] {
   position: absolute; /* already absolute via inline style, repeated for ::after stacking */
 }
 
-.tug-window[data-focused="false"]::after {
+.tug-pane[data-focused="false"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -72,10 +72,10 @@
  * interior (shared) edges while showing shadow on exterior edges. [D01, D02, D04, D08]
  * The data-in-set attribute is applied by updateSetAppearance() after each move/resize. [D08]
  */
-.tug-window[data-in-set="true"] {
+.tug-pane[data-in-set="true"] {
   border-radius: 0;
 }
-.tug-window[data-in-set="true"] .tugcard {
+.tug-pane[data-in-set="true"] .tugcard {
   border-radius: 0;
 }
 

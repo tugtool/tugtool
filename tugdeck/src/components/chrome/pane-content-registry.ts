@@ -1,6 +1,6 @@
 /**
  * Pane content registry — maps each pane id to the `HTMLDivElement` that
- * holds that pane's content area (the inner `.tug-window-content` div). Portals
+ * holds that pane's content area (the inner `.tug-pane-content` div). Portals
  * in `card-portal.tsx` look up their host pane's content element through this
  * registry and re-root whenever a pane's content element mounts, unmounts,
  * or re-registers (e.g., on HMR).

@@ -106,7 +106,7 @@ class CardDragCoordinator {
 
   /**
    * All single-tab window frame rects at drag-start.
-   * These are `.tug-window` frames whose window id is NOT in allTabBarRects.
+   * These are `.tug-pane` frames whose window id is NOT in allTabBarRects.
    */
   private allWindowFrameRects: WindowFrameEntry[] = [];
 
@@ -267,7 +267,7 @@ class CardDragCoordinator {
    *
    * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-window-id] elements
    *   excluding the source card.
-   * Tier 2: allWindowFrameRects -- all .tug-window[data-window-id] elements whose
+   * Tier 2: allWindowFrameRects -- all .tug-pane[data-window-id] elements whose
    *   window id is NOT present in allTabBarRects (i.e., single-tab windows).
    *   The accessoryElement is the matching .tugcard-accessory[data-window-id]
    *   inside each such window frame, used for drop-target visual feedback.
@@ -292,7 +292,7 @@ class CardDragCoordinator {
     });
 
     // Tier 2: single-card frames (not in the tab bar set).
-    const frameElements = document.querySelectorAll<HTMLElement>(".tug-window[data-window-id]");
+    const frameElements = document.querySelectorAll<HTMLElement>(".tug-pane[data-window-id]");
     this.allWindowFrameRects = [];
 
     frameElements.forEach((el) => {
@@ -432,7 +432,7 @@ class CardDragCoordinator {
    *
    * Inside source bar  → reorder mode
    * Outside source bar, over another tab bar → merge mode (multi-tab target)
-   * Outside source bar, over `.tug-window` (no tab bar) → merge mode (single-tab target)
+   * Outside source bar, over `.tug-pane` (no tab bar) → merge mode (single-tab target)
    * Anywhere else → detach mode
    *
    * [D04, D05]
