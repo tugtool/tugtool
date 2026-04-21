@@ -302,27 +302,28 @@ export function initActionDispatch(
     deckManager.arrangeCards(mode);
   });
 
-  // focus-card: Bring a stack to front by activating its active card.
+  // focus-card: Bring a window to front by activating its active card.
   //
-  // Swift's View menu builds a stack list from `pushCardListToHost` and
-  // emits `focus-card` with `stackId: string` when the user picks an
-  // entry. Routes through `activateCard` on the stack's `activeCardId`
+  // Swift's View menu builds a window list from `pushCardListToHost` and
+  // emits `focus-card` with `stackId` (window id) when the user picks an
+  // entry — Step 11 renames this wire to `focus-window` + `windowId`.
+  // Routes through `activateCard` on the window's `activeCardId`
   // so the menu selection fires the full will/didDeactivate +
   // will/didActivate transition and promotes the responder chain —
   // `focusCard` alone would only reorder z-order and skip the lifecycle
   // events.
   registerAction("focus-card", (payload) => {
-    const stackId = payload.stackId;
-    if (typeof stackId !== "string") {
-      console.warn("focus-card: missing or invalid stackId", payload);
+    const windowId = payload.stackId;
+    if (typeof windowId !== "string") {
+      console.warn("focus-card: missing or invalid window id (payload.stackId)", payload);
       return;
     }
-    const stack = deckManager.getSnapshot().windows.find((s) => s.id === stackId);
-    if (!stack) {
-      console.warn(`focus-card: no stack with id "${stackId}"`);
+    const win = deckManager.getSnapshot().windows.find((s) => s.id === windowId);
+    if (!win) {
+      console.warn(`focus-card: no window with id "${windowId}"`);
       return;
     }
-    deckManager.activateCard(stack.activeCardId);
+    deckManager.activateCard(win.activeCardId);
   });
 
   // show-card: Add a card by componentId (Spec S08)
@@ -342,7 +343,7 @@ export function initActionDispatch(
   // Trivial adapter — Control-frame name and chain-action name are
   // identical (TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD). DeckCanvas's
   // registered handler reads the focused card from its cardsRef and
-  // calls store.addCardToStack(). ([D06], [D09])
+  // calls store.addCardToWindow(). ([D06], [D09])
   registerAction(TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, phase: "discrete" });

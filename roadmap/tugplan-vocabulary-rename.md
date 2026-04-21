@@ -270,18 +270,18 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 | `getFirstResponderCardId()` | unchanged |
 
 **Tasks:**
-- [ ] Rename every method in the table across `deck-manager.ts`, the interface, and the mock.
-- [ ] Rename parameter names `stackId` → `windowId` on all renamed methods.
-- [ ] Update every call site.
-- [ ] Update JSDoc to refer to windows/cards.
+- [x] Rename every method in the table across `deck-manager.ts`, the interface, and the mock.
+- [x] Rename parameter names `stackId` → `windowId` on all renamed methods.
+- [x] Update every call site.
+- [x] Update JSDoc to refer to windows/cards.
 
 **Tests:**
-- [ ] Every existing `deck-manager.test.ts`, `deck-canvas.test.tsx`, `card-drag-coordinator.test.ts`, `card-header.test.tsx`, and `e2e-responder-chain.test.tsx` test passes under the new names.
+- [x] Every existing `deck-manager.test.ts`, `deck-canvas.test.tsx`, `card-drag-coordinator.test.ts`, `card-header.test.tsx`, and `e2e-responder-chain.test.tsx` test passes under the new names.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "addCardToStack|setActiveCardInStack|reorderCardInStack|toggleStackCollapse|moveStack\b|handleStackMoved|handleStackClosed|_closeStack|moveCardToStack" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "addCardToStack|setActiveCardInStack|reorderCardInStack|toggleStackCollapse|moveStack\b|handleStackMoved|handleStackClosed|_closeStack|moveCardToStack" tugdeck/src` returns zero matches.
 
 ---
 

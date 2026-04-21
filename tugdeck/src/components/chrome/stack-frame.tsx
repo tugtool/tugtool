@@ -124,14 +124,14 @@ export interface StackFrameProps {
     size: { width: number; height: number },
   ) => void;
   /** Called when the Tugcard's close action fires (wired via renderContent
-   * factory). `id` is the stack id — close-button action closes the whole
-   * stack, not an individual card. */
-  onStackClosed: (stackId: string) => void;
-  /** Called on pointer-down anywhere in the frame to bring the stack to front.
-   * The `stackId` is this frame's stack id — callers must resolve the stack's
+   * factory). `id` is the window id — close-button action closes the whole
+   * window, not an individual card. */
+  onStackClosed: (windowId: string) => void;
+  /** Called on pointer-down anywhere in the frame to bring the window to front.
+   * The `windowId` is this frame's id — callers must resolve the window's
    * active card id before invoking card-level APIs like `activateCard` /
    * `focusCard`. */
-  onStackActivated: (stackId: string) => void;
+  onStackActivated: (windowId: string) => void;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -139,7 +139,7 @@ export interface StackFrameProps {
    * within the target's tab array. The active tab of the source card is merged
    * into the target card at insertIndex.
    *
-   * Wired in DeckCanvas to store.mergeTab. When this prop is not provided,
+   * Wired in DeckCanvas to `moveCardToWindow`. When this prop is not provided,
    * card drag always falls back to onCardMoved (no merge behaviour).
    */
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
@@ -155,7 +155,7 @@ export interface StackFrameProps {
   /**
    * Called when the user toggles collapse on the card header.
    * StackFrame passes this as onCollapse to the Tugcard via renderContent.
-   * DeckCanvas wires this to store.toggleStackCollapse(id).
+   * DeckCanvas wires this to store.toggleWindowCollapse(id).
    */
   onCardCollapsed?: (id: string) => void;
   /**

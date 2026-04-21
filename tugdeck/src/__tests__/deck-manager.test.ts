@@ -252,14 +252,14 @@ describe("DeckManager.addCard – unregistered component", () => {
 // T32: removeCard removes the card
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.handleStackClosed", () => {
+describe("DeckManager.handleWindowClosed", () => {
   it("T32: closes the specified stack, removing all its cards from DeckState.cards", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.handleStackClosed(stackId);
+    manager.handleWindowClosed(windowId);
     expect(manager.getDeckState().cards.length).toBe(0);
     expect(manager.getDeckState().windows.length).toBe(0);
   });
@@ -272,7 +272,7 @@ describe("DeckManager.handleStackClosed", () => {
     const stack1Id = hostStack(manager.getDeckState(), id1).id;
     expect(manager.getDeckState().cards.length).toBe(2);
 
-    manager.handleStackClosed(stack1Id);
+    manager.handleWindowClosed(stack1Id);
 
     const remaining = manager.getDeckState().cards;
     expect(remaining.length).toBe(1);
@@ -284,7 +284,7 @@ describe("DeckManager.handleStackClosed", () => {
     manager.addCard("hello");
     expect(manager.getDeckState().cards.length).toBe(1);
 
-    manager.handleStackClosed("nonexistent-id");
+    manager.handleWindowClosed("nonexistent-id");
     expect(manager.getDeckState().cards.length).toBe(1);
   });
 
@@ -315,7 +315,7 @@ describe("DeckManager.handleStackClosed", () => {
     );
     log.length = 0;
 
-    manager.handleStackClosed(stack2Id);
+    manager.handleWindowClosed(stack2Id);
 
     // Plan 11.6.1b transition 8c: flip the composite first-responder bit
     // BEFORE firing destruction, so the will/did pair on the old FR and
@@ -333,7 +333,7 @@ describe("DeckManager.handleStackClosed", () => {
   it("fires no activation when the last stack closes (nothing left to activate)", () => {
     registerCard(makeRegistration("hello"));
     const id1 = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), id1).id;
+    const windowId = hostStack(manager.getDeckState(), id1).id;
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillActivate(null, (id) =>
@@ -344,7 +344,7 @@ describe("DeckManager.handleStackClosed", () => {
     );
     log.length = 0;
 
-    manager.handleStackClosed(stackId);
+    manager.handleWindowClosed(windowId);
 
     expect(log).toEqual([]);
   });
@@ -371,7 +371,7 @@ describe("DeckManager.handleStackClosed", () => {
     );
     log.length = 0;
 
-    manager.handleStackClosed(stack1Id);
+    manager.handleWindowClosed(stack1Id);
 
     expect(log).toEqual([]);
   });
@@ -381,13 +381,13 @@ describe("DeckManager.handleStackClosed", () => {
 // T33: moveCard updates position and size
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.moveStack", () => {
+describe("DeckManager.moveWindow", () => {
   it("T33: updates position and size of the specified stack", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
 
-    manager.moveStack(stackId, { x: 150, y: 200 }, { width: 500, height: 400 });
+    manager.moveWindow(windowId, { x: 150, y: 200 }, { width: 500, height: 400 });
 
     const stack = hostStack(manager.getDeckState(), cardId);
     expect(stack.position.x).toBe(150);
@@ -406,8 +406,8 @@ describe("DeckManager.moveStack", () => {
     const originalPos2 = { ...originalStack2.position };
     const originalSize2 = { ...originalStack2.size };
 
-    const stackId1 = hostStack(manager.getDeckState(), id1).id;
-    manager.moveStack(stackId1, { x: 999, y: 888 }, { width: 777, height: 666 });
+    const windowId1 = hostStack(manager.getDeckState(), id1).id;
+    manager.moveWindow(windowId1, { x: 999, y: 888 }, { width: 777, height: 666 });
 
     const stack2 = hostStack(manager.getDeckState(), id2);
     expect(stack2.position.x).toBe(originalPos2.x);
@@ -434,7 +434,7 @@ describe("DeckManager.moveStack", () => {
     );
 
     // Pure drag: position changes, size stays the same.
-    manager.moveStack(
+    manager.moveWindow(
       stack.id,
       { x: stack.position.x + 100, y: stack.position.y + 50 },
       { width: stack.size.width, height: stack.size.height },
@@ -461,7 +461,7 @@ describe("DeckManager.moveStack", () => {
     );
 
     // Pure edge resize: size changes, position stays.
-    manager.moveStack(
+    manager.moveWindow(
       stack.id,
       { x: stack.position.x, y: stack.position.y },
       { width: stack.size.width + 50, height: stack.size.height + 30 },
@@ -488,7 +488,7 @@ describe("DeckManager.moveStack", () => {
     );
 
     // Top-left handle drag: origin moves, size changes.
-    manager.moveStack(
+    manager.moveWindow(
       stack.id,
       { x: stack.position.x + 20, y: stack.position.y + 20 },
       { width: stack.size.width - 20, height: stack.size.height - 20 },
@@ -498,7 +498,7 @@ describe("DeckManager.moveStack", () => {
     expect(log).toEqual(["willMove", "willResize", "didMove", "didResize"]);
   });
 
-  it("fires neither pair on an identity moveStack (same position AND size)", () => {
+  it("fires neither pair on an identity moveWindow (same position AND size)", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
     const stack = hostStack(manager.getDeckState(), cardId);
@@ -509,7 +509,7 @@ describe("DeckManager.moveStack", () => {
     manager.cardLifecycle.observeCardWillResize(cardId, () => log.push("r"));
     manager.cardLifecycle.observeCardDidResize(cardId, () => log.push("R"));
 
-    manager.moveStack(
+    manager.moveWindow(
       stack.id,
       { x: stack.position.x, y: stack.position.y },
       { width: stack.size.width, height: stack.size.height },
@@ -534,7 +534,7 @@ describe("DeckManager.arrangeCards", () => {
     // one stack off the cascade so arrangeCards("cascade") actually
     // changes its position; the other two stay put.
     const stack2 = hostStack(manager.getDeckState(), id2);
-    manager.moveStack(stack2.id, { x: 500, y: 500 }, stack2.size);
+    manager.moveWindow(stack2.id, { x: 500, y: 500 }, stack2.size);
 
     const log: string[] = [];
     manager.cardLifecycle.observeCardWillMove(null, (id) =>
@@ -789,25 +789,25 @@ describe("DeckManager store API – getVersion", () => {
     expect(manager.getVersion()).toBe(v0 + 1);
   });
 
-  it("getVersion() increments twice after handleStackClosed() of the active stack", () => {
+  it("getVersion() increments twice after handleWindowClosed() of the active stack", () => {
     // Plan 11.6.1b transition 8c: closing the first responder's stack
     // flips the composite bit (one commit) then fires destruction and
     // removes the stack (second commit) — two notifies for the active-
     // stack close path.
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     const v1 = manager.getVersion();
-    manager.handleStackClosed(stackId);
+    manager.handleWindowClosed(windowId);
     expect(manager.getVersion()).toBe(v1 + 2);
   });
 
-  it("getVersion() increments after moveStack()", () => {
+  it("getVersion() increments after moveWindow()", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     const v1 = manager.getVersion();
-    manager.moveStack(stackId, { x: 10, y: 20 }, { width: 300, height: 200 });
+    manager.moveWindow(windowId, { x: 10, y: 20 }, { width: 300, height: 200 });
     expect(manager.getVersion()).toBe(v1 + 1);
   });
 
@@ -854,23 +854,23 @@ describe("DeckManager store API – subscriber callback timing", () => {
     expect(fired).toBe(true);
   });
 
-  it("subscriber fires on handleStackClosed()", () => {
+  it("subscriber fires on handleWindowClosed()", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     let fired = false;
     manager.subscribe(() => { fired = true; });
-    manager.handleStackClosed(stackId);
+    manager.handleWindowClosed(windowId);
     expect(fired).toBe(true);
   });
 
-  it("subscriber fires on moveStack()", () => {
+  it("subscriber fires on moveWindow()", () => {
     registerCard(makeRegistration("hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     let fired = false;
     manager.subscribe(() => { fired = true; });
-    manager.moveStack(stackId, { x: 5, y: 10 }, { width: 300, height: 200 });
+    manager.moveWindow(windowId, { x: 5, y: 10 }, { width: 300, height: 200 });
     expect(fired).toBe(true);
   });
 
@@ -899,10 +899,10 @@ describe("DeckManager store API – subscriber callback timing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// addCardToStack tests (Spec S03)
+// addCardToWindow tests (Spec S03)
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCardToStack", () => {
+describe("DeckManager.addCardToWindow", () => {
   it("creates a new card with correct componentId and title from registration", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
@@ -910,7 +910,7 @@ describe("DeckManager.addCardToStack", () => {
     expect(stack.cardIds.length).toBe(1);
 
     registerCard(makeRegistration("terminal", "Terminal"));
-    const newCardId = manager.addCardToStack(stack.id, "terminal");
+    const newCardId = manager.addCardToWindow(stack.id, "terminal");
 
     expect(newCardId).not.toBeNull();
     expect(typeof newCardId).toBe("string");
@@ -922,13 +922,13 @@ describe("DeckManager.addCardToStack", () => {
     expect(newCard.title).toBe("Terminal");
   });
 
-  it("new card becomes the active card after addCardToStack", () => {
+  it("new card becomes the active card after addCardToWindow", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
 
     registerCard(makeRegistration("terminal", "Terminal"));
-    const newCardId = manager.addCardToStack(stackId, "terminal");
+    const newCardId = manager.addCardToWindow(windowId, "terminal");
 
     expect(hostStack(manager.getDeckState(), cardId).activeCardId).toBe(newCardId!);
   });
@@ -936,35 +936,35 @@ describe("DeckManager.addCardToStack", () => {
   it("returns null for unregistered componentId", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = manager.addCardToStack(stackId, "nonexistent");
+    const result = manager.addCardToWindow(windowId, "nonexistent");
 
     expect(result).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
-  it("returns null for non-existent stackId", () => {
+  it("returns null for non-existent windowId", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = manager.addCardToStack("nonexistent-stack-id", "hello");
+    const result = manager.addCardToWindow("nonexistent-stack-id", "hello");
 
     expect(result).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
-  it("notifies subscribers after addCardToStack", () => {
+  it("notifies subscribers after addCardToWindow", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     registerCard(makeRegistration("terminal", "Terminal"));
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.addCardToStack(stackId, "terminal");
+    manager.addCardToWindow(windowId, "terminal");
 
     expect(callCount).toBe(1);
   });
@@ -979,14 +979,14 @@ describe("DeckManager.removeCard", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
 
     // Add a second card and make it active
-    const secondCardId = manager.addCardToStack(stackId, "terminal") as string;
+    const secondCardId = manager.addCardToWindow(windowId, "terminal") as string;
     expect(hostStack(manager.getDeckState(), firstCardId).activeCardId).toBe(secondCardId);
 
     // Remove the second (active) card -- should activate the previous (first) card
-    manager.removeCard(stackId, secondCardId);
+    manager.removeCard(windowId, secondCardId);
 
     const stack = hostStack(manager.getDeckState(), firstCardId);
     expect(stack.cardIds.length).toBe(1);
@@ -997,17 +997,17 @@ describe("DeckManager.removeCard", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
 
     // Add a second card (it becomes active)
-    const secondCardId = manager.addCardToStack(stackId, "terminal") as string;
+    const secondCardId = manager.addCardToWindow(windowId, "terminal") as string;
 
     // Make first card active, then remove it
-    manager.setActiveCardInStack(stackId, firstCardId);
-    manager.removeCard(stackId, firstCardId);
+    manager.setActiveCardInWindow(windowId, firstCardId);
+    manager.removeCard(windowId, firstCardId);
 
     const state = manager.getDeckState();
-    const stack = state.windows.find((s) => s.id === stackId)!;
+    const stack = state.windows.find((s) => s.id === windowId)!;
     expect(stack.cardIds.length).toBe(1);
     expect(stack.activeCardId).toBe(secondCardId);
   });
@@ -1015,27 +1015,27 @@ describe("DeckManager.removeCard", () => {
   it("removes the stack entirely when the last card is removed", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
 
-    manager.removeCard(stackId, cardId);
+    manager.removeCard(windowId, cardId);
 
     const state = manager.getDeckState();
-    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === windowId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
   });
 
   it("is a no-op for a non-existent cardId", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     const cardsBefore = hostStack(manager.getDeckState(), cardId).cardIds.length;
 
-    manager.removeCard(stackId, "nonexistent-card-id");
+    manager.removeCard(windowId, "nonexistent-card-id");
 
     expect(hostStack(manager.getDeckState(), cardId).cardIds.length).toBe(cardsBefore);
   });
 
-  it("is a no-op for a non-existent stackId", () => {
+  it("is a no-op for a non-existent windowId", () => {
     const cardCountBefore = manager.getDeckState().cards.length;
 
     manager.removeCard("nonexistent-stack-id", "some-card-id");
@@ -1050,12 +1050,12 @@ describe("DeckManager.removeCard", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
-    const secondCardId = manager.addCardToStack(stackId, "terminal") as string;
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
+    const secondCardId = manager.addCardToWindow(windowId, "terminal") as string;
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.removeCard(stackId, secondCardId);
+    manager.removeCard(windowId, secondCardId);
 
     expect(callCount).toBe(2);
   });
@@ -1072,7 +1072,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
 
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const stackId = crypto.randomUUID();
+    const windowId = crypto.randomUUID();
     const helloCardId = crypto.randomUUID();
     const ghostCardId = crypto.randomUUID();
 
@@ -1083,7 +1083,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       ],
       windows: [
         {
-          id: stackId,
+          id: windowId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
           cardIds: [helloCardId, ghostCardId],
@@ -1095,7 +1095,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     });
 
     const state = manager.getDeckState();
-    const stack = state.windows.find((s) => s.id === stackId);
+    const stack = state.windows.find((s) => s.id === windowId);
     expect(stack).toBeDefined();
     expect(stack!.cardIds).toEqual([helloCardId]);
     expect(stack!.activeCardId).toBe(helloCardId);
@@ -1108,7 +1108,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
   it("removes a stack entirely when all its cards are unregistered", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const stackId = crypto.randomUUID();
+    const windowId = crypto.randomUUID();
     const cardId = crypto.randomUUID();
 
     manager.applyLayout({
@@ -1117,7 +1117,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       ],
       windows: [
         {
-          id: stackId,
+          id: windowId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
           cardIds: [cardId],
@@ -1129,7 +1129,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     });
 
     const state = manager.getDeckState();
-    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === windowId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
@@ -1140,7 +1140,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
 
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
-    const stackId = crypto.randomUUID();
+    const windowId = crypto.randomUUID();
     const helloCardId = crypto.randomUUID();
     const ghostCardId = crypto.randomUUID();
 
@@ -1152,7 +1152,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       ],
       windows: [
         {
-          id: stackId,
+          id: windowId,
           position: { x: 0, y: 0 },
           size: { width: 400, height: 300 },
           cardIds: [helloCardId, ghostCardId],
@@ -1163,7 +1163,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       ],
     });
 
-    const stack = manager.getDeckState().windows.find((s) => s.id === stackId);
+    const stack = manager.getDeckState().windows.find((s) => s.id === windowId);
     expect(stack).toBeDefined();
     expect(stack!.cardIds).toEqual([helloCardId]);
     expect(stack!.activeCardId).toBe(helloCardId);
@@ -1173,18 +1173,18 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
   });
 });
 
-describe("DeckManager.setActiveCardInStack", () => {
+describe("DeckManager.setActiveCardInWindow", () => {
   it("updates activeCardId to the specified card", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
 
     // Add second card (becomes active)
-    manager.addCardToStack(stackId, "terminal");
+    manager.addCardToWindow(windowId, "terminal");
 
     // Switch back to first card
-    manager.setActiveCardInStack(stackId, firstCardId);
+    manager.setActiveCardInWindow(windowId, firstCardId);
 
     expect(hostStack(manager.getDeckState(), firstCardId).activeCardId).toBe(firstCardId);
   });
@@ -1196,7 +1196,7 @@ describe("DeckManager.setActiveCardInStack", () => {
     const originalActiveCardId = stack.activeCardId;
     const versionBefore = manager.getVersion();
 
-    manager.setActiveCardInStack(stack.id, "nonexistent-card-id");
+    manager.setActiveCardInWindow(stack.id, "nonexistent-card-id");
 
     expect(hostStack(manager.getDeckState(), cardId).activeCardId).toBe(originalActiveCardId);
     expect(manager.getVersion()).toBe(versionBefore);
@@ -1205,46 +1205,46 @@ describe("DeckManager.setActiveCardInStack", () => {
   it("is a no-op when the card is already active", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
     const versionBefore = manager.getVersion();
 
-    manager.setActiveCardInStack(stackId, cardId);
+    manager.setActiveCardInWindow(windowId, cardId);
 
     expect(manager.getVersion()).toBe(versionBefore);
   });
 
-  it("notifies subscribers after setActiveCardInStack changes the active card", () => {
+  it("notifies subscribers after setActiveCardInWindow changes the active card", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
-    manager.addCardToStack(stackId, "terminal");
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
+    manager.addCardToWindow(windowId, "terminal");
 
     let callCount = 0;
     manager.subscribe(() => { callCount += 1; });
-    manager.setActiveCardInStack(stackId, firstCardId);
+    manager.setActiveCardInWindow(windowId, firstCardId);
 
     expect(callCount).toBe(1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// reorderCardInStack tests (Spec S01 / Step 1)
+// reorderCardInWindow tests (Spec S01 / Step 1)
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.reorderCardInStack", () => {
+describe("DeckManager.reorderCardInWindow", () => {
   it("T1: moves card from index 0 to index 2 in a 3-card stack", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     registerCard(makeRegistration("git", "Git"));
 
     const card1Id = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), card1Id).id;
-    const card2Id = manager.addCardToStack(stackId, "terminal") as string;
-    const card3Id = manager.addCardToStack(stackId, "git") as string;
+    const windowId = hostStack(manager.getDeckState(), card1Id).id;
+    const card2Id = manager.addCardToWindow(windowId, "terminal") as string;
+    const card3Id = manager.addCardToWindow(windowId, "git") as string;
 
     // Initial order: [card1, card2, card3]
-    manager.reorderCardInStack(stackId, 0, 2);
+    manager.reorderCardInWindow(windowId, 0, 2);
 
     const stack = hostStack(manager.getDeckState(), card1Id);
     expect(stack.cardIds[0]).toBe(card2Id);
@@ -1257,13 +1257,13 @@ describe("DeckManager.reorderCardInStack", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const card1Id = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(stackId, "terminal");
+    const windowId = hostStack(manager.getDeckState(), card1Id).id;
+    manager.addCardToWindow(windowId, "terminal");
 
     const before = [...hostStack(manager.getDeckState(), card1Id).cardIds];
     const versionBefore = manager.getVersion();
 
-    manager.reorderCardInStack(stackId, 0, 0);
+    manager.reorderCardInWindow(windowId, 0, 0);
 
     const after = [...hostStack(manager.getDeckState(), card1Id).cardIds];
     expect(after).toEqual(before);
@@ -1272,7 +1272,7 @@ describe("DeckManager.reorderCardInStack", () => {
 
   it("T3: no-op when stack not found", () => {
     const versionBefore = manager.getVersion();
-    manager.reorderCardInStack("nonexistent-stack", 0, 1);
+    manager.reorderCardInWindow("nonexistent-stack", 0, 1);
     expect(manager.getVersion()).toBe(versionBefore);
   });
 
@@ -1281,16 +1281,16 @@ describe("DeckManager.reorderCardInStack", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const card1Id = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(stackId, "terminal");
+    const windowId = hostStack(manager.getDeckState(), card1Id).id;
+    manager.addCardToWindow(windowId, "terminal");
 
     const before = [...hostStack(manager.getDeckState(), card1Id).cardIds];
     const versionBefore = manager.getVersion();
 
-    manager.reorderCardInStack(stackId, -1, 1);
+    manager.reorderCardInWindow(windowId, -1, 1);
     expect(manager.getVersion()).toBe(versionBefore);
 
-    manager.reorderCardInStack(stackId, 0, 5);
+    manager.reorderCardInWindow(windowId, 0, 5);
     expect(manager.getVersion()).toBe(versionBefore);
 
     const after = [...hostStack(manager.getDeckState(), card1Id).cardIds];
@@ -1309,7 +1309,7 @@ describe("DeckManager.detachCard", () => {
 
     const firstCardId = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), firstCardId).id;
-    const card2Id = manager.addCardToStack(sourceStackId, "terminal") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "terminal") as string;
 
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 100, y: 150 });
 
@@ -1336,9 +1336,9 @@ describe("DeckManager.detachCard", () => {
   it("T6: returns null when stack has only one card (last-card guard)", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
 
-    const result = manager.detachCard(stackId, cardId, { x: 100, y: 100 });
+    const result = manager.detachCard(windowId, cardId, { x: 100, y: 100 });
 
     expect(result).toBeNull();
     // Stack should still have 1 card
@@ -1351,7 +1351,7 @@ describe("DeckManager.detachCard", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    const card2Id = manager.addCardToStack(sourceStackId, "terminal") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "terminal") as string;
 
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 200, y: 200 });
 
@@ -1375,7 +1375,7 @@ describe("DeckManager.detachCard", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    const card2Id = manager.addCardToStack(sourceStackId, "terminal") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "terminal") as string;
 
     const stacksBefore = manager.getDeckState().windows.length;
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 50, y: 50 }) as string;
@@ -1392,7 +1392,7 @@ describe("DeckManager.detachCard", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    const card2Id = manager.addCardToStack(sourceStackId, "terminal") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "terminal") as string;
 
     // Position far outside canvas bounds (canvas is 1280x800 in tests)
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 9999, y: 9999 }) as string;
@@ -1490,7 +1490,7 @@ describe("DeckManager.addCard – defaultCards registration", () => {
     const sourceStackId = hostStack(manager.getDeckState(), firstCardId).id;
 
     // Add a second card so we can detach (last-card guard)
-    const card2Id = manager.addCardToStack(sourceStackId, "hello") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "hello") as string;
 
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 50, y: 50 });
     expect(newStackId).not.toBeNull();
@@ -1507,12 +1507,12 @@ describe("DeckManager.addCard – defaultCards registration", () => {
     registerCard(makeRegistration("hello"));
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    const card2Id = manager.addCardToStack(sourceStackId, "hello") as string;
+    const card2Id = manager.addCardToWindow(sourceStackId, "hello") as string;
 
     // Switch active back to the first card so the detached card (card2) is
     // non-active — mimicking the production pattern where the user explicitly
     // chooses which card to detach.
-    manager.setActiveCardInStack(sourceStackId, card1Id);
+    manager.setActiveCardInWindow(sourceStackId, card1Id);
     manager.activateCard(card1Id);
 
     const log: string[] = [];
@@ -1534,10 +1534,10 @@ describe("DeckManager.addCard – defaultCards registration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// moveCardToStack tests (Spec S03 / Step 1)
+// moveCardToWindow tests (Spec S03 / Step 1)
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.moveCardToStack", () => {
+describe("DeckManager.moveCardToWindow", () => {
   it("T9: moves card from source to target at insertAtIndex", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
@@ -1546,14 +1546,14 @@ describe("DeckManager.moveCardToStack", () => {
     // Create source stack with 2 cards
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(sourceStackId, "terminal");
+    manager.addCardToWindow(sourceStackId, "terminal");
 
     // Create target stack with 2 cards
     const card3Id = manager.addCard("git") as string;
     const targetStackId = hostStack(manager.getDeckState(), card3Id).id;
-    manager.addCardToStack(targetStackId, "terminal");
+    manager.addCardToWindow(targetStackId, "terminal");
 
-    manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 0);
+    manager.moveCardToWindow(sourceStackId, card1Id, targetStackId, 0);
 
     const state = manager.getDeckState();
     const targetStack = state.windows.find((s) => s.id === targetStackId)!;
@@ -1575,7 +1575,7 @@ describe("DeckManager.moveCardToStack", () => {
     const targetCardId = manager.addCard("terminal") as string;
     const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
 
-    manager.moveCardToStack(sourceStackId, sourceCardId, targetStackId, 0);
+    manager.moveCardToWindow(sourceStackId, sourceCardId, targetStackId, 0);
 
     const state = manager.getDeckState();
     // Source stack should be gone (single-card stack closed when its card moved).
@@ -1591,12 +1591,12 @@ describe("DeckManager.moveCardToStack", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(sourceStackId, "terminal");
+    manager.addCardToWindow(sourceStackId, "terminal");
 
     const targetCardId = manager.addCard("hello") as string;
     const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
 
-    manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 0);
+    manager.moveCardToWindow(sourceStackId, card1Id, targetStackId, 0);
 
     const targetStack = manager.getDeckState().windows.find((s) => s.id === targetStackId)!;
     expect(targetStack.activeCardId).toBe(card1Id);
@@ -1608,13 +1608,13 @@ describe("DeckManager.moveCardToStack", () => {
 
     const card1Id = manager.addCard("hello") as string;
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(sourceStackId, "terminal");
+    manager.addCardToWindow(sourceStackId, "terminal");
 
     const targetCardId = manager.addCard("hello") as string;
     const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
 
     // target has 1 card; insertAtIndex of 999 should be clamped to 1
-    manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 999);
+    manager.moveCardToWindow(sourceStackId, card1Id, targetStackId, 999);
 
     const targetStack = manager.getDeckState().windows.find((s) => s.id === targetStackId)!;
     // Merged card should appear at end
@@ -1626,13 +1626,13 @@ describe("DeckManager.moveCardToStack", () => {
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const card1Id = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), card1Id).id;
-    manager.addCardToStack(stackId, "terminal");
+    const windowId = hostStack(manager.getDeckState(), card1Id).id;
+    manager.addCardToWindow(windowId, "terminal");
 
     const cardsBefore = [...hostStack(manager.getDeckState(), card1Id).cardIds];
     const versionBefore = manager.getVersion();
 
-    manager.moveCardToStack(stackId, card1Id, stackId, 0);
+    manager.moveCardToWindow(windowId, card1Id, windowId, 0);
 
     expect(manager.getVersion()).toBe(versionBefore);
     const cardsAfter = [...hostStack(manager.getDeckState(), card1Id).cardIds];
@@ -1674,7 +1674,7 @@ describe("DeckManager.moveCardToStack", () => {
     );
     log.length = 0; // clear initial-sync
 
-    manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
+    manager.moveCardToWindow(srcStackId, srcCardId, tgtStackId, 0);
 
     expect(log).toEqual([]);
     // Source stack is gone, target survives; `srcCardId` is target's
@@ -1716,7 +1716,7 @@ describe("DeckManager.moveCardToStack", () => {
     );
     log.length = 0;
 
-    manager.moveCardToStack(srcStackId, srcCardId, tgtStackId, 0);
+    manager.moveCardToWindow(srcStackId, srcCardId, tgtStackId, 0);
 
     expect(log).toEqual([
       `willDeact:${tgtCardId}`,
@@ -2039,19 +2039,19 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
 // ---------------------------------------------------------------------------
 
 describe("DeckManager — two-table invariants preserved across mutations", () => {
-  it("no orphan cards and no duplicate homes after moveCardToStack", () => {
+  it("no orphan cards and no duplicate homes after moveCardToWindow", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
     registerCard(makeRegistration("git", "Git"));
 
     const c1 = manager.addCard("hello") as string;
     const srcStackId = hostStack(manager.getDeckState(), c1).id;
-    const c2 = manager.addCardToStack(srcStackId, "terminal") as string;
+    const c2 = manager.addCardToWindow(srcStackId, "terminal") as string;
 
     const c3 = manager.addCard("git") as string;
     const tgtStackId = hostStack(manager.getDeckState(), c3).id;
 
-    manager.moveCardToStack(srcStackId, c2, tgtStackId, 0);
+    manager.moveCardToWindow(srcStackId, c2, tgtStackId, 0);
 
     const state = manager.getDeckState();
     expect(() => validateDeckState(state)).not.toThrow();
@@ -2066,16 +2066,16 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
   it("no empty windows after removing the last card in a window", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), cardId).id;
+    const windowId = hostStack(manager.getDeckState(), cardId).id;
 
-    manager.removeCard(stackId, cardId);
+    manager.removeCard(windowId, cardId);
 
     const state = manager.getDeckState();
     expect(() => validateDeckState(state)).not.toThrow();
 
     // Explicit cross-check: the stack is gone (not left behind with an
     // empty cardIds array).
-    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === windowId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
   });
 
@@ -2084,19 +2084,19 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
     registerCard(makeRegistration("terminal", "Terminal"));
 
     const firstCardId = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
-    const secondCardId = manager.addCardToStack(stackId, "terminal") as string;
+    const windowId = hostStack(manager.getDeckState(), firstCardId).id;
+    const secondCardId = manager.addCardToWindow(windowId, "terminal") as string;
 
-    // Second card is active (addCardToStack sets it as active).
+    // Second card is active (addCardToWindow sets it as active).
     expect(hostStack(manager.getDeckState(), firstCardId).activeCardId).toBe(secondCardId);
 
-    manager.removeCard(stackId, secondCardId);
+    manager.removeCard(windowId, secondCardId);
 
     const state = manager.getDeckState();
     expect(() => validateDeckState(state)).not.toThrow();
 
     // Explicit cross-check: activeCardId was re-pointed to the surviving card.
-    const stack = state.windows.find((s) => s.id === stackId)!;
+    const stack = state.windows.find((s) => s.id === windowId)!;
     expect(stack.activeCardId).toBe(firstCardId);
     expect(stack.cardIds.includes(stack.activeCardId)).toBe(true);
   });
@@ -2113,7 +2113,7 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
     // window is the active one.
     expect(manager.getDeckState().activeWindowId).toBe(secondStackId);
 
-    manager.handleStackClosed(secondStackId);
+    manager.handleWindowClosed(secondStackId);
 
     const state = manager.getDeckState();
     expect(() => validateDeckState(state)).not.toThrow();
@@ -2185,14 +2185,14 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const a = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(stackId, "terminal") as string;
-    // After addCardToStack in the active stack, b is FR.
+    const windowId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToWindow(windowId, "terminal") as string;
+    // After addCardToWindow in the active stack, b is FR.
     expect(manager.getFirstResponderCardId()).toBe(b);
     const log = attachTransitionLog(manager);
 
     // Switch active-in-stack back to a. Same stack, different card → flip.
-    manager.setActiveCardInStack(stackId, a);
+    manager.setActiveCardInWindow(windowId, a);
 
     expect(log).toEqual([
       `willDeact:${b}`,
@@ -2209,16 +2209,16 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     registerCard(makeRegistration("git"));
     const a = manager.addCard("hello") as string;
     const stack1Id = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(stack1Id, "terminal") as string;
+    const b = manager.addCardToWindow(stack1Id, "terminal") as string;
     const c = manager.addCard("git") as string;
     // stack1 holds [a, b]; b is active-in-stack1. c's stack is the deck's
     // active stack, c is FR. Simulate clicking tab `a` in the inactive
-    // stack1: (i) setActiveCardInStack(stack1, a) fires no events
+    // stack1: (i) setActiveCardInWindow(stack1, a) fires no events
     // (stack1 is inactive); (ii) activateCard(a) promotes stack1 and
     // flips FR to a.
     const log = attachTransitionLog(manager);
 
-    manager.setActiveCardInStack(stack1Id, a);
+    manager.setActiveCardInWindow(stack1Id, a);
     manager.activateCard(a);
 
     expect(log).toEqual([
@@ -2230,14 +2230,14 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(a);
   });
 
-  it("T-11-6-1b-05a: addCardToStack on the active stack fires construction then full flip", () => {
+  it("T-11-6-1b-05a: addCardToWindow on the active stack fires construction then full flip", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const a = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), a).id;
+    const windowId = hostStack(manager.getDeckState(), a).id;
     const log = attachTransitionLog(manager);
 
-    const b = manager.addCardToStack(stackId, "terminal") as string;
+    const b = manager.addCardToWindow(windowId, "terminal") as string;
 
     expect(log).toEqual([
       `willDeact:${a}`,
@@ -2249,7 +2249,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(b);
   });
 
-  it("T-11-6-1b-05b: addCardToStack on an inactive stack fires construction only, no flip", () => {
+  it("T-11-6-1b-05b: addCardToWindow on an inactive stack fires construction only, no flip", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     registerCard(makeRegistration("git"));
@@ -2258,7 +2258,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     manager.addCard("terminal"); // stack2 becomes active; its card is FR.
     const log = attachTransitionLog(manager);
 
-    const newCard = manager.addCardToStack(stack1Id, "git") as string;
+    const newCard = manager.addCardToWindow(stack1Id, "git") as string;
 
     expect(log).toEqual([`construct:${newCard}`]);
     // FR is still stack2's active card; stack1.activeCardId has flipped
@@ -2273,8 +2273,8 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     registerCard(makeRegistration("terminal"));
     const a = manager.addCard("hello") as string;
     const stack1Id = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(stack1Id, "terminal") as string;
-    // b is FR (active-in-stack1 after addCardToStack, and stack1 is the
+    const b = manager.addCardToWindow(stack1Id, "terminal") as string;
+    // b is FR (active-in-stack1 after addCardToWindow, and stack1 is the
     // deck's active stack).
     expect(manager.getFirstResponderCardId()).toBe(b);
     const log = attachTransitionLog(manager);
@@ -2290,9 +2290,9 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     registerCard(makeRegistration("terminal"));
     const a = manager.addCard("hello") as string;
     const stack1Id = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(stack1Id, "terminal") as string;
+    const b = manager.addCardToWindow(stack1Id, "terminal") as string;
     // b is FR. Switch back to a so a is FR and b is NOT FR.
-    manager.setActiveCardInStack(stack1Id, a);
+    manager.setActiveCardInWindow(stack1Id, a);
     expect(manager.getFirstResponderCardId()).toBe(a);
     const log = attachTransitionLog(manager);
 
@@ -2307,20 +2307,20 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(b);
   });
 
-  it("T-11-6-1b-07: moveCardToStack into the active stack flips FR to the moved card", () => {
+  it("T-11-6-1b-07: moveCardToWindow into the active stack flips FR to the moved card", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     registerCard(makeRegistration("git"));
     // source is not active; target is active.
     const a = manager.addCard("hello") as string;
     const srcStackId = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(srcStackId, "terminal") as string;
+    const b = manager.addCardToWindow(srcStackId, "terminal") as string;
     const c = manager.addCard("git") as string;
     const tgtStackId = hostStack(manager.getDeckState(), c).id;
     // tgtStack is active, c is FR. Move b from src to tgt.
     const log = attachTransitionLog(manager);
 
-    manager.moveCardToStack(srcStackId, b, tgtStackId, 0);
+    manager.moveCardToWindow(srcStackId, b, tgtStackId, 0);
 
     expect(log).toEqual([
       `willDeact:${c}`,
@@ -2331,13 +2331,13 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(b);
   });
 
-  it("T-11-6-1b-07b: moveCardToStack into an inactive stack fires no flip events", () => {
+  it("T-11-6-1b-07b: moveCardToWindow into an inactive stack fires no flip events", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     registerCard(makeRegistration("git"));
     const a = manager.addCard("hello") as string;
     const srcStackId = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(srcStackId, "terminal") as string;
+    const b = manager.addCardToWindow(srcStackId, "terminal") as string;
     const c = manager.addCard("git") as string;
     const tgtStackId = hostStack(manager.getDeckState(), c).id;
     // tgtStack is active, c is FR. Now activate src so src is active
@@ -2349,7 +2349,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     // Move b from src (active, multi-card) to tgt (inactive). src stays
     // active with a as its activeCard. tgt's activeCard becomes b but
     // tgt is not the active stack so no flip.
-    manager.moveCardToStack(srcStackId, b, tgtStackId, 0);
+    manager.moveCardToWindow(srcStackId, b, tgtStackId, 0);
 
     expect(log).toEqual([]);
     expect(manager.getFirstResponderCardId()).toBe(a);
@@ -2359,13 +2359,13 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     const a = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), a).id;
-    const b = manager.addCardToStack(stackId, "terminal") as string;
+    const windowId = hostStack(manager.getDeckState(), a).id;
+    const b = manager.addCardToWindow(windowId, "terminal") as string;
     // b is FR.
     expect(manager.getFirstResponderCardId()).toBe(b);
     const log = attachTransitionLog(manager);
 
-    manager.removeCard(stackId, b);
+    manager.removeCard(windowId, b);
 
     expect(log).toEqual([
       `willDeact:${b}`,
@@ -2380,11 +2380,11 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
   it("T-11-6-1b-08b: removeCard on the sole card in the sole stack flips to null then destroys", () => {
     registerCard(makeRegistration("hello"));
     const a = manager.addCard("hello") as string;
-    const stackId = hostStack(manager.getDeckState(), a).id;
-    // a is FR. removeCard delegates to _closeStack for single-card stacks.
+    const windowId = hostStack(manager.getDeckState(), a).id;
+    // a is FR. removeCard delegates to _closeWindow for single-card stacks.
     const log = attachTransitionLog(manager);
 
-    manager.removeCard(stackId, a);
+    manager.removeCard(windowId, a);
 
     expect(log).toEqual([
       `willDeact:${a}`,
@@ -2394,7 +2394,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBeNull();
   });
 
-  it("T-11-6-1b-08c: handleStackClosed on an active multi-card stack flips to new top then destroys all", () => {
+  it("T-11-6-1b-08c: handleWindowClosed on an active multi-card stack flips to new top then destroys all", () => {
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     registerCard(makeRegistration("git"));
@@ -2402,12 +2402,12 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     const stack1Id = hostStack(manager.getDeckState(), a).id;
     const b = manager.addCard("terminal") as string;
     const stack2Id = hostStack(manager.getDeckState(), b).id;
-    const c = manager.addCardToStack(stack2Id, "git") as string;
+    const c = manager.addCardToWindow(stack2Id, "git") as string;
     // stack2 is active, c is FR. stack2 has [b, c].
     expect(manager.getFirstResponderCardId()).toBe(c);
     const log = attachTransitionLog(manager);
 
-    manager.handleStackClosed(stack2Id);
+    manager.handleWindowClosed(stack2Id);
 
     expect(log).toEqual([
       `willDeact:${c}`,
@@ -2425,7 +2425,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
   it("T-11-6-1b-detach-focus: add-then-detach blurs tide and does not refocus it", () => {
     // Reproducer for the 11.6.1a-motivating detach focus bug. Sequence:
     //   1. Stack S1 contains tide (FR).
-    //   2. addCardToStack(S1, hello) → hello becomes FR in S1; tide
+    //   2. addCardToWindow(S1, hello) → hello becomes FR in S1; tide
     //      deactivates (prompt blurs).
     //   3. detachCard(S1, hello, pos) → hello moves to a new stack S2
     //      which becomes the deck's active stack; hello was already FR
@@ -2440,10 +2440,10 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(tide);
     const log = attachTransitionLog(manager);
 
-    const hello = manager.addCardToStack(s1, "hello") as string;
+    const hello = manager.addCardToWindow(s1, "hello") as string;
     manager.detachCard(s1, hello, { x: 200, y: 200 });
 
-    // After addCardToStack on the active stack: FR flips tide → hello
+    // After addCardToWindow on the active stack: FR flips tide → hello
     // (construction fires inside commit). After detachCard: hello is
     // already FR, new stack becomes active, no flip events. No
     // `didAct:tide` should appear anywhere.

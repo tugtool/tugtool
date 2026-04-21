@@ -34,8 +34,8 @@ export function makeMockStore(
     subscribe: () => () => {},
     getSnapshot: (): DeckState => ({ cards: [], windows: [] }),
     getVersion: () => 0,
-    handleStackMoved: () => {},
-    handleStackClosed: () => {},
+    handleWindowMoved: () => {},
+    handleWindowClosed: () => {},
     focusCard: () => {},
     activateCard: () => {},
     getFirstResponderCardId: () => null,
@@ -45,12 +45,12 @@ export function makeMockStore(
     observeCardWillBeginDestruction: () => () => {},
     getActiveCardId: () => null,
     addCard: () => null,
-    addCardToStack: () => null,
+    addCardToWindow: () => null,
     removeCard: () => {},
-    setActiveCardInStack: () => {},
-    reorderCardInStack: () => {},
+    setActiveCardInWindow: () => {},
+    reorderCardInWindow: () => {},
     detachCard: () => null,
-    moveCardToStack: () => {},
+    moveCardToWindow: () => {},
     getCardState: (id: string) => cardStateCache.get(id),
     setCardState: (id: string, bag: CardStateBag) => {
       cardStateCache.set(id, bag);
@@ -69,7 +69,7 @@ export function makeMockStore(
     invokeSaveCallback: (id: string) => {
       saveCallbacks.get(id)?.();
     },
-    toggleStackCollapse: () => {},
+    toggleWindowCollapse: () => {},
   };
 
   return { ...base, ...overrides };

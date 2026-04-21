@@ -39,21 +39,21 @@ export interface IDeckManagerStore {
   getVersion: () => number;
 
   /**
-   * Stable bound callback: update a stack's position/size on drag-end /
-   * resize-end. The frame that gets dragged is a CardStack; individual
-   * cards within it share the stack's position.
+   * Stable bound callback: update a window's position/size on drag-end /
+   * resize-end. The frame that gets dragged is the window chrome; individual
+   * cards within it share the window's position.
    */
-  handleStackMoved: (
-    stackId: string,
+  handleWindowMoved: (
+    windowId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
 
-  /** Stable bound callback: close a stack (and all of its cards). */
-  handleStackClosed: (stackId: string) => void;
+  /** Stable bound callback: close a window (and all of its cards). */
+  handleWindowClosed: (windowId: string) => void;
 
   /**
-   * Promote a card's host stack to the top of the stacks array (highest
+   * Promote a card's host window to the top of the `windows` array (highest
    * z-index) and persist the card id for reload restoration. Does NOT
    * fire lifecycle events — pair with `activateCard` when handling a
    * user gesture that should also drive the responder chain.
@@ -62,9 +62,9 @@ export interface IDeckManagerStore {
 
   /**
    * Make `cardId` the first responder — flip the composite bit
-   * `(activeStack?.activeCardId)` to point at `cardId`, fire the
+   * `(activeWindow?.activeCardId)` to point at `cardId`, fire the
    * will/didDeactivate + will/didActivate lifecycle events, promote
-   * the card as the responder chain's key card, bump its host stack's
+   * the card as the responder chain's key card, bump its host window's
    * z-order, and persist the focused-card pointer for reload
    * restoration. No-op when `cardId` is already the first responder
    * (same-bit calls still refresh the persisted pointer and the
@@ -73,8 +73,8 @@ export interface IDeckManagerStore {
   activateCard: (cardId: string) => void;
 
   /**
-   * Read the composite first-responder bit: the active stack's
-   * active card id, or `null` when no stack is active. At any
+   * Read the composite first-responder bit: the active window's
+   * active card id, or `null` when no window is active. At any
    * moment, exactly zero or one card is the first responder.
    */
   getFirstResponderCardId: () => string | null;
@@ -125,60 +125,60 @@ export interface IDeckManagerStore {
 
   /**
    * Add a new card from the registry, wrapped in a new single-card
-   * CardStack at the default position. Returns the generated card id,
+   * window at the default position. Returns the generated card id,
    * or null if no registration is found for `componentId`.
    */
   addCard: (componentId: string) => string | null;
 
   /**
-   * Add a new card to an existing stack. Returns the new card id, or
-   * null if the stack or registration is not found. The new card
-   * becomes the stack's active card.
+   * Add a new card to an existing window. Returns the new card id, or
+   * null if the window or registration is not found. The new card
+   * becomes the window's active card.
    */
-  addCardToStack: (stackId: string, componentId: string) => string | null;
+  addCardToWindow: (windowId: string, componentId: string) => string | null;
 
   /**
-   * Remove a card. If the card was the last card in its stack, the
-   * stack is removed entirely. (Renamed from `removeTab`.)
+   * Remove a card. If the card was the last card in its window, the
+   * window is removed entirely. (Renamed from `removeTab`.)
    */
-  removeCard: (stackId: string, cardId: string) => void;
+  removeCard: (windowId: string, cardId: string) => void;
 
   /**
-   * Set the active card in a stack. No-op when `cardId` is not in
-   * the stack. (Renamed from `setActiveTab`.)
+   * Set the active card in a window. No-op when `cardId` is not in
+   * the window. (Renamed from `setActiveTab`.)
    */
-  setActiveCardInStack: (stackId: string, cardId: string) => void;
+  setActiveCardInWindow: (windowId: string, cardId: string) => void;
 
   /**
-   * Reorder a card within its stack. Moves the card at `fromIndex`
-   * to `toIndex`. No-op when the stack is not found, indices are out
+   * Reorder a card within its window. Moves the card at `fromIndex`
+   * to `toIndex`. No-op when the window is not found, indices are out
    * of bounds, or fromIndex === toIndex. (Renamed from `reorderTab`.)
    */
-  reorderCardInStack: (stackId: string, fromIndex: number, toIndex: number) => void;
+  reorderCardInWindow: (windowId: string, fromIndex: number, toIndex: number) => void;
 
   /**
-   * Detach a card from its stack and create a new single-card stack at
-   * the given position. Returns the new stack's id, or null if the
-   * stack or card is not found, or if the card is the last card in
-   * its stack. (Renamed from `detachTab`.)
+   * Detach a card from its window and create a new single-card window at
+   * the given position. Returns the new window's id, or null if the
+   * window or card is not found, or if the card is the last card in
+   * its window. (Renamed from `detachTab`.)
    */
   detachCard: (
-    stackId: string,
+    windowId: string,
     cardId: string,
     position: { x: number; y: number },
   ) => string | null;
 
   /**
-   * Move a card from its source stack to a target stack, inserting at
-   * `insertAtIndex`. No-op when `sourceStackId === targetStackId`.
-   * The moved card becomes the target stack's active card. If the
-   * source stack has only one card, the source stack is removed.
+   * Move a card from its source window to a target window, inserting at
+   * `insertAtIndex`. No-op when `sourceWindowId === targetWindowId`.
+   * The moved card becomes the target window's active card. If the
+   * source window has only one card, the source window is removed.
    * (Renamed from `mergeTab`.)
    */
-  moveCardToStack: (
-    sourceStackId: string,
+  moveCardToWindow: (
+    sourceWindowId: string,
     cardId: string,
-    targetStackId: string,
+    targetWindowId: string,
     insertAtIndex: number,
   ) => void;
 
@@ -233,12 +233,12 @@ export interface IDeckManagerStore {
   invokeSaveCallback: (id: string) => void;
 
   /**
-   * Toggle the collapsed state of a stack. When collapsing, sets
-   * `collapsed: true`; the StackFrame renders the stack at
+   * Toggle the collapsed state of a window. When collapsing, sets
+   * `collapsed: true`; the StackFrame renders the window at
    * CARD_TITLE_BAR_HEIGHT. When expanding, restores the full height.
    * Notifies subscribers and schedules a save so collapsed state is
    * persisted. (Renamed from `toggleCardCollapse` — position/size and
-   * collapse are stack-level concerns.)
+   * collapse are window-level concerns.)
    */
-  toggleStackCollapse: (stackId: string) => void;
+  toggleWindowCollapse: (windowId: string) => void;
 }

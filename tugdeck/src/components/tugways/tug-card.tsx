@@ -519,7 +519,7 @@ export function Tugcard({
       if (outgoingCardId) {
         store.invokeSaveCallback(outgoingCardId);
       }
-      store.setActiveCardInStack(stackId, newCardId);
+      store.setActiveCardInWindow(stackId, newCardId);
     },
     [store, stackId],
   );
@@ -668,12 +668,12 @@ export function Tugcard({
       // add-tab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
       // after the A2.5 tug-popup-button migration. Payload is
       // `value: componentId`. This stack's id plus the incoming
-      // componentId are the arguments to store.addCardToStack, completing
+      // componentId are the arguments to store.addCardToWindow, completing
       // the chain-native card-add flow. Distinct from the global
       // add-tab-to-active-card action handled by deck-canvas.
       [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.addCardToStack(stackId, event.value);
+        store.addCardToWindow(stackId, event.value);
       },
       // Stubs: minimize, toggle-menu, find are no-ops until implemented.
       // `find` logs because ⌘F is bound in keybinding-map.ts and a user

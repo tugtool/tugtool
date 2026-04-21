@@ -179,7 +179,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // StackFrame's pointerdown fires with a stack id. Resolve the stack's
+  // StackFrame's pointerdown fires with a window id. Resolve the window's
   // current `activeCardId` and route through `activateCard` — under the
   // 11.6.1b composite-bit model `_setFirstResponder` handles z-order
   // bumping, `activeWindowId` commit, focused-card persistence, and
@@ -189,8 +189,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // breaking prompt focus when clicking back to a previously-active
   // card.
   const handleStackActivate = useCallback(
-    (stackId: string) => {
-      const win = store.getSnapshot().windows.find((s) => s.id === stackId);
+    (windowId: string) => {
+      const win = store.getSnapshot().windows.find((s) => s.id === windowId);
       if (!win) return;
       store.activateCard(win.activeCardId);
     },
@@ -309,7 +309,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const s = windowsRef.current;
         if (s.length === 0) return;
         const activeWindowId = s[s.length - 1].id; // topmost window (z-order)
-        store.addCardToStack(activeWindowId, "hello");
+        store.addCardToWindow(activeWindowId, "hello");
       },
     },
   });
@@ -436,7 +436,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
          * the live snapshot on every dispatch.
          */
         const handleClose = () => {
-          store.handleStackClosed(stackState.id);
+          store.handleWindowClosed(stackState.id);
         };
 
         const stackCards = stackState.cardIds
@@ -451,10 +451,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             isFocused={stackState.id === focusedStackId}
-            onCardMoved={store.handleStackMoved}
+            onCardMoved={store.handleWindowMoved}
             onStackClosed={handleClose}
             onStackActivated={handleStackActivate}
-            onCardCollapsed={(id) => store.toggleStackCollapse(id)}
+            onCardCollapsed={(id) => store.toggleWindowCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.
               const snapshot = store.getSnapshot();
@@ -462,7 +462,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                 (s) => s.id === sourceStackId,
               );
               if (!sourceStack) return;
-              store.moveCardToStack(
+              store.moveCardToWindow(
                 sourceStackId,
                 sourceStack.activeCardId,
                 targetStackId,
