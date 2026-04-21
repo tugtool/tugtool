@@ -1237,6 +1237,41 @@ useCardDelegate(cardId, {
 - Manual: run the full card-switch / app-transition trace with `LIFECYCLE_LOG = false` — console is quiet.
 - Manual: run with `LIFECYCLE_LOG = true` — console shows the full trace as before Step 9.
 
+**Piece decomposition (four commits):**
+
+*Piece 1 — Cascade subscription hygiene (H6 + H7 + H8/H-A9).*
+- H6: change `initActionDispatch(connection, deck)` signature from `void` to `() => void`. The returned disposer unsubscribes the `observeApplicationDidResignActive` subscription. Production doesn't call it; tests that reinitialize can.
+- H7: add a `deck-manager.test.ts` test covering DeckManager → cascade install/dispose: construct a DeckManager, fire `deck.appLifecycle.notifyApplicationWillResignActive()`, assert cascade fires; `deck.destroy()`, fire again, assert no cascade.
+- H8 / H-A9: add `hasConstructed(cardId: string): boolean` to `CardLifecycle` (delegates to the existing `constructedCards` Set). In `lifecycle-cascade.ts` `reactivateIfNeeded`, check `cardLifecycle.hasConstructed(cardId)` before firing `notifyCardWillActivate`; if false, clear `deactivatedByAppCardId` silently and log `[CardLifecycle] cascade from <trigger> → card <id> destroyed between deactivate and reactivate; skipping reactivation`. Add a cascade test: deactivate A, destroy A, foreground → cascade logs skip, no activation.
+- Files: `tugdeck/src/action-dispatch.ts`, `tugdeck/src/main.tsx`, `tugdeck/src/lib/card-lifecycle.ts`, `tugdeck/src/lib/lifecycle-cascade.ts`, `tugdeck/src/__tests__/deck-manager.test.ts`, `tugdeck/src/__tests__/lifecycle-cascade.test.ts`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with +2 new tests.
+
+*Piece 2 — Dev-mode log gating (H10).*
+- Add a module-level `const LIFECYCLE_LOG` constant at the top of `card-lifecycle.ts`, `app-lifecycle.ts`, and `lifecycle-cascade.ts`. Default to `import.meta.env.DEV ?? false` (or whatever dev-mode gate tugdeck uses elsewhere).
+- Wrap every `console.log("[CardLifecycle] ...")` / `console.log("[AppLifecycle] ...")` call with `if (LIFECYCLE_LOG) ...`.
+- Add a test that flips the gate to `false` and asserts no `console.log` fires during a lifecycle event sequence.
+- Files: `tugdeck/src/lib/card-lifecycle.ts`, `tugdeck/src/lib/app-lifecycle.ts`, `tugdeck/src/lib/lifecycle-cascade.ts`, one test file.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green with +1 new test. Manual: dev build shows the full trace; prod build is quiet.
+
+*Piece 3 — Typed `window.tugdeck` global (H11).*
+- Add a `declare global { interface Window { tugdeck?: { saveState(): void; reconnect(): void }; } }` block — in `main.tsx` directly, or extract to a new `tugdeck/src/globals.d.ts`.
+- Replace the cast `(window as unknown as Record<string, unknown>).tugdeck = ...` in `main.tsx:184` with `window.tugdeck = { saveState: ..., reconnect: ... }`.
+- Files: `tugdeck/src/main.tsx` (and optionally `tugdeck/src/globals.d.ts`).
+- Verification: `bun x tsc --noEmit` clean (the typed assignment compiles without `as unknown`).
+
+*Piece 4 — Documentation bundle (H9 + H-A7 + H-A8).*
+- H9: add a banner comment at the top of `AppLifecycle` explaining: "App lifecycle events during startup (before the JS side has registered the `AppLifecycle` singleton via `DeckManager` construction) are best-effort; control frames dispatched before registration are dropped. Consumers should not rely on receiving every app event in the pre-mount window; the first post-mount `applicationDidBecomeActive` on user interaction recovers state." No code change.
+- H-A7: add a JSDoc `@deprecated` tag on `applyLayout` (deck-manager.ts:1498) pointing to a future diff-based replacement if a production need arises. No diff-based implementation for now.
+- H-A8: add a JSDoc note on `_toggleStackCollapse` (deck-manager.ts:1344) explaining: "Collapse/expand changes rendered geometry (via CardFrame's height override) but NOT the stored `CardState.size`. Per L06 (appearance via CSS/DOM), this is an appearance-zone transition, not a data-zone event. No `cardWillResize` / `cardDidResize` fires; consumers that want to react to collapse specifically should subscribe to the deck-manager store directly (collapse flips `CardState.collapsed`, which the store-subscriber sees)."
+- Files: `tugdeck/src/lib/app-lifecycle.ts`, `tugdeck/src/deck-manager.ts`.
+- Verification: `bun x tsc --noEmit` clean; `bun test` green (no new tests — documentation only).
+
+**Rules for executing each piece:**
+- Each piece lands as exactly one commit with a clear commit message.
+- `bun x tsc --noEmit` and `bun test` must pass at HEAD of every piece before moving to the next.
+- Do not edit files outside the piece's stated file list. If an unexpected file needs a change, pause and surface it before editing.
+- If a piece grows substantially beyond its stated scope, STOP and re-scope; don't pile unrelated work into one commit.
+
 **Note on scope:** This is a hygiene / polish / documentation sweep. No behavior changes on the happy path. Closes out every hole flagged by the reliability study except H1–H5 (already closed) and the standing behavior of H-A7 (deprecated, not deleted).
 
 #### Step 12 — Tuglaws walkthrough and plan close {#step-12}
