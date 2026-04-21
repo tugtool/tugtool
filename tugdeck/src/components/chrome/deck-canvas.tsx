@@ -179,21 +179,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // StackFrame's pointerdown fires with a stack id. Activation/focus
-  // operate on a **card** id, so resolve the stack's current
-  // `activeCardId` and drive both z-order and the lifecycle from it.
-  // `focusCard` bumps the host stack to the top of the stacks array
-  // (z-index) and persists `focusedCardId` for reload restoration;
-  // `activateCard` fires will/didActivate through the lifecycle.
-  // The order is z-order first, lifecycle second — observers reading
-  // `getSnapshot()` in their callback see the stack already promoted.
+  // StackFrame's pointerdown fires with a stack id. Resolve the stack's
+  // current `activeCardId` and route through `activateCard` — under the
+  // 11.6.1b composite-bit model `_setFirstResponder` handles z-order
+  // bumping, `activeStackId` commit, focused-card persistence, and
+  // lifecycle events atomically. A preceding `focusCard(cardId)` would
+  // pre-mutate `activeStackId`, making `_setFirstResponder` see a
+  // same-bit call and short-circuit the will/didActivate events —
+  // breaking prompt focus when clicking back to a previously-active
+  // card.
   const handleStackActivate = useCallback(
     (stackId: string) => {
       const stack = store.getSnapshot().stacks.find((s) => s.id === stackId);
       if (!stack) return;
-      const cardId = stack.activeCardId;
-      store.focusCard(cardId);
-      store.activateCard(cardId);
+      store.activateCard(stack.activeCardId);
     },
     [store],
   );
@@ -288,7 +287,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
         if (galleryStack) {
           // Gallery stack already exists — activate its active card.
-          store.focusCard(galleryStack.activeCardId);
+          // `activateCard` alone drives z-order, persistence, and lifecycle.
           store.activateCard(galleryStack.activeCardId);
         } else {
           // No gallery card anywhere — create one and activate its seed.

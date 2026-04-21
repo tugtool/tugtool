@@ -616,7 +616,7 @@ describe("DeckCanvas – click-to-activate dispatches cardId, not stackId", () =
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("pointer-down on a stack frame calls store.focusCard and store.activateCard with the stack's activeCardId", () => {
+  it("pointer-down on a stack frame calls store.activateCard with the stack's activeCardId", () => {
     registerCard({
       componentId: "hello",
       contentFactory: (_cardId: string) =>
@@ -625,8 +625,12 @@ describe("DeckCanvas – click-to-activate dispatches cardId, not stackId", () =
     });
 
     // Fixture uses a multi-card stack so stack id and card ids are distinct
-    // — if the handler passes the stack id by mistake, focusCard /
-    // activateCard will see a non-card value and the assertions fail.
+    // — if the handler passes the stack id by mistake, activateCard will
+    // see a non-card value and the assertion fails. Under 11.6.1b
+    // `activateCard` alone drives z-order, persistence, and the full
+    // will/didActivate cycle via `_setFirstResponder`; a prior
+    // `focusCard` call would short-circuit the lifecycle events by
+    // pre-mutating the composite bit.
     const stackSpec: StackSpec = {
       id: "stack-alpha",
       position: { x: 0, y: 0 },
@@ -658,7 +662,7 @@ describe("DeckCanvas – click-to-activate dispatches cardId, not stackId", () =
       fireEvent.pointerDown(frame);
     });
 
-    expect(focusCalls).toEqual(["card-a2"]);
+    expect(focusCalls).toEqual([]);
     expect(activateCalls).toEqual(["card-a2"]);
   });
 
