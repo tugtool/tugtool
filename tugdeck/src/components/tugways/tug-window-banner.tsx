@@ -51,7 +51,7 @@ import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { icons } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { TugPanePortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { group } from "@/components/tugways/tug-animator";
 
 /* ---------------------------------------------------------------------------

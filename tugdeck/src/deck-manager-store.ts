@@ -234,7 +234,7 @@ export interface IDeckManagerStore {
 
   /**
    * Toggle the collapsed state of a pane. When collapsing, sets
-   * `collapsed: true`; `TugWindow` renders the pane at
+   * `collapsed: true`; `TugPane` renders the pane at
    * CARD_TITLE_BAR_HEIGHT. When expanding, restores the full height.
    * Notifies subscribers and schedules a save so collapsed state is
    * persisted. (Renamed from `toggleCardCollapse` — position/size and

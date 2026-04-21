@@ -125,7 +125,7 @@ export class FeedStore {
 
   /**
    * Replace the current filter. Used by consumers whose filter predicate
-   * depends on reactive state (e.g., `TugWindow` when its `workspaceKey`
+   * depends on reactive state (e.g., `TugPane` when its `workspaceKey`
    * binding arrives asynchronously). Only affects future frames; cached
    * payloads already in the snapshot are left in place.
    */

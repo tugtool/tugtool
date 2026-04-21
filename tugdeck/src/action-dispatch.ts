@@ -353,7 +353,7 @@ export function initActionDispatch(
 
   // close (Both): close the focused card via the responder chain. Trivial
   // adapter — Control-frame name and chain-action name are identical
-  // (TUG_ACTIONS.CLOSE = "close"). The walk lands on TugWindow's registered
+  // (TUG_ACTIONS.CLOSE = "close"). The walk lands on TugPane's registered
   // close handler. This is the File > Close Card menu item's Control-frame
   // round-trip: the Swift menu has keyEquivalent "w", so ⌘W triggers the
   // menu action (AppKit swallows the keystroke before the WKWebView sees
@@ -373,7 +373,7 @@ export function initActionDispatch(
   // spawn_session (Spec S03). The handler populates
   // `cardSessionBindingStore` so `useCardWorkspaceKey(cardId)` returns
   // the exact string tugcast splices into FILETREE/FILESYSTEM/GIT
-  // frames, enabling the per-card value-check filter in `TugWindow`.
+  // frames, enabling the per-card value-check filter in `TugPane`.
   //
   // Tugdeck does NOT canonicalize the path client-side — the canonical
   // form includes macOS firmlink resolution that JS path libraries

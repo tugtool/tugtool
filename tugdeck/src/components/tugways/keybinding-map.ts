@@ -161,13 +161,13 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyF", meta: true, action: TUG_ACTIONS.FIND },
   // Tab navigation: macOS convention (Safari, Terminal) uses
   // ⇧⌘[ / ⇧⌘] for previous / next tab with wrap-around. Routes to
-  // TugWindow's existing previous-tab / next-tab handlers, which already
+  // TugPane's existing previous-tab / next-tab handlers, which already
   // wrap via `(idx ± 1 + n) % n`.
   { key: "BracketLeft", meta: true, shift: true, action: TUG_ACTIONS.PREVIOUS_TAB },
   { key: "BracketRight", meta: true, shift: true, action: TUG_ACTIONS.NEXT_TAB },
   // Jump to tab by 1-based index (⌘1..⌘9). Each binding carries its
   // index on `value`; the capture-phase pipeline copies that onto
-  // the dispatched ActionEvent. TugWindow's `jump-to-tab` handler reads
+  // the dispatched ActionEvent. TugPane's `jump-to-tab` handler reads
   // the index, narrows to `number`, and selects the corresponding
   // tab. Out-of-range indices are a silent no-op on the handler side.
   // `preventDefaultOnMatch` is not set: browsers have no default

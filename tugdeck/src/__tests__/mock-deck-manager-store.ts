@@ -1,9 +1,9 @@
 /**
- * Minimal mock IDeckManagerStore for tests that render TugWindow or other
+ * Minimal mock IDeckManagerStore for tests that render TugPane or other
  * components that call useDeckManager().
  *
- * Phase 5f added `useDeckManager()` to TugWindow so it can read/write tab state
- * bags. All test render helpers that wrap TugWindow must now include a
+ * Phase 5f added `useDeckManager()` to TugPane so it can read/write tab state
+ * bags. All test render helpers that wrap TugPane must now include a
  * DeckManagerContext.Provider. This module provides a factory function for
  * a no-op mock store so existing tests can opt in with minimal changes.
  *
@@ -11,7 +11,7 @@
  *   import { makeMockStore, withDeckManager } from "./mock-deck-manager-store";
  *
  *   // Wrap render output:
- *   render(withDeckManager(<TugWindow .../>));
+ *   render(withDeckManager(<TugPane .../>));
  *
  *   // Or access the store for assertions:
  *   const store = makeMockStore();
@@ -77,7 +77,7 @@ export function makeMockStore(
 
 /**
  * Wrap a React element with DeckManagerContext.Provider carrying a no-op mock
- * store. Drop-in replacement for bare render helpers in TugWindow tests.
+ * store. Drop-in replacement for bare render helpers in TugPane tests.
  */
 export function withDeckManager(
   ui: React.ReactElement,

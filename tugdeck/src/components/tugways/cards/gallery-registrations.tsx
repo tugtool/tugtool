@@ -722,7 +722,7 @@ export function registerGalleryCards(): void {
   });
 
   // The cardId is passed through to GalleryObservableProps so inspector
-  // controls can direct setProperty actions to the correct TugWindow responder
+  // controls can direct setProperty actions to the correct TugPane responder
   // node via sendToTarget. [D04] Spec S07 (#s07-gallery-demo)
   registerCard({
     componentId: "gallery-observable-props",

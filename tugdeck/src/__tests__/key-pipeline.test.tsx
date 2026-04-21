@@ -443,7 +443,7 @@ describe("matchKeybinding", () => {
   //
   // Each case below asserts that the binding resolves to the correct
   // typed action. The action handlers themselves are tested in the
-  // component files (tug-window for close / previousTab / nextTab /
+  // component files (tug-pane for close / previousTab / nextTab /
   // find, deck-canvas for addCardToActiveWindow / showSettings,
   // tug-prompt-input + use-text-input-responder for undo / redo,
   // the four floating surfaces for cancelDialog). This block is

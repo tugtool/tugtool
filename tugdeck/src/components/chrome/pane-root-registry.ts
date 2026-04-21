@@ -1,6 +1,6 @@
 /**
  * Pane root registry — maps a pane id to that pane's root
- * `HTMLDivElement` (the `<div class="tugcard">` rendered by `TugWindow`).
+ * `HTMLDivElement` (the `<div class="tugcard">` rendered by `TugPane`).
  * Used as a bridge so card content rendered via portal at the deck level
  * can re-provide `TugPanePortalContext` pointing at its host pane's root.
  *

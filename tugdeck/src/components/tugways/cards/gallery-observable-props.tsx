@@ -5,7 +5,7 @@
  *   1. Card content registers a PropertyStore via usePropertyStore().
  *   2. An inspector panel reads current values and dispatches setProperty
  *      actions via manager.sendToTarget(cardId, ...) — routing through the
- *      parent TugWindow's responder node to the registered store.
+ *      parent TugPane's responder node to the registered store.
  *   3. The target element's appearance updates reactively via
  *      useSyncExternalStore subscriptions, one per property.
  *   4. Source attribution prevents circular re-dispatch: inspector controls
@@ -13,14 +13,14 @@
  *      source 'inspector' it skips re-dispatch.
  *
  * This is the first gallery tab to use the cardId argument from contentFactory.
- * The cardId is needed to direct setProperty actions to the correct TugWindow
+ * The cardId is needed to direct setProperty actions to the correct TugPane
  * responder node via sendToTarget.
  *
  * Design decisions:
  *   [D01] Context callback registration for PropertyStore
  *   [D02] Store owns values with optional callbacks
  *   [D03] Observer-side circular guard
- *   [D04] setProperty action routed through TugWindow responder
+ *   [D04] setProperty action routed through TugPane responder
  *   [D05] Per-path observe for useSyncExternalStore
  *
  * Rules of Tugways:
@@ -95,7 +95,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  * observable-properties pipeline.
  *
  * Accepts the `cardId` prop from contentFactory so it can target setProperty
- * actions at the correct TugWindow responder node via sendToTarget. This is the
+ * actions at the correct TugPane responder node via sendToTarget. This is the
  * first gallery tab content to use the cardId argument; existing tabs discard
  * it as `_cardId`.
  *
@@ -107,7 +107,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  * **Inspector panel:** Three controls (color input, number input + range,
  * select dropdown). Each control dispatches a setProperty action via
  * manager.sendToTarget(cardId, { action: 'set-property', value: { path, value,
- * source: 'inspector' } }). The action routes through the parent TugWindow's
+ * source: 'inspector' } }). The action routes through the parent TugPane's
  * responder node, which calls store.set() on the registered PropertyStore.
  * [D04]
  *
@@ -120,7 +120,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
 export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const manager = useRequiredResponderChain();
 
-  // Register the PropertyStore with TugWindow via context callback.
+  // Register the PropertyStore with TugPane via context callback.
   // [D01] usePropertyStore calls CardPropertyContext in useLayoutEffect.
   const store = usePropertyStore({
     schema: DEMO_SCHEMA,
@@ -158,7 +158,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   //     observer would re-dispatch or apply secondary effects here.
   //   - source === 'inspector': the change came from the inspector; the
   //     observer SKIPS re-dispatch to break the circular loop:
-  //       inspector → sendToTarget → TugWindow.setProperty → store.set →
+  //       inspector → sendToTarget → TugPane.setProperty → store.set →
   //       notify observers → (skip) → no re-dispatch back to inspector.
   //
   // The observer writes the last change record into a DOM ref for live display
@@ -223,9 +223,9 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   // content-side observer above to detect that it did not originate the change
   // and skip re-dispatch, preventing circular notification loops. [D03]
   //
-  // The action routes through the parent TugWindow's setProperty handler, which
+  // The action routes through the parent TugPane's setProperty handler, which
   // calls store.set(path, value, source). This exercises the full round-trip:
-  //   inspector control → sendToTarget → TugWindow.setProperty → store.set →
+  //   inspector control → sendToTarget → TugPane.setProperty → store.set →
   //   observer notification → useSyncExternalStore re-render. [D04]
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,7 +319,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
       {/* ------------------------------------------------------------------ */}
       <div className="cg-section" data-testid="observable-props-inspector">
         <TugLabel className="cg-section-title">Inspector Panel</TugLabel>
-        <TugLabel size="2xs" color="muted">Each control dispatches setProperty via sendToTarget(cardId, ...). The action routes through the parent TugWindow's responder node to the registered PropertyStore. Source is tagged 'inspector' to prevent circular loops.</TugLabel>
+        <TugLabel size="2xs" color="muted">Each control dispatches setProperty via sendToTarget(cardId, ...). The action routes through the parent TugPane's responder node to the registered PropertyStore. Source is tagged 'inspector' to prevent circular loops.</TugLabel>
 
         {/* Background Color */}
         <div className="cg-control-group" data-testid="inspector-bg-color-group">

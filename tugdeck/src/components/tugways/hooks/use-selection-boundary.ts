@@ -3,7 +3,7 @@
  *
  * Part of the Phase 5a selection model (tugplan-tugways-phase-5a-selection-model.md).
  *
- * Card authors never call this hook directly -- it is called internally by TugWindow
+ * Card authors never call this hook directly -- it is called internally by TugPane
  * (Step 5) to register its content area div with the SelectionGuard singleton.
  *
  * ## How it fits

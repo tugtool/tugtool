@@ -36,7 +36,7 @@ import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/pr
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
-import { TugWindow } from "@/components/chrome/tug-window";
+import { TugPane } from "@/components/chrome/tug-pane";
 import { CardHost } from "@/components/chrome/card-host";
 import type { TugPaneState } from "@/layout-tree";
 import { _resetForTest } from "@/card-registry";
@@ -66,7 +66,7 @@ function makeStore() {
 
 // ---------------------------------------------------------------------------
 // Helper: render GalleryObservableProps with the same deck layout as DeckCanvas
-// (TugWindow + CardHost sibling; content portals into the window).
+// (TugPane + CardHost sibling; content portals into the window).
 // ---------------------------------------------------------------------------
 
 function renderObservableProps(cardId = "obs-int-card") {
@@ -86,7 +86,7 @@ function renderObservableProps(cardId = "obs-int-card") {
     ({ container } = render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <TugWindow
+          <TugPane
             stackState={stackState}
             meta={{ title: "Test" }}
             onCardMoved={() => {}}

@@ -145,7 +145,7 @@ body {
 /*
  * When collapsed (.tugcard--collapsed), the .tugcard-body collapses to
  * height:0. The React tree stays mounted -- only the CSS box disappears.
- * TugWindow sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
+ * TugPane sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
  * via inline style when cardState.collapsed is true.
  */
 .tugcard--collapsed .tugcard-body {
@@ -199,7 +199,7 @@ body {
 
 /*
  * When the card is focused (active), the title bar background switches to the
- * active color. TugWindow sets data-focused="true" on its container div,
+ * active color. TugPane sets data-focused="true" on its container div,
  * which is the ancestor of the window chrome root.
  */
 .tug-window[data-focused="true"] .tugcard-title-bar {

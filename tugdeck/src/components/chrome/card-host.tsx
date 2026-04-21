@@ -26,7 +26,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
-import { CardDirtyContext, TugPanePortalContext } from "./tug-window";
+import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
@@ -312,7 +312,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // the chain walk from `firstResponderId = cardId` would skip every
   // window-level card handler. Passing `parentId: hostStackId` re-parents the
   // chain to match the portaled DOM layout so `NEXT_TAB` /
-  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach the window's `TugWindow` responder and
+  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach the window's `TugPane` responder and
   // `FOCUS_PROMPT` finds a `kind="card"` node via `getKeyCard`.
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,

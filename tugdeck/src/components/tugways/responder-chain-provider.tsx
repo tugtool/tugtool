@@ -240,7 +240,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // single mechanism for "click-to-focus" and "Tab-to-focus" in the
     // chain. No per-component `makeFirstResponder` calls, no focus
     // listeners on individual editors, no pointerdown handlers in
-    // tug-window or tug-prompt-input. Nested responders compose
+    // tug-pane or tug-prompt-input. Nested responders compose
     // naturally: clicking or tabbing into an editor inside a card
     // makes the editor first responder without any per-component
     // wiring.

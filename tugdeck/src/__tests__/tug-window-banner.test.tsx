@@ -15,7 +15,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, cleanup, act, waitFor } from "@testing-library/react";
 
 import { TugWindowBanner } from "@/components/tugways/tug-window-banner";
-import { TugPanePortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 
 // ---------------------------------------------------------------------------
 // Helpers

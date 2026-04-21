@@ -140,7 +140,7 @@ export interface TugPopupMenuProps {
  * Renders a Radix-based dropdown via @radix-ui/react-dropdown-menu primitives
  * directly (no shadcn wrapper). Uses `--tug-*` semantic tokens for all
  * visual properties via tug-menu.css. The content renders into a Radix portal
- * (document root), avoiding z-index conflicts with TugWindow and other stacked
+ * (document root), avoiding z-index conflicts with TugPane and other stacked
  * elements.
  *
  * The trigger is the caller-provided ReactNode, wrapped in Radix Trigger asChild.

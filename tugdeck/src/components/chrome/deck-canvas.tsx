@@ -1,5 +1,5 @@
 /**
- * DeckCanvas -- canvas shell with responder chain support and TugWindow rendering
+ * DeckCanvas -- canvas shell with responder chain support and TugPane rendering
  * from DeckState (Phase 5).
  *
  * Phase 3: Registers as root responder "deck-canvas" via useResponder.
@@ -10,7 +10,7 @@
  *          explicit makeFirstResponder call.
  *
  * Phase 5 (Spec S06, Spec S07): Receives DeckState + stable callbacks from
- *          DeckManager via props. Maps deckState.panes to TugWindow components.
+ *          DeckManager via props. Maps deckState.panes to TugPane components.
  *          For each window, looks up the active card's registry entry for chrome metadata.
  *          Cards with unregistered componentIds are skipped (warning logged).
  *          Z-index by array position: first card = lowest, last card = highest.
@@ -61,7 +61,7 @@ import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { TugWindow } from "./tug-window";
+import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { TugPaneState } from "@/layout-tree";
@@ -93,7 +93,7 @@ const CARD_ZINDEX_BASE = 1;
 /**
  * DeckCanvas -- plain function component (Phase 5 removes forwardRef).
  *
- * Renders the responder-chain root and one TugWindow per entry in deckState.panes.
+ * Renders the responder-chain root and one TugPane per entry in deckState.panes.
  *
  * State is read from DeckManagerContext via useSyncExternalStore -- no
  * deckState prop. The variable `store` holds the IDeckManagerStore instance;
@@ -178,7 +178,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // TugWindow's pointerdown fires with a window id. Resolve the window's
+  // TugPane's pointerdown fires with a window id. Resolve the window's
   // current `activeCardId` and route through `activateCard` — under the
   // 11.6.1b composite-bit model `_setFirstResponder` handles z-order
   // bumping, `activePaneId` commit, focused-card persistence, and
@@ -403,7 +403,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
-      {/* TugWindows: one per pane in deckState.panes.
+      {/* TugPanes: one per pane in deckState.panes.
           Rendered in stable ID order (no DOM reordering on focus change).
           Z-index from store array position (first = lowest). Panes whose
           active card's componentId is unregistered are skipped with a
@@ -444,7 +444,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const hasMultipleCards = stackCards.length > 1;
 
         return (
-          <TugWindow
+          <TugPane
             key={stackState.id}
             stackState={stackState}
             meta={registration.defaultMeta}

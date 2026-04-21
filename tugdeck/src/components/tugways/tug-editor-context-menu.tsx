@@ -367,7 +367,7 @@ export function TugEditorContextMenu({
   //
   // 1. The responder-chain-provider installs a document-level capture
   //    keydown listener. When a keybinding matches (e.g. ⌘A → selectAll
-  //    dispatched to TugWindow's responder) and a responder handles it,
+  //    dispatched to TugPane's responder) and a responder handles it,
   //    the provider calls event.stopImmediatePropagation() — which
   //    silences every other listener registered on the same element
   //    and phase. A document-level listener installed after the

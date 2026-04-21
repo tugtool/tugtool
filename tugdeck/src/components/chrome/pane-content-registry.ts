@@ -9,9 +9,9 @@
  * the pane's content `<div>` (the node inside which every card's content lands).
  *
  * Lifecycle:
- *   - `TugWindow` calls `register(paneId, el)` in a useLayoutEffect after its
+ *   - `TugPane` calls `register(paneId, el)` in a useLayoutEffect after its
  *     `contentRef` is attached.
- *   - `TugWindow` calls `unregister(paneId)` in the cleanup.
+ *   - `TugPane` calls `unregister(paneId)` in the cleanup.
  *   - `CardPortal` calls `subscribe(paneId, cb)` to be notified when the
  *     target element changes, and `getElement(paneId)` to read the current
  *     value.

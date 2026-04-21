@@ -1,10 +1,10 @@
 /**
  * TugTabBar — presentational tab strip for multi-tab Tugcards.
  *
- * Renders in the TugWindow accessory slot when a card has more than one tab.
+ * Renders in the TugPane accessory slot when a card has more than one tab.
  * Purely presentational: no DeckManager coupling. Per [L11], TugTabBar is a
  * control, not a responder — it dispatches `selectTab` and `closeTab`
- * actions through the chain, where the enclosing TugWindow's responder
+ * actions through the chain, where the enclosing TugPane's responder
  * handles them and updates the store.
  *
  * **Authoritative references:**
@@ -14,7 +14,7 @@
  * - [L19] Component authoring guide
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
  * - [D02] Overflow state split across appearance and structural zones
- * - [D03] Tab bar uses the TugWindow accessory slot
+ * - [D03] Tab bar uses the TugPane accessory slot
  * - [D04] Replace overflow-x: auto with overflow-x: hidden
  */
 
@@ -471,7 +471,7 @@ function TabView({
  * A [+] button at the end opens a TugPopupMenu type picker listing all
  * registered card types; selecting one dispatches an `addTab` action
  * through the responder chain with the chosen componentId as the
- * payload. The enclosing TugWindow's responder handles the dispatch.
+ * payload. The enclosing TugPane's responder handles the dispatch.
  *
  * Overflow handling is provided by the `useTabOverflow` hook, which attaches
  * a ResizeObserver to the bar container and applies data-overflow attributes
@@ -633,7 +633,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   });
 
   // Stable handler for [+] button type picker selection.
-  // Dispatches `addTab` through the chain; TugWindow's responder handles
+  // Dispatches `addTab` through the chain; TugPane's responder handles
   // it by calling `store.addCardToPane(paneId, componentId)`. [L11, A2.5]
   const handleTypeSelect = useCallback(
     (componentId: string) => {

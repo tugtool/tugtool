@@ -345,7 +345,7 @@ body {
 
 /* ============================================================================
    Card-Drag Merge Drop Target ([D45])
-   Applied imperatively via data-card-drag-target="true" by TugWindow's
+   Applied imperatively via data-card-drag-target="true" by TugPane's
    drag handler during a card drag over another card's tab bar.
    Appearance changes go through CSS and DOM, never React state. [L06]
    ============================================================================ */

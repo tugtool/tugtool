@@ -82,7 +82,7 @@ export function GalleryBanner() {
   const sampleStack = [
     "TypeError: undefined is not an object (evaluating 'state.perRoute[state.currentRoute]')",
     "    at onRestore (tug-prompt-entry.tsx:217:39)",
-    "    at TugCard.onRestore (tug-window.tsx:356:48)",
+    "    at TugCard.onRestore (tug-pane.tsx:356:48)",
     "    at react_stack_bottom_frame (react-dom-client.js:18567:26)",
     "    at runWithFiberInDEV (react-dom-client.js:999:23)",
     "    at commitHookEffectListMount (react-dom-client.js:9411:180)",

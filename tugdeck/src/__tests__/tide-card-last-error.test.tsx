@@ -64,7 +64,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugPanePortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 
 const CARD_ID = "tide-6-test";
 const SESSION_ID = "sess-6-1";

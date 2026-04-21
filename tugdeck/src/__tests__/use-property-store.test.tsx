@@ -102,7 +102,7 @@ describe("usePropertyStore – context registration", () => {
     expect(registrar).toHaveBeenCalledWith(result.current);
   });
 
-  it("works without a context (outside TugWindow) without throwing", () => {
+  it("works without a context (outside TugPane) without throwing", () => {
     // No wrapper -- CardPropertyContext has a null default
     expect(() => {
       renderHook(() =>

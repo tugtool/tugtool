@@ -3,9 +3,9 @@
  *
  * Renders branch name, ahead/behind indicators, HEAD commit message, and
  * staged/unstaged/untracked file lists. Uses `useTugcardData<GitStatus>()` to
- * read decoded feed data provided by `TugcardDataProvider` in tug-window.tsx.
+ * read decoded feed data provided by `TugcardDataProvider` in tug-pane.tsx.
  *
- * **Laws:** [L02] External state via useSyncExternalStore (handled by TugWindow/FeedStore),
+ * **Laws:** [L02] External state via useSyncExternalStore (handled by TugPane/FeedStore),
  * [L15] CSS tokens for colors, [L19] data-slot annotations.
  * **Decisions:** [D04] Single-call registration, [D09] card content pattern.
  *

@@ -36,7 +36,7 @@ import {
   useTugSheetClose,
   type TugSheetHandle,
 } from "@/components/tugways/tug-sheet";
-import { TugPanePortalContext } from "@/components/chrome/tug-window";
+import { TugPanePortalContext } from "@/components/chrome/tug-pane";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
@@ -250,7 +250,7 @@ describe("TugSheet – cancelDialog chain dispatch closes the sheet", () => {
  * to its card" bug.
  *
  * Reproduces the production scenario:
- *   1. Sheet opens inside a parent responder (simulating a TugWindow).
+ *   1. Sheet opens inside a parent responder (simulating a TugPane).
  *   2. User focuses another card — first responder becomes a node
  *      OUTSIDE the sheet subtree.
  *   3. User returns to the sheet's card and clicks Cancel.
@@ -277,7 +277,7 @@ describe("TugSheet – close from consumer when first responder is elsewhere", (
       );
     }
 
-    // Parent responder id simulating a TugWindow wrapping the sheet.
+    // Parent responder id simulating a TugPane wrapping the sheet.
     const parentResponderId = "parent-card";
 
     const { manager, cleanupCard } = renderWithChainAndCard(
@@ -290,7 +290,7 @@ describe("TugSheet – close from consumer when first responder is elsewhere", (
       </ResponderParentContext.Provider>,
     );
 
-    // Register the parent node (simulating the TugWindow's responder)
+    // Register the parent node (simulating the TugPane's responder)
     // and make it first responder — the sheet is NOT first responder.
     manager.register({
       id: parentResponderId,

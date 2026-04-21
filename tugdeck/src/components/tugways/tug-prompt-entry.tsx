@@ -137,7 +137,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  *   its own draft that survives route switches and card/tab reloads.
  *
  * JSON-serializable (no DOM, no functions) — round-trips through
- * tugbank via the TugWindow persistence pipeline [L23].
+ * tugbank via the TugPane persistence pipeline [L23].
  */
 interface TugPromptEntryPersistedState {
   currentRoute: string;
@@ -757,7 +757,7 @@ export const TugPromptEntry = React.forwardRef<
     root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
   }, []);
 
-  // TugWindow persistence [L23]. TugPromptEntry is the sole persister for
+  // TugPane persistence [L23]. TugPromptEntry is the sole persister for
   // this compound — the composed `TugPromptInput` is explicitly opted
   // out via `persistState={false}` below so there's no competing
   // registration. Payload carries the active route + a per-route
@@ -768,7 +768,7 @@ export const TugPromptEntry = React.forwardRef<
   // in-memory map of drafts for inactive routes. onRestore seeds the
   // map, sets the route state, and rehydrates the input to whatever
   // draft was last saved for the active route (or installs a fresh
-  // route atom if none). TugWindow's orchestration guarantees both refs
+  // route atom if none). TugPane's orchestration guarantees both refs
   // (`promptInputRef`, `rootRef`) are populated by the time onRestore
   // fires — parent effects run after child mounts.
   useTugcardPersistence<TugPromptEntryPersistedState>({

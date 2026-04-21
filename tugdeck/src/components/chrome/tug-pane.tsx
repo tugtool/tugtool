@@ -1,5 +1,5 @@
 /**
- * TugWindow — deck window chrome and frame: title bar, tabs, content area,
+ * TugPane — deck window chrome and frame: title bar, tabs, content area,
  * drag/resize, z-order, and responder integration. Merged from the former
  * inner card chrome + outer frame split ([D02] merge window).
  *
@@ -10,9 +10,9 @@
  * - Resize: 8 handles, clamped to min-size, `onCardMoved` on end
  * - Bring to front via `onStackActivated` on pointer-down in the frame
  *
- * [D03] TugWindow chrome, [D06] appearance-zone drag
+ * [D03] TugPane chrome, [D06] appearance-zone drag
  *
- * @module components/chrome/tug-window
+ * @module components/chrome/tug-pane
  */
 
 import "../tugways/tug-window.css";
@@ -205,7 +205,7 @@ export function CardTitleBar({
 /**
  * React context: the pane frame's root element (`HTMLDivElement`, the
  * `.tugcard` host). Sheet and tooltip layers portal here so overlays attach
- * inside the pane's chrome. Card content outside the `TugWindow` tree
+ * inside the pane's chrome. Card content outside the `TugPane` tree
  * (e.g. `CardHost`) re-bridges this via `pane-root-registry`.
  */
 export const TugPanePortalContext = createContext<HTMLDivElement | null>(null);
@@ -291,9 +291,9 @@ const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, hei
 // ---------------------------------------------------------------------------
 
 /**
- * Props for the TugWindow component (frame + window chrome).
+ * Props for the TugPane component (frame + window chrome).
  */
-export interface TugWindowProps {
+export interface TugPaneProps {
   /** Window position, size, id, and collapsed state from DeckState. */
   stackState: TugPaneState;
   /** Default metadata for the window (from card registration). */
@@ -366,13 +366,13 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
 // ---------------------------------------------------------------------------
-// TugWindow
+// TugPane
 // ---------------------------------------------------------------------------
 
 /**
- * TugWindow — positions, drags, resizes, and hosts a window's cards on the canvas.
+ * TugPane — positions, drags, resizes, and hosts a window's cards on the canvas.
  */
-export function TugWindow({
+export function TugPane({
   stackState,
   meta,
   minContentSize: minContentSizeProp,
@@ -389,7 +389,7 @@ export function TugWindow({
   zIndex,
   isFocused,
   onCardCollapsed,
-}: TugWindowProps) {
+}: TugPaneProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;

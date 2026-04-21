@@ -43,7 +43,7 @@ export const presentWorkspaceKey: FeedStoreFilter = (_feedId, decoded) =>
 
 /**
  * Size policy for a card type. Governs default sizing of new cards and
- * resize clamping in TugWindow.
+ * resize clamping in TugPane.
  *
  * - `min`: hard floor for resize (content can report a larger min, but not smaller).
  * - `max`: hard ceiling for resize (omit for unbounded).

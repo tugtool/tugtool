@@ -1,12 +1,12 @@
 /**
- * TugWindow component unit tests.
+ * TugPane component unit tests.
  *
  * Tests cover:
- * - T16: TugWindow renders at correct position and size from stackState
- * - T17: TugWindow applies zIndex prop
- * - T18: TugWindow calls onStackActivated on pointer-down
- * - T19: TugWindow calls onClose when the title bar close path fires
- * - T20: TugWindow clamps resize to min-size derived from chrome + minContentSize
+ * - T16: TugPane renders at correct position and size from stackState
+ * - T17: TugPane applies zIndex prop
+ * - T18: TugPane calls onStackActivated on pointer-down
+ * - T19: TugPane calls onClose when the title bar close path fires
+ * - T20: TugPane clamps resize to min-size derived from chrome + minContentSize
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -16,7 +16,7 @@ import React from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
-import { TugWindow } from "@/components/chrome/tug-window";
+import { TugPane } from "@/components/chrome/tug-pane";
 import type { TugPaneState } from "@/layout-tree";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { withDeckManager } from "./mock-deck-manager-store";
@@ -53,10 +53,10 @@ const defaultProps = {
 };
 
 // ---------------------------------------------------------------------------
-// T16: TugWindow renders at correct position and size from stackState
+// T16: TugPane renders at correct position and size from stackState
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – position and size", () => {
+describe("TugPane – position and size", () => {
   it("T16: renders with correct position and size from stackState", () => {
     const stackState = makeStackState({
       position: { x: 50, y: 75 },
@@ -65,14 +65,14 @@ describe("TugWindow – position and size", () => {
 
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           stackState={stackState}
         />
       )
     );
 
-    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
     expect(frame).not.toBeNull();
 
     expect(frame.style.left).toBe("50px");
@@ -84,49 +84,49 @@ describe("TugWindow – position and size", () => {
   it("position: absolute is applied", () => {
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
         />
       )
     );
 
-    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
     expect(frame.style.position).toBe("absolute");
   });
 });
 
 // ---------------------------------------------------------------------------
-// T17: TugWindow applies zIndex prop
+// T17: TugPane applies zIndex prop
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – zIndex", () => {
+describe("TugPane – zIndex", () => {
   it("T17: applies the zIndex prop as a CSS z-index style", () => {
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           zIndex={42}
         />
       )
     );
 
-    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
     expect(frame.style.zIndex).toBe("42");
   });
 });
 
 // ---------------------------------------------------------------------------
-// T18: TugWindow calls onStackActivated on pointer-down
+// T18: TugPane calls onStackActivated on pointer-down
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – onStackActivated", () => {
+describe("TugPane – onStackActivated", () => {
   it("T18: calls onStackActivated with the stack id on pointer-down anywhere in the frame", () => {
     const onStackActivated = mock((_id: string) => {});
     const stackState = makeStackState({ id: "focus-test-stack" });
 
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           stackState={stackState}
           onStackActivated={onStackActivated}
@@ -134,7 +134,7 @@ describe("TugWindow – onStackActivated", () => {
       )
     );
 
-    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
 
     act(() => {
       fireEvent.pointerDown(frame);
@@ -149,7 +149,7 @@ describe("TugWindow – onStackActivated", () => {
 
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           onStackActivated={onStackActivated}
         />
@@ -166,17 +166,17 @@ describe("TugWindow – onStackActivated", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T19: TugWindow calls onClose from the title bar close path (single-tab)
+// T19: TugPane calls onClose from the title bar close path (single-tab)
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – onClose", () => {
+describe("TugPane – onClose", () => {
   it("T19: calls onClose when the close button is activated (single-card window)", () => {
     const onClose = mock(() => {});
     const stackState = makeStackState({ id: "close-test-card" });
 
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           stackState={stackState}
           onClose={onClose}
@@ -194,10 +194,10 @@ describe("TugWindow – onClose", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T20: TugWindow clamps resize to min-size
+// T20: TugPane clamps resize to min-size
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – min-size clamping", () => {
+describe("TugPane – min-size clamping", () => {
   it("T20: resize clamped to at least the computed chrome + minContentSize floor", () => {
     const onCardMoved = mock(
       (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {}
@@ -210,7 +210,7 @@ describe("TugWindow – min-size clamping", () => {
 
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
           stackState={stackState}
           onCardMoved={onCardMoved}
@@ -222,7 +222,7 @@ describe("TugWindow – min-size clamping", () => {
     const seHandle = container.querySelector(".tug-window-resize-se") as HTMLElement;
     expect(seHandle).not.toBeNull();
 
-    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
     (frame as any).setPointerCapture = () => {};
     (frame as any).releasePointerCapture = () => {};
 
@@ -247,11 +247,11 @@ describe("TugWindow – min-size clamping", () => {
 // Extra: 8 resize handles are rendered
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – resize handles", () => {
+describe("TugPane – resize handles", () => {
   it("renders 8 resize handles with correct CSS classes", () => {
     const { container } = render(
       wrap(
-        <TugWindow
+        <TugPane
           {...defaultProps}
         />
       )

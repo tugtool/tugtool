@@ -341,7 +341,7 @@ function TugPromptInputPersistence({
   engineRef: React.RefObject<TugTextEngine | null>;
   pendingRestoreRef: React.RefObject<TugTextEditingState | null>;
 }) {
-  // The TugWindow persistence protocol expects onRestore to trigger a re-render
+  // The TugPane persistence protocol expects onRestore to trigger a re-render
   // so the no-deps useLayoutEffect in useTugcardPersistence fires and calls
   // onContentReady (which removes visibility:hidden). Without this setState,
   // the direct DOM write via restoreState produces no re-render, onContentReady

@@ -398,20 +398,20 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Consumers: `deck-canvas.tsx` and any test.
 
 **Tasks:**
-- [ ] Rename the file.
-- [ ] Rename `TugWindow` → `TugPane` at the export.
-- [ ] Rename prop types accordingly.
-- [ ] Update every import and JSX usage (`<TugWindow …>` → `<TugPane …>`).
-- [ ] Keep CSS class names and DOM attributes as they are for now — those land in #step-7 and #step-8.
+- [x] Rename the file.
+- [x] Rename `TugWindow` → `TugPane` at the export.
+- [x] Rename prop types accordingly.
+- [x] Update every import and JSX usage (`<TugWindow …>` → `<TugPane …>`).
+- [x] Keep CSS class names and DOM attributes as they are for now — those land in #step-7 and #step-8.
 
 **Tests:**
-- [ ] `tug-window.test.tsx` renamed to `tug-pane.test.tsx`; tests pass.
-- [ ] `deck-canvas.test.tsx` passes.
+- [x] `tug-window.test.tsx` renamed to `tug-pane.test.tsx`; tests pass.
+- [x] `deck-canvas.test.tsx` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "TugWindow\b|tug-window\.tsx|tug-window'" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "TugWindow\b|tug-window\.tsx|tug-window'" tugdeck/src` returns zero matches.
 
 ---
 

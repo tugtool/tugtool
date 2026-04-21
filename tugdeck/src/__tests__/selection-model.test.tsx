@@ -2,9 +2,9 @@
  * Selection model integration tests -- Step 5.
  *
  * Tests cover:
- * - T13: TugWindow card responder does NOT handle selectAll (boundary enforcer model — content components own it)
+ * - T13: TugPane card responder does NOT handle selectAll (boundary enforcer model — content components own it)
  * - T14: Dispatching selectAll to card is unhandled (no selectAllChildren call)
- * - T15: TugWindow content area is registered with SelectionGuard on mount
+ * - T15: TugPane content area is registered with SelectionGuard on mount
  * - T15a: Contenteditable region with data-tug-select="custom" inside card content
  *         receives full selection autonomy (guard does not clip within the custom region)
  * - T16: Regression — window-level card actions still work
@@ -17,7 +17,7 @@ import React from "react";
 import { describe, it, expect, afterEach, beforeEach, mock } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
-import { TugWindow } from "@/components/chrome/tug-window";
+import { TugPane } from "@/components/chrome/tug-pane";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";
@@ -41,7 +41,7 @@ function makeStackState(id: string): TugPaneState {
 }
 
 /**
- * Render a TugWindow inside a manually-controlled ResponderChainManager so tests
+ * Render a TugPane inside a manually-controlled ResponderChainManager so tests
  * can dispatch actions and inspect chain state directly.
  */
 function renderWithManager(ui: React.ReactElement) {
@@ -78,13 +78,13 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// T13: TugWindow card responder does NOT handle selectAll (boundary enforcer model)
+// T13: TugPane card responder does NOT handle selectAll (boundary enforcer model)
 // ---------------------------------------------------------------------------
 
-describe("T13 – TugWindow card responder does not handle selectAll", () => {
+describe("T13 – TugPane card responder does not handle selectAll", () => {
   it("canHandle('select-all') returns false — card does not own selectAll", () => {
     const { manager } = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t13")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t13")} />
     );
 
     expect(manager.canHandle("select-all")).toBe(false);
@@ -92,7 +92,7 @@ describe("T13 – TugWindow card responder does not handle selectAll", () => {
 
   it("pre-existing card actions are still registered", () => {
     const { manager } = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t13b")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t13b")} />
     );
 
     expect(manager.canHandle("close")).toBe(true);
@@ -109,7 +109,7 @@ describe("T13 – TugWindow card responder does not handle selectAll", () => {
 describe("T14 – selectAll dispatch is unhandled at card level", () => {
   it("dispatch('select-all') does not throw when no content component handles it", () => {
     const { manager } = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t14")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t14")} />
     );
 
     expect(() => {
@@ -121,13 +121,13 @@ describe("T14 – selectAll dispatch is unhandled at card level", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T15: TugWindow content area is registered with SelectionGuard on mount
+// T15: TugPane content area is registered with SelectionGuard on mount
 // ---------------------------------------------------------------------------
 
-describe("T15 – TugWindow registers content area with SelectionGuard", () => {
+describe("T15 – TugPane registers content area with SelectionGuard", () => {
   it("content area is registered on mount (saveSelection returns null, not error)", () => {
     renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15")} />
     );
 
     expect(selectionGuard.saveSelection("card-t15")).toBeNull();
@@ -137,10 +137,10 @@ describe("T15 – TugWindow registers content area with SelectionGuard", () => {
     let unmount!: () => void;
 
     renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15-unmount")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-unmount")} />
     );
     const result = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15-unmount2")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-unmount2")} />
     );
     unmount = result.unmount;
 
@@ -154,7 +154,7 @@ describe("T15 – TugWindow registers content area with SelectionGuard", () => {
   it("content area element passed to SelectionGuard is the tug-window-content div", () => {
     let container!: HTMLElement;
     const result = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15-elem")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-elem")} />
     );
     container = result.container;
 
@@ -192,7 +192,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15a")} />
+        <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15a")} />
       );
       container = result.container;
     });
@@ -221,7 +221,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15a-sel")} />
+        <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15a-sel")} />
       );
       container = result.container;
     });
@@ -260,7 +260,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
     let container!: HTMLElement;
     act(() => {
       const result = renderWithManager(
-        <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15a-noclip")} />
+        <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15a-noclip")} />
       );
       container = result.container;
     });
@@ -294,11 +294,11 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
 // T16: Regression – existing window card actions still work
 // ---------------------------------------------------------------------------
 
-describe("T16 – regression: existing TugWindow card actions unaffected", () => {
+describe("T16 – regression: existing TugPane card actions unaffected", () => {
   it("dispatching close through the chain still calls onClose", () => {
     const onClose = mock(() => {});
     const { manager } = renderWithManager(
-      <TugWindow
+      <TugPane
         {...defaultWindowProps}
         stackState={makeStackState("card-t16-close")}
         onClose={onClose}
@@ -314,7 +314,7 @@ describe("T16 – regression: existing TugWindow card actions unaffected", () =>
 
   it("all original responder actions are still registered (selectAll is NOT)", () => {
     const { manager } = renderWithManager(
-      <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t16-all")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t16-all")} />
     );
 
     expect(manager.canHandle("close")).toBe(true);

@@ -183,7 +183,7 @@ export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
     return () => editorStore.unbind();
   }, [editorStore]);
 
-  // Per-instance FILETREE stack. Same pattern as TugWindow's `feedStoreRef`:
+  // Per-instance FILETREE stack. Same pattern as TugPane's `feedStoreRef`:
   // stateful stores live in a ref (not React state) to comply with [L02]
   // "External state enters React through useSyncExternalStore only — no
   // useState + manual sync, no useEffect copying external values into
@@ -193,7 +193,7 @@ export function GalleryPromptInput({ cardId }: GalleryPromptInputProps) {
   // The FeedStore filter is the only reactive piece: `useMemo` produces a
   // pure filter function identity from `workspaceKey`, and a `useEffect`
   // reinstalls it on the existing FeedStore via `setFilter` when the
-  // identity changes — mirroring TugWindow's workspace-filter wiring
+  // identity changes — mirroring TugPane's workspace-filter wiring
   // exactly. Before binding lands, the fallback `presentWorkspaceKey`
   // accepts any workspace-stamped frame (Risk R04, unbound window); once
   // bound, the filter tightens to an exact value match.
