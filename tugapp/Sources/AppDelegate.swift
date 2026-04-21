@@ -360,7 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addCardToActiveWindow(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
         developerMenu.isHidden = !devModeEnabled
@@ -459,16 +459,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("next-theme")
     }
 
-    @objc private func addTabToActiveCard(_ sender: Any) {
+    @objc private func addCardToActiveWindow(_ sender: Any) {
         sendControl("add-card-to-active-window")
     }
 
     @objc private func closeActiveCard(_ sender: Any) {
-        // Wire format is the bare chain-action name "close" — see
-        // tugdeck/src/action-dispatch.ts and tuglaws/action-naming.md
-        // for the Both-category convention. The Swift method name
-        // (closeActiveCard) follows Swift conventions and is unrelated
-        // to the wire string.
+        // Wire format is the bare chain-action name "close" (a Both-
+        // category identity action — see tugdeck/src/action-dispatch.ts
+        // and tuglaws/action-naming.md). The Swift method name stays
+        // as `closeActiveCard` because it still describes what the
+        // method does: close the active card via the responder chain.
+        // In a multi-card window the chain's handler removes the active
+        // card from the window; in a single-card window it closes the
+        // window. Either way, "close the active card" is the right
+        // mental model at the dispatch site.
         sendControl("close")
     }
 
