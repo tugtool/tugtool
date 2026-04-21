@@ -1,6 +1,6 @@
 /**
  * Window content registry — maps each window id to the `HTMLDivElement` that
- * holds that window's content area (the inner `.tugcard-content` div). Portals
+ * holds that window's content area (the inner `.tug-window-content` div). Portals
  * in `card-portal.tsx` look up their host window's content element through this
  * registry and re-root whenever a window's content element mounts, unmounts,
  * or re-registers (e.g., on HMR).

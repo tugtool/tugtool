@@ -336,7 +336,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   }
 
   // DOM output routes through `CardPortal` so children land inside the host
-  // window's `tugcard-content` div. The portal's stable-slot pattern preserves
+  // window's `tug-window-content` div. The portal's stable-slot pattern preserves
   // identity when the portal re-roots to a different host window — the
   // mechanism that keeps tide card sessions alive across detach/merge.
   //
@@ -348,7 +348,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       <div
         ref={responderRef}
         data-card-host
-        data-tab-id={cardId}
+        data-card-id={cardId}
         style={{
           display: isActive ? "contents" : "none",
         }}

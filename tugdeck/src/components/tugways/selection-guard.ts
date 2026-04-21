@@ -740,7 +740,8 @@ class SelectionGuard {
     // ---- Determine which card the click belongs to ----
     //
     // First check content boundaries (most common), then walk up the DOM to
-    // find card chrome (title bar, tab bar, etc.) via data-card-id.
+    // find deck chrome (title bar, tab bar, etc.) via data-window-id (window) or
+    // data-card-id (card host wrapper).
     let clickedCardId: string | null = null;
     for (const [cardId, element] of this.boundaries) {
       if (element.contains(target)) {
@@ -751,7 +752,8 @@ class SelectionGuard {
     if (clickedCardId === null) {
       let el: Element | null = target instanceof Element ? target : (target as Node).parentElement;
       while (el) {
-        const cid = el.getAttribute("data-card-id");
+        const cid =
+          el.getAttribute("data-window-id") ?? el.getAttribute("data-card-id");
         if (cid !== null && this.boundaries.has(cid)) {
           clickedCardId = cid;
           break;

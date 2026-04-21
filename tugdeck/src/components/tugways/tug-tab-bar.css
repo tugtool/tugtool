@@ -345,12 +345,12 @@ body {
 
 /* ============================================================================
    Card-Drag Merge Drop Target ([D45])
-   Applied imperatively via data-card-drag-target="true" by CardFrame's
+   Applied imperatively via data-card-drag-target="true" by TugWindow's
    drag handler during a card drag over another card's tab bar.
    Appearance changes go through CSS and DOM, never React state. [L06]
    ============================================================================ */
 
-/* Highlight the target tab bar when a card frame is dragged over it. */
+/* Highlight the target tab bar when a window frame is dragged over it. */
 .tug-tab-bar[data-card-drag-target="true"] {
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
   border-bottom-color: var(--tug7-element-global-fill-normal-accent-rest);

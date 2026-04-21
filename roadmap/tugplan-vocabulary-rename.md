@@ -464,22 +464,22 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Tests — any `screen.getByTestId` / `getAttribute` that references the old names.
 
 **Tasks:**
-- [ ] Rename `data-card-id` → `data-window-id` on the frame; keep `data-testid="card-frame"` as `data-testid="tug-window"`.
-- [ ] Rename `data-tab-id` → `data-card-id` on the card host wrapper.
-- [ ] Rename `.card-frame` → `.tug-window` in CSS and JSX className.
-- [ ] Rename `.tugcard-content` → `.tug-window-content` in CSS and JSX className.
-- [ ] Update `card-drag-coordinator` and `tug-window`'s internal `dragTabBarCache` / `snapshotCardRects` query selectors.
-- [ ] Update every test that reads these attributes or classes.
+- [x] Rename `data-card-id` → `data-window-id` on the frame; keep `data-testid="card-frame"` as `data-testid="tug-window"`.
+- [x] Rename `data-tab-id` → `data-card-id` on the card host wrapper.
+- [x] Rename `.card-frame` → `.tug-window` in CSS and JSX className.
+- [x] Rename `.tugcard-content` → `.tug-window-content` in CSS and JSX className.
+- [x] Update `card-drag-coordinator` and `tug-window`'s internal `dragTabBarCache` / `snapshotCardRects` query selectors.
+- [x] Update every test that reads these attributes or classes.
 
 **Tests:**
-- [ ] Drag tests in `stack-frame.test.tsx` (now `tug-window.test.tsx`) pass.
-- [ ] Merge tests in `card-drag-coordinator.test.ts` pass.
-- [ ] Identity preservation tests pass.
+- [x] Drag tests in `stack-frame.test.tsx` (now `tug-window.test.tsx`) pass.
+- [x] Merge tests in `card-drag-coordinator.test.ts` pass.
+- [x] Identity preservation tests pass.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "data-tab-id\b|data-card-id=\{(stackId|id)\}|\.card-frame\b|\.tugcard-content\b" tugdeck` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "data-tab-id\b|data-card-id=\{(stackId|id)\}|\.card-frame\b|\.tugcard-content\b" tugdeck` returns zero matches.
 - [ ] Manual smoke: drag a card tab onto another window's tab bar — merges. Drag a window frame — position commits.
 
 ---

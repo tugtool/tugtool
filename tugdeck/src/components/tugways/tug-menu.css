@@ -220,7 +220,7 @@ body {
 /*
  * Override Radix defaults with semantic tokens.
  * The content renders in a Radix portal at the document root, so z-index
- * conflicts with CardFrame are not an issue.
+ * conflicts with TugWindow are not an issue.
  */
 .tug-menu-content {
   background-color: var(--tugx-menu-bg);

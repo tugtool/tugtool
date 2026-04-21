@@ -151,7 +151,7 @@ describe("T15 – TugWindow registers content area with SelectionGuard", () => {
     expect(selectionGuard.saveSelection("card-t15-unmount2")).toBeNull();
   });
 
-  it("content area element passed to SelectionGuard is the tugcard-content div", () => {
+  it("content area element passed to SelectionGuard is the tug-window-content div", () => {
     let container!: HTMLElement;
     const result = renderWithManager(
       <TugWindow {...defaultWindowProps} stackState={makeStackState("card-t15-elem")} />
@@ -159,7 +159,7 @@ describe("T15 – TugWindow registers content area with SelectionGuard", () => {
     container = result.container;
 
     const contentDiv = container.querySelector(
-      "[data-testid='tugcard-content']"
+      "[data-testid='tug-window-content']"
     ) as HTMLElement;
     expect(contentDiv).not.toBeNull();
 
@@ -197,7 +197,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
       container = result.container;
     });
 
-    const contentDiv = container.querySelector("[data-testid='tugcard-content']") as HTMLElement;
+    const contentDiv = container.querySelector("[data-testid='tug-window-content']") as HTMLElement;
     expect(contentDiv).not.toBeNull();
 
     const editable = document.createElement("div");
@@ -226,7 +226,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
       container = result.container;
     });
 
-    const contentDiv = container.querySelector("[data-testid='tugcard-content']") as HTMLElement;
+    const contentDiv = container.querySelector("[data-testid='tug-window-content']") as HTMLElement;
     const editable = document.createElement("div");
     editable.setAttribute("data-tug-select", "custom");
     editable.setAttribute("data-testid", "custom-editable");
@@ -265,7 +265,7 @@ describe("T15a – contenteditable data-tug-select=custom is autonomous", () => 
       container = result.container;
     });
 
-    const contentDiv = container.querySelector("[data-testid='tugcard-content']") as HTMLElement;
+    const contentDiv = container.querySelector("[data-testid='tug-window-content']") as HTMLElement;
     const customRegion = document.createElement("div");
     customRegion.setAttribute("data-tug-select", "custom");
     customRegion.setAttribute("data-testid", "custom-region");

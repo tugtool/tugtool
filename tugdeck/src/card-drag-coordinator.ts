@@ -105,8 +105,8 @@ class CardDragCoordinator {
   private allTabBarRects: TabBarEntry[] = [];
 
   /**
-   * All single-tab card frame rects at drag-start.
-   * These are card-frames whose cardId is NOT in allTabBarRects.
+   * All single-tab window frame rects at drag-start.
+   * These are `.tug-window` frames whose window id is NOT in allTabBarRects.
    */
   private allStackFrameRects: StackFrameEntry[] = [];
 
@@ -265,23 +265,23 @@ class CardDragCoordinator {
   /**
    * Build the two-tier hit-test cache at drag-start.
    *
-   * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-card-id] elements
+   * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-window-id] elements
    *   excluding the source card.
-   * Tier 2: allStackFrameRects -- all .card-frame[data-card-id] elements whose
-   *   cardId is NOT present in allTabBarRects (i.e., single-tab windows).
-   *   The accessoryElement is the matching .tugcard-accessory[data-card-id]
-   *   inside each such card-frame, used for drop-target visual feedback.
+   * Tier 2: allStackFrameRects -- all .tug-window[data-window-id] elements whose
+   *   window id is NOT present in allTabBarRects (i.e., single-tab windows).
+   *   The accessoryElement is the matching .tugcard-accessory[data-window-id]
+   *   inside each such window frame, used for drop-target visual feedback.
    *
    * [Spec S04]
    */
   private buildHitTestCache(sourceWindowId: string): void {
     // Tier 1: multi-card tab bars (excluding source window).
-    const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-card-id]");
+    const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-window-id]");
     const tabBarWindowIds = new Set<string>();
     this.allTabBarRects = [];
 
     barElements.forEach((el) => {
-      const sid = el.getAttribute("data-card-id");
+      const sid = el.getAttribute("data-window-id");
       if (!sid || sid === sourceWindowId) return;
       tabBarWindowIds.add(sid);
       this.allTabBarRects.push({
@@ -292,15 +292,15 @@ class CardDragCoordinator {
     });
 
     // Tier 2: single-card frames (not in the tab bar set).
-    const frameElements = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+    const frameElements = document.querySelectorAll<HTMLElement>(".tug-window[data-window-id]");
     this.allStackFrameRects = [];
 
     frameElements.forEach((el) => {
-      const sid = el.getAttribute("data-card-id");
+      const sid = el.getAttribute("data-window-id");
       if (!sid || sid === sourceWindowId || tabBarWindowIds.has(sid)) return;
 
       // Resolve the accessory div for drop-target visual feedback. [D05]
-      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-card-id="${sid}"]`);
+      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-window-id="${sid}"]`);
       if (!accessory) return;
 
       this.allStackFrameRects.push({
@@ -432,7 +432,7 @@ class CardDragCoordinator {
    *
    * Inside source bar  → reorder mode
    * Outside source bar, over another tab bar → merge mode (multi-tab target)
-   * Outside source bar, over card-frame (no tab bar) → merge mode (single-tab target)
+   * Outside source bar, over `.tug-window` (no tab bar) → merge mode (single-tab target)
    * Anywhere else → detach mode
    *
    * [D04, D05]

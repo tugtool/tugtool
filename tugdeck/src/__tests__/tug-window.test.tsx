@@ -72,7 +72,7 @@ describe("TugWindow – position and size", () => {
       )
     );
 
-    const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
+    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
     expect(frame).not.toBeNull();
 
     expect(frame.style.left).toBe("50px");
@@ -90,7 +90,7 @@ describe("TugWindow – position and size", () => {
       )
     );
 
-    const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
+    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
     expect(frame.style.position).toBe("absolute");
   });
 });
@@ -110,7 +110,7 @@ describe("TugWindow – zIndex", () => {
       )
     );
 
-    const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
+    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
     expect(frame.style.zIndex).toBe("42");
   });
 });
@@ -134,7 +134,7 @@ describe("TugWindow – onStackActivated", () => {
       )
     );
 
-    const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
+    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
 
     act(() => {
       fireEvent.pointerDown(frame);
@@ -219,10 +219,10 @@ describe("TugWindow – min-size clamping", () => {
       )
     );
 
-    const seHandle = container.querySelector(".card-frame-resize-se") as HTMLElement;
+    const seHandle = container.querySelector(".tug-window-resize-se") as HTMLElement;
     expect(seHandle).not.toBeNull();
 
-    const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
+    const frame = container.querySelector("[data-testid='tug-window']") as HTMLElement;
     (frame as any).setPointerCapture = () => {};
     (frame as any).releasePointerCapture = () => {};
 
@@ -259,7 +259,7 @@ describe("TugWindow – resize handles", () => {
 
     const edges = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
     for (const edge of edges) {
-      const handle = container.querySelector(`.card-frame-resize-${edge}`);
+      const handle = container.querySelector(`.tug-window-resize-${edge}`);
       expect(handle).not.toBeNull();
     }
   });

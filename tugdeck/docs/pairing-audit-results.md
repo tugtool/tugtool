@@ -100,12 +100,12 @@
 | 2 | `--tug-card-title-bar-fg` | `fg-default` | `--tug-card-title-bar-bg-inactive` | `tab-bg-inactive` | `body-text` | Card title text on inactive title bar |
 | 3 | `--tug-card-title-bar-icon-active` | `icon-active` | `--tug-card-title-bar-bg-active` | `tab-bg-active` | `ui-component` | Card icon on active title bar |
 | 4 | `--tug-card-title-bar-icon-inactive` | `fg-subtle` | `--tug-card-title-bar-bg-inactive` | `tab-bg-inactive` | `ui-component` | Card icon on inactive title bar |
-| 5 | `--tug-base-fg-default` | `fg-default` | `--tug-base-surface-default` | `surface-default` | `body-text` | Card content area text (tugcard-content background) |
+| 5 | `--tug-base-fg-default` | `fg-default` | `--tug-base-surface-default` | `surface-default` | `body-text` | Card content area text (tug-window-content background) |
 | 6 | `--tug-base-fg-muted` | `fg-muted` | `--tug-base-surface-default` | `surface-default` | `subdued-text` | .tugcard-loading placeholder text |
 | 7 | `--tug-base-selection-fg` | `selection-fg` | `--tug-base-selection-bg` | `selection-bg` | `body-text` | Selected text (CSS Custom Highlight API, active card) |
 
 **Notes:**
-- Pairing #1 (`fg-default` on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tugcard-title` sets `color: var(--tug-card-title-bar-fg)` (resolves to `fg-default`). When `card-frame[data-focused="true"]`, `.tugcard-title-bar` background becomes `tab-bg-active`.
+- Pairing #1 (`fg-default` on `tab-bg-active`) is the **explicitly identified gap** from the plan. `.tugcard-title` sets `color: var(--tug-card-title-bar-fg)` (resolves to `fg-default`). When `.tug-window[data-focused="true"]`, `.tugcard-title-bar` background becomes `tab-bg-active`.
 - Card icon hover (`fg-muted` on `tab-bg-active`) also occurs when title bar controls hover — ghost-option TugButtons inside `.card-title-bar-controls` render on the active title bar background.
 - Collapsed state: `.tugcard--collapsed` background uses `tab-bg-inactive`/`tab-bg-active` — title icon and text render on those surfaces.
 
@@ -551,7 +551,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 
 ### Confirmed Gap: Card Title Bar (fg-default on tab-bg-active)
 
-**GAP CONFIRMED.** The `.tugcard-title` element sets `color: var(--tug-card-title-bar-fg)` which resolves to `--tug-base-fg-default`. When `card-frame[data-focused="true"]`, the `.tugcard-title-bar` background becomes `var(--tug-card-title-bar-bg-active)` which resolves to `--tug-base-tab-bg-active`.
+**GAP CONFIRMED.** The `.tugcard-title` element sets `color: var(--tug-card-title-bar-fg)` which resolves to `--tug-base-fg-default`. When `.tug-window[data-focused="true"]`, the `.tugcard-title-bar` background becomes `var(--tug-card-title-bar-bg-active)` which resolves to `--tug-base-tab-bg-active`.
 
 This produces the pairing: **`fg-default` on `tab-bg-active`** with role `body-text`.
 

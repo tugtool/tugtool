@@ -44,9 +44,8 @@ import {
  * Props for TugTabBar.
  */
 export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div">, "role"> {
-  /** Unique stack instance ID. Stamped as data-card-id on the bar div (legacy
-   *  DOM attribute name kept as-is) so the CardDragCoordinator's hit-test
-   *  cache can locate this bar at drag-start. */
+  /** Unique stack / window instance ID. Stamped as `data-window-id` on the bar
+   *  div so `CardDragCoordinator`'s hit-test cache can locate this bar at drag-start. */
   stackId: string;
   /** All cards in this stack. */
   cards: readonly CardState[];
@@ -661,7 +660,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       role="tablist"
       data-slot="tug-tab-bar"
       data-testid="tug-tab-bar"
-      data-card-id={stackId}
+      data-window-id={stackId}
       {...rest}
     >
       {cards.map((card) => {

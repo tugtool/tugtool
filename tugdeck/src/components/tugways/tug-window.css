@@ -5,14 +5,14 @@
 
 /* @tug-pairings {
  *   --tug7-element-global-border-normal-default-rest       | --tug7-surface-global-primary-normal-default-rest          | informational | .tugcard (border)
- *   --tug7-element-card-text-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | content       | .card-frame[data-focused="true"] .tugcard-title (color)
+ *   --tug7-element-card-text-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | content       | .tug-window[data-focused="true"] .tugcard-title (color)
  *   --tug7-element-card-text-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | content       | .tugcard-title (color)
- *   --tug7-element-card-icon-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | control       | .card-frame[data-focused="true"] .tugcard-icon (color)
- *   --tug7-element-card-icon-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .card-frame[data-focused="false"] .tugcard-icon (color)
- *   --tug7-element-card-control-normal-plain-rest          | --tug7-surface-card-primary-normal-titlebar-active         | control       | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color)
- *   --tug7-element-card-control-normal-plain-hover         | --tug7-surface-card-control-normal-plain-hover             | control       | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color)
- *   --tug7-element-card-control-normal-muted-rest          | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color)
- *   --tug7-element-card-control-normal-muted-hover         | --tug7-surface-card-control-normal-muted-hover             | control       | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color)
+ *   --tug7-element-card-icon-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | control       | .tug-window[data-focused="true"] .tugcard-icon (color)
+ *   --tug7-element-card-icon-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-window[data-focused="false"] .tugcard-icon (color)
+ *   --tug7-element-card-control-normal-plain-rest          | --tug7-surface-card-primary-normal-titlebar-active         | control       | .tug-window[data-focused="true"] .card-title-bar-controls .tug-button (color)
+ *   --tug7-element-card-control-normal-plain-hover         | --tug7-surface-card-control-normal-plain-hover             | control       | .tug-window[data-focused="true"] .card-title-bar-controls .tug-button:hover (color)
+ *   --tug7-element-card-control-normal-muted-rest          | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-window[data-focused="false"] .card-title-bar-controls .tug-button (color)
+ *   --tug7-element-card-control-normal-muted-hover         | --tug7-surface-card-control-normal-muted-hover             | control       | .tug-window[data-focused="false"] .card-title-bar-controls .tug-button:hover (color)
  *   --tug7-element-selection-text-normal-plain-rest        | --tug7-surface-selection-primary-normal-plain-rest         | content       | ::highlight(card-selection) (color)
  *   --tug7-element-global-text-normal-muted-rest           | --tug7-surface-global-primary-normal-default-rest          | informational | .tugcard-loading (color)
  * } */
@@ -22,14 +22,14 @@
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
  * | --tugx-card-border                               | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard (border)                    |
- * | --tugx-card-title-fg-active                      | --tug7-surface-card-primary-normal-titlebar-active | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
+ * | --tugx-card-title-fg-active                      | --tug7-surface-card-primary-normal-titlebar-active | content      | .tug-window[data-focused="true"] .tugcard-title (color) |
  * | --tugx-card-title-fg-inactive                    | --tug7-surface-card-primary-normal-titlebar-inactive | content      | .tugcard-title (color)               |
- * | --tugx-card-title-bar-icon-active                | --tug7-surface-card-primary-normal-titlebar-active | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tugx-card-title-bar-icon-inactive              | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tugx-card-control-on-fg-rest                   | --tug7-surface-card-primary-normal-titlebar-active | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
- * | --tugx-card-control-on-fg-hover                  | --tug7-surface-card-control-normal-plain-hover   | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
- * | --tugx-card-control-off-fg-rest                  | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
- * | --tugx-card-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tugx-card-title-bar-icon-active                | --tug7-surface-card-primary-normal-titlebar-active | control      | .tug-window[data-focused="true"] .tugcard-icon (color) |
+ * | --tugx-card-title-bar-icon-inactive              | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-window[data-focused="false"] .tugcard-icon (color) |
+ * | --tugx-card-control-on-fg-rest                   | --tug7-surface-card-primary-normal-titlebar-active | control      | .tug-window[data-focused="true"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-on-fg-hover                  | --tug7-surface-card-control-normal-plain-hover   | control      | .tug-window[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tugx-card-control-off-fg-rest                  | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-window[data-focused="false"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .tug-window[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
  * | --tug7-element-selection-text-normal-plain-rest  | --tug7-surface-selection-primary-normal-plain-rest | content      | ::highlight(card-selection) (color)  |
  * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard-loading (color)             |
  */
@@ -145,7 +145,7 @@ body {
 /*
  * When collapsed (.tugcard--collapsed), the .tugcard-body collapses to
  * height:0. The React tree stays mounted -- only the CSS box disappears.
- * CardFrame sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
+ * TugWindow sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
  * via inline style when cardState.collapsed is true.
  */
 .tugcard--collapsed .tugcard-body {
@@ -158,12 +158,12 @@ body {
   background-color: var(--tugx-card-title-bar-bg-inactive);
 }
 
-.card-frame[data-focused="true"] .tugcard--collapsed {
+.tug-window[data-focused="true"] .tugcard--collapsed {
   background-color: var(--tugx-card-title-bar-bg-active);
 }
 
 /* ---- Card shadow: active when focused ---- */
-.card-frame[data-focused="true"] .tugcard {
+.tug-window[data-focused="true"] .tugcard {
   box-shadow: var(--tugx-card-shadow-active);
 }
 
@@ -199,10 +199,10 @@ body {
 
 /*
  * When the card is focused (active), the title bar background switches to the
- * active color. CardFrame sets data-focused="true" on its container div,
+ * active color. TugWindow sets data-focused="true" on its container div,
  * which is the ancestor of the window chrome root.
  */
-.card-frame[data-focused="true"] .tugcard-title-bar {
+.tug-window[data-focused="true"] .tugcard-title-bar {
   background-color: var(--tugx-card-title-bar-bg-active);
 }
 
@@ -227,7 +227,7 @@ body {
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
-.card-frame[data-focused="true"] .tugcard-title {
+.tug-window[data-focused="true"] .tugcard-title {
   color: var(--tugx-card-title-fg-active);
 }
 
@@ -252,12 +252,12 @@ body {
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
-.card-frame[data-focused="true"] .tugcard-icon {
+.tug-window[data-focused="true"] .tugcard-icon {
   color: var(--tugx-card-title-bar-icon-active);
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
-.card-frame[data-focused="false"] .tugcard-icon {
+.tug-window[data-focused="false"] .tugcard-icon {
   color: var(--tugx-card-title-bar-icon-inactive);
 }
 
@@ -279,19 +279,19 @@ body {
 
 /* Card title bar control buttons — focused card (plain role) */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
-.card-frame[data-focused="true"] .card-title-bar-controls .tug-button {
+.tug-window[data-focused="true"] .card-title-bar-controls .tug-button {
   color: var(--tugx-card-control-on-fg-rest);
   background-color: var(--tugx-card-control-on-bg-rest);
   border-color: var(--tugx-card-control-on-border-rest);
 }
 
-.card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
+.tug-window[data-focused="true"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
   color: var(--tugx-card-control-on-fg-hover);
   background-color: var(--tugx-card-control-on-bg-hover);
   border-color: var(--tugx-card-control-on-border-hover);
 }
 
-.card-frame[data-focused="true"] .card-title-bar-controls .tug-button:active:not(:disabled) {
+.tug-window[data-focused="true"] .card-title-bar-controls .tug-button:active:not(:disabled) {
   color: var(--tugx-card-control-on-fg-active);
   background-color: var(--tugx-card-control-on-bg-active);
   border-color: var(--tugx-card-control-on-border-active);
@@ -299,19 +299,19 @@ body {
 
 /* Card title bar control buttons — unfocused card (muted role) */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
-.card-frame[data-focused="false"] .card-title-bar-controls .tug-button {
+.tug-window[data-focused="false"] .card-title-bar-controls .tug-button {
   color: var(--tugx-card-control-off-fg-rest);
   background-color: var(--tugx-card-control-off-bg-rest);
   border-color: var(--tugx-card-control-off-border-rest);
 }
 
-.card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
+.tug-window[data-focused="false"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
   color: var(--tugx-card-control-off-fg-hover);
   background-color: var(--tugx-card-control-off-bg-hover);
   border-color: var(--tugx-card-control-off-border-hover);
 }
 
-.card-frame[data-focused="false"] .card-title-bar-controls .tug-button:active:not(:disabled) {
+.tug-window[data-focused="false"] .card-title-bar-controls .tug-button:active:not(:disabled) {
   color: var(--tugx-card-control-off-fg-active);
   background-color: var(--tugx-card-control-off-bg-active);
   border-color: var(--tugx-card-control-off-border-active);
@@ -343,7 +343,7 @@ body {
    Content area (flex-grow, overflow auto)
    ========================================================================= */
 
-.tugcard-content {
+.tug-window-content {
   position: relative;
   flex: 1;
   overflow: auto;
@@ -362,9 +362,9 @@ body {
 
 /* Layer 1: partial saturation reduction — desaturates colored content.
    Opacity controls the strength: 0 = no effect, 1 = full desaturation.
-   Positioned on .tugcard (not .tugcard-content) so the overlay covers the
+   Positioned on .tugcard (not .tug-window-content) so the overlay covers the
    full card bounds and does not scroll with content. */
-.card-frame[data-focused="false"] .tugcard::before {
+.tug-window[data-focused="false"] .tugcard::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -376,7 +376,7 @@ body {
 }
 
 /* Layer 2: lightness wash — dims achromatic content (screen for dark, multiply for light) */
-.card-frame[data-focused="false"] .tugcard::after {
+.tug-window[data-focused="false"] .tugcard::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -391,7 +391,7 @@ body {
  * browser paints it directly. Selection color tokens are applied here so
  * all card content uses the same selection appearance.
  */
-.tugcard-content ::selection {
+.tug-window-content ::selection {
   background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
   color: var(--tug7-element-selection-text-normal-plain-rest);
 }

@@ -1345,7 +1345,7 @@ export class DeckManager implements IDeckManagerStore {
    * Flip the stack's `collapsed` flag and notify subscribers (H-A8).
    *
    * Collapse/expand is an **appearance-zone** transition per [L06]:
-   * `CardFrame` reads `CardState.collapsed` and overrides the rendered
+   * `TugWindow` reads `CardState.collapsed` and overrides the rendered
    * height to `CARD_TITLE_BAR_HEIGHT` via CSS/DOM when collapsed.
    * `CardState.size` (the stored geometry) is not touched — restoring
    * the full height on expand is a pure re-read of the original value.

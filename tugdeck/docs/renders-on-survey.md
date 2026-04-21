@@ -31,7 +31,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | File | Rules needing annotation | Count |
 |------|--------------------------|-------|
 | tug-button.css | 25 svg/color rules — all button variants set `color` on SVG sub-selectors without bg | 25 |
-| tug-card.css | `.tugcard-loading`, `.tugcard-title`, `.card-frame[data-focused="true"] .tugcard-icon`, `.card-frame[data-focused="false"] .tugcard-icon` | 4 |
+| tug-card.css | `.tugcard-loading`, `.tugcard-title`, `.tug-window[data-focused="true"] .tugcard-icon`, `.tug-window[data-focused="false"] .tugcard-icon` | 4 |
 | tug-tab.css | `.tug-tab`, `.tug-tab-bar .tug-tab-add`, `.tug-tab-bar .tug-tab-overflow-btn` | 3 |
 | tug-menu.css | `.tug-dropdown-item` plus 6 svg sub-selectors for open-state buttons | 7 |
 | tug-badge.css | 10 outlined/ghost variant rules (bg=transparent) | 10 |
@@ -140,8 +140,8 @@ icon is the same background as its parent button state.
 |----------|----------|---------------|-------------------|
 | `.tugcard-loading` | `color` | `--tug-base-fg-muted` | `--tug-base-surface-default` |
 | `.tugcard-title` | `color` | `--tug-card-title-bar-fg` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
-| `.card-frame[data-focused="true"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-active` | `--tug-base-tab-bg-active` |
-| `.card-frame[data-focused="false"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
+| `.tug-window[data-focused="true"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-active` | `--tug-base-tab-bg-active` |
+| `.tug-window[data-focused="false"] .tugcard-icon` | `color` | `--tug-card-title-bar-icon-inactive` | `--tug-base-tab-bg-inactive` |
 
 > `.tugcard-accessory` has `background-color: var(--tug-base-surface-default)` in the same rule → strategy 1, no annotation needed.
 > `.tugcard-title-bar ::selection` and `.tugcard-title-bar::selection` use `color: inherit` — no specific token → no annotation needed.
@@ -289,7 +289,7 @@ Static analysis finds 4: the placeholder rule plus 3 validation border-color rul
 
 (Unchanged from previous survey — correctly identified.)
 
-All `.cg-*` elements render inside the card content area (`.tugcard-content`) which has
+All `.cg-*` elements render inside the card content area (`.tug-window-content`) which has
 `background-color: var(--tug-base-surface-default)`.
 
 | Selector | Property | Element token | Rendering surface |

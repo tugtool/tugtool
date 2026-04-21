@@ -4,7 +4,7 @@
  * inner card chrome + outer frame split ([D02] merge window).
  *
  * Responsibilities:
- * - Absolutely-positioned `.card-frame` at position/size from `stackState`
+ * - Absolutely-positioned `.tug-window` at position/size from `stackState`
  * - Title bar, accessory / tab bar, and content portal target
  * - Drag: RAF appearance-zone mutation during, `onCardMoved` commit on end
  * - Resize: 8 handles, clamped to min-size, `onCardMoved` on end
@@ -218,17 +218,17 @@ function noop(): void {}
 // ---------------------------------------------------------------------------
 
 /**
- * Snapshot all .card-frame[data-card-id] elements as canvas-relative Rects.
- * Optionally excludes a card by ID.
+ * Snapshot all `.tug-window[data-window-id]` elements as canvas-relative Rects.
+ * Optionally excludes a window by ID.
  */
 function snapshotCardRects(
   canvasBounds: DOMRect | null,
   excludeId?: string,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  const els = document.querySelectorAll<HTMLElement>('.card-frame[data-card-id]');
+  const els = document.querySelectorAll<HTMLElement>(".tug-window[data-window-id]");
   els.forEach((el) => {
-    const cid = el.getAttribute('data-card-id');
+    const cid = el.getAttribute("data-window-id");
     if (!cid || cid === excludeId) return;
     const domRect = el.getBoundingClientRect();
     results.push({
@@ -654,10 +654,10 @@ export function TugWindow({
   const dragDropTargetEl = useRef<HTMLElement | null>(null);
 
   /**
-   * Snapshot all .tug-tab-bar[data-card-id] elements at drag-start (excluding
-   * our own card). Used for hit-testing during drag and on pointer-up. [D45]
+   * Snapshot all `.tug-tab-bar[data-window-id]` elements at drag-start (excluding
+   * our own window). Used for hit-testing during drag and on pointer-up. [D45]
    */
-  const dragTabBarCache = useRef<Array<{ cardId: string; rect: DOMRect; el: HTMLElement }>>([]);
+  const dragTabBarCache = useRef<Array<{ windowId: string; rect: DOMRect; el: HTMLElement }>>([]);
 
   // Snap-related refs [D01, D03, D04]
   // Canvas-relative rects of all other cards, snapshotted at drag-start for computeSnap. [D04]
@@ -779,13 +779,13 @@ export function TugWindow({
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
       // Build tab bar cache for merge hit-testing. [D45]
-      // Snapshot all .tug-tab-bar[data-card-id] elements (excluding this card).
+      // Snapshot all .tug-tab-bar[data-window-id] elements (excluding this window).
       dragTabBarCache.current = [];
-      const barEls = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-card-id]");
+      const barEls = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-window-id]");
       barEls.forEach((el) => {
-        const cid = el.getAttribute("data-card-id");
-        if (!cid || cid === id) return;
-        dragTabBarCache.current.push({ cardId: cid, rect: el.getBoundingClientRect(), el });
+        const wid = el.getAttribute("data-window-id");
+        if (!wid || wid === id) return;
+        dragTabBarCache.current.push({ windowId: wid, rect: el.getBoundingClientRect(), el });
       });
 
       // Snapshot other card rects at drag-start for snap computation. [D04]
@@ -908,7 +908,7 @@ export function TugWindow({
             const r = entry.rect;
             if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
               const insertIndex = computeMergeInsertIndex(entry.el, cx);
-              onCardMerged(id, entry.cardId, insertIndex);
+              onCardMerged(id, entry.windowId, insertIndex);
               dragTabBarCache.current = [];
               // Reset all drag state.
               dragOtherRects.current = [];
@@ -1158,9 +1158,9 @@ export function TugWindow({
   return (
     <div
       ref={frameRef}
-      className="card-frame"
-      data-testid="card-frame"
-      data-card-id={id}
+      className="tug-window"
+      data-testid="tug-window"
+      data-window-id={id}
       data-focused={isFocused ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleFramePointerDown}
@@ -1178,7 +1178,7 @@ export function TugWindow({
       {!collapsed && RESIZE_EDGES.map((edge) => (
         <div
           key={edge}
-          className={`card-frame-resize card-frame-resize-${edge}`}
+          className={`tug-window-resize tug-window-resize-${edge}`}
           onPointerDown={(e) => handleResizeStart(edge, e)}
         />
       ))}
@@ -1188,7 +1188,7 @@ export function TugWindow({
           ref={rootRefCallback}
           className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
           data-slot="tug-window"
-          data-card-id={stackId}
+          data-window-id={stackId}
           data-collapsed={collapsed ? "true" : "false"}
         >
           <CardTitleBar
@@ -1207,7 +1207,7 @@ export function TugWindow({
                 ref={accessoryRef}
                 className="tugcard-accessory"
                 data-testid="tugcard-accessory"
-                data-card-id={stackId}
+                data-window-id={stackId}
                 style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
               >
                 {resolvedAccessory}
@@ -1215,8 +1215,8 @@ export function TugWindow({
 
               <div
                 ref={contentRef}
-                className="tugcard-content"
-                data-testid="tugcard-content"
+                className="tug-window-content"
+                data-testid="tug-window-content"
               />
             </ResponderScope>
           </div>
