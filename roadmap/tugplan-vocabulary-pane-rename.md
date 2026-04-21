@@ -331,19 +331,19 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Consumers: `card-portal.tsx`, `card-host.tsx`, `tug-window.tsx` (still named thus until #step-6), tests.
 
 **Tasks:**
-- [ ] Rename both files.
-- [ ] Rename keys: every `windowId` parameter in `register`/`unregister`/`getElement`/`subscribe` → `paneId`.
-- [ ] Update JSDoc to reference panes, not windows.
-- [ ] Update every import.
+- [x] Rename both files.
+- [x] Rename keys: every `windowId` parameter in `register`/`unregister`/`getElement`/`subscribe` → `paneId`.
+- [x] Update JSDoc to reference panes, not windows.
+- [x] Update every import.
 
 **Tests:**
-- [ ] `window-content-registry.test.ts` renamed to `pane-content-registry.test.ts`; tests pass.
-- [ ] `card-portal.test.tsx` passes.
+- [x] `window-content-registry.test.ts` renamed to `pane-content-registry.test.ts`; tests pass.
+- [x] `card-portal.test.tsx` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "window-content-registry|window-root-registry" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "window-content-registry|window-root-registry" tugdeck/src` returns zero matches.
 
 ---
 

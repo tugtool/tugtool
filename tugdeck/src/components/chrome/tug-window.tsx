@@ -40,8 +40,8 @@ import { useRequiredResponderChain } from "@/components/tugways/responder-chain-
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
-import * as windowContentRegistry from "@/components/chrome/window-content-registry";
-import * as windowRootRegistry from "@/components/chrome/window-root-registry";
+import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
+import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
 
 // ===========================================================================
 // CardTitleBar (window title chrome)
@@ -440,17 +440,17 @@ export function TugWindow({
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    windowContentRegistry.register(stackId, el);
+    paneContentRegistry.register(stackId, el);
     return () => {
-      windowContentRegistry.unregister(stackId);
+      paneContentRegistry.unregister(stackId);
     };
   }, [stackId]);
 
   useLayoutEffect(() => {
     if (!cardEl) return;
-    windowRootRegistry.register(stackId, cardEl);
+    paneRootRegistry.register(stackId, cardEl);
     return () => {
-      windowRootRegistry.unregister(stackId);
+      paneRootRegistry.unregister(stackId);
     };
   }, [stackId, cardEl]);
 

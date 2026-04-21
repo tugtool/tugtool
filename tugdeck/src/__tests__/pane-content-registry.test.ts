@@ -1,26 +1,26 @@
 /**
- * window-content-registry — module-level registry mapping window id to the
- * HTMLDivElement that holds that window's content area.
+ * pane-content-registry — module-level registry mapping pane id to the
+ * HTMLDivElement that holds that pane's content area.
  *
  * Tests cover: register/unregister, replacement, subscribe/unsubscribe
- * semantics, and isolation between window ids.
+ * semantics, and isolation between pane ids.
  */
 import "./setup-rtl";
 
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
-import * as registry from "@/components/chrome/window-content-registry";
+import * as registry from "@/components/chrome/pane-content-registry";
 
 function makeDiv(): HTMLDivElement {
   return document.createElement("div");
 }
 
-describe("window-content-registry", () => {
+describe("pane-content-registry", () => {
   beforeEach(() => {
     registry._resetForTests();
   });
 
-  it("register/getElement round-trips a single window", () => {
+  it("register/getElement round-trips a single pane", () => {
     const el = makeDiv();
     expect(registry.getElement("win-1")).toBeNull();
     registry.register("win-1", el);
@@ -54,7 +54,7 @@ describe("window-content-registry", () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it("subscribe fires on register and unregister for the same windowId", () => {
+  it("subscribe fires on register and unregister for the same paneId", () => {
     const cb = mock(() => {});
     registry.subscribe("win-1", cb);
     registry.register("win-1", makeDiv());
@@ -63,7 +63,7 @@ describe("window-content-registry", () => {
     expect(cb).toHaveBeenCalledTimes(2);
   });
 
-  it("subscribe does not fire for a different windowId", () => {
+  it("subscribe does not fire for a different paneId", () => {
     const cb = mock(() => {});
     registry.subscribe("win-1", cb);
     registry.register("win-2", makeDiv());
@@ -80,14 +80,14 @@ describe("window-content-registry", () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it("unregister on an unregistered windowId is a no-op and does not notify", () => {
+  it("unregister on an unregistered paneId is a no-op and does not notify", () => {
     const cb = mock(() => {});
     registry.subscribe("win-1", cb);
     registry.unregister("win-1");
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it("supports multiple subscribers for the same windowId", () => {
+  it("supports multiple subscribers for the same paneId", () => {
     const cbA = mock(() => {});
     const cbB = mock(() => {});
     registry.subscribe("win-1", cbA);

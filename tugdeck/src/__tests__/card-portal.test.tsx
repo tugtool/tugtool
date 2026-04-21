@@ -1,6 +1,6 @@
 /**
  * CardPortal — portal component that renders its children into a stable
- * slot and moves that slot between host window content elements via
+ * slot and moves that slot between host pane content elements via
  * `appendChild` as the host changes.
  *
  * Tests cover: render-into-registered-element, re-root on hostCardId change,
@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { render, act } from "@testing-library/react";
 
 import { CardPortal } from "@/components/chrome/card-portal";
-import * as windowContentRegistry from "@/components/chrome/window-content-registry";
+import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 
 function makeDiv(): HTMLDivElement {
   const d = document.createElement("div");
@@ -41,14 +41,14 @@ function Probe({ counters, label }: {
 
 describe("CardPortal", () => {
   beforeEach(() => {
-    windowContentRegistry._resetForTests();
+    paneContentRegistry._resetForTests();
     // Clean up any leftover DOM from previous tests.
     document.body.innerHTML = "";
   });
 
   it("renders children into the registered host element", () => {
     const host = makeDiv();
-    windowContentRegistry.register("card-1", host);
+    paneContentRegistry.register("card-1", host);
     render(
       <CardPortal hostStackId="card-1">
         <div data-testid="portal-child">hello</div>
@@ -61,7 +61,7 @@ describe("CardPortal", () => {
 
   it("does not insert into any registered host when hostCardId is unregistered", () => {
     const registeredHost = makeDiv();
-    windowContentRegistry.register("other-card", registeredHost);
+    paneContentRegistry.register("other-card", registeredHost);
     render(
       <CardPortal hostStackId="missing">
         <div data-testid="portal-child">hello</div>
@@ -73,7 +73,7 @@ describe("CardPortal", () => {
   it("re-roots into the new element when the registry updates", () => {
     const host1 = makeDiv();
     const host2 = makeDiv();
-    windowContentRegistry.register("card-1", host1);
+    paneContentRegistry.register("card-1", host1);
     render(
       <CardPortal hostStackId="card-1">
         <div data-testid="portal-child">hello</div>
@@ -81,7 +81,7 @@ describe("CardPortal", () => {
     );
     expect(host1.querySelector('[data-testid="portal-child"]')).not.toBeNull();
     act(() => {
-      windowContentRegistry.register("card-1", host2);
+      paneContentRegistry.register("card-1", host2);
     });
     expect(host1.querySelector('[data-testid="portal-child"]')).toBeNull();
     expect(host2.querySelector('[data-testid="portal-child"]')).not.toBeNull();
@@ -91,7 +91,7 @@ describe("CardPortal", () => {
     const host1 = makeDiv();
     const host2 = makeDiv();
     const counters = { mount: 0, unmount: 0 };
-    windowContentRegistry.register("card-1", host1);
+    paneContentRegistry.register("card-1", host1);
     render(
       <CardPortal hostStackId="card-1">
         <Probe counters={counters} label="probe" />
@@ -100,7 +100,7 @@ describe("CardPortal", () => {
     expect(counters.mount).toBe(1);
     expect(counters.unmount).toBe(0);
     act(() => {
-      windowContentRegistry.register("card-1", host2);
+      paneContentRegistry.register("card-1", host2);
     });
     expect(counters.mount).toBe(1);
     expect(counters.unmount).toBe(0);
@@ -109,8 +109,8 @@ describe("CardPortal", () => {
   it("does not unmount children when hostCardId changes to a new registered card", () => {
     const hostA = makeDiv();
     const hostB = makeDiv();
-    windowContentRegistry.register("card-A", hostA);
-    windowContentRegistry.register("card-B", hostB);
+    paneContentRegistry.register("card-A", hostA);
+    paneContentRegistry.register("card-B", hostB);
 
     const counters = { mount: 0, unmount: 0 };
 
@@ -143,14 +143,14 @@ describe("CardPortal", () => {
     expect(host.querySelector('[data-testid="portal-child"]')).toBeNull();
 
     act(() => {
-      windowContentRegistry.register("card-1", host);
+      paneContentRegistry.register("card-1", host);
     });
     expect(host.querySelector('[data-testid="portal-child"]')).not.toBeNull();
   });
 
   it("does not unmount children when the host unregisters temporarily", () => {
     const host = makeDiv();
-    windowContentRegistry.register("card-1", host);
+    paneContentRegistry.register("card-1", host);
     const counters = { mount: 0, unmount: 0 };
     render(
       <CardPortal hostStackId="card-1">
@@ -159,7 +159,7 @@ describe("CardPortal", () => {
     );
     expect(counters.mount).toBe(1);
     act(() => {
-      windowContentRegistry.unregister("card-1");
+      paneContentRegistry.unregister("card-1");
     });
     // Children stay mounted even though the host is gone — identity is
     // preserved across the dark window.
@@ -168,7 +168,7 @@ describe("CardPortal", () => {
 
     const hostLater = makeDiv();
     act(() => {
-      windowContentRegistry.register("card-1", hostLater);
+      paneContentRegistry.register("card-1", hostLater);
     });
     expect(counters.mount).toBe(1);
     expect(hostLater.querySelector('[data-testid="probe"]')).not.toBeNull();
@@ -176,7 +176,7 @@ describe("CardPortal", () => {
 
   it("unmounts children when the CardPortal itself unmounts", () => {
     const host = makeDiv();
-    windowContentRegistry.register("card-1", host);
+    paneContentRegistry.register("card-1", host);
     const counters = { mount: 0, unmount: 0 };
     const { unmount } = render(
       <CardPortal hostStackId="card-1">

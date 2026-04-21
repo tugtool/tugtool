@@ -5,16 +5,16 @@
  * scroll/selection listeners, FeedStore subscriptions).
  *
  * The component lives at the deck level in the React tree; its DOM output
- * is portaled into the host window's content `<div>` via `CardPortal`, so
- * React-tree position (and therefore identity) is stable across cross-window
+ * is portaled into the host pane's content `<div>` via `CardPortal`, so
+ * React-tree position (and therefore identity) is stable across cross-pane
  * moves — the mechanism that preserves tide card sessions across detach /
- * merge / window-to-window moves.
+ * merge / pane-to-pane moves.
  *
  * Render shape: wraps `registration.contentFactory(cardId)` in the four
  * per-content context providers (`TugcardDataProvider`,
  * `CardPropertyContext`, `CardPersistenceContext`,
  * `CardDirtyContext`) plus a re-bridged `TugWindowPortalContext`
- * (looked up from `window-root-registry`) and a responder scope keyed by
+ * (looked up from `pane-root-registry`) and a responder scope keyed by
  * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
  * resolve here.
  *
@@ -39,51 +39,51 @@ import { getConnection } from "../../lib/connection-singleton";
 import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
 import type { PropertyStore } from "../tugways/property-store";
 import type { CardStateBag } from "../../layout-tree";
-import * as windowContentRegistry from "./window-content-registry";
-import * as windowRootRegistry from "./window-root-registry";
+import * as paneContentRegistry from "./pane-content-registry";
+import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
 
 const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
 export interface CardHostProps {
-  /** Stable identity of this card — survives cross-window moves. */
+  /** Stable identity of this card — survives cross-pane moves. */
   cardId: string;
-  /** The window currently hosting this card. Used to locate the content element and for the workspace binding. */
+  /** The pane currently hosting this card. Used to locate the content element and for the workspace binding. */
   hostStackId: string;
   /** The registry componentId that produces this card's content via `contentFactory`. */
   componentId: string;
   /**
-   * Whether this card is the active card within its host window. When false,
+   * Whether this card is the active card within its host pane. When false,
    * the content mounts and stays alive but is hidden via `display: none` so
    * that identity (React state, session connections, scroll position)
-   * survives across card switches and cross-window moves. Defaults to `true`.
+   * survives across card switches and cross-pane moves. Defaults to `true`.
    */
   isActive?: boolean;
 }
 
 /**
- * Look up the host window's content element from the registry, reactively:
+ * Look up the host pane's content element from the registry, reactively:
  * re-fires when the element is registered, replaced, or unregistered.
  */
 function useHostContentElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => windowContentRegistry.subscribe(hostStackId, cb),
-    () => windowContentRegistry.getElement(hostStackId),
+    (cb) => paneContentRegistry.subscribe(hostStackId, cb),
+    () => paneContentRegistry.getElement(hostStackId),
     () => null,
   );
 }
 
 /**
- * Look up the host window's root element from `window-root-registry`,
+ * Look up the host pane's root element from `pane-root-registry`,
  * reactively. Used to bridge `TugWindowPortalContext` — card content needs
- * access to its host window's root `<div>` for sheets and tooltips that
+ * access to its host pane's root `<div>` for sheets and tooltips that
  * portal into it, and CardHost cannot consume the provider
- * directly because it lives outside the window's React tree.
+ * directly because it lives outside the pane's React tree.
  */
 function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
-    (cb) => windowRootRegistry.subscribe(hostStackId, cb),
-    () => windowRootRegistry.getElement(hostStackId),
+    (cb) => paneRootRegistry.subscribe(hostStackId, cb),
+    () => paneRootRegistry.getElement(hostStackId),
     () => null,
   );
 }
@@ -336,11 +336,11 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   }
 
   // DOM output routes through `CardPortal` so children land inside the host
-  // window's `tug-window-content` div. The portal's stable-slot pattern preserves
-  // identity when the portal re-roots to a different host window — the
+  // pane's `tug-window-content` div. The portal's stable-slot pattern preserves
+  // identity when the portal re-roots to a different host pane — the
   // mechanism that keeps tide card sessions alive across detach/merge.
   //
-  // Non-active cards within a window are hidden via `display: none` on the
+  // Non-active cards within a pane are hidden via `display: none` on the
   // wrapper so every card remains mounted (identity survives card switches
   // too) without affecting layout.
   return (
