@@ -54,7 +54,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - `rg "\bTugcard\w+" tugdeck/src` returns zero matches.
 - `rg "\buseTugcard\w+" tugdeck/src` returns zero matches.
 - `rg "use-tugcard-" tugdeck/src` returns zero matches (no file / import paths referencing the old names).
-- `rg "--tug-card-title-bar-|--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim|--tugx-card-title|--tugx-card-control|--tugx-card-banner" tugdeck` returns zero matches (all renamed to `pane` equivalents).
+- `rg "--tug-card-title-bar-|--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim|--tugx-card-title|--tugx-card-control|--tugx-card-content-dim|--tugx-card-accessory|--tugx-card-findbar|--tugx-card-banner" tugdeck` returns zero matches (all renamed to `pane` equivalents).
 - `tuglaws/pane-model.md` exists, is linked from `tuglaws/tuglaws.md`, and cross-references the current code paths.
 - Every step commit: `bun x tsc --noEmit` clean, `bun test` green, `bun run audit:tokens lint` zero violations.
 - Manual: every tide-card smoke path from the pane rename plan still passes (open, click-switch, detach, merge, resize, collapse, close, reload).
@@ -69,6 +69,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 6. CSS frame tokens: `--tugx-card-bg`, `--tugx-card-border`, `--tugx-card-shadow-active|inactive`, `--tugx-card-dim-overlay` → `--tugx-pane-*`.
 7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
 8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
+8a. Pane content-dim / accessory / findbar tokens (`--tugx-card-content-dim-*`, `--tugx-card-accessory-*`, `--tugx-card-findbar-*`) → `--tugx-pane-*`. Surfaced by Step 0 ([Appendix A.3](#appendix-a)).
 9. Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
 10. Author `tuglaws/pane-model.md` + add entry to `tuglaws/tuglaws.md` laws list.
 11. Integration checkpoint.
@@ -192,13 +193,15 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 **Commit:** `N/A (read-only)` — or a small commit adding an audit note to this plan if the survey surfaces surprises.
 
 **Tasks:**
-- [ ] `rg "\bTugcard\w+|\buseTugcard\w+" tugdeck/src` — confirm the 9 exports + ~133 consumer hits match this plan's assumptions; flag any new identifiers.
-- [ ] `rg "--tug-card-|--tugx-card-" tugdeck/styles tugdeck/src` — enumerate every `card-*` token and its definer/consumer. Classify each as (a) pane-chrome (rename), (b) card-content (keep), (c) banner (rename per [D04]). Paste the classification into this plan's Appendix as a table if the classification departs from the scope items listed here.
-- [ ] `rg "--tugx-card-" tugdeck/styles/themes/` — confirm whether brio/harmony directly alias any of these (informs Step 2's breadth).
-- [ ] Confirm `useTugcardDirty` is only defined/consumed at the sites the plan lists.
+- [x] `rg "\bTugcard\w+|\buseTugcard\w+" tugdeck/src` — confirm the 9 exports + ~133 consumer hits match this plan's assumptions; flag any new identifiers.
+- [x] `rg "--tug-card-|--tugx-card-" tugdeck/styles tugdeck/src` — enumerate every `card-*` token and its definer/consumer. Classify each as (a) pane-chrome (rename), (b) card-content (keep), (c) banner (rename per [D04]). Paste the classification into this plan's Appendix as a table if the classification departs from the scope items listed here.
+- [x] `rg "--tugx-card-" tugdeck/styles/themes/` — confirm whether brio/harmony directly alias any of these (informs Step 2's breadth).
+- [x] Confirm `useTugcardDirty` is only defined/consumed at the sites the plan lists.
+
+**Findings:** See [Appendix A](#appendix-a) for the full token inventory (classified per step) and the `Tugcard*` identifier surface. Three previously-unscoped pane-chrome token families surfaced (content-dim, accessory, findbar) — handled by new [Step 7a](#step-7a). Themes (brio/harmony) do **not** reference `--tug-card-*` / `--tugx-card-*` directly: R03 residual risk is zero.
 
 **Checkpoint:**
-- [ ] Audit results logged (either confirm-nothing-new, or amend scope + add Appendix).
+- [x] Audit results logged (Appendix A added; Scope items 6–9 annotated with authoritative token lists; Step 7a added for content-dim / accessory / findbar).
 
 ---
 
@@ -407,9 +410,48 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 ---
 
-#### Step 8: Rename banner tokens `--tugx-card-banner-*` → `--tugx-pane-banner-*` {#step-8}
+#### Step 7a: Rename content-dim / accessory / findbar tokens → pane equivalents {#step-7a}
 
 **Depends on:** #step-7
+
+**Commit:** `Rename pane content-dim / accessory / findbar tokens → --tugx-pane-*`
+
+**References:** [D02] Pane tokens. Surfaced by the Step 0 audit ([Appendix A.3](#appendix-a)) — these tokens describe pane chrome despite the `card-` prefix (the inactive-pane dim effect, the pane's accessory strip, the pane-scoped findbar).
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-pane.css` — definitions (lines 91–102) + consumers (lines 371–384 for content-dim; accessory/findbar consumers within the same file where applicable).
+- Any JSDoc `@tug-pairings` header rows that name these tokens.
+- `tugdeck/docs/pairing-audit-results.md` — update if referenced.
+
+**Token rename:**
+
+| Today | New |
+|---|---|
+| `--tugx-card-content-dim-desat-color` | `--tugx-pane-content-dim-desat-color` |
+| `--tugx-card-content-dim-desat-amount` | `--tugx-pane-content-dim-desat-amount` |
+| `--tugx-card-content-dim-wash-color` | `--tugx-pane-content-dim-wash-color` |
+| `--tugx-card-content-dim-wash-blend` | `--tugx-pane-content-dim-wash-blend` |
+| `--tugx-card-accessory-bg` | `--tugx-pane-accessory-bg` |
+| `--tugx-card-accessory-border` | `--tugx-pane-accessory-border` |
+| `--tugx-card-findbar-bg` | `--tugx-pane-findbar-bg` |
+| `--tugx-card-findbar-border` | `--tugx-pane-findbar-border` |
+| `--tugx-card-findbar-match` | `--tugx-pane-findbar-match` |
+| `--tugx-card-findbar-match-active` | `--tugx-pane-findbar-match-active` |
+
+**Tasks:**
+- [ ] Rename definitions + every consumer.
+- [ ] Update `@tug-pairings` block and `docs/pairing-audit-results.md` as applicable.
+
+**Checkpoint:**
+- [ ] tsc / tests / tokens-lint all green.
+- [ ] `rg "--tugx-card-content-dim-|--tugx-card-accessory-|--tugx-card-findbar-" tugdeck` returns zero matches.
+- [ ] Manual smoke: inactive-pane dim overlay renders; accessory + findbar render where they appear (findbar in gallery/tide cards).
+
+---
+
+#### Step 8: Rename banner tokens `--tugx-card-banner-*` → `--tugx-pane-banner-*` {#step-8}
+
+**Depends on:** #step-7a
 
 **Commit:** `Rename banner tokens: --tugx-card-banner-* → --tugx-pane-banner-*`
 
@@ -508,7 +550,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - [ ] Full build matrix: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
 - [ ] Grep sweep (paste-ready):
   ```
-  rg "\bTugcard\w+|\buseTugcard\w+|use-tugcard-|--tug-card-title-bar-|--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim|--tugx-card-title|--tugx-card-control|--tugx-card-banner" tugdeck
+  rg "\bTugcard\w+|\buseTugcard\w+|use-tugcard-|--tug-card-title-bar-|--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim|--tugx-card-title|--tugx-card-control|--tugx-card-content-dim|--tugx-card-accessory|--tugx-card-findbar|--tugx-card-banner" tugdeck
   ```
   Expected: zero matches.
 - [ ] Manual smoke: full tide-card path (open, click-switch, detach, merge, resize, collapse, close, Cmd-Tab, reload).
@@ -522,7 +564,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All 10 rename + authoring steps committed; integration checkpoint (#step-11) passes.
+- [ ] All 11 rename + authoring steps (1, 2, 3, 4, 5, 6, 7, 7a, 8, 9, 10) committed; integration checkpoint (#step-11) passes.
 - [ ] Final grep sweep returns zero matches.
 - [ ] `bun run audit:tokens lint` zero violations.
 - [ ] Manual smoke matrix passes.
@@ -538,4 +580,110 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 ### Open Questions {#open-questions}
 
-*(Plan-authoring decisions resolved as [D01]–[D05]. Step 0 audit may surface token-by-token refinements; amend the scope + token tables in place if that happens.)*
+*(Plan-authoring decisions resolved as [D01]–[D05]. Step 0 audit surfaced three previously-unscoped pane-chrome token families — captured by [Step 7a](#step-7a) and [Appendix A](#appendix-a). No open questions.)*
+
+---
+
+### Appendix A: Step 0 audit results {#appendix-a}
+
+**Recorded:** 2026-04-21 (Step 0). Source-of-truth for token lists and identifier counts used by Steps 1–8a.
+
+#### A.1 `Tugcard*` / `useTugcard*` identifier surface
+
+`rg "\bTugcard\w+|\buseTugcard\w+" tugdeck/src` → **133 occurrences across 17 files** (matches plan assumption).
+
+Definitions (9, as enumerated in Context):
+
+| Identifier | Kind | Definer | Renamed in Step |
+|---|---|---|---|
+| `TugcardMeta` | type | `tugdeck/src/card-registry.ts:71` | 1 |
+| `TugcardDataContext` | React context | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:58` | 2 |
+| `TugcardDataContextValue` | type | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:50` | 2 |
+| `TugcardDataProvider` | FC | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:69` | 2 |
+| `useTugcardData` | hook | `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts:86,94,112` | 2 |
+| `TugcardPersistenceCallbacks` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:58` | 3 |
+| `UseTugcardPersistenceOptions` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` | 3 |
+| `useTugcardPersistence` | hook | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:123` | 3 |
+| `useTugcardDirty` | hook | `tugdeck/src/components/chrome/tug-pane.tsx:215` | 4 |
+
+**Note:** `useTugcardDirty` has **zero call sites** today — grep finds only the export at `tug-pane.tsx:215`. Step 4 still renames it so the exported surface is coherent; future callers should use `useCardDirty`.
+
+**Prose-only references** (comments, JSDoc) that will surface during rename passes and must be rewritten, not just import-changed:
+- `tugdeck/src/__tests__/content-ready-spike.test.tsx` — 7 prose mentions of `useTugcardPersistence`.
+- `tugdeck/src/__tests__/react19-commit-timing.test.tsx:477` — 1 comment.
+- `tugdeck/src/components/tugways/tug-tab-bar.tsx:2` — header comment ("TugTabBar — presentational tab strip for multi-tab Tugcards").
+- `tugdeck/src/components/tugways/hooks/use-property-store.ts:56` — comment reference to `TugcardDataContext`.
+- `tugdeck/src/components/tugways/cards/hello-world-card.tsx:5` — JSDoc reference to `TugcardProps`.
+- `tugdeck/src/components/tugways/cards/git-card.tsx:5,6,124` — JSDoc references to `useTugcardData` / `TugcardDataProvider`.
+
+#### A.2 CSS token inventory (authoritative)
+
+Themes (`tugdeck/styles/themes/brio.css`, `harmony.css`) do **not** reference `--tug-card-*` / `--tugx-card-*`: R03 is fully mitigated.
+
+`--tug-card-title-bar-*` (non-`x` prefix) tokens have **no source definers or consumers** — they appear only in `tugdeck/docs/pairing-audit-results.md`, `tugdeck/docs/renders-on-survey.md`, and `tugdeck/scripts/audit-tokens.ts` JSDoc examples. Step 6's "Today" column in the token-rename table is therefore docs-only for the first seven rows; update those doc surfaces but do not expect source-CSS hits.
+
+All live `--tugx-card-*` token definitions are in two files:
+- `tugdeck/src/components/tugways/tug-pane.css` — frame, title-bar, control, content-dim, accessory, findbar (lines 47–102 define; lines 115–384 consume).
+- `tugdeck/src/components/tugways/tug-pane-banner.css` — banner (lines 40–50 + 243–259 define; lines 72–198 consume).
+
+Non-CSS-file consumers:
+- `tugdeck/styles/chrome.css:51` — reads `--tugx-card-dim-overlay`.
+- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx:112,115` — inline-style readers of `--tugx-card-border` and `--tugx-card-title-bar-bg-inactive`.
+
+Non-CSS informational surfaces (docs + scripts):
+- `tugdeck/scripts/audit-tokens.ts:173,197,198,828` — JSDoc examples (Step 9).
+- `tugdeck/docs/pairing-audit-results.md` — 15 occurrences (updates ride along with Steps 5–6).
+- `tugdeck/docs/renders-on-survey.md` — 6 occurrences (same).
+
+#### A.3 Token families by step
+
+**Step 5 — Frame tokens (5):**
+- `--tugx-card-bg`
+- `--tugx-card-border`
+- `--tugx-card-shadow-active`
+- `--tugx-card-shadow-inactive`
+- `--tugx-card-dim-overlay`
+
+**Step 6 — Title-bar tokens (9):**
+- `--tugx-card-title-bar-bg-active`
+- `--tugx-card-title-bar-bg-inactive`
+- `--tugx-card-title-bar-bg-collapsed`
+- `--tugx-card-title-bar-divider`
+- `--tugx-card-title-bar-icon-active`
+- `--tugx-card-title-bar-icon-inactive`
+- `--tugx-card-title-bar-icon-hover`
+- `--tugx-card-title-fg-active`
+- `--tugx-card-title-fg-inactive`
+
+(The plan's Step 6 table also lists non-`x` `--tug-card-title-bar-*` rows. Those are absent from source CSS — rewrite only the doc occurrences in `tugdeck/docs/pairing-audit-results.md`, `tugdeck/docs/renders-on-survey.md`, and `tugdeck/scripts/audit-tokens.ts` JSDoc.)
+
+**Step 7 — Control tokens (18):** On/off × fg/bg/border × rest/hover/active.
+- `--tugx-card-control-on-fg-rest` / `-hover` / `-active`
+- `--tugx-card-control-on-bg-rest` / `-hover` / `-active`
+- `--tugx-card-control-on-border-rest` / `-hover` / `-active`
+- `--tugx-card-control-off-fg-rest` / `-hover` / `-active`
+- `--tugx-card-control-off-bg-rest` / `-hover` / `-active`
+- `--tugx-card-control-off-border-rest` / `-hover` / `-active`
+
+**Step 7a — Content-dim / accessory / findbar tokens (10)** — previously out of the plan's enumeration; all pane-chrome despite the `card-` prefix:
+- `--tugx-card-content-dim-desat-color`
+- `--tugx-card-content-dim-desat-amount`
+- `--tugx-card-content-dim-wash-color`
+- `--tugx-card-content-dim-wash-blend`
+- `--tugx-card-accessory-bg`
+- `--tugx-card-accessory-border`
+- `--tugx-card-findbar-bg`
+- `--tugx-card-findbar-border`
+- `--tugx-card-findbar-match`
+- `--tugx-card-findbar-match-active`
+
+**Step 8 — Banner tokens (7):**
+- `--tugx-card-banner-strip-bg`
+- `--tugx-card-banner-strip-fg`
+- `--tugx-card-banner-strip-border`
+- `--tugx-card-banner-detail-bg`
+- `--tugx-card-banner-detail-fg`
+- `--tugx-card-banner-detail-border`
+- `--tugx-card-banner-backdrop-bg`
+
+**Totals:** 5 frame + 9 title-bar + 18 control + 10 content-dim/accessory/findbar + 7 banner = **49 `--tugx-card-*` tokens in source CSS**.
