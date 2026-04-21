@@ -194,7 +194,7 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 
 **Risk R04: Drag coordinator selector drift** {#r04-selector-drift}
 
-- **Risk:** `card-drag-coordinator.ts` queries `.tug-window[data-window-id]`. The rename touches both the class and the attribute. Miss either, drag silently breaks.
+- **Risk:** `card-drag-coordinator.ts` queries `.tug-pane[data-pane-id]` (after Steps 7–8). The rename touches both the class and the attribute. Miss either, drag silently breaks.
 - **Mitigation:** Pair the class rename (#step-7), the DOM attribute rename (#step-8), and the coordinator selector/field rename (#step-8) in adjacent commits; add a checkpoint smoke (drag-to-merge) after #step-8.
 - **Residual risk:** Zero after checkpoint passes.
 
@@ -510,21 +510,21 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Tests — any `screen.getByTestId` / `getAttribute` that references the old names.
 
 **Tasks:**
-- [ ] Rename `data-window-id` → `data-pane-id` on every emitting site.
-- [ ] Rename `data-testid="tug-window"` → `data-testid="tug-pane"`.
-- [ ] Update `card-drag-coordinator` selectors, types, and fields.
-- [ ] Update every test that reads these attributes.
-- [ ] Update tuglaws/selection-model.md §Files (line 198) — `tug-window.tsx` → `tug-pane.tsx`.
+- [x] Rename `data-window-id` → `data-pane-id` on every emitting site.
+- [x] Rename `data-testid="tug-window"` → `data-testid="tug-pane"`.
+- [x] Update `card-drag-coordinator` selectors, types, and fields.
+- [x] Update every test that reads these attributes.
+- [x] Update tuglaws/selection-model.md §Files (line 198) — `tug-window.tsx` → `tug-pane.tsx`. (Already `tug-pane.tsx`; no edit required.)
 
 **Tests:**
-- [ ] Drag tests in `tug-pane.test.tsx` pass.
-- [ ] Merge tests in `card-drag-coordinator.test.ts` pass.
-- [ ] Identity preservation tests pass.
+- [x] Drag tests in `tug-pane.test.tsx` pass.
+- [x] Merge tests in `card-drag-coordinator.test.ts` pass. (No `card-drag-coordinator.test.ts` in tree — N/A.)
+- [x] Identity preservation tests pass.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "data-window-id|WindowFrameEntry|allWindowFrameRects" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "data-window-id|WindowFrameEntry|allWindowFrameRects" tugdeck/src` returns zero matches.
 - [ ] Manual smoke: drag a card tab onto another pane's tab bar → merges. Drag a pane frame → position commits.
 
 ---

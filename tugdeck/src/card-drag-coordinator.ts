@@ -60,7 +60,7 @@ interface TabBarEntry {
   barElement: HTMLElement;
 }
 
-interface WindowFrameEntry {
+interface PaneFrameEntry {
   paneId: string;
   rect: DOMRect;
   accessoryElement: HTMLElement;
@@ -105,10 +105,10 @@ class CardDragCoordinator {
   private allTabBarRects: TabBarEntry[] = [];
 
   /**
-   * All single-tab window frame rects at drag-start.
-   * These are `.tug-pane` frames whose window id is NOT in allTabBarRects.
+   * All single-tab pane frame rects at drag-start.
+   * These are `.tug-pane` frames whose pane id is NOT in allTabBarRects.
    */
-  private allWindowFrameRects: WindowFrameEntry[] = [];
+  private allPaneFrameRects: PaneFrameEntry[] = [];
 
   /** Ghost element appended to #deck-container during drag. */
   private ghostElement: HTMLDivElement | null = null;
@@ -265,46 +265,46 @@ class CardDragCoordinator {
   /**
    * Build the two-tier hit-test cache at drag-start.
    *
-   * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-window-id] elements
+   * Tier 1: allTabBarRects -- all visible .tug-tab-bar[data-pane-id] elements
    *   excluding the source card.
-   * Tier 2: allWindowFrameRects -- all .tug-pane[data-window-id] elements whose
-   *   window id is NOT present in allTabBarRects (i.e., single-tab windows).
-   *   The accessoryElement is the matching .tugcard-accessory[data-window-id]
-   *   inside each such window frame, used for drop-target visual feedback.
+   * Tier 2: allPaneFrameRects -- all .tug-pane[data-pane-id] elements whose
+   *   pane id is NOT present in allTabBarRects (i.e., single-tab panes).
+   *   The accessoryElement is the matching .tugcard-accessory[data-pane-id]
+   *   inside each such pane frame, used for drop-target visual feedback.
    *
    * [Spec S04]
    */
   private buildHitTestCache(sourcePaneId: string): void {
-    // Tier 1: multi-card tab bars (excluding source window).
-    const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-window-id]");
+    // Tier 1: multi-card tab bars (excluding source pane).
+    const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-pane-id]");
     const tabBarPaneIds = new Set<string>();
     this.allTabBarRects = [];
 
     barElements.forEach((el) => {
-      const sid = el.getAttribute("data-window-id");
-      if (!sid || sid === sourcePaneId) return;
-      tabBarPaneIds.add(sid);
+      const paneId = el.getAttribute("data-pane-id");
+      if (!paneId || paneId === sourcePaneId) return;
+      tabBarPaneIds.add(paneId);
       this.allTabBarRects.push({
-        paneId: sid,
+        paneId,
         rect: el.getBoundingClientRect(),
         barElement: el,
       });
     });
 
     // Tier 2: single-card frames (not in the tab bar set).
-    const frameElements = document.querySelectorAll<HTMLElement>(".tug-pane[data-window-id]");
-    this.allWindowFrameRects = [];
+    const frameElements = document.querySelectorAll<HTMLElement>(".tug-pane[data-pane-id]");
+    this.allPaneFrameRects = [];
 
     frameElements.forEach((el) => {
-      const sid = el.getAttribute("data-window-id");
-      if (!sid || sid === sourcePaneId || tabBarPaneIds.has(sid)) return;
+      const paneId = el.getAttribute("data-pane-id");
+      if (!paneId || paneId === sourcePaneId || tabBarPaneIds.has(paneId)) return;
 
       // Resolve the accessory div for drop-target visual feedback. [D05]
-      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-window-id="${sid}"]`);
+      const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-pane-id="${paneId}"]`);
       if (!accessory) return;
 
-      this.allWindowFrameRects.push({
-        paneId: sid,
+      this.allPaneFrameRects.push({
+        paneId,
         rect: el.getBoundingClientRect(),
         accessoryElement: accessory,
       });
@@ -467,7 +467,7 @@ class CardDragCoordinator {
     }
 
     // Check tier-2: single-card stack frames. [D05]
-    for (const entry of this.allWindowFrameRects) {
+    for (const entry of this.allPaneFrameRects) {
       if (this.pointInRect(cx, cy, entry.rect)) {
         this.setMode("merge");
         this.setDropTarget(entry.accessoryElement);
@@ -740,7 +740,7 @@ class CardDragCoordinator {
     for (const entry of this.allTabBarRects) {
       entry.barElement.removeAttribute("data-drop-target");
     }
-    for (const entry of this.allWindowFrameRects) {
+    for (const entry of this.allPaneFrameRects) {
       entry.accessoryElement.removeAttribute("data-drop-target");
     }
 
@@ -752,7 +752,7 @@ class CardDragCoordinator {
     this.sourceBarRect = null;
     this.containerRect = null;
     this.allTabBarRects = [];
-    this.allWindowFrameRects = [];
+    this.allPaneFrameRects = [];
     this.currentMergeTarget = null;
     this.currentDropTargetElement = null;
     this.currentMode = "reorder";

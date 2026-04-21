@@ -72,7 +72,7 @@ describe("TugPane – position and size", () => {
       )
     );
 
-    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
     expect(frame).not.toBeNull();
 
     expect(frame.style.left).toBe("50px");
@@ -90,7 +90,7 @@ describe("TugPane – position and size", () => {
       )
     );
 
-    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
     expect(frame.style.position).toBe("absolute");
   });
 });
@@ -110,7 +110,7 @@ describe("TugPane – zIndex", () => {
       )
     );
 
-    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
     expect(frame.style.zIndex).toBe("42");
   });
 });
@@ -134,7 +134,7 @@ describe("TugPane – onStackActivated", () => {
       )
     );
 
-    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
 
     act(() => {
       fireEvent.pointerDown(frame);
@@ -222,7 +222,7 @@ describe("TugPane – min-size clamping", () => {
     const seHandle = container.querySelector(".tug-pane-resize-se") as HTMLElement;
     expect(seHandle).not.toBeNull();
 
-    const frame = container.querySelector('[data-testid="tug-window"]') as HTMLElement;
+    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
     (frame as any).setPointerCapture = () => {};
     (frame as any).releasePointerCapture = () => {};
 

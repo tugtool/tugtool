@@ -224,21 +224,21 @@ function noop(): void {}
 // ---------------------------------------------------------------------------
 
 /**
- * Snapshot all `.tug-pane[data-window-id]` elements as canvas-relative Rects.
- * Optionally excludes a window by ID.
+ * Snapshot all `.tug-pane[data-pane-id]` elements as canvas-relative Rects.
+ * Optionally excludes a pane by ID.
  */
 function snapshotCardRects(
   canvasBounds: DOMRect | null,
   excludeId?: string,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  const els = document.querySelectorAll<HTMLElement>(".tug-pane[data-window-id]");
+  const els = document.querySelectorAll<HTMLElement>(".tug-pane[data-pane-id]");
   els.forEach((el) => {
-    const cid = el.getAttribute("data-window-id");
-    if (!cid || cid === excludeId) return;
+    const paneId = el.getAttribute("data-pane-id");
+    if (!paneId || paneId === excludeId) return;
     const domRect = el.getBoundingClientRect();
     results.push({
-      id: cid,
+      id: paneId,
       rect: {
         x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
         y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
@@ -660,8 +660,8 @@ export function TugPane({
   const dragDropTargetEl = useRef<HTMLElement | null>(null);
 
   /**
-   * Snapshot all `.tug-tab-bar[data-window-id]` elements at drag-start (excluding
-   * our own window). Used for hit-testing during drag and on pointer-up. [D45]
+   * Snapshot all `.tug-tab-bar[data-pane-id]` elements at drag-start (excluding
+   * our own pane). Used for hit-testing during drag and on pointer-up. [D45]
    */
   const dragTabBarCache = useRef<Array<{ paneId: string; rect: DOMRect; el: HTMLElement }>>([]);
 
@@ -785,13 +785,13 @@ export function TugPane({
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
       // Build tab bar cache for merge hit-testing. [D45]
-      // Snapshot all .tug-tab-bar[data-window-id] elements (excluding this window).
+      // Snapshot all .tug-tab-bar[data-pane-id] elements (excluding this pane).
       dragTabBarCache.current = [];
-      const barEls = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-window-id]");
+      const barEls = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-pane-id]");
       barEls.forEach((el) => {
-        const wid = el.getAttribute("data-window-id");
-        if (!wid || wid === id) return;
-        dragTabBarCache.current.push({ paneId: wid, rect: el.getBoundingClientRect(), el });
+        const paneId = el.getAttribute("data-pane-id");
+        if (!paneId || paneId === id) return;
+        dragTabBarCache.current.push({ paneId, rect: el.getBoundingClientRect(), el });
       });
 
       // Snapshot other card rects at drag-start for snap computation. [D04]
@@ -1165,8 +1165,8 @@ export function TugPane({
     <div
       ref={frameRef}
       className="tug-pane"
-      data-testid="tug-window"
-      data-window-id={id}
+      data-testid="tug-pane"
+      data-pane-id={id}
       data-focused={isFocused ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleFramePointerDown}
@@ -1194,7 +1194,7 @@ export function TugPane({
           ref={rootRefCallback}
           className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
           data-slot="tug-window"
-          data-window-id={stackId}
+          data-pane-id={stackId}
           data-collapsed={collapsed ? "true" : "false"}
         >
           <CardTitleBar
@@ -1213,7 +1213,7 @@ export function TugPane({
                 ref={accessoryRef}
                 className="tugcard-accessory"
                 data-testid="tugcard-accessory"
-                data-window-id={stackId}
+                data-pane-id={stackId}
                 style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
               >
                 {resolvedAccessory}
@@ -1222,7 +1222,7 @@ export function TugPane({
               <div
                 ref={contentRef}
                 className="tug-pane-content"
-                data-testid="tug-window-content"
+                data-testid="tug-pane-content"
               />
             </ResponderScope>
           </div>
