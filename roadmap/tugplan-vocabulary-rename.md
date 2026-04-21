@@ -525,13 +525,13 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - `tugapp/Sources/AppDelegate.swift` — `sendControl("focus-card", ["stackId": id])` → `sendControl("focus-window", ["windowId": id])`. Any View-menu binding.
 
 **Tasks:**
-- [ ] TS handler renamed; payload read updated.
-- [ ] Swift send-site renamed and payload key updated.
-- [ ] If `pushCardListToHost` emits a `focused` flag keyed by stack id, no change (the shape still carries a window id; the key name stays `id` by convention).
+- [x] TS handler renamed; payload read updated.
+- [x] Swift send-site renamed and payload key updated.
+- [x] If `pushCardListToHost` emits a `focused` flag keyed by stack id, no change (the shape still carries a window id; the key name stays `id` by convention).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
 - [ ] Manual smoke: launch Tug.app, open View menu, pick a window — target window activates, tide prompt regains focus.
 
 ---

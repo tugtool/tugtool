@@ -302,25 +302,24 @@ export function initActionDispatch(
     deckManager.arrangeCards(mode);
   });
 
-  // focus-card: Bring a window to front by activating its active card.
+  // focus-window: Bring a window to front by activating its active card.
   //
   // Swift's View menu builds a window list from `pushCardListToHost` and
-  // emits `focus-card` with `stackId` (window id) when the user picks an
-  // entry — Step 11 renames this wire to `focus-window` + `windowId`.
+  // emits `focus-window` with `windowId` when the user picks an entry.
   // Routes through `activateCard` on the window's `activeCardId`
   // so the menu selection fires the full will/didDeactivate +
   // will/didActivate transition and promotes the responder chain —
   // `focusCard` alone would only reorder z-order and skip the lifecycle
   // events.
-  registerAction("focus-card", (payload) => {
-    const windowId = payload.stackId;
+  registerAction("focus-window", (payload) => {
+    const windowId = payload.windowId;
     if (typeof windowId !== "string") {
-      console.warn("focus-card: missing or invalid window id (payload.stackId)", payload);
+      console.warn("focus-window: missing or invalid window id (payload.windowId)", payload);
       return;
     }
     const win = deckManager.getSnapshot().windows.find((s) => s.id === windowId);
     if (!win) {
-      console.warn(`focus-card: no window with id "${windowId}"`);
+      console.warn(`focus-window: no window with id "${windowId}"`);
       return;
     }
     deckManager.activateCard(win.activeCardId);

@@ -434,9 +434,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("arrange-cards", params: ["mode": "tile"])
     }
 
-    @objc private func focusCardFromMenu(_ sender: NSMenuItem) {
-        guard let stackId = sender.representedObject as? String else { return }
-        sendControl("focus-card", params: ["stackId": stackId])
+    @objc private func focusWindowFromMenu(_ sender: NSMenuItem) {
+        guard let windowId = sender.representedObject as? String else { return }
+        sendControl("focus-window", params: ["windowId": windowId])
     }
 
     @objc private func showComponentGallery(_ sender: Any?) {
@@ -737,11 +737,11 @@ extension AppDelegate: NSMenuDelegate {
         if !cachedCardList.isEmpty {
             menu.addItem(NSMenuItem.separator())
             for entry in cachedCardList {
-                guard let stackId = entry["id"] as? String,
+                guard let windowId = entry["id"] as? String,
                       let title = entry["title"] as? String else { continue }
                 let focused = entry["focused"] as? Bool ?? false
-                let item = NSMenuItem(title: title, action: #selector(focusCardFromMenu(_:)), keyEquivalent: "")
-                item.representedObject = stackId
+                let item = NSMenuItem(title: title, action: #selector(focusWindowFromMenu(_:)), keyEquivalent: "")
+                item.representedObject = windowId
                 item.state = focused ? .on : .off
                 menu.addItem(item)
             }
