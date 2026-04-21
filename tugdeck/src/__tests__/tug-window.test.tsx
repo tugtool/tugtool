@@ -45,7 +45,6 @@ function wrap(ui: React.ReactElement): React.ReactElement {
 const defaultProps = {
   stackState: makeStackState(),
   meta: { title: "Test" },
-  feedIds: [] as const,
   onCardMoved: mock(() => {}),
   onClose: mock(() => {}),
   onStackActivated: mock(() => {}),

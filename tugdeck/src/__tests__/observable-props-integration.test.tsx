@@ -89,7 +89,6 @@ function renderObservableProps(cardId = "obs-int-card") {
           <TugWindow
             stackState={stackState}
             meta={{ title: "Test" }}
-            feedIds={[]}
             onCardMoved={() => {}}
             onStackActivated={() => {}}
             zIndex={1}

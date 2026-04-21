@@ -1,7 +1,7 @@
 /**
  * TugWindow — deck window chrome and frame: title bar, tabs, content area,
- * drag/resize, z-order, and responder integration. Replaces the former
- * Merged from the former inner card chrome + outer frame split ([D02] merge window).
+ * drag/resize, z-order, and responder integration. Merged from the former
+ * inner card chrome + outer frame split ([D02] merge window).
  *
  * Responsibilities:
  * - Absolutely-positioned `.card-frame` at position/size from `stackState`
@@ -27,7 +27,6 @@ import React, {
   useState,
 } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
-import type { FeedIdValue } from "@/protocol";
 import type { CardState, TugWindowState } from "@/layout-tree";
 import type { CardSizePolicy, TugcardMeta } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
@@ -293,10 +292,6 @@ export interface TugWindowProps {
   stackState: TugWindowState;
   /** Default metadata for the window (from card registration). */
   meta: TugcardMeta;
-  /** Feed IDs for the active card (from registration). */
-  feedIds: readonly FeedIdValue[];
-  /** Custom decode per feed. */
-  decode?: (feedId: FeedIdValue, bytes: Uint8Array) => unknown;
   /**
    * Minimum content area size (below title bar + accessory).
    * Total min-size = header + accessory + this region.
@@ -374,7 +369,6 @@ const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 export function TugWindow({
   stackState,
   meta,
-  feedIds,
   minContentSize: minContentSizeProp,
   accessory = null,
   cards,

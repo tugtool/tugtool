@@ -448,7 +448,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             key={stackState.id}
             stackState={stackState}
             meta={registration.defaultMeta}
-            feedIds={registration.defaultFeedIds ?? []}
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             isFocused={stackState.id === focusedStackId}

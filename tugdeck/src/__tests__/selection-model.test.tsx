@@ -21,7 +21,6 @@ import { TugWindow } from "@/components/chrome/tug-window";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";
-import type { FeedIdValue } from "@/protocol";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import type { TugWindowState } from "@/layout-tree";
 
@@ -59,7 +58,6 @@ function renderWithManager(ui: React.ReactElement) {
 
 const defaultWindowProps = {
   meta: { title: "Selection Test Card" },
-  feedIds: [] as readonly FeedIdValue[],
   onCardMoved: mock(() => {}),
   onStackActivated: mock(() => {}),
   zIndex: 1,
