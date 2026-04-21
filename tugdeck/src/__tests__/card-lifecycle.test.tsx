@@ -41,6 +41,9 @@ function makeStore(initial: string | null = null): CardLifecycleStore & {
     getFocusedCardId() {
       return state.focused;
     },
+    getFirstResponderCardId() {
+      return state.focused;
+    },
   };
 }
 

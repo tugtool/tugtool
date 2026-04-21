@@ -69,6 +69,12 @@ export interface CardLifecycleStore {
   focusCard(cardId: string): void;
   /** Current focused card id (top of z-order), or null if no cards. */
   getFocusedCardId(): string | null;
+  /**
+   * Current composite first-responder: the active stack's active card,
+   * or `null` when no stack is active. Used by the app → card cascade
+   * to pick the right card to fire deactivate on at app-resign time.
+   */
+  getFirstResponderCardId(): string | null;
 }
 
 /**
@@ -466,6 +472,14 @@ export class CardLifecycle {
   /** Current active card id. Thin pass-through to the store. */
   getActiveCardId(): string | null {
     return this.store.getFocusedCardId();
+  }
+
+  /**
+   * Current composite first responder (the active stack's active card).
+   * Thin pass-through to the store. See `CardLifecycleStore.getFirstResponderCardId`.
+   */
+  getFirstResponderCardId(): string | null {
+    return this.store.getFirstResponderCardId();
   }
 
   // ---- Internals ----

@@ -36,6 +36,9 @@ function makeStore(initial: string | null = null): CardLifecycleStore & {
     getFocusedCardId() {
       return state.focused;
     },
+    getFirstResponderCardId() {
+      return state.focused;
+    },
   };
 }
 
@@ -236,5 +239,47 @@ describe("lifecycle-cascade — dispose", () => {
     appLifecycle.notifyApplicationDidUnhide();
 
     expect(log).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 11.6.1b transition 9: cascade targets the composite first responder
+// ---------------------------------------------------------------------------
+
+describe("lifecycle-cascade — 11.6.1b composite first responder", () => {
+  it("T-11-6-1b-09: cascade fires on getFirstResponderCardId, not getFocusedCardId", () => {
+    // Build a store where the z-order top (`getFocusedCardId`) and the
+    // composite first responder (`getFirstResponderCardId`) point at
+    // different cards. Pre-11.6.1b the cascade picked the z-order top;
+    // 11.6.1b retargets it to the composite bit so the blurred card
+    // matches the card that actually holds focus in the UI.
+    const state = { topOfZ: "card-top", firstResponder: "card-fr" };
+    const store: CardLifecycleStore & { state: typeof state } = {
+      state,
+      focusCard(id: string) {
+        state.topOfZ = id;
+      },
+      getFocusedCardId() {
+        return state.topOfZ;
+      },
+      getFirstResponderCardId() {
+        return state.firstResponder;
+      },
+    };
+    const cardLifecycle = new CardLifecycle(store);
+    const appLifecycle = new AppLifecycle();
+    installLifecycleCascade(cardLifecycle, appLifecycle);
+    const log = recordCardEvents(cardLifecycle);
+    log.length = 0;
+
+    appLifecycle.notifyApplicationWillResignActive();
+    appLifecycle.notifyApplicationDidBecomeActive();
+
+    expect(log).toEqual([
+      "willDeactivate:card-fr",
+      "didDeactivate:card-fr",
+      "willActivate:card-fr",
+      "didActivate:card-fr",
+    ]);
   });
 });
