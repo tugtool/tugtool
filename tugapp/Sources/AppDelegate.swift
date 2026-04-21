@@ -297,20 +297,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
-        // Close Card / Close Window: routes through the web view's responder
+        // Close Card / Close Pane: routes through the web view's responder
         // chain rather than NSWindow.performClose. The custom selector sends a
         // Control frame that action-dispatch.ts turns into a `close` chain
-        // dispatch, which lands on TugWindow's registered handler. Without the
+        // dispatch, which lands on TugPane's registered handler. Without the
         // round-trip, AppKit would swallow ⌘W at the menubar and the WKWebView
         // would never see the keystroke.
         //
         // Title is dynamic (updated by updateCardList on every frontend push):
-        //   multi-card window  → "Close Card"  (closes the active card)
-        //   single-card window → "Close Window" (closes the whole window)
+        //   multi-card pane  → "Close Card" (closes the active card)
+        //   single-card pane → "Close Pane" (removes the last card / pane)
         // matching the macOS Safari / Finder convention. The initial title
-        // is "Close Window" — before the first card list arrives, any pending
-        // ⌘W best describes the default single-card window state.
-        closeMenuItem = NSMenuItem(title: "Close Window", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        // is "Close Pane" — before the first card list arrives, any pending
+        // ⌘W best describes the default single-card pane state.
+        closeMenuItem = NSMenuItem(title: "Close Pane", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
         fileMenu.addItem(closeMenuItem)
 
         // Edit Menu - position 2
@@ -367,7 +367,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Card to Active Window", action: #selector(addCardToActivePane(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Card to Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
         developerMenu.isHidden = !devModeEnabled
@@ -476,9 +476,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // and tuglaws/action-naming.md). The Swift method name stays
         // as `closeActiveCard` because it still describes what the
         // method does: close the active card via the responder chain.
-        // In a multi-card window the chain's handler removes the active
-        // card from the window; in a single-card window it closes the
-        // window. Either way, "close the active card" is the right
+        // In a multi-card pane the chain's handler removes the active
+        // card from the pane; in a single-card pane it removes the last
+        // card (pane goes away). Either way, "close the active card" is the right
         // mental model at the dispatch site.
         sendControl("close")
     }
@@ -514,13 +514,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateCardList(_ list: [[String: Any]]) {
         cachedCardList = list
 
-        // File ▸ Close Card / Close Window — dynamic label based on the
-        // focused window's card count. Multi-card: ⌘W closes the active card
-        // (window stays). Single-card: ⌘W closes the whole window. Matches
+        // File ▸ Close Card / Close Pane — dynamic label based on the
+        // focused pane's card count. Multi-card: ⌘W closes the active card
+        // (pane stays). Single-card: ⌘W closes the pane. Matches
         // macOS Safari / Finder behavior.
-        let focusedWindow = list.first { ($0["focused"] as? Bool) == true }
-        let cardCount = focusedWindow?["cardCount"] as? Int ?? 0
-        closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Window"
+        let focusedPane = list.first { ($0["focused"] as? Bool) == true }
+        let cardCount = focusedPane?["cardCount"] as? Int ?? 0
+        closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
     }
 
     // MARK: - UDS control commands

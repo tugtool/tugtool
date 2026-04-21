@@ -595,24 +595,24 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 
 **Artifacts:**
 - `tugapp/Sources/AppDelegate.swift` — menu item titles and the dynamic-label logic in `updateCardList`.
-- `tugapp/Sources/MainMenu.swift` (or wherever the menu is defined) — initial titles.
+- (No separate `MainMenu.swift`; main menus are built in `AppDelegate.setupMainMenu()`.)
 
 **Tasks:**
-- [ ] "Add Card to Active Window" → "Add Card to Active Pane."
-- [ ] Initial close-menu title "Close Window" → "Close Pane."
-- [ ] Dynamic label:
+- [x] "Add Card to Active Window" → "Add Card to Active Pane."
+- [x] Initial close-menu title "Close Window" → "Close Pane."
+- [x] Dynamic label:
   ```swift
   closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
   ```
-- [ ] Keybindings unchanged.
+- [x] Keybindings unchanged.
 
 **Checkpoint:**
-- [ ] Tug.app builds and runs.
+- [x] Tug.app builds and runs.
 - [ ] Manual smoke:
-  - [ ] File menu shows "Add Card to Active Pane"; selecting it adds a card.
-  - [ ] With a single-card pane focused: close menu title is "Close Pane"; ⌘W closes the pane.
-  - [ ] With a multi-card pane focused: close menu title is "Close Card"; ⌘W closes the active card only.
-- [ ] `rg "Add Card to Active Window|Close Window" tugapp/Sources` returns zero matches.
+  - [ ] Developer menu shows "Add Card to Active Pane"; selecting it adds a card.
+  - [ ] With a single-card pane focused: File menu close title is "Close Pane"; ⌘W closes the pane.
+  - [ ] With a multi-card pane focused: File menu close title is "Close Card"; ⌘W closes the active card only.
+- [x] `rg "Add Card to Active Window|Close Window" tugapp/Sources` returns zero matches.
 
 ---
 
