@@ -8,7 +8,6 @@
  * - putFocusedCardId sends correct URL and body format (mock fetch)
  * - readCardStates returns populated Map for known card IDs
  * - readCardStates skips missing entries
- * - migrateTabstateToCardstate (legacy tabstate → cardstate)
  */
 
 import { describe, test, expect, mock, afterEach } from "bun:test";
@@ -17,7 +16,6 @@ import {
   readDeckState,
   putFocusedCardId,
   readCardStates,
-  migrateTabstateToCardstate,
   putPromptHistory,
   getPromptHistory,
   readTideRecentProjects,
@@ -59,194 +57,7 @@ function makeMockClient(
   } as TugbankClient;
 }
 
-/** Domains used by `migrateTabstateToCardstate` (must match settings-api). */
-const LEGACY_TABSTATE_DOMAIN = "dev.tugtool.deck.tabstate";
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
-
-/** Parse `/api/defaults/:domain/:key` paths used by tugcast defaults HTTP API. */
-function parseDefaultsDomainKey(url: string): { domain: string; key: string } | null {
-  const prefix = "/api/defaults/";
-  if (!url.startsWith(prefix)) return null;
-  const rest = url.slice(prefix.length);
-  const slash = rest.indexOf("/");
-  if (slash < 0) return null;
-  const domain = rest.slice(0, slash);
-  const key = decodeURIComponent(rest.slice(slash + 1));
-  return { domain, key };
-}
-
-/**
- * Mutates `store` on PUT to cardstate and DELETE from legacy tabstate, mirroring server behavior.
- */
-function installMigrationFetchMock(
-  store: Record<string, Record<string, TaggedValue>>,
-  options?: { failFirstCardstatePut?: boolean },
-): { cardstatePutCount: () => number } {
-  let cardstatePutSuccessCount = 0;
-  let consumedFirstPutFailure = false;
-  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-    const u = typeof url === "string" ? url : url.toString();
-    const method = (init?.method ?? "GET").toUpperCase();
-    const parsed = parseDefaultsDomainKey(u);
-    if (!parsed) {
-      return makeResponse(404, {});
-    }
-
-    if (method === "PUT" && parsed.domain === CARDSTATE_DOMAIN) {
-      if (options?.failFirstCardstatePut && !consumedFirstPutFailure) {
-        consumedFirstPutFailure = true;
-        throw new Error("simulated PUT failure");
-      }
-      cardstatePutSuccessCount++;
-      const body = init?.body as string;
-      const tagged = JSON.parse(body) as TaggedValue;
-      if (!store[parsed.domain]) store[parsed.domain] = {};
-      store[parsed.domain][parsed.key] = tagged;
-      return makeResponse(200, { status: "ok" });
-    }
-
-    if (method === "DELETE" && parsed.domain === LEGACY_TABSTATE_DOMAIN) {
-      const domainMap = store[parsed.domain];
-      if (domainMap?.[parsed.key]) {
-        delete domainMap[parsed.key];
-        if (Object.keys(domainMap).length === 0) {
-          delete store[parsed.domain];
-        }
-      }
-      return makeResponse(200, { status: "ok" });
-    }
-
-    return makeResponse(404, {});
-  }) as unknown as typeof fetch;
-
-  return {
-    cardstatePutCount: () => cardstatePutSuccessCount,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// migrateTabstateToCardstate
-// ---------------------------------------------------------------------------
-
-describe("migrateTabstateToCardstate", () => {
-  afterEach(() => {
-    mock.restore();
-  });
-
-  test("empty legacy tabstate and empty cardstate → zero summary", async () => {
-    const store: Record<string, Record<string, TaggedValue>> = {};
-    installMigrationFetchMock(store);
-    const client = makeMockClient(store);
-
-    const summary = await migrateTabstateToCardstate(client);
-    expect(summary).toEqual({ migrated: 0, skipped: 0, unchanged: 0 });
-  });
-
-  test("three legacy rows, no cardstate → migrated verbatim; legacy domain cleared", async () => {
-    const bag1: CardStateBag = { scroll: { x: 0, y: 1 } };
-    const bag2: CardStateBag = { scroll: { x: 2, y: 3 }, content: { n: 4 } };
-    const bag3: CardStateBag = { scroll: { x: 5, y: 6 } };
-
-    const store: Record<string, Record<string, TaggedValue>> = {
-      [LEGACY_TABSTATE_DOMAIN]: {
-        "legacy-a": { kind: "json", value: bag1 },
-        "legacy-b": { kind: "json", value: bag2 },
-        "legacy-c": { kind: "json", value: bag3 },
-      },
-    };
-    installMigrationFetchMock(store);
-    const client = makeMockClient(store);
-
-    const summary = await migrateTabstateToCardstate(client);
-    expect(summary).toEqual({ migrated: 3, skipped: 0, unchanged: 0 });
-
-    expect(store[LEGACY_TABSTATE_DOMAIN]).toBeUndefined();
-    expect(store[CARDSTATE_DOMAIN]?.["legacy-a"]?.value).toEqual(bag1);
-    expect(store[CARDSTATE_DOMAIN]?.["legacy-b"]?.value).toEqual(bag2);
-    expect(store[CARDSTATE_DOMAIN]?.["legacy-c"]?.value).toEqual(bag3);
-  });
-
-  test("row in both domains → cardstate value kept; legacy row removed (skipped)", async () => {
-    const legacyOnly: CardStateBag = { scroll: { x: 99, y: 99 } };
-    const winner: CardStateBag = { scroll: { x: 1, y: 2 } };
-
-    const store: Record<string, Record<string, TaggedValue>> = {
-      [LEGACY_TABSTATE_DOMAIN]: {
-        "dup-1": { kind: "json", value: legacyOnly },
-        "dup-2": { kind: "json", value: { scroll: { x: 0, y: 0 } } },
-      },
-      [CARDSTATE_DOMAIN]: {
-        "dup-1": { kind: "json", value: winner },
-        "dup-2": { kind: "json", value: { scroll: { x: 7, y: 8 } } },
-      },
-    };
-    installMigrationFetchMock(store);
-    const client = makeMockClient(store);
-
-    const summary = await migrateTabstateToCardstate(client);
-    expect(summary).toEqual({ migrated: 0, skipped: 2, unchanged: 0 });
-
-    expect(store[LEGACY_TABSTATE_DOMAIN]).toBeUndefined();
-    expect(store[CARDSTATE_DOMAIN]?.["dup-1"]?.value).toEqual(winner);
-    expect((store[CARDSTATE_DOMAIN]?.["dup-2"]?.value as CardStateBag).scroll?.y).toBe(8);
-  });
-
-  test("row only in cardstate → unchanged count; no PUT or legacy DELETE", async () => {
-    const bag: CardStateBag = { scroll: { x: 3, y: 4 } };
-    const store: Record<string, Record<string, TaggedValue>> = {
-      [CARDSTATE_DOMAIN]: {
-        "only-card": { kind: "json", value: bag },
-      },
-    };
-    const { cardstatePutCount } = installMigrationFetchMock(store);
-    const client = makeMockClient(store);
-
-    const summary = await migrateTabstateToCardstate(client);
-    expect(summary).toEqual({ migrated: 0, skipped: 0, unchanged: 1 });
-    expect(cardstatePutCount()).toBe(0);
-    expect(store[CARDSTATE_DOMAIN]?.["only-card"]?.value).toEqual(bag);
-  });
-
-  test("first cardstate PUT fails → that legacy row remains; other rows still migrate", async () => {
-    const keep: CardStateBag = { scroll: { x: 1, y: 1 } };
-    const moved: CardStateBag = { scroll: { x: 2, y: 2 } };
-
-    const store: Record<string, Record<string, TaggedValue>> = {
-      [LEGACY_TABSTATE_DOMAIN]: {
-        "fail-first": { kind: "json", value: keep },
-        "ok-second": { kind: "json", value: moved },
-      },
-    };
-    installMigrationFetchMock(store, { failFirstCardstatePut: true });
-    const client = makeMockClient(store);
-
-    const summary = await migrateTabstateToCardstate(client);
-    expect(summary.migrated).toBe(1);
-    expect(store[LEGACY_TABSTATE_DOMAIN]?.["fail-first"]).toBeDefined();
-    expect(store[LEGACY_TABSTATE_DOMAIN]?.["ok-second"]).toBeUndefined();
-    expect(store[CARDSTATE_DOMAIN]?.["ok-second"]?.value).toEqual(moved);
-    expect(store[CARDSTATE_DOMAIN]?.["fail-first"]).toBeUndefined();
-  });
-
-  test("running twice yields stable store and second pass is a no-op on legacy rows", async () => {
-    const bag: CardStateBag = { scroll: { x: 9, y: 8 } };
-    const store: Record<string, Record<string, TaggedValue>> = {
-      [LEGACY_TABSTATE_DOMAIN]: {
-        "once": { kind: "json", value: bag },
-      },
-    };
-    installMigrationFetchMock(store);
-    const client = makeMockClient(store);
-
-    const first = await migrateTabstateToCardstate(client);
-    expect(first).toEqual({ migrated: 1, skipped: 0, unchanged: 0 });
-    const afterFirst = JSON.stringify(store);
-
-    const second = await migrateTabstateToCardstate(client);
-    expect(second).toEqual({ migrated: 0, skipped: 0, unchanged: 1 });
-    expect(JSON.stringify(store)).toBe(afterFirst);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // putCardState

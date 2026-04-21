@@ -30,9 +30,7 @@ import type { SavedSelection } from "./components/tugways/selection-guard";
  *
  * Stored in DeckManager's in-memory cache (primary read source during a
  * session) and in tugbank under `dev.tugtool.deck.cardstate/{cardId}` (durable
- * backing store). Legacy `tabstate/{cardId}` rows are migrated at app launch.
- * `cardId` is the content identity (the same string as the former single-table
- * tab identity when the two-table model landed).
+ * backing store).
  *
  * Spec S01: CardStateBag type ([D01])
  */

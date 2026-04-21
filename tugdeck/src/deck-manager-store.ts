@@ -187,14 +187,12 @@ export interface IDeckManagerStore {
   /**
    * Read a per-card state bag from the in-memory cache. Returns
    * `undefined` when there is no cached state for the card.
-   * (Renamed from `getTabState`.)
    */
   getCardState: (cardId: string) => CardStateBag | undefined;
 
   /**
    * Write a per-card state bag to the in-memory cache and schedule a
-   * debounced tugbank write (fire-and-forget). (Renamed from
-   * `setTabState`.)
+   * debounced tugbank write (fire-and-forget).
    */
   setCardState: (cardId: string, bag: CardStateBag) => void;
 

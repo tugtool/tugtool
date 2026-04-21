@@ -1730,53 +1730,53 @@ describe("DeckManager.moveCardToPane", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 5f: Tab state cache (Spec S03, Step 3)
+// Phase 5f: Per-card state cache (Spec S03, Step 3)
 // ---------------------------------------------------------------------------
 
-describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
-  it("getTabState returns undefined for unknown tab ID", () => {
-    expect(manager.getCardState("unknown-tab-id")).toBeUndefined();
+describe("DeckManager per-card state cache (Phase 5f Step 3)", () => {
+  it("getCardState returns undefined for unknown card ID", () => {
+    expect(manager.getCardState("unknown-card-id")).toBeUndefined();
   });
 
-  it("setTabState followed by getTabState returns the saved bag", () => {
+  it("setCardState followed by getCardState returns the saved bag", () => {
     const bag = { scroll: { x: 10, y: 50 }, content: { key: "value" } };
-    manager.setCardState("tab-abc", bag);
-    const retrieved = manager.getCardState("tab-abc");
+    manager.setCardState("card-abc", bag);
+    const retrieved = manager.getCardState("card-abc");
     expect(retrieved).toBeDefined();
     expect(retrieved?.scroll?.x).toBe(10);
     expect(retrieved?.scroll?.y).toBe(50);
     expect((retrieved?.content as Record<string, string>).key).toBe("value");
   });
 
-  it("setTabState overwrites an existing entry", () => {
-    manager.setCardState("tab-xyz", { scroll: { x: 0, y: 0 } });
-    manager.setCardState("tab-xyz", { scroll: { x: 99, y: 77 } });
-    const retrieved = manager.getCardState("tab-xyz");
+  it("setCardState overwrites an existing entry", () => {
+    manager.setCardState("card-xyz", { scroll: { x: 0, y: 0 } });
+    manager.setCardState("card-xyz", { scroll: { x: 99, y: 77 } });
+    const retrieved = manager.getCardState("card-xyz");
     expect(retrieved?.scroll?.x).toBe(99);
     expect(retrieved?.scroll?.y).toBe(77);
   });
 
-  it("getTabState with different tab IDs returns independent entries", () => {
-    manager.setCardState("tab-1", { scroll: { x: 1, y: 1 } });
-    manager.setCardState("tab-2", { scroll: { x: 2, y: 2 } });
-    expect(manager.getCardState("tab-1")?.scroll?.x).toBe(1);
-    expect(manager.getCardState("tab-2")?.scroll?.x).toBe(2);
+  it("getCardState with different card IDs returns independent entries", () => {
+    manager.setCardState("card-1", { scroll: { x: 1, y: 1 } });
+    manager.setCardState("card-2", { scroll: { x: 2, y: 2 } });
+    expect(manager.getCardState("card-1")?.scroll?.x).toBe(1);
+    expect(manager.getCardState("card-2")?.scroll?.x).toBe(2);
   });
 
-  it("constructor accepts initialTabStates and populates cache", () => {
+  it("constructor accepts initialCardStates and populates cache", () => {
     const initialMap = new Map([
-      ["tab-init-1", { scroll: { x: 5, y: 15 } }],
-      ["tab-init-2", { content: "saved" }],
+      ["card-init-1", { scroll: { x: 5, y: 15 } }],
+      ["card-init-2", { content: "saved" }],
     ]);
 
-    // Create a fresh manager with pre-loaded tab states.
+    // Create a fresh manager with pre-loaded card states.
     const c2 = makeContainer();
     const conn2 = makeMockConnection();
     const mgr2 = new DeckManager(c2, conn2, undefined, undefined, initialMap);
     try {
-      expect(mgr2.getCardState("tab-init-1")?.scroll?.x).toBe(5);
-      expect(mgr2.getCardState("tab-init-2")?.content).toBe("saved");
-      expect(mgr2.getCardState("tab-init-3")).toBeUndefined();
+      expect(mgr2.getCardState("card-init-1")?.scroll?.x).toBe(5);
+      expect(mgr2.getCardState("card-init-2")?.content).toBe("saved");
+      expect(mgr2.getCardState("card-init-3")).toBeUndefined();
     } finally {
       mgr2.destroy();
       c2.remove();

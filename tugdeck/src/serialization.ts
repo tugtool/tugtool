@@ -21,7 +21,7 @@
  *   {@link buildDefaultLayout}.
  *
  * Legacy card ids become pane ids; legacy tab ids become card ids — identity
- * is preserved so tugbank per-card state remains keyed by the same id strings.
+ * is preserved so per-card state in tugbank remains keyed by the same id strings.
  */
 
 import {

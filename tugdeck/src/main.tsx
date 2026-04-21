@@ -121,8 +121,7 @@ if (!container) {
   registerGalleryCards();
 
   // Extract card IDs from the loaded layout and read per-card state bags
-  // from the tugbank cache (`dev.tugtool.deck.cardstate`). Launch-time
-  // migration rewrites any legacy `tabstate` rows (see `migrateTabstateToCardstate`).
+  // from the tugbank cache (`dev.tugtool.deck.cardstate`).
   let cardStates = new Map<string, import("./layout-tree").CardStateBag>();
   if (layout !== null) {
     try {
