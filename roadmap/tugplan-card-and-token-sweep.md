@@ -61,7 +61,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 3. **Done (Step 3).** `use-card-persistence.tsx` with exports `useCardPersistence`, `UseCardPersistenceOptions`, `CardPersistenceCallbacks` (was `use-tugcard-persistence.tsx` / `TugcardPersistence*`).
 4. **Done (Step 4).** `useCardDirty` (was `useTugcardDirty`) — `tug-pane.tsx` with `CardDirtyContext`.
 5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-card-persistence.test.tsx` **done (Step 3)**.
-6. CSS frame tokens: `--tugx-card-bg`, `--tugx-card-border`, `--tugx-card-shadow-active|inactive`, `--tugx-card-dim-overlay` → `--tugx-pane-*`.
+6. **Done (Step 5).** CSS frame tokens → `--tugx-pane-bg`, `--tugx-pane-border`, `--tugx-pane-shadow-active|inactive`, `--tugx-pane-dim-overlay`.
 7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
 8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
 8a. Pane content-dim / accessory / findbar tokens (`--tugx-card-content-dim-*`, `--tugx-card-accessory-*`, `--tugx-card-findbar-*`) → `--tugx-pane-*`. Surfaced by Step 0 ([Appendix A.3](#appendix-a)).
@@ -310,8 +310,11 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 **Artifacts:**
 - `tugdeck/src/components/tugways/tug-pane.css` — token definitions + consumer selectors.
 - `tugdeck/styles/chrome.css` — `.card-flash-overlay`, `[data-focused]::after`, any other reader.
-- `tugdeck/styles/themes/brio.css`, `harmony.css` — only if Step 0 found direct aliases.
-- `tugdeck/docs/pairing-audit-results.md` — pairing tables.
+- `tugdeck/styles/themes/brio.css`, `harmony.css` — only if Step 0 found direct aliases (none).
+- `tugdeck/docs/pairing-audit-results.md` — `tug-pane.css` token list.
+- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx` — inline `var(--tugx-pane-border)`.
+- `tugdeck/scripts/audit-tokens.ts` — JSDoc example for `stripTugPrefix`.
+- `tuglaws/component-authoring.md`, `tuglaws/token-naming.md` — illustrative `--tugx-pane-*` names.
 
 **Token rename table (starter):**
 
@@ -324,15 +327,15 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 | `--tugx-card-dim-overlay` | `--tugx-pane-dim-overlay` |
 
 **Tasks:**
-- [ ] Rename definitions in `tug-pane.css`.
-- [ ] Rename every `var(--tugx-card-…)` consumer site (same file + chrome.css + theme files as applicable).
-- [ ] Update the JSDoc `@tug-pairings` table header at the top of `tug-pane.css`.
-- [ ] Update `docs/pairing-audit-results.md` to reflect new names.
+- [x] Rename definitions in `tug-pane.css`.
+- [x] Rename every `var(--tugx-card-…)` consumer site (same file + chrome.css + theme files as applicable).
+- [x] Update the JSDoc `@tug-pairings` table header at the top of `tug-pane.css`.
+- [x] Update `docs/pairing-audit-results.md` to reflect new names.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green; `bun run audit:tokens lint` zero violations.
-- [ ] `rg "--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim-overlay" tugdeck` returns zero matches.
-- [ ] Manual smoke: pane renders with correct border / shadow / dim overlay when switching active card.
+- [x] `bun x tsc --noEmit` clean; `bun test` green; `bun run audit:tokens lint` zero violations.
+- [x] `rg "--tugx-card-bg|--tugx-card-border|--tugx-card-shadow|--tugx-card-dim-overlay" tugdeck` returns zero matches.
+- [x] Manual smoke: pane renders with correct border / shadow / dim overlay when switching active card.
 
 ---
 
@@ -616,8 +619,8 @@ All live `--tugx-card-*` token definitions are in two files:
 - `tugdeck/src/components/tugways/tug-pane-banner.css` — banner (lines 40–50 + 243–259 define; lines 72–198 consume).
 
 Non-CSS-file consumers:
-- `tugdeck/styles/chrome.css:51` — reads `--tugx-card-dim-overlay`.
-- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx:112,115` — inline-style readers of `--tugx-card-border` and `--tugx-card-title-bar-bg-inactive`.
+- `tugdeck/styles/chrome.css:51` — reads `--tugx-pane-dim-overlay`.
+- `tugdeck/src/components/tugways/cards/gallery-title-bar.tsx:112,115` — inline-style readers of `--tugx-pane-border` and `--tugx-card-title-bar-bg-inactive` (title-bar token — Step 6).
 
 Non-CSS informational surfaces (docs + scripts):
 - `tugdeck/scripts/audit-tokens.ts:173,197,198,828` — JSDoc examples (Step 9).
@@ -626,12 +629,12 @@ Non-CSS informational surfaces (docs + scripts):
 
 #### A.3 Token families by step
 
-**Step 5 — Frame tokens (5):**
-- `--tugx-card-bg`
-- `--tugx-card-border`
-- `--tugx-card-shadow-active`
-- `--tugx-card-shadow-inactive`
-- `--tugx-card-dim-overlay`
+**Step 5 — Frame tokens (5):** ✓ renamed to `--tugx-pane-*`
+- `--tugx-pane-bg`
+- `--tugx-pane-border`
+- `--tugx-pane-shadow-active`
+- `--tugx-pane-shadow-inactive`
+- `--tugx-pane-dim-overlay`
 
 **Step 6 — Title-bar tokens (9):**
 - `--tugx-card-title-bar-bg-active`

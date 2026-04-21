@@ -21,7 +21,7 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tugx-card-border                               | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard (border)                    |
+ * | --tugx-pane-border                               | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard (border)                    |
  * | --tugx-card-title-fg-active                      | --tug7-surface-card-primary-normal-titlebar-active | content      | .tug-pane[data-focused="true"] .tugcard-title (color) |
  * | --tugx-card-title-fg-inactive                    | --tug7-surface-card-primary-normal-titlebar-inactive | content      | .tugcard-title (color)               |
  * | --tugx-card-title-bar-icon-active                | --tug7-surface-card-primary-normal-titlebar-active | control      | .tug-pane[data-focused="true"] .tugcard-icon (color) |
@@ -43,12 +43,12 @@
  * } */
 
 body {
-  /* --- Card --- */
-  --tugx-card-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
-  --tugx-card-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-card-shadow-active: 0 1px 4px var(--tug7-element-global-shadow-normal-md-rest);
-  --tugx-card-shadow-inactive: 0 1px 4px var(--tug7-element-global-shadow-normal-xs-rest);
-  --tugx-card-dim-overlay: var(--tug7-surface-overlay-primary-normal-highlight-rest);
+  /* --- Pane frame (.tugcard outer chrome) --- */
+  --tugx-pane-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-pane-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-shadow-active: 0 1px 4px var(--tug7-element-global-shadow-normal-md-rest);
+  --tugx-pane-shadow-inactive: 0 1px 4px var(--tug7-element-global-shadow-normal-xs-rest);
+  --tugx-pane-dim-overlay: var(--tug7-surface-overlay-primary-normal-highlight-rest);
 
   /* --- Card Title Bar --- */
   --tugx-card-title-bar-bg-active: var(--tug7-surface-card-primary-normal-titlebar-active);
@@ -112,11 +112,11 @@ body {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--tugx-card-bg);
-  border: 1px solid var(--tugx-card-border);
+  background-color: var(--tugx-pane-bg);
+  border: 1px solid var(--tugx-pane-border);
   border-radius: var(--tug-radius-md);
   overflow: hidden;
-  box-shadow: var(--tugx-card-shadow-inactive);
+  box-shadow: var(--tugx-pane-shadow-inactive);
 }
 
 /* ============================================================================
@@ -164,7 +164,7 @@ body {
 
 /* ---- Card shadow: active when focused ---- */
 .tug-pane[data-focused="true"] .tugcard {
-  box-shadow: var(--tugx-card-shadow-active);
+  box-shadow: var(--tugx-pane-shadow-active);
 }
 
 /* ============================================================================
@@ -331,8 +331,8 @@ body {
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--tugx-card-bg);
-  border-bottom: 1px solid var(--tugx-card-border);
+  background-color: var(--tugx-pane-bg);
+  border-bottom: 1px solid var(--tugx-pane-border);
 }
 
 .tugcard-accessory:empty {
@@ -347,7 +347,7 @@ body {
   position: relative;
   flex: 1;
   overflow: auto;
-  background-color: var(--tugx-card-bg);
+  background-color: var(--tugx-pane-bg);
   min-height: 0; /* needed for flex children to allow scroll */
   /* Explicitly none — do not rely on inheritance from body through
      intermediate elements. Individual content components opt in to

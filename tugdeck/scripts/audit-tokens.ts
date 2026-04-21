@@ -825,7 +825,7 @@ function isFullNameMap(map: Record<string, string>): boolean {
  *   "--tug-element-foo"   → "element-foo"
  *   "--tug7-element-foo"  → "element-foo"
  *   "--tugc-red-h"        → "red-h"
- *   "--tugx-card-border"  → "card-border"
+ *   "--tugx-pane-border"  → "pane-border"
  */
 function stripTugPrefix(fullName: string): string {
   if (fullName.startsWith("--tug7-")) return fullName.slice("--tug7-".length);

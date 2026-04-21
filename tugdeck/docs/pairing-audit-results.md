@@ -91,6 +91,10 @@
 - `--tug-card-title-bar-icon-active` resolves to `--tug-base-icon-active`
 - `--tug-card-title-bar-icon-inactive` resolves to `--tug-base-fg-subtle`
 - `--tug-card-title-bar-icon-hover` resolves to `--tug-base-fg-muted`
+- `--tugx-pane-bg` resolves to `--tug7-surface-global-primary-normal-overlay-rest`
+- `--tugx-pane-border` resolves to `--tug7-element-global-border-normal-default-rest`
+- `--tugx-pane-shadow-active` / `--tugx-pane-shadow-inactive` — `box-shadow` values using `--tug7-element-global-shadow-normal-md-rest` / `-xs-rest`
+- `--tugx-pane-dim-overlay` resolves to `--tug7-surface-overlay-primary-normal-highlight-rest` (inactive-pane dim layer; consumed from `chrome.css`)
 
 ### Pairings
 

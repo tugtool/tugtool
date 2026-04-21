@@ -5,7 +5,6 @@
  * controls for toggling the collapsed state and selecting the icon.
  *
  * [D07] Window-shade collapse
- * Step 3: Card Frame & Title Bar
  *
  * @module components/tugways/cards/gallery-title-bar
  */
@@ -32,7 +31,6 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
  * controls for toggling the collapsed state and selecting the icon.
  *
  * [D07] Window-shade collapse
- * Step 3: Card Frame & Title Bar
  */
 export function GalleryTitleBar() {
   const [collapsed, setCollapsed] = useState(false);
@@ -109,7 +107,7 @@ export function GalleryTitleBar() {
         <TugLabel className="cg-section-title">CardTitleBar — Live Demo</TugLabel>
         <div
           style={{
-            border: "1px solid var(--tugx-card-border)",
+            border: "1px solid var(--tugx-pane-border)",
             borderRadius: "var(--tug-radius-md)",
             overflow: "hidden",
             background: "var(--tugx-card-title-bar-bg-inactive)",

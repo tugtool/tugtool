@@ -48,7 +48,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--tugx-card-dim-overlay);
+  background: var(--tugx-pane-dim-overlay);
   border-radius: var(--tug-radius-md);
   pointer-events: none;
   z-index: 2;

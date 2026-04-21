@@ -372,13 +372,13 @@ When aliases are used, define them in `body {}` at the top of the CSS file, afte
 
 ```css
 body {
-  /* Card aliases — resolve to base tier in one hop [L17] */
-  --tugx-card-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-card-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  /* Pane frame aliases (TugPane) — resolve to base tier in one hop [L17] */
+  --tugx-pane-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
 }
 ```
 
-Never chain aliases (`--tugx-card-bg: var(--tugx-card-other-alias)`) — that is a second hop and violates [L17].
+Never chain aliases (`--tugx-pane-bg: var(--tugx-pane-other-alias)`) — that is a second hop and violates [L17].
 
 ### Enter/Exit Animations [L13, L14]
 
