@@ -349,12 +349,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     );
     if (!cardExists) return;
 
-    // Pass `null` as known-previous: the app just launched, no card
-    // was previously active in this session. Without this the loaded
-    // top-of-stack card would same-card-bail inside activateCard and
-    // fire no will/didActivate — delegates waiting on activation
-    // would miss the event on reload.
-    store.activateCard(focusedCardId, null);
+    // On mount, route through `activateCard` — `_setFirstResponder`
+    // treats the serialized `activeStackId` as the pre-existing
+    // composite bit and delivers initial-sync to late-mounting
+    // lifecycle subscribers via `observeCardDidActivate`'s
+    // subscribe-time read of the current focused card.
+    store.activateCard(focusedCardId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fade out the startup overlay once DeckCanvas has committed its first render.

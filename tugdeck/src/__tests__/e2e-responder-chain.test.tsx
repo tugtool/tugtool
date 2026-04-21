@@ -79,6 +79,7 @@ function makeMockStore(deckState: DeckState = { cards: [], stacks: [] }): IDeckM
     handleStackClosed: (_id: string) => {},
     focusCard: (_id: string) => {},
     activateCard: (_id: string) => {},
+    getFirstResponderCardId: () => null,
     observeCardDidFinishConstruction: () => () => {},
     observeCardDidActivate: () => () => {},
     observeCardDidDeactivate: () => () => {},
@@ -188,6 +189,7 @@ class ReactiveStore implements IDeckManagerStore {
     _callback: (cardId: string) => void,
   ): (() => void) => () => {};
   getActiveCardId = (): string | null => null;
+  getFirstResponderCardId = (): string | null => null;
   addCard = (_componentId: string): string | null => null;
   addCardToStack = (_cardId: string, _componentId: string): string | null => null;
   removeCard = (_cardId: string, _tabId: string): void => {};

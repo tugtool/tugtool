@@ -255,11 +255,20 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- CardLifecycle pass-throughs ----
 
-  public activateCard = (
-    cardId: string,
-    knownPreviousActive?: string | null,
-  ): void => {
-    this.cardLifecycle.activateCard(cardId, knownPreviousActive);
+  public activateCard = (cardId: string): void => {
+    this._setFirstResponder(cardId);
+  };
+
+  /**
+   * Read the composite first-responder bit: the active stack's
+   * active card id, or `null` when no stack is active. At any
+   * moment, exactly zero or one card is the first responder.
+   */
+  public getFirstResponderCardId = (): string | null => {
+    const activeStackId = this.deckState.activeStackId;
+    if (activeStackId === undefined) return null;
+    const activeStack = this.deckState.stacks.find((s) => s.id === activeStackId);
+    return activeStack?.activeCardId ?? null;
   };
 
   public observeCardDidFinishConstruction = (
@@ -520,22 +529,25 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Close a stack by id. Fires will/didDeactivate on the active card if the
-   * stack currently owns the active card; fires willBeginDestruction on
-   * every card in the stack; removes the stack and all its cards; activates
-   * the new top-of-deck if the closed stack was active.
+   * Close a stack by id. Fires will/didDeactivate on the first responder
+   * if the stack currently owns it (via `_setFirstResponder` in the
+   * activation half); fires willBeginDestruction on every card in the
+   * stack; removes the stack and all its cards; promotes the new
+   * top-of-deck to first responder when the closed stack was active.
    */
   _closeStack(stackId: string): void {
     const stack = this.deckState.stacks.find((s) => s.id === stackId);
     if (!stack) return;
 
-    const activeCardId = this.cardLifecycle.getActiveCardId();
-    const wasActive =
-      activeCardId !== null && stack.cardIds.includes(activeCardId);
+    const oldFR = this.getFirstResponderCardId();
+    const closedContainsOldFR =
+      oldFR !== null && stack.cardIds.includes(oldFR);
 
-    if (wasActive && activeCardId) {
-      this.cardLifecycle.notifyCardWillDeactivate(activeCardId);
-      this.cardLifecycle.notifyCardDidDeactivate(activeCardId);
+    // Fire deactivation BEFORE destruction so observers see the
+    // closing card still in state during willDeactivate/didDeactivate.
+    if (closedContainsOldFR && oldFR !== null) {
+      this.cardLifecycle.notifyCardWillDeactivate(oldFR);
+      this.cardLifecycle.notifyCardDidDeactivate(oldFR);
     }
     for (const cid of stack.cardIds) {
       this.cardLifecycle.notifyCardWillBeginDestruction(cid);
@@ -544,11 +556,15 @@ export class DeckManager implements IDeckManagerStore {
     const cardIdSet = new Set(stack.cardIds);
     const newStacks = this.deckState.stacks.filter((s) => s.id !== stackId);
     const newCards = this.deckState.cards.filter((c) => !cardIdSet.has(c.id));
+    // Clear activeStackId when closing the active stack; `_setFirstResponder`
+    // re-sets it to the new top-of-deck below. Leaving activeStackId
+    // referencing the closed stack would make `getFirstResponderCardId`
+    // return stale, and clearing it prematurely here lets the subsequent
+    // `_setFirstResponder(newFR)` see `oldFR === null` and fire only the
+    // will/didActivate half (deactivation already fired above).
     const newActiveStackId =
       this.deckState.activeStackId === stackId
-        ? newStacks.length > 0
-          ? newStacks[newStacks.length - 1].id
-          : undefined
+        ? undefined
         : this.deckState.activeStackId;
     this.deckState = {
       ...this.deckState,
@@ -561,12 +577,106 @@ export class DeckManager implements IDeckManagerStore {
     this.notify();
     this.scheduleSave();
 
-    if (wasActive) {
-      const newTop = this.getFocusedCardId();
-      if (newTop !== null) {
-        this.cardLifecycle.activateCard(newTop, null);
+    if (closedContainsOldFR) {
+      const newTopStack =
+        newStacks.length > 0 ? newStacks[newStacks.length - 1] : null;
+      const newFR = newTopStack?.activeCardId ?? null;
+      if (newFR !== null) {
+        this._setFirstResponder(newFR);
       }
     }
+  }
+
+  /**
+   * Flip the composite first-responder bit to `newFR`. The central
+   * entry point for first-responder transitions. Handles:
+   *
+   *   - Old-FR lookup via `getFirstResponderCardId()` (reads the
+   *     composite bit from current state).
+   *   - Same-bit refresh (no events) when `oldFR === newFR`: still
+   *     bumps z-order, refreshes the persisted focused-card pointer,
+   *     and re-syncs the responder chain in case it drifted.
+   *   - Full flip: fires `cardWillDeactivate(oldFR)` → `cardWillActivate(newFR)`
+   *     → commits the state mutation (z-order + `activeStackId` +
+   *     target stack's `activeCardId` + persisted pointer) → `notify()`
+   *     → promotes the responder chain → `cardDidDeactivate(oldFR)` →
+   *     `cardDidActivate(newFR)`.
+   *
+   * Piece 1 callers: public `activateCard`, `_closeStack`. Piece 2
+   * routes every other mutator that can flip the bit through this
+   * method.
+   */
+  private _setFirstResponder(newFR: string | null): void {
+    const oldFR = this.getFirstResponderCardId();
+
+    if (oldFR === newFR) {
+      if (newFR !== null) {
+        // Same-bit refresh: still bump z-order + persist + re-key
+        // the responder chain so callers can force a refresh when
+        // state has drifted (e.g., post-reload focus restoration).
+        this.focusCard(newFR);
+        this.cardLifecycle.setResponderChainKey(newFR);
+      }
+      return;
+    }
+
+    // Will phase — fires BEFORE any state mutation.
+    if (oldFR !== null) this.cardLifecycle.notifyCardWillDeactivate(oldFR);
+    if (newFR !== null) this.cardLifecycle.notifyCardWillActivate(newFR);
+
+    // Commit state mutation.
+    if (newFR === null) {
+      // Deactivate to null: clear activeStackId without touching z-order
+      // or individual stacks' activeCardId fields.
+      this.deckState = { ...this.deckState, activeStackId: undefined };
+      this.notify();
+      this.scheduleSave();
+    } else {
+      // Bump host stack to the end of the stacks array (z-order top),
+      // set activeStackId to the host, set host's activeCardId = newFR,
+      // and persist the focused-card pointer. One commit, one notify.
+      const stacks = this.deckState.stacks;
+      const hostIdx = stacks.findIndex((s) => s.cardIds.includes(newFR));
+      if (hostIdx === -1) {
+        // newFR has no host stack (shouldn't happen in practice).
+        // Bail without mutating; will/did deactivate already fired
+        // for oldFR, but no activation fires for a non-existent card.
+        return;
+      }
+      const hostStack = stacks[hostIdx];
+      const updatedHost: CardStackState =
+        hostStack.activeCardId === newFR
+          ? hostStack
+          : { ...hostStack, activeCardId: newFR };
+
+      let newStacks: readonly CardStackState[];
+      const isAtEnd = hostIdx === stacks.length - 1;
+      if (isAtEnd && updatedHost === hostStack) {
+        newStacks = stacks;
+      } else if (isAtEnd) {
+        newStacks = stacks.map((s, i) => (i === hostIdx ? updatedHost : s));
+      } else {
+        const reordered = [...stacks];
+        reordered.splice(hostIdx, 1);
+        reordered.push(updatedHost);
+        newStacks = reordered;
+      }
+
+      this.deckState = {
+        ...this.deckState,
+        stacks: newStacks,
+        activeStackId: updatedHost.id,
+      };
+      putFocusedCardId(newFR);
+      this.notify();
+      this.scheduleSave();
+
+      this.cardLifecycle.setResponderChainKey(newFR);
+    }
+
+    // Did phase — observers read post-mutation state.
+    if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
+    if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
   }
 
   /**

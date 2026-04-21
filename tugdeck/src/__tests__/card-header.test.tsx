@@ -69,6 +69,7 @@ const mockStore: IDeckManagerStore = {
   handleStackClosed: (_id: string) => {},
   focusCard: (_id: string) => {},
   activateCard: (_id: string) => {},
+  getFirstResponderCardId: () => null,
   observeCardDidFinishConstruction: () => () => {},
   observeCardDidActivate: () => () => {},
   observeCardDidDeactivate: () => () => {},

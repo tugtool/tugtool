@@ -131,6 +131,20 @@ export class CardLifecycle {
     this.manager = manager;
   }
 
+  /**
+   * Promote `cardId` as the responder chain's key card. No-op when no
+   * manager is attached, or when `cardId` is already the key card.
+   *
+   * Carved out of `activateCard` so `DeckManager._setFirstResponder` can
+   * promote the responder chain as part of the composite-bit commit
+   * without double-firing the will/did lifecycle events.
+   */
+  setResponderChainKey(cardId: string): void {
+    if (this.manager === null) return;
+    if (this.manager.getKeyCard() === cardId) return;
+    this.manager.makeFirstResponder(cardId);
+  }
+
   // ---- Activation (existing behavior) ----
 
   /**

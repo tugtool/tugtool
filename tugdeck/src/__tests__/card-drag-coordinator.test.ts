@@ -45,6 +45,7 @@ function makeMockStore() {
     handleStackClosed: () => {},
     focusCard: () => {},
     activateCard: () => {},
+    getFirstResponderCardId: () => null,
     observeCardDidFinishConstruction: () => () => {},
     observeCardDidActivate: () => () => {},
     observeCardDidDeactivate: () => () => {},

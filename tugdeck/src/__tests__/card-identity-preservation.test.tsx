@@ -83,6 +83,7 @@ class Store implements IDeckManagerStore {
 
   focusCard = (): void => {};
   activateCard = (): void => {};
+  getFirstResponderCardId = (): string | null => null;
   observeCardDidFinishConstruction = (): (() => void) => () => {};
   observeCardDidActivate = (): (() => void) => () => {};
   observeCardDidDeactivate = (): (() => void) => () => {};

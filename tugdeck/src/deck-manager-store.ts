@@ -61,18 +61,23 @@ export interface IDeckManagerStore {
   focusCard: (cardId: string) => void;
 
   /**
-   * Activate a card — fire will/didActivate through the card lifecycle
-   * and promote the card as the responder chain's key card. Does NOT
-   * update z-order; callers that need z-order (user clicks, detach,
-   * addCard) call `focusCard` first.
-   *
-   * Optional `knownPreviousActive` is an escape hatch for callers
-   * that have mutated the store before calling `activateCard` (e.g.,
-   * `addCard` appends first, then activates). Passing `null`
-   * explicitly forces the transition to fire activation-only (no
-   * prior to deactivate).
+   * Make `cardId` the first responder — flip the composite bit
+   * `(activeStack?.activeCardId)` to point at `cardId`, fire the
+   * will/didDeactivate + will/didActivate lifecycle events, promote
+   * the card as the responder chain's key card, bump its host stack's
+   * z-order, and persist the focused-card pointer for reload
+   * restoration. No-op when `cardId` is already the first responder
+   * (same-bit calls still refresh the persisted pointer and the
+   * responder chain in case it drifted).
    */
-  activateCard: (cardId: string, knownPreviousActive?: string | null) => void;
+  activateCard: (cardId: string) => void;
+
+  /**
+   * Read the composite first-responder bit: the active stack's
+   * active card id, or `null` when no stack is active. At any
+   * moment, exactly zero or one card is the first responder.
+   */
+  getFirstResponderCardId: () => string | null;
 
   /**
    * Subscribe to card CONSTRUCTION events. Fires per card when
