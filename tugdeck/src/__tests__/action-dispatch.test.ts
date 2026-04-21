@@ -536,14 +536,14 @@ describe("initActionDispatch: next-theme", () => {
   });
 });
 
-// ---- add-card-to-active-window handler ([D06], [D09]) ----
+// ---- add-card-to-active-pane handler ([D06], [D09]) ----
 
-describe("initActionDispatch: add-card-to-active-window", () => {
+describe("initActionDispatch: add-card-to-active-pane", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("dispatches 'add-card-to-active-window' through the registered ResponderChainManager", () => {
+  it("dispatches 'add-card-to-active-pane' through the registered ResponderChainManager", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -558,10 +558,10 @@ describe("initActionDispatch: add-card-to-active-window", () => {
     };
     registerResponderChainManager(stubManager as any);
 
-    dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW });
+    dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, phase: "discrete" });
+    expect(dispatched[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -570,7 +570,7 @@ describe("initActionDispatch: add-card-to-active-window", () => {
     initActionDispatch(conn as any, deck as any);
 
     // No registerResponderChainManager call -- ref is null after _resetForTest.
-    expect(() => dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW })).not.toThrow();
+    expect(() => dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE })).not.toThrow();
   });
 
   it("uses the most recently registered manager (last-registration-wins)", () => {
@@ -583,11 +583,11 @@ describe("initActionDispatch: add-card-to-active-window", () => {
     registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { first.push(e); return true; } } as any);
     registerResponderChainManager({ sendToFirstResponder: (e: ActionEvent) => { second.push(e); return true; } } as any);
 
-    dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW });
+    dispatchAction({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE });
 
     expect(first.length).toBe(0);
     expect(second.length).toBe(1);
-    expect(second[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, phase: "discrete" });
+    expect(second[0]).toEqual({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
   });
 });
 

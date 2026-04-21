@@ -545,16 +545,16 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Tests — any test that references the old constant name or wire string.
 
 **Tasks:**
-- [ ] Rename `ADD_CARD_TO_ACTIVE_WINDOW` → `ADD_CARD_TO_ACTIVE_PANE`.
-- [ ] Wire string: `"add-card-to-active-window"` → `"add-card-to-active-pane"` on both sides.
-- [ ] Update tests.
-- [ ] Update tuglaws/action-naming.md to reflect new vocabulary.
+- [x] Rename `ADD_CARD_TO_ACTIVE_WINDOW` → `ADD_CARD_TO_ACTIVE_PANE`.
+- [x] Wire string: `"add-card-to-active-window"` → `"add-card-to-active-pane"` on both sides.
+- [x] Update tests.
+- [x] Update tuglaws/action-naming.md to reflect new vocabulary. (`tuglaws/responder-chain.md` wire string updated in the same sweep.)
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `cargo nextest run` green.
-- [ ] `rg "add-card-to-active-window|ADD_CARD_TO_ACTIVE_WINDOW" tugdeck/src tugapp/Sources` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `cargo nextest run` green.
+- [x] `rg "add-card-to-active-window|ADD_CARD_TO_ACTIVE_WINDOW" tugdeck/src tugapp/Sources` returns zero matches.
 
 ---
 
@@ -631,6 +631,7 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - `tugdeck/docs/pairing-audit-results.md` — any `TugWindow` or `window`-as-Tug-container references updated (historical narrative in `roadmap/` stays as written).
 - `tugdeck/docs/renders-on-survey.md` — same treatment.
 - `roadmap/lifecycle-and-portal-audit.md` — appendix to the existing "Vocabulary decisions (2026-04-21)" section: short note "Subsequent correction: `TugWindow` → `TugPane` — see `tugplan-vocabulary-pane-rename.md`. Rationale: conflict with NSWindow." No rewrite of the historical section.
+- `roadmap/lifecycle-and-portal-audit.md` — **coherence fix under §Vocabulary decisions**: the "Also in that plan (cross-references for readers of this audit)" bullet was partially edited during #step-9 (only `ADD_CARD_TO_ACTIVE_WINDOW` → `ADD_CARD_TO_ACTIVE_PANE` was swapped). The bullet describes what the prior `tugplan-vocabulary-rename.md` delivered; the one-item edit leaves four "window-era" items (`windows / activeWindowId`, `*Window mutators`, `focus-window + windowId`, menu text) alongside one "pane-era" item — internally incoherent. Fix: revert that one item to `ADD_CARD_TO_ACTIVE_WINDOW` so the bullet accurately records the prior plan's deliverables, then the pane-correction appendix (above) supersedes them in one coherent block.
 
 **Tasks:**
 - [ ] Grep each tuglaws file for `TugWindow`, `windowId`, `data-window-id`, `tug-window`, `.tug-window`, `focus-window`; replace with pane equivalents.

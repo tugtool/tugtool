@@ -467,7 +467,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func addCardToActiveWindow(_ sender: Any) {
-        sendControl("add-card-to-active-window")
+        sendControl("add-card-to-active-pane")
     }
 
     @objc private func closeActiveCard(_ sender: Any) {

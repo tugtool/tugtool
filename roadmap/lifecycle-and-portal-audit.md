@@ -330,6 +330,6 @@ This audit was written while the codebase still used **stack**-centric names (`S
   - **P1 (DOM vocabulary):** Window frames use `data-window-id` and `.tug-window` / `.tug-window-content`; card hosts use `data-card-id`; tab bar and drag hit-testing use `data-window-id` for window identity; `selection-guard` walks `data-window-id` / `data-card-id` as appropriate.
   - **P2 (registry file names):** `window-content-registry` and `window-root-registry` (keys = host window id).
   - **P3 (CSS):** `.tug-window`, `.tug-window-resize-*`, shared chrome in `chrome.css` / `tug-window.css`.
-- **Also in that plan (cross-references for readers of this audit):** `DeckState` v3 (`windows` / `activeWindowId`), store API `*Window` mutators, `ADD_CARD_TO_ACTIVE_WINDOW`, Swift `focus-window` + `windowId`, menu text for add/close card actions.
+- **Also in that plan (cross-references for readers of this audit):** `DeckState` v3 (`windows` / `activeWindowId`), store API `*Window` mutators, `ADD_CARD_TO_ACTIVE_PANE`, Swift `focus-window` + `windowId`, menu text for add/close card actions.
 
 Historical paragraphs elsewhere in this document retain **stack** / **StackFrame** / **`CardContentHost`** names where they describe the code as it existed at audit time; use this section and the rename plan as the source of truth for **current** naming.

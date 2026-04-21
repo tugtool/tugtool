@@ -478,9 +478,9 @@ describe("matchKeybinding", () => {
     );
   });
 
-  it("Cmd+T → addCardToActiveWindow", () => {
+  it("Cmd+T → addCardToActivePane", () => {
     expect(matchKeybinding(makeEvent("KeyT", { metaKey: true }))?.action).toBe(
-      "add-card-to-active-window",
+      "add-card-to-active-pane",
     );
   });
 

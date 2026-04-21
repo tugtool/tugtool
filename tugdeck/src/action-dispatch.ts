@@ -20,7 +20,7 @@
  *   item. These use the corresponding `TUG_ACTIONS.*` constant at
  *   both the `registerAction` call and the inner `manager.sendToFirstResponder`
  *   call, so the wire string on both sides is identical. Examples:
- *   `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`, `TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW`,
+ *   `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`, `TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE`,
  *   `TUG_ACTIONS.CLOSE`. The Swift side calls `sendControl("close")`
  *   (etc.) with the same string.
  *
@@ -28,7 +28,7 @@
  * Phase 2: Added gallerySetterRef and show-component-gallery handler.
  * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
  *   show-component-gallery now dispatches through the responder chain
- *   manager (same pattern as add-card-to-active-window).
+ *   manager (same pattern as add-card-to-active-pane).
  * Action-naming rollout: Both-category handlers use TUG_ACTIONS constants
  *   at the registerAction call site; close-active-card was renamed to
  *   `close` so its wire format matches the chain-action name.
@@ -72,7 +72,7 @@ let themeGetterRef: (() => string) | null = null;
  * Module-level reference to the ResponderChainManager, populated by
  * ResponderChainProvider on mount via `registerResponderChainManager`.
  *
- * Used by the `add-card-to-active-window` and `show-component-gallery` Control-frame actions
+ * Used by the `add-card-to-active-pane` and `show-component-gallery` Control-frame actions
  * to dispatch through the responder chain, which routes them to DeckCanvas's
  * registered handlers.
  *
@@ -338,16 +338,16 @@ export function initActionDispatch(
     deckManager.addCard(component);
   });
 
-  // add-card-to-active-window (Both): add a new card to the focused window.
+  // add-card-to-active-pane (Both): add a new card to the focused pane.
   // Trivial adapter — Control-frame name and chain-action name are
-  // identical (TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW). DeckCanvas's
+  // identical (TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE). DeckCanvas's
   // registered handler reads the focused card from its cardsRef and
   // calls store.addCardToPane(). ([D06], [D09])
-  registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, () => {
+  registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, phase: "discrete" });
+      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE, phase: "discrete" });
     } else {
-      console.warn(`${TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW}: responder chain manager not registered yet`);
+      console.warn(`${TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE}: responder chain manager not registered yet`);
     }
   });
 

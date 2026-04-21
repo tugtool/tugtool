@@ -227,8 +227,8 @@ export const TUG_ACTIONS = {
   //             handles it (typically `TugPane`) uses its own cardId
   //             plus the componentId from the payload to call
   //             `store.addTab(cardId, componentId)`. Distinct from
-  //             `add-card-to-active-window`, which is the global
-  //             menu/keystroke path that targets the focused window with
+  //             `add-card-to-active-pane`, which is the global
+  //             menu/keystroke path that targets the focused pane with
   //             a hardcoded component type.
   // REOPEN_TAB: payload — none. Restore the most recently closed tab.
   //             NOTE: no handler yet — ⌘⇧T is deferred per the A3 / R4
@@ -245,7 +245,7 @@ export const TUG_ACTIONS = {
   //                 ids for single vs. multi-expand accordions).
   TOGGLE_SECTION: "toggle-section",
 
-  // ---- Window / card ----
+  // ---- Pane / card ----
   //
   // CLOSE:                  payload — none. Close the first card responder.
   // MINIMIZE:               payload — none. Minimize the first card.
@@ -253,7 +253,7 @@ export const TUG_ACTIONS = {
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
   // SHOW_SETTINGS:          payload — none. Open the settings panel.
   // RESET_LAYOUT:           payload — none. Reset card positions.
-  // ADD_CARD_TO_ACTIVE_WINDOW: payload — none. Add a new card to the active window
+  // ADD_CARD_TO_ACTIVE_PANE: payload — none. Add a new card to the active pane
   //                         via the global menu / ⌘T (canvas targets the first responder).
   // FIND:                   payload — none. Open the find UI for the first
   //                         searchable responder.
@@ -272,7 +272,7 @@ export const TUG_ACTIONS = {
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
   SHOW_SETTINGS:          "show-settings",
   RESET_LAYOUT:           "reset-layout",
-  ADD_CARD_TO_ACTIVE_WINDOW: "add-card-to-active-window",
+  ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   FIND:                   "find",
   TOGGLE_MENU:            "toggle-menu",
   TOGGLE_MAXIMIZE:        "toggle-maximize",
