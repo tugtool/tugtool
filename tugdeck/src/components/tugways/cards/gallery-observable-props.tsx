@@ -121,7 +121,7 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const manager = useRequiredResponderChain();
 
   // Register the PropertyStore with Tugcard via context callback.
-  // [D01] usePropertyStore calls TugcardPropertyContext in useLayoutEffect.
+  // [D01] usePropertyStore calls CardPropertyContext in useLayoutEffect.
   const store = usePropertyStore({
     schema: DEMO_SCHEMA,
     initialValues: DEMO_INITIAL_VALUES,

@@ -972,7 +972,7 @@ export const TugPromptEntry = React.forwardRef<
             onSubmit={performSubmit}
             /* Persistence is owned by TugPromptEntry (per-route map).
                Disable the child's registration so only one component
-               claims the single TugcardPersistenceContext slot. */
+               claims the single CardPersistenceContext slot. */
             persistState={false}
           />
         </div>

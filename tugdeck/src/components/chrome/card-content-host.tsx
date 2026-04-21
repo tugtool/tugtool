@@ -12,8 +12,8 @@
  *
  * Render shape: wraps `registration.contentFactory(cardId)` in the four
  * per-content context providers (`TugcardDataProvider`,
- * `TugcardPropertyContext`, `TugcardPersistenceContext`,
- * `TugcardDirtyContext`) plus a re-bridged `TugcardPortalContext`
+ * `CardPropertyContext`, `CardPersistenceContext`,
+ * `CardDirtyContext`) plus a re-bridged `TugWindowPortalContext`
  * (looked up from `window-root-registry`) and a responder scope keyed by
  * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
  * resolve here.
@@ -24,9 +24,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
-import { TugcardPropertyContext } from "../tugways/hooks/use-property-store";
-import { TugcardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
-import { TugcardDirtyContext, TugcardPortalContext } from "../tugways/tug-card";
+import { CardPropertyContext } from "../tugways/hooks/use-property-store";
+import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
+import { CardDirtyContext, TugWindowPortalContext } from "../tugways/tug-card";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
@@ -56,7 +56,7 @@ export interface CardContentHostProps {
    * Whether this card is the active card within its host window. When false,
    * the content mounts and stays alive but is hidden via `display: none` so
    * that identity (React state, session connections, scroll position)
-   * survives across card switches and cross-stack moves. Defaults to `true`.
+   * survives across card switches and cross-window moves. Defaults to `true`.
    */
   isActive?: boolean;
 }
@@ -75,7 +75,7 @@ function useHostContentElement(hostStackId: string): HTMLDivElement | null {
 
 /**
  * Look up the host window's root element from `window-root-registry`,
- * reactively. Used to bridge `TugcardPortalContext` — card content needs
+ * reactively. Used to bridge `TugWindowPortalContext` — card content needs
  * access to its host window's root `<div>` for sheets and tooltips that
  * portal into it, and CardContentHost cannot consume the provider
  * directly because it lives outside Tugcard's React tree.
@@ -353,12 +353,12 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
           display: isActive ? "contents" : "none",
         }}
       >
-        <TugcardPortalContext value={hostCardRootEl}>
+        <TugWindowPortalContext value={hostCardRootEl}>
           <ResponderScope>
             <TugcardDataProvider feedData={feedData}>
-              <TugcardPropertyContext value={registerPropertyStore}>
-                <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-                  <TugcardDirtyContext value={markDirty}>
+              <CardPropertyContext value={registerPropertyStore}>
+                <CardPersistenceContext value={registerPersistenceCallbacks}>
+                  <CardDirtyContext value={markDirty}>
                     {feedsReady ? (
                       // Pass `cardId` as the stable identity for content.
                       // Consumers (tide, gallery observable-props) key their
@@ -372,12 +372,12 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
                         Loading...
                       </div>
                     )}
-                  </TugcardDirtyContext>
-                </TugcardPersistenceContext>
-              </TugcardPropertyContext>
+                  </CardDirtyContext>
+                </CardPersistenceContext>
+              </CardPropertyContext>
             </TugcardDataProvider>
           </ResponderScope>
-        </TugcardPortalContext>
+        </TugWindowPortalContext>
       </div>
     </CardPortal>
   );

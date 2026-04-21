@@ -1,5 +1,5 @@
 /**
- * TugcardPersistenceContext and useTugcardPersistence hook.
+ * CardPersistenceContext and useTugcardPersistence hook.
  *
  * Provides the opt-in card content state persistence mechanism for Tugcard.
  *
@@ -75,7 +75,7 @@ export interface TugcardPersistenceCallbacks {
 }
 
 // ---------------------------------------------------------------------------
-// TugcardPersistenceContext
+// CardPersistenceContext
 // ---------------------------------------------------------------------------
 
 /**
@@ -89,7 +89,7 @@ export interface TugcardPersistenceCallbacks {
  *
  * Spec S04 ([D02])
  */
-export const TugcardPersistenceContext = createContext<
+export const CardPersistenceContext = createContext<
   ((callbacks: TugcardPersistenceCallbacks) => void) | null
 >(null);
 
@@ -122,7 +122,7 @@ export const TugcardPersistenceContext = createContext<
  */
 export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T>): void {
   // Read the registration function from context (null outside a Tugcard).
-  const register = useContext(TugcardPersistenceContext);
+  const register = useContext(CardPersistenceContext);
 
   // Store the caller's options in refs so the registered wrappers never go
   // stale when options change on re-renders (Rule 5).

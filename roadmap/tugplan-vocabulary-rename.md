@@ -339,17 +339,17 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 | `TugcardPersistenceContext` | `CardPersistenceContext` |
 
 **Tasks:**
-- [ ] Rename each context export at its definition site.
-- [ ] Update every consumer import and Provider usage.
-- [ ] Note in JSDoc: `TugWindowPortalContext` provides the window's root element (used by sheet/tooltip portals that need to attach inside the window's frame).
+- [x] Rename each context export at its definition site.
+- [x] Update every consumer import and Provider usage.
+- [x] Note in JSDoc: `TugWindowPortalContext` provides the window's root element (used by sheet/tooltip portals that need to attach inside the window's frame).
 
 **Tests:**
-- [ ] Every existing test that mounts a card body (tide, gallery, etc.) continues to pass.
+- [x] Every existing test that mounts a card body (tide, gallery, etc.) continues to pass.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "TugcardPortalContext|TugcardDirtyContext|TugcardPropertyContext|TugcardPersistenceContext" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "TugcardPortalContext|TugcardDirtyContext|TugcardPropertyContext|TugcardPersistenceContext" tugdeck/src` returns zero matches.
 
 ---
 

@@ -278,27 +278,29 @@ export function CardTitleBar({
 // ===========================================================================
 
 // ===========================================================================
-// TugcardPortalContext
+// TugWindowPortalContext
 // ===========================================================================
 
 /**
- * Provides the Tugcard root DOM element to descendants that need to portal
- * into the card element (e.g., TugSheetContent).
+ * Provides this window's root DOM element (`<div class="tugcard">`) for
+ * descendants that must portal into the window frame — e.g. `TugSheetContent`,
+ * tooltips, and other overlays that should attach inside the window chrome
+ * rather than at the document root.
  *
- * The context value is set via a ref callback on the root div — it becomes
- * non-null after mount. Children inside the card div read this context to
- * obtain the portal target (a sibling of .tugcard-body, not a child of it).
+ * The value is set via a ref callback on the root div — it becomes non-null
+ * after mount. Children inside the card div read this context to obtain the
+ * portal target (a sibling of `.tugcard-body`, not a child of it).
  *
- * null before mount or when rendered outside a Tugcard.
+ * `null` before mount or when rendered outside a `Tugcard`.
  */
-export const TugcardPortalContext = createContext<HTMLDivElement | null>(null);
+export const TugWindowPortalContext = createContext<HTMLDivElement | null>(null);
 
 // ===========================================================================
-// TugcardDirtyContext — contentchange mechanism
+// CardDirtyContext — contentchange mechanism
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// TugcardDirtyContext — contentchange mechanism
+// CardDirtyContext — contentchange mechanism
 // ---------------------------------------------------------------------------
 
 /**
@@ -310,7 +312,7 @@ export const TugcardPortalContext = createContext<HTMLDivElement | null>(null);
  *
  * null when rendered outside a Tugcard.
  */
-export const TugcardDirtyContext = createContext<(() => void) | null>(null);
+export const CardDirtyContext = createContext<(() => void) | null>(null);
 
 /**
  * Hook for card content to signal a state change worth persisting.
@@ -320,7 +322,7 @@ export const TugcardDirtyContext = createContext<(() => void) | null>(null);
  * outside a Tugcard.
  */
 export function useTugcardDirty(): () => void {
-  const markDirty = useContext(TugcardDirtyContext);
+  const markDirty = useContext(CardDirtyContext);
   return markDirty ?? noop;
 }
 
@@ -451,7 +453,7 @@ export function Tugcard({
   const store = useDeckManager();
 
   // ---------------------------------------------------------------------------
-  // Card root element — provided via TugcardPortalContext for portal targets
+  // Card root element — provided via TugWindowPortalContext for portal targets
   // (e.g., TugSheetContent). The ref callback fires after mount and causes
   // one extra render, which is fine — the sheet isn't open on first mount.
   // ---------------------------------------------------------------------------
@@ -539,7 +541,7 @@ export function Tugcard({
 
   // Register this window's root element with window-root-registry so
   // CardContentHost (which lives at the deck level in the React tree and
-  // therefore cannot see TugcardPortalContext directly) can re-provide
+  // therefore cannot see TugWindowPortalContext directly) can re-provide
   // that context with the correct element. Re-registered whenever cardEl
   // changes (rootRefCallback's state-setter causes one extra render with
   // the element populated).
@@ -798,7 +800,7 @@ export function Tugcard({
   }, [responderRef]);
 
   return (
-    <TugcardPortalContext value={cardEl}>
+    <TugWindowPortalContext value={cardEl}>
     <div
       ref={rootRefCallback}
       className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
@@ -858,6 +860,6 @@ export function Tugcard({
         </ResponderScope>
       </div>
     </div>
-    </TugcardPortalContext>
+    </TugWindowPortalContext>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * use-property-store.ts -- usePropertyStore hook and TugcardPropertyContext.
+ * use-property-store.ts -- usePropertyStore hook and CardPropertyContext.
  *
  * Provides a React hook for card content components to create and register a
  * PropertyStore with the enclosing Tugcard. Inspectors can then discover,
@@ -38,7 +38,7 @@ import { PropertyStore } from "../property-store";
 import type { PropertyDescriptor } from "../property-store";
 
 // ---------------------------------------------------------------------------
-// TugcardPropertyContext (Spec S05)
+// CardPropertyContext (Spec S05)
 // ---------------------------------------------------------------------------
 
 /**
@@ -62,7 +62,7 @@ export type PropertyStoreRegistrar = (store: PropertyStore) => void;
  * [D01] Context callback registration for PropertyStore
  * Spec S05 (#s05-tugcard-property-context)
  */
-export const TugcardPropertyContext = createContext<PropertyStoreRegistrar | null>(null);
+export const CardPropertyContext = createContext<PropertyStoreRegistrar | null>(null);
 
 // ---------------------------------------------------------------------------
 // usePropertyStore options (Spec S04)
@@ -98,7 +98,7 @@ export interface UsePropertyStoreOptions {
  * Create a PropertyStore and register it with the enclosing Tugcard.
  *
  * The store is created once on first render via useRef -- it is stable across
- * re-renders. The store is registered with Tugcard via TugcardPropertyContext
+ * re-renders. The store is registered with Tugcard via CardPropertyContext
  * in useLayoutEffect (Rule #3) so it is available before events fire.
  *
  * Returns the stable PropertyStore instance. Card content uses the store
@@ -129,7 +129,7 @@ export function usePropertyStore(options: UsePropertyStoreOptions): PropertyStor
 
   // Capture the registration callback from Tugcard's context. May be null
   // when rendered outside a Tugcard.
-  const registrar = useContext(TugcardPropertyContext);
+  const registrar = useContext(CardPropertyContext);
 
   // Ref for the registrar so the useLayoutEffect closure stays fresh even if
   // the context value changes (Rule #5).

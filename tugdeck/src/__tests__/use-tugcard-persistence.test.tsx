@@ -25,7 +25,7 @@ import React, { useState } from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
 
-import { TugcardPersistenceContext, useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
+import { CardPersistenceContext, useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 import type { TugcardPersistenceCallbacks } from "@/components/tugways/use-tugcard-persistence";
 
 // ---------------------------------------------------------------------------
@@ -50,9 +50,9 @@ function makeTestProvider() {
 
   function Provider({ children }: { children: React.ReactNode }) {
     return (
-      <TugcardPersistenceContext value={register}>
+      <CardPersistenceContext value={register}>
         {children}
-      </TugcardPersistenceContext>
+      </CardPersistenceContext>
     );
   }
 
@@ -125,7 +125,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
   });
 
   it("T-P01c: no-op when rendered outside a Tugcard (context is null)", () => {
-    // Without a Provider, TugcardPersistenceContext value is null.
+    // Without a Provider, CardPersistenceContext value is null.
     // The hook must not throw and must not call register.
     const onSave = mock(() => ({}));
     const onRestore = mock((_s: unknown) => {});

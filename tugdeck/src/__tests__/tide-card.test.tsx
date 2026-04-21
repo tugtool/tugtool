@@ -92,7 +92,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugcardPortalContext } from "@/components/tugways/tug-card";
+import { TugWindowPortalContext } from "@/components/tugways/tug-card";
 import { FeedId } from "@/protocol";
 import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
 
@@ -110,7 +110,7 @@ function makeBinding(overrides: Partial<CardSessionBinding> = {}): CardSessionBi
 
 /**
  * Render TideCardContent inside a ResponderChainProvider and a mock
- * TugcardPortalContext. The portal target is a detached `.tugcard`
+ * TugWindowPortalContext. The portal target is a detached `.tugcard`
  * element with a `.tugcard-body` child (required by TugSheet's inert
  * lifecycle effect). The element is attached to document.body so
  * portaled content (the picker sheet) is queryable via the DOM.
@@ -139,9 +139,9 @@ function renderTideCard(cardId: string) {
   const rtl = render(
     <CardLifecycleContext.Provider value={lifecycle}>
       <ResponderChainProvider>
-        <TugcardPortalContext value={cardEl}>
+        <TugWindowPortalContext value={cardEl}>
           <TideCardContent cardId={cardId} />
-        </TugcardPortalContext>
+        </TugWindowPortalContext>
       </ResponderChainProvider>
     </CardLifecycleContext.Provider>,
   );

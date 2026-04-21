@@ -17,7 +17,7 @@
  * Tests cover each close path, the modal no-external-dismiss semantics,
  * and the hook's Promise resolution on chain-driven dismissal.
  *
- * A mock `TugcardPortalContext` is provided so TugSheetContent can
+ * A mock `TugWindowPortalContext` is provided so TugSheetContent can
  * portal into a known root element during the test.
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -36,7 +36,7 @@ import {
   useTugSheetClose,
   type TugSheetHandle,
 } from "@/components/tugways/tug-sheet";
-import { TugcardPortalContext } from "@/components/tugways/tug-card";
+import { TugWindowPortalContext } from "@/components/tugways/tug-card";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   ResponderChainContext,
@@ -50,7 +50,7 @@ import {
 
 /**
  * Render UI inside both a ResponderChainManager and a
- * TugcardPortalContext with a mock card element attached to
+ * TugWindowPortalContext with a mock card element attached to
  * document.body. The `.tugcard-body` child satisfies the inert-
  * attribute lifecycle effect in TugSheetContent.
  */
@@ -65,9 +65,9 @@ function renderWithChainAndCard(ui: React.ReactElement) {
 
   const result = render(
     <ResponderChainContext.Provider value={manager}>
-      <TugcardPortalContext.Provider value={cardEl}>
+      <TugWindowPortalContext.Provider value={cardEl}>
         {ui}
-      </TugcardPortalContext.Provider>
+      </TugWindowPortalContext.Provider>
     </ResponderChainContext.Provider>,
   );
 

@@ -7,7 +7,7 @@
  * fully interactive.
  *
  * Compound API: TugSheet (Root) / TugSheetTrigger / TugSheetContent.
- * Portals into the card root element via TugcardPortalContext. Open
+ * Portals into the card root element via TugWindowPortalContext. Open
  * state is internal — consumers open the sheet via `TugSheetTrigger`
  * (click-to-open), an imperative ref handle (`TugSheetHandle.open()`),
  * or the `useTugSheet()` hook's `showSheet()` Promise API. There is no
@@ -69,7 +69,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
-import { TugcardPortalContext } from "./tug-card";
+import { TugWindowPortalContext } from "./tug-card";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
@@ -285,7 +285,7 @@ export interface TugSheetContentProps {
 /**
  * TugSheetContent — the sheet panel, overlay, focus scope, and portal logic.
  *
- * Portals into the card root element (from TugcardPortalContext). Sets `inert`
+ * Portals into the window root element (from TugWindowPortalContext). Sets `inert`
  * on `.tugcard-body` for card-scoped modality. Restores focus to the trigger
  * element on close.
  */
@@ -298,7 +298,7 @@ export function TugSheetContent({
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
-  const cardEl = useContext(TugcardPortalContext);
+  const cardEl = useContext(TugWindowPortalContext);
 
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
@@ -650,7 +650,7 @@ interface UseTugSheetState {
  * - `renderSheet()` must be called once in the component's JSX to render
  *   the sheet portal. Returns null when no sheet is open.
  *
- * Must be called from within a Tugcard (requires TugcardPortalContext).
+ * Must be called from within a Tugcard (requires TugWindowPortalContext).
  *
  * ## State machine
  *
@@ -761,7 +761,7 @@ export function useTugSheet(): {
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
   renderSheet: () => React.ReactNode;
 } {
-  // TugcardPortalContext is consumed downstream by TugSheetContent,
+  // TugWindowPortalContext is consumed downstream by TugSheetContent,
   // which returns null when the portal target isn't attached yet. A
   // dev-time "you're outside a Tugcard" warning here fires on every
   // first render of a card body (Tugcard populates `cardEl` via a

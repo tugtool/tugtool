@@ -7,14 +7,14 @@
  * - usePropertyStore calls the context callback with the store instance
  *
  * Uses @testing-library/react renderHook with a context wrapper to simulate
- * the TugcardPropertyContext registration pattern.
+ * the CardPropertyContext registration pattern.
  */
 
 import "./setup-rtl";
 import { describe, it, expect, mock } from "bun:test";
 import React from "react";
 import { renderHook, act } from "@testing-library/react";
-import { usePropertyStore, TugcardPropertyContext } from "@/components/tugways/hooks/use-property-store";
+import { usePropertyStore, CardPropertyContext } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyDescriptor } from "@/components/tugways/property-store";
 import { PropertyStore } from "@/components/tugways/property-store";
 
@@ -89,7 +89,7 @@ describe("usePropertyStore – context registration", () => {
     const registrar = mock((_store: PropertyStore) => {});
 
     const wrapper = ({ children }: { children: React.ReactNode }) =>
-      React.createElement(TugcardPropertyContext, { value: registrar }, children);
+      React.createElement(CardPropertyContext, { value: registrar }, children);
 
     const { result } = renderHook(
       () => usePropertyStore({ schema: SCHEMA, initialValues: INITIAL_VALUES }),
@@ -103,7 +103,7 @@ describe("usePropertyStore – context registration", () => {
   });
 
   it("works without a context (outside Tugcard) without throwing", () => {
-    // No wrapper -- TugcardPropertyContext has a null default
+    // No wrapper -- CardPropertyContext has a null default
     expect(() => {
       renderHook(() =>
         usePropertyStore({ schema: SCHEMA, initialValues: INITIAL_VALUES })
@@ -114,7 +114,7 @@ describe("usePropertyStore – context registration", () => {
   it("does not call the registrar when context is null", () => {
     // Explicitly provide null context value
     const wrapper = ({ children }: { children: React.ReactNode }) =>
-      React.createElement(TugcardPropertyContext, { value: null }, children);
+      React.createElement(CardPropertyContext, { value: null }, children);
 
     const registrar = mock((_store: PropertyStore) => {});
 
