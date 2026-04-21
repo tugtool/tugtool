@@ -30,7 +30,7 @@ The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `wind
 
    These surfaces describe **card-level** state (metadata, feed data, persistence, dirty bit). The plain `Card*` word matches sibling types (`CardState`, `CardStateBag`, `CardLifecycle`, `CardHost`) that already drop the `Tug` prefix for card-model types.
 
-2. **`--tug-card-*` / `--tugx-card-*` CSS tokens that describe pane chrome.** The frame background, border, shadow, dim overlay, title bar backgrounds, title foreground colors, title bar icons, and title-bar controls are all **pane-chrome** properties. They were named `--tug-card-*` / `--tugx-card-*` when the outer frame was called `Tugcard`. With the frame now called `TugPane`, these token names misname what they style. The only genuinely card-scoped tokens are banner colors (`--tugx-card-banner-*`) which attach to the `TugPaneBanner` component — and even those should probably follow the component name.
+2. **`--tug-card-*` / `--tugx-card-*` CSS tokens that described pane chrome.** The frame background, border, shadow, dim overlay, title bar backgrounds, title foreground colors, title bar icons, title-bar controls, and **TugPaneBanner** colors were all named `--tug-card-*` / `--tugx-card-*` when the outer frame was called `Tugcard`. With the frame now called `TugPane`, those aliases have been renamed to **`--tugx-pane-*`** (including banner — Step 8) so token names match what they style.
 
 Without a formal law document, the Deck → Pane → Card hierarchy lives only in rename-plan prose. Authoring `tuglaws/pane-model.md` as part of this sweep defends the vocabulary against future drift, and gives consumers (card authors, theme authors) a single link for "where does my thing live."
 
@@ -65,7 +65,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 7. **Done (Step 6).** Title-bar chrome: `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*` (and docs swept for legacy `--tug-card-title-bar-*` names). No non-`x` `--tug-pane-title-bar-*` definers in source — pairing docs use the `--tugx-*` aliases that `tug-pane.css` defines.
 8. **Done (Step 7).** CSS control tokens: `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*` (was `--tugx-card-control-*`).
 8a. **Done (Step 7a).** Content-dim / accessory / findbar → `--tugx-pane-content-dim-*`, `--tugx-pane-accessory-*`, `--tugx-pane-findbar-*`.
-9. Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
+9. **Done (Step 8).** Banner tokens: `--tugx-card-banner-*` → `--tugx-pane-banner-*` (matches the `TugPaneBanner` component name).
 10. Author `tuglaws/pane-model.md` + add entry to `tuglaws/tuglaws.md` laws list.
 11. Integration checkpoint.
 
@@ -138,7 +138,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - The component is `TugPaneBanner`; its tokens should be `--tugx-pane-banner-*`. One consistent prefix per component.
 - The prior plan left these tokens named `--tugx-card-banner-*` because the rename didn't need to touch tokens. That was correct at the time; now it's cleanup.
 
-**Implications:** The banner CSS file (`tug-pane-banner.css`) gets token renames + JSDoc pairing-table rewrites. Theme-file check needed: if brio/harmony directly reference `--tugx-card-banner-*`, those references update in the same commit.
+**Implications:** The banner CSS file (`tug-pane-banner.css`) gets token renames + JSDoc pairing-table rewrites. Theme-file check: no brio/harmony references to `--tugx-card-banner-*` were found; aliases live only in `tug-pane-banner.css` (**done Step 8**).
 
 #### [D05] `tuglaws/pane-model.md` is authored as part of this plan (DECIDED) {#d05-pane-model-law}
 
@@ -462,7 +462,9 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/tug-pane-banner.css` — definitions + selectors, top-of-file `@tug-pairings` comment block.
-- Theme aliases in brio/harmony if Step 0 found them.
+- `tugdeck/src/components/tugways/tug-pane-banner.tsx` — `TugAnimator` layer keys aligned with pane naming (`pane-banner-strip` / `pane-banner-detail`).
+- `tugdeck/scripts/token-classify.ts` — `pane-banner-*` short names.
+- Theme aliases in brio/harmony: none referenced `--tugx-card-banner-*`.
 
 **Token rename:**
 
@@ -473,17 +475,19 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 | `--tugx-card-banner-strip-border` | `--tugx-pane-banner-strip-border` |
 | `--tugx-card-banner-detail-fg` | `--tugx-pane-banner-detail-fg` |
 | `--tugx-card-banner-detail-bg` | `--tugx-pane-banner-detail-bg` |
-| (any others surfaced by Step 0) | |
+| `--tugx-card-banner-detail-border` | `--tugx-pane-banner-detail-border` |
+| `--tugx-card-banner-backdrop-bg` | `--tugx-pane-banner-backdrop-bg` |
 
 **Tasks:**
-- [ ] Rename definitions in `tug-pane-banner.css`.
-- [ ] Rename consumer selectors.
-- [ ] Update `@tug-pairings` block.
+- [x] Rename definitions in `tug-pane-banner.css`.
+- [x] Rename consumer selectors.
+- [x] Update `@tug-pairings` block.
+- [x] `token-classify.ts` allowlist + animator keys (`tug-pane-banner.tsx`).
 
 **Checkpoint:**
-- [ ] tsc / tests / tokens-lint all green.
-- [ ] `rg "--tugx-card-banner-" tugdeck` returns zero matches.
-- [ ] Manual smoke: tide-card last-error banner renders (error variant + contained variant).
+- [x] tsc / tests / tokens-lint all green.
+- [x] `rg "--tugx-card-banner-" tugdeck` returns zero matches.
+- [ ] Manual smoke skipped at commit time (dev server unavailable — defer to Step 11 integration checkpoint): tide-card last-error banner renders (error variant + contained variant).
 
 ---
 
@@ -674,13 +678,13 @@ Non-CSS informational surfaces (docs + scripts):
 - `--tugx-pane-findbar-match`
 - `--tugx-pane-findbar-match-active`
 
-**Step 8 — Banner tokens (7):**
-- `--tugx-card-banner-strip-bg`
-- `--tugx-card-banner-strip-fg`
-- `--tugx-card-banner-strip-border`
-- `--tugx-card-banner-detail-bg`
-- `--tugx-card-banner-detail-fg`
-- `--tugx-card-banner-detail-border`
-- `--tugx-card-banner-backdrop-bg`
+**Step 8 — Banner tokens (7):** ✓ `--tugx-pane-banner-*`
+- `--tugx-pane-banner-strip-bg`
+- `--tugx-pane-banner-strip-fg`
+- `--tugx-pane-banner-strip-border`
+- `--tugx-pane-banner-detail-bg`
+- `--tugx-pane-banner-detail-fg`
+- `--tugx-pane-banner-detail-border`
+- `--tugx-pane-banner-backdrop-bg`
 
-**Totals (naming):** 5 frame + 9 title-bar + 18 control + 10 content-dim/accessory/findbar use **`--tugx-pane-*`** after Steps 5–7a. **7** `--tugx-card-banner-*` tokens remain in source until Step 8 (`tug-pane-banner.css`).
+**Totals (naming):** Steps 5–8: 5 frame + 9 title-bar + 18 control + 10 content-dim/accessory/findbar + 7 banner = **49** pane-chrome **`--tugx-pane-*`** aliases across `tug-pane.css` and `tug-pane-banner.css`. No `--tugx-card-*` pane-chrome tokens remain in source (Step 9 greps for legacy `--tug-card-*` / `--tugx-card-*` elsewhere).

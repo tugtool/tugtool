@@ -181,11 +181,11 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
       g.animate(
         strip,
         [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }],
-        { key: "card-banner-strip", easing: "ease-out" },
+        { key: "pane-banner-strip", easing: "ease-out" },
       );
       if (detail) {
         g.animate(detail, [{ opacity: 0 }, { opacity: 1 }], {
-          key: "card-banner-detail",
+          key: "pane-banner-detail",
         });
       }
     }, [visible, mounted]);
@@ -207,12 +207,12 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
         g.animate(
           strip,
           [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
-          { key: "card-banner-strip", easing: "ease-in" },
+          { key: "pane-banner-strip", easing: "ease-in" },
         );
       }
       if (detail) {
         g.animate(detail, [{ opacity: 1 }, { opacity: 0 }], {
-          key: "card-banner-detail",
+          key: "pane-banner-detail",
         });
       }
       g.finished

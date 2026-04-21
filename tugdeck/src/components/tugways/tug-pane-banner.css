@@ -1,24 +1,24 @@
 /* @tug-pairings {
-  --tugx-card-banner-strip-fg     | --tugx-card-banner-strip-bg  | content
-  --tugx-card-banner-strip-border | --tugx-card-banner-strip-bg  | informational
-  --tugx-card-banner-detail-fg    | --tugx-card-banner-detail-bg | content
+  --tugx-pane-banner-strip-fg     | --tugx-pane-banner-strip-bg  | content
+  --tugx-pane-banner-strip-border | --tugx-pane-banner-strip-bg  | informational
+  --tugx-pane-banner-detail-fg    | --tugx-pane-banner-detail-bg | content
 } */
 
 /**
  * @tug-pairings
  * | Element                          | Surface                         | Role          | Context                                          |
  * |----------------------------------|---------------------------------|---------------|--------------------------------------------------|
- * | --tugx-card-banner-strip-fg      | --tugx-card-banner-strip-bg     | content       | .tug-pane-banner-strip (color)                   |
- * | --tugx-card-banner-strip-border  | --tugx-card-banner-strip-bg     | informational | .tug-pane-banner-strip (border-color)            |
- * | --tugx-card-banner-detail-fg     | --tugx-card-banner-detail-bg    | content       | .tug-pane-banner-detail-panel (color)            |
+ * | --tugx-pane-banner-strip-fg      | --tugx-pane-banner-strip-bg     | content       | .tug-pane-banner-strip (color)                   |
+ * | --tugx-pane-banner-strip-border  | --tugx-pane-banner-strip-bg     | informational | .tug-pane-banner-strip (border-color)            |
+ * | --tugx-pane-banner-detail-fg     | --tugx-pane-banner-detail-bg    | content       | .tug-pane-banner-detail-panel (color)            |
  */
 
 /**
  * tug-pane-banner.css — styles for TugPaneBanner.
  *
- * Card-scoped modal banner. Positioned absolutely inside `.tugcard`, clipped
+ * Pane-scoped modal banner. Positioned absolutely inside `.tugcard`, clipped
  * below the title bar via `top: var(--tug-chrome-height)` — same technique
- * as .tug-sheet-clip so chrome height stays consistent across card-modal
+ * as .tug-sheet-clip so chrome height stays consistent across pane-modal
  * surfaces.
  *
  * Component-tier aliases point to the same base `--tug7-*` tokens TugBanner
@@ -37,17 +37,17 @@
 
 body {
   /* Strip — bold filled danger surface, shared with TugBanner base tokens */
-  --tugx-card-banner-strip-bg:      var(--tug7-surface-control-primary-filled-danger-rest);
-  --tugx-card-banner-strip-fg:      var(--tug7-element-control-text-filled-danger-rest);
-  --tugx-card-banner-strip-border:  var(--tug7-element-control-border-filled-danger-rest);
+  --tugx-pane-banner-strip-bg:      var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-pane-banner-strip-fg:      var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-pane-banner-strip-border:  var(--tug7-element-control-border-filled-danger-rest);
 
   /* Detail panel — overlay surface for the error diagnostic area */
-  --tugx-card-banner-detail-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
-  --tugx-card-banner-detail-fg:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-card-banner-detail-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-banner-detail-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-pane-banner-detail-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-pane-banner-detail-border: var(--tug7-element-global-border-normal-default-rest);
 
   /* Dim backdrop behind the detail panel (error variant only) */
-  --tugx-card-banner-backdrop-bg:   var(--tug7-surface-overlay-primary-normal-dim-rest);
+  --tugx-pane-banner-backdrop-bg:   var(--tug7-surface-overlay-primary-normal-dim-rest);
 }
 
 /* ---- Banner root — absolute within .tugcard, below title bar ---- */
@@ -55,9 +55,9 @@ body {
 .tug-pane-banner {
   position: absolute;
   inset: 0;
-  /* Sit below the card title bar; strip and detail panel both clip at this line */
+  /* Sit below the pane title bar; strip and detail panel both clip at this line */
   top: var(--tug-chrome-height, 36px);
-  /* Above card content, below any app-modal surfaces */
+  /* Above the pane body, below any app-modal surfaces */
   z-index: 20;
   /* Base state: pointer events enabled so the dim backdrop (error variant)
      swallows clicks even with the body inert. Status variant has no backdrop;
@@ -66,10 +66,10 @@ body {
   box-sizing: border-box;
 }
 
-/* Error variant root: dim backdrop fills the body area behind the detail panel */
+/* Error variant root: dim backdrop fills the pane body behind the detail panel */
 .tug-pane-banner[data-variant="error"] {
-  /* @tug-renders-on: --tugx-card-banner-backdrop-bg */
-  background-color: var(--tugx-card-banner-backdrop-bg);
+  /* @tug-renders-on: --tugx-pane-banner-backdrop-bg */
+  background-color: var(--tugx-pane-banner-backdrop-bg);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -79,7 +79,7 @@ body {
 .tug-pane-banner[data-variant="status"] {
   background-color: transparent;
   /* Strip extends full width at the top; below the strip, no backdrop covers
-     the card body, so pointer events should pass through. */
+     the pane body, so pointer events should pass through. */
   pointer-events: none;
 }
 .tug-pane-banner[data-variant="status"] .tug-pane-banner-strip {
@@ -123,10 +123,10 @@ body {
   padding: 12px 20px;
   font-size: 0.875rem;
   line-height: 1.4;
-  /* @tug-renders-on: --tugx-card-banner-strip-bg */
-  background-color: var(--tugx-card-banner-strip-bg);
-  color: var(--tugx-card-banner-strip-fg);
-  border-bottom: 1px solid var(--tugx-card-banner-strip-border);
+  /* @tug-renders-on: --tugx-pane-banner-strip-bg */
+  background-color: var(--tugx-pane-banner-strip-bg);
+  color: var(--tugx-pane-banner-strip-fg);
+  border-bottom: 1px solid var(--tugx-pane-banner-strip-border);
   /* Base state: off-screen above clip. TugAnimator's fill:forwards holds the
      final transform after enter/exit animations. */
   transform: translateY(-100%);
@@ -160,10 +160,10 @@ body {
   display: flex;
   flex-direction: column;
   padding: 20px 24px;
-  /* @tug-renders-on: --tugx-card-banner-detail-bg */
-  background-color: var(--tugx-card-banner-detail-bg);
-  color: var(--tugx-card-banner-detail-fg);
-  border: 1px solid var(--tugx-card-banner-detail-border);
+  /* @tug-renders-on: --tugx-pane-banner-detail-bg */
+  background-color: var(--tugx-pane-banner-detail-bg);
+  color: var(--tugx-pane-banner-detail-fg);
+  border: 1px solid var(--tugx-pane-banner-detail-border);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
@@ -194,8 +194,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* @tug-renders-on: --tugx-card-banner-detail-bg */
-  color: var(--tugx-card-banner-detail-fg);
+  /* @tug-renders-on: --tugx-pane-banner-detail-bg */
+  color: var(--tugx-pane-banner-detail-fg);
   opacity: 0.8;
 }
 
@@ -240,21 +240,21 @@ body {
 
 /* danger (default, already set on body) */
 .tug-pane-banner[data-tone="danger"] .tug-pane-banner-strip {
-  --tugx-card-banner-strip-bg:     var(--tug7-surface-control-primary-filled-danger-rest);
-  --tugx-card-banner-strip-fg:     var(--tug7-element-control-text-filled-danger-rest);
-  --tugx-card-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
+  --tugx-pane-banner-strip-bg:     var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-pane-banner-strip-fg:     var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-pane-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
 }
 
 /* caution — dark text for contrast against the caution fill */
 .tug-pane-banner[data-tone="caution"] .tug-pane-banner-strip {
-  --tugx-card-banner-strip-bg:     var(--tug7-surface-control-primary-filled-caution-rest);
-  --tugx-card-banner-strip-fg:     var(--tug7-element-global-text-normal-onCaution-rest);
-  --tugx-card-banner-strip-border: var(--tug7-element-control-border-filled-caution-rest);
+  --tugx-pane-banner-strip-bg:     var(--tug7-surface-control-primary-filled-caution-rest);
+  --tugx-pane-banner-strip-fg:     var(--tug7-element-global-text-normal-onCaution-rest);
+  --tugx-pane-banner-strip-border: var(--tug7-element-control-border-filled-caution-rest);
 }
 
 /* default — neutral filled overlay */
 .tug-pane-banner[data-tone="default"] .tug-pane-banner-strip {
-  --tugx-card-banner-strip-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
-  --tugx-card-banner-strip-fg:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-card-banner-strip-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-banner-strip-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-pane-banner-strip-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-pane-banner-strip-border: var(--tug7-element-global-border-normal-default-rest);
 }
