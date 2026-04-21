@@ -7,7 +7,7 @@
  * Domain/key mapping:
  *   Layout    → domain `dev.tugtool.deck.layout`,   key `layout`        (Value::Json)
  *   Theme     → domain `dev.tugtool.app`,            key `theme`         (Value::String)
- *   Tab state → domain `dev.tugtool.deck.tabstate`,  key `<tabId>`       (Value::Json)
+ *   Card state → domain `dev.tugtool.deck.tabstate`, key `<cardId>`      (Value::Json) — legacy prefix; see `migrateTabstateToCardstate`
  *   Deck state→ domain `dev.tugtool.deck.state`,     key `focusedCardId` (Value::String)
  *
  * The tagged-value wire format is `{"kind":"json","value":{...}}` for JSON
@@ -18,6 +18,109 @@ import type { CardStateBag } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
+
+/** Legacy tugbank domain for per-card JSON state (historical `tabstate` name). Read during migration only. */
+const LEGACY_TABSTATE_DOMAIN = "dev.tugtool.deck.tabstate";
+/** Target domain for per-card JSON state after migration from {@link LEGACY_TABSTATE_DOMAIN}. */
+const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
+
+/**
+ * Counts from {@link migrateTabstateToCardstate}: rows moved from legacy `tabstate` to `cardstate`,
+ * legacy rows dropped because `cardstate` already held the id, and keys that only existed under
+ * `cardstate` (no legacy row to reconcile).
+ */
+export interface MigrationSummary {
+  /** Rows PUT to `cardstate` and removed from legacy `tabstate`. */
+  migrated: number;
+  /** Legacy row removed because `cardstate` already had that id (`cardstate` value kept). */
+  skipped: number;
+  /** Keys present only under `cardstate` at migration start (no legacy row). */
+  unchanged: number;
+}
+
+/**
+ * One-shot migration from legacy `dev.tugtool.deck.tabstate` to `dev.tugtool.deck.cardstate`.
+ *
+ * Reads both domains from `client`, then for each legacy row: if `cardstate` already has that id,
+ * the existing `cardstate` value wins — the legacy row is deleted only. Otherwise the legacy tagged
+ * value is PUT to `cardstate`, then the legacy row is deleted. Idempotent once legacy is empty.
+ *
+ * Uses HTTP PUT/DELETE (same as other settings writers); the in-memory cache is not updated here.
+ */
+export async function migrateTabstateToCardstate(client: TugbankClient): Promise<MigrationSummary> {
+  const tabRows = client.readDomain(LEGACY_TABSTATE_DOMAIN);
+  const cardRows = client.readDomain(CARDSTATE_DOMAIN);
+
+  const tabKeys = tabRows ? Object.keys(tabRows) : [];
+  const tabKeySet = new Set(tabKeys);
+
+  let unchanged = 0;
+  if (cardRows) {
+    for (const id of Object.keys(cardRows)) {
+      if (!tabKeySet.has(id)) {
+        unchanged++;
+      }
+    }
+  }
+
+  if (tabKeys.length === 0) {
+    return { migrated: 0, skipped: 0, unchanged };
+  }
+
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const id of tabKeys) {
+    const legacyTagged = tabRows![id];
+    const existingCard = cardRows?.[id];
+
+    if (existingCard !== undefined) {
+      try {
+        await deleteLegacyTabstateRow(id);
+        skipped++;
+      } catch (err) {
+        console.warn("[settings] migrateTabstateToCardstate: DELETE legacy row failed for", id, err);
+      }
+      continue;
+    }
+
+    try {
+      await putCardstateRow(id, legacyTagged);
+      await deleteLegacyTabstateRow(id);
+      migrated++;
+    } catch (err) {
+      console.warn("[settings] migrateTabstateToCardstate: failed to migrate row", id, err);
+    }
+  }
+
+  return { migrated, skipped, unchanged };
+}
+
+function cardstatePutUrl(id: string): string {
+  return `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(id)}`;
+}
+
+function legacyTabstateKeyUrl(id: string): string {
+  return `/api/defaults/${LEGACY_TABSTATE_DOMAIN}/${encodeURIComponent(id)}`;
+}
+
+async function putCardstateRow(id: string, tagged: TaggedValue): Promise<void> {
+  const response = await fetch(cardstatePutUrl(id), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tagged),
+  });
+  if (!response.ok) {
+    throw new Error(`PUT ${CARDSTATE_DOMAIN} failed: ${response.status}`);
+  }
+}
+
+async function deleteLegacyTabstateRow(id: string): Promise<void> {
+  const response = await fetch(legacyTabstateKeyUrl(id), { method: "DELETE" });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`DELETE ${LEGACY_TABSTATE_DOMAIN} failed: ${response.status}`);
+  }
+}
 
 // ── Read functions (TugbankClient cache) ─────────────────────────────────────
 
@@ -63,7 +166,7 @@ export function readDeckState(client: TugbankClient): string | null {
  */
 export function readTabStates(client: TugbankClient, tabIds: string[]): Map<string, CardStateBag> {
   const map = new Map<string, CardStateBag>();
-  const domain = client.readDomain("dev.tugtool.deck.tabstate");
+  const domain = client.readDomain(LEGACY_TABSTATE_DOMAIN);
   if (!domain) return map;
 
   for (const tabId of tabIds) {
@@ -116,7 +219,7 @@ export function putTheme(theme: string): void {
  * callers can ignore the return value.
  */
 export function putTabState(tabId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
-  const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
+  const url = legacyTabstateKeyUrl(tabId);
   const body = JSON.stringify({ kind: "json", value: bag });
 
   if (options?.sync) {
