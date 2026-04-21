@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | in progress |
+| Status | complete |
 | Target branch | main |
 | Last updated | 2026-04-21 |
 | Predecessor | [tugplan-vocabulary-pane-rename.md](./tugplan-vocabulary-pane-rename.md) (complete — Deck → Pane → Card vocabulary landed) |
@@ -177,11 +177,11 @@ There are no production users. A dev launching at head after this rename will se
 - `tugdeck/src/main.tsx` — any remaining grep hits.
 
 **Tasks:**
-- [ ] Grep-walk every remaining `tabstate` / `tabState` / `TabState` reference in `tugdeck/src`. Rewrite each to the current (cardstate) vocabulary.
+- [x] Grep-walk every remaining `tabstate` / `tabState` / `TabState` reference in `tugdeck/src`. Rewrite each to the current (cardstate) vocabulary.
 
 **Checkpoint:**
-- [ ] `rg "tabstate|tabState|TabState" tugdeck/src` returns zero matches.
-- [ ] `bun test` green.
+- [x] `rg "tabstate|tabState|TabState" tugdeck/src` returns zero matches.
+- [x] `bun test` green.
 
 ---
 
@@ -192,17 +192,17 @@ There are no production users. A dev launching at head after this rename will se
 **Commit:** `N/A (verification only)`
 
 **Tasks:**
-- [ ] Full build matrix: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
-- [ ] Grep sweep:
+- [x] Full build matrix: `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run`.
+- [x] Grep sweep:
   ```
   rg "\btabId\b|\btabIds\b|tabState\b|tabStates\b|putTabState|readTabStates|dev\\.tugtool\\.deck\\.tabstate" tugdeck/src
   ```
   Expected: zero matches.
-- [ ] Launch app; verify card saves write to `cardstate/` (dev console / Network tab).
+- [x] Launch app; verify card saves write to `cardstate/` (dev console / Network tab).
 
 **Checkpoint:**
-- [ ] All four build checks green.
-- [ ] Grep sweep clean.
+- [x] All four build checks green.
+- [x] Grep sweep clean.
 
 ---
 
@@ -212,8 +212,8 @@ There are no production users. A dev launching at head after this rename will se
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All 3 implementation steps committed; integration checkpoint (#step-4) passes.
-- [ ] Grep sweep clean — zero `tabstate` / `tabId` references remain.
+- [x] All 3 implementation steps committed; integration checkpoint (#step-4) passes.
+- [x] Grep sweep clean — zero `tabstate` / `tabId` references remain.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
