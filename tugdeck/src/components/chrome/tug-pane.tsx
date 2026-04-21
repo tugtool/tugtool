@@ -212,7 +212,12 @@ export const TugPanePortalContext = createContext<HTMLDivElement | null>(null);
 
 export const CardDirtyContext = createContext<(() => void) | null>(null);
 
-export function useTugcardDirty(): () => void {
+/**
+ * Returns a stable `markDirty` callback from `CardDirtyContext`, or a no-op
+ * outside a provider. Card content uses this to participate in the pane's
+ * debounced auto-save path alongside scroll/selection listeners.
+ */
+export function useCardDirty(): () => void {
   const markDirty = useContext(CardDirtyContext);
   return markDirty ?? noop;
 }

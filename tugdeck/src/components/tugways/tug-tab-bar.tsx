@@ -1,5 +1,5 @@
 /**
- * TugTabBar — presentational tab strip for multi-tab Tugcards.
+ * TugTabBar — presentational tab strip for multi-tab card hosts.
  *
  * Renders in the TugPane accessory slot when a card has more than one tab.
  * Purely presentational: no DeckManager coupling. Per [L11], TugTabBar is a

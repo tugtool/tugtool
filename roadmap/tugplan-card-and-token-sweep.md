@@ -26,7 +26,7 @@
 
 The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `windowId` / `.tug-window*` everywhere a Tug-authored identifier carried "window." Two surfaces survived that sweep by design — both are straightforward to clean up now that the vocabulary is stable:
 
-1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but hooks and types authored under that name needed a `Card*` rename (Steps 1–4). **Steps 1–3 complete:** `CardMeta`; `CardDataContext` / `CardDataProvider` / `useCardData`; `CardPersistenceCallbacks` / `UseCardPersistenceOptions` / `useCardPersistence`. **Step 4 remaining:** `useTugcardDirty` → `useCardDirty` (`tug-pane.tsx`).
+1. **Tugcard fossils (code identifiers).** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone; **Steps 1–4** renamed the remaining `Tugcard*` / `useTugcard*` hooks and types to `Card*` (`CardMeta`, `CardData*`, `useCardData`, `CardPersistence*`, `useCardPersistence`, `useCardDirty`). Residual `.tugcard*` **CSS class** names stay per [D03] — a deliberate scope boundary, not forgotten fossils.
 
    These surfaces describe **card-level** state (metadata, feed data, persistence, dirty bit). The plain `Card*` word matches sibling types (`CardState`, `CardStateBag`, `CardLifecycle`, `CardHost`) that already drop the `Tug` prefix for card-model types.
 
@@ -59,7 +59,7 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 1. **Done (Step 1).** `CardMeta` (was `TugcardMeta`) — card-registry.ts + all consumers.
 2. **Done (Step 2).** `use-card-data.ts` with exports `CardDataContext`, `CardDataContextValue`, `CardDataProvider`, `useCardData` (was `use-tugcard-data.ts` / `TugcardData*`).
 3. **Done (Step 3).** `use-card-persistence.tsx` with exports `useCardPersistence`, `UseCardPersistenceOptions`, `CardPersistenceCallbacks` (was `use-tugcard-persistence.tsx` / `TugcardPersistence*`).
-4. `useTugcardDirty` → `useCardDirty` (stays in tug-pane.tsx where `CardDirtyContext` is defined).
+4. **Done (Step 4).** `useCardDirty` (was `useTugcardDirty`) — `tug-pane.tsx` with `CardDirtyContext`.
 5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-card-persistence.test.tsx` **done (Step 3)**.
 6. CSS frame tokens: `--tugx-card-bg`, `--tugx-card-border`, `--tugx-card-shadow-active|inactive`, `--tugx-card-dim-overlay` → `--tugx-pane-*`.
 7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
@@ -285,17 +285,17 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 **References:** [D01] Card prefix
 
 **Artifacts:**
-- `tugdeck/src/components/chrome/tug-pane.tsx` — hook export.
-- Consumers that call `useTugcardDirty()`.
+- `tugdeck/src/components/chrome/tug-pane.tsx` — hook export (`useCardDirty`), optional JSDoc.
+- Consumers: none at Step 0 audit; any future callers import `useCardDirty`.
 
 **Tasks:**
-- [ ] Rename export.
-- [ ] Update every consumer.
+- [x] Rename export.
+- [x] Update every consumer (none).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "useTugcardDirty" tugdeck/src` returns zero matches.
-- [ ] `rg "\bTugcard\w+|\buseTugcard\w+" tugdeck/src` returns zero matches (all `Tugcard*` identifiers retired).
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "useTugcardDirty" tugdeck/src` returns zero matches.
+- [x] `rg "\bTugcard\w+|\buseTugcard\w+" tugdeck/src` returns zero matches (all `Tugcard*` identifiers retired from source; `.tugcard*` CSS classes remain per [D03]).
 
 ---
 
@@ -599,13 +599,11 @@ Definitions (9, as enumerated in Context):
 | `CardPersistenceCallbacks` | type | `tugdeck/src/components/tugways/use-card-persistence.tsx:58` | 3 ✓ |
 | `UseCardPersistenceOptions` | type | `tugdeck/src/components/tugways/use-card-persistence.tsx:32` | 3 ✓ |
 | `useCardPersistence` | hook | `tugdeck/src/components/tugways/use-card-persistence.tsx:123` | 3 ✓ |
-| `useTugcardDirty` | hook | `tugdeck/src/components/chrome/tug-pane.tsx:215` | 4 |
+| `useCardDirty` | hook | `tugdeck/src/components/chrome/tug-pane.tsx:220` | 4 ✓ |
 
-**Note:** `useTugcardDirty` has **zero call sites** today — grep finds only the export at `tug-pane.tsx:215`. Step 4 still renames it so the exported surface is coherent; future callers should use `useCardDirty`.
+**Note:** `useCardDirty` had **zero call sites** at Step 0 — only the export in `tug-pane.tsx`. Step 4 renames for a coherent public surface; prose in `tug-tab-bar.tsx` and `hello-world-card.tsx` was swept so `rg "\bTugcard\w+" tugdeck/src` is clean.
 
-**Prose-only references** (comments, JSDoc) that will surface during rename passes and must be rewritten, not just import-changed:
-- `tugdeck/src/components/tugways/tug-tab-bar.tsx:2` — header comment ("TugTabBar — presentational tab strip for multi-tab Tugcards").
-- `tugdeck/src/components/tugways/cards/hello-world-card.tsx:5` — JSDoc reference to `TugcardProps`.
+**Prose-only references:** Cleared in Step 4 for the code-identifiers sweep. `.tugcard*` CSS **class** names remain (see [D03]).
 
 #### A.2 CSS token inventory (authoritative)
 
