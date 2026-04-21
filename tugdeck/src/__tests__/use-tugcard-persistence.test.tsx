@@ -2,17 +2,17 @@
  * useTugcardPersistence hook unit tests -- Phase 5f4.
  *
  * Tests cover:
- * - T-P01: useTugcardPersistence registers callbacks called by Tugcard on
+ * - T-P01: useTugcardPersistence registers callbacks called by TugWindow on
  *   deactivation (onSave) and activation (onRestore).
  * - T-P02: Updating onSave/onRestore options does not cause re-registration
  *   (stable useLayoutEffect with [register] deps, refs used inside wrappers).
- * - T-P03: Integration with Tugcard context (round-trip through Tugcard).
+ * - T-P03: Integration with TugWindow context (round-trip through TugWindow).
  * - T-P04: restorePendingRef is included in registered callbacks and defaults
  *   to false. ([D03])
  * - T-P05: When restorePendingRef.current is set to true and onContentReady is
  *   written into the callbacks object, triggering a re-render causes the no-deps
  *   useLayoutEffect to fire onContentReady and reset the flag. ([D01], [D02])
- * - T-P06: Parent-sets-ref, child-reads-ref indirection (mirrors the real Tugcard
+ * - T-P06: Parent-sets-ref, child-reads-ref indirection (mirrors the real TugWindow
  *   code path): provider sets callbacks.restorePendingRef.current = true, writes
  *   callbacks.onContentReady = mock(), then calls callbacks.onRestore(state) to
  *   trigger child setState. Verifies onContentReady fires and flag resets. ([D01])
@@ -60,7 +60,7 @@ function makeTestProvider() {
 }
 
 // ---------------------------------------------------------------------------
-// T-P01: useTugcardPersistence registers callbacks called by Tugcard
+// T-P01: useTugcardPersistence registers callbacks called by TugWindow
 // ---------------------------------------------------------------------------
 
 describe("useTugcardPersistence – callback registration and invocation", () => {
@@ -88,7 +88,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
     const callbacks = getLatestCallbacks();
     expect(callbacks).not.toBeNull();
 
-    // Tugcard calls onSave on deactivation.
+    // TugWindow calls onSave on deactivation.
     const result = callbacks!.onSave();
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(result).toEqual(savedState);
@@ -117,14 +117,14 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
     const callbacks = getLatestCallbacks();
     expect(callbacks).not.toBeNull();
 
-    // Tugcard calls onRestore on activation with saved state.
+    // TugWindow calls onRestore on activation with saved state.
     const savedState = { value: 99 };
     callbacks!.onRestore(savedState);
     expect(onRestore).toHaveBeenCalledTimes(1);
     expect(restoredValues).toEqual([savedState]);
   });
 
-  it("T-P01c: no-op when rendered outside a Tugcard (context is null)", () => {
+  it("T-P01c: no-op when rendered outside a TugWindow (context is null)", () => {
     // Without a Provider, CardPersistenceContext value is null.
     // The hook must not throw and must not call register.
     const onSave = mock(() => ({}));
@@ -209,12 +209,12 @@ describe("useTugcardPersistence – stable registration across re-renders", () =
 });
 
 // ---------------------------------------------------------------------------
-// T-P03: Integration with Tugcard context (round-trip through Tugcard)
+// T-P03: Integration with TugWindow context (round-trip through TugWindow)
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – Tugcard context round-trip", () => {
-  it("T-P03: card content using useTugcardPersistence receives onRestore via Tugcard activation", () => {
-    // Simulate Tugcard providing context and calling onSave/onRestore.
+describe("useTugcardPersistence – TugWindow context round-trip", () => {
+  it("T-P03: card content using useTugcardPersistence receives onRestore via TugWindow activation", () => {
+    // Simulate TugWindow providing context and calling onSave/onRestore.
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
     const contentState = { scroll: 100, selected: ["item-1"] };
@@ -238,11 +238,11 @@ describe("useTugcardPersistence – Tugcard context round-trip", () => {
     const callbacks = getLatestCallbacks()!;
     expect(callbacks).not.toBeNull();
 
-    // Simulate deactivation: Tugcard calls onSave to capture state.
+    // Simulate deactivation: TugWindow calls onSave to capture state.
     const saved = callbacks.onSave();
     expect(saved).toEqual(contentState);
 
-    // Simulate activation: Tugcard calls onRestore with the saved state.
+    // Simulate activation: TugWindow calls onRestore with the saved state.
     callbacks.onRestore(saved);
     expect(restoredStates).toHaveLength(1);
     expect(restoredStates[0]).toEqual(contentState);
@@ -334,12 +334,12 @@ describe("useTugcardPersistence – no-deps useLayoutEffect fires onContentReady
 });
 
 // ---------------------------------------------------------------------------
-// T-P06: Parent-sets-ref, child-reads-ref: mirrors real Tugcard code path
+// T-P06: Parent-sets-ref, child-reads-ref: mirrors real TugWindow code path
 // ---------------------------------------------------------------------------
 
 describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection", () => {
-  it("T-P06: Tugcard sets flag + writes onContentReady before onRestore; callback fires after child re-render commits", () => {
-    // This test exercises the exact indirection the real Tugcard code path uses:
+  it("T-P06: TugWindow sets flag + writes onContentReady before onRestore; callback fires after child re-render commits", () => {
+    // This test exercises the exact indirection the real TugWindow code path uses:
     // 1. Provider (parent) gets the registered callbacks object.
     // 2. Parent sets callbacks.restorePendingRef.current = true.
     // 3. Parent writes callbacks.onContentReady = handler.
@@ -375,7 +375,7 @@ describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection
     expect(callbacks).not.toBeNull();
     expect(callbacks.restorePendingRef).toBeDefined();
 
-    // Simulate Tugcard's Phase 1 effect: set flag, write onContentReady, call onRestore.
+    // Simulate TugWindow's Phase 1 effect: set flag, write onContentReady, call onRestore.
     act(() => {
       callbacks.restorePendingRef!.current = true;
       callbacks.onContentReady = () => {

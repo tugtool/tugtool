@@ -1,9 +1,9 @@
 /**
- * TideCardContent — lastError banner integration (TugCardBanner adoption).
+ * TideCardContent — lastError banner integration (TugWindowBanner adoption).
  *
  * Drives `CodeSessionStore` through real error transitions by dispatching
  * SESSION_STATE frames on a MockTugConnection, then asserts the rendered
- * TugCardBanner appears, dismisses, and re-raises on new errors.
+ * TugWindowBanner appears, dismisses, and re-raises on new errors.
  *
  * Banner unmount is deferred to the exit animation's `.finished` — tests
  * drive the WAAPI mock to completion to deterministically observe the
@@ -64,7 +64,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugWindowPortalContext } from "@/components/tugways/tug-card";
+import { TugWindowPortalContext } from "@/components/chrome/tug-window";
 
 const CARD_ID = "tide-6-test";
 const SESSION_ID = "sess-6-1";
@@ -107,13 +107,13 @@ function dispatchSessionErrored(detail: string): void {
   });
 }
 
-/** Locate the portaled TugCardBanner via its `data-slot` anchor. */
+/** Locate the portaled TugWindowBanner via its `data-slot` anchor. */
 function queryBannerEl(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-slot=\"tug-card-banner\"]");
+  return document.querySelector<HTMLElement>("[data-slot=\"tug-window-banner\"]");
 }
 function getBannerEl(): HTMLElement {
   const el = queryBannerEl();
-  if (el === null) throw new Error("tug-card-banner not in the DOM");
+  if (el === null) throw new Error("tug-window-banner not in the DOM");
   return el;
 }
 
@@ -137,7 +137,7 @@ afterEach(() => {
   mock.reset();
 });
 
-describe("TideCardContent — lastError TugCardBanner", () => {
+describe("TideCardContent — lastError TugWindowBanner", () => {
   it("T-TIDE-LASTERR-01: renders the banner when lastError becomes non-null", () => {
     const { queryByTestId } = renderTideCard(CARD_ID);
 

@@ -36,8 +36,9 @@ import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/pr
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
-import { Tugcard } from "@/components/tugways/tug-card";
+import { TugWindow } from "@/components/chrome/tug-window";
 import { CardContentHost } from "@/components/chrome/card-content-host";
+import type { TugWindowState } from "@/layout-tree";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -64,23 +65,41 @@ function makeStore() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: render GalleryObservableProps inside a fully-wired Tugcard
+// Helper: render GalleryObservableProps with the same deck layout as DeckCanvas
+// (TugWindow + CardContentHost sibling; content portals into the window).
 // ---------------------------------------------------------------------------
 
 function renderObservableProps(cardId = "obs-int-card") {
   const manager = new ResponderChainManager();
+  const stackId = `${cardId}-stack`;
+  const stackState: TugWindowState = {
+    id: stackId,
+    position: { x: 0, y: 0 },
+    size: { width: 800, height: 600 },
+    cardIds: [cardId],
+    activeCardId: cardId,
+    title: "",
+    acceptsFamilies: ["standard"],
+  };
   let container!: HTMLElement;
   act(() => {
     ({ container } = render(
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
-          <Tugcard stackId={`${cardId}-stack`} meta={{ title: "Test" }} feedIds={[]}>
-            <CardContentHost
-              cardId={cardId}
-              hostStackId={`${cardId}-stack`}
-              componentId="gallery-observable-props"
-            />
-          </Tugcard>
+          <TugWindow
+            stackState={stackState}
+            meta={{ title: "Test" }}
+            feedIds={[]}
+            onCardMoved={() => {}}
+            onStackActivated={() => {}}
+            zIndex={1}
+            isFocused={false}
+          />
+          <CardContentHost
+            cardId={cardId}
+            hostStackId={stackId}
+            componentId="gallery-observable-props"
+          />
         </ResponderChainContext.Provider>
       )
     ));
@@ -474,7 +493,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#ff0000" },
-        // source omitted — Tugcard defaults it to 'inspector'
+        // source omitted — CardContentHost setProperty handler defaults it to 'inspector'
       });
     });
 
@@ -485,7 +504,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
     const { container, manager } = renderObservableProps("obs-t6b");
 
     // The source attribution observer tracks the source; when source is
-    // 'inspector' (the default from Tugcard.setProperty handler) it guards.
+    // 'inspector' (the default from the card host setProperty handler) it guards.
     const countSpan = container.querySelector("[data-testid='observer-fire-count']") as HTMLSpanElement;
     const lastChangeSpan = container.querySelector("[data-testid='observer-last-change']") as HTMLSpanElement;
 
@@ -494,7 +513,7 @@ describe("Task 6: setProperty action works via sendToTarget (console-equivalent)
         action: TUG_ACTIONS.SET_PROPERTY,
         phase: "discrete",
         value: { path: "style.backgroundColor", value: "#abcdef" },
-        // no source — Tugcard defaults to 'inspector'
+        // no source — card host handler defaults to 'inspector'
       });
     });
 

@@ -92,7 +92,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugWindowPortalContext } from "@/components/tugways/tug-card";
+import { TugWindowPortalContext } from "@/components/chrome/tug-window";
 import { FeedId } from "@/protocol";
 import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
 

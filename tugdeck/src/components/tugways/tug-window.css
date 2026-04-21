@@ -103,7 +103,7 @@ body {
 }
 
 /* ============================================================================
-   Tugcard root
+   Window chrome root (.tugcard)
    ========================================================================= */
 
 .tugcard {
@@ -120,7 +120,7 @@ body {
 }
 
 /* ============================================================================
-   Tugcard body wrapper -- holds accessory + content below the title bar [D07]
+   Body wrapper -- holds accessory + content below the title bar [D07]
    ========================================================================= */
 
 /*
@@ -139,7 +139,7 @@ body {
 }
 
 /* ============================================================================
-   Tugcard collapsed state -- title bar only, content CSS-hidden [D07]
+   Collapsed state -- title bar only, content CSS-hidden [D07]
    ========================================================================= */
 
 /*
@@ -200,7 +200,7 @@ body {
 /*
  * When the card is focused (active), the title bar background switches to the
  * active color. CardFrame sets data-focused="true" on its container div,
- * which is the ancestor of the Tugcard.
+ * which is the ancestor of the window chrome root.
  */
 .card-frame[data-focused="true"] .tugcard-title-bar {
   background-color: var(--tugx-card-title-bar-bg-active);

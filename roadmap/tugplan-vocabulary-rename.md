@@ -400,22 +400,22 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Consumers that imported `Tugcard`, `CARD_TITLE_BAR_HEIGHT`, `TugcardPortalContext`, `TugcardDirtyContext`, etc. — re-point to their new homes (`tug-window.tsx`, or wherever the contexts landed in #step-5).
 
 **Tasks:**
-- [ ] Absorb `Tugcard`'s render (title bar, tab bar, content div, responder scope, selection boundary) into `TugWindow`'s render.
-- [ ] Inline what was `renderContent(injected)` — `TugWindow` already owns the injected callbacks; no closure needed.
-- [ ] Move `CARD_TITLE_BAR_HEIGHT` constant to `tug-window.tsx` (or a new `tug-window-constants.ts`).
-- [ ] Move `TugcardPortalContext` and the other contexts to `tug-window.tsx` (or keep them in the module they moved to in #step-5).
-- [ ] Delete `tug-card.tsx`.
-- [ ] Update every import.
+- [x] Absorb `Tugcard`'s render (title bar, tab bar, content div, responder scope, selection boundary) into `TugWindow`'s render.
+- [x] Inline what was `renderContent(injected)` — `TugWindow` already owns the injected callbacks; no closure needed.
+- [x] Move `CARD_TITLE_BAR_HEIGHT` constant to `tug-window.tsx` (or a new `tug-window-constants.ts`).
+- [x] Move `TugcardPortalContext` and the other contexts to `tug-window.tsx` (or keep them in the module they moved to in #step-5).
+- [x] Delete `tug-card.tsx`.
+- [x] Update every import.
 
 **Tests:**
-- [ ] Every test that rendered `<Tugcard>` directly is updated to render `<TugWindow>` with the prop surface.
-- [ ] Existing drag, resize, collapse, close, tab-switch tests pass.
-- [ ] Identity-preservation tests pass — the merge does not change portal mechanics.
+- [x] Every test that rendered `<Tugcard>` directly is updated to render `<TugWindow>` with the prop surface.
+- [x] Existing drag, resize, collapse, close, tab-switch tests pass.
+- [x] Identity-preservation tests pass — the merge does not change portal mechanics.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green (existing count preserved).
-- [ ] `rg "Tugcard\b|tug-card" tugdeck/src` returns zero matches (inside `tugdeck/src`; tuglaws and roadmap docs stay historical).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (existing count preserved).
+- [x] `rg "Tugcard\b|tug-card" tugdeck/src` returns zero matches (inside `tugdeck/src`; tuglaws and roadmap docs stay historical).
 - [ ] Manual smoke: open tide card, click its title bar — active. Drag the frame — position commits. Resize from a corner — size commits. Collapse / expand — works. Add a card to make it multi-card — tab bar appears. Click a tab — switches.
 
 ---

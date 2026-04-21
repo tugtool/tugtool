@@ -235,7 +235,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
 /**
  * Internal helper that renders a Lucide icon by name string.
  * Only status variant uses this. App code passes e.g. icon="wifi-off".
- * Uses the static lucide-react `icons` map (same pattern as tug-card.tsx).
+ * Uses the static lucide-react `icons` map (same pattern as tug-window.tsx).
  */
 function BannerIcon({ name }: { name: string }) {
   // Convert kebab-case to PascalCase for Lucide icons map lookup

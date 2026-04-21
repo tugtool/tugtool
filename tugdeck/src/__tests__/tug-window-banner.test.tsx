@@ -1,5 +1,5 @@
 /**
- * TugCardBanner unit tests — card-scoped modal banner.
+ * TugWindowBanner unit tests — card-scoped modal banner.
  *
  * Covers the 7 cases from the plan's § Tests section plus the R2 risk
  * (inert cleanup on unmount). The WAAPI mock installed by setup-rtl
@@ -14,8 +14,8 @@ import React from "react";
 import { describe, it, expect, afterEach } from "bun:test";
 import { render, cleanup, act, waitFor } from "@testing-library/react";
 
-import { TugCardBanner } from "@/components/tugways/tug-card-banner";
-import { TugWindowPortalContext } from "@/components/tugways/tug-card";
+import { TugWindowBanner } from "@/components/tugways/tug-window-banner";
+import { TugWindowPortalContext } from "@/components/chrome/tug-window";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,7 +46,7 @@ function renderInCard(ui: React.ReactElement) {
 }
 
 function getBanner(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-slot=\"tug-card-banner\"]");
+  return document.querySelector<HTMLElement>("[data-slot=\"tug-window-banner\"]");
 }
 
 function resolveAllWaapiAnimations() {
@@ -71,10 +71,10 @@ afterEach(() => {
 // 1. Renders without throwing inside a card portal context
 // ---------------------------------------------------------------------------
 
-describe("TugCardBanner — mount + props", () => {
+describe("TugWindowBanner — mount + props", () => {
   it("T-CARDBANNER-01: renders without throwing when visible=false (nothing in DOM)", () => {
     const { cleanupCard } = renderInCard(
-      <TugCardBanner visible={false} message="hello" />,
+      <TugWindowBanner visible={false} message="hello" />,
     );
     expect(getBanner()).toBeNull();
     cleanupCard();
@@ -86,7 +86,7 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-02: visible=true mounts, visible=false removes after exit animation", async () => {
     const { rerender, cleanupCard } = renderInCard(
-      <TugCardBanner visible={false} message="m" />,
+      <TugWindowBanner visible={false} message="m" />,
     );
     expect(getBanner()).toBeNull();
 
@@ -94,7 +94,7 @@ describe("TugCardBanner — mount + props", () => {
     act(() => {
       rerender(
         <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
-          <TugCardBanner visible={true} message="m" />
+          <TugWindowBanner visible={true} message="m" />
         </TugWindowPortalContext.Provider>,
       );
     });
@@ -105,7 +105,7 @@ describe("TugCardBanner — mount + props", () => {
     act(() => {
       rerender(
         <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
-          <TugCardBanner visible={false} message="m" />
+          <TugWindowBanner visible={false} message="m" />
         </TugWindowPortalContext.Provider>,
       );
     });
@@ -127,7 +127,7 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-03: data-variant, data-tone, data-visible reflect props", () => {
     const { cleanupCard } = renderInCard(
-      <TugCardBanner
+      <TugWindowBanner
         visible={true}
         variant="error"
         tone="caution"
@@ -148,14 +148,14 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-04: inert on .tugcard-body while mounted; released after exit animation", async () => {
     const { cardBody, rerender, cleanupCard } = renderInCard(
-      <TugCardBanner visible={true} message="m" />,
+      <TugWindowBanner visible={true} message="m" />,
     );
     expect(cardBody.hasAttribute("inert")).toBe(true);
 
     act(() => {
       rerender(
         <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
-          <TugCardBanner visible={false} message="m" />
+          <TugWindowBanner visible={false} message="m" />
         </TugWindowPortalContext.Provider>,
       );
     });
@@ -178,7 +178,7 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-05: contained=true leaves .tugcard-body interactive", () => {
     const { cardBody, cleanupCard } = renderInCard(
-      <TugCardBanner visible={true} contained={true} message="m" />,
+      <TugWindowBanner visible={true} contained={true} message="m" />,
     );
     expect(getBanner()).not.toBeNull();
     expect(cardBody.hasAttribute("inert")).toBe(false);
@@ -191,7 +191,7 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-06: renders label, message, children body, and footer", () => {
     const { getByText, cleanupCard } = renderInCard(
-      <TugCardBanner
+      <TugWindowBanner
         visible={true}
         variant="error"
         label="Connection lost"
@@ -199,7 +199,7 @@ describe("TugCardBanner — mount + props", () => {
         footer={<button type="button">Dismiss</button>}
       >
         <p>Detail body content.</p>
-      </TugCardBanner>,
+      </TugWindowBanner>,
     );
     expect(getByText("Connection lost")).not.toBeNull();
     expect(getByText("transport closed")).not.toBeNull();
@@ -214,14 +214,14 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-07: tone attribute updates on prop change", () => {
     const { rerender, cleanupCard } = renderInCard(
-      <TugCardBanner visible={true} tone="danger" message="m" />,
+      <TugWindowBanner visible={true} tone="danger" message="m" />,
     );
     expect(getBanner()!.getAttribute("data-tone")).toBe("danger");
 
     act(() => {
       rerender(
         <TugWindowPortalContext.Provider value={document.querySelector(".tugcard")!}>
-          <TugCardBanner visible={true} tone="default" message="m" />
+          <TugWindowBanner visible={true} tone="default" message="m" />
         </TugWindowPortalContext.Provider>,
       );
     });
@@ -235,7 +235,7 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-R2: unmounting a visible banner clears inert on the body", () => {
     const { cardBody, unmount, cleanupCard } = renderInCard(
-      <TugCardBanner visible={true} message="m" />,
+      <TugWindowBanner visible={true} message="m" />,
     );
     expect(cardBody.hasAttribute("inert")).toBe(true);
 
@@ -252,13 +252,13 @@ describe("TugCardBanner — mount + props", () => {
 
   it("T-CARDBANNER-08: status variant renders strip only (no detail panel)", () => {
     const { cleanupCard } = renderInCard(
-      <TugCardBanner visible={true} variant="status" message="heads up" />,
+      <TugWindowBanner visible={true} variant="status" message="heads up" />,
     );
     const el = getBanner();
     expect(el).not.toBeNull();
     expect(el!.getAttribute("data-variant")).toBe("status");
-    expect(el!.querySelector(".tug-card-banner-strip")).not.toBeNull();
-    expect(el!.querySelector(".tug-card-banner-detail-panel")).toBeNull();
+    expect(el!.querySelector(".tug-window-banner-strip")).not.toBeNull();
+    expect(el!.querySelector(".tug-window-banner-detail-panel")).toBeNull();
     cleanupCard();
   });
 });

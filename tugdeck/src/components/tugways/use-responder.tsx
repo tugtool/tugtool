@@ -99,7 +99,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * `CardContentHost` after 11.6.1a Piece 1 (Card content lives in a
    * flat deck-level list in the React tree but is portaled into the
    * host stack's content div) — passing `parentId: hostStackId`
-   * re-parents the chain to the stack's tug-card responder so
+   * re-parents the chain to the stack's tug-window responder so
    * `NEXT_TAB` / `PREVIOUS_TAB` / `FOCUS_PROMPT` / etc. walk to the
    * right handler.
    *
@@ -136,7 +136,7 @@ export interface UseResponderResult {
  * runtime state for components that intend to register as responders.
  *
  * Use this for components where chain participation is load-bearing for
- * correctness — tug-card, tug-prompt-input, deck-canvas, any responder
+ * correctness — tug-window, tug-prompt-input, deck-canvas, any responder
  * whose actions must be routable from the chain. The throw catches
  * "I forgot the provider" bugs at mount rather than letting them
  * silently degrade into a no-op at runtime.

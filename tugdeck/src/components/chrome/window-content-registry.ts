@@ -10,9 +10,9 @@
  * which every card's content lands).
  *
  * Lifecycle:
- *   - `Tugcard` calls `register(windowId, el)` in a useLayoutEffect after its
+ *   - `TugWindow` calls `register(windowId, el)` in a useLayoutEffect after its
  *     `contentRef` is attached.
- *   - `Tugcard` calls `unregister(windowId)` in the cleanup.
+ *   - `TugWindow` calls `unregister(windowId)` in the cleanup.
  *   - `CardPortal` calls `subscribe(windowId, cb)` to be notified when the
  *     target element changes, and `getElement(windowId)` to read the current
  *     value.

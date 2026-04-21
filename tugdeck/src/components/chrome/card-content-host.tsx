@@ -26,7 +26,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 import { TugcardDataProvider } from "../tugways/hooks/use-tugcard-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
-import { CardDirtyContext, TugWindowPortalContext } from "../tugways/tug-card";
+import { CardDirtyContext, TugWindowPortalContext } from "./tug-window";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
@@ -78,7 +78,7 @@ function useHostContentElement(hostStackId: string): HTMLDivElement | null {
  * reactively. Used to bridge `TugWindowPortalContext` — card content needs
  * access to its host window's root `<div>` for sheets and tooltips that
  * portal into it, and CardContentHost cannot consume the provider
- * directly because it lives outside Tugcard's React tree.
+ * directly because it lives outside the window's React tree.
  */
 function useHostStackRootElement(hostStackId: string): HTMLDivElement | null {
   return useSyncExternalStore(
@@ -308,11 +308,11 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
   // (flat `cards.map` in DeckCanvas) and portaled into its host window's
   // content div via CardPortal. Without an explicit parentId override
   // the responder node's parent would follow the React tree — pointing
-  // at `deck-canvas` rather than at the host window's tug-card — and
+  // at `deck-canvas` rather than at the host window's card responder — and
   // the chain walk from `firstResponderId = cardId` would skip every
-  // tug-card handler. Passing `parentId: hostStackId` re-parents the
+  // window-level card handler. Passing `parentId: hostStackId` re-parents the
   // chain to match the portaled DOM layout so `NEXT_TAB` /
-  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach tug-card and
+  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach the window's `TugWindow` responder and
   // `FOCUS_PROMPT` finds a `kind="card"` node via `getKeyCard`.
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,

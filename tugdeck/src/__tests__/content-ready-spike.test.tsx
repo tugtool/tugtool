@@ -393,7 +393,7 @@ describe("S6: Independent sibling components", () => {
 describe("S7: Persistence context indirection", () => {
   it("the pattern works through context registration (like real useTugcardPersistence)", () => {
     // This simulates the full real pattern:
-    // 1. Parent (Tugcard) provides registration context
+    // 1. Parent (TugWindow) provides registration context
     // 2. Child registers onRestore + onContentReady via useLayoutEffect
     // 3. Parent calls onRestore in its own useLayoutEffect
     // 4. Child's hook fires onContentReady after re-render

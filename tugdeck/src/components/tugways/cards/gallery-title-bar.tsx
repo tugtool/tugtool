@@ -1,7 +1,7 @@
 /**
  * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
- * Shows a CardTitleBar in isolation (outside a real Tugcard frame) with interactive
+ * Shows a CardTitleBar in isolation (outside a real deck window frame) with interactive
  * controls for toggling the collapsed state and selecting the icon.
  *
  * [D07] Window-shade collapse
@@ -11,7 +11,7 @@
  */
 
 import React, { useId, useState } from "react";
-import { CardTitleBar } from "@/components/tugways/tug-card";
+import { CardTitleBar } from "@/components/chrome/tug-window";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -28,7 +28,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 /**
  * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
- * Shows a CardTitleBar in isolation (outside a real Tugcard frame) with interactive
+ * Shows a CardTitleBar in isolation (outside a real deck window frame) with interactive
  * controls for toggling the collapsed state and selecting the icon.
  *
  * [D07] Window-shade collapse

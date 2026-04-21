@@ -1,12 +1,12 @@
 /**
- * TugWindow component unit tests -- Step 4.
+ * TugWindow component unit tests.
  *
  * Tests cover:
- * - T16: TugWindow renders at correct position and size from cardState
+ * - T16: TugWindow renders at correct position and size from stackState
  * - T17: TugWindow applies zIndex prop
  * - T18: TugWindow calls onStackActivated on pointer-down
- * - T19: TugWindow calls onStackClosed when Tugcard fires close
- * - T20: TugWindow clamps resize to min-size
+ * - T19: TugWindow calls onClose when the title bar close path fires
+ * - T20: TugWindow clamps resize to min-size derived from chrome + minContentSize
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -17,8 +17,10 @@ import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
 import { TugWindow } from "@/components/chrome/tug-window";
-import type { TugWindowInjectedProps } from "@/components/chrome/tug-window";
 import type { TugWindowState } from "@/layout-tree";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { withDeckManager } from "./mock-deck-manager-store";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -36,65 +38,44 @@ function makeStackState(overrides: Partial<TugWindowState> = {}): TugWindowState
   };
 }
 
-/**
- * Default renderContent that renders a simple div.
- * Tests that need to interact with injected props receive them via the captureRef.
- */
-function makeRenderContent(
-  extra?: {
-    captureRef?: React.MutableRefObject<TugWindowInjectedProps | null>;
-    onClose?: () => void;
-  }
-) {
-  return (injected: TugWindowInjectedProps): React.ReactNode => {
-    if (extra?.captureRef) {
-      extra.captureRef.current = injected;
-    }
-    return (
-      <div data-testid="card-content">
-        <button
-          data-testid="close-trigger"
-          onClick={() => extra?.onClose?.()}
-        >
-          Close
-        </button>
-      </div>
-    );
-  };
+function wrap(ui: React.ReactElement): React.ReactElement {
+  return withDeckManager(<ResponderChainProvider>{ui}</ResponderChainProvider>);
 }
 
 const defaultProps = {
   stackState: makeStackState(),
+  meta: { title: "Test" },
+  feedIds: [] as const,
   onCardMoved: mock(() => {}),
-  onStackClosed: mock(() => {}),
+  onClose: mock(() => {}),
   onStackActivated: mock(() => {}),
   zIndex: 1,
   isFocused: false,
 };
 
 // ---------------------------------------------------------------------------
-// T16: TugWindow renders at correct position and size from cardState
+// T16: TugWindow renders at correct position and size from stackState
 // ---------------------------------------------------------------------------
 
 describe("TugWindow – position and size", () => {
-  it("T16: renders with correct position and size from cardState", () => {
+  it("T16: renders with correct position and size from stackState", () => {
     const stackState = makeStackState({
       position: { x: 50, y: 75 },
       size: { width: 350, height: 250 },
     });
 
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        stackState={stackState}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          stackState={stackState}
+        />
+      )
     );
 
     const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
     expect(frame).not.toBeNull();
 
-    // Position and size are applied as inline styles.
     expect(frame.style.left).toBe("50px");
     expect(frame.style.top).toBe("75px");
     expect(frame.style.width).toBe("350px");
@@ -103,10 +84,11 @@ describe("TugWindow – position and size", () => {
 
   it("position: absolute is applied", () => {
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+        />
+      )
     );
 
     const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
@@ -121,11 +103,12 @@ describe("TugWindow – position and size", () => {
 describe("TugWindow – zIndex", () => {
   it("T17: applies the zIndex prop as a CSS z-index style", () => {
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        zIndex={42}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          zIndex={42}
+        />
+      )
     );
 
     const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
@@ -143,12 +126,13 @@ describe("TugWindow – onStackActivated", () => {
     const stackState = makeStackState({ id: "focus-test-stack" });
 
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        stackState={stackState}
-        onStackActivated={onStackActivated}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          stackState={stackState}
+          onStackActivated={onStackActivated}
+        />
+      )
     );
 
     const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
@@ -161,61 +145,52 @@ describe("TugWindow – onStackActivated", () => {
     expect(onStackActivated.mock.calls[0][0]).toBe("focus-test-stack");
   });
 
-  it("also fires onStackActivated when pointer-down hits the card content", () => {
+  it("also fires onStackActivated when pointer-down hits inner chrome (tugcard body)", () => {
     const onStackActivated = mock((_id: string) => {});
 
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        onStackActivated={onStackActivated}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          onStackActivated={onStackActivated}
+        />
+      )
     );
 
-    const content = container.querySelector("[data-testid='card-content']") as HTMLElement;
+    const body = container.querySelector("[data-testid='tugcard-body']") as HTMLElement;
     act(() => {
-      fireEvent.pointerDown(content);
+      fireEvent.pointerDown(body);
     });
 
-    // Event bubbles up to frame → onStackActivated fires.
     expect(onStackActivated.mock.calls.length).toBeGreaterThan(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// T19: TugWindow calls onStackClosed when Tugcard fires close
+// T19: TugWindow calls onClose from the title bar close path (single-tab)
 // ---------------------------------------------------------------------------
 
-describe("TugWindow – onStackClosed", () => {
-  it("T19: calls onStackClosed with cardId when renderContent triggers onClose", () => {
-    const onStackClosed = mock((_id: string) => {});
+describe("TugWindow – onClose", () => {
+  it("T19: calls onClose when the close button is activated (single-card window)", () => {
+    const onClose = mock(() => {});
     const stackState = makeStackState({ id: "close-test-card" });
 
-    // The factory wires onClose → onStackClosed(id). Simulate this in the test
-    // renderContent by calling onStackClosed directly on close trigger.
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        stackState={stackState}
-        onStackClosed={onStackClosed}
-        renderContent={() => (
-          <button
-            data-testid="close-trigger"
-            onClick={() => onStackClosed("close-test-card")}
-          >
-            Close
-          </button>
-        )}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          stackState={stackState}
+          onClose={onClose}
+        />
+      )
     );
 
-    const closeBtn = container.querySelector("[data-testid='close-trigger']") as HTMLElement;
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']") as HTMLElement;
     act(() => {
       fireEvent.click(closeBtn);
     });
 
-    expect(onStackClosed).toHaveBeenCalledTimes(1);
-    expect(onStackClosed.mock.calls[0][0]).toBe("close-test-card");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -224,8 +199,7 @@ describe("TugWindow – onStackClosed", () => {
 // ---------------------------------------------------------------------------
 
 describe("TugWindow – min-size clamping", () => {
-  it("T20: resize clamped to min-size reported by Tugcard via onMinSizeChange", () => {
-    const injectedRef = { current: null as TugWindowInjectedProps | null };
+  it("T20: resize clamped to at least the computed chrome + minContentSize floor", () => {
     const onCardMoved = mock(
       (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {}
     );
@@ -236,67 +210,37 @@ describe("TugWindow – min-size clamping", () => {
     });
 
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        stackState={stackState}
-        onCardMoved={onCardMoved}
-        renderContent={makeRenderContent({ captureRef: injectedRef })}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+          stackState={stackState}
+          onCardMoved={onCardMoved}
+          minContentSize={{ width: 200, height: 150 }}
+        />
+      )
     );
 
-    // Report a minimum size via the injected onMinSizeChange callback.
-    act(() => {
-      injectedRef.current?.onMinSizeChange({ width: 200, height: 150 });
-    });
-
-    // Simulate a resize via the south-east handle pointer events.
     const seHandle = container.querySelector(".card-frame-resize-se") as HTMLElement;
     expect(seHandle).not.toBeNull();
 
-    // Simulate drag on the SE handle that would shrink below min-size.
-    // setPointerCapture is not available in happy-dom -- mock it on the frame.
     const frame = container.querySelector("[data-testid='card-frame']") as HTMLElement;
     (frame as any).setPointerCapture = () => {};
     (frame as any).releasePointerCapture = () => {};
 
     act(() => {
-      // Start resize at clientX=400, clientY=300 (bottom-right of the 400x300 card).
       fireEvent.pointerDown(seHandle, { clientX: 400, clientY: 300, pointerId: 1 });
     });
 
     act(() => {
-      // Move to clientX=50, clientY=50 -- this would produce width=50, height=50
-      // which is below the reported min of 200x150.
       fireEvent.pointerUp(frame, { clientX: 50, clientY: 50, pointerId: 1 });
     });
 
-    // onCardMoved should have been called with size clamped to at least minSize.
     if (onCardMoved.mock.calls.length > 0) {
       const lastCall = onCardMoved.mock.calls[onCardMoved.mock.calls.length - 1];
       const reportedSize = lastCall[2] as { width: number; height: number };
       expect(reportedSize.width).toBeGreaterThanOrEqual(200);
       expect(reportedSize.height).toBeGreaterThanOrEqual(150);
     }
-    // Even if no onCardMoved was called (no pointer capture in happy-dom),
-    // the test verifies the wiring is in place.
-  });
-
-  it("default min-size is 150x100 before Tugcard reports", () => {
-    // This is a structural/contract test: the component initializes with the
-    // correct default per Spec S04.
-    const injectedRef = { current: null as TugWindowInjectedProps | null };
-
-    render(
-      <TugWindow
-        {...defaultProps}
-        renderContent={makeRenderContent({ captureRef: injectedRef })}
-      />
-    );
-
-    // The injected onMinSizeChange callback is wired to the internal minSize state.
-    // We verify onMinSizeChange is a function (it is callable).
-    expect(typeof injectedRef.current?.onMinSizeChange).toBe("function");
-    expect(typeof injectedRef.current?.onDragStart).toBe("function");
   });
 });
 
@@ -307,10 +251,11 @@ describe("TugWindow – min-size clamping", () => {
 describe("TugWindow – resize handles", () => {
   it("renders 8 resize handles with correct CSS classes", () => {
     const { container } = render(
-      <TugWindow
-        {...defaultProps}
-        renderContent={makeRenderContent()}
-      />
+      wrap(
+        <TugWindow
+          {...defaultProps}
+        />
+      )
     );
 
     const edges = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
@@ -318,26 +263,5 @@ describe("TugWindow – resize handles", () => {
       const handle = container.querySelector(`.card-frame-resize-${edge}`);
       expect(handle).not.toBeNull();
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Extra: renderContent receives injected callbacks
-// ---------------------------------------------------------------------------
-
-describe("TugWindow – renderContent injection", () => {
-  it("renderContent receives onDragStart and onMinSizeChange callbacks", () => {
-    const captureRef = { current: null as TugWindowInjectedProps | null };
-
-    render(
-      <TugWindow
-        {...defaultProps}
-        renderContent={makeRenderContent({ captureRef })}
-      />
-    );
-
-    expect(captureRef.current).not.toBeNull();
-    expect(typeof captureRef.current?.onDragStart).toBe("function");
-    expect(typeof captureRef.current?.onMinSizeChange).toBe("function");
   });
 });

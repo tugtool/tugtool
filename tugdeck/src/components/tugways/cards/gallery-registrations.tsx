@@ -542,7 +542,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-card-banner",
     contentFactory: (_cardId) => <GalleryCardBanner />,
-    defaultMeta: { title: "TugCardBanner", icon: "CircleAlert", closable: true },
+    defaultMeta: { title: "TugWindowBanner", icon: "CircleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -722,7 +722,7 @@ export function registerGalleryCards(): void {
   });
 
   // The cardId is passed through to GalleryObservableProps so inspector
-  // controls can direct setProperty actions to the correct Tugcard responder
+  // controls can direct setProperty actions to the correct TugWindow responder
   // node via sendToTarget. [D04] Spec S07 (#s07-gallery-demo)
   registerCard({
     componentId: "gallery-observable-props",

@@ -6,7 +6,7 @@
  *
  * ## Design
  *
- * Tugcard places a `TugcardDataProvider` around its children. The provider
+ * `CardContentHost` places a `TugcardDataProvider` around card content. The provider
  * holds a `Map<number, unknown>` of decoded feed payloads keyed by feed ID.
  *
  * Two overloads are provided:
@@ -16,7 +16,7 @@
  *   access.
  *
  * Both overloads return `null` when:
- * - The component is rendered outside a `TugcardDataProvider` (no Tugcard in
+ * - The component is rendered outside a `TugcardDataProvider` (no provider in
  *   the tree), or
  * - The feed data map is empty (feedless card or feed not yet arrived).
  *
@@ -43,7 +43,7 @@ import React, { createContext, useContext } from "react";
 /**
  * The value stored in `TugcardDataContext`.
  *
- * `null` means the component is either outside a Tugcard or inside a feedless
+ * `null` means the component is either outside a `TugcardDataProvider` or inside a feedless
  * card (`feedIds=[]`). When non-null the map holds decoded feed payloads keyed
  * by numeric feed ID.
  */
@@ -52,7 +52,7 @@ export type TugcardDataContextValue = { feedData: Map<number, unknown> } | null;
 /**
  * React context holding the current card's feed data.
  *
- * Default value is `null` so hooks rendered outside a Tugcard return `null`
+ * Default value is `null` so hooks rendered outside a provider return `null`
  * rather than throwing.
  */
 export const TugcardDataContext = createContext<TugcardDataContextValue>(null);
@@ -64,7 +64,7 @@ export const TugcardDataContext = createContext<TugcardDataContextValue>(null);
 /**
  * Wraps card children with the current feed data map.
  *
- * Intended for **internal use by Tugcard only** -- not part of the public API.
+ * Intended for **internal use by CardContentHost only** -- not part of the public API.
  */
 export const TugcardDataProvider: React.FC<{
   feedData: Map<number, unknown>;
@@ -80,7 +80,7 @@ export const TugcardDataProvider: React.FC<{
  * Typed single-feed convenience overload.
  *
  * Returns the decoded value of the **first** feed in the map typed as `T`, or
- * `null` when outside a Tugcard, inside a feedless card, or when the map is
+ * `null` when outside a provider, inside a feedless card, or when the map is
  * empty.
  */
 export function useTugcardData<T>(): T | null;
@@ -89,7 +89,7 @@ export function useTugcardData<T>(): T | null;
  * Raw multi-feed overload.
  *
  * Returns the full `Map<number, unknown>` of decoded feed payloads, or `null`
- * when outside a Tugcard or inside a feedless card.
+ * when outside a provider or inside a feedless card.
  */
 export function useTugcardData(): Map<number, unknown> | null;
 

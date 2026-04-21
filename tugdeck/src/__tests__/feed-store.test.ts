@@ -195,7 +195,7 @@ describe("FeedStore filter", () => {
   });
 
   test("setFilter swaps the predicate for subsequent frames", () => {
-    // W2 Step 3: Tugcard installs a reactive filter on the existing
+    // W2 Step 3: TugWindow installs a reactive filter on the existing
     // FeedStore via setFilter when its `workspaceKey` binding arrives.
     // This test verifies the mechanism directly: install a fallback filter,
     // emit a passing frame, swap to a stricter filter, verify the next

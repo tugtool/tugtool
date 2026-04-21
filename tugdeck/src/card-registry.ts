@@ -1,7 +1,7 @@
 /**
  * Card Registry Module
  *
- * Single-call card registration API for the Tugcard system.
+ * Single-call card registration API for the deck card system.
  *
  * **Authoritative reference:** design-system-concepts.md [D04] Single-call card
  * registration, Spec S02 CardRegistration interface, Spec S03 Registry API.
@@ -27,14 +27,14 @@ import type { CardState } from "./layout-tree";
 import type { FeedStoreFilter } from "./lib/feed-store";
 
 /**
- * Fallback filter used by `Tugcard` while a card is still unbound — i.e.,
+ * Fallback filter used by `CardContentHost` while a card is still unbound — i.e.,
  * before the `spawn_session_ok` CONTROL ack has populated
  * `cardSessionBindingStore` with the card's canonical `workspace_key`.
  * Requires only that the field is present; does not match against any
  * specific value. Once `useCardWorkspaceKey(cardId)` returns a bound key,
- * `Tugcard` switches to an exact value-check predicate.
+ * the host switches to an exact value-check predicate.
  *
- * Consumers: `Tugcard` (via `useCardWorkspaceKey` in tug-card.tsx) and
+ * Consumers: `CardContentHost` (via `useCardWorkspaceKey` in card-content-host.tsx) and
  * `GalleryPromptInput` (see gallery-prompt-input.tsx). See roadmap
  * tugplan-workspace-registry-w2.md Risk R04 (unbound window).
  */
@@ -79,7 +79,7 @@ export interface TugcardMeta {
  *
  * **Authoritative reference:** Spec S02 CardRegistration interface.
  *
- * DeckCanvas constructs Tugcard directly for every card (single-tab and
+ * DeckCanvas renders `CardContentHost` for every card (single-tab and
  * multi-tab alike) and uses `contentFactory` to get card-specific content.
  */
 export interface CardRegistration {
@@ -87,7 +87,7 @@ export interface CardRegistration {
   componentId: string;
   /**
    * Returns the content component (e.g. `<HelloCardContent />`) without
-   * the Tugcard chrome. DeckCanvas constructs Tugcard directly and uses this
+   * the window chrome. DeckCanvas uses this
    * to get card-specific content.
    */
   contentFactory: (cardId: string) => React.ReactNode;

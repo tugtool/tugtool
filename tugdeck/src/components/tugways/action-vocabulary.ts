@@ -224,7 +224,7 @@ export const TUG_ACTIONS = {
   // ADD_TAB:    payload — `value: string` (componentId of the new tab).
   //             Dispatched by card-level "new tab" controls (e.g. the
   //             tab bar's `+` popup-button menu). The responder that
-  //             handles it (typically `Tugcard`) uses its own cardId
+  //             handles it (typically `TugWindow`) uses its own cardId
   //             plus the componentId from the payload to call
   //             `store.addTab(cardId, componentId)`. Distinct from
   //             `add-tab-to-active-card`, which is the global

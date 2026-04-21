@@ -4,7 +4,7 @@
  * Maps `cardId → { tugSessionId, workspaceKey, projectDir }`. The binding is
  * populated from the `spawn_session_ok` CONTROL ack (where tugcast echoes the
  * canonical `workspace_key`) and consumed by `useCardWorkspaceKey`, which
- * `Tugcard` uses to build its `FeedStore` workspace-value filter.
+ * `TugWindow` uses to build its `FeedStore` workspace-value filter.
  *
  * **Laws:** [L02] External state enters React through `useSyncExternalStore`
  * only — this store exposes `subscribe + getSnapshot` and is read via

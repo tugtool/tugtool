@@ -2,7 +2,7 @@
  * use-property-store.ts -- usePropertyStore hook and CardPropertyContext.
  *
  * Provides a React hook for card content components to create and register a
- * PropertyStore with the enclosing Tugcard. Inspectors can then discover,
+ * PropertyStore with the enclosing card host (`CardContentHost`). Inspectors can then discover,
  * read, write, and observe properties without importing card internals.
  *
  * Usage:
@@ -42,7 +42,7 @@ import type { PropertyDescriptor } from "../property-store";
 // ---------------------------------------------------------------------------
 
 /**
- * Registration callback type. Tugcard provides this callback so that card
+ * Registration callback type. `CardContentHost` provides this callback so that card
  * content can register its PropertyStore.
  *
  * Spec S05 (#s05-tugcard-property-context)
@@ -50,13 +50,13 @@ import type { PropertyDescriptor } from "../property-store";
 export type PropertyStoreRegistrar = (store: PropertyStore) => void;
 
 /**
- * React context that Tugcard provides with a registration callback.
+ * React context that `CardContentHost` provides with a registration callback.
  *
  * Card content calls usePropertyStore(), which internally calls this callback
  * in useLayoutEffect to install the store. This mirrors the TugcardDataContext
  * pattern.
  *
- * Default value is null so usePropertyStore() works outside a Tugcard without
+ * Default value is null so usePropertyStore() works outside a host without
  * throwing -- the registration call is simply skipped.
  *
  * [D01] Context callback registration for PropertyStore
@@ -95,10 +95,10 @@ export interface UsePropertyStoreOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a PropertyStore and register it with the enclosing Tugcard.
+ * Create a PropertyStore and register it with the enclosing card host.
  *
  * The store is created once on first render via useRef -- it is stable across
- * re-renders. The store is registered with Tugcard via CardPropertyContext
+ * re-renders. The store is registered with `CardContentHost` via CardPropertyContext
  * in useLayoutEffect (Rule #3) so it is available before events fire.
  *
  * Returns the stable PropertyStore instance. Card content uses the store
@@ -127,8 +127,8 @@ export function usePropertyStore(options: UsePropertyStoreOptions): PropertyStor
     });
   }
 
-  // Capture the registration callback from Tugcard's context. May be null
-  // when rendered outside a Tugcard.
+  // Capture the registration callback from the host context. May be null
+  // when rendered outside a card host.
   const registrar = useContext(CardPropertyContext);
 
   // Ref for the registrar so the useLayoutEffect closure stays fresh even if
@@ -136,7 +136,7 @@ export function usePropertyStore(options: UsePropertyStoreOptions): PropertyStor
   const registrarRef = useRef(registrar);
   registrarRef.current = registrar;
 
-  // Register the store with Tugcard in useLayoutEffect (Rule #3) so the store
+  // Register the store with the host in useLayoutEffect (Rule #3) so the store
   // is available before any events fire. Re-runs if the store instance changes
   // (which only happens on mount since storeRef is stable).
   useLayoutEffect(() => {

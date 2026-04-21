@@ -42,7 +42,7 @@ const PAIRING_MAP_PATH = path.join(TUGWAYS, "theme-pairings.ts");
 /** Component CSS files in scope for the contrast audit. */
 const COMPONENT_CSS_FILES = [
   "internal/tug-button.css",
-  "tug-card.css",
+  "tug-window.css",
   "tug-tab-bar.css",
   "tug-menu.css",
   "tug-dialog.css",

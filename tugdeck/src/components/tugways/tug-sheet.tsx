@@ -69,7 +69,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
-import { TugWindowPortalContext } from "./tug-card";
+import { TugWindowPortalContext } from "@/components/chrome/tug-window";
 import { group } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
@@ -650,7 +650,7 @@ interface UseTugSheetState {
  * - `renderSheet()` must be called once in the component's JSX to render
  *   the sheet portal. Returns null when no sheet is open.
  *
- * Must be called from within a Tugcard (requires TugWindowPortalContext).
+ * Must be called from within a TugWindow (requires TugWindowPortalContext).
  *
  * ## State machine
  *
@@ -763,8 +763,8 @@ export function useTugSheet(): {
 } {
   // TugWindowPortalContext is consumed downstream by TugSheetContent,
   // which returns null when the portal target isn't attached yet. A
-  // dev-time "you're outside a Tugcard" warning here fires on every
-  // first render of a card body (Tugcard populates `cardEl` via a
+  // dev-time "you're outside a TugWindow" warning here fires on every
+  // first render of a card body (TugWindow populates `cardEl` via a
   // `useState` ref callback that commits one render after mount), so
   // we rely on the defensive null handling in TugSheetContent and
   // skip the warning.

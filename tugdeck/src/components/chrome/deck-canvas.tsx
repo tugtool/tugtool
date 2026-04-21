@@ -11,7 +11,7 @@
  *
  * Phase 5 (Spec S06, Spec S07): Receives DeckState + stable callbacks from
  *          DeckManager via props. Maps deckState.windows to TugWindow components.
- *          For each card, looks up the registry to obtain the Tugcard factory.
+ *          For each window, looks up the active card's registry entry for chrome metadata.
  *          Cards with unregistered componentIds are skipped (warning logged).
  *          Z-index by array position: first card = lowest, last card = highest.
  *          forwardRef / DeckCanvasHandle removed -- DeckManager drives via props.
@@ -61,7 +61,6 @@ import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { Tugcard } from "@/components/tugways/tug-card";
 import { TugWindow } from "./tug-window";
 import { CardContentHost } from "./card-content-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
@@ -448,11 +447,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           <TugWindow
             key={stackState.id}
             stackState={stackState}
+            meta={registration.defaultMeta}
+            feedIds={registration.defaultFeedIds ?? []}
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             isFocused={stackState.id === focusedStackId}
             onCardMoved={store.handleWindowMoved}
-            onStackClosed={handleClose}
+            onClose={handleClose}
             onStackActivated={handleStackActivate}
             onCardCollapsed={(id) => store.toggleWindowCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
@@ -470,28 +471,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               );
             }}
             activeCardId={stackState.activeCardId}
-            renderContent={(injected) => {
-              return (
-                <Tugcard
-                  stackId={stackState.id}
-                  meta={registration.defaultMeta}
-                  feedIds={registration.defaultFeedIds ?? []}
-                  cards={hasMultipleCards ? stackCards : undefined}
-                  activeCardId={stackState.activeCardId}
-                  onClose={handleClose}
-                  onDragStart={injected.onDragStart}
-                  onMinSizeChange={injected.onMinSizeChange}
-                  collapsed={injected.collapsed}
-                  onCollapse={injected.onCollapse}
-                  cardTitle={hasMultipleCards ? stackState.title : undefined}
-                  acceptedFamilies={
-                    hasMultipleCards ? stackState.acceptsFamilies : undefined
-                  }
-                >
-                  {null}
-                </Tugcard>
-              );
-            }}
+            cards={hasMultipleCards ? stackCards : undefined}
+            cardTitle={hasMultipleCards ? stackState.title : undefined}
+            acceptedFamilies={
+              hasMultipleCards ? stackState.acceptsFamilies : undefined
+            }
           />
         );
       })}
