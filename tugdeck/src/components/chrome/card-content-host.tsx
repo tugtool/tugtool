@@ -304,8 +304,19 @@ export function CardContentHost({ cardId, hostStackId, componentId, isActive = t
   // passed to their `contentFactory`. Register a responder with id=cardId
   // here so those dispatches resolve to this host and write through to the
   // content's PropertyStore.
+  // CardContentHost is rendered at the deck level in the React tree
+  // (flat `cards.map` in DeckCanvas) and portaled into its host stack's
+  // content div via CardPortal. Without an explicit parentId override
+  // the responder node's parent would follow the React tree — pointing
+  // at `deck-canvas` rather than at the host stack's tug-card — and
+  // the chain walk from `firstResponderId = cardId` would skip every
+  // tug-card handler. Passing `parentId: hostStackId` re-parents the
+  // chain to match the portaled DOM layout so `NEXT_TAB` /
+  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach tug-card and
+  // `FOCUS_PROMPT` finds a `kind="card"` node via `getKeyCard`.
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
+    parentId: hostStackId,
     actions: {
       [TUG_ACTIONS.SET_PROPERTY]: (event: ActionEvent) => {
         const ps = propertyStoreRef.current;

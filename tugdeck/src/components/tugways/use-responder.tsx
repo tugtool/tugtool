@@ -87,6 +87,27 @@ export interface UseResponderOptions<Extra extends string = never> {
    * See `roadmap/key-card.md` for the design.
    */
   kind?: ResponderKind;
+  /**
+   * Optional explicit parent responder id. When omitted (the default),
+   * the hook reads `parentId` from `ResponderParentContext`, which
+   * follows the React tree — sufficient for the common case where the
+   * responder's DOM also sits inside its React parent's scope.
+   *
+   * Override this when the responder's DOM output is portaled out of
+   * its React parent, so the chain matches the rendered DOM
+   * relationship instead of the React tree. The primary consumer is
+   * `CardContentHost` after 11.6.1a Piece 1 (Card content lives in a
+   * flat deck-level list in the React tree but is portaled into the
+   * host stack's content div) — passing `parentId: hostStackId`
+   * re-parents the chain to the stack's tug-card responder so
+   * `NEXT_TAB` / `PREVIOUS_TAB` / `FOCUS_PROMPT` / etc. walk to the
+   * right handler.
+   *
+   * Passing `null` explicitly pins the responder as a root node
+   * (`parentId = null`), same as when there is no context-provided
+   * parent.
+   */
+  parentId?: string | null;
 }
 
 // ---- useResponder ----
@@ -218,7 +239,12 @@ export function useOptionalResponder<Extra extends string = never>(
 ): UseResponderResult {
   const manager = useContext(ResponderChainContext);
 
-  const parentId = useContext(ResponderParentContext);
+  // Allow an explicit `parentId` override (portal consumers: see
+  // `UseResponderOptions.parentId` JSDoc). Context-provided value is
+  // the default.
+  const contextParentId = useContext(ResponderParentContext);
+  const parentId =
+    options.parentId !== undefined ? options.parentId : contextParentId;
 
   // Keep a ref to the latest options so the cleanup effect always sees the
   // correct id without needing to tear down and re-register on every render.
