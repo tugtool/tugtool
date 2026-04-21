@@ -7,7 +7,7 @@
  * Domain/key mapping:
  *   Layout    → domain `dev.tugtool.deck.layout`,   key `layout`        (Value::Json)
  *   Theme     → domain `dev.tugtool.app`,            key `theme`         (Value::String)
- *   Card state → domain `dev.tugtool.deck.tabstate`, key `<cardId>`      (Value::Json) — legacy prefix; see `migrateTabstateToCardstate`
+ *   Card state → domain `dev.tugtool.deck.cardstate`, key `<cardId>`      (Value::Json) — `putCardState`; `readTabStates` still reads legacy `tabstate` until renamed to `readCardStates`
  *   Deck state→ domain `dev.tugtool.deck.state`,     key `focusedCardId` (Value::String)
  *
  * The tagged-value wire format is `{"kind":"json","value":{...}}` for JSON
@@ -212,14 +212,14 @@ export function putTheme(theme: string): void {
 }
 
 /**
- * PUT a single tab state bag to tugbank.
+ * PUT a single per-card state bag to tugbank under `dev.tugtool.deck.cardstate/{cardId}`.
  *
  * Returns a Promise that resolves when the write completes. Callers that
  * need to wait (e.g. prepareForReload) can await it; fire-and-forget
  * callers can ignore the return value.
  */
-export function putTabState(tabId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
-  const url = legacyTabstateKeyUrl(tabId);
+export function putCardState(cardId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+  const url = cardstatePutUrl(cardId);
   const body = JSON.stringify({ kind: "json", value: bag });
 
   if (options?.sync) {
@@ -229,7 +229,7 @@ export function putTabState(tabId: string, bag: CardStateBag, options?: { keepal
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.send(body);
     } catch (err) {
-      console.warn("[settings] PUT tabState (sync) failed for tab", tabId, err);
+      console.warn("[settings] PUT cardState (sync) failed for card", cardId, err);
     }
     return Promise.resolve();
   }
@@ -240,7 +240,7 @@ export function putTabState(tabId: string, bag: CardStateBag, options?: { keepal
     body,
     keepalive: options?.keepalive,
   }).then(() => {}).catch((err) => {
-    console.warn("[settings] PUT tabState failed for tab", tabId, err);
+    console.warn("[settings] PUT cardState failed for card", cardId, err);
   });
 }
 

@@ -30,7 +30,7 @@ import { validateDeckState } from "../layout-tree";
 // ---------------------------------------------------------------------------
 // Global fetch stub
 //
-// DeckManager's fire-and-forget settings API calls (putLayout, putTabState,
+// DeckManager's fire-and-forget settings API calls (putLayout, putCardState,
 // putFocusedCardId) use the global fetch. happy-dom does not provide fetch,
 // so install a no-op stub for the entire test file. Individual tests that
 // need to inspect fetch calls can temporarily replace globalThis.fetch within
@@ -1936,9 +1936,9 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     // Wait a tick for fire-and-forget fetch to execute.
     await new Promise((r) => setTimeout(r, 0));
 
-    // flushDirtyTabStates must have issued a PUT for tab-x.
-    const tabStatePuts = fetchedUrls.filter((u) => u.includes("/api/defaults/dev.tugtool.deck.tabstate/"));
-    expect(tabStatePuts.length).toBeGreaterThan(0);
+    // flushDirtyCardStates must have issued a PUT under cardstate.
+    const cardStatePuts = fetchedUrls.filter((u) => u.includes("/api/defaults/dev.tugtool.deck.cardstate/"));
+    expect(cardStatePuts.length).toBeGreaterThan(0);
 
     // Restore.
     Object.defineProperty(document, "hidden", { configurable: true, get: () => false });

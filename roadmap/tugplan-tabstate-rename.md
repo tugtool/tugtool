@@ -219,15 +219,15 @@ export function migrateTabstateToCardstate(client: TugbankClient): Promise<Migra
 - Tests: `settings-api.test.ts` — describe block + URL assertions + fixture ids.
 
 **Tasks:**
-- [ ] Rename the function + parameter + URL in `settings-api.ts`.
-- [ ] Update JSDoc.
-- [ ] Update `deck-manager.ts` import + call site (`promises.push(putCardState(cardId, bag, options))`).
-- [ ] Update every test URL assertion and describe label.
-- [ ] Rename test fixture ids to `card-*` per [D04].
+- [x] Rename the function + parameter + URL in `settings-api.ts`.
+- [x] Update JSDoc.
+- [x] Update `deck-manager.ts` import + call site (`promises.push(putCardState(cardId, bag, options))`).
+- [x] Update every test URL assertion and describe label.
+- [x] Rename test fixture ids to `card-*` per [D04].
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "putTabState" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "putTabState" tugdeck/src` returns zero matches.
 
 ---
 

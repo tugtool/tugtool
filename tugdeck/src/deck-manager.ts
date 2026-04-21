@@ -52,7 +52,7 @@ import { ResponderChainProvider } from "./components/tugways/responder-chain-pro
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { TugAlertProvider } from "./components/tugways/tug-alert";
 import { TugBulletinProvider } from "./components/tugways/tug-bulletin";
-import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
+import { putLayout, putCardState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
@@ -908,16 +908,15 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Write all dirty per-card state bags to tugbank and clear the dirty set.
    *
-   * The underlying tugbank row prefix is still `tabstate/{id}` (unchanged
-   * external wire format — cleanup is out of scope for Piece 2). `putTabState`
-   * uses the cardId, which is numerically identical to the former tabId.
+   * Persists under `dev.tugtool.deck.cardstate/{cardId}`. `putCardState` uses
+   * the card id, which is numerically identical to the former tab id from the one-table model.
    */
   private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
     const promises: Promise<void>[] = [];
     for (const cardId of this.dirtyCardIds) {
       const bag = this.cardStateCache.get(cardId);
       if (bag !== undefined) {
-        promises.push(putTabState(cardId, bag, options));
+        promises.push(putCardState(cardId, bag, options));
       }
     }
     this.dirtyCardIds.clear();

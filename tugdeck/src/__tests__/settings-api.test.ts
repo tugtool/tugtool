@@ -2,7 +2,7 @@
  * settings-api unit tests.
  *
  * Tests cover:
- * - putTabState sends correct URL and body format (mock fetch)
+ * - putCardState sends correct URL and body format (mock fetch)
  * - readDeckState returns null when not cached
  * - readDeckState returns the string value from cache
  * - putFocusedCardId sends correct URL and body format (mock fetch)
@@ -13,7 +13,7 @@
 
 import { describe, test, expect, mock, afterEach } from "bun:test";
 import {
-  putTabState,
+  putCardState,
   readDeckState,
   putFocusedCardId,
   readTabStates,
@@ -249,10 +249,10 @@ describe("migrateTabstateToCardstate", () => {
 });
 
 // ---------------------------------------------------------------------------
-// putTabState
+// putCardState
 // ---------------------------------------------------------------------------
 
-describe("putTabState", () => {
+describe("putCardState", () => {
   afterEach(() => {
     mock.restore();
   });
@@ -265,16 +265,16 @@ describe("putTabState", () => {
       return makeResponse(200, {});
     }) as unknown as typeof fetch;
 
-    const tabId = "tab-abc-123";
+    const cardId = "card-abc-123";
     const bag: CardStateBag = { scroll: { x: 10, y: 50 }, content: { key: "val" } };
-    putTabState(tabId, bag);
+    putCardState(cardId, bag);
 
     // Give the fire-and-forget promise a tick to run.
     await new Promise((r) => setTimeout(r, 0));
 
     expect(calls.length).toBe(1);
     expect(calls[0].url).toBe(
-      `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`
+      `/api/defaults/dev.tugtool.deck.cardstate/${encodeURIComponent(cardId)}`
     );
     expect(calls[0].init.method).toBe("PUT");
 
@@ -285,7 +285,7 @@ describe("putTabState", () => {
     expect((body.value.content as Record<string, string>).key).toBe("val");
   });
 
-  test("tab ID with special characters is percent-encoded in URL", async () => {
+  test("card ID with special characters is percent-encoded in URL", async () => {
     const calls: { url: string }[] = [];
 
     globalThis.fetch = (async (url: string | URL | Request) => {
@@ -293,12 +293,12 @@ describe("putTabState", () => {
       return makeResponse(200, {});
     }) as unknown as typeof fetch;
 
-    const tabId = "tab/with spaces&chars";
-    putTabState(tabId, {});
+    const cardId = "card/with spaces&chars";
+    putCardState(cardId, {});
     await new Promise((r) => setTimeout(r, 0));
 
     expect(calls[0].url).toBe(
-      `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`
+      `/api/defaults/dev.tugtool.deck.cardstate/${encodeURIComponent(cardId)}`
     );
   });
 });
@@ -379,32 +379,32 @@ describe("readTabStates", () => {
     const bag2: CardStateBag = { scroll: { x: 20, y: 30 }, content: "hello" };
 
     const client = makeMockClient({
-      "dev.tugtool.deck.tabstate": {
-        "tab-1": { kind: "json", value: bag1 },
-        "tab-2": { kind: "json", value: bag2 },
+      [LEGACY_TABSTATE_DOMAIN]: {
+        "card-1": { kind: "json", value: bag1 },
+        "card-2": { kind: "json", value: bag2 },
       },
     });
 
-    const result = readTabStates(client, ["tab-1", "tab-2"]);
+    const result = readTabStates(client, ["card-1", "card-2"]);
     expect(result.size).toBe(2);
-    expect(result.get("tab-1")?.scroll?.y).toBe(100);
-    expect(result.get("tab-2")?.scroll?.x).toBe(20);
-    expect(result.get("tab-2")?.content).toBe("hello");
+    expect(result.get("card-1")?.scroll?.y).toBe(100);
+    expect(result.get("card-2")?.scroll?.x).toBe(20);
+    expect(result.get("card-2")?.content).toBe("hello");
   });
 
   test("skips missing entries — absent tabs are not in the returned Map", () => {
     const bag: CardStateBag = { scroll: { x: 5, y: 10 } };
 
     const client = makeMockClient({
-      "dev.tugtool.deck.tabstate": {
-        "tab-present": { kind: "json", value: bag },
+      [LEGACY_TABSTATE_DOMAIN]: {
+        "card-present": { kind: "json", value: bag },
       },
     });
 
-    const result = readTabStates(client, ["tab-present", "tab-missing"]);
+    const result = readTabStates(client, ["card-present", "card-missing"]);
     expect(result.size).toBe(1);
-    expect(result.has("tab-present")).toBe(true);
-    expect(result.has("tab-missing")).toBe(false);
+    expect(result.has("card-present")).toBe(true);
+    expect(result.has("card-missing")).toBe(false);
   });
 });
 
