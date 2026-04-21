@@ -634,7 +634,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
 
   // Stable handler for [+] button type picker selection.
   // Dispatches `addTab` through the chain; TugWindow's responder handles
-  // it by calling `store.addCardToWindow(cardId, componentId)`. [L11, A2.5]
+  // it by calling `store.addCardToPane(paneId, componentId)`. [L11, A2.5]
   const handleTypeSelect = useCallback(
     (componentId: string) => {
       dispatchAddTab(componentId);

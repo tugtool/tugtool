@@ -188,8 +188,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // breaking prompt focus when clicking back to a previously-active
   // card.
   const handleStackActivate = useCallback(
-    (windowId: string) => {
-      const pane = store.getSnapshot().panes.find((s) => s.id === windowId);
+    (paneId: string) => {
+      const pane = store.getSnapshot().panes.find((s) => s.id === paneId);
       if (!pane) return;
       store.activateCard(pane.activeCardId);
     },
@@ -308,7 +308,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const s = panesRef.current;
         if (s.length === 0) return;
         const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
-        store.addCardToWindow(activePaneId, "hello");
+        store.addCardToPane(activePaneId, "hello");
       },
     },
   });
@@ -435,7 +435,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
          * the live snapshot on every dispatch.
          */
         const handleClose = () => {
-          store.handleWindowClosed(stackState.id);
+          store.handlePaneClosed(stackState.id);
         };
 
         const stackCards = stackState.cardIds
@@ -451,10 +451,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             isFocused={stackState.id === focusedStackId}
-            onCardMoved={store.handleWindowMoved}
+            onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onStackActivated={handleStackActivate}
-            onCardCollapsed={(id) => store.toggleWindowCollapse(id)}
+            onCardCollapsed={(id) => store.togglePaneCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.
               const snapshot = store.getSnapshot();
@@ -462,7 +462,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                 (s) => s.id === sourceStackId,
               );
               if (!sourceStack) return;
-              store.moveCardToWindow(
+              store.moveCardToPane(
                 sourceStackId,
                 sourceStack.activeCardId,
                 targetStackId,

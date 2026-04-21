@@ -39,18 +39,18 @@ export interface IDeckManagerStore {
   getVersion: () => number;
 
   /**
-   * Stable bound callback: update a window's position/size on drag-end /
-   * resize-end. The frame that gets dragged is the window chrome; individual
-   * cards within it share the window's position.
+   * Stable bound callback: update a pane frame's position/size on drag-end /
+   * resize-end. The frame that gets dragged is the chrome shell; individual
+   * cards within it share the pane's position.
    */
-  handleWindowMoved: (
-    windowId: string,
+  handlePaneMoved: (
+    paneId: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
 
-  /** Stable bound callback: close a window (and all of its cards). */
-  handleWindowClosed: (windowId: string) => void;
+  /** Stable bound callback: close a pane (and all of its cards). */
+  handlePaneClosed: (paneId: string) => void;
 
   /**
    * Promote a card's host pane to the top of the `panes` array (highest
@@ -131,54 +131,54 @@ export interface IDeckManagerStore {
   addCard: (componentId: string) => string | null;
 
   /**
-   * Add a new card to an existing window. Returns the new card id, or
-   * null if the window or registration is not found. The new card
-   * becomes the window's active card.
+   * Add a new card to an existing pane. Returns the new card id, or
+   * null if the pane or registration is not found. The new card
+   * becomes the pane's active card.
    */
-  addCardToWindow: (windowId: string, componentId: string) => string | null;
+  addCardToPane: (paneId: string, componentId: string) => string | null;
 
   /**
-   * Remove a card. If the card was the last card in its window, the
-   * window is removed entirely. (Renamed from `removeTab`.)
+   * Remove a card. If the card was the last card in its pane, the
+   * pane is removed entirely. (Renamed from `removeTab`.)
    */
-  removeCard: (windowId: string, cardId: string) => void;
+  removeCard: (paneId: string, cardId: string) => void;
 
   /**
-   * Set the active card in a window. No-op when `cardId` is not in
-   * the window. (Renamed from `setActiveTab`.)
+   * Set the active card in a pane. No-op when `cardId` is not in
+   * the pane. (Renamed from `setActiveTab`.)
    */
-  setActiveCardInWindow: (windowId: string, cardId: string) => void;
+  setActiveCardInPane: (paneId: string, cardId: string) => void;
 
   /**
-   * Reorder a card within its window. Moves the card at `fromIndex`
-   * to `toIndex`. No-op when the window is not found, indices are out
+   * Reorder a card within its pane. Moves the card at `fromIndex`
+   * to `toIndex`. No-op when the pane is not found, indices are out
    * of bounds, or fromIndex === toIndex. (Renamed from `reorderTab`.)
    */
-  reorderCardInWindow: (windowId: string, fromIndex: number, toIndex: number) => void;
+  reorderCardInPane: (paneId: string, fromIndex: number, toIndex: number) => void;
 
   /**
-   * Detach a card from its window and create a new single-card window at
-   * the given position. Returns the new window's id, or null if the
-   * window or card is not found, or if the card is the last card in
-   * its window. (Renamed from `detachTab`.)
+   * Detach a card from its pane and create a new single-card pane at
+   * the given position. Returns the new pane's id, or null if the
+   * pane or card is not found, or if the card is the last card in
+   * its pane. (Renamed from `detachTab`.)
    */
   detachCard: (
-    windowId: string,
+    paneId: string,
     cardId: string,
     position: { x: number; y: number },
   ) => string | null;
 
   /**
-   * Move a card from its source window to a target window, inserting at
-   * `insertAtIndex`. No-op when `sourceWindowId === targetWindowId`.
-   * The moved card becomes the target window's active card. If the
-   * source window has only one card, the source window is removed.
+   * Move a card from its source pane to a target pane, inserting at
+   * `insertAtIndex`. No-op when `sourcePaneId === targetPaneId`.
+   * The moved card becomes the target pane's active card. If the
+   * source pane has only one card, the source pane is removed.
    * (Renamed from `mergeTab`.)
    */
-  moveCardToWindow: (
-    sourceWindowId: string,
+  moveCardToPane: (
+    sourcePaneId: string,
     cardId: string,
-    targetWindowId: string,
+    targetPaneId: string,
     insertAtIndex: number,
   ) => void;
 
@@ -233,12 +233,12 @@ export interface IDeckManagerStore {
   invokeSaveCallback: (id: string) => void;
 
   /**
-   * Toggle the collapsed state of a window. When collapsing, sets
+   * Toggle the collapsed state of a pane. When collapsing, sets
    * `collapsed: true`; `TugWindow` renders the pane at
    * CARD_TITLE_BAR_HEIGHT. When expanding, restores the full height.
    * Notifies subscribers and schedules a save so collapsed state is
    * persisted. (Renamed from `toggleCardCollapse` — position/size and
-   * collapse are window-level concerns.)
+   * collapse are pane-level concerns.)
    */
-  toggleWindowCollapse: (windowId: string) => void;
+  togglePaneCollapse: (paneId: string) => void;
 }

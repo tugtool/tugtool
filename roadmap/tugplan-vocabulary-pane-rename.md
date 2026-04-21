@@ -302,18 +302,18 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 | `getFirstResponderCardId()` | unchanged |
 
 **Tasks:**
-- [ ] Rename every method in the table across `deck-manager.ts`, the interface, and the mock.
-- [ ] Rename parameter names `windowId` → `paneId` on all renamed methods.
-- [ ] Update every call site.
-- [ ] Update JSDoc to refer to panes/cards.
+- [x] Rename every method in the table across `deck-manager.ts`, the interface, and the mock.
+- [x] Rename parameter names `windowId` → `paneId` on all renamed methods.
+- [x] Update every call site.
+- [x] Update JSDoc to refer to panes/cards.
 
 **Tests:**
-- [ ] Every existing `deck-manager.test.ts`, `deck-canvas.test.tsx`, `card-drag-coordinator.test.ts`, `card-header.test.tsx`, and `e2e-responder-chain.test.tsx` test passes under the new names.
+- [x] Every existing `deck-manager.test.ts`, `deck-canvas.test.tsx`, `card-drag-coordinator.test.ts`, `card-header.test.tsx`, and `e2e-responder-chain.test.tsx` test passes under the new names.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "addCardToWindow|setActiveCardInWindow|reorderCardInWindow|toggleWindowCollapse|moveWindow\b|handleWindowMoved|handleWindowClosed|_closeWindow|moveCardToWindow" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "addCardToWindow|setActiveCardInWindow|reorderCardInWindow|toggleWindowCollapse|moveWindow\b|handleWindowMoved|handleWindowClosed|_closeWindow|moveCardToWindow" tugdeck/src` returns zero matches.
 
 ---
 

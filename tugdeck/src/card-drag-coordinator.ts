@@ -55,13 +55,13 @@ const DRAG_THRESHOLD_PX = 5;
 // ---- Internal types ----
 
 interface TabBarEntry {
-  windowId: string;
+  paneId: string;
   rect: DOMRect;
   barElement: HTMLElement;
 }
 
 interface WindowFrameEntry {
-  windowId: string;
+  paneId: string;
   rect: DOMRect;
   accessoryElement: HTMLElement;
 }
@@ -86,7 +86,7 @@ class CardDragCoordinator {
 
   // ---- Per-drag state (valid only while dragActive is true) ----
   private dragActive: boolean = false;
-  private sourceWindowId: string = "";
+  private sourcePaneId: string = "";
   private sourceCardId: string = "";
   private sourceTabElement: HTMLElement | null = null;
   private capturedPointerId: number = -1;
@@ -126,7 +126,7 @@ class CardDragCoordinator {
   private currentReorderIndex: number = 0;
 
   /** Current merge target, or null when not in merge mode. */
-  private currentMergeTarget: { windowId: string; insertIndex: number } | null = null;
+  private currentMergeTarget: { paneId: string; insertIndex: number } | null = null;
 
   /**
    * The element currently highlighted as a drop target.
@@ -181,14 +181,14 @@ class CardDragCoordinator {
    *
    * @param event - The native PointerEvent that triggered the drag
    * @param tabElement - The DOM element of the dragged tab div
-   * @param windowId - The source window id
+   * @param paneId - The source pane id
    * @param cardId - The card being dragged
-   * @param cardCount - Number of cards in the source window
+   * @param cardCount - Number of cards in the source pane
    */
   startDrag(
     event: PointerEvent,
     tabElement: HTMLElement,
-    windowId: string,
+    paneId: string,
     cardId: string,
     cardCount: number,
   ): void {
@@ -202,7 +202,7 @@ class CardDragCoordinator {
     }
 
     this.dragActive = true;
-    this.sourceWindowId = windowId;
+    this.sourcePaneId = paneId;
     this.sourceCardId = cardId;
     this.sourceTabElement = tabElement;
     this.capturedPointerId = event.pointerId;
@@ -224,7 +224,7 @@ class CardDragCoordinator {
     this.grabOffsetY = event.clientY - tabRect.top;
 
     // Build two-tier hit-test cache. [Spec S04]
-    this.buildHitTestCache(windowId);
+    this.buildHitTestCache(paneId);
 
     // Create ghost element. [D02, Spec S05]
     this.ghostElement = this.createGhost(tabElement, event.clientX, event.clientY);
@@ -274,18 +274,18 @@ class CardDragCoordinator {
    *
    * [Spec S04]
    */
-  private buildHitTestCache(sourceWindowId: string): void {
+  private buildHitTestCache(sourcePaneId: string): void {
     // Tier 1: multi-card tab bars (excluding source window).
     const barElements = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-window-id]");
-    const tabBarWindowIds = new Set<string>();
+    const tabBarPaneIds = new Set<string>();
     this.allTabBarRects = [];
 
     barElements.forEach((el) => {
       const sid = el.getAttribute("data-window-id");
-      if (!sid || sid === sourceWindowId) return;
-      tabBarWindowIds.add(sid);
+      if (!sid || sid === sourcePaneId) return;
+      tabBarPaneIds.add(sid);
       this.allTabBarRects.push({
-        windowId: sid,
+        paneId: sid,
         rect: el.getBoundingClientRect(),
         barElement: el,
       });
@@ -297,14 +297,14 @@ class CardDragCoordinator {
 
     frameElements.forEach((el) => {
       const sid = el.getAttribute("data-window-id");
-      if (!sid || sid === sourceWindowId || tabBarWindowIds.has(sid)) return;
+      if (!sid || sid === sourcePaneId || tabBarPaneIds.has(sid)) return;
 
       // Resolve the accessory div for drop-target visual feedback. [D05]
       const accessory = el.querySelector<HTMLElement>(`.tugcard-accessory[data-window-id="${sid}"]`);
       if (!accessory) return;
 
       this.allWindowFrameRects.push({
-        windowId: sid,
+        paneId: sid,
         rect: el.getBoundingClientRect(),
         accessoryElement: accessory,
       });
@@ -374,7 +374,7 @@ class CardDragCoordinator {
 
     // Snapshot final state before cleanup.
     const mode = this.currentMode;
-    const sourceWindowId = this.sourceWindowId;
+    const sourcePaneId = this.sourcePaneId;
     const sourceCardId = this.sourceCardId;
     const reorderIndex = this.currentReorderIndex;
     const mergeTarget = this.currentMergeTarget;
@@ -395,9 +395,9 @@ class CardDragCoordinator {
     if (mode === "reorder") {
       // Find the original index of the dragged card in the source stack.
       const snapshot = store.getSnapshot();
-      const sourceWindow = snapshot.panes.find((s) => s.id === sourceWindowId);
-      if (sourceWindow) {
-        const fromIndex = sourceWindow.cardIds.indexOf(sourceCardId);
+      const sourcePane = snapshot.panes.find((s) => s.id === sourcePaneId);
+      if (sourcePane) {
+        const fromIndex = sourcePane.cardIds.indexOf(sourceCardId);
         if (fromIndex !== -1 && fromIndex !== reorderIndex) {
           // When dropping after the source position, the effective toIndex is
           // reorderIndex - 1 because removing fromIndex shifts items left.
@@ -405,7 +405,7 @@ class CardDragCoordinator {
           if (reorderIndex > fromIndex) {
             toIndex = reorderIndex - 1;
           }
-          store.reorderCardInWindow(sourceWindowId, fromIndex, toIndex);
+          store.reorderCardInPane(sourcePaneId, fromIndex, toIndex);
         }
       }
     } else if (mode === "detach") {
@@ -416,9 +416,9 @@ class CardDragCoordinator {
         x = dropX - containerRect.left;
         y = dropY - containerRect.top;
       }
-      store.detachCard(sourceWindowId, sourceCardId, { x, y });
+      store.detachCard(sourcePaneId, sourceCardId, { x, y });
     } else if (mode === "merge" && mergeTarget) {
-      store.moveCardToWindow(sourceWindowId, sourceCardId, mergeTarget.windowId, mergeTarget.insertIndex);
+      store.moveCardToPane(sourcePaneId, sourceCardId, mergeTarget.paneId, mergeTarget.insertIndex);
     }
   }
 
@@ -460,7 +460,7 @@ class CardDragCoordinator {
 
         // Compute merge insertion index from pointer X vs tab midpoints in target bar.
         const insertIndex = this.computeReorderIndex(entry.barElement, cx);
-        this.currentMergeTarget = { windowId: entry.windowId, insertIndex };
+        this.currentMergeTarget = { paneId: entry.paneId, insertIndex };
         this.updateInsertionIndicator(entry.barElement, insertIndex);
         return;
       }
@@ -474,8 +474,8 @@ class CardDragCoordinator {
 
         // Default insertion index: append (insertIndex = cardIds.length of target).
         // DeckManager clamps insertAtIndex to [0, cardIds.length] in
-        // moveCardToWindow, so using a large sentinel (999) is safe.
-        this.currentMergeTarget = { windowId: entry.windowId, insertIndex: 999 };
+        // moveCardToPane, so using a large sentinel (999) is safe.
+        this.currentMergeTarget = { paneId: entry.paneId, insertIndex: 999 };
         this.removeInsertionIndicator();
         return;
       }
@@ -679,7 +679,7 @@ class CardDragCoordinator {
   /**
    * Return the current merge target. For use in unit tests only.
    */
-  _testOnly_getCurrentMergeTarget(): { windowId: string; insertIndex: number } | null {
+  _testOnly_getCurrentMergeTarget(): { paneId: string; insertIndex: number } | null {
     return this.currentMergeTarget;
   }
 
@@ -746,7 +746,7 @@ class CardDragCoordinator {
 
     // Reset per-drag state.
     this.sourceTabElement = null;
-    this.sourceWindowId = "";
+    this.sourcePaneId = "";
     this.sourceCardId = "";
     this.capturedPointerId = -1;
     this.sourceBarRect = null;

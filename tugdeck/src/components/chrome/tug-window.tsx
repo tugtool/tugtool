@@ -319,10 +319,10 @@ export interface TugWindowProps {
     size: { width: number; height: number },
   ) => void;
   /** Called on pointer-down anywhere in the frame to bring the window to front.
-   * The `windowId` is this frame's id — callers must resolve the window's
+   * The `paneId` is this frame's id — callers must resolve the pane's
    * active card id before invoking card-level APIs like `activateCard` /
    * `focusCard`. */
-  onStackActivated: (windowId: string) => void;
+  onStackActivated: (paneId: string) => void;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -330,7 +330,7 @@ export interface TugWindowProps {
    * within the target's tab array. The active tab of the source card is merged
    * into the target card at insertIndex.
    *
-   * Wired in DeckCanvas to `moveCardToWindow`. When this prop is not provided,
+   * Wired in DeckCanvas to `moveCardToPane`. When this prop is not provided,
    * card drag always falls back to onCardMoved (no merge behaviour).
    */
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
@@ -340,7 +340,7 @@ export interface TugWindowProps {
   isFocused: boolean;
   /**
    * Called when the user toggles collapse on the card header.
-   * DeckCanvas wires this to `store.toggleWindowCollapse(id)`.
+   * DeckCanvas wires this to `store.togglePaneCollapse(id)`.
    */
   onCardCollapsed?: (id: string) => void;
   /**
@@ -432,7 +432,7 @@ export function TugWindow({
       if (outgoingCardId) {
         store.invokeSaveCallback(outgoingCardId);
       }
-      store.setActiveCardInWindow(stackId, newCardId);
+      store.setActiveCardInPane(stackId, newCardId);
     },
     [store, stackId],
   );
@@ -531,7 +531,7 @@ export function TugWindow({
       },
       [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.addCardToWindow(stackId, event.value);
+        store.addCardToPane(stackId, event.value);
       },
       [TUG_ACTIONS.MINIMIZE]: (_event: ActionEvent) => {},
       [TUG_ACTIONS.TOGGLE_MENU]: (_event: ActionEvent) => {},
@@ -657,7 +657,7 @@ export function TugWindow({
    * Snapshot all `.tug-tab-bar[data-window-id]` elements at drag-start (excluding
    * our own window). Used for hit-testing during drag and on pointer-up. [D45]
    */
-  const dragTabBarCache = useRef<Array<{ windowId: string; rect: DOMRect; el: HTMLElement }>>([]);
+  const dragTabBarCache = useRef<Array<{ paneId: string; rect: DOMRect; el: HTMLElement }>>([]);
 
   // Snap-related refs [D01, D03, D04]
   // Canvas-relative rects of all other cards, snapshotted at drag-start for computeSnap. [D04]
@@ -785,7 +785,7 @@ export function TugWindow({
       barEls.forEach((el) => {
         const wid = el.getAttribute("data-window-id");
         if (!wid || wid === id) return;
-        dragTabBarCache.current.push({ windowId: wid, rect: el.getBoundingClientRect(), el });
+        dragTabBarCache.current.push({ paneId: wid, rect: el.getBoundingClientRect(), el });
       });
 
       // Snapshot other card rects at drag-start for snap computation. [D04]
@@ -908,7 +908,7 @@ export function TugWindow({
             const r = entry.rect;
             if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
               const insertIndex = computeMergeInsertIndex(entry.el, cx);
-              onCardMerged(id, entry.windowId, insertIndex);
+              onCardMerged(id, entry.paneId, insertIndex);
               dragTabBarCache.current = [];
               // Reset all drag state.
               dragOtherRects.current = [];

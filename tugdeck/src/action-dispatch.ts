@@ -305,21 +305,21 @@ export function initActionDispatch(
   // focus-window: Bring a window to front by activating its active card.
   //
   // Swift's View menu builds a window list from `pushCardListToHost` and
-  // emits `focus-window` with `windowId` when the user picks an entry.
+  // emits `focus-window` with `payload.windowId` when the user picks an entry.
   // Routes through `activateCard` on the window's `activeCardId`
   // so the menu selection fires the full will/didDeactivate +
   // will/didActivate transition and promotes the responder chain —
   // `focusCard` alone would only reorder z-order and skip the lifecycle
   // events.
   registerAction("focus-window", (payload) => {
-    const windowId = payload.windowId;
-    if (typeof windowId !== "string") {
-      console.warn("focus-window: missing or invalid window id (payload.windowId)", payload);
+    const paneId = payload.windowId;
+    if (typeof paneId !== "string") {
+      console.warn("focus-window: missing or invalid pane id (payload.windowId)", payload);
       return;
     }
-    const win = deckManager.getSnapshot().panes.find((s) => s.id === windowId);
+    const win = deckManager.getSnapshot().panes.find((s) => s.id === paneId);
     if (!win) {
-      console.warn(`focus-window: no window with id "${windowId}"`);
+      console.warn(`focus-window: no pane with id "${paneId}"`);
       return;
     }
     deckManager.activateCard(win.activeCardId);
@@ -342,7 +342,7 @@ export function initActionDispatch(
   // Trivial adapter — Control-frame name and chain-action name are
   // identical (TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW). DeckCanvas's
   // registered handler reads the focused card from its cardsRef and
-  // calls store.addCardToWindow(). ([D06], [D09])
+  // calls store.addCardToPane(). ([D06], [D09])
   registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, () => {
     if (responderChainManagerRef) {
       responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, phase: "discrete" });

@@ -3,9 +3,9 @@
  *
  * CardHost renders via CardPortal at deck level, so card content must
  * mount exactly once and survive every deck operation that preserves card
- * identity: setActiveCardInWindow (in-stack card switch), detachCard
- * (cross-stack move to new stack), moveCardToWindow (cross-stack move to
- * existing stack). addCardToWindow creates a genuinely new card so a new mount
+ * identity: setActiveCardInPane (in-stack card switch), detachCard
+ * (cross-stack move to new stack), moveCardToPane (cross-stack move to
+ * existing stack). addCardToPane creates a genuinely new card so a new mount
  * is expected; existing cards on the same stack must not re-mount.
  *
  * Probe strategy: a single module-level counter tracks total mount/unmount
@@ -68,14 +68,14 @@ class Store implements IDeckManagerStore {
   getSnapshot = (): DeckState => this.state;
   getVersion = (): number => this.version;
 
-  handleWindowMoved = (): void => {};
-  handleWindowClosed = (windowId: string): void => {
-    const stack = this.state.panes.find((s) => s.id === windowId);
+  handlePaneMoved = (): void => {};
+  handlePaneClosed = (paneId: string): void => {
+    const stack = this.state.panes.find((s) => s.id === paneId);
     if (!stack) return;
     const dropped = new Set(stack.cardIds);
     this.state = {
       ...this.state,
-      panes: this.state.panes.filter((s) => s.id !== windowId),
+      panes: this.state.panes.filter((s) => s.id !== paneId),
       cards: this.state.cards.filter((c) => !dropped.has(c.id)),
     };
     this.notify();
@@ -91,14 +91,14 @@ class Store implements IDeckManagerStore {
   getActiveCardId = (): string | null => null;
   addCard = (): string | null => null;
 
-  addCardToWindow = (windowId: string, componentId: string): string | null => {
+  addCardToPane = (paneId: string, componentId: string): string | null => {
     const newCardId = `card-${Math.random().toString(36).slice(2, 8)}`;
     const newCard: CardState = { id: newCardId, componentId, title: "Added", closable: true };
     this.state = {
       ...this.state,
       cards: [...this.state.cards, newCard],
       panes: this.state.panes.map((s) =>
-        s.id === windowId
+        s.id === paneId
           ? { ...s, cardIds: [...s.cardIds, newCardId], activeCardId: newCardId }
           : s,
       ),
@@ -109,25 +109,25 @@ class Store implements IDeckManagerStore {
 
   removeCard = (): void => {};
 
-  setActiveCardInWindow = (windowId: string, cardId: string): void => {
+  setActiveCardInPane = (paneId: string, cardId: string): void => {
     this.state = {
       ...this.state,
       panes: this.state.panes.map((s) =>
-        s.id === windowId ? { ...s, activeCardId: cardId } : s,
+        s.id === paneId ? { ...s, activeCardId: cardId } : s,
       ),
     };
     this.notify();
   };
 
-  reorderCardInWindow = (): void => {};
+  reorderCardInPane = (): void => {};
 
-  detachCard = (windowId: string, cardId: string, position: { x: number; y: number }): string | null => {
-    const stack = this.state.panes.find((s) => s.id === windowId);
+  detachCard = (paneId: string, cardId: string, position: { x: number; y: number }): string | null => {
+    const stack = this.state.panes.find((s) => s.id === paneId);
     if (!stack || !stack.cardIds.includes(cardId)) return null;
-    const newWindowId = `stack-${Math.random().toString(36).slice(2, 8)}`;
+    const newPaneId = `stack-${Math.random().toString(36).slice(2, 8)}`;
     const remainingCardIds = stack.cardIds.filter((id) => id !== cardId);
     const newPane: TugPaneState = {
-      id: newWindowId,
+      id: newPaneId,
       position,
       size: { width: 400, height: 300 },
       cardIds: [cardId],
@@ -143,17 +143,17 @@ class Store implements IDeckManagerStore {
     this.state = {
       ...this.state,
       panes: [
-        ...this.state.panes.map((s) => (s.id === windowId ? updatedSource : s)),
+        ...this.state.panes.map((s) => (s.id === paneId ? updatedSource : s)),
         newPane,
       ],
     };
     this.notify();
-    return newWindowId;
+    return newPaneId;
   };
 
-  moveCardToWindow = (sourceWindowId: string, cardId: string, targetWindowId: string, insertAtIndex: number): void => {
-    const source = this.state.panes.find((s) => s.id === sourceWindowId);
-    const target = this.state.panes.find((s) => s.id === targetWindowId);
+  moveCardToPane = (sourcePaneId: string, cardId: string, targetPaneId: string, insertAtIndex: number): void => {
+    const source = this.state.panes.find((s) => s.id === sourcePaneId);
+    const target = this.state.panes.find((s) => s.id === targetPaneId);
     if (!source || !target || !source.cardIds.includes(cardId)) return;
     const newSourceCardIds = source.cardIds.filter((id) => id !== cardId);
     const newTargetCardIds = [...target.cardIds];
@@ -172,8 +172,8 @@ class Store implements IDeckManagerStore {
       ...this.state,
       panes: this.state.panes
         .map((s) => {
-          if (s.id === sourceWindowId) return updatedSource;
-          if (s.id === targetWindowId) return updatedTarget;
+          if (s.id === sourcePaneId) return updatedSource;
+          if (s.id === targetPaneId) return updatedTarget;
           return s;
         })
         .filter((s) => s.cardIds.length > 0),
@@ -196,7 +196,7 @@ class Store implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   };
 
-  toggleWindowCollapse = (): void => {};
+  togglePaneCollapse = (): void => {};
 }
 
 function renderDeck(store: Store) {
@@ -254,7 +254,7 @@ describe("Card content identity preservation (two-table model)", () => {
     cleanup();
   });
 
-  it("setActiveCardInWindow does not unmount either card's content", () => {
+  it("setActiveCardInPane does not unmount either card's content", () => {
     const cX: CardState = { id: "card-x", componentId: "probe-hello", title: "X", closable: true };
     const cY: CardState = { id: "card-y", componentId: "probe-other", title: "Y", closable: true };
     const stack = makeStack("stack-B", [cX, cY], 0);
@@ -266,14 +266,14 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.setActiveCardInWindow("stack-B", "card-y");
+      store.setActiveCardInPane("stack-B", "card-y");
     });
 
     expect(probeStats.mountTotal).toBe(2);
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("addCardToWindow mounts the new card's content without unmounting the existing card", () => {
+  it("addCardToPane mounts the new card's content without unmounting the existing card", () => {
     const cOrig: CardState = { id: "card-orig", componentId: "probe-hello", title: "Orig", closable: true };
     const stack = makeStack("stack-A", [cOrig]);
     const store = new Store({ cards: [cOrig], panes: [stack] });
@@ -283,7 +283,7 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.addCardToWindow("stack-A", "probe-other");
+      store.addCardToPane("stack-A", "probe-other");
     });
 
     expect(probeStats.mountTotal).toBe(2);
@@ -312,7 +312,7 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("moveCardToWindow preserves the moved card's content identity", () => {
+  it("moveCardToPane preserves the moved card's content identity", () => {
     const srcA: CardState = { id: "card-src-1", componentId: "probe-hello", title: "Src", closable: true };
     const mv: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
@@ -326,7 +326,7 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
 
     act(() => {
-      store.moveCardToWindow("stack-src", "card-move", "stack-tgt", 1);
+      store.moveCardToPane("stack-src", "card-move", "stack-tgt", 1);
     });
 
     // Card count unchanged; identity preserved.
@@ -334,7 +334,7 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.aliveUnmount).toBe(0);
   });
 
-  it("moveCardToWindow roots the moved card's DOM inside the destination stack's content element", () => {
+  it("moveCardToPane roots the moved card's DOM inside the destination stack's content element", () => {
     const srcA: CardState = { id: "card-src-1", componentId: "probe-hello", title: "Src", closable: true };
     const mv: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
@@ -355,7 +355,7 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(targetHostBefore!.contains(movedProbeBefore!)).toBe(false);
 
     act(() => {
-      store.moveCardToWindow("stack-src", "card-move", "stack-tgt", 1);
+      store.moveCardToPane("stack-src", "card-move", "stack-tgt", 1);
     });
 
     // After the move, the moved card's DOM root is re-parented into the
