@@ -332,4 +332,38 @@ describe("Card content identity preservation (two-table model)", () => {
     expect(probeStats.mountTotal).toBe(3);
     expect(probeStats.aliveUnmount).toBe(0);
   });
+
+  it("moveCardToStack roots the moved card's DOM inside the destination stack's content element", () => {
+    const srcA: CardState = { id: "card-src-1", componentId: "probe-hello", title: "Src", closable: true };
+    const mv: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
+    const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
+    const stackSrc = makeStack("stack-src", [srcA, mv], 1);
+    const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
+    const store = new Store({ cards: [srcA, mv, tgt], stacks: [stackSrc, stackTgt] });
+    renderDeck(store);
+
+    // Before the move, the moved card's DOM is inside the source stack's
+    // content element, not the target's.
+    const movedProbeBefore = document.querySelector('[data-testid="probe-card-move"]');
+    expect(movedProbeBefore).not.toBeNull();
+    const sourceHostBefore = registry.getElement("stack-src");
+    const targetHostBefore = registry.getElement("stack-tgt");
+    expect(sourceHostBefore).not.toBeNull();
+    expect(targetHostBefore).not.toBeNull();
+    expect(sourceHostBefore!.contains(movedProbeBefore!)).toBe(true);
+    expect(targetHostBefore!.contains(movedProbeBefore!)).toBe(false);
+
+    act(() => {
+      store.moveCardToStack("stack-src", "card-move", "stack-tgt", 1);
+    });
+
+    // After the move, the moved card's DOM root is re-parented into the
+    // target stack's content element. Portal re-rooting preserves the same
+    // DOM node (identity) — query the same probe element.
+    const movedProbeAfter = document.querySelector('[data-testid="probe-card-move"]');
+    expect(movedProbeAfter).toBe(movedProbeBefore);
+    const targetHostAfter = registry.getElement("stack-tgt");
+    expect(targetHostAfter).not.toBeNull();
+    expect(targetHostAfter!.contains(movedProbeAfter!)).toBe(true);
+  });
 });

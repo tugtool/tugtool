@@ -25,6 +25,7 @@ import { DeckManager } from "../deck-manager";
 import { registerCard, _resetForTest } from "../card-registry";
 import type { CardRegistration } from "../card-registry";
 import { serialize } from "../serialization";
+import { validateDeckState } from "../layout-tree";
 
 // ---------------------------------------------------------------------------
 // Global fetch stub
@@ -2007,6 +2008,105 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     container.remove();
     container = makeContainer();
     manager = new DeckManager(container, connection);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-table invariants preserved across DeckManager mutations.
+//
+// Each test drives a real mutation that would violate one of the five
+// invariants documented in layout-tree.ts if the implementation were wrong,
+// then asserts validateDeckState passes. The exact shape of the resulting
+// state is also checked so a bug that happens to still satisfy invariants
+// (e.g., dropping a card entirely instead of moving it) is caught.
+// ---------------------------------------------------------------------------
+
+describe("DeckManager — two-table invariants preserved across mutations", () => {
+  it("no orphan cards and no duplicate homes after moveCardToStack", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    registerCard(makeRegistration("git", "Git"));
+
+    const c1 = manager.addCard("hello") as string;
+    const srcStackId = hostStack(manager.getDeckState(), c1).id;
+    const c2 = manager.addCardToStack(srcStackId, "terminal") as string;
+
+    const c3 = manager.addCard("git") as string;
+    const tgtStackId = hostStack(manager.getDeckState(), c3).id;
+
+    manager.moveCardToStack(srcStackId, c2, tgtStackId, 0);
+
+    const state = manager.getDeckState();
+    expect(() => validateDeckState(state)).not.toThrow();
+
+    // Explicit cross-check: the moved card has exactly one home, and it is
+    // the target stack.
+    const homes = state.stacks.filter((s) => s.cardIds.includes(c2));
+    expect(homes.length).toBe(1);
+    expect(homes[0].id).toBe(tgtStackId);
+  });
+
+  it("no empty stacks after removing the last card in a stack", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), cardId).id;
+
+    manager.removeCard(stackId, cardId);
+
+    const state = manager.getDeckState();
+    expect(() => validateDeckState(state)).not.toThrow();
+
+    // Explicit cross-check: the stack is gone (not left behind with an
+    // empty cardIds array).
+    expect(state.stacks.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
+  });
+
+  it("activeCardId remains a member of cardIds after removing the active card in a multi-card stack", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const firstCardId = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    const secondCardId = manager.addCardToStack(stackId, "terminal") as string;
+
+    // Second card is active (addCardToStack sets it as active).
+    expect(hostStack(manager.getDeckState(), firstCardId).activeCardId).toBe(secondCardId);
+
+    manager.removeCard(stackId, secondCardId);
+
+    const state = manager.getDeckState();
+    expect(() => validateDeckState(state)).not.toThrow();
+
+    // Explicit cross-check: activeCardId was re-pointed to the surviving card.
+    const stack = state.stacks.find((s) => s.id === stackId)!;
+    expect(stack.activeCardId).toBe(firstCardId);
+    expect(stack.cardIds.includes(stack.activeCardId)).toBe(true);
+  });
+
+  it("activeStackId references a real stack (or is cleared) after closing the active stack", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    manager.addCard("hello");
+    const secondCardId = manager.addCard("terminal") as string;
+    const secondStackId = hostStack(manager.getDeckState(), secondCardId).id;
+
+    // addCard sets activeStackId to the newly-created stack, so the second
+    // stack is the active one.
+    expect(manager.getDeckState().activeStackId).toBe(secondStackId);
+
+    manager.handleStackClosed(secondStackId);
+
+    const state = manager.getDeckState();
+    expect(() => validateDeckState(state)).not.toThrow();
+
+    // Explicit cross-check: activeStackId either points to a remaining
+    // stack or is undefined — never a stale reference to the closed stack.
+    expect(state.activeStackId).not.toBe(secondStackId);
+    if (state.activeStackId !== undefined) {
+      expect(state.stacks.some((s) => s.id === state.activeStackId)).toBe(true);
+    }
   });
 });
 
