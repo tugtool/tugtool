@@ -366,7 +366,151 @@ f. **Test pass.** Units for `card-lifecycle` exercising the invariant (post-`act
 - **Selection guard install timing.** `selectionGuard.attach()` runs inside `ResponderChainProvider`'s mount effect. If `card-lifecycle` is accessed there before its instance is constructed, we risk a null-ref. Mitigation: construct the lifecycle at the same time as the manager (or earlier), and document the install order.
 - **Breadth of touch.** Six files change. No single file is large, but the cross-cutting nature raises review surface. Mitigation: land in a single atomic commit (or tight sequence) so no intermediate state has two call sites disagreeing on the activation contract.
 
+---
 
+> **Steps 5.5.a–5.5.c below absorb the follow-up work that grew out of Step 5.5 during implementation.** Step 5.5 unified card activation; the implementation pass produced a full App + Card lifecycle delegate subsystem (`card-lifecycle.ts`, `app-lifecycle.ts`, `lifecycle-cascade.ts`), a portal-based identity-preserving content pipeline (`CardHost` + `CardPortal` + `pane-content-registry` + `pane-root-registry`), and a two-table data model (`DeckState.cards` + `DeckState.panes`).
+>
+> Along the way four vocabulary / token / data-layer plans forked off and landed in `roadmap/archive/`: `tugplan-vocabulary-rename.md`, `tugplan-vocabulary-pane-rename.md`, `tugplan-tabstate-rename.md`, `tugplan-card-and-token-sweep.md`. The resulting vocabulary — `TugPane` (frame + chrome), `CardHost` (per-content bridge), `useCard*` hooks, `--tugx-pane-*` tokens, `.tug-pane-*` classes, `data-pane-id` / `data-card-id`, `cardstate/{cardId}` tugbank rows, v4 wire — is codified in `tuglaws/pane-model.md` (law **L25**).
+>
+> Steps 5.5.a–5.5.c tighten the seams that mid-implementation review surfaced but deferred: deprecated code that violates invariants, duplicated helpers, semantic inversions in the delegate layer, a god-component starting to form in `CardHost`, and missing safety-net tests. Landing these **before** Steps 6–23 keeps the tide-card feature work on a coherent foundation.
+
+#### Step 5.5.a — Lifecycle & DeckManager tightening (audit follow-ups) {#step-5-5-a}
+
+**Why this exists.** Step 5.5 shipped a working delegate layer; implementation review found a cluster of seams that are each small and each a future-bug attractor. This step bundles the high-urgency items: deprecated code that fires no lifecycle events, two helpers where one suffices, a semantic inversion the delegate layer doesn't document, and a handful of doc-only clarifications. None blocks the next tide-card step; any of them will quietly compound as more cards land on top of the same API.
+
+**Files (high level):**
+- `tugdeck/src/deck-manager.ts` — delete `applyLayout`; consolidate `_setFirstResponder` / `_flipFirstResponder`; evaluate `getActiveCardId` vs `getFirstResponderCardId`.
+- `tugdeck/src/lib/card-lifecycle.ts`, `tugdeck/src/lib/app-lifecycle.ts` — JSDoc pass on `cardWill*` / `applicationWill*` methods describing the deferred-delivery semantic; add observer-vs-delegate guidance in the module header; document startup-drop behavior.
+- `tugdeck/src/lib/delegate-drain.ts` (new) — shared `MessageChannel` drain queue consumed by both `useCardDelegate` and `useAppDelegate`; guarantees cross-module ordering.
+- Call sites for `applyLayout`: currently `deck-manager.ts` (defn + 2 call sites), `layout-tree.ts`, `__tests__/deck-manager.test.ts`. Update tests to use the mutator API (`addCard`, `removeCard`, `setActiveCardInPane`) or the new diff-based replacement.
+
+**Work:**
+
+a. **Delete `applyLayout`** (audit L7 / P13). Fires no lifecycle events, violates the invariants every other mutator enforces, deprecated in JSDoc but still present. Replace each call site with explicit mutator calls. If a test truly needs wholesale state replacement, implement a minimal `replaceLayout(next)` that diffs and routes through `addCard` / `removeCard` / `_setFirstResponder` — not the free-form assignment the current version permits.
+
+b. **Consolidate `_setFirstResponder` and `_flipFirstResponder`** (audit L4). The latter exists because some mutators need caller-provided commit closures; the former reads `oldFR` from current state and commits internally. The division invites wrong-snapshot bugs. Produce one `_flipFirstResponder(newFR, commitClosure)` helper that snapshots `oldFR` itself and delegates the commit — the mechanism that would catch a mistake (read current state) stays inside the helper.
+
+c. **Consolidate `getActiveCardId` vs `getFirstResponderCardId`** (audit L3). Both are public; they diverge after detach/move. Pick one as canonical (the composite-bit reader `getFirstResponderCardId`) and either delete the other or rename it to something unambiguous (`getTopOfPaneCardId`). Internal call sites that still use `getActiveCardId` get updated to whichever survives. Tests update with them.
+
+d. **Share one drain queue** across `useCardDelegate` and `useAppDelegate` (audit L2). Today each owns a `MessageChannel`; cross-module ordering is not guaranteed. Extract `lib/delegate-drain.ts` with one shared channel and `scheduleDelegateCall(fn)`. Both hooks call through it. Eliminates a race class before any future app/card delegate pair exhibits it.
+
+e. **Document will-delegate semantic inversion** (audit L1). `useCardDelegate` / `useAppDelegate` subscribers run on the next MessageChannel drain — *after* the transition commits. Methods named `cardWillDeactivate` / `applicationWillResignActive` therefore run in a world where the transition has already happened. Add one JSDoc line to each `will*` delegate method on the `TugCardDelegate` / `TugAppDelegate` interfaces: "Delegate runs after the transition commits. Subscribe via `observeCard*` directly for synchronous pre-mutation semantics." Also add a short observer-vs-delegate decision rule at the top of `card-lifecycle.ts` (audit L6): synchronous observer for pre-mutation state or ordering with other synchronous observers; delegate hook for React-context-bound focus/DOM work that must survive gesture.
+
+f. **Document startup-event drop** (audit L8) in the `app-lifecycle.ts` banner: "Swift-side control frames sent before `AppLifecycle` registers are silently dropped. Subscribers that need a reliable 'fire once at app start' signal must coordinate with Swift through a different channel."
+
+g. **Pin lifecycle-silent paths in JSDoc** (audit P10, P11): `setActiveCardInPane` on an inactive pane fires no lifecycle events; `_closePane` fires destruction in `cardIds` order. Add one JSDoc sentence on each.
+
+h. **Portal mount-ordering note** (audit P4): add a paragraph to `card-portal.tsx`'s header: "Children render into a null host until the content-registry subscriber fires on the next commit; do not assume children are in the DOM on first render."
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green.
+- `rg "applyLayout" tugdeck/src` returns zero matches (only test file may retain if `replaceLayout` wasn't built; note the exception).
+- `rg "_setFirstResponder|_flipFirstResponder" tugdeck/src` returns one name (whichever survived).
+- `rg "getActiveCardId" tugdeck/src` returns zero matches (if deleted) or only the new unambiguous name.
+- New unit test: `useCardDelegate` + `useAppDelegate` registered on the same page drain events in subscription order across modules (before: order was non-deterministic across channels).
+
+**Risks:**
+- `applyLayout` deletion may surface test fixtures that rely on its "jump to arbitrary state" semantics. Resolution: convert to the mutator chain; the conversion itself documents the intended state transition.
+- Consolidating the two FR helpers risks a mistranslated call site. Mitigation: cover every caller with a targeted unit test before the refactor.
+
+---
+
+#### Step 5.5.b — Decompose `CardHost` into per-concern hooks {#step-5-5-b}
+
+**Why this exists.** `CardHost` (`tugdeck/src/components/chrome/card-host.tsx`, currently 384 lines) accreted every per-card concern: PropertyStore registration, persistence callbacks, dirty/auto-save, content-restore effect, scroll/selection listeners, FeedStore subscription, responder scope, portal mount. Each concern is reasonable in isolation; the file is the wiring harness *and* each concern's implementation. The next per-card concern (session metadata, cross-turn state, whatever the next tide feature needs) would land here by default, pushing it past the 500-line threshold where nobody wants to touch it.
+
+Decomposing into per-concern hooks now — while the vocabulary is stable and `Tugcard*` → `Card*` renames have landed — gives each concern a testable surface and leaves `CardHost` as the wiring harness it should be.
+
+**Files:**
+- `tugdeck/src/components/tugways/hooks/use-card-property-store.ts` (new).
+- `tugdeck/src/components/tugways/hooks/use-card-dirty-state.ts` (new).
+- `tugdeck/src/components/tugways/hooks/use-card-content-restore.ts` (new).
+- `tugdeck/src/components/tugways/hooks/use-card-feed-store.ts` (new).
+- `tugdeck/src/components/tugways/hooks/use-card-selection-and-scroll.ts` (new — if the scroll/selection effect decomposes cleanly; may fold into `use-card-content-restore.ts`).
+- `tugdeck/src/components/chrome/card-host.tsx` — reduced to wiring: each hook called in order, portal wrapper, context providers, responder scope.
+- `tugdeck/src/components/tugways/card-portal.tsx` — define a teardown contract for portal cleanup (audit P5): either guarantee cards finish destruction before the host content div unmounts, or expose an explicit `onHostGone(cb)` subscription for effects that need deterministic teardown.
+- `tugdeck/src/__tests__/` — one test file per new hook, each exercising the hook in isolation via a minimal host.
+- Test helper `tugdeck/src/__tests__/wait-for-portal.ts` (new — audit P12): `waitForPortal(paneId): Promise<HTMLElement>` resolves when the content registry reports an element for that paneId. Adopted by existing portal-sensitive tests.
+
+**Work:**
+
+a. **Extract `useCardPropertyStore`** first. Smallest seam. Takes `cardId` + `ResponderProvider`; registers the PropertyStore in `useLayoutEffect`; exposes the registered store via ref. `CardHost` loses ~30 lines.
+
+b. **Extract `useCardPersistence`** — wait, this is already extracted (`use-card-persistence.tsx`). Skip.
+
+c. **Extract `useCardDirtyState`** — the dirty-bit + debounced auto-save pipeline. Takes `cardId` + `saveFn`. Returns a `markDirty` callback. `CardHost` loses the dirty-bit state, the timer ref, and the debounced-save closure.
+
+d. **Extract `useCardContentRestore`** — the initial-restore effect that runs when `CardHost` mounts and the tugbank row arrives. Takes `cardId`. Consults `DeckManager.getCardState(cardId)`, calls `onRestore` via the `CardPersistenceContext` when available.
+
+e. **Extract `useCardFeedStore`** — the FeedStore subscription that drives `CardDataProvider`'s `feedData` map. Takes `cardId` + list of `feedIds` from the registration. Returns `feedData`.
+
+f. **Optional: `useCardSelectionAndScroll`** — scroll-position and selection listeners that write back through `useCardDirtyState`. If the coupling with dirty state is too tight, leave inside `useCardContentRestore` or `CardHost` directly.
+
+g. **`CardHost` becomes the wiring harness.** Call each hook in order, assemble the context providers, render the portal. Target: 120–150 lines.
+
+h. **Define `CardPortal` teardown contract** (audit P5). When the host pane closes, the registry unregisters before React unmounts the card's effects. The current window — where effects run against detached DOM — is small but load-bearing. Either: (a) order destruction before host-content unmount (preferred, guarantees the invariant), or (b) expose `onHostGone` subscription. Decide during implementation based on where the actual race risk is.
+
+i. **Test helper `waitForPortal(paneId)`** (audit P12). Replaces ad-hoc `await act(() => {})` / `await waitFor(...)` patterns in portal-sensitive tests with one explicit wait. Portals over the content registry's `subscribe(paneId, cb)`.
+
+**Verification:**
+- `bun x tsc --noEmit` + `bun test` all green after each hook extraction (land as a chain of small commits).
+- `wc -l card-host.tsx` reports ~150 lines (down from 384).
+- Each new hook has an isolated unit test.
+- Existing integration tests (`tide-card.test.tsx`, `card-identity-preservation.test.tsx`) pass unchanged — the decomposition is internal.
+
+**Risks:**
+- Extraction order matters: the dirty-bit + save loop is the tightest coupling. Extract it last, after `useCardPropertyStore` and `useCardFeedStore` have proven the seam shape.
+- React effect ordering between sibling hooks: every hook uses `useLayoutEffect` for registration; the order they're called in `CardHost` is the order effects fire. Write a one-paragraph note in `card-host.tsx`'s header documenting the ordering.
+- A hook extraction that accidentally drops a dependency on `cardId` / `hostPaneId` / `componentId` will produce a stale closure. Each hook signature should take these as explicit arguments; don't reach through context.
+
+---
+
+#### Step 5.5.c — Invariants and safety-net tests {#step-5-5-c}
+
+**Why this exists.** `validateDeckState` is the model: encode invariants in executable form, run in dev on every mutation, give clear errors on violation. The same pattern would catch an entire class of drift bug in the lifecycle / selection / save-callback layers that are currently only covered by happy-path tests. The four missing tests the audit calls out are the ones most likely to fail silently when the next layer lands.
+
+**Files:**
+- `tugdeck/src/lib/card-lifecycle.ts` — export `validateCardLifecycleState(cardLifecycle, deckState)` dev-only validator.
+- `tugdeck/src/components/tugways/selection-guard.ts` — export `validateSelectionBoundaryMap(selectionGuard, deckState)` dev-only validator.
+- `tugdeck/src/deck-manager.ts` — the `saveCallbacks` map: add `validateSaveCallbackKeys(manager, deckState)` dev-only. Also tighten `registerSaveCallback(id, callback)` signature to accept only `cardId` (audit P7): change the parameter name, JSDoc states "must be a cardId"; consider a branded-type check if the split map approach proves noisy.
+- `tugdeck/src/deck-manager.ts` — wire all three validators into dev-mode `notify()`, alongside the existing `validateDeckState` call.
+- `tugdeck/src/__tests__/hmr-lifecycle-registration.test.ts` (new — audit L5).
+- `tugdeck/src/__tests__/concurrent-move-destruction.test.ts` (new — cross-cutting).
+- `tugdeck/src/__tests__/portal-orphan-recovery.test.ts` (new — cross-cutting).
+- `tugdeck/src/__tests__/construction-event-order.test.ts` (new — cross-cutting).
+- `tugdeck/src/__tests__/non-focused-pane-activation.test.tsx` (new — audit P8): click an interactive element in a non-focused pane; assert activation event fires *before* the click event.
+
+**Work:**
+
+a. **Validator extension.**
+   - `validateCardLifecycleState`: the set of ids tracked by `CardLifecycle.constructedCards` must equal the set of ids in `deckState.cards`. If a card is destroyed but the lifecycle's tracking set still contains it (or vice versa), throw `CardLifecycleInvariantError` naming the drift.
+   - `validateSelectionBoundaryMap`: the keys in `selectionGuard.boundaries` map should be a subset of `deckState.cards.map(c => c.id)` — a boundary registered for a card that no longer exists is a leak.
+   - `validateSaveCallbackKeys`: keys in `saveCallbacks` should be a subset of live `cardId`s. Stale keys after close indicate an unregister was missed.
+   - All three run inside the dev-only `notify()` guard; production builds strip the calls.
+
+b. **Stable-render-order invariant test** (audit P8). Render a deck with two panes. Click an interactive element (checkbox, button) in the non-focused pane. Assert the activation event fires *before* the click handler runs, and that the click handler runs on the same synthetic event (no stale-synthetic-event bugs). This is the regression test for the scenario the `sortedStacks` sort exists to prevent; if someone ever removes the sort, this test fails.
+
+c. **HMR re-registration test** (audit L5). Construct `DeckManager` → destroy → construct again. Install cascade subscribers on generation 2. Fire a cascade event. Assert only generation-2 subscribers received it (gen-1 subscribers are silent). Protects against module-level singleton drift during HMR.
+
+d. **Concurrent move + destruction test.** Drag card A from pane P1 to pane P2 while closing P2 mid-drag. Expected: graceful rejection of one operation, no invariant violation (validators stay green through the race). Pins the mutator synchronization that currently works by `notify()` ordering alone.
+
+e. **Portal orphan recovery test.** Close the host pane while the card's content effects are mid-debounce (dirty-bit save timer fired but commit pending). Assert no exception, no duplicate save, no stale listener on detached DOM.
+
+f. **Construction event order on loaded layout.** Mount with a pre-populated 5-card / 3-pane layout via tugbank rows. Assert 5 `cardDidFinishConstruction` events fire in `deckState.cards` array order before the React root commits visible content. This is the test that a `cardDidFinishConstruction` subscriber on a card that exists at cold-launch gets its event reliably.
+
+**Verification:**
+- All four new tests pass.
+- Dev-mode validators run on every `notify()` without noticeable slowdown on the test suite (if validators add > 100ms to test-run time, make them opt-in per test file via a flag).
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green.
+- Production build (if checked) does not include validator call sites — gate on `import.meta.env?.DEV`.
+
+**Risks:**
+- A validator that throws during a legitimate intermediate state (mid-mutation invariants temporarily violated) would break more than it catches. Mitigation: validators run *after* the commit closure, *before* `notify()` — the same point `validateDeckState` already runs. Same contract.
+- Concurrent-op tests are inherently timing-sensitive and may be flaky. Mitigation: use deterministic promise sequencing (`await Promise.all([...])` with explicit `await`s rather than setTimeout races).
+
+---
+
+#### Step 6 — Cmd+J scrolls to the selected history entry (or bottom) {#step-6}
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (Cmd+J handler).
