@@ -312,12 +312,12 @@ function migrateV1ToDeckState(
   for (const c of rawCards) {
     if (!c || typeof c !== "object") continue;
     const legacy = c as Record<string, unknown>;
-    const windowId = legacy["id"];
+    const paneId = legacy["id"];
     const pos = legacy["position"] as { x: number; y: number } | undefined;
     const sz = legacy["size"] as { width: number; height: number } | undefined;
     const rawTabs = legacy["tabs"];
     if (
-      typeof windowId !== "string" ||
+      typeof paneId !== "string" ||
       !pos ||
       !sz ||
       !Array.isArray(rawTabs) ||
@@ -372,7 +372,7 @@ function migrateV1ToDeckState(
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
     panes.push({
-      id: windowId,
+      id: paneId,
       position: { x, y },
       size: { width, height },
       cardIds,

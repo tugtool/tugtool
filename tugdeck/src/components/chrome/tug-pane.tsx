@@ -138,7 +138,7 @@ export function CardTitleBar({
   return (
     <div
       className="tugcard-title-bar"
-      data-slot="tug-window-title-bar"
+      data-slot="tug-pane-title-bar"
       onPointerDown={handleTitleBarPointerDown}
       onDoubleClick={handleTitleBarDoubleClick}
       data-testid="tugcard-title-bar"
@@ -1193,7 +1193,7 @@ export function TugPane({
         <div
           ref={rootRefCallback}
           className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
-          data-slot="tug-window"
+          data-slot="tug-pane"
           data-pane-id={stackId}
           data-collapsed={collapsed ? "true" : "false"}
         >

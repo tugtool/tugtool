@@ -406,8 +406,8 @@ describe("DeckManager.movePane", () => {
     const originalPos2 = { ...originalStack2.position };
     const originalSize2 = { ...originalStack2.size };
 
-    const windowId1 = hostStack(manager.getDeckState(), id1).id;
-    manager.movePane(windowId1, { x: 999, y: 888 }, { width: 777, height: 666 });
+    const paneId1 = hostStack(manager.getDeckState(), id1).id;
+    manager.movePane(paneId1, { x: 999, y: 888 }, { width: 777, height: 666 });
 
     const stack2 = hostStack(manager.getDeckState(), id2);
     expect(stack2.position.x).toBe(originalPos2.x);
