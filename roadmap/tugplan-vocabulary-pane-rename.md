@@ -65,6 +65,7 @@ This plan lands the rename across source, DOM, CSS, serialized wire format, Swif
 5. Context rename (`TugWindowPortalContext` → `TugPanePortalContext`; other contexts stay as named).
 6. Component file rename (`tug-window.tsx` → `tug-pane.tsx`; `TugWindow` → `TugPane`; props types).
 7. CSS file + class rename (`tug-window.css` → `tug-pane.css`; `.tug-window` → `.tug-pane`; `.tug-window-content` → `.tug-pane-content`; `.tug-window-resize-*` → `.tug-pane-resize-*`).
+7a. `TugWindowBanner` → `TugPaneBanner` rename (component file, CSS file, 13 selectors, consumers) — surfaced by the Step 7 sweep.
 8. DOM attribute rename (`data-window-id` → `data-pane-id`; internal `WindowFrameEntry` → `PaneFrameEntry`; `allWindowFrameRects` → `allPaneFrameRects`).
 9. Action constant + wire string rename (`ADD_CARD_TO_ACTIVE_WINDOW` → `ADD_CARD_TO_ACTIVE_PANE`; `"add-card-to-active-window"` → `"add-card-to-active-pane"`).
 10. Swift wire contract (`focus-window` with `windowId` → `focus-pane` with `paneId`; Swift method `focusWindowFromMenu` → `focusPaneFromMenu`; `addCardToActiveWindow` → `addCardToActivePane`).
@@ -446,6 +447,52 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green.
 - [x] `rg "tug-window\\.css|\\.tug-window\\b|\\.tug-window-content\\b|\\.tug-window-resize-" tugdeck` returns zero matches.
+- [x] **Open residue flagged:** `TugWindowBanner` (component, CSS, tests) still carries the old word. The Step 7 grep `\.tug-window\b` false-positives on `.tug-window-banner*` because ripgrep treats `-` as a word boundary. Scope-called-out and moved to #step-7a.
+
+---
+
+#### Step 7a: Rename TugWindowBanner → TugPaneBanner {#step-7a}
+
+**Depends on:** #step-7
+
+**Commit:** `Rename TugWindowBanner → TugPaneBanner (file, exports, CSS, consumers)`
+
+**References:** [D01] Pane, (#context — no internal identifier uses "window" except DOM global / NSWindow)
+
+**Rationale:** Surfaced by the Step 7 CSS sweep. `TugWindowBanner` is a card-scoped notification strip that lives *inside* a pane. It is not part of the pane frame itself, so it was not in Step 7's declared scope, but its name still uses "window" in a Tug-authored identifier — which the plan's exit criteria forbid. The rename here closes that straggler before Step 8 touches DOM attributes.
+
+**Artifacts:**
+- File rename: `tugdeck/src/components/tugways/tug-window-banner.tsx` → `tug-pane-banner.tsx`.
+- File rename: `tugdeck/src/components/tugways/tug-window-banner.css` → `tug-pane-banner.css`.
+- File rename: `tugdeck/src/__tests__/tug-window-banner.test.tsx` → `tug-pane-banner.test.tsx`.
+- Component export: `TugWindowBanner` → `TugPaneBanner`; props type `TugWindowBannerProps` → `TugPaneBannerProps`.
+- CSS selectors (13 classes): `.tug-window-banner`, `.tug-window-banner-strip`, `.tug-window-banner-clip`, `.tug-window-banner-icon`, `.tug-window-banner-label`, `.tug-window-banner-message`, `.tug-window-banner-detail-panel`, `.tug-window-banner-detail-body`, `.tug-window-banner-detail-icon`, `.tug-window-banner-detail-text`, `.tug-window-banner-detail-title`, `.tug-window-banner-detail-message`, `.tug-window-banner-detail-actions` → `.tug-pane-banner-*` equivalents.
+- DOM slot: `data-slot="tug-window-banner"` → `data-slot="tug-pane-banner"`.
+- Consumers: `tide-card.tsx` (import + JSX), `gallery-card-banner.tsx` (import + JSDoc + 4 JSX sites), `gallery-registrations.tsx` (registered-card title string), `__tests__/tide-card-last-error.test.tsx` (imports + `data-slot` selector + describe label).
+
+**Note:** CSS custom-property token names are unaffected — they already use `--tugx-card-banner-*` (the `card-banner` prefix is independent of the component name).
+
+**Tasks:**
+- [ ] Rename three files (`.tsx`, `.css`, `.test.tsx`) — use `git mv` so history tracks.
+- [ ] Rename component + props export at its definition site.
+- [ ] Rename every CSS selector in the CSS file.
+- [ ] Rename every JSX `className` and `data-slot` reference in the component.
+- [ ] Rename the CSS side-effect import inside the component (`./tug-window-banner.css` → `./tug-pane-banner.css`).
+- [ ] Update every consumer import + JSX usage.
+- [ ] Update `gallery-registrations.tsx` registered-card `defaultMeta.title` if it reads "TugWindowBanner."
+- [ ] Update tuglaws and any doc references (`rg "TugWindowBanner|tug-window-banner" tuglaws tugdeck/docs` should return zero).
+
+**Tests:**
+- [ ] `tug-pane-banner.test.tsx` passes (describe labels + imports updated; `[data-slot]` selector updated).
+- [ ] `tide-card-last-error.test.tsx` passes (locator uses new `data-slot`).
+- [ ] Gallery tab smoke: open the gallery card, pick the `TugPaneBanner` demo — error / status / contained variants all render.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green (count unchanged).
+- [ ] `bun run audit:tokens lint` zero violations.
+- [ ] `rg "TugWindowBanner|tug-window-banner|\\.tug-window-banner" tugdeck tuglaws` returns zero matches.
+- [ ] Plan-wide grep `rg "\\.tug-window\\b" tugdeck` now returns zero matches (no banner false-positives).
 
 ---
 
@@ -615,9 +662,9 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - [ ] `cargo nextest run` green.
 - [ ] Grep sweep (paste-ready):
   ```
-  rg "TugWindow\b|TugWindowState|TugWindowProps|TugWindowInjectedProps|TugWindowPortalContext|windowId|activeWindowId|data-window-id|\.tug-window\b|\.tug-window-content\b|\.tug-window-resize-|tug-window\.tsx|tug-window\.css|window-content-registry|window-root-registry|WindowFrameEntry|allWindowFrameRects|addCardToWindow|setActiveCardInWindow|reorderCardInWindow|moveCardToWindow|toggleWindowCollapse|moveWindow\b|handleWindowMoved|handleWindowClosed|_closeWindow|ADD_CARD_TO_ACTIVE_WINDOW|add-card-to-active-window|focus-window|focusWindowFromMenu|addCardToActiveWindow|Add Card to Active Window|Close Window" tugdeck/src tugapp/Sources tugdeck/styles tuglaws tugdeck/docs
+  rg "TugWindow[A-Z]?\w*|windowId|activeWindowId|data-window-id|\.tug-window\b|\.tug-window-banner|\.tug-window-content\b|\.tug-window-resize-|tug-window[-.]|window-content-registry|window-root-registry|WindowFrameEntry|allWindowFrameRects|addCardToWindow|setActiveCardInWindow|reorderCardInWindow|moveCardToWindow|toggleWindowCollapse|moveWindow\b|handleWindowMoved|handleWindowClosed|_closeWindow|ADD_CARD_TO_ACTIVE_WINDOW|add-card-to-active-window|focus-window|focusWindowFromMenu|addCardToActiveWindow|Add Card to Active Window|Close Window" tugdeck/src tugapp/Sources tugdeck/styles tuglaws tugdeck/docs
   ```
-  Expected: zero matches.
+  Expected: zero matches. (`TugWindow[A-Z]?\w*` catches `TugWindow`, `TugWindowBanner`, `TugWindowBannerProps`, etc. — one pattern, no false negatives from the old `\b`-terminated form.)
 - [ ] Bare-`window` grep sanity (reviewer-only, should show only DOM globals in TS and NSWindow in Swift):
   ```
   rg "\bwindow\b" tugdeck/src tugapp/Sources
