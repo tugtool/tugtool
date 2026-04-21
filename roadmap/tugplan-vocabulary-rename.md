@@ -368,20 +368,20 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Consumers: `deck-canvas.tsx` and any test.
 
 **Tasks:**
-- [ ] Rename the file.
-- [ ] Rename `StackFrame` → `TugWindow` at the export.
-- [ ] Rename `StackFrameProps` → `TugWindowProps`; `StackFrameInjectedProps` → `TugWindowInjectedProps`.
-- [ ] Keep the internal structure: `TugWindow` still renders `Tugcard` via `renderContent(injected)`. The merge happens in #step-7.
-- [ ] Update every import and JSX usage.
+- [x] Rename the file.
+- [x] Rename `StackFrame` → `TugWindow` at the export.
+- [x] Rename `StackFrameProps` → `TugWindowProps`; `StackFrameInjectedProps` → `TugWindowInjectedProps`.
+- [x] Keep the internal structure: `TugWindow` still renders `Tugcard` via `renderContent(injected)`. The merge happens in #step-7.
+- [x] Update every import and JSX usage.
 
 **Tests:**
-- [ ] `stack-frame.test.tsx` (if exists) renamed to `tug-window.test.tsx`; tests pass.
-- [ ] `deck-canvas.test.tsx` passes.
+- [x] `stack-frame.test.tsx` (if exists) renamed to `tug-window.test.tsx`; tests pass.
+- [x] `deck-canvas.test.tsx` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `rg "StackFrame\b|stack-frame" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `rg "StackFrame\b|stack-frame" tugdeck/src` returns zero matches.
 
 ---
 

@@ -1,8 +1,7 @@
 /**
- * StackFrame — absolutely-positioned frame with drag, resize, z-index, and
- * min-size clamping. The visual container for a CardStack — a group of one
- * or more cards under a shared frame. (Formerly called `StackFrame` when
- * every "card" was also its own frame.)
+ * TugWindow — absolutely-positioned frame with drag, resize, z-index, and
+ * min-size clamping. The visual chrome for a deck window: one or more cards
+ * under a shared frame (see `TugWindowState` in the layout tree).
  *
  * Responsibilities:
  * - Render an absolutely-positioned div at position/size from stackState
@@ -11,9 +10,9 @@
  * - Resize: 8 edge/corner handles, clamped to min-size, onCardMoved on end
  * - Bring to front via onStackActivated on any pointer-down in the frame
  *
- * [D03] StackFrame/Tugcard separation, [D06] appearance-zone drag
+ * [D03] TugWindow/Tugcard separation, [D06] appearance-zone drag
  *
- * @module components/chrome/stack-frame
+ * @module components/chrome/tug-window
  */
 
 import React, { useCallback, useRef, useState } from "react";
@@ -92,31 +91,31 @@ const SNAP_GAP_PX = 5;
 // ---------------------------------------------------------------------------
 
 /**
- * Props injected by StackFrame into the content returned by `renderContent`.
+ * Props injected by TugWindow into the content returned by `renderContent`.
  */
-export interface StackFrameInjectedProps {
+export interface TugWindowInjectedProps {
   /** Tugcard header calls this on pointer-down to initiate drag. */
   onDragStart: (event: React.PointerEvent) => void;
-  /** Tugcard calls this to report its computed minimum size to StackFrame. */
+  /** Tugcard calls this to report its computed minimum size to TugWindow. */
   onMinSizeChange: (size: { width: number; height: number }) => void;
-  /** Whether the stack is currently collapsed. Forwarded from stackState.collapsed. */
+  /** Whether the window is currently collapsed. Forwarded from stackState.collapsed. */
   collapsed: boolean;
-  /** Called when the user toggles collapse. StackFrame forwards to onCardCollapsed. */
+  /** Called when the user toggles collapse. TugWindow forwards to onCardCollapsed. */
   onCollapse: () => void;
 }
 
 /**
- * Props for the StackFrame component.
+ * Props for the TugWindow component.
  */
-export interface StackFrameProps {
-  /** Stack position, size, id, and collapsed state from DeckState. */
+export interface TugWindowProps {
+  /** Window position, size, id, and collapsed state from DeckState. */
   stackState: TugWindowState;
   /**
    * Render function that receives injected callbacks and returns the Tugcard.
    * The factory closure (from the card registry) is responsible for wiring
    * the Tugcard's `onClose` prop to `onStackClosed(id)`.
    */
-  renderContent: (injected: StackFrameInjectedProps) => React.ReactNode;
+  renderContent: (injected: TugWindowInjectedProps) => React.ReactNode;
   /** Called on drag-end or resize-end (structure-zone commit). */
   onCardMoved: (
     id: string,
@@ -144,8 +143,8 @@ export interface StackFrameProps {
    */
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
   /**
-   * The id of the active card in this stack. Used by the merge hit-test in
-   * onPointerUp to determine which card gets merged into the target stack.
+   * The id of the active card in this window. Used by the merge hit-test in
+   * onPointerUp to determine which card gets merged into the target window.
    */
   activeCardId?: string;
   /** CSS z-index for stacking order. */
@@ -154,7 +153,7 @@ export interface StackFrameProps {
   isFocused: boolean;
   /**
    * Called when the user toggles collapse on the card header.
-   * StackFrame passes this as onCollapse to the Tugcard via renderContent.
+   * TugWindow passes this as onCollapse to the Tugcard via renderContent.
    * DeckCanvas wires this to store.toggleWindowCollapse(id).
    */
   onCardCollapsed?: (id: string) => void;
@@ -175,13 +174,13 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
 // ---------------------------------------------------------------------------
-// StackFrame
+// TugWindow
 // ---------------------------------------------------------------------------
 
 /**
- * StackFrame -- positions, drags, resizes, and stacks a single card on the canvas.
+ * TugWindow — positions, drags, resizes, and hosts a window's cards on the canvas.
  */
-export function StackFrame({
+export function TugWindow({
   stackState,
   renderContent,
   onCardMoved,
@@ -192,7 +191,7 @@ export function StackFrame({
   zIndex,
   isFocused,
   onCardCollapsed,
-}: StackFrameProps) {
+}: TugWindowProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
 
@@ -767,7 +766,7 @@ export function StackFrame({
     onCardCollapsed?.(id);
   }, [id, onCardCollapsed]);
 
-  const injected: StackFrameInjectedProps = {
+  const injected: TugWindowInjectedProps = {
     onDragStart: handleDragStart,
     onMinSizeChange: handleMinSizeChange,
     collapsed,

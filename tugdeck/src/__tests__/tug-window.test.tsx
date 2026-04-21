@@ -1,12 +1,12 @@
 /**
- * StackFrame component unit tests -- Step 4.
+ * TugWindow component unit tests -- Step 4.
  *
  * Tests cover:
- * - T16: StackFrame renders at correct position and size from cardState
- * - T17: StackFrame applies zIndex prop
- * - T18: StackFrame calls onStackActivated on pointer-down
- * - T19: StackFrame calls onStackClosed when Tugcard fires close
- * - T20: StackFrame clamps resize to min-size
+ * - T16: TugWindow renders at correct position and size from cardState
+ * - T17: TugWindow applies zIndex prop
+ * - T18: TugWindow calls onStackActivated on pointer-down
+ * - T19: TugWindow calls onStackClosed when Tugcard fires close
+ * - T20: TugWindow clamps resize to min-size
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -16,8 +16,8 @@ import React from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
-import { StackFrame } from "@/components/chrome/stack-frame";
-import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
+import { TugWindow } from "@/components/chrome/tug-window";
+import type { TugWindowInjectedProps } from "@/components/chrome/tug-window";
 import type { TugWindowState } from "@/layout-tree";
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,11 +42,11 @@ function makeStackState(overrides: Partial<TugWindowState> = {}): TugWindowState
  */
 function makeRenderContent(
   extra?: {
-    captureRef?: React.MutableRefObject<StackFrameInjectedProps | null>;
+    captureRef?: React.MutableRefObject<TugWindowInjectedProps | null>;
     onClose?: () => void;
   }
 ) {
-  return (injected: StackFrameInjectedProps): React.ReactNode => {
+  return (injected: TugWindowInjectedProps): React.ReactNode => {
     if (extra?.captureRef) {
       extra.captureRef.current = injected;
     }
@@ -73,10 +73,10 @@ const defaultProps = {
 };
 
 // ---------------------------------------------------------------------------
-// T16: StackFrame renders at correct position and size from cardState
+// T16: TugWindow renders at correct position and size from cardState
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – position and size", () => {
+describe("TugWindow – position and size", () => {
   it("T16: renders with correct position and size from cardState", () => {
     const stackState = makeStackState({
       position: { x: 50, y: 75 },
@@ -84,7 +84,7 @@ describe("StackFrame – position and size", () => {
     });
 
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         stackState={stackState}
         renderContent={makeRenderContent()}
@@ -103,7 +103,7 @@ describe("StackFrame – position and size", () => {
 
   it("position: absolute is applied", () => {
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         renderContent={makeRenderContent()}
       />
@@ -115,13 +115,13 @@ describe("StackFrame – position and size", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T17: StackFrame applies zIndex prop
+// T17: TugWindow applies zIndex prop
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – zIndex", () => {
+describe("TugWindow – zIndex", () => {
   it("T17: applies the zIndex prop as a CSS z-index style", () => {
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         zIndex={42}
         renderContent={makeRenderContent()}
@@ -134,16 +134,16 @@ describe("StackFrame – zIndex", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T18: StackFrame calls onStackActivated on pointer-down
+// T18: TugWindow calls onStackActivated on pointer-down
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – onStackActivated", () => {
+describe("TugWindow – onStackActivated", () => {
   it("T18: calls onStackActivated with the stack id on pointer-down anywhere in the frame", () => {
     const onStackActivated = mock((_id: string) => {});
     const stackState = makeStackState({ id: "focus-test-stack" });
 
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         stackState={stackState}
         onStackActivated={onStackActivated}
@@ -165,7 +165,7 @@ describe("StackFrame – onStackActivated", () => {
     const onStackActivated = mock((_id: string) => {});
 
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         onStackActivated={onStackActivated}
         renderContent={makeRenderContent()}
@@ -183,10 +183,10 @@ describe("StackFrame – onStackActivated", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T19: StackFrame calls onStackClosed when Tugcard fires close
+// T19: TugWindow calls onStackClosed when Tugcard fires close
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – onStackClosed", () => {
+describe("TugWindow – onStackClosed", () => {
   it("T19: calls onStackClosed with cardId when renderContent triggers onClose", () => {
     const onStackClosed = mock((_id: string) => {});
     const stackState = makeStackState({ id: "close-test-card" });
@@ -194,7 +194,7 @@ describe("StackFrame – onStackClosed", () => {
     // The factory wires onClose → onStackClosed(id). Simulate this in the test
     // renderContent by calling onStackClosed directly on close trigger.
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         stackState={stackState}
         onStackClosed={onStackClosed}
@@ -220,12 +220,12 @@ describe("StackFrame – onStackClosed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T20: StackFrame clamps resize to min-size
+// T20: TugWindow clamps resize to min-size
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – min-size clamping", () => {
+describe("TugWindow – min-size clamping", () => {
   it("T20: resize clamped to min-size reported by Tugcard via onMinSizeChange", () => {
-    const injectedRef = { current: null as StackFrameInjectedProps | null };
+    const injectedRef = { current: null as TugWindowInjectedProps | null };
     const onCardMoved = mock(
       (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {}
     );
@@ -236,7 +236,7 @@ describe("StackFrame – min-size clamping", () => {
     });
 
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         stackState={stackState}
         onCardMoved={onCardMoved}
@@ -284,10 +284,10 @@ describe("StackFrame – min-size clamping", () => {
   it("default min-size is 150x100 before Tugcard reports", () => {
     // This is a structural/contract test: the component initializes with the
     // correct default per Spec S04.
-    const injectedRef = { current: null as StackFrameInjectedProps | null };
+    const injectedRef = { current: null as TugWindowInjectedProps | null };
 
     render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         renderContent={makeRenderContent({ captureRef: injectedRef })}
       />
@@ -304,10 +304,10 @@ describe("StackFrame – min-size clamping", () => {
 // Extra: 8 resize handles are rendered
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – resize handles", () => {
+describe("TugWindow – resize handles", () => {
   it("renders 8 resize handles with correct CSS classes", () => {
     const { container } = render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         renderContent={makeRenderContent()}
       />
@@ -325,12 +325,12 @@ describe("StackFrame – resize handles", () => {
 // Extra: renderContent receives injected callbacks
 // ---------------------------------------------------------------------------
 
-describe("StackFrame – renderContent injection", () => {
+describe("TugWindow – renderContent injection", () => {
   it("renderContent receives onDragStart and onMinSizeChange callbacks", () => {
-    const captureRef = { current: null as StackFrameInjectedProps | null };
+    const captureRef = { current: null as TugWindowInjectedProps | null };
 
     render(
-      <StackFrame
+      <TugWindow
         {...defaultProps}
         renderContent={makeRenderContent({ captureRef })}
       />
