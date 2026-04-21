@@ -75,7 +75,7 @@ export function installLifecycleCascade(
     // (the active window's active card) — that's the card whose UI
     // focus/blur behavior tracks the app's active/hidden state.
     // Reading `getFocusedCardId` (top of z-order) could pick a
-    // different card when `activeWindowId` does not match the top
+    // different card when `activePaneId` does not match the top
     // window (post-detach or post-move edge cases).
     const activeId = cardLifecycle.getFirstResponderCardId();
     if (activeId === null) return;

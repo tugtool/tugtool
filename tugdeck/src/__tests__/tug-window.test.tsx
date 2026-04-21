@@ -17,7 +17,7 @@ import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
 import { TugWindow } from "@/components/chrome/tug-window";
-import type { TugWindowState } from "@/layout-tree";
+import type { TugPaneState } from "@/layout-tree";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { withDeckManager } from "./mock-deck-manager-store";
 
@@ -25,7 +25,7 @@ import { withDeckManager } from "./mock-deck-manager-store";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStackState(overrides: Partial<TugWindowState> = {}): TugWindowState {
+function makeStackState(overrides: Partial<TugPaneState> = {}): TugPaneState {
   return {
     id: "card-1",
     position: { x: 100, y: 200 },

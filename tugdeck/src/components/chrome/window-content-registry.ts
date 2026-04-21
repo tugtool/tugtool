@@ -5,7 +5,7 @@
  * registry and re-root whenever a window's content element mounts, unmounts,
  * or re-registers (e.g., on HMR).
  *
- * The key is the window id (the stack frame / `TugWindowState.id`); the
+ * The key is the window id (the stack frame / `TugPaneState.id`); the
  * element registered here is the window's content `<div>` (the node inside
  * which every card's content lands).
  *

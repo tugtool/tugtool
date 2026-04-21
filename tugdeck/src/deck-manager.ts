@@ -2,9 +2,9 @@
  * DeckManager -- orchestrates card state and the React render pipeline.
  *
  * Operates against the two-table model: `deckState.cards` (content
- * identities) and `deckState.windows` (visual frames). Every public mutator
+ * identities) and `deckState.panes` (visual frames). Every public mutator
  * keeps the two tables in sync, preserving the invariants documented in
- * `layout-tree.ts` (no orphan cards, no empty windows, activeCardId ∈ cardIds).
+ * `layout-tree.ts` (no orphan cards, no empty panes, activeCardId ∈ cardIds).
  *
  * DeckManager is a subscribable store conforming to the `useSyncExternalStore`
  * contract. One `root.render()` at construction time; all subsequent state
@@ -35,7 +35,7 @@
 import {
   type DeckState,
   type CardState,
-  type TugWindowState,
+  type TugPaneState,
   type CardStateBag,
   validateDeckState,
 } from "./layout-tree";
@@ -107,7 +107,7 @@ function isDevEnv(): boolean {
  * in `cardIds`.
  */
 function spliceCardFromStack(
-  win: TugWindowState,
+  win: TugPaneState,
   cardId: string,
 ): { cardIds: readonly string[]; activeCardId: string | null } {
   const cardIndex = win.cardIds.indexOf(cardId);
@@ -248,7 +248,7 @@ export class DeckManager implements IDeckManagerStore {
    * the top of z-order, and its `activeCardId` is the focused card.
    */
   public getFocusedCardId = (): string | null => {
-    const stacks = this.deckState.windows;
+    const stacks = this.deckState.panes;
     if (stacks.length === 0) return null;
     return stacks[stacks.length - 1].activeCardId;
   };
@@ -265,9 +265,9 @@ export class DeckManager implements IDeckManagerStore {
    * moment, exactly zero or one card is the first responder.
    */
   public getFirstResponderCardId = (): string | null => {
-    const activeWindowId = this.deckState.activeWindowId;
-    if (activeWindowId === undefined) return null;
-    const activeWin = this.deckState.windows.find((s) => s.id === activeWindowId);
+    const activePaneId = this.deckState.activePaneId;
+    if (activePaneId === undefined) return null;
+    const activeWin = this.deckState.panes.find((s) => s.id === activePaneId);
     return activeWin?.activeCardId ?? null;
   };
 
@@ -430,7 +430,7 @@ export class DeckManager implements IDeckManagerStore {
     const handler = messageHandlers?.cardList as { postMessage: (v: unknown) => void } | undefined;
     if (!handler) return;
 
-    const stacks = this.deckState.windows;
+    const stacks = this.deckState.panes;
     const cardsById = new Map<string, CardState>();
     for (const c of this.deckState.cards) cardsById.set(c.id, c);
     const focusedStack = stacks.length > 0 ? stacks[stacks.length - 1] : null;
@@ -501,7 +501,7 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     const firstCardId = seededCards[0].id;
-    const win: TugWindowState = {
+    const win: TugPaneState = {
       id: windowId,
       position,
       size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
@@ -516,14 +516,14 @@ export class DeckManager implements IDeckManagerStore {
 
     // Single-commit flip (transition 4): `oldFR` is snapshotted before
     // the mutation, so `_flipFirstResponder` fires the correct deactivate
-    // pair even though the commit puts `activeWindowId = windowId` (which
+    // pair even though the commit puts `activePaneId = windowId` (which
     // would make a state-derived `oldFR` read return `firstCardId`).
     this._flipFirstResponder(oldFR, newFR, () => {
       this.deckState = {
         ...this.deckState,
         cards: [...this.deckState.cards, ...seededCards],
-        windows: [...this.deckState.windows, win],
-        activeWindowId: windowId,
+        panes: [...this.deckState.panes, win],
+        activePaneId: windowId,
       };
       this.notify();
       this.scheduleSave();
@@ -547,7 +547,7 @@ export class DeckManager implements IDeckManagerStore {
    * notify.
    */
   _closeWindow(windowId: string): void {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return;
 
     const oldFR = this.getFirstResponderCardId();
@@ -557,9 +557,9 @@ export class DeckManager implements IDeckManagerStore {
     // Phase 1: flip the first responder to the new top-of-deck BEFORE
     // the destruction events. The closed stack is still in state at
     // this point — `_flipFirstResponder`'s commit just moves
-    // `activeWindowId` off the closing stack.
+    // `activePaneId` off the closing stack.
     if (closedContainsOldFR) {
-      const remainingStacks = this.deckState.windows.filter(
+      const remainingStacks = this.deckState.panes.filter(
         (s) => s.id !== windowId,
       );
       const newTopStack =
@@ -567,13 +567,13 @@ export class DeckManager implements IDeckManagerStore {
           ? remainingStacks[remainingStacks.length - 1]
           : null;
       const newFR = newTopStack?.activeCardId ?? null;
-      const newActiveWindowId = newTopStack?.id;
+      const newActivePaneId = newTopStack?.id;
       this._flipFirstResponder(oldFR, newFR, () => {
         this.deckState = {
           ...this.deckState,
-          ...(newActiveWindowId !== undefined
-            ? { activeWindowId: newActiveWindowId }
-            : { activeWindowId: undefined }),
+          ...(newActivePaneId !== undefined
+            ? { activePaneId: newActivePaneId }
+            : { activePaneId: undefined }),
         };
         this.notify();
         this.scheduleSave();
@@ -590,7 +590,7 @@ export class DeckManager implements IDeckManagerStore {
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => !cardIdSet.has(c.id)),
-      windows: this.deckState.windows.filter((s) => s.id !== windowId),
+      panes: this.deckState.panes.filter((s) => s.id !== windowId),
     };
     this.notify();
     this.scheduleSave();
@@ -606,8 +606,8 @@ export class DeckManager implements IDeckManagerStore {
    *     bumps z-order, refreshes the persisted focused-card pointer,
    *     and re-syncs the responder chain in case it drifted.
    *   - Full flip: fires `cardWillDeactivate(oldFR)` → `cardWillActivate(newFR)`
-   *     → commits the state mutation (z-order + `activeWindowId` +
-   *     target window's `activeCardId` + persisted pointer) → `notify()`
+   *     → commits the state mutation (z-order + `activePaneId` +
+   *     target pane's `activeCardId` + persisted pointer) → `notify()`
    *     → promotes the responder chain → `cardDidDeactivate(oldFR)` →
    *     `cardDidActivate(newFR)`.
    *
@@ -635,16 +635,16 @@ export class DeckManager implements IDeckManagerStore {
 
     // Commit state mutation.
     if (newFR === null) {
-      // Deactivate to null: clear activeWindowId without touching z-order
-      // or individual windows' activeCardId fields.
-      this.deckState = { ...this.deckState, activeWindowId: undefined };
+      // Deactivate to null: clear activePaneId without touching z-order
+      // or individual panes' activeCardId fields.
+      this.deckState = { ...this.deckState, activePaneId: undefined };
       this.notify();
       this.scheduleSave();
     } else {
-      // Bump host window to the end of the windows array (z-order top),
-      // set activeWindowId to the host, set host's activeCardId = newFR,
+      // Bump host pane to the end of the panes array (z-order top),
+      // set activePaneId to the host, set host's activeCardId = newFR,
       // and persist the focused-card pointer. One commit, one notify.
-      const stacks = this.deckState.windows;
+      const stacks = this.deckState.panes;
       const hostIdx = stacks.findIndex((s) => s.cardIds.includes(newFR));
       if (hostIdx === -1) {
         // newFR has no host stack (shouldn't happen in practice).
@@ -653,12 +653,12 @@ export class DeckManager implements IDeckManagerStore {
         return;
       }
       const hostStack = stacks[hostIdx];
-      const updatedHost: TugWindowState =
+      const updatedHost: TugPaneState =
         hostStack.activeCardId === newFR
           ? hostStack
           : { ...hostStack, activeCardId: newFR };
 
-      let newStacks: readonly TugWindowState[];
+      let newStacks: readonly TugPaneState[];
       const isAtEnd = hostIdx === stacks.length - 1;
       if (isAtEnd && updatedHost === hostStack) {
         newStacks = stacks;
@@ -673,8 +673,8 @@ export class DeckManager implements IDeckManagerStore {
 
       this.deckState = {
         ...this.deckState,
-        windows: newStacks,
-        activeWindowId: updatedHost.id,
+        panes: newStacks,
+        activePaneId: updatedHost.id,
       };
       putFocusedCardId(newFR);
       this.notify();
@@ -724,10 +724,10 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Update a window's position and size (called on drag-end / resize-end).
+   * Update a pane's position and size (called on drag-end / resize-end).
    *
    * Fires will/did lifecycle events for move/resize on the **active card** of
-   * the window (windows, not cards, own position/size — but the active card is
+   * the pane (panes, not cards, own position/size — but the active card is
    * the observable subject).
    */
   moveWindow(
@@ -735,7 +735,7 @@ export class DeckManager implements IDeckManagerStore {
     position: { x: number; y: number },
     size: { width: number; height: number },
   ): void {
-    const existing = this.deckState.windows.find((s) => s.id === windowId);
+    const existing = this.deckState.panes.find((s) => s.id === windowId);
     if (!existing) return;
     const positionChanged =
       existing.position.x !== position.x || existing.position.y !== position.y;
@@ -749,7 +749,7 @@ export class DeckManager implements IDeckManagerStore {
 
     this.deckState = {
       ...this.deckState,
-      windows: this.deckState.windows.map((s) =>
+      panes: this.deckState.panes.map((s) =>
         s.id === windowId ? { ...s, position, size } : s,
       ),
     };
@@ -771,7 +771,7 @@ export class DeckManager implements IDeckManagerStore {
    * blob.
    */
   focusCard(cardId: string): void {
-    const stacks = this.deckState.windows;
+    const stacks = this.deckState.panes;
     const hostStackIndex = stacks.findIndex((s) => s.cardIds.includes(cardId));
 
     if (hostStackIndex !== -1) {
@@ -789,8 +789,8 @@ export class DeckManager implements IDeckManagerStore {
     newStacks.push(focused);
     this.deckState = {
       ...this.deckState,
-      windows: newStacks,
-      activeWindowId: focused.id,
+      panes: newStacks,
+      activePaneId: focused.id,
     };
     this.notify();
     this.scheduleSave();
@@ -805,7 +805,7 @@ export class DeckManager implements IDeckManagerStore {
    * - `tile`: grid layout filling the canvas.
    */
   arrangeCards(mode: "cascade" | "tile"): void {
-    const stacks = this.deckState.windows;
+    const stacks = this.deckState.panes;
     if (stacks.length === 0) return;
 
     const canvasWidth = this.container.clientWidth || 800;
@@ -814,7 +814,7 @@ export class DeckManager implements IDeckManagerStore {
     const cardsById = new Map<string, CardState>();
     for (const c of this.deckState.cards) cardsById.set(c.id, c);
 
-    let arranged: TugWindowState[];
+    let arranged: TugPaneState[];
 
     if (mode === "cascade") {
       const ORIGIN = 10;
@@ -875,7 +875,7 @@ export class DeckManager implements IDeckManagerStore {
       if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
     }
 
-    this.deckState = { ...this.deckState, windows: arranged };
+    this.deckState = { ...this.deckState, panes: arranged };
     this.notify();
 
     for (const ch of changes) {
@@ -972,7 +972,7 @@ export class DeckManager implements IDeckManagerStore {
    * composite first-responder bit is unchanged (no lifecycle events).
    */
   private _addCardToWindow(windowId: string, componentId: string): string | null {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) {
       console.warn(`[DeckManager] addCardToWindow: stack "${windowId}" not found.`);
       return null;
@@ -993,13 +993,13 @@ export class DeckManager implements IDeckManagerStore {
       closable: registration.defaultMeta.closable !== false,
     };
 
-    const isActiveStack = windowId === this.deckState.activeWindowId;
+    const isActiveStack = windowId === this.deckState.activePaneId;
     const oldFR = this.getFirstResponderCardId();
     // Post-mutation the stack's `activeCardId` is always `cardId`; the
     // composite bit only flips when the stack is the deck's active stack.
     const newFR = isActiveStack ? cardId : oldFR;
 
-    const updatedStack: TugWindowState = {
+    const updatedStack: TugPaneState = {
       ...win,
       cardIds: [...win.cardIds, cardId],
       activeCardId: cardId,
@@ -1014,7 +1014,7 @@ export class DeckManager implements IDeckManagerStore {
       this.deckState = {
         ...this.deckState,
         cards: [...this.deckState.cards, newCard],
-        windows: this.deckState.windows.map((s) => (s.id === windowId ? updatedStack : s)),
+        panes: this.deckState.panes.map((s) => (s.id === windowId ? updatedStack : s)),
       };
       this.notify();
       this.scheduleSave();
@@ -1037,7 +1037,7 @@ export class DeckManager implements IDeckManagerStore {
    * `_flipFirstResponder`) BEFORE firing `cardWillBeginDestruction`.
    */
   private _removeCard(windowId: string, cardId: string): void {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return;
     if (!win.cardIds.includes(cardId)) return;
 
@@ -1058,13 +1058,13 @@ export class DeckManager implements IDeckManagerStore {
     // removes it. Two commits, two notifies.
     if (wasRemovingFR) {
       this._flipFirstResponder(oldFR, newActiveCardId, () => {
-        const flippedStack: TugWindowState = {
+        const flippedStack: TugPaneState = {
           ...win,
           activeCardId: newActiveCardId,
         };
         this.deckState = {
           ...this.deckState,
-          windows: this.deckState.windows.map((s) =>
+          panes: this.deckState.panes.map((s) =>
             s.id === windowId ? flippedStack : s,
           ),
         };
@@ -1077,15 +1077,15 @@ export class DeckManager implements IDeckManagerStore {
     // Phase 2: destruction + removal.
     this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
     const currentStack =
-      this.deckState.windows.find((s) => s.id === windowId) ?? win;
-    const finalStack: TugWindowState = {
+      this.deckState.panes.find((s) => s.id === windowId) ?? win;
+    const finalStack: TugPaneState = {
       ...currentStack,
       cardIds: currentStack.cardIds.filter((id) => id !== cardId),
     };
     this.deckState = {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
-      windows: this.deckState.windows.map((s) => (s.id === windowId ? finalStack : s)),
+      panes: this.deckState.panes.map((s) => (s.id === windowId ? finalStack : s)),
     };
     this.notify();
     this.scheduleSave();
@@ -1104,20 +1104,20 @@ export class DeckManager implements IDeckManagerStore {
    *     no first-responder change.
    */
   private _setActiveCardInWindow(windowId: string, cardId: string): void {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return;
     if (!win.cardIds.includes(cardId)) return;
     if (win.activeCardId === cardId) return;
 
-    if (windowId === this.deckState.activeWindowId) {
+    if (windowId === this.deckState.activePaneId) {
       this._setFirstResponder(cardId);
       return;
     }
 
-    const updatedStack: TugWindowState = { ...win, activeCardId: cardId };
+    const updatedStack: TugPaneState = { ...win, activeCardId: cardId };
     this.deckState = {
       ...this.deckState,
-      windows: this.deckState.windows.map((s) => (s.id === windowId ? updatedStack : s)),
+      panes: this.deckState.panes.map((s) => (s.id === windowId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
@@ -1127,7 +1127,7 @@ export class DeckManager implements IDeckManagerStore {
    * Reorder a card within its stack.
    */
   private _reorderCardInWindow(windowId: string, fromIndex: number, toIndex: number): void {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return;
 
     const len = win.cardIds.length;
@@ -1138,10 +1138,10 @@ export class DeckManager implements IDeckManagerStore {
     const [moved] = newCardIds.splice(fromIndex, 1);
     newCardIds.splice(toIndex, 0, moved);
 
-    const updatedStack: TugWindowState = { ...win, cardIds: newCardIds };
+    const updatedStack: TugPaneState = { ...win, cardIds: newCardIds };
     this.deckState = {
       ...this.deckState,
-      windows: this.deckState.windows.map((s) => (s.id === windowId ? updatedStack : s)),
+      panes: this.deckState.panes.map((s) => (s.id === windowId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
@@ -1161,7 +1161,7 @@ export class DeckManager implements IDeckManagerStore {
     cardId: string,
     position: { x: number; y: number },
   ): string | null {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return null;
     if (!win.cardIds.includes(cardId)) return null;
 
@@ -1184,9 +1184,9 @@ export class DeckManager implements IDeckManagerStore {
     );
     const clampedY = Math.max(0, Math.min(position.y, canvasHeight - TITLE_BAR_HEIGHT));
 
-    const newWindowId = crypto.randomUUID();
-    const newStack: TugWindowState = {
-      id: newWindowId,
+    const newPaneId = crypto.randomUUID();
+    const newStack: TugPaneState = {
+      id: newPaneId,
       position: { x: clampedX, y: clampedY },
       size: { width: sizePolicy.preferred.width, height: sizePolicy.preferred.height },
       cardIds: [cardId],
@@ -1198,7 +1198,7 @@ export class DeckManager implements IDeckManagerStore {
     // Source keeps at least one card (last-card guard above), so
     // `spliced.activeCardId` is guaranteed non-null here.
     const spliced = spliceCardFromStack(win, cardId);
-    const updatedSourceStack: TugWindowState = {
+    const updatedSourceStack: TugPaneState = {
       ...win,
       cardIds: spliced.cardIds,
       activeCardId: spliced.activeCardId as string,
@@ -1207,13 +1207,13 @@ export class DeckManager implements IDeckManagerStore {
     const oldFR = this.getFirstResponderCardId();
 
     // Phase 1: insert the new stack and patch the source, but leave
-    // `activeWindowId` unchanged. `_flipFirstResponder` below handles
+    // `activePaneId` unchanged. `_flipFirstResponder` below handles
     // the composite-bit commit. Card identity is preserved, so no
     // construction event fires.
     this.deckState = {
       ...this.deckState,
-      windows: [
-        ...this.deckState.windows.map((s) =>
+      panes: [
+        ...this.deckState.panes.map((s) =>
           s.id === windowId ? updatedSourceStack : s,
         ),
         newStack,
@@ -1224,15 +1224,15 @@ export class DeckManager implements IDeckManagerStore {
 
     // Phase 2: flip to `cardId`. Transition 6 (cardId was already FR)
     // → same-bit, no events. Transition 6b (cardId was not FR) → full
-    // flip. In both cases the commit sets `activeWindowId = newWindowId`.
+    // flip. In both cases the commit sets `activePaneId = newPaneId`.
     this._flipFirstResponder(oldFR, cardId, () => {
-      this.deckState = { ...this.deckState, activeWindowId: newWindowId };
+      this.deckState = { ...this.deckState, activePaneId: newPaneId };
       this.notify();
       this.scheduleSave();
       putFocusedCardId(cardId);
     });
 
-    return newWindowId;
+    return newPaneId;
   }
 
   /**
@@ -1249,43 +1249,43 @@ export class DeckManager implements IDeckManagerStore {
   ): void {
     if (sourceWindowId === targetWindowId) return;
 
-    const sourceStack = this.deckState.windows.find((s) => s.id === sourceWindowId);
+    const sourceStack = this.deckState.panes.find((s) => s.id === sourceWindowId);
     if (!sourceStack || !sourceStack.cardIds.includes(cardId)) return;
 
-    const targetStack = this.deckState.windows.find((s) => s.id === targetWindowId);
+    const targetStack = this.deckState.panes.find((s) => s.id === targetWindowId);
     if (!targetStack) return;
 
     const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
-    const sourceIsActive = this.deckState.activeWindowId === sourceWindowId;
+    const sourceIsActive = this.deckState.activePaneId === sourceWindowId;
 
-    // Post-move `activeWindowId`: shift to target when the source was
+    // Post-move `activePaneId`: shift to target when the source was
     // active AND will be destroyed (otherwise we'd leave a stale
-    // reference to a removed stack). In every other case `activeWindowId`
+    // reference to a removed stack). In every other case `activePaneId`
     // stays put — plan transition 7 only flips the first responder when
     // the target is/becomes the active stack.
-    const postMoveActiveWindowId =
+    const postMoveActivePaneId =
       sourceWillBeDestroyed && sourceIsActive
         ? targetWindowId
-        : this.deckState.activeWindowId;
+        : this.deckState.activePaneId;
 
     const spliced = spliceCardFromStack(sourceStack, cardId);
     const oldFR = this.getFirstResponderCardId();
 
     // Determine the composite first-responder bit after the move.
     let newFR: string | null;
-    if (postMoveActiveWindowId === targetWindowId) {
+    if (postMoveActivePaneId === targetWindowId) {
       // Target is/becomes the active stack → moved card is first responder.
       newFR = cardId;
     } else if (
-      postMoveActiveWindowId === sourceWindowId &&
+      postMoveActivePaneId === sourceWindowId &&
       !sourceWillBeDestroyed
     ) {
       // Source remains active; its new `activeCardId` depends on whether
       // the moved card was the source's active-in-stack pre-move.
       newFR = spliced.activeCardId;
-    } else if (postMoveActiveWindowId !== undefined) {
-      const other = this.deckState.windows.find(
-        (s) => s.id === postMoveActiveWindowId,
+    } else if (postMoveActivePaneId !== undefined) {
+      const other = this.deckState.panes.find(
+        (s) => s.id === postMoveActivePaneId,
       );
       newFR = other?.activeCardId ?? null;
     } else {
@@ -1295,13 +1295,13 @@ export class DeckManager implements IDeckManagerStore {
     // Plan 11.6.1b transition 7 / 7b: flip composite bit iff it changes.
     // Card identity is preserved across the move, so no destruction event.
     this._flipFirstResponder(oldFR, newFR, () => {
-      let intermediateStacks: readonly TugWindowState[] = this.deckState.windows;
+      let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
       if (spliced.activeCardId === null) {
         intermediateStacks = intermediateStacks.filter(
           (s) => s.id !== sourceWindowId,
         );
       } else {
-        const updatedSourceStack: TugWindowState = {
+        const updatedSourceStack: TugPaneState = {
           ...sourceStack,
           cardIds: spliced.cardIds,
           activeCardId: spliced.activeCardId,
@@ -1317,7 +1317,7 @@ export class DeckManager implements IDeckManagerStore {
       );
       const newTargetCardIds = [...targetStack.cardIds];
       newTargetCardIds.splice(clampedIndex, 0, cardId);
-      const updatedTargetStack: TugWindowState = {
+      const updatedTargetStack: TugPaneState = {
         ...targetStack,
         cardIds: newTargetCardIds,
         activeCardId: cardId,
@@ -1328,10 +1328,10 @@ export class DeckManager implements IDeckManagerStore {
 
       this.deckState = {
         ...this.deckState,
-        windows: finalStacks,
-        ...(postMoveActiveWindowId !== undefined
-          ? { activeWindowId: postMoveActiveWindowId }
-          : { activeWindowId: undefined }),
+        panes: finalStacks,
+        ...(postMoveActivePaneId !== undefined
+          ? { activePaneId: postMoveActivePaneId }
+          : { activePaneId: undefined }),
       };
       this.notify();
       this.scheduleSave();
@@ -1361,17 +1361,17 @@ export class DeckManager implements IDeckManagerStore {
    * the delegate.
    */
   private _toggleWindowCollapse(windowId: string): void {
-    const win = this.deckState.windows.find((s) => s.id === windowId);
+    const win = this.deckState.panes.find((s) => s.id === windowId);
     if (!win) return;
 
     const nowCollapsed = !win.collapsed;
-    const updatedStack: TugWindowState = nowCollapsed
+    const updatedStack: TugPaneState = nowCollapsed
       ? { ...win, collapsed: true as const }
       : { ...win, collapsed: undefined };
 
     this.deckState = {
       ...this.deckState,
-      windows: this.deckState.windows.map((s) => (s.id === windowId ? updatedStack : s)),
+      panes: this.deckState.panes.map((s) => (s.id === windowId ? updatedStack : s)),
     };
     this.notify();
     this.scheduleSave();
@@ -1463,8 +1463,8 @@ export class DeckManager implements IDeckManagerStore {
       keptCards.push(card);
     }
 
-    const keptStacks: TugWindowState[] = [];
-    for (const win of state.windows) {
+    const keptStacks: TugPaneState[] = [];
+    for (const win of state.panes) {
       const survivingCardIds = win.cardIds.filter(
         (id) => !droppedCardIds.has(id),
       );
@@ -1493,19 +1493,19 @@ export class DeckManager implements IDeckManagerStore {
 
     if (!changed) return state;
 
-    const keptWindowIds = new Set(keptStacks.map((s) => s.id));
-    const activeWindowId =
-      state.activeWindowId !== undefined && keptWindowIds.has(state.activeWindowId)
-        ? state.activeWindowId
+    const keptPaneIds = new Set(keptStacks.map((s) => s.id));
+    const activePaneId =
+      state.activePaneId !== undefined && keptPaneIds.has(state.activePaneId)
+        ? state.activePaneId
         : undefined;
 
     return {
       ...state,
       cards: keptCards,
-      windows: keptStacks,
-      ...(activeWindowId !== undefined
-        ? { activeWindowId }
-        : { activeWindowId: undefined }),
+      panes: keptStacks,
+      ...(activePaneId !== undefined
+        ? { activePaneId }
+        : { activePaneId: undefined }),
     };
   }
 

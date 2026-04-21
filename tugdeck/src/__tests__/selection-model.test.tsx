@@ -22,13 +22,13 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import type { TugWindowState } from "@/layout-tree";
+import type { TugPaneState } from "@/layout-tree";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStackState(id: string): TugWindowState {
+function makeStackState(id: string): TugPaneState {
   return {
     id,
     position: { x: 0, y: 0 },

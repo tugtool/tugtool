@@ -2,20 +2,20 @@ import { describe, test, expect } from "bun:test";
 import {
   type DeckState,
   type CardState,
-  type TugWindowState,
+  type TugPaneState,
   type CardStateBag,
   validateDeckState,
   DeckStateInvariantError,
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
-// ---- DeckState / CardState / TugWindowState type tests ----
+// ---- DeckState / CardState / TugPaneState type tests ----
 
 describe("DeckState", () => {
-  test("DeckState with empty cards and windows is valid", () => {
-    const state: DeckState = { cards: [], windows: [] };
+  test("DeckState with empty cards and panes is valid", () => {
+    const state: DeckState = { cards: [], panes: [] };
     expect(state.cards.length).toBe(0);
-    expect(state.windows.length).toBe(0);
+    expect(state.panes.length).toBe(0);
   });
 });
 
@@ -45,9 +45,9 @@ describe("CardState (two-table model)", () => {
   });
 });
 
-describe("TugWindowState (two-table model)", () => {
-  test("TugWindowState with single cardId constructs correctly", () => {
-    const stack: TugWindowState = {
+describe("TugPaneState (two-table model)", () => {
+  test("TugPaneState with single cardId constructs correctly", () => {
+    const stack: TugPaneState = {
       id: "stack-1",
       position: { x: 0, y: 0 },
       size: { width: 800, height: 600 },
@@ -62,8 +62,8 @@ describe("TugWindowState (two-table model)", () => {
     expect(stack.activeCardId).toBe("card-1");
   });
 
-  test("TugWindowState with multiple cardIds constructs correctly", () => {
-    const stack: TugWindowState = {
+  test("TugPaneState with multiple cardIds constructs correctly", () => {
+    const stack: TugPaneState = {
       id: "stack-2",
       position: { x: 100, y: 200 },
       size: { width: 400, height: 300 },
@@ -83,7 +83,7 @@ describe("buildDefaultLayout", () => {
   test("buildDefaultLayout returns empty DeckState (Phase 5: no pre-registered cards)", () => {
     const result = buildDefaultLayout();
     expect(result.cards.length).toBe(0);
-    expect(result.windows.length).toBe(0);
+    expect(result.panes.length).toBe(0);
   });
 });
 
@@ -97,7 +97,7 @@ describe("serialize and deserialize (v3)", () => {
       title: "Terminal",
       closable: true,
     };
-    const stack: TugWindowState = {
+    const stack: TugPaneState = {
       id: "stack-known-1",
       position: { x: 100, y: 200 },
       size: { width: 400, height: 300 },
@@ -106,18 +106,18 @@ describe("serialize and deserialize (v3)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards: [card], windows: [stack] };
+    const state: DeckState = { cards: [card], panes: [stack] };
 
     const serialized = serialize(state);
     const json = JSON.stringify(serialized);
     const restored = deserialize(json, 1920, 1080);
 
     expect(restored.cards.length).toBe(1);
-    expect(restored.windows.length).toBe(1);
+    expect(restored.panes.length).toBe(1);
     const rCard = restored.cards[0];
     expect(rCard.id).toBe("card-known-1");
     expect(rCard.componentId).toBe("terminal");
-    const rStack = restored.windows[0];
+    const rStack = restored.panes[0];
     expect(rStack.id).toBe("stack-known-1");
     expect(rStack.position.x).toBe(100);
     expect(rStack.cardIds).toEqual(["card-known-1"]);
@@ -130,7 +130,7 @@ describe("serialize and deserialize (v3)", () => {
       { id: "card-mt-2", componentId: "hello", title: "Hello 2", closable: true },
       { id: "card-mt-3", componentId: "hello", title: "Hello 3", closable: false },
     ];
-    const stack: TugWindowState = {
+    const stack: TugPaneState = {
       id: "stack-mt",
       position: { x: 50, y: 80 },
       size: { width: 500, height: 400 },
@@ -139,20 +139,20 @@ describe("serialize and deserialize (v3)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards, windows: [stack] };
+    const state: DeckState = { cards, panes: [stack] };
 
     const json = JSON.stringify(serialize(state));
     const restored = deserialize(json, 1920, 1080);
 
-    expect(restored.windows.length).toBe(1);
-    const r = restored.windows[0];
+    expect(restored.panes.length).toBe(1);
+    const r = restored.panes[0];
     expect(r.cardIds.length).toBe(3);
     expect(r.activeCardId).toBe("card-mt-2");
     expect(restored.cards.find((c) => c.id === "card-mt-3")?.closable).toBe(false);
   });
 
   test("serialize emits version: 3", () => {
-    const out = serialize({ cards: [], windows: [] }) as { version: number };
+    const out = serialize({ cards: [], panes: [] }) as { version: number };
     expect(out.version).toBe(3);
   });
 
@@ -163,7 +163,7 @@ describe("serialize and deserialize (v3)", () => {
       title: "T",
       closable: true,
     };
-    const win: TugWindowState = {
+    const pane: TugPaneState = {
       id: "w1",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -174,8 +174,8 @@ describe("serialize and deserialize (v3)", () => {
     };
     const state: DeckState = {
       cards: [card],
-      windows: [win],
-      activeWindowId: "w1",
+      panes: [pane],
+      activePaneId: "w1",
     };
     const first = serialize(state);
     const restored = deserialize(JSON.stringify(first), 1920, 1080);
@@ -186,7 +186,7 @@ describe("serialize and deserialize (v3)", () => {
   test("deserialize with corrupt JSON falls back to buildDefaultLayout", () => {
     const result = deserialize("not-valid-json{{{", 1200, 800);
     expect(result.cards.length).toBe(0);
-    expect(result.windows.length).toBe(0);
+    expect(result.panes.length).toBe(0);
   });
 });
 
@@ -256,14 +256,14 @@ describe("v1 → two-table migration", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v1Blob), 1920, 1080);
-    expect(restored.windows.length).toBe(1);
+    expect(restored.panes.length).toBe(1);
     expect(restored.cards.length).toBe(1);
     // Stack id preserved from legacy card id.
-    expect(restored.windows[0].id).toBe("legacy-card-1");
+    expect(restored.panes[0].id).toBe("legacy-card-1");
     // Card id preserved from legacy tab id.
     expect(restored.cards[0].id).toBe("legacy-tab-1");
-    expect(restored.windows[0].cardIds).toEqual(["legacy-tab-1"]);
-    expect(restored.windows[0].activeCardId).toBe("legacy-tab-1");
+    expect(restored.panes[0].cardIds).toEqual(["legacy-tab-1"]);
+    expect(restored.panes[0].activeCardId).toBe("legacy-tab-1");
   });
 
   test("legacy multi-tab card migrates to a multi-card stack preserving order", () => {
@@ -286,10 +286,10 @@ describe("v1 → two-table migration", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v1Blob), 1920, 1080);
-    expect(restored.windows.length).toBe(1);
+    expect(restored.panes.length).toBe(1);
     expect(restored.cards.length).toBe(3);
-    expect(restored.windows[0].cardIds).toEqual(["t1", "t2", "t3"]);
-    expect(restored.windows[0].activeCardId).toBe("t2");
+    expect(restored.panes[0].cardIds).toEqual(["t1", "t2", "t3"]);
+    expect(restored.panes[0].activeCardId).toBe("t2");
     expect(restored.cards.find((c) => c.id === "t3")?.closable).toBe(false);
   });
 
@@ -313,7 +313,7 @@ describe("v1 → two-table migration", () => {
       focusedCardId: "T1b",
     };
     const loaded = deserialize(JSON.stringify(v1), 1920, 1080);
-    expect(loaded.windows.length).toBe(1);
+    expect(loaded.panes.length).toBe(1);
     // `focusedCardId` is persisted separately via putFocusedCardId — it
     // does not round-trip through the layout blob.
     expect((loaded as { focusedCardId?: string }).focusedCardId).toBeUndefined();
@@ -338,17 +338,17 @@ describe("v1 → two-table migration", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v1), 1920, 1080);
-    expect(restored.windows.length).toBe(1);
+    expect(restored.panes.length).toBe(1);
     expect(restored.cards[0].id).toBe("nv-tab");
   });
 });
 
 // ---- CardStateBag + focusedCardId / CollapsedState ----
 
-describe("TugWindowState collapsed field", () => {
+describe("TugPaneState collapsed field", () => {
   test("serialize -> deserialize round-trip preserves collapsed:true", () => {
     const card: CardState = { id: "c", componentId: "hello", title: "H", closable: true };
-    const stack: TugWindowState = {
+    const stack: TugPaneState = {
       id: "s",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -358,9 +358,9 @@ describe("TugWindowState collapsed field", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const json = JSON.stringify(serialize({ cards: [card], windows: [stack] }));
+    const json = JSON.stringify(serialize({ cards: [card], panes: [stack] }));
     const restored = deserialize(json, 1920, 1080);
-    expect(restored.windows[0].collapsed).toBe(true);
+    expect(restored.panes[0].collapsed).toBe(true);
   });
 });
 
@@ -378,7 +378,7 @@ describe("CardStateBag type", () => {
 
 describe("DeckState focusedCardId persistence", () => {
   test("serialize does not emit focusedCardId in the layout blob", () => {
-    const state: DeckState = { cards: [], windows: [] };
+    const state: DeckState = { cards: [], panes: [] };
     const blob = serialize(state) as Record<string, unknown>;
     expect("focusedCardId" in blob).toBe(false);
   });
@@ -427,7 +427,7 @@ describe("deserialize edge cases", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows[0].activeCardId).toBe("a");
+    expect(restored.panes[0].activeCardId).toBe("a");
   });
 
   test("falls back activeCardId when it references a non-existent card", () => {
@@ -448,7 +448,7 @@ describe("deserialize edge cases", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows[0].activeCardId).toBe("a");
+    expect(restored.panes[0].activeCardId).toBe("a");
   });
 
   test("round-trip with two multi-card stacks preserves both", () => {
@@ -459,7 +459,7 @@ describe("deserialize edge cases", () => {
       { id: "b2", componentId: "hello", title: "B2", closable: false },
       { id: "b3", componentId: "hello", title: "B3", closable: true },
     ];
-    const windows: TugWindowState[] = [
+    const paneList: TugPaneState[] = [
       {
         id: "sa",
         position: { x: 10, y: 20 },
@@ -479,11 +479,11 @@ describe("deserialize edge cases", () => {
         acceptsFamilies: ["standard"],
       },
     ];
-    const json = JSON.stringify(serialize({ cards, windows }));
+    const json = JSON.stringify(serialize({ cards, panes: paneList }));
     const restored = deserialize(json, 1920, 1080);
-    expect(restored.windows.length).toBe(2);
-    expect(restored.windows[0].activeCardId).toBe("a2");
-    expect(restored.windows[1].activeCardId).toBe("b3");
+    expect(restored.panes.length).toBe(2);
+    expect(restored.panes[0].activeCardId).toBe("a2");
+    expect(restored.panes[1].activeCardId).toBe("b3");
     expect(restored.cards.find((c) => c.id === "b2")?.closable).toBe(false);
   });
 
@@ -491,7 +491,7 @@ describe("deserialize edge cases", () => {
     const json = JSON.stringify({ version: 3, root: {}, floating: [] });
     const result = deserialize(json, 1200, 800);
     expect(result.cards.length).toBe(0);
-    expect(result.windows.length).toBe(0);
+    expect(result.panes.length).toBe(0);
   });
 
   test("deserialize clamps stack positions with Finder-style rules", () => {
@@ -509,9 +509,9 @@ describe("deserialize edge cases", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows.length).toBe(1);
-    expect(restored.windows[0].position.x).toBe(1920 - 100);
-    expect(restored.windows[0].position.y).toBe(1080 - 36);
+    expect(restored.panes.length).toBe(1);
+    expect(restored.panes[0].position.x).toBe(1920 - 100);
+    expect(restored.panes[0].position.y).toBe(1080 - 36);
   });
 
   test("deserialize enforces 100px minimum sizes", () => {
@@ -529,8 +529,8 @@ describe("deserialize edge cases", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows[0].size.width).toBe(100);
-    expect(restored.windows[0].size.height).toBe(100);
+    expect(restored.panes[0].size.width).toBe(100);
+    expect(restored.panes[0].size.height).toBe(100);
   });
 });
 
@@ -551,7 +551,7 @@ describe("collapsed field serialization", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows[0].collapsed).toBe(true);
+    expect(restored.panes[0].collapsed).toBe(true);
   });
 
   test("deserialize of v2 JSON without collapsed produces collapsed === undefined", () => {
@@ -569,12 +569,12 @@ describe("collapsed field serialization", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows[0].collapsed).toBeUndefined();
+    expect(restored.panes[0].collapsed).toBeUndefined();
   });
 
   test("serialize of DeckState with collapsed:true stack includes collapsed field", () => {
     const card: CardState = { id: "c", componentId: "hello", title: "H", closable: true };
-    const stack: TugWindowState = {
+    const stack: TugPaneState = {
       id: "s",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -584,7 +584,7 @@ describe("collapsed field serialization", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const serialized = serialize({ cards: [card], windows: [stack] }) as {
+    const serialized = serialize({ cards: [card], panes: [stack] }) as {
       windows: Array<{ collapsed?: boolean }>;
     };
     expect(serialized.windows[0].collapsed).toBe(true);
@@ -629,8 +629,8 @@ describe("Two-table invariants via the parser", () => {
       ],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.windows.length).toBe(1);
-    expect(restored.windows[0].id).toBe("s1");
+    expect(restored.panes.length).toBe(1);
+    expect(restored.panes[0].id).toBe("s1");
   });
 
   test("orphan cards (not referenced by any stack) are dropped during deserialize", () => {
@@ -670,7 +670,7 @@ describe("validateDeckState", () => {
     id: string,
     cardIds: string[],
     activeCardId: string,
-  ): TugWindowState {
+  ): TugPaneState {
     return {
       id,
       position: { x: 0, y: 0 },
@@ -683,63 +683,63 @@ describe("validateDeckState", () => {
   }
 
   test("accepts the empty deck", () => {
-    expect(() => validateDeckState({ cards: [], windows: [] })).not.toThrow();
+    expect(() => validateDeckState({ cards: [], panes: [] })).not.toThrow();
   });
 
-  test("accepts a well-formed single-card, single-window deck", () => {
+  test("accepts a well-formed single-card, single-pane deck", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
-      windows: [makeStack("s1", ["c1"], "c1")],
+      panes: [makeStack("s1", ["c1"], "c1")],
     };
     expect(() => validateDeckState(state)).not.toThrow();
   });
 
-  test("accepts a well-formed multi-card window with activeWindowId set", () => {
+  test("accepts a well-formed multi-card pane with activePaneId set", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2"), makeCard("c3")],
-      windows: [
+      panes: [
         makeStack("s1", ["c1", "c2"], "c2"),
         makeStack("s2", ["c3"], "c3"),
       ],
-      activeWindowId: "s2",
+      activePaneId: "s2",
     };
     expect(() => validateDeckState(state)).not.toThrow();
   });
 
-  test("rejects a window referencing a missing card id (invariant 1)", () => {
+  test("rejects a pane referencing a missing card id (invariant 1)", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
-      windows: [makeStack("s1", ["c1", "ghost"], "c1")],
+      panes: [makeStack("s1", ["c1", "ghost"], "c1")],
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/missing card id "ghost"/);
   });
 
-  test("rejects a card appearing in two windows (invariant 2: no duplicates)", () => {
+  test("rejects a card appearing in two panes (invariant 2: no duplicates)", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
-      windows: [
+      panes: [
         makeStack("s1", ["c1", "c2"], "c1"),
         makeStack("s2", ["c2"], "c2"),
       ],
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
-    expect(() => validateDeckState(state)).toThrow(/appears in both window/);
+    expect(() => validateDeckState(state)).toThrow(/appears in both pane/);
   });
 
   test("rejects an orphan card (invariant 2: every card has a host)", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("orphan")],
-      windows: [makeStack("s1", ["c1"], "c1")],
+      panes: [makeStack("s1", ["c1"], "c1")],
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/"orphan" is orphaned/);
   });
 
-  test("rejects an empty window (invariant 3)", () => {
+  test("rejects an empty pane (invariant 3)", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
-      windows: [
+      panes: [
         makeStack("s1", ["c1"], "c1"),
         makeStack("s-empty", [], "x"),
       ],
@@ -751,7 +751,7 @@ describe("validateDeckState", () => {
   test("rejects activeCardId that is not in cardIds (invariant 4)", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
-      windows: [makeStack("s1", ["c1", "c2"], "ghost")],
+      panes: [makeStack("s1", ["c1", "c2"], "ghost")],
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
@@ -759,34 +759,34 @@ describe("validateDeckState", () => {
     );
   });
 
-  test("rejects activeWindowId that references no real window (invariant 5)", () => {
+  test("rejects activePaneId that references no real pane (invariant 5)", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
-      windows: [makeStack("s1", ["c1"], "c1")],
-      activeWindowId: "no-such-stack",
+      panes: [makeStack("s1", ["c1"], "c1")],
+      activePaneId: "no-such-stack",
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
-      /activeWindowId "no-such-stack" does not reference a real window/,
+      /activePaneId "no-such-stack" does not reference a real pane/,
     );
   });
 
   test("rejects duplicate card ids in deckState.cards", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c1", "terminal")],
-      windows: [makeStack("s1", ["c1"], "c1")],
+      panes: [makeStack("s1", ["c1"], "c1")],
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate card id "c1"/);
   });
 
-  test("rejects duplicate window ids in deckState.windows", () => {
+  test("rejects duplicate pane ids in deckState.panes", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
-      windows: [
+      panes: [
         makeStack("s1", ["c1"], "c1"),
         makeStack("s1", ["c2"], "c2"),
       ],
     };
-    expect(() => validateDeckState(state)).toThrow(/duplicate window id "s1"/);
+    expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
   });
 });

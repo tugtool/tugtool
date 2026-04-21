@@ -53,7 +53,7 @@ export interface IDeckManagerStore {
   handleWindowClosed: (windowId: string) => void;
 
   /**
-   * Promote a card's host window to the top of the `windows` array (highest
+   * Promote a card's host pane to the top of the `panes` array (highest
    * z-index) and persist the card id for reload restoration. Does NOT
    * fire lifecycle events — pair with `activateCard` when handling a
    * user gesture that should also drive the responder chain.
@@ -73,8 +73,8 @@ export interface IDeckManagerStore {
   activateCard: (cardId: string) => void;
 
   /**
-   * Read the composite first-responder bit: the active window's
-   * active card id, or `null` when no window is active. At any
+   * Read the composite first-responder bit: the active pane's
+   * active card id, or `null` when no pane is active. At any
    * moment, exactly zero or one card is the first responder.
    */
   getFirstResponderCardId: () => string | null;
@@ -234,7 +234,7 @@ export interface IDeckManagerStore {
 
   /**
    * Toggle the collapsed state of a window. When collapsing, sets
-   * `collapsed: true`; `TugWindow` renders the window at
+   * `collapsed: true`; `TugWindow` renders the pane at
    * CARD_TITLE_BAR_HEIGHT. When expanding, restores the full height.
    * Notifies subscribers and schedules a save so collapsed state is
    * persisted. (Renamed from `toggleCardCollapse` — position/size and

@@ -1,13 +1,15 @@
 /**
  * Serialization, deserialization, and default layout for DeckState.
  *
- * **Current wire format:** `version: 3` with
- * `{ version: 3, cards, windows, activeWindowId? }`. `focusedCardId` is
- * persisted separately via `putFocusedCardId` and is not part of the layout
- * blob.
+ * **Current wire format:** `version: 3` with on-disk keys
+ * `{ version: 3, cards, windows, activeWindowId? }`. In-memory {@link DeckState}
+ * uses `panes` / `activePaneId`; {@link serialize} maps those fields to the
+ * historical v3 wire names. `focusedCardId` is persisted separately via
+ * `putFocusedCardId` and is not part of the layout blob.
  *
  * **Load path:**
- * - `version === 3` — parsed by {@link parseV3} (field names match `DeckState`).
+ * - `version === 3` — parsed by {@link parseV3} (reads `windows` / `activeWindowId`
+ *   from JSON, emits `DeckState` with `panes` / `activePaneId`).
  * - `version === 2` — legacy two-table blob (`stacks`, `activeStackId`); migrated
  *   in place via {@link migrateV2ToV3} then parsed like v3.
  * - Missing `version` or other legacy shapes — if `cards` is an array, the
@@ -23,7 +25,7 @@
 import {
   type DeckState,
   type CardState,
-  type TugWindowState,
+  type TugPaneState,
 } from "./layout-tree";
 
 // ---- Constants ----
@@ -47,9 +49,9 @@ export function serialize(deckState: DeckState): object {
   return {
     version: 3,
     cards: deckState.cards,
-    windows: deckState.windows,
-    ...(deckState.activeWindowId !== undefined
-      ? { activeWindowId: deckState.activeWindowId }
+    windows: deckState.panes,
+    ...(deckState.activePaneId !== undefined
+      ? { activeWindowId: deckState.activePaneId }
       : {}),
   };
 }
@@ -102,6 +104,7 @@ export function deserialize(
 /**
  * Parse a `version: 3` layout blob into {@link DeckState}.
  * Ignores unknown top-level keys (including legacy `focusedCardId`).
+ * On-disk keys remain `windows` / `activeWindowId` until the v4 wire-format migration.
  */
 function parseV3(
   raw: Record<string, unknown>,
@@ -141,7 +144,7 @@ function parseV3(
     cardIdSet.add(id);
   }
 
-  const windows: TugWindowState[] = [];
+  const panes: TugPaneState[] = [];
   for (const w of rawWindows) {
     if (!w || typeof w !== "object") continue;
     const win = w as Record<string, unknown>;
@@ -191,7 +194,7 @@ function parseV3(
     const collapsed =
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
-    windows.push({
+    panes.push({
       id,
       position: { x, y },
       size: { width, height },
@@ -204,22 +207,22 @@ function parseV3(
   }
 
   const referencedCardIds = new Set<string>();
-  for (const win of windows) {
-    for (const cid of win.cardIds) referencedCardIds.add(cid);
+  for (const pane of panes) {
+    for (const cid of pane.cardIds) referencedCardIds.add(cid);
   }
   const filteredCards = cards.filter((c) => referencedCardIds.has(c.id));
 
   const rawActiveWindowId = raw["activeWindowId"];
-  const activeWindowId =
+  const activePaneId =
     typeof rawActiveWindowId === "string" &&
-    windows.some((win) => win.id === rawActiveWindowId)
+    panes.some((pane) => pane.id === rawActiveWindowId)
       ? rawActiveWindowId
       : undefined;
 
   return {
     cards: filteredCards,
-    windows,
-    ...(activeWindowId !== undefined ? { activeWindowId } : {}),
+    panes,
+    ...(activePaneId !== undefined ? { activePaneId } : {}),
   };
 }
 
@@ -272,7 +275,7 @@ function migrateV1ToDeckState(
   }
 
   const cards: CardState[] = [];
-  const windows: TugWindowState[] = [];
+  const panes: TugPaneState[] = [];
 
   for (const c of rawCards) {
     if (!c || typeof c !== "object") continue;
@@ -336,7 +339,7 @@ function migrateV1ToDeckState(
     const collapsed =
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
-    windows.push({
+    panes.push({
       id: windowId,
       position: { x, y },
       size: { width, height },
@@ -348,7 +351,7 @@ function migrateV1ToDeckState(
     });
   }
 
-  return { cards, windows };
+  return { cards, panes };
 }
 
 // ---- Default Layout ----
@@ -361,5 +364,5 @@ function migrateV1ToDeckState(
  * correct default until Phase 9 registers real cards.
  */
 export function buildDefaultLayout(): DeckState {
-  return { cards: [], windows: [] };
+  return { cards: [], panes: [] };
 }

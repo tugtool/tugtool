@@ -317,7 +317,7 @@ export function initActionDispatch(
       console.warn("focus-window: missing or invalid window id (payload.windowId)", payload);
       return;
     }
-    const win = deckManager.getSnapshot().windows.find((s) => s.id === windowId);
+    const win = deckManager.getSnapshot().panes.find((s) => s.id === windowId);
     if (!win) {
       console.warn(`focus-window: no window with id "${windowId}"`);
       return;

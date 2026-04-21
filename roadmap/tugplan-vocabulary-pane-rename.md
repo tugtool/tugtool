@@ -219,22 +219,22 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - Tests — mechanical find/replace.
 
 **Tasks:**
-- [ ] Rename type `TugWindowState` → `TugPaneState` in `layout-tree.ts`.
-- [ ] Rename `DeckState.windows` → `DeckState.panes`.
-- [ ] Rename `DeckState.activeWindowId` → `DeckState.activePaneId`.
-- [ ] Update local variable conventions: `win` / `pane`-ish local names normalize to `pane`.
-- [ ] Update `validateDeckState` error message strings to say "pane" / "panes."
-- [ ] Method names keep their existing form (`addCardToWindow`, etc.) — renamed in #step-3.
-- [ ] Internal variables named `windowId` keep their form for now — renamed in later steps as they propagate.
+- [x] Rename type `TugWindowState` → `TugPaneState` in `layout-tree.ts`.
+- [x] Rename `DeckState.windows` → `DeckState.panes`.
+- [x] Rename `DeckState.activeWindowId` → `DeckState.activePaneId`.
+- [x] Update local variable conventions: `win` / `pane`-ish local names normalize to `pane`.
+- [x] Update `validateDeckState` error message strings to say "pane" / "panes."
+- [x] Method names keep their existing form (`addCardToWindow`, etc.) — renamed in #step-3.
+- [x] Internal variables named `windowId` keep their form for now — renamed in later steps as they propagate.
 
 **Tests:**
-- [ ] Existing `layout-tree.test.ts` passes with the renamed types.
-- [ ] `deck-manager.test.ts` passes.
+- [x] Existing `layout-tree.test.ts` passes with the renamed types.
+- [x] `deck-manager.test.ts` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green at existing count.
-- [ ] `rg "TugWindowState" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green at existing count.
+- [x] `rg "TugWindowState" tugdeck/src` returns zero matches.
 
 ---
 

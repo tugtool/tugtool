@@ -4,18 +4,18 @@
  * DeckState holds two flat arrays:
  *   - `cards`: the content identities — id, componentId, title, closable,
  *     plus an optional persistence bag.
- *   - `windows`: the visual frames — position, size, ordered cardIds, the
- *     active card in the window, collapsed, acceptsFamilies, title.
+ *   - `panes`: the visual frames — position, size, ordered cardIds, the
+ *     active card in the pane, collapsed, acceptsFamilies, title.
  *
  * Invariants:
- *   1. Every `cardIds` entry in every window references a real card (by id) in
+ *   1. Every `cardIds` entry in every pane references a real card (by id) in
  *      `deckState.cards`.
- *   2. Each card appears in exactly one window's `cardIds` (no orphans, no
+ *   2. Each card appears in exactly one pane's `cardIds` (no orphans, no
  *      duplicates).
- *   3. No window has an empty `cardIds` array — closing the last card of a
- *      window closes the window.
- *   4. Each window's `activeCardId` is a member of that window's `cardIds`.
- *   5. `activeWindowId`, when set, references a real window in `windows`.
+ *   3. No pane has an empty `cardIds` array — closing the last card of a
+ *      pane closes the pane.
+ *   4. Each pane's `activeCardId` is a member of that pane's `cardIds`.
+ *   5. `activePaneId`, when set, references a real pane in `panes`.
  *
  * Spec S01: Canvas Data Model Types
  */
@@ -43,10 +43,10 @@ export interface CardStateBag {
 }
 
 /**
- * A card — the content identity that survives cross-window moves.
+ * A card — the content identity that survives cross-pane moves.
  *
  * A card knows its componentId, title, and whether it is closable. Position,
- * size, and active-ness are properties of the enclosing window, not the card.
+ * size, and active-ness are properties of the enclosing pane, not the card.
  * An optional `state` bag carries per-content persistence.
  */
 export interface CardState {
@@ -58,26 +58,26 @@ export interface CardState {
 }
 
 /**
- * A window — the visual frame containing one or more cards.
+ * A pane — the visual frame containing one or more cards.
  *
- * Windows own position, size, collapsed, acceptsFamilies, and the ordered list
- * of cardIds they contain. Exactly one of the cardIds is the window's
- * `activeCardId`, which is the card whose content is visible in the window.
+ * Panes own position, size, collapsed, acceptsFamilies, and the ordered list
+ * of cardIds they contain. Exactly one of the cardIds is the pane's
+ * `activeCardId`, which is the card whose content is visible in the pane.
  */
-export interface TugWindowState {
+export interface TugPaneState {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
-  /** Ordered list of card ids belonging to this window. */
+  /** Ordered list of card ids belonging to this pane. */
   cardIds: readonly string[];
-  /** The currently-active card in the window. Must be in `cardIds`. */
+  /** The currently-active card in the pane. Must be in `cardIds`. */
   activeCardId: string;
-  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic windows. */
+  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic panes. */
   title: string;
-  /** Families of card types this window can host in its type picker. Defaults to ["standard"]. */
+  /** Families of card types this pane can host in its type picker. Defaults to ["standard"]. */
   acceptsFamilies: readonly string[];
   /**
-   * Whether the window is collapsed (title bar only, content hidden).
+   * Whether the pane is collapsed (title bar only, content hidden).
    * Missing/undefined is treated as false. ([D04])
    */
   collapsed?: boolean;
@@ -87,9 +87,9 @@ export interface TugWindowState {
  * The deck's full state.
  *
  * - `cards` holds every card identity in the deck.
- * - `windows` holds every window frame; each window's `cardIds` partitions
+ * - `panes` holds every pane frame; each pane's `cardIds` partitions
  *   `cards`.
- * - `activeWindowId` identifies the deck's currently-active window, if any.
+ * - `activePaneId` identifies the deck's currently-active pane, if any.
  *
  * Reload-focus restoration is handled out-of-band: `putFocusedCardId`
  * writes a single-field row to tugbank, and `DeckManager` reads it back
@@ -99,8 +99,8 @@ export interface TugWindowState {
  */
 export interface DeckState {
   cards: readonly CardState[];
-  windows: readonly TugWindowState[];
-  activeWindowId?: string;
+  panes: readonly TugPaneState[];
+  activePaneId?: string;
 }
 
 // ---- Invariant validation ----
@@ -122,12 +122,12 @@ export class DeckStateInvariantError extends Error {
  * {@link DeckStateInvariantError} on the first violation.
  *
  * Invariants checked:
- *   1. every `win.cardIds` entry references a real `state.cards[].id`;
- *   2. every card appears in exactly one window's `cardIds` (no orphans, no
+ *   1. every `pane.cardIds` entry references a real `state.cards[].id`;
+ *   2. every card appears in exactly one pane's `cardIds` (no orphans, no
  *      duplicates);
- *   3. no window has `cardIds.length === 0`;
- *   4. every `win.activeCardId` is a member of that window's `cardIds`;
- *   5. when `state.activeWindowId` is set, it references a real window.
+ *   3. no pane has `cardIds.length === 0`;
+ *   4. every `pane.activeCardId` is a member of that pane's `cardIds`;
+ *   5. when `state.activePaneId` is set, it references a real pane.
  *
  * Called unconditionally from `DeckManager.applyLayout` (before notify) and
  * from `DeckManager.notify` in dev/test builds only.
@@ -143,64 +143,64 @@ export function validateDeckState(state: DeckState): void {
     cardIds.add(card.id);
   }
 
-  const windowIds = new Set<string>();
-  const cardToWindow = new Map<string, string>();
-  for (const win of state.windows) {
-    if (windowIds.has(win.id)) {
+  const paneIds = new Set<string>();
+  const cardToPane = new Map<string, string>();
+  for (const pane of state.panes) {
+    if (paneIds.has(pane.id)) {
       throw new DeckStateInvariantError(
-        `duplicate window id "${win.id}" in deckState.windows`,
+        `duplicate pane id "${pane.id}" in deckState.panes`,
       );
     }
-    windowIds.add(win.id);
+    paneIds.add(pane.id);
 
     // Invariant 3
-    if (win.cardIds.length === 0) {
+    if (pane.cardIds.length === 0) {
       throw new DeckStateInvariantError(
-        `window "${win.id}" has empty cardIds (no empty windows permitted)`,
+        `pane "${pane.id}" has empty cardIds (no empty panes permitted)`,
       );
     }
 
-    for (const cid of win.cardIds) {
+    for (const cid of pane.cardIds) {
       // Invariant 1
       if (!cardIds.has(cid)) {
         throw new DeckStateInvariantError(
-          `window "${win.id}" references missing card id "${cid}"`,
+          `pane "${pane.id}" references missing card id "${cid}"`,
         );
       }
       // Invariant 2
-      const existingHost = cardToWindow.get(cid);
+      const existingHost = cardToPane.get(cid);
       if (existingHost !== undefined) {
         throw new DeckStateInvariantError(
-          `card "${cid}" appears in both window "${existingHost}" and "${win.id}"`,
+          `card "${cid}" appears in both pane "${existingHost}" and "${pane.id}"`,
         );
       }
-      cardToWindow.set(cid, win.id);
+      cardToPane.set(cid, pane.id);
     }
 
     // Invariant 4
-    if (!win.cardIds.includes(win.activeCardId)) {
+    if (!pane.cardIds.includes(pane.activeCardId)) {
       throw new DeckStateInvariantError(
-        `window "${win.id}" activeCardId "${win.activeCardId}" is not in cardIds`,
+        `pane "${pane.id}" activeCardId "${pane.activeCardId}" is not in cardIds`,
       );
     }
   }
 
-  // Invariant 2 (second half): every card has a host window.
+  // Invariant 2 (second half): every card has a host pane.
   for (const card of state.cards) {
-    if (!cardToWindow.has(card.id)) {
+    if (!cardToPane.has(card.id)) {
       throw new DeckStateInvariantError(
-        `card "${card.id}" is orphaned (no window references it)`,
+        `card "${card.id}" is orphaned (no pane references it)`,
       );
     }
   }
 
   // Invariant 5
   if (
-    state.activeWindowId !== undefined &&
-    !windowIds.has(state.activeWindowId)
+    state.activePaneId !== undefined &&
+    !paneIds.has(state.activePaneId)
   ) {
     throw new DeckStateInvariantError(
-      `activeWindowId "${state.activeWindowId}" does not reference a real window`,
+      `activePaneId "${state.activePaneId}" does not reference a real pane`,
     );
   }
 }

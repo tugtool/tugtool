@@ -38,7 +38,7 @@ import { GalleryObservableProps } from "@/components/tugways/cards/gallery-obser
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { TugWindow } from "@/components/chrome/tug-window";
 import { CardHost } from "@/components/chrome/card-host";
-import type { TugWindowState } from "@/layout-tree";
+import type { TugPaneState } from "@/layout-tree";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -72,7 +72,7 @@ function makeStore() {
 function renderObservableProps(cardId = "obs-int-card") {
   const manager = new ResponderChainManager();
   const stackId = `${cardId}-stack`;
-  const stackState: TugWindowState = {
+  const stackState: TugPaneState = {
     id: stackId,
     position: { x: 0, y: 0 },
     size: { width: 800, height: 600 },

@@ -27,7 +27,7 @@ import React, {
   useState,
 } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
-import type { CardState, TugWindowState } from "@/layout-tree";
+import type { CardState, TugPaneState } from "@/layout-tree";
 import type { CardSizePolicy, TugcardMeta } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
@@ -289,7 +289,7 @@ const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, hei
  */
 export interface TugWindowProps {
   /** Window position, size, id, and collapsed state from DeckState. */
-  stackState: TugWindowState;
+  stackState: TugPaneState;
   /** Default metadata for the window (from card registration). */
   meta: TugcardMeta;
   /**
