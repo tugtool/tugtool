@@ -316,7 +316,18 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
     noticeRef.current = pickerNoticeStore.consume(cardId);
   }
 
-  useLayoutEffect(() => {
+  // Present the sheet only when this card becomes first responder.
+  // An unbound tide card that lives in an inactive tab must wait —
+  // otherwise its sheet drops on top of the sibling card the user is
+  // actually looking at (reload symptom: restart with hello-world
+  // front and a sibling tide tab → tide's picker covers hello).
+  //
+  // `observeCardDidActivate` fires an initial-sync synchronously at
+  // subscribe time when the card is already the focused card — so a
+  // fresh `addCard("tide")` (tide IS the new FR) presents the sheet
+  // on mount without waiting for a macrotask drain.
+  const cardLifecycle = useCardLifecycle();
+  const presentSheet = useCallback(() => {
     if (shownRef.current) return;
     shownRef.current = true;
     void showSheet({
@@ -357,6 +368,11 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       },
     });
   }, [showSheet, cardId, manager, senderId]);
+
+  useLayoutEffect(() => {
+    if (cardLifecycle === null) return;
+    return cardLifecycle.observeCardDidActivate(cardId, () => presentSheet());
+  }, [cardLifecycle, cardId, presentSheet]);
 
   return (
     <div

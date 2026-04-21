@@ -94,6 +94,7 @@ import {
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugcardPortalContext } from "@/components/tugways/tug-card";
 import { FeedId } from "@/protocol";
+import { CardLifecycle, CardLifecycleContext } from "@/lib/card-lifecycle";
 
 const CARD_ID = "tide-4bc-test";
 
@@ -122,17 +123,33 @@ function renderTideCard(cardId: string) {
   cardEl.appendChild(cardBody);
   document.body.appendChild(cardEl);
 
+  // Under 11.6.1b the picker only presents on `cardDidActivate`. Build
+  // a minimal CardLifecycle whose store reports this card as the
+  // focused/first-responder, then fire the construction + activation
+  // notifications so `useCardDelegate`'s initial-sync delivers
+  // `cardDidActivate` to the picker and it shows its sheet.
+  const lifecycleStore = {
+    focusCard() {},
+    getFocusedCardId: () => cardId,
+    getFirstResponderCardId: () => cardId,
+  };
+  const lifecycle = new CardLifecycle(lifecycleStore);
+  lifecycle.notifyCardDidFinishConstruction(cardId);
+
   const rtl = render(
-    <ResponderChainProvider>
-      <TugcardPortalContext value={cardEl}>
-        <TideCardContent cardId={cardId} />
-      </TugcardPortalContext>
-    </ResponderChainProvider>,
+    <CardLifecycleContext.Provider value={lifecycle}>
+      <ResponderChainProvider>
+        <TugcardPortalContext value={cardEl}>
+          <TideCardContent cardId={cardId} />
+        </TugcardPortalContext>
+      </ResponderChainProvider>
+    </CardLifecycleContext.Provider>,
   );
 
   return {
     ...rtl,
     cardEl,
+    lifecycle,
     cleanupCard: () => {
       if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
     },
