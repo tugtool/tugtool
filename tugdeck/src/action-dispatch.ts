@@ -171,12 +171,22 @@ export function dispatchAction(payload: Record<string, unknown>): void {
 /**
  * Initialize action dispatch system.
  *
- * Registers a callback for Control frames and registers all built-in handlers.
+ * Registers a callback for Control frames and registers all built-in
+ * handlers. Returns a disposer that unsubscribes any lifecycle
+ * subscriptions installed here (currently the save-on-resign
+ * subscription on `AppLifecycle`); callers that never tear the wiring
+ * down can ignore the return value. Production does not call the
+ * disposer; tests that re-initialize the action-dispatch wiring
+ * should.
+ *
+ * The Control-frame `onFrame` callback is not reversible — `TugConnection.onFrame`
+ * has no dispose surface today — so it stays registered for the lifetime
+ * of the connection.
  */
 export function initActionDispatch(
   connection: TugConnection,
   deckManager: DeckManager
-): void {
+): () => void {
   // Register Control frame callback
   connection.onFrame(FeedId.CONTROL, (payload: Uint8Array) => {
     try {
@@ -478,14 +488,21 @@ export function initActionDispatch(
   // subscription. `getAppLifecycle()` is guaranteed non-null here
   // because `DeckManager` registers the lifecycle before
   // `initActionDispatch` is called.
+  const disposers: Array<() => void> = [];
   const appLifecycle = getAppLifecycle();
   if (appLifecycle !== null) {
-    appLifecycle.observeApplicationDidResignActive(() => {
+    const unsubscribe = appLifecycle.observeApplicationDidResignActive(() => {
       deckManager.saveAndFlush();
     });
+    disposers.push(unsubscribe);
   } else {
     console.warn(
       "initActionDispatch: AppLifecycle not registered; save-on-resign wire skipped",
     );
   }
+
+  return () => {
+    for (const dispose of disposers) dispose();
+    disposers.length = 0;
+  };
 }

@@ -482,6 +482,18 @@ export class CardLifecycle {
     return this.store.getFirstResponderCardId();
   }
 
+  /**
+   * Whether `cardId` is currently in the constructed-but-not-destroyed
+   * state. True between `notifyCardDidFinishConstruction(cardId)` and
+   * `notifyCardWillBeginDestruction(cardId)`, false otherwise.
+   *
+   * Used by the cascade (`lifecycle-cascade.ts`) to skip reactivation
+   * of a card that was destroyed while the app was backgrounded.
+   */
+  hasConstructed(cardId: string): boolean {
+    return this.constructedCards.has(cardId);
+  }
+
   // ---- Internals ----
 
   private subscribe(

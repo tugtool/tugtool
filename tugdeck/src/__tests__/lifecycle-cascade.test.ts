@@ -46,6 +46,14 @@ function makeLifecycles(initialActive: string | null = null) {
   const store = makeStore(initialActive);
   const cardLifecycle = new CardLifecycle(store);
   const appLifecycle = new AppLifecycle();
+  // Mirror the real invariant: an active card is always a constructed
+  // card. The 11.6.5 H8 skip-on-destroyed guard in `lifecycle-cascade`
+  // reads `cardLifecycle.hasConstructed(cardId)` before firing
+  // reactivation — tests that never flip this on would look like a
+  // "destroyed" card to the cascade.
+  if (initialActive !== null) {
+    cardLifecycle.notifyCardDidFinishConstruction(initialActive);
+  }
   return { cardLifecycle, appLifecycle, store };
 }
 
@@ -246,6 +254,34 @@ describe("lifecycle-cascade — dispose", () => {
 // Step 11.6.1b transition 9: cascade targets the composite first responder
 // ---------------------------------------------------------------------------
 
+describe("lifecycle-cascade — 11.6.5 H8/H-A9 skip-on-destroyed", () => {
+  it("T-LCC-DESTROYED: cascade skips reactivation when the deactivated card was destroyed", () => {
+    // Setup: card-A is constructed and active. App resigns → cascade
+    // deactivates A. A is then destroyed (willBeginDestruction removes
+    // it from `constructedCards`). App becomes active → cascade must
+    // skip reactivation instead of firing will/didActivate on a freed id.
+    const { cardLifecycle, appLifecycle } = makeLifecycles("card-A");
+    cardLifecycle.notifyCardDidFinishConstruction("card-A");
+    installLifecycleCascade(cardLifecycle, appLifecycle);
+    const log = recordCardEvents(cardLifecycle);
+    log.length = 0;
+
+    appLifecycle.notifyApplicationWillResignActive();
+    expect(log).toEqual([
+      "willDeactivate:card-A",
+      "didDeactivate:card-A",
+    ]);
+
+    // Card-A is destroyed while the app is backgrounded.
+    cardLifecycle.notifyCardWillBeginDestruction("card-A");
+    log.length = 0;
+
+    // App returns → cascade sees `!hasConstructed("card-A")` and skips.
+    appLifecycle.notifyApplicationDidBecomeActive();
+    expect(log).toEqual([]);
+  });
+});
+
 describe("lifecycle-cascade — 11.6.1b composite first responder", () => {
   it("T-11-6-1b-09: cascade fires on getFirstResponderCardId, not getFocusedCardId", () => {
     // Build a store where the z-order top (`getFocusedCardId`) and the
@@ -267,6 +303,9 @@ describe("lifecycle-cascade — 11.6.1b composite first responder", () => {
       },
     };
     const cardLifecycle = new CardLifecycle(store);
+    // Mark the FR as constructed so the 11.6.5 H8 skip-on-destroyed
+    // guard inside `reactivateIfNeeded` does not suppress reactivation.
+    cardLifecycle.notifyCardDidFinishConstruction(state.firstResponder);
     const appLifecycle = new AppLifecycle();
     installLifecycleCascade(cardLifecycle, appLifecycle);
     const log = recordCardEvents(cardLifecycle);

@@ -2466,3 +2466,43 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Step 11.6.5 Piece 1 — cascade subscription hygiene
+// ---------------------------------------------------------------------------
+
+describe("DeckManager ↔ lifecycle-cascade install/dispose (11.6.5 H7)", () => {
+  it("installs the cascade on construction and disposes it on destroy()", () => {
+    registerCard(makeRegistration("hello"));
+    manager.addCard("hello");
+
+    const log: string[] = [];
+    manager.cardLifecycle.observeCardWillDeactivate(null, (id) =>
+      log.push(`willDeact:${id}`),
+    );
+    manager.cardLifecycle.observeCardDidDeactivate(null, (id) =>
+      log.push(`didDeact:${id}`),
+    );
+    log.length = 0;
+
+    // App resigns → cascade fires on the live DeckManager.
+    manager.appLifecycle.notifyApplicationWillResignActive();
+    expect(log.length).toBeGreaterThan(0);
+
+    // Tear down the deck manager, then fire the same app event again —
+    // the cascade must be disposed, so no new lifecycle events fire.
+    manager.destroy();
+    const lenAfterDestroy = log.length;
+
+    // Fresh appLifecycle notification — dispatched through the still-reachable
+    // appLifecycle instance, but cascade's subscription has been removed.
+    manager.appLifecycle.notifyApplicationWillResignActive();
+    expect(log.length).toBe(lenAfterDestroy);
+
+    // Replace `manager` so afterEach cleanup doesn't call destroy() on a
+    // torn-down instance.
+    container.remove();
+    container = makeContainer();
+    manager = new DeckManager(container, connection);
+  });
+});
+

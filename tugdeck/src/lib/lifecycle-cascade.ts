@@ -83,12 +83,25 @@ export function installLifecycleCascade(
   const reactivateIfNeeded = (trigger: string): void => {
     const cardId = deactivatedByAppCardId;
     if (cardId === null) return;
-    console.log(
-      `[CardLifecycle] cascade from ${trigger} → cardWillActivate/cardDidActivate id=${cardId}`,
-    );
     // Clear the guard BEFORE firing, so observers that trigger
     // nested app events during the cascade don't see a stale flag.
     deactivatedByAppCardId = null;
+    // H8 / H-A9: the card may have been destroyed while the app was
+    // backgrounded. Firing activation on a destroyed id would deliver
+    // a phantom `cardWillActivate` / `cardDidActivate` to observers
+    // that have already torn down. Skip the reactivation silently —
+    // the app-foreground path does not need to pick a substitute; the
+    // store-driven activation path (user click, restoration) will
+    // reactivate whatever card is top-of-deck post-destruction.
+    if (!cardLifecycle.hasConstructed(cardId)) {
+      console.log(
+        `[CardLifecycle] cascade from ${trigger} → card ${cardId} destroyed between deactivate and reactivate; skipping reactivation`,
+      );
+      return;
+    }
+    console.log(
+      `[CardLifecycle] cascade from ${trigger} → cardWillActivate/cardDidActivate id=${cardId}`,
+    );
     cardLifecycle.notifyCardWillActivate(cardId);
     cardLifecycle.notifyCardDidActivate(cardId);
   };
