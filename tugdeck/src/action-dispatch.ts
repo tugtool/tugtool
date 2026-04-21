@@ -302,27 +302,27 @@ export function initActionDispatch(
     deckManager.arrangeCards(mode);
   });
 
-  // focus-window: Bring a window to front by activating its active card.
+  // focus-pane: Bring a pane to front by activating its active card.
   //
-  // Swift's View menu builds a window list from `pushCardListToHost` and
-  // emits `focus-window` with `payload.windowId` when the user picks an entry.
-  // Routes through `activateCard` on the window's `activeCardId`
+  // Swift's View menu builds a pane list from `pushCardListToHost` and
+  // emits `focus-pane` with `payload.paneId` when the user picks an entry.
+  // Routes through `activateCard` on the pane's `activeCardId`
   // so the menu selection fires the full will/didDeactivate +
   // will/didActivate transition and promotes the responder chain —
   // `focusCard` alone would only reorder z-order and skip the lifecycle
   // events.
-  registerAction("focus-window", (payload) => {
-    const paneId = payload.windowId;
+  registerAction("focus-pane", (payload) => {
+    const paneId = payload.paneId;
     if (typeof paneId !== "string") {
-      console.warn("focus-window: missing or invalid pane id (payload.windowId)", payload);
+      console.warn("focus-pane: missing or invalid pane id (payload.paneId)", payload);
       return;
     }
-    const win = deckManager.getSnapshot().panes.find((s) => s.id === paneId);
-    if (!win) {
-      console.warn(`focus-window: no pane with id "${paneId}"`);
+    const pane = deckManager.getSnapshot().panes.find((s) => s.id === paneId);
+    if (!pane) {
+      console.warn(`focus-pane: no pane with id "${paneId}"`);
       return;
     }
-    deckManager.activateCard(win.activeCardId);
+    deckManager.activateCard(pane.activeCardId);
   });
 
   // show-card: Add a card by componentId (Spec S08)

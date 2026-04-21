@@ -367,7 +367,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Card to Active Window", action: #selector(addCardToActiveWindow(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Card to Active Window", action: #selector(addCardToActivePane(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
         developerMenu.isHidden = !devModeEnabled
@@ -441,9 +441,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("arrange-cards", params: ["mode": "tile"])
     }
 
-    @objc private func focusWindowFromMenu(_ sender: NSMenuItem) {
-        guard let windowId = sender.representedObject as? String else { return }
-        sendControl("focus-window", params: ["windowId": windowId])
+    @objc private func focusPaneFromMenu(_ sender: NSMenuItem) {
+        guard let paneId = sender.representedObject as? String else { return }
+        sendControl("focus-pane", params: ["paneId": paneId])
     }
 
     @objc private func showComponentGallery(_ sender: Any?) {
@@ -466,7 +466,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("next-theme")
     }
 
-    @objc private func addCardToActiveWindow(_ sender: Any) {
+    @objc private func addCardToActivePane(_ sender: Any) {
         sendControl("add-card-to-active-pane")
     }
 
@@ -751,11 +751,11 @@ extension AppDelegate: NSMenuDelegate {
         if !cachedCardList.isEmpty {
             menu.addItem(NSMenuItem.separator())
             for entry in cachedCardList {
-                guard let windowId = entry["id"] as? String,
+                guard let paneId = entry["id"] as? String,
                       let title = entry["title"] as? String else { continue }
                 let focused = entry["focused"] as? Bool ?? false
-                let item = NSMenuItem(title: title, action: #selector(focusWindowFromMenu(_:)), keyEquivalent: "")
-                item.representedObject = windowId
+                let item = NSMenuItem(title: title, action: #selector(focusPaneFromMenu(_:)), keyEquivalent: "")
+                item.representedObject = paneId
                 item.state = focused ? .on : .off
                 menu.addItem(item)
             }

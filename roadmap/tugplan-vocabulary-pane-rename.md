@@ -190,7 +190,7 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 
 - **Risk:** Swift sends `focus-window` with `windowId` after TS has renamed to `focus-pane` with `paneId`, or vice versa. Handler warns, user sees a silent no-op on View-menu activation.
 - **Mitigation:** Rename both sides atomically in #step-10. Manual smoke: launch Tug.app, pick a pane from the View menu, verify activation.
-- **Residual risk:** Low; both sides in this repo.
+- **Residual risk:** Zero after #step-10 checkpoint passes (wire + payload key match on both sides).
 
 **Risk R04: Drag coordinator selector drift** {#r04-selector-drift}
 
@@ -571,17 +571,17 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - `tugapp/Sources/AppDelegate.swift` — `sendControl("focus-window", ["windowId": id])` → `sendControl("focus-pane", ["paneId": id])`. Rename `focusWindowFromMenu` → `focusPaneFromMenu`. Rename `addCardToActiveWindow` → `addCardToActivePane`. Any View-menu binding follows.
 
 **Tasks:**
-- [ ] TS handler renamed; payload read updated.
-- [ ] Swift send-site renamed; payload key updated.
-- [ ] Swift method names renamed; Selector strings for menu targets updated.
-- [ ] If the Swift-side cached "card list" payload carries a `focused` bool keyed by pane id, no change to the JSON key (it stays `id` or whatever it currently is); confirm by reading the current code.
+- [x] TS handler renamed; payload read updated.
+- [x] Swift send-site renamed; payload key updated.
+- [x] Swift method names renamed; Selector strings for menu targets updated.
+- [x] If the Swift-side cached "card list" payload carries a `focused` bool keyed by pane id, no change to the JSON key (it stays `id` or whatever it currently is); confirm by reading the current code. (`pushCardListToHost` / `DeckManager` still emit `{ id, title, focused, cardCount }` per pane.)
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] Tug.app builds.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] Tug.app builds.
 - [ ] Manual smoke: launch Tug.app, open View menu, pick a pane → target pane activates, tide prompt regains focus.
-- [ ] `rg "focus-window|focusWindowFromMenu|addCardToActiveWindow" tugdeck/src tugapp/Sources` returns zero matches.
+- [x] `rg "focus-window|focusWindowFromMenu|addCardToActiveWindow" tugdeck/src tugapp/Sources` returns zero matches.
 
 ---
 

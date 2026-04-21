@@ -444,7 +444,7 @@ describe("matchKeybinding", () => {
   // Each case below asserts that the binding resolves to the correct
   // typed action. The action handlers themselves are tested in the
   // component files (tug-pane for close / previousTab / nextTab /
-  // find, deck-canvas for addCardToActiveWindow / showSettings,
+  // find, deck-canvas for addCardToActivePane / showSettings,
   // tug-prompt-input + use-text-input-responder for undo / redo,
   // the four floating surfaces for cancelDialog). This block is
   // narrowly scoped to the map lookup so a misspelled modifier or
