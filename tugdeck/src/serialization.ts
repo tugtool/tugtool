@@ -21,7 +21,7 @@
  *   {@link buildDefaultLayout}.
  *
  * Legacy card ids become pane ids; legacy tab ids become card ids — identity
- * is preserved so tugbank's `tabstate/{id}` rows remain addressable.
+ * is preserved so tugbank per-card state remains keyed by the same id strings.
  */
 
 import {
@@ -294,7 +294,7 @@ function migrateV2ToV4(
  * becomes a card (same id). Pane `cardIds` = ordered legacy tab ids;
  * `activeCardId` = legacy `activeTabId` (falls back to first tab id).
  * `focusedCardId` in the legacy blob is already the card identity (= former
- * tabId) and carries across unchanged.
+ * single-table tab identity) and carries across unchanged.
  */
 function migrateV1ToDeckState(
   raw: Record<string, unknown>,

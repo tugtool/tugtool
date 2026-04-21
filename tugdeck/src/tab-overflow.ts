@@ -55,7 +55,7 @@ export const OVERFLOW_BUTTON_WIDTH = 40;
  * or to `fullWidth` when `hasIcon` is false (iconless tabs cannot collapse).
  */
 export interface TabMeasurement {
-  tabId: string;
+  id: string;
   /** Width with icon + label + close button (measured via getBoundingClientRect). */
   fullWidth: number;
   /**
@@ -136,7 +136,7 @@ export function computeOverflow(
   if (totalFull <= availableBase) {
     return {
       stage: "none",
-      visibleFullIds: tabs.map((t) => t.tabId),
+      visibleFullIds: tabs.map((t) => t.id),
       collapsedIds: [],
       overflowIds: [],
     };
@@ -146,11 +146,11 @@ export function computeOverflow(
   // Start with all tabs at full width. Collapse inactive icon tabs one at a
   // time from rightmost inward until the total fits. Only the minimum number
   // of tabs are collapsed; iconless tabs always remain at full width.
-  const activeTab = tabs.find((t) => t.tabId === activeTabId);
+  const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeFullWidth = activeTab?.fullWidth ?? 0;
 
   // Collect inactive tabs in left-to-right order.
-  const inactiveTabs = tabs.filter((t) => t.tabId !== activeTabId);
+  const inactiveTabs = tabs.filter((t) => t.id !== activeTabId);
 
   // Collect inactive icon tabs in right-to-left order (rightmost first for collapse).
   const inactiveIconTabsRTL = inactiveTabs.filter((t) => t.hasIcon).reverse();
@@ -163,19 +163,19 @@ export function computeOverflow(
     if (stage1Running <= availableBase) break;
     // Collapse this tab: replace fullWidth with iconOnlyWidth.
     stage1Running -= tab.fullWidth - tab.iconOnlyWidth;
-    stage1Collapsed.push(tab.tabId);
+    stage1Collapsed.push(tab.id);
   }
 
   if (stage1Running <= availableBase) {
     // Fits after minimal collapse. Build visibleFullIds (all tabs NOT collapsed).
     const collapsedSet = new Set(stage1Collapsed);
     const visibleFullIds = tabs
-      .filter((t) => !collapsedSet.has(t.tabId))
-      .map((t) => t.tabId);
+      .filter((t) => !collapsedSet.has(t.id))
+      .map((t) => t.id);
     // Restore left-to-right order for collapsedIds.
     const collapsedIds = inactiveTabs
-      .filter((t) => collapsedSet.has(t.tabId))
-      .map((t) => t.tabId);
+      .filter((t) => collapsedSet.has(t.id))
+      .map((t) => t.id);
     return {
       stage: "collapsed",
       visibleFullIds,
@@ -202,14 +202,14 @@ export function computeOverflow(
   while (currentTotal > availableOverflow && remainingInactive.length > 0) {
     // Pop the rightmost inactive tab.
     const removed = remainingInactive.pop()!;
-    overflowIds.unshift(removed.tabId); // maintain left-to-right order in overflow list
+    overflowIds.unshift(removed.id); // maintain left-to-right order in overflow list
     currentTotal -= removed.hasIcon ? removed.iconOnlyWidth : removed.fullWidth;
   }
 
   // Edge case: even the active tab alone exceeds the container.
   // Keep only the active tab visible; all others go to overflow.
   if (activeFullWidth > availableOverflow && remainingInactive.length === 0) {
-    const allOverflow = inactiveTabs.map((t) => t.tabId);
+    const allOverflow = inactiveTabs.map((t) => t.id);
     return {
       stage: "overflow",
       visibleFullIds: [activeTabId],
@@ -223,9 +223,9 @@ export function computeOverflow(
   const finalFullInactive: string[] = [];
   for (const tab of remainingInactive) {
     if (tab.hasIcon) {
-      finalCollapsed.push(tab.tabId);
+      finalCollapsed.push(tab.id);
     } else {
-      finalFullInactive.push(tab.tabId);
+      finalFullInactive.push(tab.id);
     }
   }
 

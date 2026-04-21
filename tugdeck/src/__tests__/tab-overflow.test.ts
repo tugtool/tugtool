@@ -40,9 +40,9 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Build a TabMeasurement with an icon. Full width defaults to 80px. */
-function tabWithIcon(tabId: string, fullWidth = 80): TabMeasurement {
+function tabWithIcon(id: string, fullWidth = 80): TabMeasurement {
   return {
-    tabId,
+    id,
     fullWidth,
     iconOnlyWidth: ICON_ONLY_TAB_WIDTH,
     hasIcon: true,
@@ -50,9 +50,9 @@ function tabWithIcon(tabId: string, fullWidth = 80): TabMeasurement {
 }
 
 /** Build a TabMeasurement without an icon. Full width defaults to 80px. */
-function tabWithoutIcon(tabId: string, fullWidth = 80): TabMeasurement {
+function tabWithoutIcon(id: string, fullWidth = 80): TabMeasurement {
   return {
-    tabId,
+    id,
     fullWidth,
     iconOnlyWidth: fullWidth, // iconless tabs cannot collapse
     hasIcon: false,

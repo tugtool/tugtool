@@ -245,15 +245,15 @@ export function migrateTabstateToCardstate(client: TugbankClient): Promise<Migra
 - Tests: `settings-api.test.ts` — describe block + fixture ids + URL assertions.
 
 **Tasks:**
-- [ ] Rename function + parameter + domain in `settings-api.ts`.
-- [ ] Update JSDoc.
-- [ ] Update `main.tsx` — `tabStates` → `cardStates`, `readTabStates` → `readCardStates`, and update the constructor argument in the `new DeckManager(...)` call (the parameter is `initialCardStates`, so the variable rename is the only change).
-- [ ] Update every test describe + URL + fixture.
+- [x] Rename function + parameter + domain in `settings-api.ts`.
+- [x] Update JSDoc.
+- [x] Update `main.tsx` — `tabStates` → `cardStates`, `readTabStates` → `readCardStates`, and update the constructor argument in the `new DeckManager(...)` call (the parameter is `initialCardStates`, so the variable rename is the only change).
+- [x] Update every test describe + URL + fixture.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "readTabStates" tugdeck/src` returns zero matches.
-- [ ] `rg "\btabId\b|\btabIds\b|tabState\b|tabStates\b" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "readTabStates" tugdeck/src` returns zero matches.
+- [x] `rg "\btabId\b|\btabIds\b|tabState\b|tabStates\b" tugdeck/src` returns zero matches.
 
 ---
 

@@ -6,8 +6,8 @@
  * - readDeckState returns null when not cached
  * - readDeckState returns the string value from cache
  * - putFocusedCardId sends correct URL and body format (mock fetch)
- * - readTabStates returns populated Map for known tab IDs
- * - readTabStates skips missing entries
+ * - readCardStates returns populated Map for known card IDs
+ * - readCardStates skips missing entries
  * - migrateTabstateToCardstate (legacy tabstate → cardstate)
  */
 
@@ -16,7 +16,7 @@ import {
   putCardState,
   readDeckState,
   putFocusedCardId,
-  readTabStates,
+  readCardStates,
   migrateTabstateToCardstate,
   putPromptHistory,
   getPromptHistory,
@@ -364,44 +364,44 @@ describe("readDeckState", () => {
 });
 
 // ---------------------------------------------------------------------------
-// readTabStates
+// readCardStates
 // ---------------------------------------------------------------------------
 
-describe("readTabStates", () => {
-  test("returns empty Map when tabIds array is empty", () => {
+describe("readCardStates", () => {
+  test("returns empty Map when cardIds array is empty", () => {
     const client = makeMockClient();
-    const result = readTabStates(client, []);
+    const result = readCardStates(client, []);
     expect(result.size).toBe(0);
   });
 
-  test("returns populated Map for tabs with stored state", () => {
+  test("returns populated Map for cards with stored state", () => {
     const bag1: CardStateBag = { scroll: { x: 0, y: 100 } };
     const bag2: CardStateBag = { scroll: { x: 20, y: 30 }, content: "hello" };
 
     const client = makeMockClient({
-      [LEGACY_TABSTATE_DOMAIN]: {
+      [CARDSTATE_DOMAIN]: {
         "card-1": { kind: "json", value: bag1 },
         "card-2": { kind: "json", value: bag2 },
       },
     });
 
-    const result = readTabStates(client, ["card-1", "card-2"]);
+    const result = readCardStates(client, ["card-1", "card-2"]);
     expect(result.size).toBe(2);
     expect(result.get("card-1")?.scroll?.y).toBe(100);
     expect(result.get("card-2")?.scroll?.x).toBe(20);
     expect(result.get("card-2")?.content).toBe("hello");
   });
 
-  test("skips missing entries — absent tabs are not in the returned Map", () => {
+  test("skips missing entries — absent cards are not in the returned Map", () => {
     const bag: CardStateBag = { scroll: { x: 5, y: 10 } };
 
     const client = makeMockClient({
-      [LEGACY_TABSTATE_DOMAIN]: {
+      [CARDSTATE_DOMAIN]: {
         "card-present": { kind: "json", value: bag },
       },
     });
 
-    const result = readTabStates(client, ["card-present", "card-missing"]);
+    const result = readCardStates(client, ["card-present", "card-missing"]);
     expect(result.size).toBe(1);
     expect(result.has("card-present")).toBe(true);
     expect(result.has("card-missing")).toBe(false);

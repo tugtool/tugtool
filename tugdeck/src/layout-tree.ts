@@ -29,10 +29,10 @@ import type { SavedSelection } from "./components/tugways/selection-guard";
  * state.
  *
  * Stored in DeckManager's in-memory cache (primary read source during a
- * session) and in tugbank under `dev.tugtool.deck.tabstate/{cardId}` (durable
- * backing store). The tugbank row prefix retains the historical `tabstate/`
- * name so existing persisted bags remain readable; `cardId` IS the former
- * `tabId` (identity was preserved when the two-table model landed).
+ * session) and in tugbank under `dev.tugtool.deck.cardstate/{cardId}` (durable
+ * backing store). Legacy `tabstate/{cardId}` rows are migrated at app launch.
+ * `cardId` is the content identity (the same string as the former single-table
+ * tab identity when the two-table model landed).
  *
  * Spec S01: CardStateBag type ([D01])
  */

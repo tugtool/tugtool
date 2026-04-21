@@ -12,7 +12,7 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
 import { restoreTideSessions } from "./lib/tide-session-restore";
-import { readLayout, readTheme, readTabStates, readDeckState } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState } from "./settings-api";
 import { getThemeSetter } from "./action-dispatch";
 import {
   sendCanvasColor,
@@ -72,7 +72,7 @@ if (!container) {
 //   1. Connect WebSocket (triggers tugcast to push DEFAULTS frame with all domains)
 //   2. Wait for TugbankClient.ready() + WASM init in parallel
 //   3. Read layout, theme, deck state from TugbankClient cache (synchronous)
-//   4. Deserialize layout, read tab states from cache (synchronous)
+//   4. Deserialize layout, read per-card state from cache (synchronous)
 //   5. Construct DeckManager with all data
 (async () => {
   // Connect first — this triggers the DEFAULTS frame push from tugcast.
@@ -121,30 +121,29 @@ if (!container) {
   registerGalleryCards();
 
   // Extract card IDs from the loaded layout and read per-card state bags
-  // from cache. Card ids are numerically equal to the former tab ids, so
-  // tugbank's `tabstate/{id}` rows remain addressable without a data-layer
-  // migration.
-  let tabStates = new Map<string, import("./layout-tree").CardStateBag>();
+  // from the tugbank cache (`dev.tugtool.deck.cardstate`). Launch-time
+  // migration rewrites any legacy `tabstate` rows (see `migrateTabstateToCardstate`).
+  let cardStates = new Map<string, import("./layout-tree").CardStateBag>();
   if (layout !== null) {
     try {
       const parsed = deserialize(JSON.stringify(layout), 0, 0);
       const cardIds = parsed.cards.map((c) => c.id);
       if (cardIds.length > 0) {
-        tabStates = readTabStates(tugbankClient, cardIds);
+        cardStates = readCardStates(tugbankClient, cardIds);
       }
     } catch (e) {
       console.warn("[main] failed to read per-card states, continuing without", e);
     }
   }
 
-  // Create deck manager with the pre-fetched layout, initial theme, tab states,
+  // Create deck manager with the pre-fetched layout, initial theme, card states,
   // and focused card ID.
   const deck = new DeckManager(
     container,
     connection,
     layout ?? undefined,
     initialTheme,
-    tabStates,
+    cardStates,
     focusedCardId ?? undefined
   );
 

@@ -201,11 +201,11 @@ function useTabOverflow(
       // Read full widths now that overflow attributes are cleared.
       const measurements: TabMeasurement[] = [];
       tabEls.forEach((el) => {
-        const tabId = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
+        const tabKey = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
         const fullWidth = el.getBoundingClientRect().width;
         const hasIcon = el.querySelector(".tug-tab-icon") !== null;
         measurements.push({
-          tabId,
+          id: tabKey,
           fullWidth,
           iconOnlyWidth: hasIcon ? ICON_ONLY_TAB_WIDTH : fullWidth,
           hasIcon,
@@ -245,10 +245,10 @@ function useTabOverflow(
         // Apply data-overflow attribute to each tab element (appearance-zone).
         const tabEls2 = barEl2.querySelectorAll<HTMLElement>(".tug-tab");
         tabEls2.forEach((el) => {
-          const tabId = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
-          if (result.overflowIds.includes(tabId)) {
+          const tabKey = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
+          if (result.overflowIds.includes(tabKey)) {
             el.setAttribute("data-overflow", "hidden");
-          } else if (result.collapsedIds.includes(tabId)) {
+          } else if (result.collapsedIds.includes(tabKey)) {
             el.setAttribute("data-overflow", "collapsed");
           } else {
             el.removeAttribute("data-overflow");

@@ -7,7 +7,7 @@
  * Domain/key mapping:
  *   Layout    → domain `dev.tugtool.deck.layout`,   key `layout`        (Value::Json)
  *   Theme     → domain `dev.tugtool.app`,            key `theme`         (Value::String)
- *   Card state → domain `dev.tugtool.deck.cardstate`, key `<cardId>`      (Value::Json) — `putCardState`; `readTabStates` still reads legacy `tabstate` until renamed to `readCardStates`
+ *   Card state → domain `dev.tugtool.deck.cardstate`, key `<cardId>`      (Value::Json) — `putCardState` / `readCardStates`
  *   Deck state→ domain `dev.tugtool.deck.state`,     key `focusedCardId` (Value::String)
  *
  * The tagged-value wire format is `{"kind":"json","value":{...}}` for JSON
@@ -161,18 +161,19 @@ export function readDeckState(client: TugbankClient): string | null {
 }
 
 /**
- * Read all tab state bags from the TugbankClient cache.
- * Returns a Map of tabId → CardStateBag for tabs that have stored state.
+ * Read per-card state bags from the TugbankClient cache for the given card ids.
+ * Returns a Map of cardId → CardStateBag for cards that have stored state under
+ * `dev.tugtool.deck.cardstate`.
  */
-export function readTabStates(client: TugbankClient, tabIds: string[]): Map<string, CardStateBag> {
+export function readCardStates(client: TugbankClient, cardIds: string[]): Map<string, CardStateBag> {
   const map = new Map<string, CardStateBag>();
-  const domain = client.readDomain(LEGACY_TABSTATE_DOMAIN);
+  const domain = client.readDomain(CARDSTATE_DOMAIN);
   if (!domain) return map;
 
-  for (const tabId of tabIds) {
-    const entry = domain[tabId] as TaggedValue | undefined;
+  for (const cardId of cardIds) {
+    const entry = domain[cardId] as TaggedValue | undefined;
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      map.set(tabId, entry.value as CardStateBag);
+      map.set(cardId, entry.value as CardStateBag);
     }
   }
   return map;

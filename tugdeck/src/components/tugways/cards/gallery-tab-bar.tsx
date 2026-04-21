@@ -59,17 +59,17 @@ export function TugTabBarDemo() {
   // wrapper setters that drive the local demo state and the
   // last-selected status line.
   const tabBarId = useId();
-  const handleTabSelect = (tabId: string) => {
-    setActiveTabId(tabId);
-    setLastSelected(tabId);
+  const handleTabSelect = (id: string) => {
+    setActiveTabId(id);
+    setLastSelected(id);
   };
 
-  const handleTabClose = (tabId: string) => {
+  const handleTabClose = (id: string) => {
     setTabs((prev) => {
-      const remaining = prev.filter((t) => t.id !== tabId);
+      const remaining = prev.filter((t) => t.id !== id);
       if (remaining.length === 0) return prev;
-      if (activeTabId === tabId) {
-        const closedIndex = prev.findIndex((t) => t.id === tabId);
+      if (activeTabId === id) {
+        const closedIndex = prev.findIndex((t) => t.id === id);
         const newIndex = closedIndex > 0 ? closedIndex - 1 : 0;
         setActiveTabId(remaining[newIndex].id);
       }
