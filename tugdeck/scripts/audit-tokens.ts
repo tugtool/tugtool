@@ -170,7 +170,7 @@ function cmdTokens(): void {
 // ---------------------------------------------------------------------------
 
 interface AliasMap {
-  /** Maps component alias (e.g., --tug-card-bg) → resolved --tug-* name */
+  /** Maps component alias (e.g., --tugx-pane-bg) → resolved --tug7|tugc|tug name */
   [alias: string]: string;
 }
 
@@ -194,8 +194,8 @@ interface CssPairing {
 /**
  * Parse body {} blocks in a CSS file to extract component alias → token mappings.
  * Handles both direct base refs and alias-to-alias chains:
- *   --tug-card-bg: var(--tug-surface-overlay);       (direct)
- *   --tug-alias: var(--tugx-pane-title-bar-bg-inactive);  (alias chain)
+ *   --tugx-pane-bg: var(--tug7-surface-global-primary-normal-overlay-rest);  (direct)
+ *   --tugx-pane-title-bar-bg-inactive: var(--tug7-surface-card-primary-normal-titlebar-inactive);  (alias chain)
  */
 function extractAliases(css: string): AliasMap {
   const aliases: AliasMap = {};
@@ -640,7 +640,7 @@ function cmdPairings(): void {
     );
     if (criticalGap) {
       console.log(
-        `\n⚠ CRITICAL GAP CONFIRMED: element-global-text-normal-default-rest on tab-bg-active (card title bar)`,
+        `\n⚠ CRITICAL GAP CONFIRMED: element-global-text-normal-default-rest on tab-bg-active (pane tab bar)`,
       );
     }
   }
@@ -1203,7 +1203,7 @@ function guessRole(
   // Control element tokens (interactive labels, icons, borders on controls)
   if (elementShortName.startsWith("element-control-")) return "control";
 
-  // Card title tokens
+  // Title typography (tug7 `element-card-title-*` slot — not pane-chrome `--tugx-pane-*`)
   if (elementShortName.startsWith("element-card-title-")) return "display";
 
   // Badge and tone tokens are informational

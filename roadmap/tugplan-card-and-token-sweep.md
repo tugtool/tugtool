@@ -503,12 +503,12 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - `tugdeck/scripts/audit-tokens.ts` — JSDoc example strings + any alias-chain examples.
 
 **Tasks:**
-- [ ] Grep the script for `--tug-card-` / `--tugx-card-` references. Update JSDoc examples; if the script has alias-chain logic that reads these names directly, update it to match.
-- [ ] `bun run audit:tokens lint` clean after the update.
+- [x] Grep the script for `--tug-card-` / `--tugx-card-` references. Update JSDoc examples; if the script has alias-chain logic that reads these names directly, update it to match (no hard-coded legacy names in logic — only doc examples + diagnostic copy).
+- [x] `bun run audit:tokens lint` clean after the update.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens lint` zero violations.
-- [ ] `rg "--tug-card-|--tugx-card-" tugdeck` returns zero matches (excluding `.tugcard*` class selectors, which are out of scope per [D03] — confirm the grep is tight enough to exclude those).
+- [x] `bun run audit:tokens lint` zero violations.
+- [x] `rg "--tug-card-|--tugx-card-" tugdeck` returns zero matches (pattern does not match `.tugcard*` class selectors per [D03]).
 
 ---
 
