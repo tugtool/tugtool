@@ -21,7 +21,7 @@ import { render, act, cleanup } from "@testing-library/react";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import * as registry from "@/components/chrome/card-content-registry";
 import { registerCard, _resetForTest } from "@/card-registry";
-import type { CardState, CardStackState, DeckState, CardStateBag } from "@/layout-tree";
+import type { CardState, TugWindowState, DeckState, CardStateBag } from "@/layout-tree";
 import { DeckManagerContext } from "@/deck-manager-context";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
@@ -70,12 +70,12 @@ class Store implements IDeckManagerStore {
 
   handleStackMoved = (): void => {};
   handleStackClosed = (stackId: string): void => {
-    const stack = this.state.stacks.find((s) => s.id === stackId);
+    const stack = this.state.windows.find((s) => s.id === stackId);
     if (!stack) return;
     const dropped = new Set(stack.cardIds);
     this.state = {
       ...this.state,
-      stacks: this.state.stacks.filter((s) => s.id !== stackId),
+      windows: this.state.windows.filter((s) => s.id !== stackId),
       cards: this.state.cards.filter((c) => !dropped.has(c.id)),
     };
     this.notify();
@@ -97,7 +97,7 @@ class Store implements IDeckManagerStore {
     this.state = {
       ...this.state,
       cards: [...this.state.cards, newCard],
-      stacks: this.state.stacks.map((s) =>
+      windows: this.state.windows.map((s) =>
         s.id === stackId
           ? { ...s, cardIds: [...s.cardIds, newCardId], activeCardId: newCardId }
           : s,
@@ -112,7 +112,7 @@ class Store implements IDeckManagerStore {
   setActiveCardInStack = (stackId: string, cardId: string): void => {
     this.state = {
       ...this.state,
-      stacks: this.state.stacks.map((s) =>
+      windows: this.state.windows.map((s) =>
         s.id === stackId ? { ...s, activeCardId: cardId } : s,
       ),
     };
@@ -122,11 +122,11 @@ class Store implements IDeckManagerStore {
   reorderCardInStack = (): void => {};
 
   detachCard = (stackId: string, cardId: string, position: { x: number; y: number }): string | null => {
-    const stack = this.state.stacks.find((s) => s.id === stackId);
+    const stack = this.state.windows.find((s) => s.id === stackId);
     if (!stack || !stack.cardIds.includes(cardId)) return null;
     const newStackId = `stack-${Math.random().toString(36).slice(2, 8)}`;
     const remainingCardIds = stack.cardIds.filter((id) => id !== cardId);
-    const newStack: CardStackState = {
+    const newStack: TugWindowState = {
       id: newStackId,
       position,
       size: { width: 400, height: 300 },
@@ -135,15 +135,15 @@ class Store implements IDeckManagerStore {
       title: "",
       acceptsFamilies: stack.acceptsFamilies,
     };
-    const updatedSource: CardStackState = {
+    const updatedSource: TugWindowState = {
       ...stack,
       cardIds: remainingCardIds,
       activeCardId: remainingCardIds[0] ?? stack.activeCardId,
     };
     this.state = {
       ...this.state,
-      stacks: [
-        ...this.state.stacks.map((s) => (s.id === stackId ? updatedSource : s)),
+      windows: [
+        ...this.state.windows.map((s) => (s.id === stackId ? updatedSource : s)),
         newStack,
       ],
     };
@@ -152,25 +152,25 @@ class Store implements IDeckManagerStore {
   };
 
   moveCardToStack = (sourceStackId: string, cardId: string, targetStackId: string, insertAtIndex: number): void => {
-    const source = this.state.stacks.find((s) => s.id === sourceStackId);
-    const target = this.state.stacks.find((s) => s.id === targetStackId);
+    const source = this.state.windows.find((s) => s.id === sourceStackId);
+    const target = this.state.windows.find((s) => s.id === targetStackId);
     if (!source || !target || !source.cardIds.includes(cardId)) return;
     const newSourceCardIds = source.cardIds.filter((id) => id !== cardId);
     const newTargetCardIds = [...target.cardIds];
     newTargetCardIds.splice(insertAtIndex, 0, cardId);
-    const updatedSource: CardStackState = {
+    const updatedSource: TugWindowState = {
       ...source,
       cardIds: newSourceCardIds,
       activeCardId: newSourceCardIds[0] ?? source.activeCardId,
     };
-    const updatedTarget: CardStackState = {
+    const updatedTarget: TugWindowState = {
       ...target,
       cardIds: newTargetCardIds,
       activeCardId: cardId,
     };
     this.state = {
       ...this.state,
-      stacks: this.state.stacks
+      windows: this.state.windows
         .map((s) => {
           if (s.id === sourceStackId) return updatedSource;
           if (s.id === targetStackId) return updatedTarget;
@@ -220,7 +220,7 @@ function makeStack(
   cards: CardState[],
   activeIndex = 0,
   position = { x: 0, y: 0 },
-): CardStackState {
+): TugWindowState {
   return {
     id,
     position,
@@ -258,7 +258,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const cX: CardState = { id: "card-x", componentId: "probe-hello", title: "X", closable: true };
     const cY: CardState = { id: "card-y", componentId: "probe-other", title: "Y", closable: true };
     const stack = makeStack("stack-B", [cX, cY], 0);
-    const store = new Store({ cards: [cX, cY], stacks: [stack] });
+    const store = new Store({ cards: [cX, cY], windows: [stack] });
     renderDeck(store);
 
     // Two cards in the stack → two Probe mounts on initial render.
@@ -276,7 +276,7 @@ describe("Card content identity preservation (two-table model)", () => {
   it("addCardToStack mounts the new card's content without unmounting the existing card", () => {
     const cOrig: CardState = { id: "card-orig", componentId: "probe-hello", title: "Orig", closable: true };
     const stack = makeStack("stack-A", [cOrig]);
-    const store = new Store({ cards: [cOrig], stacks: [stack] });
+    const store = new Store({ cards: [cOrig], windows: [stack] });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(1);
@@ -294,7 +294,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const cStay: CardState = { id: "card-stay", componentId: "probe-hello", title: "Stay", closable: true };
     const cMove: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
     const stack = makeStack("stack-C", [cStay, cMove], 0);
-    const store = new Store({ cards: [cStay, cMove], stacks: [stack] });
+    const store = new Store({ cards: [cStay, cMove], windows: [stack] });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(2);
@@ -318,7 +318,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
     const stackSrc = makeStack("stack-src", [srcA, mv], 1);
     const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
-    const store = new Store({ cards: [srcA, mv, tgt], stacks: [stackSrc, stackTgt] });
+    const store = new Store({ cards: [srcA, mv, tgt], windows: [stackSrc, stackTgt] });
     renderDeck(store);
 
     // 3 total cards → 3 mounts.
@@ -340,7 +340,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
     const stackSrc = makeStack("stack-src", [srcA, mv], 1);
     const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
-    const store = new Store({ cards: [srcA, mv, tgt], stacks: [stackSrc, stackTgt] });
+    const store = new Store({ cards: [srcA, mv, tgt], windows: [stackSrc, stackTgt] });
     renderDeck(store);
 
     // Before the move, the moved card's DOM is inside the source stack's

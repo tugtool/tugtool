@@ -91,11 +91,11 @@ function makeRegistration(componentId: string, title = "Test Card"): CardRegistr
 
 type DeckStateT = import("../layout-tree").DeckState;
 type CardT = import("../layout-tree").CardState;
-type StackT = import("../layout-tree").CardStackState;
+type StackT = import("../layout-tree").TugWindowState;
 
 /** Return the stack hosting `cardId`. Throws when no stack hosts it. */
 function hostStack(state: DeckStateT, cardId: string): StackT {
-  const s = state.stacks.find((st) => st.cardIds.includes(cardId));
+  const s = state.windows.find((st) => st.cardIds.includes(cardId));
   if (!s) throw new Error(`deck-manager.test: no stack hosts card ${cardId}`);
   return s;
 }
@@ -148,9 +148,9 @@ describe("DeckManager.addCard – registered component", () => {
 
     const state = manager.getDeckState();
     expect(state.cards.length).toBe(1);
-    expect(state.stacks.length).toBe(1);
+    expect(state.windows.length).toBe(1);
 
-    const stack = state.stacks[0];
+    const stack = state.windows[0];
     expect(stack.cardIds).toEqual([cardId!]);
     expect(stack.size.width).toBe(400);
     expect(stack.size.height).toBe(300);
@@ -261,7 +261,7 @@ describe("DeckManager.handleStackClosed", () => {
 
     manager.handleStackClosed(stackId);
     expect(manager.getDeckState().cards.length).toBe(0);
-    expect(manager.getDeckState().stacks.length).toBe(0);
+    expect(manager.getDeckState().windows.length).toBe(0);
   });
 
   it("removes only the specified stack when multiple stacks exist", () => {
@@ -598,7 +598,7 @@ describe("DeckManager.focusCard", () => {
     manager.focusCard(id1);
 
     // focusCard reorders stacks (frames hold z-order), not cards.
-    const stacks = manager.getDeckState().stacks;
+    const stacks = manager.getDeckState().windows;
     expect(stacks.length).toBe(3);
     expect(stacks[stacks.length - 1].cardIds).toContain(id1);
     expect(stacks[0].cardIds).toContain(id2);
@@ -614,7 +614,7 @@ describe("DeckManager.focusCard", () => {
 
     manager.focusCard(id2);
 
-    const stacks = manager.getDeckState().stacks;
+    const stacks = manager.getDeckState().windows;
     expect(stacks[0].cardIds).toContain(id1);
     expect(stacks[1].cardIds).toContain(id2);
   });
@@ -625,7 +625,7 @@ describe("DeckManager.focusCard", () => {
 
     manager.focusCard("nonexistent");
 
-    expect(manager.getDeckState().stacks[0].cardIds).toContain(id1);
+    expect(manager.getDeckState().windows[0].cardIds).toContain(id1);
   });
 });
 
@@ -670,7 +670,7 @@ describe("DeckManager.addCard – cascade positioning", () => {
       manager.addCard("hello");
     }
 
-    const stacks = manager.getDeckState().stacks;
+    const stacks = manager.getDeckState().windows;
     expect(stacks.length).toBe(NUM_CARDS);
 
     // The cascade must have reset at some point. Verify this by finding a stack
@@ -1007,7 +1007,7 @@ describe("DeckManager.removeCard", () => {
     manager.removeCard(stackId, firstCardId);
 
     const state = manager.getDeckState();
-    const stack = state.stacks.find((s) => s.id === stackId)!;
+    const stack = state.windows.find((s) => s.id === stackId)!;
     expect(stack.cardIds.length).toBe(1);
     expect(stack.activeCardId).toBe(secondCardId);
   });
@@ -1020,7 +1020,7 @@ describe("DeckManager.removeCard", () => {
     manager.removeCard(stackId, cardId);
 
     const state = manager.getDeckState();
-    expect(state.stacks.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
   });
 
@@ -1081,7 +1081,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
         { id: helloCardId, componentId: "hello", title: "Hello", closable: true },
         { id: ghostCardId, componentId: "ghost", title: "Ghost", closable: true },
       ],
-      stacks: [
+      windows: [
         {
           id: stackId,
           position: { x: 0, y: 0 },
@@ -1095,7 +1095,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     });
 
     const state = manager.getDeckState();
-    const stack = state.stacks.find((s) => s.id === stackId);
+    const stack = state.windows.find((s) => s.id === stackId);
     expect(stack).toBeDefined();
     expect(stack!.cardIds).toEqual([helloCardId]);
     expect(stack!.activeCardId).toBe(helloCardId);
@@ -1115,7 +1115,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       cards: [
         { id: cardId, componentId: "totally-unknown", title: "Unknown", closable: true },
       ],
-      stacks: [
+      windows: [
         {
           id: stackId,
           position: { x: 0, y: 0 },
@@ -1129,7 +1129,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
     });
 
     const state = manager.getDeckState();
-    expect(state.stacks.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
@@ -1150,7 +1150,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
         { id: helloCardId, componentId: "hello", title: "Hello", closable: true },
         { id: ghostCardId, componentId: "ghost", title: "Ghost", closable: true },
       ],
-      stacks: [
+      windows: [
         {
           id: stackId,
           position: { x: 0, y: 0 },
@@ -1163,7 +1163,7 @@ describe("DeckManager filterRegisteredCards – multi-card filtering", () => {
       ],
     });
 
-    const stack = manager.getDeckState().stacks.find((s) => s.id === stackId);
+    const stack = manager.getDeckState().windows.find((s) => s.id === stackId);
     expect(stack).toBeDefined();
     expect(stack!.cardIds).toEqual([helloCardId]);
     expect(stack!.activeCardId).toBe(helloCardId);
@@ -1319,13 +1319,13 @@ describe("DeckManager.detachCard", () => {
     const state = manager.getDeckState();
 
     // Source stack should still exist with only 1 card
-    const sourceStack = state.stacks.find((s) => s.id === sourceStackId);
+    const sourceStack = state.windows.find((s) => s.id === sourceStackId);
     expect(sourceStack).toBeDefined();
     expect(sourceStack!.cardIds.length).toBe(1);
     expect(sourceStack!.cardIds.includes(card2Id)).toBe(false);
 
     // New stack should carry the detached card (same card identity)
-    const newStack = state.stacks.find((s) => s.id === newStackId);
+    const newStack = state.windows.find((s) => s.id === newStackId);
     expect(newStack).toBeDefined();
     expect(newStack!.cardIds).toEqual([card2Id]);
     expect(newStack!.activeCardId).toBe(card2Id);
@@ -1358,7 +1358,7 @@ describe("DeckManager.detachCard", () => {
     expect(newStackId).not.toBeNull();
 
     const state = manager.getDeckState();
-    const sourceStack = state.stacks.find((s) => s.id === sourceStackId);
+    const sourceStack = state.windows.find((s) => s.id === sourceStackId);
     expect(sourceStack).toBeDefined();
     expect(sourceStack!.cardIds).toEqual([card1Id]);
     expect(sourceStack!.activeCardId).toBe(card1Id);
@@ -1377,10 +1377,10 @@ describe("DeckManager.detachCard", () => {
     const sourceStackId = hostStack(manager.getDeckState(), card1Id).id;
     const card2Id = manager.addCardToStack(sourceStackId, "terminal") as string;
 
-    const stacksBefore = manager.getDeckState().stacks.length;
+    const stacksBefore = manager.getDeckState().windows.length;
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 50, y: 50 }) as string;
 
-    const stacks = manager.getDeckState().stacks;
+    const stacks = manager.getDeckState().windows;
     expect(stacks.length).toBe(stacksBefore + 1);
     // New stack should be the last in the array (highest z-index).
     expect(stacks[stacks.length - 1].id).toBe(newStackId);
@@ -1397,7 +1397,7 @@ describe("DeckManager.detachCard", () => {
     // Position far outside canvas bounds (canvas is 1280x800 in tests)
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 9999, y: 9999 }) as string;
 
-    const newStack = manager.getDeckState().stacks.find((s) => s.id === newStackId)!;
+    const newStack = manager.getDeckState().windows.find((s) => s.id === newStackId)!;
     // Finder-style: x clamped to canvasWidth - 100 = 1180, y clamped to canvasHeight - 36 = 764
     expect(newStack.position.x).toBe(1280 - 100);
     expect(newStack.position.y).toBe(800 - 36);
@@ -1495,7 +1495,7 @@ describe("DeckManager.addCard – defaultCards registration", () => {
     const newStackId = manager.detachCard(sourceStackId, card2Id, { x: 50, y: 50 });
     expect(newStackId).not.toBeNull();
 
-    const newStack = manager.getDeckState().stacks.find((s) => s.id === newStackId)!;
+    const newStack = manager.getDeckState().windows.find((s) => s.id === newStackId)!;
     expect(newStack).toBeDefined();
     // Detached stack loses the card-level title
     expect(newStack.title).toBe("");
@@ -1556,11 +1556,11 @@ describe("DeckManager.moveCardToStack", () => {
     manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 0);
 
     const state = manager.getDeckState();
-    const targetStack = state.stacks.find((s) => s.id === targetStackId)!;
+    const targetStack = state.windows.find((s) => s.id === targetStackId)!;
     expect(targetStack.cardIds[0]).toBe(card1Id);
 
     // Source stack should still exist (it had 2 cards, now 1).
-    const sourceStack = state.stacks.find((s) => s.id === sourceStackId);
+    const sourceStack = state.windows.find((s) => s.id === sourceStackId);
     expect(sourceStack).toBeDefined();
     expect(sourceStack!.cardIds.includes(card1Id)).toBe(false);
   });
@@ -1579,9 +1579,9 @@ describe("DeckManager.moveCardToStack", () => {
 
     const state = manager.getDeckState();
     // Source stack should be gone (single-card stack closed when its card moved).
-    expect(state.stacks.find((s) => s.id === sourceStackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === sourceStackId)).toBeUndefined();
     // Target stack should carry the merged card.
-    const targetStack = state.stacks.find((s) => s.id === targetStackId)!;
+    const targetStack = state.windows.find((s) => s.id === targetStackId)!;
     expect(targetStack.cardIds.includes(sourceCardId)).toBe(true);
   });
 
@@ -1598,7 +1598,7 @@ describe("DeckManager.moveCardToStack", () => {
 
     manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 0);
 
-    const targetStack = manager.getDeckState().stacks.find((s) => s.id === targetStackId)!;
+    const targetStack = manager.getDeckState().windows.find((s) => s.id === targetStackId)!;
     expect(targetStack.activeCardId).toBe(card1Id);
   });
 
@@ -1616,7 +1616,7 @@ describe("DeckManager.moveCardToStack", () => {
     // target has 1 card; insertAtIndex of 999 should be clamped to 1
     manager.moveCardToStack(sourceStackId, card1Id, targetStackId, 999);
 
-    const targetStack = manager.getDeckState().stacks.find((s) => s.id === targetStackId)!;
+    const targetStack = manager.getDeckState().windows.find((s) => s.id === targetStackId)!;
     // Merged card should appear at end
     expect(targetStack.cardIds[targetStack.cardIds.length - 1]).toBe(card1Id);
   });
@@ -1652,7 +1652,7 @@ describe("DeckManager.moveCardToStack", () => {
 
     // Plan 11.6.1b composite-bit model: merging the active single-card
     // source into target makes the moved card the new FR of the target
-    // stack, and the post-move `activeStackId` shifts to target. Because
+    // window, and the post-move `activeWindowId` shifts to target. Because
     // the moved card was already FR, the composite bit does not flip —
     // no will/did (de)activate events, no destruction event (identity is
     // preserved across merges).
@@ -1679,8 +1679,8 @@ describe("DeckManager.moveCardToStack", () => {
     expect(log).toEqual([]);
     // Source stack is gone, target survives; `srcCardId` is target's
     // active card and the deck's first responder.
-    expect(manager.getDeckState().stacks.find((s) => s.id === srcStackId)).toBeUndefined();
-    expect(manager.getDeckState().stacks.find((s) => s.id === tgtStackId)).toBeDefined();
+    expect(manager.getDeckState().windows.find((s) => s.id === srcStackId)).toBeUndefined();
+    expect(manager.getDeckState().windows.find((s) => s.id === tgtStackId)).toBeDefined();
     expect(manager.getFirstResponderCardId()).toBe(srcCardId);
   });
 
@@ -2058,12 +2058,12 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
 
     // Explicit cross-check: the moved card has exactly one home, and it is
     // the target stack.
-    const homes = state.stacks.filter((s) => s.cardIds.includes(c2));
+    const homes = state.windows.filter((s) => s.cardIds.includes(c2));
     expect(homes.length).toBe(1);
     expect(homes[0].id).toBe(tgtStackId);
   });
 
-  it("no empty stacks after removing the last card in a stack", () => {
+  it("no empty windows after removing the last card in a window", () => {
     registerCard(makeRegistration("hello", "Hello"));
     const cardId = manager.addCard("hello") as string;
     const stackId = hostStack(manager.getDeckState(), cardId).id;
@@ -2075,7 +2075,7 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
 
     // Explicit cross-check: the stack is gone (not left behind with an
     // empty cardIds array).
-    expect(state.stacks.find((s) => s.id === stackId)).toBeUndefined();
+    expect(state.windows.find((s) => s.id === stackId)).toBeUndefined();
     expect(state.cards.find((c) => c.id === cardId)).toBeUndefined();
   });
 
@@ -2096,12 +2096,12 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
     expect(() => validateDeckState(state)).not.toThrow();
 
     // Explicit cross-check: activeCardId was re-pointed to the surviving card.
-    const stack = state.stacks.find((s) => s.id === stackId)!;
+    const stack = state.windows.find((s) => s.id === stackId)!;
     expect(stack.activeCardId).toBe(firstCardId);
     expect(stack.cardIds.includes(stack.activeCardId)).toBe(true);
   });
 
-  it("activeStackId references a real stack (or is cleared) after closing the active stack", () => {
+  it("activeWindowId references a real window (or is cleared) after closing the active window", () => {
     registerCard(makeRegistration("hello", "Hello"));
     registerCard(makeRegistration("terminal", "Terminal"));
 
@@ -2109,20 +2109,20 @@ describe("DeckManager — two-table invariants preserved across mutations", () =
     const secondCardId = manager.addCard("terminal") as string;
     const secondStackId = hostStack(manager.getDeckState(), secondCardId).id;
 
-    // addCard sets activeStackId to the newly-created stack, so the second
-    // stack is the active one.
-    expect(manager.getDeckState().activeStackId).toBe(secondStackId);
+    // addCard sets activeWindowId to the newly-created window, so the second
+    // window is the active one.
+    expect(manager.getDeckState().activeWindowId).toBe(secondStackId);
 
     manager.handleStackClosed(secondStackId);
 
     const state = manager.getDeckState();
     expect(() => validateDeckState(state)).not.toThrow();
 
-    // Explicit cross-check: activeStackId either points to a remaining
-    // stack or is undefined — never a stale reference to the closed stack.
-    expect(state.activeStackId).not.toBe(secondStackId);
-    if (state.activeStackId !== undefined) {
-      expect(state.stacks.some((s) => s.id === state.activeStackId)).toBe(true);
+    // Explicit cross-check: activeWindowId either points to a remaining
+    // window or is undefined — never a stale reference to the closed window.
+    expect(state.activeWindowId).not.toBe(secondStackId);
+    if (state.activeWindowId !== undefined) {
+      expect(state.windows.some((s) => s.id === state.activeWindowId)).toBe(true);
     }
   });
 });
@@ -2263,7 +2263,7 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(log).toEqual([`construct:${newCard}`]);
     // FR is still stack2's active card; stack1.activeCardId has flipped
     // to the newly-added card silently.
-    const stack1 = manager.getDeckState().stacks.find((s) => s.id === stack1Id)!;
+    const stack1 = manager.getDeckState().windows.find((s) => s.id === stack1Id)!;
     expect(stack1.activeCardId).toBe(newCard);
     expect(manager.getFirstResponderCardId()).not.toBe(newCard);
   });
@@ -2418,8 +2418,8 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
       `willDestroy:${c}`,
     ]);
     expect(manager.getFirstResponderCardId()).toBe(a);
-    expect(manager.getDeckState().stacks.find((s) => s.id === stack1Id)).toBeDefined();
-    expect(manager.getDeckState().stacks.find((s) => s.id === stack2Id)).toBeUndefined();
+    expect(manager.getDeckState().windows.find((s) => s.id === stack1Id)).toBeDefined();
+    expect(manager.getDeckState().windows.find((s) => s.id === stack2Id)).toBeUndefined();
   });
 
   it("T-11-6-1b-detach-focus: add-then-detach blurs tide and does not refocus it", () => {
@@ -2459,10 +2459,10 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
 
     // Hello landed in a new stack that is the deck's active stack.
     const state = manager.getDeckState();
-    const helloStack = state.stacks.find((s) => s.cardIds.includes(hello));
+    const helloStack = state.windows.find((s) => s.cardIds.includes(hello));
     expect(helloStack).toBeDefined();
     expect(helloStack!.id).not.toBe(s1);
-    expect(state.activeStackId).toBe(helloStack!.id);
+    expect(state.activeWindowId).toBe(helloStack!.id);
   });
 });
 

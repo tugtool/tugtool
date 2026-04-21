@@ -317,7 +317,7 @@ export function initActionDispatch(
       console.warn("focus-card: missing or invalid stackId", payload);
       return;
     }
-    const stack = deckManager.getSnapshot().stacks.find((s) => s.id === stackId);
+    const stack = deckManager.getSnapshot().windows.find((s) => s.id === stackId);
     if (!stack) {
       console.warn(`focus-card: no stack with id "${stackId}"`);
       return;

@@ -32,7 +32,7 @@ export function makeMockStore(
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
-    getSnapshot: (): DeckState => ({ cards: [], stacks: [] }),
+    getSnapshot: (): DeckState => ({ cards: [], windows: [] }),
     getVersion: () => 0,
     handleStackMoved: () => {},
     handleStackClosed: () => {},

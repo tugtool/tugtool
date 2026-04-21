@@ -191,22 +191,22 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Tests — mechanical find/replace.
 
 **Tasks:**
-- [ ] Rename type `CardStackState` → `TugWindowState` in `layout-tree.ts`.
-- [ ] Rename `DeckState.stacks` → `DeckState.windows`.
-- [ ] Rename `DeckState.activeStackId` → `DeckState.activeWindowId`.
-- [ ] Update local variable conventions: `stack` → `win` where the variable is a `TugWindowState`.
-- [ ] Update `validateDeckState` error message strings to say "window" / "windows."
-- [ ] Method names keep their existing form (`addCardToStack`, etc.) — renamed in #step-3.
-- [ ] Internal variables named `stackId` keep their form for now — renamed in later steps as they propagate.
+- [x] Rename type `CardStackState` → `TugWindowState` in `layout-tree.ts`.
+- [x] Rename `DeckState.stacks` → `DeckState.windows`.
+- [x] Rename `DeckState.activeStackId` → `DeckState.activeWindowId`.
+- [x] Update local variable conventions: `stack` → `win` where the variable is a `TugWindowState`.
+- [x] Update `validateDeckState` error message strings to say "window" / "windows."
+- [x] Method names keep their existing form (`addCardToStack`, etc.) — renamed in #step-3.
+- [x] Internal variables named `stackId` keep their form for now — renamed in later steps as they propagate.
 
 **Tests:**
-- [ ] Existing `layout-tree.test.ts` passes with the renamed types.
-- [ ] `deck-manager.test.ts` passes.
+- [x] Existing `layout-tree.test.ts` passes with the renamed types.
+- [x] `deck-manager.test.ts` passes.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green at existing count.
-- [ ] `rg "CardStackState" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green at existing count.
+- [x] `rg "CardStackState" tugdeck/src` returns zero matches.
 
 ---
 

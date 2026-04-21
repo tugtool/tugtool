@@ -17,7 +17,7 @@
  */
 
 import React, { useCallback, useRef, useState } from "react";
-import type { CardStackState } from "@/layout-tree";
+import type { TugWindowState } from "@/layout-tree";
 import type { CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
@@ -110,7 +110,7 @@ export interface StackFrameInjectedProps {
  */
 export interface StackFrameProps {
   /** Stack position, size, id, and collapsed state from DeckState. */
-  stackState: CardStackState;
+  stackState: TugWindowState;
   /**
    * Render function that receives injected callbacks and returns the Tugcard.
    * The factory closure (from the card registry) is responsible for wiring

@@ -395,7 +395,7 @@ class CardDragCoordinator {
     if (mode === "reorder") {
       // Find the original index of the dragged card in the source stack.
       const snapshot = store.getSnapshot();
-      const sourceStack = snapshot.stacks.find((s) => s.id === sourceStackId);
+      const sourceStack = snapshot.windows.find((s) => s.id === sourceStackId);
       if (sourceStack) {
         const fromIndex = sourceStack.cardIds.indexOf(sourceCardId);
         if (fromIndex !== -1 && fromIndex !== reorderIndex) {

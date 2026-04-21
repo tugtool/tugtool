@@ -16,7 +16,7 @@
 import {
   type DeckState,
   type CardState,
-  type CardStackState,
+  type TugWindowState,
 } from "./layout-tree";
 
 // ---- Constants ----
@@ -40,9 +40,9 @@ export function serialize(deckState: DeckState): object {
   return {
     version: 2,
     cards: deckState.cards,
-    stacks: deckState.stacks,
-    ...(deckState.activeStackId !== undefined
-      ? { activeStackId: deckState.activeStackId }
+    stacks: deckState.windows,
+    ...(deckState.activeWindowId !== undefined
+      ? { activeStackId: deckState.activeWindowId }
       : {}),
   };
 }
@@ -126,7 +126,7 @@ function parseV2(
     cardIdSet.add(id);
   }
 
-  const stacks: CardStackState[] = [];
+  const windows: TugWindowState[] = [];
   for (const s of rawStacks) {
     if (!s || typeof s !== "object") continue;
     const stack = s as Record<string, unknown>;
@@ -177,7 +177,7 @@ function parseV2(
     const collapsed =
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
-    stacks.push({
+    windows.push({
       id,
       position: { x, y },
       size: { width, height },
@@ -189,17 +189,17 @@ function parseV2(
     });
   }
 
-  // Drop cards that aren't referenced by any stack (orphans).
+  // Drop cards that aren't referenced by any window (orphans).
   const referencedCardIds = new Set<string>();
-  for (const s of stacks) {
-    for (const cid of s.cardIds) referencedCardIds.add(cid);
+  for (const w of windows) {
+    for (const cid of w.cardIds) referencedCardIds.add(cid);
   }
   const filteredCards = cards.filter((c) => referencedCardIds.has(c.id));
 
   const rawActiveStackId = raw["activeStackId"];
-  const activeStackId =
+  const activeWindowId =
     typeof rawActiveStackId === "string" &&
-    stacks.some((s) => s.id === rawActiveStackId)
+    windows.some((w) => w.id === rawActiveStackId)
       ? rawActiveStackId
       : undefined;
 
@@ -208,8 +208,8 @@ function parseV2(
 
   return {
     cards: filteredCards,
-    stacks,
-    ...(activeStackId !== undefined ? { activeStackId } : {}),
+    windows,
+    ...(activeWindowId !== undefined ? { activeWindowId } : {}),
   };
 }
 
@@ -241,7 +241,7 @@ function migrateV1ToV2(
   }
 
   const cards: CardState[] = [];
-  const stacks: CardStackState[] = [];
+  const windows: TugWindowState[] = [];
 
   for (const c of rawCards) {
     if (!c || typeof c !== "object") continue;
@@ -305,7 +305,7 @@ function migrateV1ToV2(
     const collapsed =
       typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
 
-    stacks.push({
+    windows.push({
       id: stackId,
       position: { x, y },
       size: { width, height },
@@ -320,7 +320,7 @@ function migrateV1ToV2(
   // Legacy `focusedCardId` is ignored — reload restoration now reads from
   // tugbank via the `putFocusedCardId` / `initialFocusedCardId` path.
 
-  return { cards, stacks };
+  return { cards, windows };
 }
 
 // ---- Default Layout ----
@@ -334,5 +334,5 @@ function migrateV1ToV2(
  *
  */
 export function buildDefaultLayout(): DeckState {
-  return { cards: [], stacks: [] };
+  return { cards: [], windows: [] };
 }

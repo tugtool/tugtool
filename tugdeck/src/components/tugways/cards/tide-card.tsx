@@ -1010,8 +1010,8 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // `cardDidMove` / `cardDidResize` re-assert focus only when this card
   // is the deck's composite first responder. The pre-11.6.1b guard
   // used `cardLifecycle.getActiveCardId()` (top of z-order), which can
-  // drift from the composite bit when `activeStackId` does not match
-  // the top stack (post-detach or post-move edge cases).
+  // drift from the composite bit when `activeWindowId` does not match
+  // the top window (post-detach or post-move edge cases).
   const cardLifecycle = useCardLifecycle();
   useCardDelegate(cardId, {
     cardDidActivate: () => entryDelegateRef.current?.focus(),

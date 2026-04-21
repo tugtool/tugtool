@@ -65,7 +65,7 @@ import { Tugcard } from "@/components/tugways/tug-card";
 import { StackFrame } from "./stack-frame";
 import { CardContentHost } from "./card-content-host";
 import { getRegistration, getSizePolicy } from "@/card-registry";
-import type { CardStackState } from "@/layout-tree";
+import type { TugWindowState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
@@ -106,7 +106,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // variable below.
   const store = useDeckManager();
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const stacks = deckState.stacks;
+  const windows = deckState.windows;
   const cards = deckState.cards;
 
   // ---------------------------------------------------------------------------
@@ -124,20 +124,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const { sortedStacks, zIndexMap } = useMemo(() => {
     const map = new Map<string, number>();
-    stacks.forEach((stack, i) => map.set(stack.id, CARD_ZINDEX_BASE + i));
-    const sorted = [...stacks].sort((a, b) => a.id.localeCompare(b.id));
+    windows.forEach((win, i) => map.set(win.id, CARD_ZINDEX_BASE + i));
+    const sorted = [...windows].sort((a, b) => a.id.localeCompare(b.id));
     return { sortedStacks: sorted, zIndexMap: map };
-  }, [stacks]);
+  }, [windows]);
 
   // Build a cardId → hostStackId map so `CardContentHost` can look up its
   // host stack without re-scanning the stacks array on every render.
   const hostStackIdByCardId = useMemo(() => {
     const map = new Map<string, string>();
-    for (const s of stacks) {
+    for (const s of windows) {
       for (const cid of s.cardIds) map.set(cid, s.id);
     }
     return map;
-  }, [stacks]);
+  }, [windows]);
 
   // Build a cardId → CardState map once per render. Consumed by the stack
   // render loop (active-card lookup, componentId resolution) and by the
@@ -160,8 +160,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const focusedStackId = deselected
     ? null
-    : stacks.length > 0
-      ? stacks[stacks.length - 1].id
+    : windows.length > 0
+      ? windows[windows.length - 1].id
       : null;
 
   // ---------------------------------------------------------------------------
@@ -170,8 +170,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // cycleCard is captured at mount time and never re-registered. All mutable
   // state it accesses must be via refs or stable values.
 
-  const stacksRef = useRef<readonly CardStackState[]>(stacks);
-  stacksRef.current = stacks;
+  const windowsRef = useRef<readonly TugWindowState[]>(windows);
+  windowsRef.current = windows;
 
   /**
    * containerRef: ref to the positioning wrapper div that card frames and snap guides
@@ -182,17 +182,17 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // StackFrame's pointerdown fires with a stack id. Resolve the stack's
   // current `activeCardId` and route through `activateCard` — under the
   // 11.6.1b composite-bit model `_setFirstResponder` handles z-order
-  // bumping, `activeStackId` commit, focused-card persistence, and
+  // bumping, `activeWindowId` commit, focused-card persistence, and
   // lifecycle events atomically. A preceding `focusCard(cardId)` would
-  // pre-mutate `activeStackId`, making `_setFirstResponder` see a
+  // pre-mutate `activeWindowId`, making `_setFirstResponder` see a
   // same-bit call and short-circuit the will/didActivate events —
   // breaking prompt focus when clicking back to a previously-active
   // card.
   const handleStackActivate = useCallback(
     (stackId: string) => {
-      const stack = store.getSnapshot().stacks.find((s) => s.id === stackId);
-      if (!stack) return;
-      store.activateCard(stack.activeCardId);
+      const win = store.getSnapshot().windows.find((s) => s.id === stackId);
+      if (!win) return;
+      store.activateCard(win.activeCardId);
     },
     [store],
   );
@@ -252,7 +252,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     canHandle: () => true,
     actions: {
       [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
-        const s = stacksRef.current;
+        const s = windowsRef.current;
         if (s.length < 2) return;
         // Bottom stack rotates to top — activate its active card.
         const nextId = s[0].activeCardId;
@@ -282,7 +282,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           (c) => c.componentId === "gallery-buttons",
         );
         const galleryStack = galleryCard
-          ? snapshot.stacks.find((st) => st.cardIds.includes(galleryCard.id))
+          ? snapshot.windows.find((st) => st.cardIds.includes(galleryCard.id))
           : undefined;
 
         if (galleryStack) {
@@ -306,10 +306,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // [D06] Add-tab action uses DeckManager + responder chain
       // [D09] Add-tab routed as DeckCanvas responder action
       [TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD]: (_event: ActionEvent) => {
-        const s = stacksRef.current;
+        const s = windowsRef.current;
         if (s.length === 0) return;
-        const activeStackId = s[s.length - 1].id; // topmost stack
-        store.addCardToStack(activeStackId, "hello");
+        const activeWindowId = s[s.length - 1].id; // topmost window (z-order)
+        store.addCardToStack(activeWindowId, "hello");
       },
     },
   });
@@ -349,7 +349,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     if (!cardExists) return;
 
     // On mount, route through `activateCard` — `_setFirstResponder`
-    // treats the serialized `activeStackId` as the pre-existing
+    // treats the serialized `activeWindowId` as the pre-existing
     // composite bit and delivers initial-sync to late-mounting
     // lifecycle subscribers via `observeCardDidActivate`'s
     // subscribe-time read of the current focused card.
@@ -404,9 +404,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
-      {/* StackFrames: one per stack in deckState.stacks.
+      {/* StackFrames: one per window in deckState.windows.
           Rendered in stable ID order (no DOM reordering on focus change).
-          Z-index from store array position (first = lowest). Stacks whose
+          Z-index from store array position (first = lowest). Windows whose
           active card's componentId is unregistered are skipped with a
           warning. */}
       {sortedStacks.map((stackState) => {
@@ -458,7 +458,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.
               const snapshot = store.getSnapshot();
-              const sourceStack = snapshot.stacks.find(
+              const sourceStack = snapshot.windows.find(
                 (s) => s.id === sourceStackId,
               );
               if (!sourceStack) return;
@@ -506,7 +506,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       {cards.map((card) => {
         const hostStackId = hostStackIdByCardId.get(card.id);
         if (!hostStackId) return null;
-        const hostStack = stacks.find((s) => s.id === hostStackId);
+        const hostStack = windows.find((s) => s.id === hostStackId);
         return (
           <CardContentHost
             key={card.id}

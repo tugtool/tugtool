@@ -72,11 +72,11 @@ export function installLifecycleCascade(
     // fired the cascade, the second will-event is a no-op.
     if (deactivatedByAppCardId !== null) return;
     // 11.6.1b: the cascade targets the composite first responder
-    // (the active stack's active card) — that's the card whose UI
+    // (the active window's active card) — that's the card whose UI
     // focus/blur behavior tracks the app's active/hidden state.
     // Reading `getFocusedCardId` (top of z-order) could pick a
-    // different card when `activeStackId` does not match the top
-    // stack (post-detach or post-move edge cases).
+    // different card when `activeWindowId` does not match the top
+    // window (post-detach or post-move edge cases).
     const activeId = cardLifecycle.getFirstResponderCardId();
     if (activeId === null) return;
     if (LIFECYCLE_LOG) {

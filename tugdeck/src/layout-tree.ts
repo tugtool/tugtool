@@ -4,18 +4,18 @@
  * DeckState holds two flat arrays:
  *   - `cards`: the content identities — id, componentId, title, closable,
  *     plus an optional persistence bag.
- *   - `stacks`: the visual frames — position, size, ordered cardIds, the
- *     active card in the stack, collapsed, acceptsFamilies, title.
+ *   - `windows`: the visual frames — position, size, ordered cardIds, the
+ *     active card in the window, collapsed, acceptsFamilies, title.
  *
  * Invariants:
- *   1. Every `cardIds` entry in every stack references a real card (by id) in
+ *   1. Every `cardIds` entry in every window references a real card (by id) in
  *      `deckState.cards`.
- *   2. Each card appears in exactly one stack's `cardIds` (no orphans, no
+ *   2. Each card appears in exactly one window's `cardIds` (no orphans, no
  *      duplicates).
- *   3. No stack has an empty `cardIds` array — closing the last card of a
- *      stack closes the stack.
- *   4. Each stack's `activeCardId` is a member of that stack's `cardIds`.
- *   5. `activeStackId`, when set, references a real stack in `stacks`.
+ *   3. No window has an empty `cardIds` array — closing the last card of a
+ *      window closes the window.
+ *   4. Each window's `activeCardId` is a member of that window's `cardIds`.
+ *   5. `activeWindowId`, when set, references a real window in `windows`.
  *
  * Spec S01: Canvas Data Model Types
  */
@@ -43,10 +43,10 @@ export interface CardStateBag {
 }
 
 /**
- * A card — the content identity that survives cross-stack moves.
+ * A card — the content identity that survives cross-window moves.
  *
  * A card knows its componentId, title, and whether it is closable. Position,
- * size, and active-ness are properties of the enclosing stack, not the card.
+ * size, and active-ness are properties of the enclosing window, not the card.
  * An optional `state` bag carries per-content persistence.
  */
 export interface CardState {
@@ -58,26 +58,26 @@ export interface CardState {
 }
 
 /**
- * A card stack — the visual frame containing one or more cards.
+ * A window — the visual frame containing one or more cards.
  *
- * Stacks own position, size, collapsed, acceptsFamilies, and the ordered list
- * of cardIds they contain. Exactly one of the cardIds is the stack's
- * `activeCardId`, which is the card whose content is visible in the stack.
+ * Windows own position, size, collapsed, acceptsFamilies, and the ordered list
+ * of cardIds they contain. Exactly one of the cardIds is the window's
+ * `activeCardId`, which is the card whose content is visible in the window.
  */
-export interface CardStackState {
+export interface TugWindowState {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
-  /** Ordered list of card ids belonging to this stack. */
+  /** Ordered list of card ids belonging to this window. */
   cardIds: readonly string[];
-  /** The currently-active card in the stack. Must be in `cardIds`. */
+  /** The currently-active card in the window. Must be in `cardIds`. */
   activeCardId: string;
-  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic stacks. */
+  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic windows. */
   title: string;
-  /** Families of card types this stack can host in its type picker. Defaults to ["standard"]. */
+  /** Families of card types this window can host in its type picker. Defaults to ["standard"]. */
   acceptsFamilies: readonly string[];
   /**
-   * Whether the stack is collapsed (title bar only, content hidden).
+   * Whether the window is collapsed (title bar only, content hidden).
    * Missing/undefined is treated as false. ([D04])
    */
   collapsed?: boolean;
@@ -87,9 +87,9 @@ export interface CardStackState {
  * The deck's full state.
  *
  * - `cards` holds every card identity in the deck.
- * - `stacks` holds every stack frame; each stack's `cardIds` partitions
+ * - `windows` holds every window frame; each window's `cardIds` partitions
  *   `cards`.
- * - `activeStackId` identifies the deck's currently-active stack, if any.
+ * - `activeWindowId` identifies the deck's currently-active window, if any.
  *
  * Reload-focus restoration is handled out-of-band: `putFocusedCardId`
  * writes a single-field row to tugbank, and `DeckManager` reads it back
@@ -99,8 +99,8 @@ export interface CardStackState {
  */
 export interface DeckState {
   cards: readonly CardState[];
-  stacks: readonly CardStackState[];
-  activeStackId?: string;
+  windows: readonly TugWindowState[];
+  activeWindowId?: string;
 }
 
 // ---- Invariant validation ----
@@ -122,12 +122,12 @@ export class DeckStateInvariantError extends Error {
  * {@link DeckStateInvariantError} on the first violation.
  *
  * Invariants checked:
- *   1. every `stack.cardIds` entry references a real `state.cards[].id`;
- *   2. every card appears in exactly one stack's `cardIds` (no orphans, no
+ *   1. every `win.cardIds` entry references a real `state.cards[].id`;
+ *   2. every card appears in exactly one window's `cardIds` (no orphans, no
  *      duplicates);
- *   3. no stack has `cardIds.length === 0`;
- *   4. every `stack.activeCardId` is a member of that stack's `cardIds`;
- *   5. when `state.activeStackId` is set, it references a real stack.
+ *   3. no window has `cardIds.length === 0`;
+ *   4. every `win.activeCardId` is a member of that window's `cardIds`;
+ *   5. when `state.activeWindowId` is set, it references a real window.
  *
  * Called unconditionally from `DeckManager.applyLayout` (before notify) and
  * from `DeckManager.notify` in dev/test builds only.
@@ -143,61 +143,64 @@ export function validateDeckState(state: DeckState): void {
     cardIds.add(card.id);
   }
 
-  const stackIds = new Set<string>();
-  const cardToStack = new Map<string, string>();
-  for (const stack of state.stacks) {
-    if (stackIds.has(stack.id)) {
+  const windowIds = new Set<string>();
+  const cardToWindow = new Map<string, string>();
+  for (const win of state.windows) {
+    if (windowIds.has(win.id)) {
       throw new DeckStateInvariantError(
-        `duplicate stack id "${stack.id}" in deckState.stacks`,
+        `duplicate window id "${win.id}" in deckState.windows`,
       );
     }
-    stackIds.add(stack.id);
+    windowIds.add(win.id);
 
     // Invariant 3
-    if (stack.cardIds.length === 0) {
+    if (win.cardIds.length === 0) {
       throw new DeckStateInvariantError(
-        `stack "${stack.id}" has empty cardIds (no empty stacks permitted)`,
+        `window "${win.id}" has empty cardIds (no empty windows permitted)`,
       );
     }
 
-    for (const cid of stack.cardIds) {
+    for (const cid of win.cardIds) {
       // Invariant 1
       if (!cardIds.has(cid)) {
         throw new DeckStateInvariantError(
-          `stack "${stack.id}" references missing card id "${cid}"`,
+          `window "${win.id}" references missing card id "${cid}"`,
         );
       }
       // Invariant 2
-      const existingHost = cardToStack.get(cid);
+      const existingHost = cardToWindow.get(cid);
       if (existingHost !== undefined) {
         throw new DeckStateInvariantError(
-          `card "${cid}" appears in both stack "${existingHost}" and "${stack.id}"`,
+          `card "${cid}" appears in both window "${existingHost}" and "${win.id}"`,
         );
       }
-      cardToStack.set(cid, stack.id);
+      cardToWindow.set(cid, win.id);
     }
 
     // Invariant 4
-    if (!stack.cardIds.includes(stack.activeCardId)) {
+    if (!win.cardIds.includes(win.activeCardId)) {
       throw new DeckStateInvariantError(
-        `stack "${stack.id}" activeCardId "${stack.activeCardId}" is not in cardIds`,
+        `window "${win.id}" activeCardId "${win.activeCardId}" is not in cardIds`,
       );
     }
   }
 
-  // Invariant 2 (second half): every card has a host stack.
+  // Invariant 2 (second half): every card has a host window.
   for (const card of state.cards) {
-    if (!cardToStack.has(card.id)) {
+    if (!cardToWindow.has(card.id)) {
       throw new DeckStateInvariantError(
-        `card "${card.id}" is orphaned (no stack references it)`,
+        `card "${card.id}" is orphaned (no window references it)`,
       );
     }
   }
 
   // Invariant 5
-  if (state.activeStackId !== undefined && !stackIds.has(state.activeStackId)) {
+  if (
+    state.activeWindowId !== undefined &&
+    !windowIds.has(state.activeWindowId)
+  ) {
     throw new DeckStateInvariantError(
-      `activeStackId "${state.activeStackId}" does not reference a real stack`,
+      `activeWindowId "${state.activeWindowId}" does not reference a real window`,
     );
   }
 }

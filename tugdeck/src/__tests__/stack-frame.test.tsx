@@ -18,12 +18,12 @@ import { render, fireEvent, act } from "@testing-library/react";
 
 import { StackFrame } from "@/components/chrome/stack-frame";
 import type { StackFrameInjectedProps } from "@/components/chrome/stack-frame";
-import type { CardStackState } from "@/layout-tree";
+import type { TugWindowState } from "@/layout-tree";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStackState(overrides: Partial<CardStackState> = {}): CardStackState {
+function makeStackState(overrides: Partial<TugWindowState> = {}): TugWindowState {
   return {
     id: "card-1",
     position: { x: 100, y: 200 },
