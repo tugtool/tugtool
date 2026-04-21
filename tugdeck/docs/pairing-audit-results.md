@@ -80,7 +80,7 @@
 
 ## File 2: tug-pane.css
 
-**Component:** TugWindow + CardTitleBar
+**Component:** TugPane + CardTitleBar
 
 ### Component Token Definitions (body {})
 

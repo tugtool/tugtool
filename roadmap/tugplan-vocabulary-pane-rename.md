@@ -634,13 +634,13 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - `roadmap/lifecycle-and-portal-audit.md` — **coherence fix under §Vocabulary decisions**: the "Also in that plan (cross-references for readers of this audit)" bullet was partially edited during #step-9 (only `ADD_CARD_TO_ACTIVE_WINDOW` → `ADD_CARD_TO_ACTIVE_PANE` was swapped). The bullet describes what the prior `tugplan-vocabulary-rename.md` delivered; the one-item edit leaves four "window-era" items (`windows / activeWindowId`, `*Window mutators`, `focus-window + windowId`, menu text) alongside one "pane-era" item — internally incoherent. Fix: revert that one item to `ADD_CARD_TO_ACTIVE_WINDOW` so the bullet accurately records the prior plan's deliverables, then the pane-correction appendix (above) supersedes them in one coherent block.
 
 **Tasks:**
-- [ ] Grep each tuglaws file for `TugWindow`, `windowId`, `data-window-id`, `tug-window`, `.tug-window`, `focus-window`; replace with pane equivalents.
-- [ ] Audit doc appendix added.
-- [ ] `rg "TugWindow|windowId|data-window-id|tug-window|\\.tug-window|focus-window" tuglaws tugdeck/docs` returns zero matches (excluding historical notes the task deliberately preserves — identify and annotate if any).
+- [x] Grep each tuglaws file for `TugWindow`, `windowId`, `data-window-id`, `tug-window`, `.tug-window`, `focus-window`; replace with pane equivalents. (`selection-model.md` §Files already referenced `tug-pane.css` / `tug-pane.tsx`; `responder-chain.md`, `tuglaws.md`, `framework-architecture.md`, `action-naming.md`, and `tugdeck/docs/pairing-audit-results.md` updated.)
+- [x] Audit doc appendix added. (`lifecycle-and-portal-audit.md` — **Subsequent correction: pane vocabulary**; cross-reference bullet restored to full **window**-plan deliverables for coherence.)
+- [x] `rg "TugWindow|windowId|data-window-id|tug-window|\\.tug-window|focus-window" tuglaws tugdeck/docs` returns zero matches (excluding historical notes the task deliberately preserves — identify and annotate if any).
 
 **Checkpoint:**
-- [ ] Tuglaws docs read coherently end-to-end.
-- [ ] Audit doc's vocabulary section now tells the full story (window-was-interim, pane-is-final).
+- [x] Tuglaws docs read coherently end-to-end.
+- [x] Audit doc's vocabulary section now tells the full story (window-was-interim, pane-is-final).
 
 ---
 
@@ -684,8 +684,8 @@ closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
 - [ ] Prefixed grep sweep from #step-13 shows zero old-vocabulary matches in the scoped directories.
 - [ ] Bare-`window` grep shows only DOM globals and NSWindow — no Tug-authored identifiers.
 - [ ] Manual smoke matrix from the prior vocabulary plan still passes under the new vocabulary.
-- [ ] `lifecycle-and-portal-audit.md` vocabulary section updated to record the pane correction.
-- [ ] Tuglaws (`selection-model.md`, `responder-chain.md`, `action-naming.md`) updated.
+- [x] `lifecycle-and-portal-audit.md` vocabulary section updated to record the pane correction.
+- [x] Tuglaws (`selection-model.md`, `responder-chain.md`, `action-naming.md`) updated.
 
 **Acceptance tests:**
 - [ ] Existing test suite green at HEAD.

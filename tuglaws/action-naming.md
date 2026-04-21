@@ -246,6 +246,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `set-theme`      | Switch the active CSS theme. |
 | `next-theme`     | Advance to the next shipped theme. |
 | `show-card`      | Add a card by component id. |
+| `focus-pane`     | Activate a deck pane by id (`paneId` in payload). Swift View menu → `sendControl`; handler in `action-dispatch.ts` activates the pane's active card. |
 | `source-tree`    | Open the source-tree picker in Swift. |
 | `eval`           | JavaScript eval with response Control frame. |
 
@@ -258,6 +259,8 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `show-component-gallery`   | `showComponentGallery` | `show-component-gallery` (both) |
 
 The `close-active-card` Control-frame name (introduced in A3.3) is renamed to `close` during this migration so it matches the chain-action name. The Swift `@objc closeActiveCard(_:)` selector stays (Swift method names follow Swift conventions; only the `sendControl("close")` string changes).
+
+Pane vocabulary (including the **`focus-pane`** wire and **`paneId`** payload key, retitled from the older deck-**window** Control frame so in-canvas containers are not confused with `NSWindow` or the browser `window` global) lives in [`roadmap/tugplan-vocabulary-pane-rename.md`](../roadmap/tugplan-vocabulary-pane-rename.md) Steps 10–11.
 
 ---
 
