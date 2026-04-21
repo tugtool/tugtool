@@ -78,9 +78,9 @@
 
 ---
 
-## File 2: tug-card.css
+## File 2: tug-window.css
 
-**Component:** TugCard + CardTitleBar
+**Component:** TugWindow + CardTitleBar
 
 ### Component Token Definitions (body {})
 
@@ -520,7 +520,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 | File | Audited | Non-decorative Pairings Found |
 |------|---------|-------------------------------|
 | tug-button.css | yes | 48 (fg+icon per emphasis/role/state) |
-| tug-card.css | yes | 7 |
+| tug-window.css | yes | 7 |
 | tug-tab.css | yes | 8 |
 | tug-menu.css | yes | 9 |
 | tug-dialog.css | yes | 5 |

@@ -31,7 +31,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | File | Rules needing annotation | Count |
 |------|--------------------------|-------|
 | tug-button.css | 25 svg/color rules — all button variants set `color` on SVG sub-selectors without bg | 25 |
-| tug-card.css | `.tugcard-loading`, `.tugcard-title`, `.tug-window[data-focused="true"] .tugcard-icon`, `.tug-window[data-focused="false"] .tugcard-icon` | 4 |
+| tug-window.css | `.tugcard-loading`, `.tugcard-title`, `.tug-window[data-focused="true"] .tugcard-icon`, `.tug-window[data-focused="false"] .tugcard-icon` | 4 |
 | tug-tab.css | `.tug-tab`, `.tug-tab-bar .tug-tab-add`, `.tug-tab-bar .tug-tab-overflow-btn` | 3 |
 | tug-menu.css | `.tug-dropdown-item` plus 6 svg sub-selectors for open-state buttons | 7 |
 | tug-badge.css | 10 outlined/ghost variant rules (bg=transparent) | 10 |
@@ -132,7 +132,7 @@ icon is the same background as its parent button state.
 
 ---
 
-### tug-card.css — 4 annotations
+### tug-window.css — 4 annotations
 
 (Unchanged from previous survey — these are correctly identified.)
 
@@ -427,7 +427,7 @@ Most elements render on `--tug-base-surface-default`. Key exceptions noted below
 | File | Distinct rules needing annotation |
 |------|----------------------------------|
 | tug-button.css | 25 |
-| tug-card.css | 4 |
+| tug-window.css | 4 |
 | tug-tab.css | 3 |
 | tug-menu.css | 7 |
 | tug-badge.css | 10 |
@@ -455,7 +455,7 @@ The following rules render on different surfaces depending on state. They requir
 
 | File | Selector | Surfaces |
 |------|----------|---------|
-| tug-card.css | `.tugcard-title` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
+| tug-window.css | `.tugcard-title` | `--tug-base-tab-bg-inactive, --tug-base-tab-bg-active` |
 
 ---
 

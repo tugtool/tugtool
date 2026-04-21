@@ -89,8 +89,8 @@ It does NOT reach inside cards to manage content selection. Active selection ren
 Only ONE CSS Custom Highlight exists: `inactive-selection` for dimmed cards. Active selection uses native `::selection` — no highlight needed.
 
 ```css
-/* tug-card.css — active selection uses native ::selection */
-.tugcard-content ::selection {
+/* tug-window.css — active selection uses native ::selection */
+.tug-window-content ::selection {
   background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
   color: var(--tug7-element-selection-text-normal-plain-rest);
 }
@@ -193,7 +193,7 @@ ResponderChainProvider installs several document-level listeners beyond Selectio
 | `hooks/use-selection-boundary.ts` | Hook to register/unregister card content boundaries |
 | `responder-chain-provider.tsx` | Focus refusal, fallback context menu, SelectionGuard lifecycle |
 | `use-copyable-text.tsx` | Hook for copyable components (right-click → Copy) |
-| `tug-card.css` | `::selection` token rules, `::highlight(inactive-selection)`, `data-tug-select` attribute CSS |
+| `tug-window.css` | `::selection` token rules, `::highlight(inactive-selection)`, `data-tug-select` attribute CSS |
 | `globals.css` | `user-select: none` baseline on body |
-| `tug-card.tsx` | Calls `useSelectionBoundary`, `saveSelection`, `restoreSelection` |
+| `tug-window.tsx` | Calls `useSelectionBoundary`, `saveSelection`, `restoreSelection` |
 | `tug-label.tsx` | First consumer of `useCopyableText` (via `copyable` prop) |
