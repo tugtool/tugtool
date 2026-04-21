@@ -29,7 +29,7 @@ import type {
   TugTextInputDelegate,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
-import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
+import { useCardPersistence } from "@/components/tugways/use-card-persistence";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTugBoxDisabled } from "@/components/tugways/internal/tug-box-context";
@@ -342,12 +342,12 @@ function TugPromptInputPersistence({
   pendingRestoreRef: React.RefObject<TugTextEditingState | null>;
 }) {
   // The TugPane persistence protocol expects onRestore to trigger a re-render
-  // so the no-deps useLayoutEffect in useTugcardPersistence fires and calls
+  // so the no-deps useLayoutEffect in useCardPersistence fires and calls
   // onContentReady (which removes visibility:hidden). Without this setState,
   // the direct DOM write via restoreState produces no re-render, onContentReady
   // never fires, and the card stays invisible.
   const [, setRestoreCount] = useState(0);
-  useTugcardPersistence<TugTextEditingState>({
+  useCardPersistence<TugTextEditingState>({
     onSave: () => {
       const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
       const engine = engineRef.current;

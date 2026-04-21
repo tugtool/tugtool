@@ -65,7 +65,7 @@ import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover"
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useTugcardPersistence } from "./use-tugcard-persistence";
+import { useCardPersistence } from "./use-card-persistence";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 
@@ -128,7 +128,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
 };
 
 /**
- * Persisted state payload for TugPromptEntry via `useTugcardPersistence`.
+ * Persisted state payload for TugPromptEntry via `useCardPersistence`.
  *
  * - `currentRoute` is the active prefix at save time. On restore, the
  *   indicator snaps back to this route and the input displays the
@@ -771,7 +771,7 @@ export const TugPromptEntry = React.forwardRef<
   // route atom if none). TugPane's orchestration guarantees both refs
   // (`promptInputRef`, `rootRef`) are populated by the time onRestore
   // fires — parent effects run after child mounts.
-  useTugcardPersistence<TugPromptEntryPersistedState>({
+  useCardPersistence<TugPromptEntryPersistedState>({
     onSave: () => {
       const input = promptInputRef.current;
       const perRoute = { ...savedContentByRouteRef.current };

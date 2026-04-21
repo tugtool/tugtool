@@ -124,7 +124,7 @@
 
 **D49.** Per-tab state bag preserves `scroll`, `selection`, and `content` across tab switches and reloads.
 
-**D50.** `useTugcardPersistence` hook: card content registers `onSave`/`onRestore` callbacks. Uses `useLayoutEffect` for registration. [L03]
+**D50.** `useCardPersistence` hook: card content registers `onSave`/`onRestore` callbacks. Uses `useLayoutEffect` for registration. [L03]
 
 **D51.** Focused card ID persisted in `DeckState.focusedCardId` for reload restoration.
 

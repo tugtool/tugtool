@@ -1,8 +1,8 @@
 /**
- * useTugcardPersistence hook unit tests -- Phase 5f4.
+ * useCardPersistence hook unit tests.
  *
  * Tests cover:
- * - T-P01: useTugcardPersistence registers callbacks called by TugPane on
+ * - T-P01: useCardPersistence registers callbacks called by TugPane on
  *   deactivation (onSave) and activation (onRestore).
  * - T-P02: Updating onSave/onRestore options does not cause re-registration
  *   (stable useLayoutEffect with [register] deps, refs used inside wrappers).
@@ -25,8 +25,8 @@ import React, { useState } from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
 
-import { CardPersistenceContext, useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
-import type { TugcardPersistenceCallbacks } from "@/components/tugways/use-tugcard-persistence";
+import { CardPersistenceContext, useCardPersistence } from "@/components/tugways/use-card-persistence";
+import type { CardPersistenceCallbacks } from "@/components/tugways/use-card-persistence";
 
 // ---------------------------------------------------------------------------
 // Test helper: tracks how many times register is called (registration count).
@@ -38,9 +38,9 @@ import type { TugcardPersistenceCallbacks } from "@/components/tugways/use-tugca
  */
 function makeTestProvider() {
   let registrationCount = 0;
-  let latestCallbacks: TugcardPersistenceCallbacks | null = null;
+  let latestCallbacks: CardPersistenceCallbacks | null = null;
 
-  function register(callbacks: TugcardPersistenceCallbacks) {
+  function register(callbacks: CardPersistenceCallbacks) {
     registrationCount += 1;
     latestCallbacks = callbacks;
   }
@@ -60,10 +60,10 @@ function makeTestProvider() {
 }
 
 // ---------------------------------------------------------------------------
-// T-P01: useTugcardPersistence registers callbacks called by TugPane
+// T-P01: useCardPersistence registers callbacks called by TugPane
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – callback registration and invocation", () => {
+describe("useCardPersistence – callback registration and invocation", () => {
   it("T-P01a: onSave registered callback is called and returns the card's state", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -72,7 +72,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
     const onRestore = mock((_s: typeof savedState) => {});
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore });
+      useCardPersistence({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -102,7 +102,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
     const onRestore = mock((s: { value: number }) => { restoredValues.push(s); });
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore });
+      useCardPersistence({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -131,7 +131,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
     const onRestore = mock((_s: unknown) => {});
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore });
+      useCardPersistence({ onSave, onRestore });
       return <div>no provider</div>;
     }
 
@@ -148,7 +148,7 @@ describe("useTugcardPersistence – callback registration and invocation", () =>
 // T-P02: Updating options does not cause re-registration
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – stable registration across re-renders", () => {
+describe("useCardPersistence – stable registration across re-renders", () => {
   it("T-P02: updating onSave/onRestore does not trigger re-registration", () => {
     const { Provider, getRegistrationCount, getLatestCallbacks } = makeTestProvider();
 
@@ -160,7 +160,7 @@ describe("useTugcardPersistence – stable registration across re-renders", () =
     let currentOnRestore = onRestoreV1;
 
     function CardContent() {
-      useTugcardPersistence({
+      useCardPersistence({
         onSave: () => currentOnSave(),
         onRestore: (s: unknown) => currentOnRestore(s),
       });
@@ -212,8 +212,8 @@ describe("useTugcardPersistence – stable registration across re-renders", () =
 // T-P03: Integration with TugPane context (round-trip through TugPane)
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – TugPane context round-trip", () => {
-  it("T-P03: card content using useTugcardPersistence receives onRestore via TugPane activation", () => {
+describe("useCardPersistence – TugPane context round-trip", () => {
+  it("T-P03: card content using useCardPersistence receives onRestore via TugPane activation", () => {
     // Simulate TugPane providing context and calling onSave/onRestore.
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -223,7 +223,7 @@ describe("useTugcardPersistence – TugPane context round-trip", () => {
     const onRestore = mock((s: typeof contentState) => { restoredStates.push(s); });
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore });
+      useCardPersistence({ onSave, onRestore });
       return <div>card content</div>;
     }
 
@@ -253,7 +253,7 @@ describe("useTugcardPersistence – TugPane context round-trip", () => {
 // T-P04: restorePendingRef is included in registered callbacks
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – restorePendingRef in registered callbacks", () => {
+describe("useCardPersistence – restorePendingRef in registered callbacks", () => {
   it("T-P04: restorePendingRef is present on registered callbacks and defaults to false", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -261,7 +261,7 @@ describe("useTugcardPersistence – restorePendingRef in registered callbacks", 
     const onRestore = mock((_s: unknown) => {});
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore });
+      useCardPersistence({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -285,7 +285,7 @@ describe("useTugcardPersistence – restorePendingRef in registered callbacks", 
 // T-P05: No-deps useLayoutEffect fires onContentReady when flag is set
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – no-deps useLayoutEffect fires onContentReady", () => {
+describe("useCardPersistence – no-deps useLayoutEffect fires onContentReady", () => {
   it("T-P05: setting restorePendingRef to true and writing onContentReady fires callback on re-render", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -294,7 +294,7 @@ describe("useTugcardPersistence – no-deps useLayoutEffect fires onContentReady
     const onRestoreMock = mock((s: unknown) => { currentState = s as string; });
 
     function CardContent() {
-      useTugcardPersistence({ onSave, onRestore: onRestoreMock });
+      useCardPersistence({ onSave, onRestore: onRestoreMock });
       return <div data-testid="content">{currentState}</div>;
     }
 
@@ -337,7 +337,7 @@ describe("useTugcardPersistence – no-deps useLayoutEffect fires onContentReady
 // T-P06: Parent-sets-ref, child-reads-ref: mirrors real TugPane code path
 // ---------------------------------------------------------------------------
 
-describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection", () => {
+describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", () => {
   it("T-P06: TugPane sets flag + writes onContentReady before onRestore; callback fires after child re-render commits", () => {
     // This test exercises the exact indirection the real TugPane code path uses:
     // 1. Provider (parent) gets the registered callbacks object.
@@ -355,7 +355,7 @@ describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection
     function CardContent() {
       const [text, setText] = useState("initial");
 
-      useTugcardPersistence<string>({
+      useCardPersistence<string>({
         onSave: () => text,
         onRestore: (s: string) => { setText(s); },
       });

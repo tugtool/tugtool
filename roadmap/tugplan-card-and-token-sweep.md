@@ -26,14 +26,9 @@
 
 The pane rename plan (closed 2026-04-21) retired `TugWindow` / `windows` / `windowId` / `.tug-window*` everywhere a Tug-authored identifier carried "window." Two surfaces survived that sweep by design — both are straightforward to clean up now that the vocabulary is stable:
 
-1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but four identifiers still carry the old name — mostly hooks and contexts that were authored when `Tugcard` existed:
-   - `CardMeta` (card-registry; renamed from `TugcardMeta` in Step 1)
-   - `CardDataContext`, `CardDataContextValue`, `CardDataProvider`, `useCardData` (`hooks/use-card-data.ts`; renamed from `TugcardData*` in Step 2)
-   - `TugcardPersistenceCallbacks`, `UseTugcardPersistenceOptions`, `useTugcardPersistence` (use-tugcard-persistence.tsx)
-   - `useTugcardDirty` (tug-pane.tsx)
-   - 133 consumer references across 17 files
+1. **Tugcard fossils.** `Tugcard` was the React component that merged into `TugWindow` and then became `TugPane`. The component is gone, but hooks and types authored under that name needed a `Card*` rename (Steps 1–4). **Steps 1–3 complete:** `CardMeta`; `CardDataContext` / `CardDataProvider` / `useCardData`; `CardPersistenceCallbacks` / `UseCardPersistenceOptions` / `useCardPersistence`. **Step 4 remaining:** `useTugcardDirty` → `useCardDirty` (`tug-pane.tsx`).
 
-   These identifiers describe **card-level** state (metadata, feed data, persistence, dirty bit). They should be `Card*` — the plain word matches sibling types (`CardState`, `CardStateBag`, `CardLifecycle`, `CardHost`) that already drop the `Tug` prefix for card-model types.
+   These surfaces describe **card-level** state (metadata, feed data, persistence, dirty bit). The plain `Card*` word matches sibling types (`CardState`, `CardStateBag`, `CardLifecycle`, `CardHost`) that already drop the `Tug` prefix for card-model types.
 
 2. **`--tug-card-*` / `--tugx-card-*` CSS tokens that describe pane chrome.** The frame background, border, shadow, dim overlay, title bar backgrounds, title foreground colors, title bar icons, and title-bar controls are all **pane-chrome** properties. They were named `--tug-card-*` / `--tugx-card-*` when the outer frame was called `Tugcard`. With the frame now called `TugPane`, these token names misname what they style. The only genuinely card-scoped tokens are banner colors (`--tugx-card-banner-*`) which attach to the `TugPaneBanner` component — and even those should probably follow the component name.
 
@@ -63,9 +58,9 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 
 1. **Done (Step 1).** `CardMeta` (was `TugcardMeta`) — card-registry.ts + all consumers.
 2. **Done (Step 2).** `use-card-data.ts` with exports `CardDataContext`, `CardDataContextValue`, `CardDataProvider`, `useCardData` (was `use-tugcard-data.ts` / `TugcardData*`).
-3. `use-tugcard-persistence.tsx` → `use-card-persistence.tsx` with all exports renamed (`useTugcardPersistence` → `useCardPersistence`, `UseTugcardPersistenceOptions` → `UseCardPersistenceOptions`, `TugcardPersistenceCallbacks` → `CardPersistenceCallbacks`).
+3. **Done (Step 3).** `use-card-persistence.tsx` with exports `useCardPersistence`, `UseCardPersistenceOptions`, `CardPersistenceCallbacks` (was `use-tugcard-persistence.tsx` / `TugcardPersistence*`).
 4. `useTugcardDirty` → `useCardDirty` (stays in tug-pane.tsx where `CardDirtyContext` is defined).
-5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-tugcard-persistence.test.tsx` → `use-card-persistence.test.tsx` (Step 3).
+5. Test file renames: `use-card-data.test.tsx` **done (Step 2)**. `use-card-persistence.test.tsx` **done (Step 3)**.
 6. CSS frame tokens: `--tugx-card-bg`, `--tugx-card-border`, `--tugx-card-shadow-active|inactive`, `--tugx-card-dim-overlay` → `--tugx-pane-*`.
 7. CSS title-bar tokens: `--tug-card-title-bar-*`, `--tugx-card-title-bar-*`, `--tugx-card-title-fg-*` → `--tug-pane-title-bar-*`, `--tugx-pane-title-bar-*`, `--tugx-pane-title-fg-*`.
 8. CSS control tokens: `--tugx-card-control-on-*`, `--tugx-card-control-off-*` → `--tugx-pane-control-on-*`, `--tugx-pane-control-off-*`.
@@ -267,17 +262,17 @@ Without a formal law document, the Deck → Pane → Card hierarchy lives only i
 - File rename: `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` → `use-card-persistence.tsx`.
 - File rename: `tugdeck/src/__tests__/use-tugcard-persistence.test.tsx` → `use-card-persistence.test.tsx`.
 - Export renames: `useTugcardPersistence` → `useCardPersistence`, `UseTugcardPersistenceOptions<T>` → `UseCardPersistenceOptions<T>`, `TugcardPersistenceCallbacks` → `CardPersistenceCallbacks`.
-- Consumers: every card body that registers persistence callbacks, tests.
+- Consumers: `card-host.tsx`, `tug-prompt-input.tsx`, `tug-prompt-entry.tsx`, `use-card-persistence.test.tsx`, `content-ready-spike.test.tsx`, `react19-commit-timing.test.tsx`.
 
 **Tasks:**
-- [ ] `git mv` the source + test files.
-- [ ] Rename exports at the definition site.
-- [ ] Update every import and usage site.
-- [ ] Update JSDoc.
+- [x] `git mv` the source + test files.
+- [x] Rename exports at the definition site.
+- [x] Update every import and usage site.
+- [x] Update JSDoc.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean; `bun test` green.
-- [ ] `rg "useTugcardPersistence|UseTugcardPersistenceOptions|TugcardPersistenceCallbacks|use-tugcard-persistence" tugdeck/src` returns zero matches.
+- [x] `bun x tsc --noEmit` clean; `bun test` green.
+- [x] `rg "useTugcardPersistence|UseTugcardPersistenceOptions|TugcardPersistenceCallbacks|use-tugcard-persistence" tugdeck/src` returns zero matches.
 
 ---
 
@@ -601,16 +596,14 @@ Definitions (9, as enumerated in Context):
 | `CardDataContextValue` | type | `tugdeck/src/components/tugways/hooks/use-card-data.ts:50` | 2 ✓ |
 | `CardDataProvider` | FC | `tugdeck/src/components/tugways/hooks/use-card-data.ts:69` | 2 ✓ |
 | `useCardData` | hook | `tugdeck/src/components/tugways/hooks/use-card-data.ts:86,94,112` | 2 ✓ |
-| `TugcardPersistenceCallbacks` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:58` | 3 |
-| `UseTugcardPersistenceOptions` | type | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` | 3 |
-| `useTugcardPersistence` | hook | `tugdeck/src/components/tugways/use-tugcard-persistence.tsx:123` | 3 |
+| `CardPersistenceCallbacks` | type | `tugdeck/src/components/tugways/use-card-persistence.tsx:58` | 3 ✓ |
+| `UseCardPersistenceOptions` | type | `tugdeck/src/components/tugways/use-card-persistence.tsx:32` | 3 ✓ |
+| `useCardPersistence` | hook | `tugdeck/src/components/tugways/use-card-persistence.tsx:123` | 3 ✓ |
 | `useTugcardDirty` | hook | `tugdeck/src/components/chrome/tug-pane.tsx:215` | 4 |
 
 **Note:** `useTugcardDirty` has **zero call sites** today — grep finds only the export at `tug-pane.tsx:215`. Step 4 still renames it so the exported surface is coherent; future callers should use `useCardDirty`.
 
 **Prose-only references** (comments, JSDoc) that will surface during rename passes and must be rewritten, not just import-changed:
-- `tugdeck/src/__tests__/content-ready-spike.test.tsx` — 7 prose mentions of `useTugcardPersistence`.
-- `tugdeck/src/__tests__/react19-commit-timing.test.tsx:477` — 1 comment.
 - `tugdeck/src/components/tugways/tug-tab-bar.tsx:2` — header comment ("TugTabBar — presentational tab strip for multi-tab Tugcards").
 - `tugdeck/src/components/tugways/cards/hello-world-card.tsx:5` — JSDoc reference to `TugcardProps`.
 

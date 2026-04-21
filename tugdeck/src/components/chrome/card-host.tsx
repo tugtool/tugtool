@@ -25,7 +25,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 
 import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
-import { CardPersistenceContext, type TugcardPersistenceCallbacks } from "../tugways/use-tugcard-persistence";
+import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
@@ -108,9 +108,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   );
 
   // ---- Persistence callbacks ----
-  const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
+  const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);
   const registerPersistenceCallbacks = useCallback(
-    (callbacks: TugcardPersistenceCallbacks) => {
+    (callbacks: CardPersistenceCallbacks) => {
       persistenceCallbacksRef.current = callbacks;
     },
     [],

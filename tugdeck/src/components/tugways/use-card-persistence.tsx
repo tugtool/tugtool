@@ -1,9 +1,9 @@
 /**
- * CardPersistenceContext and useTugcardPersistence hook.
+ * CardPersistenceContext and useCardPersistence hook.
  *
  * Provides the opt-in card content state persistence mechanism for card content.
  *
- * Card content components call `useTugcardPersistence({ onSave, onRestore })`
+ * Card content components call `useCardPersistence({ onSave, onRestore })`
  * to register save/restore callbacks with their enclosing CardHost, which
  * calls `onSave` on tab deactivation and `onRestore` on tab activation, using
  * the DeckManager tab state cache as the durable backing store.
@@ -21,15 +21,15 @@ import React, { createContext, useContext, useLayoutEffect, useRef } from "react
 // ---------------------------------------------------------------------------
 
 /**
- * Options accepted by useTugcardPersistence.
+ * Options accepted by useCardPersistence.
  *
  * Generic over T so card content components get type-safe onRestore.
- * Internally stored as TugcardPersistenceCallbacks (erased to unknown)
+ * Internally stored as CardPersistenceCallbacks (erased to unknown)
  * so CardHost can treat the content payload as opaque JSON.
  *
  * Spec S05 ([D02])
  */
-export interface UseTugcardPersistenceOptions<T> {
+export interface UseCardPersistenceOptions<T> {
   /** Called by CardHost on tab deactivation. Must return JSON-serializable state. */
   onSave: () => T;
   /** Called by CardHost on tab activation with the previously saved state. */
@@ -37,12 +37,12 @@ export interface UseTugcardPersistenceOptions<T> {
 }
 
 // ---------------------------------------------------------------------------
-// TugcardPersistenceCallbacks
+// CardPersistenceCallbacks
 // ---------------------------------------------------------------------------
 
 /**
  * Save/restore callback pair registered by card content components via
- * `useTugcardPersistence`. CardHost calls these on tab deactivation/activation.
+ * `useCardPersistence`. CardHost calls these on tab deactivation/activation.
  *
  * - `onSave()` is called on deactivation. Returns opaque JSON-serializable state.
  * - `onRestore(state)` is called on activation with the previously saved state.
@@ -55,7 +55,7 @@ export interface UseTugcardPersistenceOptions<T> {
  *
  * Spec S04 ([D02], [D01], [D03])
  */
-export interface TugcardPersistenceCallbacks {
+export interface CardPersistenceCallbacks {
   onSave: () => unknown;
   onRestore: (state: unknown) => void;
   /**
@@ -82,19 +82,19 @@ export interface TugcardPersistenceCallbacks {
  * Context provided by CardHost to its children.
  *
  * The value is a stable registration function. Card content components call
- * `useTugcardPersistence()` which reads this context and registers their
+ * `useCardPersistence()` which reads this context and registers their
  * save/restore callbacks in `useLayoutEffect` (Rule 3 of Rules of Tugways).
  *
- * null when rendered outside CardHost (no-op in useTugcardPersistence).
+ * null when rendered outside CardHost (no-op in useCardPersistence).
  *
  * Spec S04 ([D02])
  */
 export const CardPersistenceContext = createContext<
-  ((callbacks: TugcardPersistenceCallbacks) => void) | null
+  ((callbacks: CardPersistenceCallbacks) => void) | null
 >(null);
 
 // ---------------------------------------------------------------------------
-// useTugcardPersistence hook
+// useCardPersistence hook
 // ---------------------------------------------------------------------------
 
 /**
@@ -120,7 +120,7 @@ export const CardPersistenceContext = createContext<
  *
  * Spec S05 ([D02], [D01], [D02], [D03], #s05-persistence-hook)
  */
-export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T>): void {
+export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): void {
   // Read the registration function from context (null outside CardHost).
   const register = useContext(CardPersistenceContext);
 
@@ -143,7 +143,7 @@ export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T
   // after unmount cleanup (which re-registers a no-op pair without
   // restorePendingRef). This is safe: after unmount, no further effects fire on
   // this component, so the no-deps useLayoutEffect never reads the stale ref.
-  const callbacksObjRef = useRef<TugcardPersistenceCallbacks | null>(null);
+  const callbacksObjRef = useRef<CardPersistenceCallbacks | null>(null);
 
   // Register stable wrappers that read from refs at call time.
   // useLayoutEffect runs before any events can fire (Rule 3).
@@ -152,7 +152,7 @@ export function useTugcardPersistence<T>(options: UseTugcardPersistenceOptions<T
   useLayoutEffect(() => {
     if (!register) return;
 
-    const callbacks: TugcardPersistenceCallbacks = {
+    const callbacks: CardPersistenceCallbacks = {
       onSave: () => onSaveRef.current?.() as unknown,
       onRestore: (state: unknown) => onRestoreRef.current?.(state as T),
       restorePendingRef,
