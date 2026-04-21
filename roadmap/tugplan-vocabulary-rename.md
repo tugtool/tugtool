@@ -500,15 +500,15 @@ This plan lands the rename across source, DOM, CSS, wire format, and Swift menu 
 - Tests — any test that references the old constant name or wire string.
 
 **Tasks:**
-- [ ] Rename `ADD_TAB_TO_ACTIVE_CARD` → `ADD_CARD_TO_ACTIVE_WINDOW`.
-- [ ] Wire string: `"add-tab-to-active-card"` → `"add-card-to-active-window"` on both sides.
-- [ ] Update tests.
+- [x] Rename `ADD_TAB_TO_ACTIVE_CARD` → `ADD_CARD_TO_ACTIVE_WINDOW`.
+- [x] Wire string: `"add-tab-to-active-card"` → `"add-card-to-active-window"` on both sides.
+- [x] Update tests.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `cargo nextest run` green.
-- [ ] `rg "add-tab-to-active-card|ADD_TAB_TO_ACTIVE_CARD" tugdeck/src tugapp/Sources` returns zero matches.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `cargo nextest run` green.
+- [x] `rg "add-tab-to-active-card|ADD_TAB_TO_ACTIVE_CARD" tugdeck/src tugapp/Sources` returns zero matches.
 
 ---
 

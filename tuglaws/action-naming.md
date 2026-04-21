@@ -14,7 +14,7 @@ Action names are API. They sit at three protocol boundaries:
 2. **Keybinding map** — `{ key: "KeyZ", meta: true, action: ... }`. The name is how the keyboard reaches the chain.
 3. **Control-frame RPC** — `sendControl("name")` on the Swift side ↔ `registerAction("name", handler)` on the JS side. The name is a wire-format symbol carried across a process boundary.
 
-When the same concept is spelled differently in each boundary, grep stops working, cross-references rot, and reviewers have to remember whether "add a tab" is `addTabToActiveCard` or `add-tab-to-active-card` or `addTabToActiveCard` depending on which file they're reading. The point of this document is to make **the same concept always look the same**, and **different concepts always look different**, wherever the name appears.
+When the same concept is spelled differently in each boundary, grep stops working, cross-references rot, and reviewers have to remember whether "add a card" is `addCardToActiveWindow` or `add-card-to-active-window` depending on which file they're reading. The point of this document is to make **the same concept always look the same**, and **different concepts always look different**, wherever the name appears.
 
 The design-system CSS custom properties get this treatment via [token-naming.md](token-naming.md) — a fixed shape, a fixed prefix, a fixed source of truth. Action names earn the same rigor for the same reasons.
 
@@ -30,7 +30,7 @@ Every action name belongs to exactly one of three categories. The category deter
 |----------|------------|---------------|------------|---------|
 | **Chain action** | `TUG_ACTIONS` in `action-vocabulary.ts` | `manager.dispatch` (chain walk), `manager.sendToFirstResponderForContinuation`, `keybinding-map.ts` | Responders via `useResponder`'s `actions` map | `cut`, `close`, `jump-to-tab` |
 | **Control frame** | `registerAction` calls in `action-dispatch.ts` | Swift `sendControl(...)` → `dispatchAction` on the JS side | Handler body inside `registerAction`; may side-effect directly, may dispatch a chain action | `reload`, `set-theme`, `eval` |
-| **Both** (identity) | Both — same string in both tables | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler is a one-liner that re-dispatches the chain action; responders handle it | `close`, `add-tab-to-active-card`, `show-component-gallery` |
+| **Both** (identity) | Both — same string in both tables | Swift `sendControl(...)` *and* `manager.dispatch` | Control-frame handler is a one-liner that re-dispatches the chain action; responders handle it | `close`, `add-card-to-active-window`, `show-component-gallery` |
 
 **Rules:**
 
@@ -39,15 +39,15 @@ Every action name belongs to exactly one of three categories. The category deter
 - A **Both** entry is the preferred shape for any RPC whose job is to inject a chain dispatch on behalf of a Swift menu item or bridge call. The Control-frame handler becomes a one-liner:
 
   ```ts
-  registerAction(TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD, () => {
-    responderChainManagerRef?.dispatch({
-      action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD,
+  registerAction(TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW, () => {
+    responderChainManagerRef?.sendToFirstResponder({
+      action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW,
       phase: "discrete",
     });
   });
   ```
 
-  No name translation. The Swift `sendControl("add-tab-to-active-card")` and the `manager.sendToFirstResponder({ action: "add-tab-to-active-card" })` carry the same string; the responder chain takes over from there.
+  No name translation. The Swift `sendControl("add-card-to-active-window")` and the `manager.sendToFirstResponder({ action: "add-card-to-active-window" })` carry the same string; the responder chain takes over from there.
 
 ---
 
@@ -61,7 +61,7 @@ Every action name belongs to exactly one of three categories. The category deter
 - **Words separated by single dashes.** No underscores. No double-dashes.
 - **Verb first.** `close`, `cut`, `select`, `jump`, `toggle`, `show`, `add`, `remove`, `reset`, `set`, `dismiss`, `confirm`, `cancel`, `open`, `focus`, `cycle`, `increment`, `decrement`, `preview`, `find`.
 - **Object second** (when the verb needs a direct object). `close-tab`, `select-all`, `jump-to-tab`, `set-value`, `set-property`, `toggle-section`, `show-settings`, `add-tab`, `reset-layout`, `open-menu`, `focus-next`, `cycle-card`, `preview-color`.
-- **Modifier third** (when the object needs disambiguation). `add-tab-to-active-card` — the object is the tab, but the modifier pins down *which* card receives it. `show-component-gallery` — the object is the gallery, the modifier narrows *which* gallery.
+- **Modifier third** (when the object needs disambiguation). `add-card-to-active-window` — the object is the card, but the modifier pins down *which* window receives it. `show-component-gallery` — the object is the gallery, the modifier narrows *which* gallery.
 - **Single-word names are valid** when the verb alone is unambiguous in the chain's context. `close`, `cut`, `copy`, `paste`, `undo`, `redo`, `delete`, `duplicate`, `toggle`, `find`, `minimize`, `maximize`, `reload`. These are dispatched without an object because the first responder supplies it — `close` closes whatever responds to `close`; `undo` undoes whatever owns the history at the focus point.
 
 **No compound words inside a single slot.** The verb, object, and modifier are each a single English word. `showGallery` or `previousTab` are camelCase and forbidden; `show-gallery` and `previous-tab` are the canonical forms. If you find yourself wanting to write `showcomponentgallery` (three words, no dashes) because the concept feels atomic, split it at the natural word boundaries instead.
@@ -71,7 +71,7 @@ Every action name belongs to exactly one of three categories. The category deter
 Different concepts must get visually distinct names. A few guardrails:
 
 - **Same verb, different object = different name.** `close-tab` (closes a single tab) vs. `close` (closes the whole card responder). These are siblings, not synonyms.
-- **Same verb, different modifier = different name.** `add-tab` (dispatched by a card-internal control; the responder supplies the card id) vs. `add-tab-to-active-card` (dispatched by the global menu; the responder walks to find the active card). These are peers at different scopes.
+- **Same verb, different modifier = different name.** `add-tab` (dispatched by a card-internal control; the responder supplies the card id) vs. `add-card-to-active-window` (dispatched by the global menu; the responder walks to find the active window). These are peers at different scopes.
 - **No synonyms.** Pick `delete` or `remove`, not both. Pick `show` or `open`, not both. The vocabulary is small; precedent wins.
 
 The current vocabulary prefers:
@@ -113,7 +113,7 @@ export const TUG_ACTIONS = {
   // ...
 
   CLOSE:                  "close",
-  ADD_TAB_TO_ACTIVE_CARD: "add-tab-to-active-card",
+  ADD_CARD_TO_ACTIVE_WINDOW: "add-card-to-active-window",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
   JUMP_TO_TAB:            "jump-to-tab",
   // ...
@@ -135,7 +135,7 @@ export type TugAction<Extra extends string = never> =
 - The object is **`TUG_ACTIONS`** (plural, uppercase with underscore).
 - Each key is the name of the action, in **`SCREAMING_SNAKE_CASE`**, derived mechanically from the kebab-case wire value:
   - `"select-all"` → `SELECT_ALL`
-  - `"add-tab-to-active-card"` → `ADD_TAB_TO_ACTIVE_CARD`
+  - `"add-card-to-active-window"` → `ADD_CARD_TO_ACTIVE_WINDOW`
   - `"jump-to-tab"` → `JUMP_TO_TAB`
 - No prefix on the key. `TUG_ACTIONS.CUT`, not `TUG_ACTIONS.TUG_CUT`. The object name carries the namespace.
 
@@ -223,7 +223,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `showComponentGallery`  | `show-component-gallery`      | `TUG_ACTIONS.SHOW_COMPONENT_GALLERY`  |
 | `showSettings`          | `show-settings`               | `TUG_ACTIONS.SHOW_SETTINGS`           |
 | `resetLayout`           | `reset-layout`                | `TUG_ACTIONS.RESET_LAYOUT`            |
-| `addTabToActiveCard`    | `add-tab-to-active-card`      | `TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD`  |
+| `addCardToActiveWindow` | `add-card-to-active-window`   | `TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW` |
 | `find`                  | `find`                        | `TUG_ACTIONS.FIND`                    |
 | `toggleMenu`            | `toggle-menu`                 | `TUG_ACTIONS.TOGGLE_MENU`             |
 | `setProperty`           | `set-property`                | `TUG_ACTIONS.SET_PROPERTY`            |
@@ -253,7 +253,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 
 | Old control-frame name     | Old chain action       | New (identity) name            |
 |----------------------------|------------------------|--------------------------------|
-| `add-tab-to-active-card`   | `addTabToActiveCard`   | `add-tab-to-active-card` (both) |
+| `add-card-to-active-window` | `addCardToActiveWindow` | `add-card-to-active-window` (both) |
 | `close-active-card`        | `close`                | `close` (both) — Control frame renamed from `close-active-card` to `close` |
 | `show-component-gallery`   | `showComponentGallery` | `show-component-gallery` (both) |
 

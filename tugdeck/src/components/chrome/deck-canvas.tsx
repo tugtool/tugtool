@@ -296,7 +296,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           }
         }
       },
-      // add-tab-to-active-card: Add a new "hello" tab to the topmost card
+      // add-card-to-active-window: Add a new "hello" card to the active window
       // (last in array). Reads cardsRef so the closure never goes stale.
       // If no cards exist, this is a no-op. The componentId "hello" is
       // intentionally hardcoded because it is the only registered card
@@ -304,7 +304,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // until payload support is added.
       // [D06] Add-tab action uses DeckManager + responder chain
       // [D09] Add-tab routed as DeckCanvas responder action
-      [TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD]: (_event: ActionEvent) => {
+      [TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW]: (_event: ActionEvent) => {
         const s = windowsRef.current;
         if (s.length === 0) return;
         const activeWindowId = s[s.length - 1].id; // topmost window (z-order)

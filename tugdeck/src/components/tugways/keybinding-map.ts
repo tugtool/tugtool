@@ -87,7 +87,7 @@ export interface KeyBinding {
  * dispatches a typed action through the responder chain; the walk
  * lands on whatever responder registered a handler for that action
  * (editor for undo, card for close/tab nav, canvas for show-settings
- * and add-tab-to-active-card, any of the floating surfaces for
+ * and add-card-to-active-window, any of the floating surfaces for
  * cancel-dialog). There is no per-component keyboard wiring — adding
  * a new shortcut is one entry here and (if needed) one handler on
  * the responder that owns the semantic.
@@ -105,7 +105,7 @@ export interface KeyBinding {
  * | Cmd+Z            | undo                   | stage 1 + preventDefaultOnMatch |
  * | Shift+Cmd+Z      | redo                   | stage 1 + preventDefaultOnMatch |
  * | Cmd+W            | close                  | stage 1 (card close)            |
- * | Cmd+T            | add-tab-to-active-card | stage 1 (canvas)                |
+ * | Cmd+T            | add-card-to-active-window | stage 1 (canvas)                |
  * | Cmd+,            | show-settings          | stage 1 (canvas stub)           |
  * | Cmd+.            | cancel-dialog          | stage 1 (floating surfaces)     |
  * | Cmd+F            | find                   | stage 1 (card stub)             |
@@ -142,7 +142,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // no conflicting default at all (⌘, , ⌘., ⌘F inside a WebView run
   // without a browser UI to collide with).
   { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
-  { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_TAB_TO_ACTIVE_CARD },
+  { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_WINDOW },
   // Focus the key card's prompt input. `scope: "key-card"` routes the
   // dispatch to the `card-content` responder inside the active card;
   // each card type that has a prompt (tide, future) registers a

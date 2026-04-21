@@ -227,8 +227,8 @@ export const TUG_ACTIONS = {
   //             handles it (typically `TugWindow`) uses its own cardId
   //             plus the componentId from the payload to call
   //             `store.addTab(cardId, componentId)`. Distinct from
-  //             `add-tab-to-active-card`, which is the global
-  //             menu/keystroke path that targets the focused card with
+  //             `add-card-to-active-window`, which is the global
+  //             menu/keystroke path that targets the focused window with
   //             a hardcoded component type.
   // REOPEN_TAB: payload — none. Restore the most recently closed tab.
   //             NOTE: no handler yet — ⌘⇧T is deferred per the A3 / R4
@@ -253,7 +253,8 @@ export const TUG_ACTIONS = {
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
   // SHOW_SETTINGS:          payload — none. Open the settings panel.
   // RESET_LAYOUT:           payload — none. Reset card positions.
-  // ADD_TAB_TO_ACTIVE_CARD: payload — none. Add a new tab to the first card.
+  // ADD_CARD_TO_ACTIVE_WINDOW: payload — none. Add a new card to the active window
+  //                         via the global menu / ⌘T (canvas targets the first responder).
   // FIND:                   payload — none. Open the find UI for the first
   //                         searchable responder.
   // TOGGLE_MENU:            payload — none. Open the action menu for the
@@ -271,7 +272,7 @@ export const TUG_ACTIONS = {
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
   SHOW_SETTINGS:          "show-settings",
   RESET_LAYOUT:           "reset-layout",
-  ADD_TAB_TO_ACTIVE_CARD: "add-tab-to-active-card",
+  ADD_CARD_TO_ACTIVE_WINDOW: "add-card-to-active-window",
   FIND:                   "find",
   TOGGLE_MENU:            "toggle-menu",
   TOGGLE_MAXIMIZE:        "toggle-maximize",

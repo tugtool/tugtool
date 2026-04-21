@@ -110,8 +110,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     // ---- ResponderChainManager registration with action-dispatch ----
-    // Register the manager so the add-tab-to-active-card Control-frame action handler can
-    // dispatch "add-tab-to-active-card" through the chain without importing React context.
+    // Register the manager so the add-card-to-active-window Control-frame action handler can
+    // dispatch "add-card-to-active-window" through the chain without importing React context.
     // ([D06], [D09])
     registerResponderChainManager(manager);
 

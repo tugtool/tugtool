@@ -460,7 +460,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func addTabToActiveCard(_ sender: Any) {
-        sendControl("add-tab-to-active-card")
+        sendControl("add-card-to-active-window")
     }
 
     @objc private func closeActiveCard(_ sender: Any) {
