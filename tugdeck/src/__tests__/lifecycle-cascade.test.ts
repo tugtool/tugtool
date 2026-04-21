@@ -12,7 +12,7 @@
  *   - `dispose()` removes all observer subscriptions.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import {
   CardLifecycle,
   type CardLifecycleStore,
@@ -320,5 +320,50 @@ describe("lifecycle-cascade — 11.6.1b composite first responder", () => {
       "willActivate:card-fr",
       "didActivate:card-fr",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 11.6.5 Piece 2 — dev-mode log gating
+// ---------------------------------------------------------------------------
+
+describe("lifecycle trace logs gated by LIFECYCLE_LOG (11.6.5 H10)", () => {
+  it("lifecycle notify methods and cascade transitions emit no console.log when the gate is closed", () => {
+    // Bun tests run with `import.meta.env?.DEV` absent, so the
+    // module-level `LIFECYCLE_LOG` constants in card-lifecycle.ts,
+    // app-lifecycle.ts, and lifecycle-cascade.ts resolve to `false`.
+    // Every wrapped `console.log` is a no-op under these conditions;
+    // the spy captures any call that leaks through the gate.
+    const { cardLifecycle, appLifecycle } = makeLifecycles("card-A");
+    installLifecycleCascade(cardLifecycle, appLifecycle);
+
+    const spy = spyOn(console, "log");
+    spy.mockClear();
+
+    // Card-lifecycle channels.
+    cardLifecycle.notifyCardDidFinishConstruction("card-B");
+    cardLifecycle.notifyCardWillActivate("card-B");
+    cardLifecycle.notifyCardDidActivate("card-B");
+    cardLifecycle.notifyCardWillDeactivate("card-B");
+    cardLifecycle.notifyCardDidDeactivate("card-B");
+    cardLifecycle.notifyCardWillMove("card-B");
+    cardLifecycle.notifyCardDidMove("card-B");
+    cardLifecycle.notifyCardWillResize("card-B");
+    cardLifecycle.notifyCardDidResize("card-B");
+    cardLifecycle.notifyCardWillBeginDestruction("card-B");
+
+    // App-lifecycle channels.
+    appLifecycle.notifyApplicationWillBecomeActive();
+    appLifecycle.notifyApplicationDidBecomeActive();
+    appLifecycle.notifyApplicationWillResignActive();
+    appLifecycle.notifyApplicationDidResignActive();
+    appLifecycle.notifyApplicationWillHide();
+    appLifecycle.notifyApplicationDidHide();
+    appLifecycle.notifyApplicationWillUnhide();
+    appLifecycle.notifyApplicationDidUnhide();
+
+    // Cascade trace (fires during the resign/become-active pair above).
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

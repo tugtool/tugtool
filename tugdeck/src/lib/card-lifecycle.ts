@@ -53,6 +53,14 @@ import {
 } from "react";
 
 /**
+ * Module-level toggle for lifecycle trace logs. Defaults to the Vite
+ * `import.meta.env.DEV` flag: dev builds print the full will/did →
+ * construct/destroy trace; prod builds are silent. Flip to `true` in
+ * source to capture a one-off trace without flipping the build mode.
+ */
+const LIFECYCLE_LOG: boolean = Boolean(import.meta.env?.DEV);
+
+/**
  * Observer callback shape. Receives the id of the card the event
  * applies to. Same value for wildcard subscribers, so callers can
  * route on id without also tracking "am I subscribed to cardId?".
@@ -227,7 +235,7 @@ export class CardLifecycle {
    * constructed-set so late-subscribing hooks receive initial-sync.
    */
   notifyCardDidFinishConstruction(cardId: string): void {
-    console.log(`[CardLifecycle] cardDidFinishConstruction id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardDidFinishConstruction id=${cardId}`);
     this.constructedCards.add(cardId);
     this.fire(this.constructionSubs, cardId);
   }
@@ -247,7 +255,7 @@ export class CardLifecycle {
    * `cardWillBeginDestruction` delegate method.
    */
   notifyCardWillBeginDestruction(cardId: string): void {
-    console.log(`[CardLifecycle] cardWillBeginDestruction id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardWillBeginDestruction id=${cardId}`);
     this.fire(this.destructionSubs, cardId);
     this.constructedCards.delete(cardId);
   }
@@ -258,7 +266,7 @@ export class CardLifecycle {
    * from `activateCard` in the will-phase of a card switch.
    */
   notifyCardWillActivate(cardId: string): void {
-    console.log(`[CardLifecycle] cardWillActivate id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardWillActivate id=${cardId}`);
     this.fire(this.willActivateSubs, cardId);
   }
 
@@ -269,7 +277,7 @@ export class CardLifecycle {
    * cascade layer when the app returns to the foreground.
    */
   notifyCardDidActivate(cardId: string): void {
-    console.log(`[CardLifecycle] cardDidActivate id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardDidActivate id=${cardId}`);
     this.fire(this.activationSubs, cardId);
   }
 
@@ -280,7 +288,7 @@ export class CardLifecycle {
    * `removeCard` before closing an active card.
    */
   notifyCardWillDeactivate(cardId: string): void {
-    console.log(`[CardLifecycle] cardWillDeactivate id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardWillDeactivate id=${cardId}`);
     this.fire(this.willDeactivateSubs, cardId);
   }
 
@@ -291,7 +299,7 @@ export class CardLifecycle {
    * on an active card.
    */
   notifyCardDidDeactivate(cardId: string): void {
-    console.log(`[CardLifecycle] cardDidDeactivate id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardDidDeactivate id=${cardId}`);
     this.fire(this.deactivationSubs, cardId);
   }
 
@@ -301,7 +309,7 @@ export class CardLifecycle {
    * `moveCard` when the new position differs from the existing one.
    */
   notifyCardWillMove(cardId: string): void {
-    console.log(`[CardLifecycle] cardWillMove id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardWillMove id=${cardId}`);
     this.fire(this.willMoveSubs, cardId);
   }
 
@@ -312,7 +320,7 @@ export class CardLifecycle {
    * loss during a drag gesture, etc.).
    */
   notifyCardDidMove(cardId: string): void {
-    console.log(`[CardLifecycle] cardDidMove id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardDidMove id=${cardId}`);
     this.fire(this.didMoveSubs, cardId);
   }
 
@@ -322,7 +330,7 @@ export class CardLifecycle {
    * `moveCard` when the new size differs from the existing one.
    */
   notifyCardWillResize(cardId: string): void {
-    console.log(`[CardLifecycle] cardWillResize id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardWillResize id=${cardId}`);
     this.fire(this.willResizeSubs, cardId);
   }
 
@@ -332,7 +340,7 @@ export class CardLifecycle {
    * transition.
    */
   notifyCardDidResize(cardId: string): void {
-    console.log(`[CardLifecycle] cardDidResize id=${cardId}`);
+    if (LIFECYCLE_LOG) console.log(`[CardLifecycle] cardDidResize id=${cardId}`);
     this.fire(this.didResizeSubs, cardId);
   }
 

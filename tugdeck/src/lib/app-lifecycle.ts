@@ -48,6 +48,15 @@ import {
 } from "react";
 
 /**
+ * Module-level toggle for app-lifecycle trace logs. Defaults to the
+ * Vite `import.meta.env.DEV` flag: dev builds print every will/did
+ * become-active/resign/hide/unhide transition; prod builds are
+ * silent. Flip to `true` in source to capture a one-off trace without
+ * flipping the build mode.
+ */
+const LIFECYCLE_LOG: boolean = Boolean(import.meta.env?.DEV);
+
+/**
  * Observer callback shape for app-lifecycle events. No arguments —
  * the app is singular and the fact of the event is the payload.
  */
@@ -91,42 +100,42 @@ export class AppLifecycle {
   // them to drive card-lifecycle cascades.
 
   notifyApplicationWillBecomeActive(): void {
-    console.log("[AppLifecycle] applicationWillBecomeActive");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationWillBecomeActive");
     this.fire("applicationWillBecomeActive");
   }
 
   notifyApplicationDidBecomeActive(): void {
-    console.log("[AppLifecycle] applicationDidBecomeActive");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationDidBecomeActive");
     this.fire("applicationDidBecomeActive");
   }
 
   notifyApplicationWillResignActive(): void {
-    console.log("[AppLifecycle] applicationWillResignActive");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationWillResignActive");
     this.fire("applicationWillResignActive");
   }
 
   notifyApplicationDidResignActive(): void {
-    console.log("[AppLifecycle] applicationDidResignActive");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationDidResignActive");
     this.fire("applicationDidResignActive");
   }
 
   notifyApplicationWillHide(): void {
-    console.log("[AppLifecycle] applicationWillHide");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationWillHide");
     this.fire("applicationWillHide");
   }
 
   notifyApplicationDidHide(): void {
-    console.log("[AppLifecycle] applicationDidHide");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationDidHide");
     this.fire("applicationDidHide");
   }
 
   notifyApplicationWillUnhide(): void {
-    console.log("[AppLifecycle] applicationWillUnhide");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationWillUnhide");
     this.fire("applicationWillUnhide");
   }
 
   notifyApplicationDidUnhide(): void {
-    console.log("[AppLifecycle] applicationDidUnhide");
+    if (LIFECYCLE_LOG) console.log("[AppLifecycle] applicationDidUnhide");
     this.fire("applicationDidUnhide");
   }
 

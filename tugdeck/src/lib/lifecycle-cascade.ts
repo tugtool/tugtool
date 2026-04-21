@@ -34,6 +34,15 @@
 import type { CardLifecycle } from "./card-lifecycle";
 import type { AppLifecycle } from "./app-lifecycle";
 
+/**
+ * Module-level toggle for cascade trace logs. Defaults to the Vite
+ * `import.meta.env.DEV` flag: dev builds print the cascade's from-which-
+ * app-event / to-which-card-id trace; prod builds are silent. Flip to
+ * `true` in source to capture a one-off trace without flipping the
+ * build mode.
+ */
+const LIFECYCLE_LOG: boolean = Boolean(import.meta.env?.DEV);
+
 /** Opaque handle returned by `installLifecycleCascade`. */
 export interface LifecycleCascadeHandle {
   /** Release all observer subscriptions installed by the cascade. */
@@ -70,9 +79,11 @@ export function installLifecycleCascade(
     // stack (post-detach or post-move edge cases).
     const activeId = cardLifecycle.getFirstResponderCardId();
     if (activeId === null) return;
-    console.log(
-      `[CardLifecycle] cascade from ${trigger} → cardWillDeactivate/cardDidDeactivate id=${activeId}`,
-    );
+    if (LIFECYCLE_LOG) {
+      console.log(
+        `[CardLifecycle] cascade from ${trigger} → cardWillDeactivate/cardDidDeactivate id=${activeId}`,
+      );
+    }
     deactivatedByAppCardId = activeId;
     cardLifecycle.notifyCardWillDeactivate(activeId);
     cardLifecycle.notifyCardDidDeactivate(activeId);
@@ -94,14 +105,18 @@ export function installLifecycleCascade(
     // store-driven activation path (user click, restoration) will
     // reactivate whatever card is top-of-deck post-destruction.
     if (!cardLifecycle.hasConstructed(cardId)) {
-      console.log(
-        `[CardLifecycle] cascade from ${trigger} → card ${cardId} destroyed between deactivate and reactivate; skipping reactivation`,
-      );
+      if (LIFECYCLE_LOG) {
+        console.log(
+          `[CardLifecycle] cascade from ${trigger} → card ${cardId} destroyed between deactivate and reactivate; skipping reactivation`,
+        );
+      }
       return;
     }
-    console.log(
-      `[CardLifecycle] cascade from ${trigger} → cardWillActivate/cardDidActivate id=${cardId}`,
-    );
+    if (LIFECYCLE_LOG) {
+      console.log(
+        `[CardLifecycle] cascade from ${trigger} → cardWillActivate/cardDidActivate id=${cardId}`,
+      );
+    }
     cardLifecycle.notifyCardWillActivate(cardId);
     cardLifecycle.notifyCardDidActivate(cardId);
   };
