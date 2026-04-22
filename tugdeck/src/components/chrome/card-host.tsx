@@ -25,6 +25,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 
 import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
+import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
@@ -37,7 +38,6 @@ import { getRegistration, presentWorkspaceKey } from "../../card-registry";
 import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
 import { getConnection } from "../../lib/connection-singleton";
 import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
-import type { PropertyStore } from "../tugways/property-store";
 import type { CardStateBag } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
@@ -99,13 +99,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // The card content's PropertyStore is held in a ref and consumed by the
   // card-level responder's `setProperty` handler below. No registry
   // indirection — sendToTarget(cardId) resolves to this responder directly.
-  const propertyStoreRef = useRef<PropertyStore | null>(null);
-  const registerPropertyStore = useCallback(
-    (ps: PropertyStore) => {
-      propertyStoreRef.current = ps;
-    },
-    [],
-  );
+  const { register: registerPropertyStore, ref: propertyStoreRef } = useCardPropertyStore();
 
   // ---- Persistence callbacks ----
   const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);

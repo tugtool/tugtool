@@ -55,3 +55,5 @@ export { useCardData } from "./use-card-data";
 export { useSelectionBoundary } from "./use-selection-boundary";
 export { usePropertyStore, CardPropertyContext } from "./use-property-store";
 export type { UsePropertyStoreOptions, PropertyStoreRegistrar } from "./use-property-store";
+export { useCardPropertyStore } from "./use-card-property-store";
+export type { UseCardPropertyStoreResult } from "./use-card-property-store";
