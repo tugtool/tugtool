@@ -106,35 +106,49 @@ Per `tuglaws/tugplan-skeleton.md`. Anchors follow the prefix convention (`d`NN, 
 
 Every open question below has a concrete question, what breaks if we guess wrong, options with tradeoffs, and a decision plan. Resolve before starting [Step 1](#step-1), or explicitly defer with rationale.
 
-#### [Q01] On `applicationDidBecomeActive` / `applicationDidUnhide`, which cards does the keeper re-apply? {#q01-restore-scope-on-activate}
+#### [Q01] On `applicationDidBecomeActive` / `applicationDidUnhide`, which cards does the keeper re-apply? (DECIDED) {#q01-restore-scope-on-activate}
 
-**Question.** When the app becomes active again after Cmd-Tab or unhide, the keeper's `apply()` is called via the lifecycle observer. Does it walk **every card** that has a saved selection snapshot and apply each, or **only the card whose active card is the focused card of the deck** (i.e., the single card that was "where the user was" when the app went inactive)?
+**Question.** When the app becomes active again after Cmd-Tab or unhide, the keeper's `apply()` is called via the lifecycle observer. Does it walk **every card** that has a saved selection snapshot and apply each, or **only the active card of the active pane** (i.e., the single card that was "where the user was" when the app went inactive)?
 
-**Why it matters.** The browser has one selection at a time, globally. Only one card can have a visible selection. If we apply snapshots to non-focused cards, we are writing to `el.selectionStart` / `selectionEnd` on elements inside display-none subtrees or inactive tabs, which is harmless but wasted work — and any DOM-selection apply to a non-focused card would instantly move the browser's global selection off the focused card, which is wrong. If we apply to only the focused card, non-focused cards keep their saved snapshots; those get applied at `cardDidActivate` time when the user later switches. That path exists regardless.
+**Why it matters.** The browser has one selection at a time, globally. Only one card can have a visible selection. If we apply snapshots to non-focused cards, we are writing to `el.selectionStart` / `selectionEnd` on elements inside display-none subtrees or inactive tabs, which is harmless but wasted work — and any DOM-selection apply to a non-focused card would instantly move the browser's global selection off the focused card, which is wrong. If we apply to only the focused card, non-focused cards keep their saved snapshots; those get applied at `cardDidActivate` time when the user later switches. That path exists regardless ([Q04]).
 
-**Options.**
+**Options considered.**
 - **Option A — focused card only.** Keeper iterates the `activePaneId` → `activeCardId` resolution and applies for that one card. Other cards rely on `cardDidActivate` for eventual apply.
 - **Option B — every card with a snapshot.** Keeper walks all cards, calls apply for each. For form-control selections on non-focused cards, this is a set-but-invisible state (harmless). For DOM selections on non-focused cards, this *moves the browser's global selection* — certainly wrong.
 - **Option C — every card for form-control snapshots, focused card only for DOM snapshots.** Hybrid. Avoids B's DOM-wreckage while pre-warming form-control offsets on inactive cards.
 
-**Plan to resolve.** Ship with **Option A**. It matches the user's mental model ("when I come back, my selection is where I left it, which was the active card"). If a case surfaces where a user switches cards after become-active and sees a stale selection, promote to Option C (Option B is eliminated).
+**Resolution: DECIDED — Option A (focused card only).**
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 9](#step-9). Revisit if SC-6 fails after Step 12 (card activation wiring) lands.
+Rationale:
+1. Option B is eliminated — DOM-selection apply on a non-focused card is unambiguously wrong (moves the browser's global selection off the focused card).
+2. Option C's pre-warming has no user-visible payoff. Form-control `selectionStart/End` on an invisible card is not observable; the offsets are re-applied when the user visits that card via `cardDidActivate` (Step 12 / [Q04]).
+3. Option A matches the user's mental model: "when I come back, my selection is where I left it, which was the active card." The per-card-activation path covers every other card the user later visits.
+4. Option A is the smallest surface that still satisfies SC-1, SC-2, SC-5, SC-6.
 
-#### [Q02] On cold-boot reload/relaunch, does the keeper's `apply()` steal focus? {#q02-focus-steal-on-reload}
+Implemented at [Step 9](#step-9). Revisit only if SC-6 fails after [Step 12](#step-12) (card activation wiring) lands.
+
+#### [Q02] On cold-boot reload/relaunch, does the keeper's `apply()` steal focus? (DECIDED) {#q02-focus-steal-on-reload}
 
 **Question.** When a card mounts with a saved `CardSelectionState` where `focus: { kind: "keyed", focusKey: "..." }`, should the keeper call `el.focus()`?
 
-**Why it matters.** Restoring focus is **required** for form-control selection to be *visible* — `setSelectionRange` on an unfocused element paints no highlight ([SC-2]). But stealing focus on cold mount can be surprising: on mobile this pops the virtual keyboard; on desktop it grabs keystrokes away from wherever the OS has directed them.
+**Why it matters.** Restoring focus is **required** for form-control selection to be *visible* — `setSelectionRange` on an unfocused element paints no highlight ([SC-2]). But stealing focus on cold mount can be surprising, especially on multi-pane layouts where the restored card may not be the pane the user is looking at.
 
-**Options.**
-- **Option A — always.** If the saved snapshot has a focus key, focus the element on mount. Uniform behavior; fulfills SC-2 without caveats.
-- **Option B — only when the focused card at save time is still the focused card on boot.** If the deck's active card is the same as the one whose snapshot has focus, focus. Otherwise the user's focus context shifted (they closed the window while focused on a different app's element, perhaps); don't grab focus.
+**Options considered.**
+- **Option A — always.** If the saved snapshot has a focus key, focus the element on mount. Uniform behavior; fulfills SC-2 without caveats. Downside: on multi-pane layouts, yanks focus away from the active pane's card to a non-active pane's card just because that card mounted with a saved focus key.
+- **Option B — only when the card being restored is the active card of the active pane.** If the saved focus belongs to `deckState.panes[activePaneIndex].activeCardId`, focus it. Otherwise leave focus alone; the user's `cardDidActivate` path (Step 12 / [Q04]) focuses the card when they later navigate to it.
 - **Option C — never. Rely on the user clicking back in.** Save fidelity drops: the user sees their text but no cursor until they click. SC-2 fails for the common case.
 
-**Plan to resolve.** Ship with **Option B**. It preserves the common case (user closed the app with focus on input X, reopens to see cursor back in X) while not stealing focus when the context has changed (user never had our app's card focused; we shouldn't grab it now). Implementation: check whether the target card's `cardId` matches `deckState.panes[last].activeCardId` on mount.
+**Resolution: DECIDED — Option B (active card of active pane only).**
 
-**Resolution:** OPEN. Recommendation to adopt Option B at [Step 6](#step-6). [Q01] and [Q02] together describe "apply only for the currently focused card" — they are consistent.
+Rationale:
+1. Option C is eliminated — defeats the purpose of the plan (SC-2 requires visible selection on restore).
+2. Option A breaks on multi-pane layouts: if pane 0 has card X focused and pane 1 has card Y with a stored focus key, A would call `.focus()` on Y during mount, stealing focus off X. B defers Y's focus until the user navigates to pane 1; at that moment `cardDidActivate` fires and the per-card-activation path ([Q04]) focuses Y cleanly.
+3. B reads naturally as "where the user left off" — the user left off with focus on the active card of the active pane. Non-active panes' cards get their focus back when the user visits them, not speculatively on mount.
+4. Implementation is a single guard: `cardId === deckState.panes[activePaneIndex].activeCardId`.
+
+**Cmd-Tab then quit is not a wrinkle.** On Cmd-Tab, `applicationWillResignActive` fires while the WebView still owns focus ([Q03]); the will-phase save captures `focus: { kind: "keyed", focusKey: X }` correctly. If the user later quits from another app, the app terminates; the saved snapshot on disk is already `keyed-X`. Cold boot reads `keyed-X` and Option B refocuses it. The `body-transient` FocusSnapshot variant ([R06]) covers the narrower case where the user's last intentional focus state genuinely was "not on any keyed input" — e.g., clicked card chrome or Tabbed out of all inputs before the will-phase event — so that restore leaves focus alone, not that it failed to capture a known-good focus.
+
+Implemented at [Step 6](#step-6). Consistent with [Q01]: both describe "apply only for the currently-focused card."
 
 #### [Q03] Does the Swift host emit `applicationWillResignActive` / `applicationWillHide`? (DECIDED) {#q03-will-phase-events}
 
@@ -147,66 +161,104 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 No Swift patch is required. Step 10 (will-phase save) subscribes directly.
 
-#### [Q04] On card/tab activation within the app, is cross-card selection transfer automatic? {#q04-cross-card-activation-transfer}
+#### [Q04] On card/tab activation within the app, is cross-card selection transfer automatic? (DECIDED) {#q04-cross-card-activation-transfer}
 
 **Question.** User clicks from card A's content to card B's chrome (or switches tabs). The browser has at most one selection globally. What exactly happens, and what should we guarantee?
 
 **Why it matters.** Without explicit handling, the user's click on B's chrome cancels A's selection (native browser behavior). A's `willDeactivate` fires, then B's `didActivate`. If we capture A's selection in `willDeactivate` and apply B's saved snapshot in `didActivate`, each card carries its own stable selection across visits — click A, select, click B, click A, the selection is back. Without this, A's selection is gone forever the moment the user clicks B.
 
-**Options.**
+**Options considered.**
 - **Option A — capture on `willDeactivate`, apply on `didActivate`.** Each card owns its own selection across the user's navigation.
 - **Option B — no card-level keeper wiring; rely only on app-lifecycle events.** Users lose per-card selection memory on every card switch. Fails the spirit of SC-6.
 - **Option C — capture only; don't apply.** Saves the outgoing card's selection but doesn't resurrect the incoming card's. Users see their old card's selection return only after app resign+activate, not after card switch+back.
 
-**Plan to resolve.** **Ship Option A.** It's a clean match for `observeCardWillDeactivate` / `observeCardDidActivate` (both exist, both are called today for other reasons). Skip-if-correct ensures that on a quick tab-return the existing selection is left alone.
+**Resolution: DECIDED — Option A (capture on `willDeactivate`, apply on `didActivate`).**
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 12](#step-12).
+Rationale:
+1. Options B and C both fail the spirit of [SC-6] ("selection survives card/tab activation"). The reason the plan takes on card-lifecycle observers at all is that app-lifecycle events alone aren't enough for per-card memory.
+2. Option A is symmetric with [Q01] and [Q02] at the app-lifecycle boundary: "capture on the way out, apply on the way in, scoped to the card that's transitioning." Same mental model, different boundary.
+3. Both observer hooks already exist (`deckManager.cardLifecycle.observeCardWillDeactivate` and `deckManager.observeCardDidActivate`). No new plumbing.
+4. `willDeactivate` is the only moment we can read card A's selection before the native click-into-B cancels it. This is the same will-phase logic that justifies [Q03]'s app-level will-phase capture.
 
-#### [Q05] When `apply()` is called but the target element is no longer in the DOM, what does it do? {#q05-stale-snapshot-handling}
+**No-snapshot clause.** On `didActivate` of a card with no saved snapshot (first visit), `apply()` is a no-op. The keeper does not invent a default caret — the browser's native focus behavior from the activating click stands.
+
+Implemented at [Step 12](#step-12). Skip-if-correct ensures a quick tab-return (user clicks B, clicks back to A fast enough that the snapshot still matches the live selection) does not re-apply and cause WebKit programmatic-selection degradation ([R03]).
+
+#### [Q05] When `apply()` is called but the target element is no longer in the DOM, what does it do? (DECIDED) {#q05-stale-snapshot-handling}
 
 **Question.** A saved bag has `selection: { kind: "form-control", persistKey: "email" }` but on restore no element with `data-tug-persist-value="email"` exists in the card's subtree (author removed the input, component was redesigned, older bag shape). What happens?
 
-**Why it matters.** Users will have bags from older app versions. A crash, silent corruption, or visible error would be worse than a graceful "best effort; nothing to restore".
+**Why it matters.** Users will always have bags written by older versions of the app. A crash or visible error would be worse than the missing selection itself — but a clever fallback could land the user's cursor on the *wrong* element, which is worse still, because the next keystroke goes into the wrong input (silent corruption).
 
-**Options.**
-- **Option A — silent fail in prod, dev-mode warning.** Apply returns `"failed"`, the keeper logs in dev-mode, user sees no selection (which matches "the element no longer exists, nothing to select").
-- **Option B — attempt fallback.** Search for an input with a similar name, or the first input in the card, or apply the range to a DOM-selection textContext search. High risk of attaching the selection to the wrong element.
-- **Option C — raise an error.** Surfaces the bag/component mismatch loudly. Probably too aggressive for a user-facing state-restore concern.
+**Options considered.**
+- **Option A — silent fail in prod, dev-mode warning.** `apply()` returns `"failed"`, the keeper logs in dev, the user sees no selection on that element (the element no longer exists; nothing to select is the truthful answer).
+- **Option B — attempt fallback.** Search for a similar key, fall back to the first keyed input in the card, or run a DOM-selection `textContext` search against form-control text. High risk of landing the cursor on the wrong element.
+- **Option C — raise an error.** Surface the bag/component mismatch loudly. Too aggressive for user-facing state-restore, and punishes the whole bag for one stale entry — other card states in the same save would be lost.
 
-**Plan to resolve.** **Ship Option A.** Fallbacks are not worth the risk of landing selection on the wrong element.
+**Resolution: DECIDED — Option A (silent fail in prod, dev warn).**
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 5](#step-5).
+Rationale:
+1. Option B is actively dangerous. The user's next keystroke goes into the "similar" element — possibly different semantics, a different submit path. Silent corruption. A missing selection is strictly better than a wrong selection.
+2. Option C punishes the whole bag for one stale entry. If a card has five keyed inputs and one was renamed, C would throw and lose the other four. A restores the four and drops the one.
+3. Option A is the conventional policy for persisted UI state — "best effort, keep going."
+4. Dev-mode warning is cheap and surfaces the bug to the author without bothering the user.
 
-#### [Q06] Is there a blur-time capture safety net, and if so with what debounce? {#q06-blur-time-capture}
+**Per-snapshot independence.** `apply()` treats the three concepts — DOM selection, form-control selection, focus — as **independent silent-fail units, not coupled**. A missing focus target does not block applying a still-valid selection. A missing form-control target does not block applying a still-valid DOM selection (or vice versa). Each concept's apply step runs independently; each logs its own dev warning on stale-target. If focus lands nothing and the form-control selection is applied, the selection won't paint (per [SC-2]) — that is the honest visible state and the user can click into the input to re-focus it.
 
-**Question.** Do we add a module-level `focusout` listener that captures form-control selection whenever a keyed element loses focus?
+Implemented at [Step 5](#step-5) (DOM apply), [Step 6](#step-6) (form-control + focus apply).
 
-**Why it matters.** Some transitions don't fire `willResignActive` cleanly — or fire it too late. A blur-time capture gives every save trigger a freshly-captured snapshot to read. Without it, the last save of a keyed element could be several seconds (or transitions) old.
+#### [Q06] Is there a blur-time capture safety net, and if so with what debounce? (DECIDED) {#q06-blur-time-capture}
 
-**Options.**
-- **Option A — yes, debounced at 50 ms.** Short enough that the last capture before a lifecycle transition is fresh, long enough to collapse rapid Tab-key focus traversals into one capture.
-- **Option B — yes, no debounce.** Every blur captures immediately. Simple, slightly more work but probably not measurable.
-- **Option C — no safety net.** Rely on explicit save triggers only. Higher risk of stale snapshots under rapid focus churn.
+**Question.** Do we add a module-level `focusout` listener that captures form-control selection whenever a keyed element loses focus, and if so with what debounce?
 
-**Plan to resolve.** **Ship Option A.** Debounced 50 ms is the sweet spot. The listener lives on the deck root (captures bubble up from every card's content), scoped to the current card via `findCardRoot(event.target)`.
+**Why it matters.** The blur-time listener is **not optional** — it is load-bearing for the `body-transient` `FocusSnapshot` variant ([D03], [R06], [S02]). The listener maintains a module-level `lastKeyedFocus` ref that `captureFocus` reads when `document.activeElement === document.body`, so apply can restore the user's last keyed input instead of doing nothing. Without the listener, body-transient focus has no way to carry `lastKeyedFocus` and R06's mitigation collapses. The "no listener" option is therefore eliminated.
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 11](#step-11).
+Separately, the listener serves a secondary safety-net job: for window-level transitions where no element blurs cleanly, a freshly-debounced capture is already on disk when the lifecycle event fires.
 
-#### [Q07] What is the `textContext` fallback window size? {#q07-text-context-window}
+**Options considered** (debounce only; the listener itself is required by [R06]).
+- **Option A — debounced 50 ms.** Rapid Tab-traversal (user tabs through a form quickly) collapses into one capture per settled focus. Minimum work, minimum WebKit perturbation.
+- **Option B — no debounce.** Every `focusout` fires a capture immediately. Simpler, but a fast 6-input Tab-burst triggers 6 capture → `setCardState` cycles within a few hundred ms, all but the last overwritten before any save trigger reads them.
+- **Option C — no listener at all. Eliminated** — body-transient focus ([R06]) depends on the listener's `lastKeyedFocus` ref; without the listener, body-transient snapshots can't carry a key and the whole body-transient mitigation collapses.
 
-**Question.** When DOM selection `pathToNode` fails, the keeper searches for a short text window to re-anchor. How big is the window, and how does it handle ambiguity (same text appearing multiple times in the card)?
+**Resolution: DECIDED — Option A (50 ms debounce), with split update policy.**
 
-**Why it matters.** Smaller windows risk ambiguity (common substrings like `"the"` match everywhere). Larger windows risk non-existence (any nearby text change invalidates the match). The keeper needs a policy.
+Rationale:
+1. C is eliminated by [R06]'s load-bearing dependency.
+2. B is correct but wasteful. 50 ms is long enough to collapse a rapid Tab-burst into one capture, short enough that the last capture before a lifecycle event is fresh (no human perceives 50 ms).
+3. Implementation is cheap: one `setTimeout` + clear on each `focusout`.
+4. Step 11 already tests this: "blur a keyed element 5 times in 30 ms; assert `capture` is called once."
 
-**Options.**
-- **Option A — fixed 20 chars each side.** Small snapshot, high ambiguity risk.
-- **Option B — fixed 40 chars each side.** Mid-tier. Balances storage vs. specificity.
-- **Option C — adaptive: start at 20 chars, double on ambiguity (up to 200 each side), fail if still ambiguous at the cap.** Minimal snapshot for distinctive text, adaptive for repetitive text. Capped so we don't end up storing half the card's text in the bag.
-- **Option D — no textContext; fail if paths don't resolve.** Simplest, but re-opens the tide-card shape-shift fragility that was [Issue C] in the superseded `persistence-reliability.md`.
+**Split update policy (required clause).** The `lastKeyedFocus` ref updates **synchronously** on every `focusout` whose target carries `data-tug-persist-value` or `data-tug-focus-key`. Only the **capture-and-store** path (reading element state, building the `SelectionSnapshot`, calling `deckManager.setCardState`) is debounced. Rationale: if a lifecycle event fires during a debounce window, `captureFocus` must read a *current* `lastKeyedFocus` — otherwise a `body-transient` snapshot written during the window would carry the wrong (stale) key or none at all.
 
-**Plan to resolve.** **Ship Option C.** The adaptive behavior means authors with highly-repetitive content (e.g., logs) still get specificity, while common cases stay small.
+Implemented at [Step 11](#step-11). Step 11 must assert both behaviors: the debounced capture path (one capture for 5 rapid blurs), and the synchronous ref update (a lifecycle event fired mid-debounce reads the latest `lastKeyedFocus`, not the previous one).
 
-**Resolution:** OPEN. Recommendation to adopt Option C at [Step 4](#step-4).
+#### [Q07] What is the `textContext` fallback window size? (DECIDED) {#q07-text-context-window}
+
+**Question.** When DOM selection `pathToNode` fails on restore (the serialized path doesn't resolve — a sibling was inserted, a wrapper was added, a node got split), the keeper falls back to a short text window for re-anchoring. How big is the window, and how does it handle ambiguity (the same short text appearing multiple times in the card's content)?
+
+**Why it matters.** This is purely a DOM-selection concern. Form-control selection uses `persistKey` and does not use textContext. For DOM selections in tide cards and other shape-shifting content:
+- Too small → ambiguity (common words like `"the"` match everywhere).
+- Too large → any nearby edit invalidates the match (common for tide-card content flow).
+- No fallback → shape-shift fragility returns (the exact bug this plan fixes).
+
+**Options considered.**
+- **Option A — fixed 20 chars each side.** Small snapshot, high ambiguity risk on common words.
+- **Option B — fixed 40 chars each side.** Middle ground. ~80 chars per selection.
+- **Option C (full adaptive) — capture 200 chars each side; apply escalates 20→40→80→160→200, fails loudly if still ambiguous.** Adaptive at apply time.
+- **Option C1 (simple adaptive) — capture 80 chars each side; apply escalates 20→40→80 using substrings of the stored 80. No escalation beyond 80.** Fixed-size capture, adaptive match.
+- **Option C2 (minimum-storage adaptive) — capture and apply both adaptive, store just the resolving window size.** More complex; minimum bag storage.
+- **Option D — no textContext; fail if paths don't resolve.** Eliminated — re-introduces shape-shift fragility.
+
+**Resolution: DECIDED — Option C1 (simple adaptive).**
+
+Rationale:
+1. D is eliminated by the plan's purpose.
+2. A and B are fixed — either too small for common words (A) or too big for unique phrases that would resolve at 20 chars (B).
+3. C (full adaptive) stores 200 chars per selection unconditionally, which is wasteful when most resolutions succeed at 20 chars.
+4. C2 (minimum-storage adaptive) is the theoretically tidiest, but adds capture-time cost and complexity for marginal bag-size savings over C1.
+5. **C1 is the simple-until-proven-insufficient choice.** Capture stores 80 chars each side (fixed, one code path). Apply escalates 20 → 40 → 80 using substrings of the stored window. No escalation beyond 80; if 80 chars on each side still match multiple positions, apply returns `"failed"` and logs in dev (consistent with [Q05]'s silent-fail-with-dev-warn policy). Storage is bounded at ~160 chars per DOM selection — negligible against the full card bag.
+
+Implemented at [Step 4](#step-4) (DOM capture) and [Step 5](#step-5) (DOM apply). If real-world usage proves 80 chars insufficient for tide cards with highly-repetitive content, revisit as a follow-on — C or C2 can be promoted to.
 
 ---
 
@@ -314,11 +366,11 @@ type FocusSnapshot =
 
 #### [D06] `textContext` is an adaptive fallback for DOM selection path resolution failure (DECIDED) {#d06-text-context-fallback}
 
-**Decision:** DOM snapshots optionally carry a `textContext: { text, anchorOffsetInText, focusOffsetInText }` field. On apply, if `pathToNode(boundary, anchorPath)` fails, the keeper searches the current `boundary.textContent` for `textContext.text`. If found exactly once, it re-anchors against that match. If found zero times or multiple times, apply widens the context adaptively up to 200 chars each side; at the cap, apply returns `"failed"`.
+**Decision:** DOM snapshots optionally carry a `textContext: { text, anchorOffsetInText, focusOffsetInText }` field. Capture records **80 chars each side** of the selection anchor/focus (fixed; one code path). On apply, if `pathToNode(boundary, anchorPath)` fails, the keeper searches the current `boundary.textContent` using **substrings of the stored 80-char window, escalating 20 → 40 → 80 chars** until a unique match is found. If none of the three widths yield a unique match, apply returns `"failed"` and logs in dev (consistent with [Q05] silent-fail policy). No escalation beyond 80 chars — [Q07] adopts Option C1 (simple adaptive) until real-world usage proves it insufficient.
 
-**Rationale:** `pathToNode` is shape-fragile ([superseded Issue C]). Dynamic DOMs (tide-card async message arrivals) are the primary victim. TextContext adds a second anchor that is resilient to DOM tree reshaping as long as the textual content is stable.
+**Rationale:** `pathToNode` is shape-fragile ([superseded Issue C]). Dynamic DOMs (tide-card async message arrivals) are the primary victim. TextContext adds a second anchor that is resilient to DOM tree reshaping as long as the textual content is stable. C1 keeps the capture path simple (one fixed size) while preserving adaptive match behavior on apply.
 
-**Implications:** Snapshot size grows slightly (typically < 100 bytes per DOM selection). Migration doesn't need to invent `textContext` for old-shape bags (the field is optional).
+**Implications:** Snapshot size grows by ~160 bytes per DOM selection (80 chars each side). Migration doesn't need to invent `textContext` for old-shape bags (the field is optional).
 
 #### [D07] `CardStateBag` schema version bumps; read-side migration is best-effort (DECIDED) {#d07-bag-schema-migration}
 
@@ -726,12 +778,12 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 **Artifacts:**
 - `captureDomSelection(boundary): SelectionSnapshot` implementing the `kind: "dom"` branch.
 - Path-building helper (ported from `selectionGuard`).
-- textContext capture (adaptive per [Q07] Option C) *with* small default; grow on demand during apply.
+- textContext capture at **80 chars each side** of the anchor/focus (fixed, per [Q07] Option C1).
 
 **Tasks:**
 - [ ] Implement path building (reuse `selectionGuard`'s existing logic).
 - [ ] Capture anchor/focus paths + offsets.
-- [ ] Capture a 40-char textContext window by default.
+- [ ] Capture an 80-char textContext window on each side (fixed size; one code path).
 
 **Tests:**
 - [ ] Capture with a selection inside a known boundary. Assert path + offset match.
@@ -778,13 +830,13 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 **References:** [D05] skip-if-correct, [D06] textContext fallback, Spec S01, (#r02-skip-if-correct-false-negative)
 
 **Artifacts:**
-- `applyDomSelection(boundary, snapshot)` with primary path resolution, textContext adaptive fallback (20 → 40 → 80 → 160 chars, per [Q07]).
+- `applyDomSelection(boundary, snapshot)` with primary path resolution, textContext adaptive fallback using **substrings of the stored 80-char window**, escalating **20 → 40 → 80 chars** (per [Q07] Option C1). No escalation beyond 80.
 - Skip-if-correct check comparing resolved node+offset tuples.
 - Dev-mode logging of failures per [Q05].
 
 **Tasks:**
 - [ ] Primary path resolution via `pathToNode`.
-- [ ] TextContext fallback with adaptive window.
+- [ ] TextContext fallback with substring-based adaptive match (20 → 40 → 80).
 - [ ] Skip-if-correct check.
 - [ ] Return `"applied" | "already-correct" | "failed"`.
 
@@ -944,19 +996,20 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 
 **Artifacts:**
 - Module-level `focusout` listener on the deck root inside `selection-keeper.ts` (installed via a `selectionKeeper.attach(deckRootEl)` hook called from the existing deck-manager init path).
-- 50 ms debounce.
-- Scoped: the listener resolves the card owning the blurring element via `findCardRoot`; if found, captures and calls `deckManager.setCardState`.
-- Module-level `lastKeyedFocus` ref updated by the listener: on every `focusout` whose target carries `data-tug-persist-value` or `data-tug-focus-key`, record the key. The ref is read by `captureFocus` when `document.activeElement === document.body` to populate `FocusSnapshot.body-transient.lastKeyedFocus` ([D03], [R06]).
+- **Split update policy ([Q06]):** `lastKeyedFocus` ref updates **synchronously** on `focusout`; only the capture-and-store path is debounced at 50 ms.
+- Scoped: the listener resolves the card owning the blurring element via `findCardRoot`; if found, captures and calls `deckManager.setCardState` (debounced tail).
+- Module-level `lastKeyedFocus` ref updated by the listener: on every `focusout` whose target carries `data-tug-persist-value` or `data-tug-focus-key`, record the key **synchronously, before the debounce**. The ref is read by `captureFocus` when `document.activeElement === document.body` to populate `FocusSnapshot.body-transient.lastKeyedFocus` ([D03], [R06]).
 
 **Tasks:**
 - [ ] Add `attach` hook.
 - [ ] Install `focusout` listener.
-- [ ] Debounce at 50 ms.
-- [ ] Maintain the module-level `lastKeyedFocus` ref.
+- [ ] Update `lastKeyedFocus` ref synchronously on `focusout`.
+- [ ] Debounce only the capture-and-store path at 50 ms.
 
 **Tests:**
-- [ ] Unit: blur a keyed element 5 times in 30 ms; assert `capture` is called once.
+- [ ] Unit: blur a keyed element 5 times in 30 ms; assert `capture` is called once (debounced path).
 - [ ] Unit: after a keyed blur, `captureFocus` with `activeElement === body` emits `{ kind: "body-transient", lastKeyedFocus: "<key>" }`.
+- [ ] Unit: fire a keyed `focusout`, then 10 ms later (inside the debounce window) call `captureFocus` with `activeElement === body`; assert the emitted `lastKeyedFocus` is the just-blurred key, not the previous ref value (synchronous ref-update).
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
@@ -1053,12 +1106,19 @@ Depending on Step 13 (bag migration) ensures no legacy v1 bag flows into `keeper
 - `tugdeck/src/__tests__/selection-keeper-integration.test.tsx` covering the cases from `#per-case-walkthrough`.
 
 **Tasks:**
-- [ ] Write tests for α (hide/unhide, form-control), β (Cmd-Tab, form-control), γ (double Cmd-Tab, DOM), δ (reload, form-control with focus).
-- [ ] Write tests for tab activation, cross-pane move, reload with DOM selection.
-- [ ] Write a **Case γ five-cycle** test: five consecutive Cmd-Tab cycles on `TugPromptEntry`; assert selection remains correctly restored through all five. Document in the test that it specifically guards against accumulated degradation at N > 2 (if skip-if-correct + will-phase capture are not jointly effective, this is where failure first surfaces).
-- [ ] Write a grep-based contract test: no `setSelectionRange` / `setBaseAndExtent` / `.focus()` usage for persistence purposes in `tugdeck/src` outside `selection-keeper.ts`.
+- [ ] Scaffold `selection-keeper-integration.test.tsx` and set up the harness (deckManager, card mounts, lifecycle emitters).
+- [ ] Wire a grep-based contract test runner into the suite.
 
-**Tests:** (the whole commit is tests)
+**Tests:**
+- [ ] Case α (hide/unhide, form-control): assert form-control selection + focus restored after `notifyApplicationWillHide` → `notifyApplicationDidUnhide`.
+- [ ] Case β (Cmd-Tab, form-control): assert form-control selection + focus restored after `notifyApplicationWillResignActive` → `notifyApplicationDidBecomeActive`.
+- [ ] Case γ (double Cmd-Tab, DOM): assert DOM selection restored after two consecutive Cmd-Tab cycles.
+- [ ] Case δ (reload, form-control with focus): assert form-control selection and focus restored on cold mount per [Q02] Option B.
+- [ ] Tab activation: assert each card's selection restored on `cardDidActivate` per [Q04].
+- [ ] Cross-pane move: assert selection survives pane-activation transfer.
+- [ ] Reload with DOM selection: assert DOM selection restored via `pathToNode` primary or `textContext` fallback.
+- [ ] **Case γ five-cycle stress:** five consecutive Cmd-Tab cycles on `TugPromptEntry`; assert selection remains correctly restored through all five. Guards against accumulated WebKit programmatic-selection degradation at N > 2.
+- [ ] Grep contract: no `setSelectionRange` / `setBaseAndExtent` / `.focus()` usage for persistence purposes in `tugdeck/src` outside `selection-keeper.ts`.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
@@ -1087,7 +1147,11 @@ Depending on Step 13 (bag migration) ensures no legacy v1 bag flows into `keeper
 
 Note: the proposed tuglaws L-SEL-01 / L-SEL-02 / L-SEL-03 are tracked in the Roadmap / Follow-ons section, not landed in this phase.
 
-**Tests:** N/A (documentation)
+**Tests:**
+- [ ] Grep: `selection-keeper.ts` contains a module docstring covering the three state kinds (DOM selection, form-control selection, focus), skip-if-correct, and ownership boundary vs. `selectionGuard`.
+- [ ] Grep: every exported type (`SelectionSnapshot`, `FocusSnapshot`, `CardSelectionState`) carries a JSDoc block.
+- [ ] Grep: `TugInput` and `TugTextarea` JSDoc names both `persistKey` and `focusKey` props.
+- [ ] Link check: `tugplan-tide-card-polish.md` §5.5.c Commit 1A points to this plan.
 
 **Checkpoint:**
 - [ ] Docs readable; links resolve.
@@ -1115,6 +1179,7 @@ Note: the proposed tuglaws L-SEL-01 / L-SEL-02 / L-SEL-03 are tracked in the Roa
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Propose tuglaws **L-SEL-01** (selection/focus singletons owned by `SelectionKeeper`), **L-SEL-02** (save at will-phase), **L-SEL-03** (apply is skip-if-correct) as additions to `tuglaws/tuglaws.md` in a separate patch after this phase ships.
+- [ ] If [Q07]'s Option C1 (80-char fixed capture, 20→40→80 adaptive apply) proves insufficient for tide cards with highly-repetitive content, promote to Option C (200-char capture, 20→40→80→160→200 apply) or Option C2 (capture-time adaptive, minimum-storage).
 - [ ] Extend textContext fallback to handle insertion/deletion near the anchor (fuzzy match with edit distance ≤ N).
 - [ ] Cross-card selection support (browser one-selection limit still applies, but the keeper could notice cross-card selections at capture time and decide a policy).
 - [ ] Port `selectionGuard`'s drag-clipping behavior into an even narrower module if the boundary continues to be useful after the keeper migration settles.
