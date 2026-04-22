@@ -20,7 +20,7 @@
  * Spec S03, Spec S08
  */
 
-import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { matchKeybinding } from "./keybinding-map";
@@ -108,7 +108,19 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
   }
   const manager = managerRef.current;
 
-  useEffect(() => {
+  // L03: install registrations that events depend on in
+  // `useLayoutEffect`, not `useEffect`. This effect installs six
+  // document-level listeners (keydown capture + bubble, pointerdown,
+  // mousedown, focusin, contextmenu) plus three cross-module
+  // registrations (action-dispatch, card-lifecycle manager,
+  // selection-guard attach). `useEffect` runs after paint, leaving
+  // a window between React commit and the first flush where user
+  // input can arrive without handlers — a missed first click, a
+  // missed first keydown, or the browser's initial focus restore
+  // landing before responder promotion is live. `useLayoutEffect`
+  // runs synchronously before paint, closing the race. Same
+  // rationale as `pane-focus-controller.ts`.
+  useLayoutEffect(() => {
     // ---- ResponderChainManager registration with action-dispatch ----
     // Register the manager so the add-card-to-active-pane Control-frame action handler can
     // dispatch "add-card-to-active-pane" through the chain without importing React context.
