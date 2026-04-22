@@ -52,6 +52,8 @@ import {
   useRef,
 } from "react";
 
+import { scheduleDelegateCall } from "./delegate-drain";
+
 /**
  * Module-level toggle for lifecycle trace logs. Defaults to the Vite
  * `import.meta.env.DEV` flag: dev builds print the full will/did →
@@ -611,49 +613,12 @@ type CardDelegateMethodName =
   | "cardDidResize"
   | "cardWillBeginDestruction";
 
-// ---- MessageChannel-based delegate drain queue ----
-//
-// Per the lifecycle-delegate-reliability study, delegate callbacks
-// defer through a module-scope `MessageChannel` rather than through
-// React's `setState → useEffect` commit cycle. The MessageChannel
-// drain:
-//
-//   - Runs as a macrotask (escapes WebKit's gesture focus-lock).
-//   - Skips the 4 ms setTimeout clamp and timer-throttling in
-//     background tabs.
-//   - Is not entangled with React's commit scheduling; closures queued
-//     here survive component unmount (the dying card's own
-//     `cardWillBeginDestruction` delegate fires reliably — hole H1
-//     closed).
-//
-// The queue is snapshot+cleared on each drain so callbacks that enqueue
-// further work run on the next drain, preserving order within a tick
-// and preventing runaway reentrant drains.
-
-type DelegateCall = () => void;
-const delegateQueue: DelegateCall[] = [];
-const delegateChannel: MessageChannel =
-  typeof MessageChannel !== "undefined" ? new MessageChannel() : (null as unknown as MessageChannel);
-
-if (delegateChannel !== null) {
-  delegateChannel.port1.onmessage = (): void => {
-    const pending = delegateQueue.splice(0);
-    for (const fn of pending) {
-      try {
-        fn();
-      } catch (err) {
-        console.error("[CardLifecycle] delegate callback threw:", err);
-      }
-    }
-  };
-}
-
-function scheduleDelegateCall(fn: DelegateCall): void {
-  delegateQueue.push(fn);
-  if (delegateChannel !== null) {
-    delegateChannel.port2.postMessage(null);
-  }
-}
+// Delegate callbacks defer through the shared `delegate-drain.ts`
+// module (see that file for the rationale). Both `useCardDelegate`
+// and `useAppDelegate` post onto the same queue so cross-module
+// ordering is deterministic: a card's didActivate queued before an
+// app's willResignActive drains before it, regardless of which
+// module subscribed first.
 
 /**
  * `useCardDelegate` — subscribe a React component to a card's
