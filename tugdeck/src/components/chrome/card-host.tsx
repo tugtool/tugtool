@@ -27,15 +27,19 @@
  *      mount moment *is* the trigger: there is no effect dep array to
  *      re-evaluate, no version counter, no ref gate. For bags that
  *      carry content, the harness installs an `onContentReady` callback
- *      (applies scroll/selection once the child re-renders with
- *      restored state) and calls `onRestore(bag.content)`.
- *   2. **Scroll / selection restore** lives in a `useLayoutEffect`
+ *      (applies scroll once the child re-renders with restored state)
+ *      and calls `onRestore(bag.content)`.
+ *   2. **Scroll + form-control restore** lives in a `useLayoutEffect`
  *      keyed on `[cardId, hostStackId, hostContentEl]`. It fires when
  *      the host element appears or changes (cross-pane move, pane
  *      re-registration). For content-less bags, this is the only
  *      restore path. For bags with content, this provides a best-effort
- *      pre-commit apply; `onContentReady` re-applies the correct clamp
- *      after the child commits. Both applications are idempotent.
+ *      pre-commit apply; `onContentReady` re-applies the correct scroll
+ *      clamp after the child commits. Both applications are idempotent.
+ *
+ * Other axes have their own owners: DOM-selection restore is owned by
+ * the selection-guard paint authority, not by this harness. Focus
+ * restore is wired at a later step; see the selection plan.
  *
  * Neither path uses `persistenceCallbacksRef` as a dep — refs do not
  * trigger re-renders, and a dep array is not how we coordinate. The

@@ -232,12 +232,13 @@ class SelectionGuard {
   // component (e.g. TugTextEngine's `onSelectionChanged`). This is the
   // input to the multi-card paint generalization that Step 5 installs.
   //
-  // Readable from tests via {@link getCardRange}; components publish via
-  // {@link updateCardDomSelection}. A `null` entry means the component
-  // knows the card has no selection and wants the guard to paint
-  // nothing for it. A missing entry means the component has never
-  // published; the guard has no information and paints nothing either.
-  private cardRanges: Map<string, Range | null> = new Map();
+  // Only real Ranges are stored: `updateCardDomSelection(id, null)`
+  // removes the entry rather than writing a sentinel. "No entry" covers
+  // both "never published" and "explicitly cleared" — paint treats
+  // them identically, so there is no reason to distinguish. Readable
+  // from tests via {@link getCardRange}; components publish via
+  // {@link updateCardDomSelection}.
+  private cardRanges: Map<string, Range> = new Map();
 
   // The card that currently "owns" the active selection (i.e., the
   // focused card). Used to know which card to deactivate when a
@@ -344,14 +345,18 @@ class SelectionGuard {
   /**
    * Unregister a card content area.
    * Called by `useSelectionBoundary` on unmount cleanup.
-   * Also cleans up any highlight state for this card.
+   *
+   * Clears every card-scoped data structure in lockstep so no card-
+   * specific state survives past its boundary: the `inactive-selection`
+   * highlight entry, the `inactiveRanges` Map, and the `cardRanges`
+   * Map. Any future card-scoped map added to this class must be cleared
+   * here too.
    */
   unregisterBoundary(cardId: string): void {
     this.boundaries.delete(cardId);
     if (this.activeCardId === cardId) {
       this.stopTracking();
     }
-    // Clean up any inactive highlight state for this card.
     const range = this.inactiveRanges.get(cardId);
     if (range && this.inactiveHighlight) {
       this.inactiveHighlight.delete(range);
@@ -388,12 +393,14 @@ class SelectionGuard {
 
   /**
    * Read the most-recently-published DOM `Range` for a card. Returns
-   * `undefined` if the card has never published, `null` if the most
-   * recent publish was an explicit clear, and the Range otherwise.
-   * Exposed primarily for tests; production code reads `cardRanges`
-   * indirectly through the paint loop that Step 5 will install.
+   * `undefined` when the guard has no published Range for the card
+   * (either never published, or the last publish was an explicit clear
+   * — the two cases are indistinguishable by design, see
+   * {@link cardRanges}). Exposed primarily for tests; production code
+   * reads `cardRanges` indirectly through the paint loop that Step 5
+   * will install.
    */
-  getCardRange(cardId: string): Range | null | undefined {
+  getCardRange(cardId: string): Range | undefined {
     return this.cardRanges.get(cardId);
   }
 
