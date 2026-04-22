@@ -29,6 +29,46 @@
  * descendants are laid out, measurable, or reachable via `document`
  * queries on the very first render — wait for a post-commit effect.
  *
+ * ## Teardown contract
+ *
+ * When a host `TugPane` unmounts (with or without its cards also
+ * unmounting in the same commit), the slot is detached from the
+ * now-defunct content element **before** React removes the content
+ * element's DOM subtree. The chain:
+ *
+ *   1. `TugPane`'s `useLayoutEffect` cleanup fires
+ *      `paneContentRegistry.unregister(paneId)`.
+ *   2. The registry's `notify(paneId)` is synchronous — every subscriber
+ *      runs in the same tick as the `unregister` call. This synchronous
+ *      fan-out is load-bearing and is pinned as a contract in
+ *      `pane-content-registry.ts`.
+ *   3. `CardPortal`'s subscribed `attachToCurrentHost` sees `host === null`
+ *      and calls `slot.parentNode.removeChild(slot)`, detaching the slot
+ *      from the content element.
+ *   4. React removes the content element's DOM subtree. The slot is no
+ *      longer part of that subtree, so React's unmount of `CardPortal`'s
+ *      children (if it happens in the same commit) still finds the slot
+ *      as their portal container — just living in a detached state.
+ *   5. `CardPortal`'s own `useLayoutEffect` cleanup (on an unmounting
+ *      `CardHost`) later calls `slot.parentNode.removeChild(slot)`
+ *      guarded by `if (slot.parentNode)` — no-op when the subscriber
+ *      already detached in step 3.
+ *
+ * This ordering means `CardHost`'s effect cleanups (scroll /
+ * `selectionchange` listener removal via `useCardDirtyState`) never
+ * leave the slot attached to a DOM subtree that is about to be removed.
+ * A post-DOM-removal `selectionchange` (the browser collapsing a
+ * selection whose anchor was inside the removed subtree) cannot cause a
+ * save-after-destroy because `useCardDirtyState`'s cleanup defensively
+ * clears the debounce timer.
+ *
+ * An earlier draft of this contract proposed an explicit
+ * `onHostGone(cb)` subscription on the registry. It was considered and
+ * rejected: the synchronous-`notify` + per-hook-cleanup combination
+ * already closes the window the API would have addressed, and a second
+ * subscription channel would complicate the mental model without
+ * tightening any invariant.
+ *
  * @module components/chrome/card-portal
  */
 

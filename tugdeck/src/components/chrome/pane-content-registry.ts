@@ -16,6 +16,21 @@
  *     target element changes, and `getElement(paneId)` to read the current
  *     value.
  *
+ * ## Notify contract (load-bearing for teardown)
+ *
+ * `register` and `unregister` both call `notify(paneId)` **synchronously**
+ * in the same tick as the mutation. Every listener runs before control
+ * returns to the caller. This matters at teardown: `TugPane`'s
+ * `useLayoutEffect` cleanup calls `unregister` *before* React removes the
+ * pane's DOM subtree, and the synchronous `notify` gives `CardPortal` a
+ * chance to detach its slot from the content element while that element
+ * is still attached to the document. See the "Teardown contract" section
+ * of `card-portal.tsx`'s module docstring for the full chain. Do not
+ * switch `notify` to a microtask / queue / batch without reconsidering
+ * that chain — a delayed `notify` opens a window where the slot is still
+ * a child of the content element when React removes it, which would
+ * force React to clean up portal children against a detached container.
+ *
  * Module-level state (not React state). This is appearance-zone infrastructure
  * that lives outside the React render tree (L22): React components opt in via
  * `useSyncExternalStore` on the registry.
