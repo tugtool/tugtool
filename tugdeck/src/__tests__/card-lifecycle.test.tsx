@@ -556,19 +556,6 @@ describe("CardLifecycle.observeCardDidActivate", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getActiveCardId
-// ---------------------------------------------------------------------------
-
-describe("CardLifecycle.getActiveCardId", () => {
-  it("T-CL-11: returns the store's current focused card", () => {
-    const { lifecycle, store } = makeLifecycle();
-    expect(lifecycle.getActiveCardId()).toBeNull();
-    store.state.focused = "card-X";
-    expect(lifecycle.getActiveCardId()).toBe("card-X");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // useCardDelegate
 // ---------------------------------------------------------------------------
 

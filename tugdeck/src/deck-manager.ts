@@ -301,9 +301,6 @@ export class DeckManager implements IDeckManagerStore {
   ): (() => void) =>
     this.cardLifecycle.observeCardWillBeginDestruction(cardId, callback);
 
-  public getActiveCardId = (): string | null =>
-    this.cardLifecycle.getActiveCardId();
-
   public attachResponderChainManager = (
     manager: CardLifecycleManager | null,
   ): void => {

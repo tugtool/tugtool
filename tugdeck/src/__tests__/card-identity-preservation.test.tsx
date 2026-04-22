@@ -88,7 +88,6 @@ class Store implements IDeckManagerStore {
   observeCardDidActivate = (): (() => void) => () => {};
   observeCardDidDeactivate = (): (() => void) => () => {};
   observeCardWillBeginDestruction = (): (() => void) => () => {};
-  getActiveCardId = (): string | null => null;
   addCard = (): string | null => null;
 
   addCardToPane = (paneId: string, componentId: string): string | null => {

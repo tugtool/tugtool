@@ -993,7 +993,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   //     Cmd-drag and Cmd-resize move/resize a card WITHOUT activating
   //     it (a deliberate convenience for rearranging background cards
   //     without disturbing focus). We therefore guard the focus
-  //     re-assertion with `getActiveCardId() === cardId` so a
+  //     re-assertion with `getFirstResponderCardId() === cardId` so a
   //     background-card Cmd-drag does not steal focus from whatever
   //     card the user is actually working in.
   //
@@ -1008,10 +1008,9 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // drives focus via the delegate handler below.
   //
   // `cardDidMove` / `cardDidResize` re-assert focus only when this card
-  // is the deck's composite first responder. The pre-11.6.1b guard
-  // used `cardLifecycle.getActiveCardId()` (top of z-order), which can
+  // is the deck's composite first responder — top-of-z-order can
   // drift from the composite bit when `activePaneId` does not match
-  // the top window (post-detach or post-move edge cases).
+  // the top pane (post-detach or post-move edge cases).
   const cardLifecycle = useCardLifecycle();
   useCardDelegate(cardId, {
     cardDidActivate: () => entryDelegateRef.current?.focus(),

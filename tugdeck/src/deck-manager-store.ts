@@ -120,9 +120,6 @@ export interface IDeckManagerStore {
     callback: CardLifecycleObserver,
   ) => () => void;
 
-  /** Currently-active card id, or null if no card is active. */
-  getActiveCardId: () => string | null;
-
   /**
    * Add a new card from the registry, wrapped in a new single-card
    * window at the default position. Returns the generated card id,

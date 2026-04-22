@@ -477,14 +477,12 @@ export class CardLifecycle {
     return this.subscribe(this.destructionSubs, cardId, callback);
   }
 
-  /** Current active card id. Thin pass-through to the store. */
-  getActiveCardId(): string | null {
-    return this.store.getFocusedCardId();
-  }
-
   /**
-   * Current composite first responder (the active stack's active card).
-   * Thin pass-through to the store. See `CardLifecycleStore.getFirstResponderCardId`.
+   * Current composite first responder (the active pane's active card).
+   * The canonical read for "which card is the user in right now?" —
+   * see `CardLifecycleStore.getFirstResponderCardId`. Consumers that
+   * only want top-of-z-order (which can diverge from the composite bit
+   * after detach/move) should read `store.getFocusedCardId()` directly.
    */
   getFirstResponderCardId(): string | null {
     return this.store.getFirstResponderCardId();

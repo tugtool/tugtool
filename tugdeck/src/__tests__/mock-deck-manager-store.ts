@@ -43,7 +43,6 @@ export function makeMockStore(
     observeCardDidActivate: () => () => {},
     observeCardDidDeactivate: () => () => {},
     observeCardWillBeginDestruction: () => () => {},
-    getActiveCardId: () => null,
     addCard: () => null,
     addCardToPane: () => null,
     removeCard: () => {},
