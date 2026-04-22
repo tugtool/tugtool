@@ -1148,6 +1148,15 @@ export class DeckManager implements IDeckManagerStore {
    * Unlike the pre-Card/CardStack implementation, card identity is preserved:
    * the card object moves from the source stack's `cardIds` into the new
    * stack's `cardIds`. Tugcast sessions, portal DOM, and React state survive.
+   *
+   * **Fresh-bag invariant.** The card's save callback is invoked before the
+   * commit so the per-card `CardStateBag` (scroll, selection, content
+   * payload) reflects the card's live pre-move values. `CardHost`'s
+   * `useCardContentRestore` re-fires on `hostStackId` change and will
+   * re-apply the bag against the new pane's content element — re-applying a
+   * stale bag would overwrite live scroll position with values from before
+   * the user's most recent interaction, violating [L23]. Flushing here
+   * closes the debounce window between the last edit and the move.
    */
   private _detachCard(
     paneId: string,
@@ -1161,6 +1170,9 @@ export class DeckManager implements IDeckManagerStore {
     // Last-card guard: cannot detach the only card (that's just moving the
     // stack, not detaching).
     if (win.cardIds.length === 1) return null;
+
+    // Fresh-bag invariant: see method docstring.
+    this.invokeSaveCallback(cardId);
 
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return null;
@@ -1228,6 +1240,16 @@ export class DeckManager implements IDeckManagerStore {
    *
    * Card identity is preserved. If the source stack becomes empty (it had
    * only this card), the source stack is closed.
+   *
+   * **Fresh-bag invariant.** The card's save callback is invoked before the
+   * commit so the per-card `CardStateBag` (scroll, selection, content
+   * payload) reflects the card's live pre-move values. `CardHost`'s
+   * `useCardContentRestore` re-fires on `hostStackId` change and will
+   * re-apply the bag against the target pane's content element —
+   * re-applying a stale bag would overwrite live scroll position with
+   * values from before the user's most recent interaction, violating
+   * [L23]. Flushing here closes the debounce window between the last edit
+   * and the move.
    */
   private _moveCardToPane(
     sourcePaneId: string,
@@ -1242,6 +1264,9 @@ export class DeckManager implements IDeckManagerStore {
 
     const targetStack = this.deckState.panes.find((s) => s.id === targetPaneId);
     if (!targetStack) return;
+
+    // Fresh-bag invariant: see method docstring.
+    this.invokeSaveCallback(cardId);
 
     const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
     const sourceIsActive = this.deckState.activePaneId === sourcePaneId;

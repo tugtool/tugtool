@@ -2527,3 +2527,140 @@ describe("DeckManager ↔ lifecycle-cascade install/dispose (11.6.5 H7)", () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// Fresh-bag invariant (tugplan-tide-card-polish Step 5.5.b Fixup D)
+//
+// _detachCard and _moveCardToPane must flush the moving card's save
+// callback *before* mutating state so the per-card CardStateBag reflects
+// live pre-move values. CardHost's useCardContentRestore re-fires on
+// hostStackId change and re-applies the bag; a stale bag would overwrite
+// live scroll/selection with pre-debounce values — an L23 violation.
+// ---------------------------------------------------------------------------
+
+describe("DeckManager fresh-bag invariant on cross-pane transitions", () => {
+  it("moveCardToPane invokes the card's save callback before mutating state", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    // Two stacks, each with one card. Move the source card to target.
+    const sourceCardId = manager.addCard("hello") as string;
+    const sourceStackId = hostStack(manager.getDeckState(), sourceCardId).id;
+    const targetCardId = manager.addCard("terminal") as string;
+    const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
+
+    // Register a save callback whose firing captures the current host
+    // of `sourceCardId`. If invoked *before* the move, it sees the
+    // source stack. If invoked after, it would see the target (or not
+    // see a host at all if the order is wrong).
+    let hostAtFireTime: string | undefined;
+    manager.registerSaveCallback(sourceCardId, () => {
+      const state = manager.getDeckState();
+      const host = state.panes.find((s) => s.cardIds.includes(sourceCardId));
+      hostAtFireTime = host?.id;
+    });
+
+    manager.moveCardToPane(sourceStackId, sourceCardId, targetStackId, 0);
+
+    expect(hostAtFireTime).toBe(sourceStackId);
+  });
+
+  it("moveCardToPane fires the save callback exactly once", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const sourceCardId = manager.addCard("hello") as string;
+    const sourceStackId = hostStack(manager.getDeckState(), sourceCardId).id;
+    const targetCardId = manager.addCard("terminal") as string;
+    const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
+
+    let callCount = 0;
+    manager.registerSaveCallback(sourceCardId, () => {
+      callCount += 1;
+    });
+
+    manager.moveCardToPane(sourceStackId, sourceCardId, targetStackId, 0);
+    expect(callCount).toBe(1);
+  });
+
+  it("moveCardToPane does not fire save callbacks for non-moving cards", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const sourceCardId = manager.addCard("hello") as string;
+    const sourceStackId = hostStack(manager.getDeckState(), sourceCardId).id;
+    manager.addCardToPane(sourceStackId, "terminal");
+    const sourceSiblingId = hostStack(manager.getDeckState(), sourceCardId)
+      .cardIds.find((id) => id !== sourceCardId) as string;
+
+    const targetCardId = manager.addCard("hello") as string;
+    const targetStackId = hostStack(manager.getDeckState(), targetCardId).id;
+
+    let siblingSaves = 0;
+    let targetSaves = 0;
+    manager.registerSaveCallback(sourceSiblingId, () => { siblingSaves += 1; });
+    manager.registerSaveCallback(targetCardId, () => { targetSaves += 1; });
+
+    manager.moveCardToPane(sourceStackId, sourceCardId, targetStackId, 0);
+
+    expect(siblingSaves).toBe(0);
+    expect(targetSaves).toBe(0);
+  });
+
+  it("detachCard invokes the card's save callback before mutating state", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const firstCardId = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    manager.addCardToPane(stackId, "terminal");
+    const secondCardId = hostStack(manager.getDeckState(), firstCardId)
+      .cardIds.find((id) => id !== firstCardId) as string;
+
+    // Capture the pane id that still hosts the detached card at save
+    // fire time. If the flush happens before mutation, it's the
+    // original stack.
+    let hostAtFireTime: string | undefined;
+    manager.registerSaveCallback(secondCardId, () => {
+      const state = manager.getDeckState();
+      const host = state.panes.find((s) => s.cardIds.includes(secondCardId));
+      hostAtFireTime = host?.id;
+    });
+
+    manager.detachCard(stackId, secondCardId, { x: 100, y: 100 });
+
+    expect(hostAtFireTime).toBe(stackId);
+  });
+
+  it("detachCard fires the save callback exactly once", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const firstCardId = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), firstCardId).id;
+    manager.addCardToPane(stackId, "terminal");
+    const secondCardId = hostStack(manager.getDeckState(), firstCardId)
+      .cardIds.find((id) => id !== firstCardId) as string;
+
+    let callCount = 0;
+    manager.registerSaveCallback(secondCardId, () => { callCount += 1; });
+
+    manager.detachCard(stackId, secondCardId, { x: 50, y: 50 });
+    expect(callCount).toBe(1);
+  });
+
+  it("detachCard rejected by last-card guard does not fire the save callback", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+
+    // Single-card stack: detach must be rejected (cannot detach the only card).
+    const cardId = manager.addCard("hello") as string;
+    const stackId = hostStack(manager.getDeckState(), cardId).id;
+
+    let callCount = 0;
+    manager.registerSaveCallback(cardId, () => { callCount += 1; });
+
+    const result = manager.detachCard(stackId, cardId, { x: 10, y: 10 });
+    expect(result).toBeNull();
+    expect(callCount).toBe(0);
+  });
+});
+

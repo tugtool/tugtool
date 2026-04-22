@@ -29,6 +29,20 @@
  * React tree (`CardPortal` identity) — but a re-mount on cold launch does
  * trigger this hook and re-apply the saved state.
  *
+ * **Contract with `DeckManager`.** The effect depends on
+ * `[cardId, hostStackId]` and therefore re-fires on cross-pane moves.
+ * This is a load-bearing path for scroll preservation across moves: the
+ * destination pane's content element inherits the saved scroll, not the
+ * value it happened to have before the card arrived. For the re-apply
+ * to be safe (not an L23 violation), the saved bag must be fresh at
+ * move time — if the user scrolled within the 1000ms debounce window
+ * before moving, the unflushed bag would overwrite live scroll values
+ * with stale ones. `DeckManager._detachCard` and
+ * `DeckManager._moveCardToPane` therefore invoke the card's save
+ * callback before mutating state (see the "Fresh-bag invariant" note
+ * on both methods). Any new `DeckManager` method that changes a card's
+ * `hostStackId` must do the same.
+ *
  * [L03, L04, L05, L23, D01, D02, D03, D78, D79]
  *
  * @module components/tugways/hooks/use-card-content-restore
