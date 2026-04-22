@@ -497,46 +497,148 @@ g. ~~**`waitForPortal(paneId)` helper (audit P12, conditional).**~~ **Withdrawn.
 
 #### Step 5.5.c — Invariants and safety-net tests {#step-5-5-c}
 
-**Why this exists.** `validateDeckState` is the model: encode invariants in executable form, run in dev on every mutation, give clear errors on violation. The same pattern would catch an entire class of drift bug in the lifecycle / selection / save-callback layers that are currently only covered by happy-path tests. The four missing tests the audit calls out are the ones most likely to fail silently when the next layer lands.
+**Why this exists.** `validateDeckState` is the model: encode invariants in executable form, run in dev on every mutation, give clear errors on violation. The same pattern would catch an entire class of drift bug in the lifecycle / selection / save-callback layers that are currently only covered by happy-path tests. The tests the audit calls out are the ones most likely to fail silently when the next layer lands.
+
+But safety-net tests aren't enough on their own. The post-5.5.b audit surfaced a **product-level regression** (clicking card content doesn't activate the host pane), a set of **carry-forward items** deferred from 5.5.b that shouldn't be deferred further, and — on re-examination — a set of **half-measures in the original 5.5.c draft** (a per-component workaround instead of a document-level design, a prose-documented contract where a type-level one is straightforward, a "may be flaky" hedge on timing-sensitive tests that should be eliminated rather than mitigated, structural asymmetries in `CardHost` that should be closed).
+
+Step 5.5.c is rewritten to absorb all of this: **invariants + tests + the refinements that make the code actually excellent, not just "good enough to ship."**
+
+**Click-to-activate regression — root cause and excellent fix.** For portaled card content, React's synthetic `onPointerDown` on the pane frame never fires. React's event system follows the React tree, not the DOM tree; `CardHost` lives at deck level (inside `DeckCanvas`), so events bubble through `DeckCanvas` and skip `TugPane`. The title-bar handler works because the title bar is rendered inside the pane frame's own React subtree (not portaled). The document-level `pointerdown` capture listener installed by `ResponderChainProvider` promotes the **responder chain's** first responder (a parallel system), and `selectionGuard.handlePointerDown` activates the **selection guard's** tracked card — neither touches `DeckManager`'s composite first-responder bit. Net effect: content clicks promote the responder chain but leave the pane visually inactive.
+
+A per-`CardHost` `onPointerDown` handler would fix the symptom, but it's a workaround that scatters activation logic across every card host and leaves `handleFramePointerDown` as redundant-but-not-harmful code. The **excellent** fix is architectural: a single document-level capture-phase `pointerdown` listener that walks up from `event.target` looking for `data-pane-id`, calls `store.activateCard(pane.activeCardId)`, and replaces `handleFramePointerDown` entirely. This is the same pattern `ResponderChainProvider` already uses for first-responder promotion. One listener, uniform behavior for chrome and content, zero per-component coupling. The call is safe against nested responders — `_flipFirstResponder → setResponderChainKey` is guarded by `getKeyCard() === cardId`, so clicks into an inner editor promote the editor (via the existing responder-chain listener), activate the host pane (via the new listener), and the card-level `setResponderChainKey` sees the chain already pointing at the editor's ancestor card and no-ops.
+
+**Half-measures the original 5.5.c draft accepted — now rejected.** The original draft hedged on four items; each is re-examined and replaced with the excellent path:
+
+1. **`_flipFirstResponder`'s informal commit-closure contract.** The original plan: add a JSDoc hardening note because a type-level wrapper would be "clumsy." Rejected. The excellent fix is a cleaner API: split the `commit: () => void` closure into a pure state transform (`mutate: (prev: DeckState) => DeckState`) plus an optional side-effect callback (`onCommit?: () => void` — e.g., `putFocusedCardId`). `_flipFirstResponder` owns `this.deckState = mutate(...)`, `this.notify()`, and `this.scheduleSave()` directly. Callers can't forget to notify because they no longer have the opportunity to. Eight call sites updated. This isn't a wrapper-type hack — it's a simpler surface than what exists today.
+
+2. **`CardHost` asymmetry and write-during-render.** The 5.5.b audit named two legitimate decompositions and defended keeping them inline with weak arguments. Rejected. The excellent fix: extract both as hooks symmetric with `useCardPropertyStore`:
+   - `useCardPersistencePlumbing()` owns the `persistenceCallbacksRef` + `registerPersistenceCallbacks` pair. Returns `{ register, ref }` — same signature as `useCardPropertyStore`. The harness body shrinks; `useCardContentRestore` still receives the ref explicitly as an arg.
+   - `useCardSaveState({ cardId, hostStackId, hostContentEl, persistenceCallbacksRef })` encapsulates the `saveCurrentCardStateRef` write-during-render pattern. The hook's module JSDoc pins *why* it's write-during-render (not `useCallback`) with a pointer to the composition test. The pattern's subtlety no longer leaks into the harness.
+
+3. **Timing-sensitive tests "may be flaky, mitigate with await sequencing."** Rejected. A test that races with a real 1000ms timeout is broken. The excellent fix: bun's `setSystemTime` for fake timers, plus a new `DeckManager.invokeSaveCallbacksSync(cardId)` (or equivalent) if tests need a deterministic per-card flush. Deterministic or rewrite — no accepted flakiness.
+
+4. **`pane-content-registry.notify()` iterates subscribers without `try`/`catch`.** If any subscriber throws, subsequent subscribers never run — leaving the portal slot attached to a doomed content element. Dormant today (no subscriber throws) but a correctness liability. The excellent fix: wrap each subscriber call in `try`/`catch`, log and continue. Plus a test that registers a throwing subscriber and asserts downstream subscribers still run. Small diff, real correctness win. Not in the original 5.5.c draft — added here.
+
+**Audit of the original work items.** A read of the plan-as-originally-drafted against the post-5.5.b codebase, after the excellent-refinement absorption above:
+
+- **Work item (a) validator extension** is the structural groundwork. Land it after the regression fix but before the test wave, so subsequent tests get informative failure messages if they trigger a drift.
+- **Work item (b) non-focused pane activation test (audit P8)** is the direct end-to-end sibling of the regression fix. The per-component-handler version passes on a thin wrapper-level test; the document-level version enables a richer assertion — the activation event fires *before* the click handler on the target element (capture-phase ordering), same synthetic event, no stale-synthetic-event bugs. This is the test that pins `sortedStacks`' sort; if someone removes the sort, this test fails.
+- **Work items (c)–(f)** are four cross-cutting tests with independent setup. Risk-order by timing sensitivity, but with fake timers in place, the "timing-sensitive" qualifier shrinks: all four become deterministic.
+- **Audit P7 `registerSaveCallback(cardId, callback)` signature tightening** rides alongside `validateSaveCallbackKeys` in the validator commit — both are about making the save-callback keyspace match `deckState.cards`.
+
+**Carry-forward from post-5.5.b audit.** The audit flagged five weaknesses; item #1 (latent L23 on restore) was resolved by fixup D (`f0f12f96`). The remaining four:
+
+- **Item #2** — `_flipFirstResponder`'s informal closure contract. **Absorbed** into the `(mutate, onCommit)` refactor above. Type-level enforcement now; no JSDoc-only hedge.
+- **Item #3** — no regression test for `_detachCard`'s single-notify-on-detach collapse. **Absorbed** into the refactor commit as part of updating `_detachCard`; the test pins that the refactor preserves the single-notify semantic.
+- **Item #4** — historical tuglaws discipline was uneven. **Skip** — past-tense; forward discipline is captured in memory.
+- **Item #5** — `saveCurrentCardStateRef`'s write-during-render pattern lacks inline JSDoc. **Absorbed** into the `useCardSaveState` extraction; the hook's module JSDoc is the new home for the write-during-render rationale.
+
+**Follow-up items not integrated here.** Two candidates worth naming but not folded into 5.5.c, with honest reasons:
+
+- **Branded `CardId` / `PaneId` types.** Would prevent pass-the-wrong-string bugs across the codebase. Scope: the `IDeckManagerStore` interface, every call site of every method taking a card or pane id, all tests. Not a hedge — this is a distinct refactor that deserves its own plan step. Raising explicitly so it's on the record; will revisit before the next step.
+- **Replacing `handleFramePointerDown`'s remaining responsibilities with the document-level activation listener.** After Commit 1 removes `handleFramePointerDown`'s activation call, the handler's remaining body is empty. Commit 1 deletes it. This is in scope — noted here so the scope is explicit.
 
 **Files:**
+
+*New source files:*
+- `tugdeck/src/components/tugways/hooks/use-card-persistence-plumbing.ts` (new) — host-side hook owning `persistenceCallbacksRef` + `registerPersistenceCallbacks`. Returns `{ register, ref }` symmetric with `useCardPropertyStore`.
+- `tugdeck/src/components/tugways/hooks/use-card-save-state.ts` (new) — host-side hook encapsulating the `saveCurrentCardStateRef` write-during-render pattern. Returns the stable save ref.
+
+*Modified source files:*
+- `tugdeck/src/components/chrome/deck-canvas.tsx` (or a new `pane-activation-listener.ts` module near `ResponderChainProvider`) — install the document-level capture-phase `pointerdown` listener that walks up from target looking for `data-pane-id`, calls `store.activateCard(pane.activeCardId)`. Meta-key skip preserved.
+- `tugdeck/src/components/chrome/tug-pane.tsx` — delete `handleFramePointerDown` and the `onPointerDown={handleFramePointerDown}` prop. Delete the now-unused `onStackActivated` prop from `TugPane` (and from its callers in `DeckCanvas`).
+- `tugdeck/src/components/chrome/card-host.tsx` — swap the inline `persistenceCallbacksRef` + `registerPersistenceCallbacks` pair for `useCardPersistencePlumbing()`. Swap the inline `saveCurrentCardStateRef` setup for `useCardSaveState({ ... })`. Update the module JSDoc's hook-call-order section to reflect the new hooks.
+- `tugdeck/src/deck-manager.ts` — refactor `_flipFirstResponder` signature to `(newFR, mutate, onCommit?)`. Refactor `_commitStandardFirstResponderFlip` into a pure state-transform `_commitStandardFirstResponderState(state, newFR)` and a side-effect `putFocusedCardId(newFR)` callback. Update all eight call sites (`activateCard`, `addCard`, `_closePane`, `addCardToPane`, `_removeCard`, `_detachCard`, `_moveCardToPane`, `_setActiveCardInPane`). Rename `registerSaveCallback(id, callback)` → `registerSaveCallback(cardId, callback)` (audit P7). Wire the three validators into dev-mode `notify()`.
 - `tugdeck/src/lib/card-lifecycle.ts` — export `validateCardLifecycleState(cardLifecycle, deckState)` dev-only validator.
 - `tugdeck/src/components/tugways/selection-guard.ts` — export `validateSelectionBoundaryMap(selectionGuard, deckState)` dev-only validator.
-- `tugdeck/src/deck-manager.ts` — the `saveCallbacks` map: add `validateSaveCallbackKeys(manager, deckState)` dev-only. Also tighten `registerSaveCallback(id, callback)` signature to accept only `cardId` (audit P7): change the parameter name, JSDoc states "must be a cardId"; consider a branded-type check if the split map approach proves noisy.
-- `tugdeck/src/deck-manager.ts` — wire all three validators into dev-mode `notify()`, alongside the existing `validateDeckState` call.
+- `tugdeck/src/components/chrome/pane-content-registry.ts` — wrap each subscriber call in `notify()` with `try`/`catch`. Log and continue on throw.
+
+*New test files:*
+- `tugdeck/src/__tests__/pane-activation-listener.test.tsx` (new) — document-level activation listener. Tests: clicks on content, nested responders, interactive elements, meta-key skip, no double-activate, activation fires before click handler runs.
+- `tugdeck/src/__tests__/non-focused-pane-activation.test.tsx` (new — audit P8) — richer assertion: click interactive element in non-focused pane, verify activation fires before click handler on same synthetic event. This is the test that pins `sortedStacks`'s sort.
 - `tugdeck/src/__tests__/hmr-lifecycle-registration.test.ts` (new — audit L5).
-- `tugdeck/src/__tests__/concurrent-move-destruction.test.ts` (new — cross-cutting).
-- `tugdeck/src/__tests__/portal-orphan-recovery.test.ts` (new — cross-cutting).
+- `tugdeck/src/__tests__/concurrent-move-destruction.test.ts` (new — cross-cutting; fake timers).
+- `tugdeck/src/__tests__/portal-orphan-recovery.test.ts` (new — cross-cutting; fake timers).
 - `tugdeck/src/__tests__/construction-event-order.test.ts` (new — cross-cutting).
-- `tugdeck/src/__tests__/non-focused-pane-activation.test.tsx` (new — audit P8): click an interactive element in a non-focused pane; assert activation event fires *before* the click event.
+- `tugdeck/src/__tests__/pane-content-registry.test.ts` (new or extend existing) — throwing-subscriber test for notify hardening.
+
+*Modified test files:*
+- `tugdeck/src/__tests__/card-host-composition.test.tsx` — retarget the (future) click-activates-pane assertion to hit the document-level listener path. Add cases for nested responder + meta-skip.
+- `tugdeck/src/__tests__/use-card-property-store.test.tsx` — template for `use-card-persistence-plumbing.test.tsx` and `use-card-save-state.test.tsx` (both new).
+- `tugdeck/src/__tests__/deck-manager.test.ts` — update callers for the `_flipFirstResponder` signature refactor; add a targeted single-notify-on-detach test (carry-forward #3, now absorbed into the refactor commit).
 
 **Work:**
 
-a. **Validator extension.**
-   - `validateCardLifecycleState`: the set of ids tracked by `CardLifecycle.constructedCards` must equal the set of ids in `deckState.cards`. If a card is destroyed but the lifecycle's tracking set still contains it (or vice versa), throw `CardLifecycleInvariantError` naming the drift.
-   - `validateSelectionBoundaryMap`: the keys in `selectionGuard.boundaries` map should be a subset of `deckState.cards.map(c => c.id)` — a boundary registered for a card that no longer exists is a leak.
-   - `validateSaveCallbackKeys`: keys in `saveCallbacks` should be a subset of live `cardId`s. Stale keys after close indicate an unregister was missed.
-   - All three run inside the dev-only `notify()` guard; production builds strip the calls.
+a. **Document-level pane activation listener.** Install a capture-phase `pointerdown` listener that walks up from `event.target` looking for `data-pane-id`, resolves the pane's `activeCardId`, and calls `store.activateCard(activeCardId)`. Skips on `event.metaKey` (preserves existing Mac-modifier convention). Delete `handleFramePointerDown` and the `onStackActivated` prop from `TugPane`. Delete the `handleStackActivate` in `DeckCanvas` and the corresponding prop. Test: document-level listener covers content, nested responders, chrome, meta-skip, no double-activate.
 
-b. **Stable-render-order invariant test** (audit P8). Render a deck with two panes. Click an interactive element (checkbox, button) in the non-focused pane. Assert the activation event fires *before* the click handler runs, and that the click handler runs on the same synthetic event (no stale-synthetic-event bugs). This is the regression test for the scenario the `sortedStacks` sort exists to prevent; if someone ever removes the sort, this test fails.
+b. **Non-focused pane activation test (audit P8).** Render two panes; click an interactive element (button, checkbox) in the non-focused pane. Assert: (i) activation fires on `pointerdown` (capture phase) before the click handler runs, (ii) click handler runs on the same event, (iii) after the click, the non-focused pane is now focused. This pins `sortedStacks`'s sort plus the capture-phase ordering invariant.
 
-c. **HMR re-registration test** (audit L5). Construct `DeckManager` → destroy → construct again. Install cascade subscribers on generation 2. Fire a cascade event. Assert only generation-2 subscribers received it (gen-1 subscribers are silent). Protects against module-level singleton drift during HMR.
+c. **Validator extension + audit P7 signature tightening.**
+   - `validateCardLifecycleState`: set of ids in `CardLifecycle.constructedCards` must equal `deckState.cards` ids. Throw `CardLifecycleInvariantError` naming the drift on mismatch.
+   - `validateSelectionBoundaryMap`: keys in `selectionGuard.boundaries` must be a subset of `deckState.cards.map(c => c.id)`.
+   - `validateSaveCallbackKeys`: keys in `saveCallbacks` must be a subset of live `cardId`s.
+   - All three wired into `DeckManager.notify()` inside the existing `isDevEnv()` guard, alongside `validateDeckState`.
+   - Rename `registerSaveCallback(id, callback)` → `registerSaveCallback(cardId, callback)`; update JSDoc to state "must be a cardId".
 
-d. **Concurrent move + destruction test.** Drag card A from pane P1 to pane P2 while closing P2 mid-drag. Expected: graceful rejection of one operation, no invariant violation (validators stay green through the race). Pins the mutator synchronization that currently works by `notify()` ordering alone.
+d. **HMR re-registration test (audit L5).** Construct `DeckManager` → `destroy()` → construct again. Install cascade subscribers on gen 2. Fire a cascade event. Assert only gen-2 subscribers received it.
 
-e. **Portal orphan recovery test.** Close the host pane while the card's content effects are mid-debounce (dirty-bit save timer fired but commit pending). Assert no exception, no duplicate save, no stale listener on detached DOM.
+e. **Concurrent move + destruction test (fake-timer deterministic).** Drag card A from pane P1 to pane P2 while closing P2 mid-drag. Uses `setSystemTime` / equivalent for any timer-based assertions. Expected: graceful rejection of one operation, no invariant violation. Validators from commit (c) stay green through the race.
 
-f. **Construction event order on loaded layout.** Mount with a pre-populated 5-card / 3-pane layout via tugbank rows. Assert 5 `cardDidFinishConstruction` events fire in `deckState.cards` array order before the React root commits visible content. This is the test that a `cardDidFinishConstruction` subscriber on a card that exists at cold-launch gets its event reliably.
+f. **Portal orphan recovery test (fake-timer deterministic).** Close the host pane while the card's dirty-bit debounce is armed. Fake-advance time past the debounce threshold. Assert no exception, no duplicate save, no stale listener. Exercises the `CardPortal` teardown contract.
+
+g. **Construction event order on loaded layout.** Mount with a pre-populated 5-card / 3-pane layout via tugbank rows. Assert 5 `cardDidFinishConstruction` events fire in `deckState.cards` array order before the React root commits visible content.
+
+h. **`_flipFirstResponder` refactor to pure-mutator + side-effect callback.** Signature change: `_flipFirstResponder(newFR, mutate: (prev: DeckState) => DeckState, onCommit?: () => void)`. Helper owns state assignment, `notify()`, `scheduleSave()`. Lifecycle events bracket the commit as today. Decompose `_commitStandardFirstResponderFlip` into `_commitStandardFirstResponderState(state, newFR)` (pure) + `putFocusedCardId(newFR)` (side effect). Update all eight call sites. Add a targeted single-notify-on-detach test (audit carry-forward #3) pinning the 5.5.a semantic through the refactor.
+
+i. **Extract `useCardPersistencePlumbing`.** Host-side hook, symmetric with `useCardPropertyStore`. Returns `{ register, ref }`. Harness swaps the inline pair. Barrel export. Unit tests template from `use-card-property-store.test.tsx`.
+
+j. **Extract `useCardSaveState`.** Host-side hook encapsulating the `saveCurrentCardStateRef` write-during-render. Signature: `useCardSaveState({ cardId, hostStackId, hostContentEl, persistenceCallbacksRef }): React.RefObject<() => void>`. Module JSDoc explains *why* write-during-render (not `useCallback`) with a pointer to `card-host-composition.test.tsx`'s every-render-rewrite test (absorbs audit carry-forward #5). Unit test pins the rewrite behavior in isolation.
+
+k. **`pane-content-registry.notify()` hardening.** Wrap each subscriber call in `try`/`catch`; log and continue on throw. Test: register a throwing subscriber alongside a benign one; fire `notify()`; assert the benign subscriber still ran and the error was logged.
+
+**Execution plan — eleven commits.** Each commit green on `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint`. Tuglaws cross-checked before each. Risk-ordered: regression fix and document-level architectural win first, structural groundwork second, deterministic tests middle, deep refactors later, polish last.
+
+1. **Commit 1 — Document-level pane activation listener; delete `handleFramePointerDown`.** Covers work item (a). Install the capture-phase listener. Delete the now-redundant frame handler and `onStackActivated` prop. Test wave hits content, nested responders, chrome, meta-skip, no-double-activate. Upholds **L11** (pane activation is a chain-mediated dispatch; the listener is the emitter, DeckManager owns the state), **L23** (pane activation is user-observable state — preserving it across clicks is the contract).
+
+2. **Commit 2 — Validator extension + audit P7 signature tightening.** Covers work item (c). Three validators exported; all three wired into `DeckManager.notify()` under `isDevEnv()`. Rename `registerSaveCallback` param. Unit tests drift-trigger each validator. Upholds **L03** (validators run at commit boundary — same point `validateDeckState` runs).
+
+3. **Commit 3 — P8 stable-render-order / non-focused pane activation test.** Covers work item (b). Pins the end-to-end chain: click interactive element in non-focused pane → capture-phase activation → click handler runs on same synthetic event → pane is now focused. Test file: `non-focused-pane-activation.test.tsx`. Upholds **L11, L23**.
+
+4. **Commit 4 — HMR re-registration test (audit L5).** Covers work item (d). Independent of the rest; lands here for bisect clarity. Upholds **L03**.
+
+5. **Commit 5 — `pane-content-registry.notify()` hardening.** Covers work item (k). Per-subscriber `try`/`catch` + throwing-subscriber test. Small commit; lands before the portal-orphan test that relies on the teardown chain. Upholds **L23** (teardown invariants survive subscriber failures).
+
+6. **Commit 6 — Concurrent move + destruction test (fake timers).** Covers work item (e). `setSystemTime`-driven determinism. Validators from commit 2 stay green through the race. Upholds **L23**.
+
+7. **Commit 7 — Portal orphan recovery test (fake timers).** Covers work item (f). Fake-advance past debounce, assert no exception / duplicate save / stale listener. Exercises the hardened teardown chain (commits 5 and earlier `8ada5f36`). Upholds **L23**.
+
+8. **Commit 8 — Construction event order on loaded layout.** Covers work item (g). Cold mount with pre-populated 5-card / 3-pane layout. Assert 5 events fire in array order before React root commits visible content. Upholds **L03**.
+
+9. **Commit 9 — `_flipFirstResponder` refactor to `(mutate, onCommit?)`.** Covers work item (h). Signature change; eight call sites updated; `_commitStandardFirstResponderFlip` decomposed into pure state transform + side effect; single-notify-on-detach regression test (absorbs carry-forward #3). Biggest commit of the wave — deep refactor, type-level invariant win. Upholds **L23** (lifecycle + notify ordering preserved), and the refactor itself pins the invariant the commit-closure contract used to document informally.
+
+10. **Commit 10 — Extract `useCardPersistencePlumbing`.** Covers work item (i). Host-side hook symmetric with `useCardPropertyStore`. Harness swap. Barrel export. Unit tests. Upholds **L07** (ref-at-read-time still honored by the hook's pattern).
+
+11. **Commit 11 — Extract `useCardSaveState`.** Covers work item (j). Encapsulates write-during-render behind a named hook; module JSDoc hosts the why-not-useCallback rationale (absorbs carry-forward #5); unit test pins the rewrite behavior in isolation. Last commit — lands after the architectural refactor in commit 9 is stable so the save state's contract is crisp. Upholds **L07**.
 
 **Verification:**
-- All four new tests pass.
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green after every commit — no chain-of-commits detours.
+- All new tests pass: pane-activation-listener (content / nested / chrome / meta-skip / no-double-activate), three validator-drift tests, P8 stable-render-order, HMR, pane-content-registry throwing-subscriber, concurrent move + destruction, portal-orphan-recovery, construction-event-order, single-notify-on-detach, use-card-persistence-plumbing, use-card-save-state.
 - Dev-mode validators run on every `notify()` without noticeable slowdown on the test suite (if validators add > 100ms to test-run time, make them opt-in per test file via a flag).
-- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green.
-- Production build (if checked) does not include validator call sites — gate on `import.meta.env?.DEV`.
+- Production build does not include validator call sites — gate on `import.meta.env?.DEV`.
+- After commit 1: manual verification in dev server that clicking card content in a non-active pane visibly activates the pane (title bar focus ring moves, z-order bumps).
+- After commit 9: `git grep` confirms zero remaining callers pass a `commit: () => void` closure to `_flipFirstResponder`. All eight call sites use `(mutate, onCommit?)`.
+- After commit 11: `wc -l card-host.tsx` reports a further reduction from the 5.5.b-close figure of 246 lines. Target: ≤ 200 lines after the two hook extractions.
 
 **Risks:**
-- A validator that throws during a legitimate intermediate state (mid-mutation invariants temporarily violated) would break more than it catches. Mitigation: validators run *after* the commit closure, *before* `notify()` — the same point `validateDeckState` already runs. Same contract.
-- Concurrent-op tests are inherently timing-sensitive and may be flaky. Mitigation: use deterministic promise sequencing (`await Promise.all([...])` with explicit `await`s rather than setTimeout races).
+- **Commit 1 is a product behavior change with broad reach** — clicks on every interactive surface now route through `store.activateCard`. Components that assume content clicks don't activate could behave differently. Mitigation: test wave covers the click-target taxonomy (content, nested responders, interactive elements, chrome, meta-skip); manual dev-server verification across tide / gallery / debug cards; confirm every existing test passes without modification.
+- **A validator that throws during a legitimate intermediate state** (mid-mutation invariants temporarily violated) would break more than it catches. Mitigation: validators run at the same point `validateDeckState` runs (inside `notify()` guard, after the commit). Same contract.
+- **Commit 9's refactor touches eight `DeckManager` call sites.** A miscalibrated `mutate` or `onCommit` decomposition for any one caller could silently change observable semantics (e.g., `putFocusedCardId` ordering vs `notify`). Mitigation: preserve exact ordering — `onCommit` fires after `mutate` sets the new state but *before* `notify()`, matching the current `_commitStandardFirstResponderFlip` ordering where `putFocusedCardId` precedes `notify`. Every call site gets a targeted test; the single-notify-on-detach test is the clearest regression pin.
+- **Commits 6 and 7 still require correct fake-timer setup.** `setSystemTime` doesn't advance pending `Promise` microtasks; explicit `await Promise.resolve()` pumps may be needed between timer advances. Mitigation: if the test needs any real-time behavior, it's rewritten — not accepted as flaky.
+- **Commit 10 and 11's hook extractions could accidentally drop the closure dependencies they currently work through** (especially `useCardSaveState`'s five-argument shape). Mitigation: each extraction ships with its own isolated unit test; the `card-host-composition.test.tsx` invariant tests from 5.5.b continue to pass unchanged — that's the composition-level cross-check.
+
+**What excellence does NOT look like here.**
+- **Branded `CardId` / `PaneId` types** are a separate refactor worth doing; not integrated into 5.5.c because they touch the `IDeckManagerStore` interface and every call site in the codebase. Raising explicitly so it's on the record; will revisit before the next step lands.
+- **Removing the layout-dependent `handleCanvasPointerDown` deselect logic** is out of scope — its purpose (background-click deselect visual feedback) is distinct from pane activation and remains valid.
 
 ---
 
