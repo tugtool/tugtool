@@ -90,7 +90,6 @@ function renderObservableProps(cardId = "obs-int-card") {
             stackState={stackState}
             meta={{ title: "Test" }}
             onCardMoved={() => {}}
-            onStackActivated={() => {}}
             zIndex={1}
           />
           <CardHost

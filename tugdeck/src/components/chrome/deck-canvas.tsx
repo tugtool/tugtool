@@ -179,23 +179,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // TugPane's pointerdown fires with a window id. Resolve the window's
-  // current `activeCardId` and route through `activateCard` — under the
-  // composite-bit model `_flipFirstResponder` handles z-order bumping,
-  // `activePaneId` commit, focused-card persistence, and lifecycle
-  // events atomically. A preceding `focusCard(cardId)` would
-  // pre-mutate `activePaneId`, making the helper see a same-bit call
-  // and short-circuit the will/didActivate events — breaking prompt
-  // focus when clicking back to a previously-active card.
-  const handleStackActivate = useCallback(
-    (paneId: string) => {
-      const pane = store.getSnapshot().panes.find((s) => s.id === paneId);
-      if (!pane) return;
-      store.activateCard(pane.activeCardId);
-    },
-    [store],
-  );
-
   // Hook order: useDeckManager -> useSyncExternalStore -> useRef ->
   //             usePaneFocusController -> useRequiredResponderChain ->
   //             useCallback -> useResponder ->
@@ -430,7 +413,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
-            onStackActivated={handleStackActivate}
             onCardCollapsed={(id) => store.togglePaneCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.

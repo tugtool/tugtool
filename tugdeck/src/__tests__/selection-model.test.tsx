@@ -59,7 +59,6 @@ function renderWithManager(ui: React.ReactElement) {
 const defaultWindowProps = {
   meta: { title: "Selection Test Card" },
   onCardMoved: mock(() => {}),
-  onStackActivated: mock(() => {}),
   zIndex: 1,
 };
 

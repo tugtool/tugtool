@@ -7,7 +7,12 @@
  * - Title bar, accessory / tab bar, and content portal target
  * - Drag: RAF appearance-zone mutation during, `onCardMoved` commit on end
  * - Resize: 8 handles, clamped to min-size, `onCardMoved` on end
- * - Bring to front via `onStackActivated` on pointer-down in the frame
+ *
+ * Pane activation (bring-to-front on pointer-down) is driven by the
+ * document-level capture-phase listener in `pane-focus-controller.ts`
+ * — not by any React handler on this frame. The frame's own
+ * `data-focused` attribute is also written by that module, not
+ * rendered from a prop here.
  *
  * [D03] TugPane chrome, [D06] appearance-zone drag
  *
@@ -328,11 +333,6 @@ export interface TugPaneProps {
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
-  /** Called on pointer-down anywhere in the frame to bring the window to front.
-   * The `paneId` is this frame's id — callers must resolve the pane's
-   * active card id before invoking card-level APIs like `activateCard` /
-   * `focusCard`. */
-  onStackActivated: (paneId: string) => void;
   /**
    * Called when a card drag ends over another card's tab bar ([D45]).
    *
@@ -385,7 +385,6 @@ export function TugPane({
   acceptedFamilies,
   onClose,
   onCardMoved,
-  onStackActivated,
   sizePolicy: sizePolicyProp,
   onCardMerged,
   zIndex,
@@ -977,13 +976,11 @@ export function TugPane({
 
   const handleResizeStart = useCallback(
     (edge: ResizeEdge, event: React.PointerEvent) => {
-      // Bring to front on resize unless Command is held (standard Mac modifier convention).
-      // stopPropagation below prevents the frame's onPointerDown from firing, so we must
-      // call onStackActivated explicitly here.
-      if (!event.metaKey) {
-        onStackActivated(id);
-      }
-      // Stop propagation so the frame's onPointerDown does not fire a second time.
+      // Pane activation (including the metaKey-held no-activate
+      // nuance) is handled by `pane-focus-controller.ts`'s
+      // document-level capture-phase pointerdown listener, which
+      // fires before this handler. No per-handle activation call
+      // is needed.
       event.stopPropagation();
 
       if (!frameRef.current) return;
@@ -1123,19 +1120,8 @@ export function TugPane({
     },
     // minSizeRef.current is always current; position/size are start values read at resize-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onStackActivated, onCardMoved, position.x, position.y, size.width, size.height],
+    [id, onCardMoved, position.x, position.y, size.width, size.height],
   );
-
-  // ---------------------------------------------------------------------------
-  // Frame pointer-down: bring card to front
-  // ---------------------------------------------------------------------------
-
-  const handleFramePointerDown = useCallback((event: React.PointerEvent) => {
-    // Skip activation when Command is held (standard Mac modifier convention).
-    if (!event.metaKey) {
-      onStackActivated(id);
-    }
-  }, [id, onStackActivated]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1169,7 +1155,6 @@ export function TugPane({
       data-testid="tug-pane"
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
-      onPointerDown={handleFramePointerDown}
       style={{
         position: "absolute",
         left: position.x,

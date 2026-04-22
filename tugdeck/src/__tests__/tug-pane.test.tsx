@@ -4,9 +4,13 @@
  * Tests cover:
  * - T16: TugPane renders at correct position and size from stackState
  * - T17: TugPane applies zIndex prop
- * - T18: TugPane calls onStackActivated on pointer-down
  * - T19: TugPane calls onClose when the title bar close path fires
  * - T20: TugPane clamps resize to min-size derived from chrome + minContentSize
+ *
+ * T18 (onStackActivated on pointer-down) is retired: pane activation
+ * is now driven by `pane-focus-controller.ts`'s document-level listener,
+ * not by an onStackActivated callback prop on TugPane. The new
+ * classification behavior is tested in `pane-focus-controller.test.tsx`.
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -47,7 +51,6 @@ const defaultProps = {
   meta: { title: "Test" },
   onCardMoved: mock(() => {}),
   onClose: mock(() => {}),
-  onStackActivated: mock(() => {}),
   zIndex: 1,
 };
 
@@ -111,56 +114,6 @@ describe("TugPane – zIndex", () => {
 
     const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
     expect(frame.style.zIndex).toBe("42");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// T18: TugPane calls onStackActivated on pointer-down
-// ---------------------------------------------------------------------------
-
-describe("TugPane – onStackActivated", () => {
-  it("T18: calls onStackActivated with the stack id on pointer-down anywhere in the frame", () => {
-    const onStackActivated = mock((_id: string) => {});
-    const stackState = makeStackState({ id: "focus-test-stack" });
-
-    const { container } = render(
-      wrap(
-        <TugPane
-          {...defaultProps}
-          stackState={stackState}
-          onStackActivated={onStackActivated}
-        />
-      )
-    );
-
-    const frame = container.querySelector('[data-testid="tug-pane"]') as HTMLElement;
-
-    act(() => {
-      fireEvent.pointerDown(frame);
-    });
-
-    expect(onStackActivated).toHaveBeenCalledTimes(1);
-    expect(onStackActivated.mock.calls[0][0]).toBe("focus-test-stack");
-  });
-
-  it("also fires onStackActivated when pointer-down hits inner chrome (tug-pane-chrome body)", () => {
-    const onStackActivated = mock((_id: string) => {});
-
-    const { container } = render(
-      wrap(
-        <TugPane
-          {...defaultProps}
-          onStackActivated={onStackActivated}
-        />
-      )
-    );
-
-    const body = container.querySelector("[data-testid='tug-pane-body']") as HTMLElement;
-    act(() => {
-      fireEvent.pointerDown(body);
-    });
-
-    expect(onStackActivated.mock.calls.length).toBeGreaterThan(0);
   });
 });
 
