@@ -21,13 +21,14 @@
  * @module components/chrome/card-host
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
 import { useCardContentRestore } from "../tugways/hooks/use-card-content-restore";
+import { useCardDirtyState } from "../tugways/hooks/use-card-dirty-state";
 import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
@@ -40,8 +41,6 @@ import type { CardStateBag } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
-
-const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -140,45 +139,11 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 
-  // ---- Auto-save debounce ----
-  const autoSaveTimerRef = useRef<number | null>(null);
-  const markDirty = useCallback(() => {
-    if (autoSaveTimerRef.current !== null) {
-      window.clearTimeout(autoSaveTimerRef.current);
-    }
-    autoSaveTimerRef.current = window.setTimeout(() => {
-      autoSaveTimerRef.current = null;
-      saveCurrentCardStateRef.current();
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, []);
-
-  // ---- Scroll + selectionchange listeners (on host stack's content element) ----
-  useEffect(() => {
-    const contentEl = hostContentEl;
-    if (!contentEl) return;
-
-    const handleScroll = () => markDirty();
-    contentEl.addEventListener("scroll", handleScroll, { passive: true });
-
-    const handleSelectionChange = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const anchor = sel.anchorNode;
-      if (anchor && contentEl.contains(anchor)) {
-        markDirty();
-      }
-    };
-    document.addEventListener("selectionchange", handleSelectionChange);
-
-    return () => {
-      contentEl.removeEventListener("scroll", handleScroll);
-      document.removeEventListener("selectionchange", handleSelectionChange);
-      if (autoSaveTimerRef.current !== null) {
-        window.clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, [hostContentEl, markDirty]);
+  // ---- Auto-save debounce + scroll/selectionchange listeners ----
+  const markDirty = useCardDirtyState({
+    hostContentEl,
+    saveRef: saveCurrentCardStateRef,
+  });
 
   // ---- Content restore on mount ----
   useCardContentRestore({

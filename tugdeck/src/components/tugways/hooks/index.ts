@@ -60,3 +60,5 @@ export type { UseCardPropertyStoreResult } from "./use-card-property-store";
 export { useCardFeedStore } from "./use-card-feed-store";
 export { useCardContentRestore } from "./use-card-content-restore";
 export type { UseCardContentRestoreArgs } from "./use-card-content-restore";
+export { useCardDirtyState } from "./use-card-dirty-state";
+export type { UseCardDirtyStateArgs } from "./use-card-dirty-state";
