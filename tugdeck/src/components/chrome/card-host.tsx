@@ -27,6 +27,7 @@ import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
+import { useCardContentRestore } from "../tugways/hooks/use-card-content-restore";
 import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
@@ -34,7 +35,6 @@ import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { selectionGuard } from "../tugways/selection-guard";
-import type { SavedSelection } from "../tugways/selection-guard";
 import { getRegistration } from "../../card-registry";
 import type { CardStateBag } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
@@ -181,68 +181,12 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   }, [hostContentEl, markDirty]);
 
   // ---- Content restore on mount ----
-  const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
-  const pendingSelectionRef = useRef<SavedSelection | null>(null);
-  useLayoutEffect(() => {
-    const bag = store.getCardState(cardId);
-    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
-
-    const contentEl = hostContentEl;
-
-    const hasPersistence =
-      persistenceCallbacksRef.current !== null &&
-      persistenceCallbacksRef.current.restorePendingRef !== undefined &&
-      bag.content !== undefined;
-
-    if (hasPersistence) {
-      pendingScrollRef.current = bag.scroll ?? null;
-      pendingSelectionRef.current = bag.selection ?? null;
-
-      let didHide = false;
-      if (contentEl && bag.scroll !== undefined) {
-        contentEl.style.visibility = "hidden";
-        didHide = true;
-      }
-
-      persistenceCallbacksRef.current!.onContentReady = () => {
-        if (contentEl && pendingScrollRef.current !== null) {
-          contentEl.scrollLeft = pendingScrollRef.current.x;
-          contentEl.scrollTop = pendingScrollRef.current.y;
-        }
-        if (didHide && contentEl) {
-          contentEl.style.visibility = "";
-        }
-        if (pendingSelectionRef.current != null) {
-          selectionGuard.restoreSelection(hostStackId, pendingSelectionRef.current);
-        }
-        pendingScrollRef.current = null;
-        pendingSelectionRef.current = null;
-      };
-
-      persistenceCallbacksRef.current!.restorePendingRef!.current = true;
-      persistenceCallbacksRef.current!.onRestore(bag.content!);
-
-      return () => {
-        if (persistenceCallbacksRef.current?.restorePendingRef) {
-          persistenceCallbacksRef.current.restorePendingRef.current = false;
-        }
-        pendingScrollRef.current = null;
-        pendingSelectionRef.current = null;
-        if (didHide && contentEl) {
-          contentEl.style.visibility = "";
-        }
-      };
-    } else {
-      if (contentEl && bag.scroll !== undefined) {
-        contentEl.scrollLeft = bag.scroll.x;
-        contentEl.scrollTop = bag.scroll.y;
-      }
-      if (bag.selection != null) {
-        selectionGuard.restoreSelection(hostStackId, bag.selection);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, hostStackId]);
+  useCardContentRestore({
+    cardId,
+    hostStackId,
+    hostContentEl,
+    persistenceCallbacksRef,
+  });
 
   // ---- Feed store (per componentId's feedIds, filtered by workspace) ----
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);

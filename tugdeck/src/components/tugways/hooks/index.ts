@@ -58,3 +58,5 @@ export type { UsePropertyStoreOptions, PropertyStoreRegistrar } from "./use-prop
 export { useCardPropertyStore } from "./use-card-property-store";
 export type { UseCardPropertyStoreResult } from "./use-card-property-store";
 export { useCardFeedStore } from "./use-card-feed-store";
+export { useCardContentRestore } from "./use-card-content-restore";
+export type { UseCardContentRestoreArgs } from "./use-card-content-restore";
