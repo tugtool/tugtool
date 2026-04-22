@@ -122,11 +122,6 @@ export function putCardState(cardId: string, bag: CardStateBag, options?: { keep
   const url = `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(cardId)}`;
   const body = JSON.stringify({ kind: "json", value: bag });
 
-  // eslint-disable-next-line no-console
-  console.log(
-    `[probe:put] cardId=${cardId} sync=${options?.sync === true} keepalive=${options?.keepalive === true} bodyLen=${body.length} hasContent=${bag.content !== undefined} hasScroll=${bag.scroll !== undefined} hasSelection=${bag.selection != null}`,
-  );
-
   if (options?.sync) {
     try {
       const xhr = new XMLHttpRequest();

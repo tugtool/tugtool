@@ -8,50 +8,38 @@
  * across detach / merge / pane-to-pane moves.
  *
  * Per-concern state is delegated to hooks under `tugways/hooks/`:
- * `useCardPropertyStore`, `useCardDirtyState`, `useCardContentRestore`,
- * and `useCardFeedStore`. The harness itself owns only the cross-cutting
- * wiring: `hostContentEl` / `hostCardRootEl` registry lookups, the
- * per-card `saveCurrentCardState` closure, persistence-callback
- * registration, the `registerSaveCallback(cardId, …)` binding into
- * DeckManager, the card-level responder that routes `SET_PROPERTY`, and
- * the context-provider tree wrapping the content factory.
+ * `useCardPropertyStore`, `useCardDirtyState`, and `useCardFeedStore`.
+ * The harness itself owns only the cross-cutting wiring:
+ * `hostContentEl` / `hostCardRootEl` registry lookups, the per-card
+ * `saveCurrentCardState` closure, persistence-callback registration,
+ * the `registerSaveCallback(cardId, …)` binding into DeckManager, the
+ * card-level responder that routes `SET_PROPERTY`, and the
+ * context-provider tree wrapping the content factory.
  *
- * ## Hook call order
+ * ## Restoration
  *
- * React runs `useLayoutEffect` callbacks first (in declaration order),
- * then `useEffect` callbacks (in declaration order). Inserting a new
- * hook between two existing hooks in the component body does **not**
- * place its effects "between" theirs — the phase determines the actual
- * firing order. The pinned declaration order below (which matches
- * pre-extraction behavior) resolves to the two phases as follows.
+ * Restoration is trigger-driven, not React-dep-gated. Two deterministic
+ * moments drive the two slices:
  *
- * Declaration order in the component body:
+ *   1. **Content restore** fires inside `registerPersistenceCallbacks`,
+ *      synchronously when the child content component calls
+ *      `register(callbacks)` from its own `useLayoutEffect`. The child's
+ *      mount moment *is* the trigger: there is no effect dep array to
+ *      re-evaluate, no version counter, no ref gate. For bags that
+ *      carry content, the harness installs an `onContentReady` callback
+ *      (applies scroll/selection once the child re-renders with
+ *      restored state) and calls `onRestore(bag.content)`.
+ *   2. **Scroll / selection restore** lives in a `useLayoutEffect`
+ *      keyed on `[cardId, hostStackId, hostContentEl]`. It fires when
+ *      the host element appears or changes (cross-pane move, pane
+ *      re-registration). For content-less bags, this is the only
+ *      restore path. For bags with content, this provides a best-effort
+ *      pre-commit apply; `onContentReady` re-applies the correct clamp
+ *      after the child commits. Both applications are idempotent.
  *
- *   1. `useCardPropertyStore` — returns a ref + stable `register` fn only,
- *      no effects. Must run before the responder factory reads its ref.
- *   2. harness `useLayoutEffect` for `registerSaveCallback(cardId, …)`.
- *   3. `useCardDirtyState` — `useEffect` for scroll + `selectionchange`
- *      listeners.
- *   4. `useCardContentRestore` — `useLayoutEffect` for mount-time restore.
- *   5. `useCardFeedStore` — `useEffect` for FeedStore dispose + filter
- *      sync (the subscription itself enters via `useSyncExternalStore`,
- *      which is commit-time).
- *
- * Actual fire order resolves to:
- *
- *   - **Layout phase** (commit-sync): (2) `registerSaveCallback`,
- *     then (4) content-restore. `registerSaveCallback` must come first
- *     so DeckManager's save path finds the card before any save can
- *     fire against saved state in restore.
- *   - **Effect phase** (after paint): (3) dirty-state listeners,
- *     then (5) feed-store dispose + filter.
- *
- * Future hooks: if the new hook's registration must be visible to
- * DeckManager or to child `useLayoutEffect`s in the content subtree,
- * use `useLayoutEffect` and insert after `useCardContentRestore` (step
- * 4). If the new hook only installs DOM listeners or pushes derived
- * state into an external store, use `useEffect` and insert after
- * `useCardFeedStore` (step 5).
+ * Neither path uses `persistenceCallbacksRef` as a dep — refs do not
+ * trigger re-renders, and a dep array is not how we coordinate. The
+ * trigger is the store callsite (register, or host-element change).
  *
  * @module components/chrome/card-host
  */
@@ -62,7 +50,6 @@ import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
-import { useCardContentRestore } from "../tugways/hooks/use-card-content-restore";
 import { useCardDirtyState } from "../tugways/hooks/use-card-dirty-state";
 import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
@@ -129,12 +116,86 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const { register: registerPropertyStore, ref: propertyStoreRef } = useCardPropertyStore();
 
   const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);
+
+  // Refs for the latest `hostContentEl` and `hostStackId` so closures
+  // installed in `registerPersistenceCallbacks` (onContentReady) read
+  // current values at fire time, not mount-time captures. L07.
+  const hostContentElRef = useRef<HTMLDivElement | null>(null);
+  hostContentElRef.current = hostContentEl;
+  const hostStackIdRef = useRef(hostStackId);
+  hostStackIdRef.current = hostStackId;
+
+  // Content restore is imperative and trigger-driven. The trigger is the
+  // child calling `register(callbacks)` — its own `useLayoutEffect` is
+  // the deterministic moment content restoration is safe. We do not gate
+  // restore behind a React dep array because the prerequisites (host
+  // element available, child registered) can arrive in any order and
+  // React's reconciler is not the authority on "ready." This callback
+  // owns only the content branch; scroll/selection live in the effect
+  // below (keyed on host-element availability) and in the child-driven
+  // `onContentReady` for the with-content case. L11, L22, L23.
   const registerPersistenceCallbacks = useCallback(
     (callbacks: CardPersistenceCallbacks) => {
       persistenceCallbacksRef.current = callbacks;
+
+      const bag = store.getCardState(cardId);
+      if (!bag || bag.content === undefined) return;
+      // `callbacks.restorePendingRef` is absent on the no-op cleanup pair
+      // installed by `useCardPersistence`'s cleanup. Skip that re-entry.
+      if (callbacks.restorePendingRef === undefined) return;
+
+      // Install onContentReady so scroll/selection are applied after the
+      // child commits restored content — at that point the content's
+      // dimensions are valid and scroll clamps correctly.
+      callbacks.onContentReady = () => {
+        const el = hostContentElRef.current;
+        if (el) {
+          if (bag.scroll !== undefined) {
+            el.scrollLeft = bag.scroll.x;
+            el.scrollTop = bag.scroll.y;
+          }
+          if (el.style.visibility === "hidden") {
+            el.style.visibility = "";
+          }
+        }
+        if (bag.selection != null) {
+          selectionGuard.restoreSelection(
+            hostStackIdRef.current,
+            bag.selection,
+          );
+        }
+      };
+      // Pre-hide the host to mask the pre-restore scroll position while
+      // the child re-renders with restored content.
+      if (hostContentElRef.current && bag.scroll !== undefined) {
+        hostContentElRef.current.style.visibility = "hidden";
+      }
+
+      callbacks.restorePendingRef.current = true;
+      callbacks.onRestore(bag.content);
     },
-    [],
+    [cardId, store],
   );
+
+  // Scroll / selection restore: triggered by `hostContentEl` becoming
+  // available. Fires idempotently whenever the host element changes
+  // (mount, cross-pane move, pane re-registration). Applies scroll
+  // regardless of content-case: for a no-content bag this is the only
+  // restore path; for a with-content bag this provides a best-effort
+  // apply before the child commits, and `onContentReady` re-applies the
+  // correct clamp after content renders. L22, L23.
+  useLayoutEffect(() => {
+    if (!hostContentEl) return;
+    const bag = store.getCardState(cardId);
+    if (!bag) return;
+    if (bag.scroll !== undefined) {
+      hostContentEl.scrollLeft = bag.scroll.x;
+      hostContentEl.scrollTop = bag.scroll.y;
+    }
+    if (bag.selection != null) {
+      selectionGuard.restoreSelection(hostStackId, bag.selection);
+    }
+  }, [cardId, hostStackId, hostContentEl, store]);
 
   // Rewritten every render so closures registered below read the latest
   // `hostContentEl` / `hostStackId` / `cardId` without stale capture.
@@ -151,24 +212,12 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
     };
-    // eslint-disable-next-line no-console
-    console.log(
-      `[probe:save] cardId=${cardId} hostStackId=${hostStackId} hasContentEl=${!!contentEl} scroll=${JSON.stringify(scroll)} selection=${!!selection} contentDefined=${content !== undefined} contentPreview=${
-        content === undefined
-          ? "undefined"
-          : JSON.stringify(content).slice(0, 120)
-      }`,
-    );
     store.setCardState(cardId, bag);
   };
 
   useLayoutEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log(`[probe:register] cardId=${cardId}`);
     store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {
-      // eslint-disable-next-line no-console
-      console.log(`[probe:unregister] cardId=${cardId}`);
       store.unregisterSaveCallback(cardId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,13 +226,6 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const markDirty = useCardDirtyState({
     hostContentEl,
     saveRef: saveCurrentCardStateRef,
-  });
-
-  useCardContentRestore({
-    cardId,
-    hostStackId,
-    hostContentEl,
-    persistenceCallbacksRef,
   });
 
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
