@@ -61,7 +61,6 @@ const defaultWindowProps = {
   onCardMoved: mock(() => {}),
   onStackActivated: mock(() => {}),
   zIndex: 1,
-  isFocused: false,
 };
 
 // ---------------------------------------------------------------------------

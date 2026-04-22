@@ -92,7 +92,6 @@ function renderObservableProps(cardId = "obs-int-card") {
             onCardMoved={() => {}}
             onStackActivated={() => {}}
             zIndex={1}
-            isFocused={false}
           />
           <CardHost
             cardId={cardId}

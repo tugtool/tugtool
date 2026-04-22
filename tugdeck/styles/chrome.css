@@ -40,11 +40,11 @@
   border-radius: var(--tug-radius-md);
 }
 
-.tug-pane[data-focused="false"] {
+.tug-pane:not([data-focused="true"]) {
   position: absolute; /* already absolute via inline style, repeated for ::after stacking */
 }
 
-.tug-pane[data-focused="false"]::after {
+.tug-pane:not([data-focused="true"])::after {
   content: "";
   position: absolute;
   inset: 0;

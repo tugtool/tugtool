@@ -63,6 +63,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
+import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -115,8 +116,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // reordering the store array only changes z-index values -- React never
   // calls insertBefore to move DOM nodes. This preserves the browser's
   // pointer->click event sequence when clicking interactive elements on
-  // unfocused stacks (the synchronous onStackActivated on pointerdown updates
-  // z-index before click fires, so the stack is already focused).
+  // unfocused stacks: the synchronous pane-activation path on pointerdown
+  // updates z-index before click fires, so the stack is already focused.
   //
   // Z-index comes from each stack's position in the *store* array (focus
   // order), not from the stable render order.
@@ -151,17 +152,17 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // ---------------------------------------------------------------------------
   // Visual focus
   // ---------------------------------------------------------------------------
-  // Focus is derived from z-order: the last stack in the array is the focused
-  // stack, and its activeCardId is the focused card. A `deselected` flag
-  // allows explicitly clearing focus (canvas click) without changing z-order.
+  // Pane focus appearance (the `data-focused` attribute on each pane frame)
+  // is owned by `pane-focus-controller.ts` — a DOM-authority hook that
+  // subscribes to the store and writes `data-focused` directly, bypassing
+  // React state and props. See that module's docstring for the contract
+  // (L06, L10, L22).
+  //
+  // `deckRootRef` is the element the controller scopes its DOM queries to.
+  // It's merged onto the same div that carries `responderRef` below.
 
-  const [deselected, setDeselected] = useState(false);
-
-  const focusedStackId = deselected
-    ? null
-    : panes.length > 0
-      ? panes[panes.length - 1].id
-      : null;
+  const deckRootRef = useRef<HTMLDivElement | null>(null);
+  usePaneFocusController(deckRootRef);
 
   // ---------------------------------------------------------------------------
   // Refs for cycleCard closure (registered once on mount via useResponder)
@@ -195,36 +196,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     [store],
   );
 
-  // Deck-canvas-local reaction to any card activation: clear the
-  // canvas-background-click deselect flag. Subscribed on mount; the
-  // initial-sync in observeCardDidActivate fires for the currently-
-  // active card so the startup state is consistent.
-  useLayoutEffect(() => {
-    return store.observeCardDidActivate(null, () => {
-      setDeselected(false);
-    });
-  }, [store]);
-
-  // ---------------------------------------------------------------------------
-  // Canvas background click: deselect all cards
-  // ---------------------------------------------------------------------------
-
-  const handleCanvasPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      // Only deselect when clicking the canvas background itself, not a card.
-      // First-responder promotion is handled by the
-      // ResponderChainProvider's document-level pointerdown listener
-      // via data-responder-id; this handler is purely about the
-      // canvas-deselect visual feedback.
-      if (e.target === e.currentTarget) {
-        setDeselected(true);
-      }
-    },
-    [],
-  );
-
-  // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
-  //             useRequiredResponderChain -> useCallback -> useResponder ->
+  // Hook order: useDeckManager -> useSyncExternalStore -> useRef ->
+  //             usePaneFocusController -> useRequiredResponderChain ->
+  //             useCallback -> useResponder ->
   //             useEffect (cardDragCoordinator init) -> useEffect (initial focused card restore) ->
   //             useLayoutEffect (startup overlay fade-out) ->
   //             useLayoutEffect (selection highlight sync)
@@ -376,6 +350,19 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // the lifecycle's wildcard observer + initial-sync covers every
   // activation path without a coupled react-side effect.
 
+  // Merge `deckRootRef` (pane-focus-controller's query scope) and
+  // `responderRef` (responder-chain wiring) onto the same element.
+  // `useCallback` with `[responderRef]` keeps the callback identity
+  // stable across renders because `useResponder` returns a stable
+  // ref callback. Same pattern as `rootRefCallback` in tug-pane.tsx.
+  const setDeckRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      deckRootRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
+
   return (
     <ResponderScope>
       {/*
@@ -386,15 +373,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
        * without its own data-responder-id. Card-level responders
        * inside containerRef win via innermost-first DOM walk.
        */}
-      <div ref={responderRef} style={{ position: "absolute", inset: 0 }}>
-      {/* Canvas background click target for deselecting cards */}
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-      <div
-        data-testid="deck-canvas-bg"
-        onPointerDown={handleCanvasPointerDown}
-        style={{ position: "absolute", inset: 0, zIndex: 0 }}
-      />
-
+      <div ref={setDeckRef} style={{ position: "absolute", inset: 0 }}>
       {/*
         * containerRef wrapper: positioning context for card frames, snap guides,
         * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).
@@ -449,7 +428,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             meta={registration.defaultMeta}
             sizePolicy={getSizePolicy(componentId)}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
-            isFocused={stackState.id === focusedStackId}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
             onStackActivated={handleStackActivate}

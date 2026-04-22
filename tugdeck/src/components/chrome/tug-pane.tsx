@@ -346,8 +346,6 @@ export interface TugPaneProps {
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
   /** CSS z-index for stacking order. */
   zIndex: number;
-  /** Whether this card is the focused (topmost) card. Drives visual focus styles. */
-  isFocused: boolean;
   /**
    * Called when the user toggles collapse on the card header.
    * DeckCanvas wires this to `store.togglePaneCollapse(id)`.
@@ -391,7 +389,6 @@ export function TugPane({
   sizePolicy: sizePolicyProp,
   onCardMerged,
   zIndex,
-  isFocused,
   onCardCollapsed,
 }: TugPaneProps) {
   const { id, position, size } = stackState;
@@ -1171,7 +1168,6 @@ export function TugPane({
       className="tug-pane"
       data-testid="tug-pane"
       data-pane-id={id}
-      data-focused={isFocused ? "true" : "false"}
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleFramePointerDown}
       style={{

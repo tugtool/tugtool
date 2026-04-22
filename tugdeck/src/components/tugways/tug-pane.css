@@ -8,11 +8,11 @@
  *   --tug7-element-card-text-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | content       | .tug-pane[data-focused="true"] .tug-pane-title (color)
  *   --tug7-element-card-text-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | content       | .tug-pane-title (color)
  *   --tug7-element-card-icon-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | control       | .tug-pane[data-focused="true"] .tug-pane-icon (color)
- *   --tug7-element-card-icon-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-pane[data-focused="false"] .tug-pane-icon (color)
+ *   --tug7-element-card-icon-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-pane:not([data-focused="true"]) .tug-pane-icon (color)
  *   --tug7-element-card-control-normal-plain-rest          | --tug7-surface-card-primary-normal-titlebar-active         | control       | .tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button (color)
  *   --tug7-element-card-control-normal-plain-hover         | --tug7-surface-card-control-normal-plain-hover             | control       | .tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button:hover (color)
- *   --tug7-element-card-control-normal-muted-rest          | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button (color)
- *   --tug7-element-card-control-normal-muted-hover         | --tug7-surface-card-control-normal-muted-hover             | control       | .tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button:hover (color)
+ *   --tug7-element-card-control-normal-muted-rest          | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button (color)
+ *   --tug7-element-card-control-normal-muted-hover         | --tug7-surface-card-control-normal-muted-hover             | control       | .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:hover (color)
  *   --tug7-element-selection-text-normal-plain-rest        | --tug7-surface-selection-primary-normal-plain-rest         | content       | ::highlight(card-selection) (color)
  *   --tug7-element-global-text-normal-muted-rest           | --tug7-surface-global-primary-normal-default-rest          | informational | .tug-pane-loading (color)
  * } */
@@ -25,11 +25,11 @@
  * | --tugx-pane-title-fg-active                      | --tug7-surface-card-primary-normal-titlebar-active | content      | .tug-pane[data-focused="true"] .tug-pane-title (color) |
  * | --tugx-pane-title-fg-inactive                    | --tug7-surface-card-primary-normal-titlebar-inactive | content      | .tug-pane-title (color)               |
  * | --tugx-pane-title-bar-icon-active                | --tug7-surface-card-primary-normal-titlebar-active | control      | .tug-pane[data-focused="true"] .tug-pane-icon (color) |
- * | --tugx-pane-title-bar-icon-inactive              | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-pane[data-focused="false"] .tug-pane-icon (color) |
+ * | --tugx-pane-title-bar-icon-inactive              | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-pane:not([data-focused="true"]) .tug-pane-icon (color) |
  * | --tugx-pane-control-on-fg-rest                   | --tug7-surface-card-primary-normal-titlebar-active | control      | .tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button (color) |
  * | --tugx-pane-control-on-fg-hover                  | --tug7-surface-card-control-normal-plain-hover   | control      | .tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button:hover (color) |
- * | --tugx-pane-control-off-fg-rest                  | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button (color) |
- * | --tugx-pane-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button:hover (color) |
+ * | --tugx-pane-control-off-fg-rest                  | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button (color) |
+ * | --tugx-pane-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:hover (color) |
  * | --tug7-element-selection-text-normal-plain-rest  | --tug7-surface-selection-primary-normal-plain-rest | content      | ::highlight(card-selection) (color)  |
  * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .tug-pane-loading (color)             |
  */
@@ -199,8 +199,10 @@ body {
 
 /*
  * When the pane is focused (active), the title bar background switches to the
- * active color. TugPane sets data-focused="true" on its container div,
- * which is the ancestor of the pane chrome root.
+ * active color. `pane-focus-controller.ts` writes data-focused="true" on the
+ * active pane's container div (and "false" on all others) in response to
+ * store activation events; absent attribute is treated as unfocused via the
+ * `:not([data-focused="true"])` selectors below.
  */
 .tug-pane[data-focused="true"] .tug-pane-title-bar {
   background-color: var(--tugx-pane-title-bar-bg-active);
@@ -257,7 +259,7 @@ body {
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
-.tug-pane[data-focused="false"] .tug-pane-icon {
+.tug-pane:not([data-focused="true"]) .tug-pane-icon {
   color: var(--tugx-pane-title-bar-icon-inactive);
 }
 
@@ -299,19 +301,19 @@ body {
 
 /* Pane title bar control buttons — unfocused pane (muted role) */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
-.tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button {
+.tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button {
   color: var(--tugx-pane-control-off-fg-rest);
   background-color: var(--tugx-pane-control-off-bg-rest);
   border-color: var(--tugx-pane-control-off-border-rest);
 }
 
-.tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button:hover:not(:disabled) {
+.tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:hover:not(:disabled) {
   color: var(--tugx-pane-control-off-fg-hover);
   background-color: var(--tugx-pane-control-off-bg-hover);
   border-color: var(--tugx-pane-control-off-border-hover);
 }
 
-.tug-pane[data-focused="false"] .tug-pane-title-bar-controls .tug-button:active:not(:disabled) {
+.tug-pane:not([data-focused="true"]) .tug-pane-title-bar-controls .tug-button:active:not(:disabled) {
   color: var(--tugx-pane-control-off-fg-active);
   background-color: var(--tugx-pane-control-off-bg-active);
   border-color: var(--tugx-pane-control-off-border-active);
@@ -364,7 +366,7 @@ body {
    Opacity controls the strength: 0 = no effect, 1 = full desaturation.
    Positioned on .tug-pane-chrome (not .tug-pane-content) so the overlay covers the
    full pane chrome bounds and does not scroll with content. */
-.tug-pane[data-focused="false"] .tug-pane-chrome::before {
+.tug-pane:not([data-focused="true"]) .tug-pane-chrome::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -376,7 +378,7 @@ body {
 }
 
 /* Layer 2: lightness wash — dims achromatic content when the pane is unfocused */
-.tug-pane[data-focused="false"] .tug-pane-chrome::after {
+.tug-pane:not([data-focused="true"]) .tug-pane-chrome::after {
   content: "";
   position: absolute;
   inset: 0;

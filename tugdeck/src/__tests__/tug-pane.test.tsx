@@ -49,7 +49,6 @@ const defaultProps = {
   onClose: mock(() => {}),
   onStackActivated: mock(() => {}),
   zIndex: 1,
-  isFocused: false,
 };
 
 // ---------------------------------------------------------------------------
