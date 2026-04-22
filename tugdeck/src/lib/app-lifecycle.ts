@@ -29,11 +29,11 @@
  *     layer. Subscribers receive the event the instant it happens,
  *     in the same call stack as whatever triggered it.
  *   - React-integrated subscribers (`useAppDelegate`) defer their
- *     user callback onto the shared `delegate-drain.ts` macrotask
- *     queue so side effects run past WebKit's gesture focus-lock
- *     and outside React's commit scheduling. Same queue as
- *     `useCardDelegate`, so card and app delegate drains interleave
- *     in FIFO enqueue order.
+ *     user callback via a setState → useEffect pipeline so side
+ *     effects run AFTER React's post-commit paint. Same mechanism
+ *     as `useCardDelegate` (see `lib/card-lifecycle.ts`). The
+ *     reliability study in Step 10 of the plan will replace this
+ *     deferral across both delegate hooks.
  *
  * Unlike card events, app events carry no per-target id — the app is
  * singular. Observers receive no argument; the fact of the event is
@@ -57,8 +57,6 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
-
-import { scheduleDelegateCall } from "./delegate-drain";
 
 /**
  * Module-level toggle for app-lifecycle trace logs. Defaults to the
@@ -272,11 +270,36 @@ export interface TugAppDelegate {
   applicationDidUnhide?(): void;
 }
 
-// Delegate callbacks defer through the shared `delegate-drain.ts`
-// module — same drain queue as `useCardDelegate`, so cross-module
-// ordering (e.g., a card's didActivate vs an app's
-// applicationDidBecomeActive) is FIFO regardless of which hook
-// subscribed first.
+// ---- MessageChannel-based delegate drain queue ----
+//
+// Same mechanism as `card-lifecycle.ts`. See that file's banner for
+// the full rationale; this module keeps its own queue so the two
+// delegate paths don't interleave on a shared message port.
+
+type AppDelegateCall = () => void;
+const appDelegateQueue: AppDelegateCall[] = [];
+const appDelegateChannel: MessageChannel =
+  typeof MessageChannel !== "undefined" ? new MessageChannel() : (null as unknown as MessageChannel);
+
+if (appDelegateChannel !== null) {
+  appDelegateChannel.port1.onmessage = (): void => {
+    const pending = appDelegateQueue.splice(0);
+    for (const fn of pending) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("[AppLifecycle] delegate callback threw:", err);
+      }
+    }
+  };
+}
+
+function scheduleAppDelegateCall(fn: AppDelegateCall): void {
+  appDelegateQueue.push(fn);
+  if (appDelegateChannel !== null) {
+    appDelegateChannel.port2.postMessage(null);
+  }
+}
 
 /**
  * `useAppDelegate` — subscribe a React component to app-lifecycle
@@ -307,7 +330,7 @@ export function useAppDelegate(delegate: TugAppDelegate): void {
   useLayoutEffect(() => {
     if (lifecycle === null) return;
     const enqueue = (event: AppEventName): void => {
-      scheduleDelegateCall(() => {
+      scheduleAppDelegateCall(() => {
         const fn = delegateRef.current[event];
         if (fn === undefined) return;
         try {
