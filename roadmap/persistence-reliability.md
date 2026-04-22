@@ -4,26 +4,28 @@ Live investigation captured 2026-04-22. Tracks the full story of a persistence r
 
 This document is the working memory for everything persistence-related until the final threads close. The companion formal plan lives in `tugplan-tide-card-polish.md` under Step 5.5.c Commit 1A; that section is now out of date relative to this document and should be updated once the outstanding issues converge.
 
-## Status dashboard
+## Status dashboard (as of 2026-04-22, after `8de575c4`)
 
-| Surface | Across app reload / relaunch | Across hide → unhide | Across resign-active → become-active |
-|---|---|---|---|
-| Scroll position | ✓ restored | (not reported broken) | (not reported broken) |
-| `TugPromptEntry` / `TugPromptInput` text content | ✓ restored | (not reported broken) | (not reported broken) |
-| `TugPromptEntry` / `TugPromptInput` selection | ✓ restored¹ | ✗ NOT restored | ✗ NOT restored |
-| `TugInput` text content | ✗ NOT restored (never was wired) | ✗ | ✗ |
-| `TugTextarea` text content | ✗ NOT restored (never was wired) | ✗ | ✗ |
-| `TugInput` / `TugTextarea` selection | ✗ NOT restored | ✗ | ✗ |
+| Surface | Reload / relaunch | Hide → unhide | Resign → become active (once) | Resign → become active (twice) |
+|---|---|---|---|---|
+| Scroll position | ✓ | ✓ | ✓ | ✓ |
+| `TugPromptEntry` text content | ✓ | ✓ | ✓ | ✓ |
+| `TugInput` / `TugTextarea` text content | ✓ | ✓ | ✓ | ✓ |
+| `TugPromptEntry` selection | ✓ | ✗ | ✓ | ✗ (first cycle works, second fails) |
+| `TugInput` / `TugTextarea` selection | ✗ (text restored, selection not) | ✗ | ✗ | ✗ |
+| Focus restoration | ✗ (not handled at all) | ✗ | ✗ | ✗ |
 
-¹ After the selection-ownership follow-up fix; not yet committed as of this document's creation.
+**Summary:** data payloads (scroll, content, input values) are preserved across every transition we've tested. **Selection is not, in broad and specific ways, across most transitions.** Focus is not handled anywhere. The selection gap is not a single bug but a **concept gap** — see Part 7.
 
 ## Commits shipped so far
 
 - `dae7ca51` — Initial Commit 1A plan (since superseded by the instrument-first rewrite).
 - `819357aa` — Instrument save/restore pipeline (nine `[probe:*]` log points) + instrument-first plan rewrite.
 - `d70ee0d8` — **Path B.** Drive card restore from triggers, not effect deps. Deletes `useCardContentRestore`; moves content restore into `registerPersistenceCallbacks` and scroll/selection restore into a `hostContentEl`-keyed `useLayoutEffect`. Removes all `[probe:*]` instrumentation. Net −351 lines.
+- `07ec7df9` — Narrow selection-ownership (content-case cards restore selection only via `onContentReady`; no-content cards via `hostContentEl` effect). Add this reliability doc.
+- `8de575c4` — DOM-authority input persistence (`data-tug-persist-value` on `TugInput` / `TugTextarea`, `CardHost` save/restore scoped to card subtree) + become-active / unhide selection re-apply wire in `action-dispatch.ts`. Gallery inputs wired as worked examples.
 
-**Uncommitted in working tree as of this document:** selection-ownership fix (content-case cards only restore selection via `onContentReady`, no-content cards via the `hostContentEl` `useLayoutEffect`). Awaiting user repro confirmation before commit.
+**Next commit wave will follow the `tugplan-selection.md` plan** — a full selection-and-focus subsystem that replaces the patchwork described in Part 7 below.
 
 ---
 
@@ -240,4 +242,57 @@ Any hook that moves *critical, one-shot, user-data* across a reload boundary mus
 - **2026-04-22 early afternoon** — `819357aa` commits instrumentation + revised plan. User runs repro; logs pinpoint `useCardContentRestore` as the failing stage.
 - **2026-04-22 mid afternoon** — Path A implemented, tested, and user push-back ("paper-over"). Path A reverted.
 - **2026-04-22 late afternoon** — `d70ee0d8` commits Path B. User verifies: scroll ✓, text ✓, selection ✗.
-- **2026-04-22 end of day** — selection-ownership follow-up applied (uncommitted). User reports selection works across reload/relaunch but NOT across hide/unhide or resign/activate. This document created.
+- **2026-04-22 evening** — `07ec7df9` selection-ownership; `8de575c4` DOM-authority input persistence + become-active / unhide selection wire; gallery cards wired as worked examples.
+- **2026-04-22 late evening** — user reports four new selection failure modes (enumerated in Part 7). Conceptual gap diagnosed. User calls for a complete, top-to-bottom selection system plan and authorizes stopping all other work to build it. This part of the doc + `tugplan-selection.md` produced.
+
+---
+
+## Part 7 — The selection-and-focus concept gap
+
+This part captures the user-reported failure modes that surfaced immediately after `8de575c4`, the correct diagnosis of each, and the conceptual model we have been missing. The implementation plan lives in its own document: **`tugplan-selection.md`**.
+
+### The four new failure cases (all observed on `8de575c4`)
+
+**Case α — `TugPromptEntry` / `TugInput` / `TugTextarea`, hide then unhide: selection gone.** User types and selects; `Cmd-H`; unhide; selection is not visible.
+
+**Case β — `TugInput` / `TugTextarea`, Cmd-Tab away and back: selection gone.** Single cycle. Native form-control selection does not come back.
+
+**Case γ — `TugPromptEntry`, Cmd-Tab away and back, *twice*: first cycle restores, second cycle loses.** The asymmetry is the tell: the first on-screen selection is user-made, the second is programmatic, and WebKit handles the two differently on resign.
+
+**Case δ — `TugInput` / `TugTextarea`, reload: text restored, selection lost.** `setSelectionRange` on an unfocused element stores the range internally but does not paint the highlight. We never restore focus.
+
+### The concept gap
+
+Our code has been conflating **three distinct things** under the single word "selection":
+
+1. **DOM selection** — `window.getSelection()`, a singleton range anchored at nodes in the document tree. Handled by `selectionGuard` via `pathToNode`.
+2. **Form-control selection** — `<input>`/`<textarea>` own `selectionStart`/`selectionEnd`. Invisible to `window.getSelection()`, irrelevant to `selectionGuard`. **Visibility on screen requires focus on that element.**
+3. **Focus** — which element is active. Selection in a form control is invisible without focus. Selection in the DOM is grayed (but still exists) when the window lacks key status. Not tracked anywhere in our code today.
+
+### Why each failure mode happens, precisely
+
+**Case δ (reload, `TugInput`/`TugTextarea`).** The `domInputs` restore calls `setSelectionRange(start, end)` correctly. But on an unfocused element this stores the range internally without painting the highlight. We never restore focus, so selection is invisible. The state *is* there; the browser doesn't render it.
+
+**Cases α and β (hide/unhide or Cmd-Tab, any form control).** On `didResignActive` the save calls `selectionGuard.saveSelection(hostStackId)`, which inspects `window.getSelection()`. A selection inside an `<input>` / `<textarea>` is **not** in `window.getSelection()` — it lives in `el.selectionStart/End`. So `bag.selection` is `null`. `domInputs` does capture start/end at save time, but on `didBecomeActive` our `restoreActiveCardSelection` only reads `bag.selection` (null) and early-returns. Form-control selection is never restored. Even if it were restored, without focus (Case δ's mechanism) it would still be invisible.
+
+**Case γ (repeated Cmd-Tab, `TugPromptEntry`).** First cycle: the user's hand-made DOM selection is preserved by WebKit on resign, our save captures it, `selectionGuard.restoreSelection` on become-active calls `setBaseAndExtent` — selection re-appears. The on-screen selection is now **programmatic**. Second cycle away: resign-active fires, save reads `window.getSelection()`, but WebKit's handling of programmatic selections on resign differs from user-made ones — the range may already be torn down before the save reads it, or the DOM tree may have shifted under the stored paths. Save writes null-or-wrong; become-active restores nothing-or-broken.
+
+**Case α for `TugPromptEntry`.** Hybrid of Case γ and an ordering question: `didHide` may not trigger a save at all (we save on `didResignActive`, and the order of resign-active vs. did-hide on Cmd-H is unreliable); and even if it does, the `didUnhide` restore hits the programmatic-selection degradation of Case γ.
+
+### What a coherent concept looks like
+
+One module — call it a **`SelectionKeeper`** — owns the entire concept:
+
+- **A snapshot is a tagged union**: `{ kind: "dom", ... }` or `{ kind: "form-control", persistKey, start, end, direction }` or `{ kind: "none" }`.
+- **Focus is part of the saved state**: `{ focusKey } | null`.
+- **One capture method** — called at any save trigger — walks the active card's subtree, identifies what kind of selection exists and where focus lives, returns one snapshot.
+- **One apply method** — called at any restore trigger — reads the snapshot, re-focuses the element if needed, applies the appropriate selection kind.
+- **Skip-if-already-correct before programmatic apply** — avoids Case γ's programmatic-overwrite degradation by not replacing a correct selection.
+- **Save on `willResignActive` and `willHide`**, not `did*` — captures before WebKit starts tearing down selection visibility.
+- **Textual-anchor fallback** when positional paths fail to resolve — addresses Issue C's shape-fragility.
+
+### Where this plan lives
+
+The full design and implementation plan is in **`tugplan-selection.md`**. That document replaces Issue A (hide/unhide restore) and Issue C (pathToNode fragility) in this doc — they are absorbed into the unified plan — and subsumes the `8de575c4` partial wire (the become-active subscriber will be re-routed through the new `SelectionKeeper.apply`, and `domInputs` will stop carrying selection fields).
+
+Issue B (`TugInput`/`TugTextarea` content persistence via `data-tug-persist-value`) has already shipped as a non-selection concern and stays as-is. The new plan extends it with a parallel `data-tug-focus-key` attribute.
