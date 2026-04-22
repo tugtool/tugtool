@@ -392,7 +392,11 @@ b. **Consolidate `_setFirstResponder` and `_flipFirstResponder`** (audit L4). Th
 
 c. **Consolidate `getActiveCardId` vs `getFirstResponderCardId`** (audit L3). Both are public; they diverge after detach/move. Pick one as canonical (the composite-bit reader `getFirstResponderCardId`) and either delete the other or rename it to something unambiguous (`getTopOfPaneCardId`). Internal call sites that still use `getActiveCardId` get updated to whichever survives. Tests update with them.
 
-d. **Share one drain queue** across `useCardDelegate` and `useAppDelegate` (audit L2). Today each owns a `MessageChannel`; cross-module ordering is not guaranteed. Extract `lib/delegate-drain.ts` with one shared channel and `scheduleDelegateCall(fn)`. Both hooks call through it. Eliminates a race class before any future app/card delegate pair exhibits it.
+d. ~~**Share one drain queue** across `useCardDelegate` and `useAppDelegate` (audit L2).~~ **Withdrawn.** The audit framing was wrong and this work item is not going to happen.
+
+   Background: `roadmap/lifecycle-delegate-reliability.md` §2.E (April 2026) deliberately chose "dedicated drain queue owned by each lifecycle module" as a *promoted variant* of the MessageChannel design, with reasons including: single ordering authority per module (no cross-hook interleaving surprises), per-module `try/catch` with known-event-name logging, and one-file retirement when the underlying mechanism is later swapped. The audit entry reopened that decision by re-framing non-interleaving as a speculative race ("cross-module ordering is not guaranteed … before any future app/card delegate pair exhibits it") without addressing the study's reasoning.
+
+   On review, the study's position stands: the one real cross-module ordering case (app → card on app-lifecycle transitions) is handled explicitly in `lib/lifecycle-cascade.ts`, not through drain ordering; no concrete code path needs interleaved drain. A shared-drain attempt (commit `bc80ab74`) was implemented and then reverted (commit `054e8197`) once the contradiction with the reliability study was caught. No further work under this item.
 
 e. **Document will-delegate semantic inversion** (audit L1). `useCardDelegate` / `useAppDelegate` subscribers run on the next MessageChannel drain — *after* the transition commits. Methods named `cardWillDeactivate` / `applicationWillResignActive` therefore run in a world where the transition has already happened. Add one JSDoc line to each `will*` delegate method on the `TugCardDelegate` / `TugAppDelegate` interfaces: "Delegate runs after the transition commits. Subscribe via `observeCard*` directly for synchronous pre-mutation semantics." Also add a short observer-vs-delegate decision rule at the top of `card-lifecycle.ts` (audit L6): synchronous observer for pre-mutation state or ordering with other synchronous observers; delegate hook for React-context-bound focus/DOM work that must survive gesture.
 
@@ -407,7 +411,6 @@ h. **Portal mount-ordering note** (audit P4): add a paragraph to `card-portal.ts
 - `rg "applyLayout" tugdeck/src` returns zero matches (only test file may retain if `replaceLayout` wasn't built; note the exception).
 - `rg "_setFirstResponder|_flipFirstResponder" tugdeck/src` returns one name (whichever survived).
 - `rg "getActiveCardId" tugdeck/src` returns zero matches (if deleted) or only the new unambiguous name.
-- New unit test: `useCardDelegate` + `useAppDelegate` registered on the same page drain events in subscription order across modules (before: order was non-deterministic across channels).
 
 **Risks:**
 - `applyLayout` deletion may surface test fixtures that rely on its "jump to arbitrary state" semantics. Resolution: convert to the mutator chain; the conversion itself documents the intended state transition.
