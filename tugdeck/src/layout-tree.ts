@@ -20,47 +20,70 @@
  * Spec S01: Canvas Data Model Types
  */
 
-import type { SavedSelection } from "./components/tugways/selection-guard";
-
 // ---- Types (Spec S01) ----
 
 /**
- * Per-card state bag for scroll position, text selection, and card content
- * state.
+ * Per-card state bag. Uniform schema across every card type; each component
+ * owns its own apply logic (see [D01]). Axis fields are all optional; a
+ * missing field means the card has nothing to persist for that axis.
  *
  * Stored in DeckManager's in-memory cache (primary read source during a
  * session) and in tugbank under `dev.tugtool.deck.cardstate/{cardId}` (durable
  * backing store).
  *
- * Spec S01: CardStateBag type ([D01])
+ * Spec S01: CardStateBag type ([D01], [D02])
  */
 export interface CardStateBag {
+  /** Scroll position of the card's host content element. */
   scroll?: { x: number; y: number };
-  selection?: SavedSelection | null;
+  /** Component-owned content payload (e.g. tide engine state). */
   content?: unknown;
   /**
    * Snapshot of every `<input>` / `<textarea>` inside the card that carries
    * a `data-tug-persist-value="<key>"` attribute, keyed by the attribute's
-   * value. Captured at save time by walking `hostContentEl.querySelectorAll`.
+   * value. Captured at save time by walking the card-host subtree.
    * Reapplied on restore and on any DOM mutation that introduces a matching
    * element later (to handle late mounts). DOM-authority persistence for
    * native input state that sits outside `useCardPersistence`'s opt-in path.
    */
-  domInputs?: Record<string, DomInputSnapshot>;
+  formControls?: Record<string, FormControlSnapshot>;
+  /** Nested-region scroll snapshot. Shape finalized at a later step. */
+  regionScroll?: RegionScrollSnapshot | null;
+  /** Content-editable range snapshot. Shape finalized at a later step. */
+  domSelection?: DomSelectionSnapshot | null;
+  /** Element-level focus snapshot. Shape finalized at a later step. */
+  focus?: FocusSnapshot | null;
 }
 
 /**
- * DOM-authority snapshot of a single native input or textarea. Captured and
- * reapplied by `CardHost` for any element bearing `data-tug-persist-value`.
+ * DOM-authority snapshot of a single native input or textarea's value and
+ * scroll. Captured and reapplied by `CardHost` for any element bearing
+ * `data-tug-persist-value`. Selection offsets are not captured here; they
+ * ride the separate per-card capture path.
  */
-export interface DomInputSnapshot {
+export interface FormControlSnapshot {
   value: string;
-  selectionStart?: number;
-  selectionEnd?: number;
-  selectionDirection?: "forward" | "backward" | "none";
   scrollTop?: number;
   scrollLeft?: number;
 }
+
+/**
+ * Placeholder type for the nested-region scroll axis. Populated at the
+ * step that wires region-scroll capture; currently always `null`.
+ */
+export type RegionScrollSnapshot = Record<string, never>;
+
+/**
+ * Placeholder type for the content-editable selection axis. Populated at
+ * the step that wires DOM-selection capture; currently always `null`.
+ */
+export type DomSelectionSnapshot = Record<string, never>;
+
+/**
+ * Placeholder type for the element-level focus axis. Populated at the step
+ * that wires focus capture; currently always `null`.
+ */
+export type FocusSnapshot = Record<string, never>;
 
 /**
  * A card — the content identity that survives cross-pane moves.

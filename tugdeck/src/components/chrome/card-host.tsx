@@ -57,9 +57,8 @@ import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
-import { selectionGuard } from "../tugways/selection-guard";
 import { getRegistration } from "../../card-registry";
-import type { CardStateBag, DomInputSnapshot } from "../../layout-tree";
+import type { CardStateBag, FormControlSnapshot } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
@@ -83,8 +82,8 @@ export interface CardHostProps {
 /**
  * DOM-authority persistence for native `<input>` and `<textarea>` elements
  * carrying `data-tug-persist-value="<key>"`. Walks the card's own subtree
- * and snapshots each element's value + selection + scroll keyed by the
- * attribute value.
+ * and snapshots each element's value and scroll keyed by the attribute
+ * value. Selection offsets are captured separately.
  *
  * **Scope matters.** The `root` passed here must be the card-host div
  * (`[data-card-host][data-card-id]`) — not the pane's content element.
@@ -98,10 +97,10 @@ export interface CardHostProps {
  * Only reads from the DOM (uncontrolled-input assumption — controlled
  * React-owned `value` is the caller's concern via `useCardPersistence`).
  */
-function captureDomInputs(
+function captureFormControls(
   root: HTMLElement,
-): Record<string, DomInputSnapshot> | undefined {
-  const result: Record<string, DomInputSnapshot> = {};
+): Record<string, FormControlSnapshot> | undefined {
+  const result: Record<string, FormControlSnapshot> = {};
   const els = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
     "[data-tug-persist-value]",
   );
@@ -110,9 +109,6 @@ function captureDomInputs(
     if (!key) continue;
     result[key] = {
       value: el.value,
-      selectionStart: el.selectionStart ?? undefined,
-      selectionEnd: el.selectionEnd ?? undefined,
-      selectionDirection: el.selectionDirection ?? undefined,
       scrollTop: el.scrollTop,
       scrollLeft: el.scrollLeft,
     };
@@ -137,30 +133,17 @@ function findCardRoot(
 }
 
 /**
- * Apply a saved `DomInputSnapshot` to an element. Idempotent guard at the
+ * Apply a saved `FormControlSnapshot` to an element. Idempotent guard at the
  * call site (via a `WeakSet`) keeps user typing from being overwritten on
  * subsequent mutation-observer fires.
  */
-function applyDomInputSnapshot(
+function applyFormControlSnapshot(
   el: HTMLInputElement | HTMLTextAreaElement,
-  snap: DomInputSnapshot,
+  snap: FormControlSnapshot,
 ): void {
   if (el.value !== snap.value) el.value = snap.value;
   if (snap.scrollTop !== undefined) el.scrollTop = snap.scrollTop;
   if (snap.scrollLeft !== undefined) el.scrollLeft = snap.scrollLeft;
-  if (snap.selectionStart !== undefined && snap.selectionEnd !== undefined) {
-    try {
-      el.setSelectionRange(
-        snap.selectionStart,
-        snap.selectionEnd,
-        snap.selectionDirection,
-      );
-    } catch {
-      // setSelectionRange rejects on inputs whose type doesn't support
-      // selection (e.g. `type="number"`). Silent is fine — value restore
-      // already succeeded.
-    }
-  }
 }
 
 /**
@@ -200,13 +183,11 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
   const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);
 
-  // Refs for the latest `hostContentEl` and `hostStackId` so closures
-  // installed in `registerPersistenceCallbacks` (onContentReady) read
-  // current values at fire time, not mount-time captures. L07.
+  // Ref for the latest `hostContentEl` so closures installed in
+  // `registerPersistenceCallbacks` (onContentReady) read the current
+  // element at fire time, not the mount-time capture. L07.
   const hostContentElRef = useRef<HTMLDivElement | null>(null);
   hostContentElRef.current = hostContentEl;
-  const hostStackIdRef = useRef(hostStackId);
-  hostStackIdRef.current = hostStackId;
 
   // Content restore is imperative and trigger-driven. The trigger is the
   // child calling `register(callbacks)` — its own `useLayoutEffect` is
@@ -227,9 +208,10 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       // installed by `useCardPersistence`'s cleanup. Skip that re-entry.
       if (callbacks.restorePendingRef === undefined) return;
 
-      // Install onContentReady so scroll/selection are applied after the
-      // child commits restored content — at that point the content's
-      // dimensions are valid and scroll clamps correctly.
+      // Install onContentReady so scroll is applied after the child
+      // commits restored content — at that point the content's dimensions
+      // are valid and scroll clamps correctly. DOM-selection restore is
+      // wired in a later step (see selection plan Step 10).
       callbacks.onContentReady = () => {
         const el = hostContentElRef.current;
         if (el) {
@@ -240,12 +222,6 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           if (el.style.visibility === "hidden") {
             el.style.visibility = "";
           }
-        }
-        if (bag.selection != null) {
-          selectionGuard.restoreSelection(
-            hostStackIdRef.current,
-            bag.selection,
-          );
         }
       };
       // Pre-hide the host to mask the pre-restore scroll position while
@@ -260,7 +236,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [cardId, store],
   );
 
-  // Scroll / selection restore: triggered by `hostContentEl` becoming
+  // Scroll / form-control restore: triggered by `hostContentEl` becoming
   // available. Fires idempotently whenever the host element changes
   // (mount, cross-pane move, pane re-registration).
   //
@@ -269,14 +245,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // best-effort apply before the child commits, and `onContentReady`
   // re-applies the correct clamp after content renders.
   //
-  // **Selection** applies ONLY in the no-content case here. For the
-  // with-content case, `selectionGuard`'s `pathToNode` resolver needs
-  // the child's restored DOM to exist before offsets can resolve — so
-  // selection restoration rides `onContentReady` (sole owner) and this
-  // effect skips it. Attempting selection restore here when content
-  // will shortly re-render would fail to resolve (pre-commit DOM), or
-  // worse, apply to a transient node and get clobbered by the
-  // child's re-render. L22, L23.
+  // DOM-selection restore is not wired here; that axis is owned by the
+  // selection-guard paint authority (see selection plan Step 10). L22, L23.
   useLayoutEffect(() => {
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
@@ -285,20 +255,17 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       hostContentEl.scrollLeft = bag.scroll.x;
       hostContentEl.scrollTop = bag.scroll.y;
     }
-    if (bag.content === undefined && bag.selection != null) {
-      selectionGuard.restoreSelection(hostStackId, bag.selection);
-    }
 
-    // DOM-authority input restore. Apply once per element (WeakSet guard)
-    // so user typing after restore is never overwritten by a subsequent
-    // mutation-observer fire. A MutationObserver on the card's own
-    // subtree catches inputs that mount later (e.g., behind feedsReady
+    // DOM-authority form-control restore. Apply once per element (WeakSet
+    // guard) so user typing after restore is never overwritten by a
+    // subsequent mutation-observer fire. A MutationObserver on the card's
+    // own subtree catches inputs that mount later (e.g., behind feedsReady
     // or any content factory that defers rendering). The MutationObserver
     // MUST be scoped to this card's root — not the whole pane — to
     // prevent cross-card notifications from firing redundant applies
     // against this card's state.
-    if (!bag.domInputs) return;
-    const snapshots = bag.domInputs;
+    if (!bag.formControls) return;
+    const snapshots = bag.formControls;
     const applied = new WeakSet<Element>();
 
     const apply = () => {
@@ -311,7 +278,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         if (!el) continue;
         if (applied.has(el)) continue;
         applied.add(el);
-        applyDomInputSnapshot(el, snap);
+        applyFormControlSnapshot(el, snap);
       }
     };
 
@@ -331,17 +298,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
       : undefined;
-    const selection = selectionGuard.saveSelection(hostStackId);
     const content = persistenceCallbacksRef.current?.onSave();
-    // Scope DOM-input capture to THIS card's subtree so sibling cards in
+    // Scope form-control capture to THIS card's subtree so sibling cards in
     // the same pane (tab-group) never contaminate each other's values.
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
-    const domInputs = cardRoot ? captureDomInputs(cardRoot) : undefined;
+    const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
-      ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
-      ...(domInputs !== undefined ? { domInputs } : {}),
+      ...(formControls !== undefined ? { formControls } : {}),
     };
     store.setCardState(cardId, bag);
   };

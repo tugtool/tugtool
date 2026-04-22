@@ -540,26 +540,26 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - New types declared with null placeholders on the bag: `RegionScrollSnapshot | null`, `DomSelectionSnapshot | null`, `FocusSnapshot | null`. Shape is finalized at the step that captures each axis (Steps 6, 7, 9).
 
 **Tasks:**
-- [ ] Rewrite `layout-tree.ts` types. Drop `SavedSelection` import and re-export.
-- [ ] Remove `captureDomInputs`' selection-field capture at `card-host.tsx:113-115` (anticipates Step 8 which relocates them).
-- [ ] Remove `applyDomInputSnapshot`'s `setSelectionRange` call at `card-host.tsx:151-167` (anticipates Step 8).
-- [ ] Rename `captureDomInputs` → `captureFormControls`; `applyDomInputSnapshot` → `applyFormControlSnapshot`; update all callers inside `card-host.tsx`.
-- [ ] Remove `selectionGuard.saveSelection(hostStackId)` callsite at `card-host.tsx:334` (inside `saveCurrentCardStateRef.current`). Replace with `domSelection: null` until Step 7 wires new capture.
-- [ ] Remove `selectionGuard.restoreSelection(...)` callsites at `card-host.tsx:245,289` and `action-dispatch.ts:510`. Leave stubs with comment pointing at the step that restores them (Step 9 / Step 10).
-- [ ] Remove the now-unused `selectionGuard` import from `card-host.tsx` and `action-dispatch.ts` if nothing else uses it there.
-- [ ] Remove the `bag.selection != null` check from `action-dispatch.ts`'s `restoreActiveCardSelection` helper; simplify down to the scroll/`saveAndFlush` path already there (symmetric save on did-resign remains unchanged).
+- [x] Rewrite `layout-tree.ts` types. Drop `SavedSelection` import and re-export.
+- [x] Remove `captureDomInputs`' selection-field capture at `card-host.tsx:113-115` (anticipates Step 8 which relocates them).
+- [x] Remove `applyDomInputSnapshot`'s `setSelectionRange` call at `card-host.tsx:151-167` (anticipates Step 8).
+- [x] Rename `captureDomInputs` → `captureFormControls`; `applyDomInputSnapshot` → `applyFormControlSnapshot`; update all callers inside `card-host.tsx`.
+- [x] Remove `selectionGuard.saveSelection(hostStackId)` callsite at `card-host.tsx:334` (inside `saveCurrentCardStateRef.current`). Replace with `domSelection: null` until Step 7 wires new capture.
+- [x] Remove `selectionGuard.restoreSelection(...)` callsites at `card-host.tsx:245,289` and `action-dispatch.ts:510`. Leave stubs with comment pointing at the step that restores them (Step 9 / Step 10).
+- [x] Remove the now-unused `selectionGuard` import from `card-host.tsx` and `action-dispatch.ts` if nothing else uses it there.
+- [x] Remove the `bag.selection != null` check from `action-dispatch.ts`'s `restoreActiveCardSelection` helper; simplify down to the scroll/`saveAndFlush` path already there (symmetric save on did-resign remains unchanged).
 
 **Upholds:** [L10] (card-host, selection-guard ownership boundaries unchanged). [L23] (data fields for user-visible state — scroll, selection, focus — are named in the schema explicitly).
 
 **Tests:**
-- [ ] `bun test` passes; `bun x tsc --noEmit` passes.
-- [ ] Add `layout-tree.test.ts` JSON round-trip assertions for each new bag axis shape (including empty-axis cases).
-- [ ] Existing `card-host-composition.test.tsx` passes with the renamed fields.
+- [x] `bun test` passes; `bun x tsc --noEmit` passes.
+- [x] Add `layout-tree.test.ts` JSON round-trip assertions for each new bag axis shape (including empty-axis cases).
+- [x] Existing `card-host-composition.test.tsx` passes with the renamed fields.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Grep `selectionGuard.saveSelection\|selectionGuard.restoreSelection` inside `tugdeck/src/` returns only the definitions inside `selection-guard.ts` (no outside callers).
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
+- [x] Grep `selectionGuard.saveSelection\|selectionGuard.restoreSelection` inside `tugdeck/src/` returns only the definitions inside `selection-guard.ts` (no outside callers). *Residual: test callers in `__tests__/selection-guard*.test.ts`, `__tests__/selection-model.test.tsx`, `__tests__/use-selection-boundary.test.tsx` still exercise the legacy API directly. They retire alongside the API at Step 9 / Step 15.*
 
 ---
 

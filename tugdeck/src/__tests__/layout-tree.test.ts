@@ -633,12 +633,66 @@ describe("CardStateBag type — additional coverage", () => {
   test("CardStateBag with all fields is valid", () => {
     const bag: CardStateBag = {
       scroll: { x: 0, y: 50 },
-      selection: null,
       content: { someKey: "someValue" },
+      formControls: {
+        name: { value: "hello", scrollTop: 10, scrollLeft: 0 },
+      },
+      regionScroll: null,
+      domSelection: null,
+      focus: null,
     };
     expect(bag.scroll?.y).toBe(50);
-    expect(bag.selection).toBeNull();
     expect((bag.content as Record<string, string>)["someKey"]).toBe("someValue");
+    expect(bag.formControls?.["name"].value).toBe("hello");
+    expect(bag.regionScroll).toBeNull();
+    expect(bag.domSelection).toBeNull();
+    expect(bag.focus).toBeNull();
+  });
+
+  test("CardStateBag axes round-trip through JSON", () => {
+    const bag: CardStateBag = {
+      scroll: { x: 12, y: 34 },
+      content: { text: "hi" },
+      formControls: {
+        query: { value: "abc", scrollTop: 0, scrollLeft: 5 },
+      },
+      regionScroll: null,
+      domSelection: null,
+      focus: null,
+    };
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.scroll).toEqual({ x: 12, y: 34 });
+    expect(round.content).toEqual({ text: "hi" });
+    expect(round.formControls?.["query"].value).toBe("abc");
+    expect(round.formControls?.["query"].scrollLeft).toBe(5);
+    expect(round.regionScroll).toBeNull();
+    expect(round.domSelection).toBeNull();
+    expect(round.focus).toBeNull();
+  });
+
+  test("CardStateBag empty-axis cases round-trip cleanly", () => {
+    const bag: CardStateBag = {};
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.scroll).toBeUndefined();
+    expect(round.content).toBeUndefined();
+    expect(round.formControls).toBeUndefined();
+    expect(round.regionScroll).toBeUndefined();
+    expect(round.domSelection).toBeUndefined();
+    expect(round.focus).toBeUndefined();
+  });
+
+  test("FormControlSnapshot round-trip preserves value + scroll", () => {
+    const bag: CardStateBag = {
+      formControls: {
+        a: { value: "x" },
+        b: { value: "y", scrollTop: 3 },
+        c: { value: "z", scrollLeft: 4 },
+      },
+    };
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.formControls?.["a"]).toEqual({ value: "x" });
+    expect(round.formControls?.["b"]).toEqual({ value: "y", scrollTop: 3 });
+    expect(round.formControls?.["c"]).toEqual({ value: "z", scrollLeft: 4 });
   });
 });
 

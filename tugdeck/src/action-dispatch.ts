@@ -45,7 +45,6 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
-import { selectionGuard } from "./components/tugways/selection-guard";
 
 /**
  * Ordered list of all shipped themes.
@@ -475,17 +474,9 @@ export function initActionDispatch(
     }
   });
 
-  // Save all card states when the app resigns active (backgrounded),
-  // and restore selection on the symmetric become-active / unhide events.
-  // Browsers clear the native DOM selection when the window loses key
-  // status or is hidden; without re-application the user's selection
-  // vanishes on every context switch even though the tugbank bag is
-  // current (the resign-active save above captured it). The restore
-  // reads the focused card's latest bag and calls
-  // `selectionGuard.restoreSelection` on its host stack. Scroll and
-  // content survive the hide/unhide transition without re-application
-  // because the React tree and `<input>` values are not cleared by the
-  // browser — only the selection highlight is.
+  // Save all card states when the app resigns active (backgrounded).
+  // Selection repaint on the symmetric become-active / unhide events is
+  // owned by the selection-guard paint authority (see selection plan).
   //
   // `getAppLifecycle()` is guaranteed non-null here because
   // `DeckManager` registers the lifecycle before `initActionDispatch`
@@ -497,24 +488,6 @@ export function initActionDispatch(
       appLifecycle.observeApplicationDidResignActive(() => {
         deckManager.saveAndFlush();
       }),
-    );
-
-    const restoreActiveCardSelection = (): void => {
-      const snapshot = deckManager.getSnapshot();
-      const activePaneId = snapshot.activePaneId;
-      if (activePaneId === undefined) return;
-      const pane = snapshot.panes.find((p) => p.id === activePaneId);
-      if (!pane) return;
-      const bag = deckManager.getCardState(pane.activeCardId);
-      if (!bag?.selection) return;
-      selectionGuard.restoreSelection(pane.id, bag.selection);
-    };
-
-    disposers.push(
-      appLifecycle.observeApplicationDidBecomeActive(restoreActiveCardSelection),
-    );
-    disposers.push(
-      appLifecycle.observeApplicationDidUnhide(restoreActiveCardSelection),
     );
   } else {
     console.warn(
