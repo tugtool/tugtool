@@ -1,22 +1,42 @@
 /**
- * CardHost — renders a card's content component and owns the
- * per-card state (PropertyStore registration, persistence callbacks,
- * dirty/auto-save, per-card save callback, content-restore effect,
- * scroll/selection listeners, FeedStore subscriptions).
+ * CardHost — wiring harness for a card's per-content state.
  *
- * The component lives at the deck level in the React tree; its DOM output
- * is portaled into the host pane's content `<div>` via `CardPortal`, so
- * React-tree position (and therefore identity) is stable across cross-pane
- * moves — the mechanism that preserves tide card sessions across detach /
- * merge / pane-to-pane moves.
+ * CardHost lives at the deck level in the React tree; its DOM output
+ * portals into the host pane's content `<div>` via `CardPortal`, so
+ * React-tree position (and therefore identity) stays stable across
+ * cross-pane moves — the mechanism that preserves tide card sessions
+ * across detach / merge / pane-to-pane moves.
  *
- * Render shape: wraps `registration.contentFactory(cardId)` in the four
- * per-content context providers (`CardDataProvider`,
- * `CardPropertyContext`, `CardPersistenceContext`,
- * `CardDirtyContext`) plus a re-bridged `TugPanePortalContext`
- * (looked up from `pane-root-registry`) and a responder scope keyed by
- * the card's id so `setProperty` dispatches via `sendToTarget(cardId, ...)`
- * resolve here.
+ * Per-concern state is delegated to hooks under `tugways/hooks/`:
+ * `useCardPropertyStore`, `useCardDirtyState`, `useCardContentRestore`,
+ * and `useCardFeedStore`. The harness itself owns only the cross-cutting
+ * wiring: `hostContentEl` / `hostCardRootEl` registry lookups, the
+ * per-card `saveCurrentCardState` closure, persistence-callback
+ * registration, the `registerSaveCallback(cardId, …)` binding into
+ * DeckManager, the card-level responder that routes `SET_PROPERTY`, and
+ * the context-provider tree wrapping the content factory.
+ *
+ * ## Hook call order
+ *
+ * The hooks fire their effects in call-order. The current pinned order
+ * (which matches pre-extraction behavior) is:
+ *
+ *   1. harness `useLayoutEffect` — `registerSaveCallback(cardId, …)` so
+ *      DeckManager's save path finds us before any save fires.
+ *   2. `useCardDirtyState` — installs scroll + `selectionchange`
+ *      listeners that call `markDirty`.
+ *   3. `useCardContentRestore` — mount-time restore of scroll / selection
+ *      / content payload; may install `onContentReady` on the
+ *      persistence callbacks, which the child fires via its own
+ *      `useLayoutEffect`.
+ *   4. `useCardFeedStore` — subscribes to FeedStore frames.
+ *
+ * `useCardPropertyStore` is call-order-irrelevant for effects (it
+ * returns a ref + a stable `register` fn only); its only constraint is
+ * that it runs before the responder factory below reads its ref.
+ *
+ * Future hooks insert **after** `useCardFeedStore` unless they must run
+ * before content-restore (in which case insert between steps 1 and 3).
  *
  * @module components/chrome/card-host
  */
@@ -91,14 +111,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const hostContentEl = useHostContentElement(hostStackId);
   const hostCardRootEl = useHostStackRootElement(hostStackId);
 
-  // ---- PropertyStore registration ----
-  //
-  // The card content's PropertyStore is held in a ref and consumed by the
-  // card-level responder's `setProperty` handler below. No registry
-  // indirection — sendToTarget(cardId) resolves to this responder directly.
   const { register: registerPropertyStore, ref: propertyStoreRef } = useCardPropertyStore();
 
-  // ---- Persistence callbacks ----
   const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);
   const registerPersistenceCallbacks = useCallback(
     (callbacks: CardPersistenceCallbacks) => {
@@ -107,30 +121,25 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [],
   );
 
-  // ---- saveCurrentCardState (keyed by our cardId) ----
-  //
-  // Written fresh every render so closures captured by registered callbacks
-  // never go stale.
+  // Rewritten every render so closures registered below read the latest
+  // `hostContentEl` / `hostStackId` / `cardId` without stale capture.
   const saveCurrentCardStateRef = useRef<() => void>(() => {});
   saveCurrentCardStateRef.current = () => {
     const contentEl = hostContentEl;
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
       : undefined;
-
     const selection = selectionGuard.saveSelection(hostStackId);
     const content = persistenceCallbacksRef.current?.onSave();
-
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
     };
-
     store.setCardState(cardId, bag);
   };
 
-  // ---- Register save callback keyed by cardId ----
+  // Step 1 of the pinned hook order (see module header).
   useLayoutEffect(() => {
     store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {
@@ -139,13 +148,11 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 
-  // ---- Auto-save debounce + scroll/selectionchange listeners ----
   const markDirty = useCardDirtyState({
     hostContentEl,
     saveRef: saveCurrentCardStateRef,
   });
 
-  // ---- Content restore on mount ----
   useCardContentRestore({
     cardId,
     hostStackId,
@@ -153,28 +160,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     persistenceCallbacksRef,
   });
 
-  // ---- Feed store (per componentId's feedIds, filtered by workspace) ----
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
   const feedData = useCardFeedStore(hostStackId, feedIds);
   const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
-  // ---- Card-level responder (handles setProperty routed by cardId) ----
-  //
-  // Gallery cards (observable-props) dispatch `setProperty` via
-  // `manager.sendToTarget(cardId, ...)`, where `cardId` is the stable id
-  // passed to their `contentFactory`. Register a responder with id=cardId
-  // here so those dispatches resolve to this host and write through to the
-  // content's PropertyStore.
-  // CardHost is rendered at the deck level in the React tree
-  // (flat `cards.map` in DeckCanvas) and portaled into its host window's
-  // content div via CardPortal. Without an explicit parentId override
-  // the responder node's parent would follow the React tree — pointing
-  // at `deck-canvas` rather than at the host window's card responder — and
-  // the chain walk from `firstResponderId = cardId` would skip every
-  // window-level card handler. Passing `parentId: hostStackId` re-parents the
-  // chain to match the portaled DOM layout so `NEXT_TAB` /
-  // `PREVIOUS_TAB` / `CLOSE` / `JUMP_TO_TAB` reach the window's `TugPane` responder and
-  // `FOCUS_PROMPT` finds a `kind="card"` node via `getKeyCard`.
+  // Card-level responder for `SET_PROPERTY` dispatched via
+  // `manager.sendToTarget(cardId, …)`. `parentId: hostStackId` re-parents
+  // the chain to the portaled DOM layout — without the override the
+  // responder's parent would follow the React tree (pointing at
+  // `deck-canvas`) and the chain walk from `firstResponderId = cardId`
+  // would skip every pane-level handler.
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
     parentId: hostStackId,
@@ -196,14 +191,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     return null;
   }
 
-  // DOM output routes through `CardPortal` so children land inside the host
-  // pane's `tug-pane-content` div. The portal's stable-slot pattern preserves
-  // identity when the portal re-roots to a different host pane — the
-  // mechanism that keeps tide card sessions alive across detach/merge.
-  //
-  // Non-active cards within a pane are hidden via `display: none` on the
-  // wrapper so every card remains mounted (identity survives card switches
-  // too) without affecting layout.
+  // `CardPortal` routes DOM output into the host pane's content div and
+  // preserves identity across re-root. Non-active cards are hidden with
+  // `display: none` so identity survives card switches without layout impact.
   return (
     <CardPortal hostStackId={hostStackId}>
       <div
@@ -221,12 +211,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
                 <CardPersistenceContext value={registerPersistenceCallbacks}>
                   <CardDirtyContext value={markDirty}>
                     {feedsReady ? (
-                      // Pass `cardId` as the stable identity for content.
-                      // Consumers (tide, gallery observable-props) key their
-                      // per-content state (session bindings, property stores,
-                      // responder target ids) off this value. `cardId` survives
-                      // detach/merge; `hostStackId` changes when the card moves
-                      // between windows.
+                      // `cardId` is the stable identity content factories key
+                      // their per-card state off; it survives detach/merge
+                      // whereas `hostStackId` changes on cross-pane moves.
                       registration.contentFactory(cardId)
                     ) : (
                       <div className="tug-pane-loading" data-testid="tug-pane-loading">
