@@ -18,25 +18,40 @@
  *
  * ## Hook call order
  *
- * The hooks fire their effects in call-order. The current pinned order
- * (which matches pre-extraction behavior) is:
+ * React runs `useLayoutEffect` callbacks first (in declaration order),
+ * then `useEffect` callbacks (in declaration order). Inserting a new
+ * hook between two existing hooks in the component body does **not**
+ * place its effects "between" theirs — the phase determines the actual
+ * firing order. The pinned declaration order below (which matches
+ * pre-extraction behavior) resolves to the two phases as follows.
  *
- *   1. harness `useLayoutEffect` — `registerSaveCallback(cardId, …)` so
- *      DeckManager's save path finds us before any save fires.
- *   2. `useCardDirtyState` — installs scroll + `selectionchange`
- *      listeners that call `markDirty`.
- *   3. `useCardContentRestore` — mount-time restore of scroll / selection
- *      / content payload; may install `onContentReady` on the
- *      persistence callbacks, which the child fires via its own
- *      `useLayoutEffect`.
- *   4. `useCardFeedStore` — subscribes to FeedStore frames.
+ * Declaration order in the component body:
  *
- * `useCardPropertyStore` is call-order-irrelevant for effects (it
- * returns a ref + a stable `register` fn only); its only constraint is
- * that it runs before the responder factory below reads its ref.
+ *   1. `useCardPropertyStore` — returns a ref + stable `register` fn only,
+ *      no effects. Must run before the responder factory reads its ref.
+ *   2. harness `useLayoutEffect` for `registerSaveCallback(cardId, …)`.
+ *   3. `useCardDirtyState` — `useEffect` for scroll + `selectionchange`
+ *      listeners.
+ *   4. `useCardContentRestore` — `useLayoutEffect` for mount-time restore.
+ *   5. `useCardFeedStore` — `useEffect` for FeedStore dispose + filter
+ *      sync (the subscription itself enters via `useSyncExternalStore`,
+ *      which is commit-time).
  *
- * Future hooks insert **after** `useCardFeedStore` unless they must run
- * before content-restore (in which case insert between steps 1 and 3).
+ * Actual fire order resolves to:
+ *
+ *   - **Layout phase** (commit-sync): (2) `registerSaveCallback`,
+ *     then (4) content-restore. `registerSaveCallback` must come first
+ *     so DeckManager's save path finds the card before any save can
+ *     fire against saved state in restore.
+ *   - **Effect phase** (after paint): (3) dirty-state listeners,
+ *     then (5) feed-store dispose + filter.
+ *
+ * Future hooks: if the new hook's registration must be visible to
+ * DeckManager or to child `useLayoutEffect`s in the content subtree,
+ * use `useLayoutEffect` and insert after `useCardContentRestore` (step
+ * 4). If the new hook only installs DOM listeners or pushes derived
+ * state into an external store, use `useEffect` and insert after
+ * `useCardFeedStore` (step 5).
  *
  * @module components/chrome/card-host
  */
@@ -139,7 +154,6 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     store.setCardState(cardId, bag);
   };
 
-  // Step 1 of the pinned hook order (see module header).
   useLayoutEffect(() => {
     store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {

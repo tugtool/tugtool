@@ -52,12 +52,6 @@ export function useCardContentRestore(args: UseCardContentRestoreArgs): void {
   const { cardId, hostStackId, hostContentEl, persistenceCallbacksRef } = args;
   const store = useDeckManager();
 
-  // `hostContentEl` is captured by closure at effect-run time; the effect
-  // itself only depends on `cardId` / `hostStackId` so restore fires once
-  // per card identity, not on every host-element swap.
-  const hostContentElRef = useRef(hostContentEl);
-  hostContentElRef.current = hostContentEl;
-
   const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
   const pendingSelectionRef = useRef<SavedSelection | null>(null);
 
@@ -65,7 +59,11 @@ export function useCardContentRestore(args: UseCardContentRestoreArgs): void {
     const bag = store.getCardState(cardId);
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
-    const contentEl = hostContentElRef.current;
+    // `hostContentEl` is captured by closure at effect-run time. The effect
+    // depends on `[cardId, hostStackId]` only — restore fires once per card
+    // identity, not on every host-element swap — so the closure-captured
+    // element is the one present at that fire.
+    const contentEl = hostContentEl;
 
     const hasPersistence =
       persistenceCallbacksRef.current !== null &&
