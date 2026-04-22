@@ -420,51 +420,78 @@ h. **Portal mount-ordering note** (audit P4): add a paragraph to `card-portal.ts
 
 #### Step 5.5.b — Decompose `CardHost` into per-concern hooks {#step-5-5-b}
 
-**Why this exists.** `CardHost` (`tugdeck/src/components/chrome/card-host.tsx`, currently 384 lines) accreted every per-card concern: PropertyStore registration, persistence callbacks, dirty/auto-save, content-restore effect, scroll/selection listeners, FeedStore subscription, responder scope, portal mount. Each concern is reasonable in isolation; the file is the wiring harness *and* each concern's implementation. The next per-card concern (session metadata, cross-turn state, whatever the next tide feature needs) would land here by default, pushing it past the 500-line threshold where nobody wants to touch it.
+**Why this exists.** `CardHost` (`tugdeck/src/components/chrome/card-host.tsx`, 384 lines as of Step 5.5.a close) accreted every per-card concern: PropertyStore registration, persistence-callback registration, the `saveCurrentCardState` closure, a keyed save-callback `useLayoutEffect` into `DeckManager`, the dirty-bit + debounced auto-save timer, scroll + `selectionchange` listeners, the mount-time content-restore effect, a FeedStore subscription pipeline, the card-level responder scope, and the `CardPortal` wrapper. Each concern is reasonable in isolation; the file is the wiring harness *and* each concern's implementation. The next per-card concern (session metadata, cross-turn state, whatever the next tide feature needs) would land here by default, pushing it past the 500-line threshold where nobody wants to touch it.
 
 Decomposing into per-concern hooks now — while the vocabulary is stable and `Tugcard*` → `Card*` renames have landed — gives each concern a testable surface and leaves `CardHost` as the wiring harness it should be.
 
+**Audit of the work.** A scan of the current `CardHost`, `CardPortal`, the `tugways/hooks/` barrel, and the portal-sensitive tests (`card-identity-preservation.test.tsx`, `card-portal.test.tsx`, `tide-card.test.tsx`) produced these adjustments to the original item list:
+
+- **Item (a)** `useCardPropertyStore`: **advisable, smaller than advertised.** The actual seam is `propertyStoreRef` + `registerPropertyStore` (≈9 lines at `card-host.tsx:102-108`) plus the `CardPropertyContext` import. The plan originally said "~30 lines" — it is closer to 10. Still worth shipping first as a low-risk warmup that proves the extraction pattern and the barrel-export plumbing.
+- **Item (b)** `useCardPersistence`: confirmed already shipped at `tugdeck/src/components/tugways/use-card-persistence.tsx` (unchanged since `c856b7c1`). Skip.
+- **Item (c)** `useCardDirtyState`: **advisable.** `autoSaveTimerRef` + `markDirty` (`card-host.tsx:152-161`). Couples through `saveCurrentCardStateRef`, so the hook signature must accept a stable save callback (ref, not closure). Land last per the plan's existing risk note.
+- **Item (d)** `useCardContentRestore`: **advisable; largest block.** The restore effect plus pending-scroll/pending-selection refs (`card-host.tsx:192-253`). The `persistenceCallbacksRef` + `registerPersistenceCallbacks` pair stays in the harness; the hook consumes the ref by reference so the `CardPersistenceContext` provider slot does not move.
+- **Item (e)** `useCardFeedStore`: **advisable.** Self-contained registration-driven pipeline (`card-host.tsx:255-298`). Lowest coupling of the four hooks — can land before (c) or (d) without churn.
+- **Item (f)** `useCardSelectionAndScroll`: **fold into (c), do not ship as its own hook.** The scroll + `selectionchange` listeners (`card-host.tsx:163-189`) exist only to call `markDirty`. Splitting them from the dirty-state hook creates an artificial two-hook seam around one debounce timer and one shared `hostContentEl` dependency. Plan already hedged ("may fold"); commit to folding.
+- **Item (g)** wiring-harness reduction to 120–150 lines: **target reachable.** Arithmetic from the extractions above leaves ~170 lines of harness before tidy; the header ordering paragraph and dead-import removal close the gap.
+- **Item (h)** `CardPortal` teardown contract (audit P5): **reframe to investigate-then-document.** A re-read of the unmount chain — `TugPane` unmounts → `paneContentRegistry.unregister(paneId)` in its cleanup → `useSyncExternalStore` in `useHostContentElement` fires → the card's scroll/selectionchange `useEffect` re-runs with `hostContentEl=null` and cleans up listeners → `CardPortal`'s `useLayoutEffect` cleanup removes the slot — suggests the "effects running against detached DOM" window P5 warns about may already be closed by the `useSyncExternalStore` chain. First commit for this item is a **teardown-order investigation with a JSDoc-pinned contract** on `card-portal.tsx` and `pane-content-registry.ts`. Only add an `onHostGone(cb)` subscription if the investigation surfaces a reproducible race; otherwise land the guarantee as documentation.
+- **Item (i)** `waitForPortal(paneId)` helper (audit P12): **conditional on demand.** The existing portal-sensitive tests use `paneContentRegistry.getElement()` directly in synchronous assertions; none use the ad-hoc `await act(() => {})` / `await waitFor(...)` patterns the audit cited. Land only if the new per-hook unit tests in (a)–(e) actually need the helper. If they do not, amend the plan to withdraw — mirroring Step 5.5.a item (d).
+
 **Files:**
 - `tugdeck/src/components/tugways/hooks/use-card-property-store.ts` (new).
-- `tugdeck/src/components/tugways/hooks/use-card-dirty-state.ts` (new).
-- `tugdeck/src/components/tugways/hooks/use-card-content-restore.ts` (new).
 - `tugdeck/src/components/tugways/hooks/use-card-feed-store.ts` (new).
-- `tugdeck/src/components/tugways/hooks/use-card-selection-and-scroll.ts` (new — if the scroll/selection effect decomposes cleanly; may fold into `use-card-content-restore.ts`).
-- `tugdeck/src/components/chrome/card-host.tsx` — reduced to wiring: each hook called in order, portal wrapper, context providers, responder scope.
-- `tugdeck/src/components/tugways/card-portal.tsx` — define a teardown contract for portal cleanup (audit P5): either guarantee cards finish destruction before the host content div unmounts, or expose an explicit `onHostGone(cb)` subscription for effects that need deterministic teardown.
+- `tugdeck/src/components/tugways/hooks/use-card-content-restore.ts` (new).
+- `tugdeck/src/components/tugways/hooks/use-card-dirty-state.ts` (new — also owns the scroll + `selectionchange` listeners formerly item (f)).
+- `tugdeck/src/components/tugways/hooks/index.ts` — barrel-export each new hook as they land.
+- `tugdeck/src/components/chrome/card-host.tsx` — reduced to wiring: hooks called in a pinned order, header paragraph documenting that order, portal wrapper + context providers + responder scope.
+- `tugdeck/src/components/chrome/card-portal.tsx` — teardown-contract JSDoc (audit P5). `onHostGone(cb)` added only if the investigation finds a reproducible race.
+- `tugdeck/src/components/chrome/pane-content-registry.ts` — pinned contract sentence describing the unregister-before-React-unmount guarantee the teardown chain relies on.
 - `tugdeck/src/__tests__/` — one test file per new hook, each exercising the hook in isolation via a minimal host.
-- Test helper `tugdeck/src/__tests__/wait-for-portal.ts` (new — audit P12): `waitForPortal(paneId): Promise<HTMLElement>` resolves when the content registry reports an element for that paneId. Adopted by existing portal-sensitive tests.
+- `tugdeck/src/__tests__/wait-for-portal.ts` (new — conditional on audit P12 demand during hook-test writing).
 
 **Work:**
 
-a. **Extract `useCardPropertyStore`** first. Smallest seam. Takes `cardId` + `ResponderProvider`; registers the PropertyStore in `useLayoutEffect`; exposes the registered store via ref. `CardHost` loses ~30 lines.
+a. **Extract `useCardPropertyStore`.** Smallest seam, first up. Signature: `useCardPropertyStore(): { register: (ps: PropertyStore) => void; ref: React.RefObject<PropertyStore | null> }`. Hook owns the ref and the `useCallback`-stable `register` fn; the harness consumes `ref.current` from the responder's `SET_PROPERTY` handler. No state leaves the hook. Barrel export.
 
-b. **Extract `useCardPersistence`** — wait, this is already extracted (`use-card-persistence.tsx`). Skip.
+b. **Extract `useCardFeedStore`.** Signature: `useCardFeedStore(hostStackId: string, feedIds: readonly number[]): Map<number, unknown>`. Hook owns the `FeedStore` ref, the workspace-key lookup, the `FeedStoreFilter` memo, the `useSyncExternalStore` subscription, and the dispose cleanup. Returns the `feedData` map the harness hands to `CardDataProvider`. Independent of dirty / restore, lands without touching the save-callback loop.
 
-c. **Extract `useCardDirtyState`** — the dirty-bit + debounced auto-save pipeline. Takes `cardId` + `saveFn`. Returns a `markDirty` callback. `CardHost` loses the dirty-bit state, the timer ref, and the debounced-save closure.
+c. **Extract `useCardContentRestore`.** Signature: `useCardContentRestore(args: { cardId: string; hostStackId: string; hostContentEl: HTMLDivElement | null; persistenceCallbacksRef: React.RefObject<CardPersistenceCallbacks | null> })`. Hook runs the mount-time restore effect, manages the `pendingScrollRef` / `pendingSelectionRef` refs, and stamps the `onContentReady` hook on the callbacks object. The `persistenceCallbacksRef` + `registerPersistenceCallbacks` stay in the harness so `CardPersistenceContext` still provides a stable registrar. No behavior change.
 
-d. **Extract `useCardContentRestore`** — the initial-restore effect that runs when `CardHost` mounts and the tugbank row arrives. Takes `cardId`. Consults `DeckManager.getCardState(cardId)`, calls `onRestore` via the `CardPersistenceContext` when available.
+d. **Extract `useCardDirtyState` (absorbs former item f).** Signature: `useCardDirtyState(args: { hostContentEl: HTMLDivElement | null; saveRef: React.RefObject<() => void> }): () => void`. Hook owns the debounce timer, the `markDirty` callback, the scroll listener, and the `selectionchange` listener. Returns the stable `markDirty` the harness hands to `CardDirtyContext`. Signature takes `saveRef` (not a closure) to prevent stale captures.
 
-e. **Extract `useCardFeedStore`** — the FeedStore subscription that drives `CardDataProvider`'s `feedData` map. Takes `cardId` + list of `feedIds` from the registration. Returns `feedData`.
+e. **Wiring-harness reduction + ordering header.** Call hooks in the pinned order Property → Feed → Restore → Dirty (matches the effect-execution order that was stable before the extraction). Add a header paragraph to `card-host.tsx` documenting the order and the rule that future hooks insert below Dirty unless they participate in restore. Delete dead imports. Target: 120–150 lines. If the wiring tidy diff comes in under ~30 lines after (d), roll it into (d) instead of a separate commit.
 
-f. **Optional: `useCardSelectionAndScroll`** — scroll-position and selection listeners that write back through `useCardDirtyState`. If the coupling with dirty state is too tight, leave inside `useCardContentRestore` or `CardHost` directly.
+f. **`CardPortal` teardown contract (audit P5, reframed).** Investigate the unmount chain end-to-end (TugPane cleanup → `paneContentRegistry.unregister` → `useHostContentElement` re-fire → card effect cleanup → slot removal). Capture the guarantee as a JSDoc paragraph on `card-portal.tsx` and a matching contract line on `pane-content-registry.ts`. If the investigation finds a real race (listener fires on a detached element between registry-unregister and effect-cleanup), add `onHostGone(cb)` to the registry and subscribe the card's cleanup to it. If not, ship documentation only — and note in the commit message that the `onHostGone` option was considered and rejected.
 
-g. **`CardHost` becomes the wiring harness.** Call each hook in order, assemble the context providers, render the portal. Target: 120–150 lines.
+g. **`waitForPortal(paneId)` helper (audit P12, conditional).** Land only if any of the hook unit tests in (a)–(d) need it. If not, amend the plan (mirroring Step 5.5.a item d) to withdraw this work item, citing the absence of adoption candidates in the existing portal-sensitive tests.
 
-h. **Define `CardPortal` teardown contract** (audit P5). When the host pane closes, the registry unregisters before React unmounts the card's effects. The current window — where effects run against detached DOM — is small but load-bearing. Either: (a) order destruction before host-content unmount (preferred, guarantees the invariant), or (b) expose `onHostGone` subscription. Decide during implementation based on where the actual race risk is.
+**Execution plan — one commit at a time.** Each commit green on `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint`. Order chosen for risk: smallest independent seam first, tightest coupling last.
 
-i. **Test helper `waitForPortal(paneId)`** (audit P12). Replaces ad-hoc `await act(() => {})` / `await waitFor(...)` patterns in portal-sensitive tests with one explicit wait. Portals over the content registry's `subscribe(paneId, cb)`.
+1. **Commit 1 — `useCardPropertyStore`.** Covers work item (a). New hook file, barrel entry, unit test that registers a PropertyStore via a minimal host and asserts the ref is populated. Harness diff is a ~10-line swap.
+
+2. **Commit 2 — `useCardFeedStore`.** Covers work item (b). New hook file, barrel entry, unit test that boots the hook with a stub `FeedStore` (or the real one against a fake connection) and asserts the returned map reflects subscription updates. Harness diff removes ~45 lines.
+
+3. **Commit 3 — `useCardContentRestore`.** Covers work item (c). New hook file, barrel entry, unit test that seeds `DeckManager.getCardState(cardId)` with a scroll + selection + content bag and asserts `onRestore`, `onContentReady`, and the `hidden → visible` scroll-unhide dance all run. Harness diff removes ~60 lines; the `persistenceCallbacksRef` + `registerPersistenceCallbacks` stay.
+
+4. **Commit 4 — `useCardDirtyState` (+ absorbed scroll/selection).** Covers work items (d) and (f). New hook file, barrel entry, unit test that simulates scroll + selectionchange events and asserts `saveRef.current` is invoked after `AUTO_SAVE_DEBOUNCE_MS`. Harness diff removes ~40 lines. If the wiring tidy from work item (e) is small enough, fold it in here and skip commit 5.
+
+5. **Commit 5 — Wiring-harness tidy + ordering header.** Covers work item (e). Header paragraph documenting hook call order, dead-import removal, final line-count check. Roll into commit 4 if diff < ~30 lines.
+
+6. **Commit 6 — `CardPortal` teardown contract.** Covers work item (h, reframed). Teardown-chain investigation notes captured as JSDoc on `card-portal.tsx` + `pane-content-registry.ts`. Adds `onHostGone(cb)` only if the investigation surfaces a reproducible race; commit message is explicit about the decision either way.
+
+7. **Commit 7 (conditional) — `waitForPortal` helper.** Covers work item (i). Lands only if commits 1–4's unit tests needed it. Otherwise amend Step 5.5.b to strike the item and explain why.
 
 **Verification:**
-- `bun x tsc --noEmit` + `bun test` all green after each hook extraction (land as a chain of small commits).
-- `wc -l card-host.tsx` reports ~150 lines (down from 384).
-- Each new hook has an isolated unit test.
-- Existing integration tests (`tide-card.test.tsx`, `card-identity-preservation.test.tsx`) pass unchanged — the decomposition is internal.
+- `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green after every commit — no chain-of-commits detours.
+- After commit 5 (or commit 4 if folded): `wc -l card-host.tsx` reports 120–150 lines (down from 384).
+- Each new hook has an isolated unit test. Test count grows by at least four.
+- Existing integration tests (`tide-card.test.tsx`, `card-identity-preservation.test.tsx`, `card-portal.test.tsx`) pass unchanged — the decomposition is internal to `CardHost`.
+- Commit 6 either documents the teardown-order guarantee as already-true (no behavior change) or ships `onHostGone` with a regression test for the race it fixes. Both outcomes are green.
 
 **Risks:**
-- Extraction order matters: the dirty-bit + save loop is the tightest coupling. Extract it last, after `useCardPropertyStore` and `useCardFeedStore` have proven the seam shape.
-- React effect ordering between sibling hooks: every hook uses `useLayoutEffect` for registration; the order they're called in `CardHost` is the order effects fire. Write a one-paragraph note in `card-host.tsx`'s header documenting the ordering.
-- A hook extraction that accidentally drops a dependency on `cardId` / `hostPaneId` / `componentId` will produce a stale closure. Each hook signature should take these as explicit arguments; don't reach through context.
+- **Extraction order.** Dirty-state is the tightest coupling because `saveCurrentCardStateRef` is written every render. Commit order (Property → Feed → Restore → Dirty) keeps that closure in the harness until the last extraction, so earlier hooks do not have to model a moving save callback.
+- **React effect ordering between sibling hooks.** Every hook registers in `useLayoutEffect`; the order they are called in the harness is the order effects fire. The pinned order (Property → Feed → Restore → Dirty) matches the current effect order in `card-host.tsx`, so no observed behavior shifts. Commit 5's header paragraph locks this down so future additions do not silently reorder.
+- **Stale closures.** Hooks that accidentally drop a dependency on `cardId` / `hostStackId` / `componentId` produce stale captures. Each hook signature takes these as explicit arguments (or accepts a ref) rather than reaching through context. The `saveRef` pattern in (d) is the canonical form for the few places that genuinely need "read-latest-on-fire" semantics.
+- **P5 investigation outcome.** If commit 6's investigation surfaces a race, the fix (`onHostGone` + subscriber wiring) may outgrow the single-commit budget. Mitigation: land the investigation + documentation as one commit; land the `onHostGone` API + regression test as a follow-up commit inside Step 5.5.b rather than forcing it into commit 6.
 
 ---
 
