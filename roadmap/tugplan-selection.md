@@ -13,7 +13,7 @@
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-04-22 |
+| Last updated | 2026-04-23 |
 
 ---
 
@@ -46,7 +46,7 @@ This plan introduces a `SelectionKeeper` singleton that owns the full concept an
 - [SC-7] After cross-pane card move: selection survives without explicit re-application (the keeper's apply is a no-op because nothing was actually lost).
 - [SC-8] No regression in `selectionGuard`'s drag-clipping behavior. The existing interaction tests pass unchanged.
 - [SC-9] All bag writes and reads are JSON-serializable. Old-shape bags migrate on read without dropping the user's last selection (best effort — see [D10]).
-- [SC-10] The set of files that write to `window.getSelection()` / `setSelectionRange` / `.focus()` for persistence purposes is exactly one (`selection-keeper.ts`). Verified by `grep`.
+- [SC-10] The set of files that call `setBaseAndExtent`, `setSelectionRange`, or `.focus()` *for persistence purposes* is exactly one (`selection-keeper.ts`). Verified by `grep`.
 
 #### Scope {#scope}
 
@@ -58,7 +58,7 @@ This plan introduces a `SelectionKeeper` singleton that owns the full concept an
 6. Deprecation of `selectionGuard.saveSelection` / `restoreSelection` as public API; the logic moves into the keeper, `selectionGuard` retains only drag-clipping and boundary-registration concerns.
 7. Best-effort migration of in-flight bags on cold-boot read.
 8. Integration tests covering each of the transition × selection-kind combinations.
-9. Documentation: module docstring on the keeper, JSDoc on the new props, updates to `persistence` / `selection` comments in `CardHost`, and candidate tuglaws additions L-SEL-01 / L-SEL-02 / L-SEL-03.
+9. Documentation: module docstring on the keeper, JSDoc on the new props and types, updates to `persistence` / `selection` comments in `CardHost`, and a cross-reference from `tugplan-tide-card-polish.md`. Proposed tuglaws L-SEL-01 / L-SEL-02 / L-SEL-03 are tracked as post-phase follow-ons, not phase-exit criteria.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -69,11 +69,12 @@ This plan introduces a `SelectionKeeper` singleton that owns the full concept an
 - **Browser-tab transitions** (switching to a different browser tab while our webview is open in a browser-dev context). The browser handles its own behavior; we treat it as equivalent to hide/unhide.
 - **Restoring focus to a non-keyed element.** An element without `data-tug-persist-value` or `data-tug-focus-key` does not participate. No implicit focus preservation via DOM position or selector heuristics.
 - **Elements whose key collides within a card.** Uniqueness is an author responsibility (see [D08] below for the contract).
+- **`persistKey` / `focusKey` values requiring CSS-selector escaping.** Keys must be printable ASCII without whitespace or special characters that would require CSS-escaping in `querySelector(...)`. A future enhancement could add a runtime validator; this phase treats CSS-safety as an author-contract responsibility ([D08]).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- **`AppLifecycle` delegate system** with `observeApplication{Will,Did}{BecomeActive,ResignActive,Hide,Unhide}` — already in place; confirmed at `tugdeck/src/lib/app-lifecycle.ts`.
-- **Swift host emission of `willResignActive` / `willHide`** — verification required; see [Q03]. If missing, a small patch in `tugapp/` is a prerequisite, scoped as Step 8a below.
+- **`AppLifecycle` delegate system** with `observeApplication{Will,Did}{BecomeActive,ResignActive,Hide,Unhide}` — already in place; confirmed at `tugdeck/src/lib/app-lifecycle.ts` (see `observeApplicationWillResignActive` / `observeApplicationWillHide` at `tugdeck/src/lib/app-lifecycle.ts:170,178`).
+- **Swift host emission of `willResignActive` / `willHide`** — already present. Verified at `tugapp/Sources/AppDelegate.swift:199-211` (emits both events) and `tugdeck/src/action-dispatch.ts:455,461` (switches on both events and calls `lifecycle.notifyApplicationWillResignActive()` / `notifyApplicationWillHide()`). See [Q03].
 - **`CardHost.findCardRoot` helper** — shipped `8de575c4`; already scopes DOM queries to the card's own subtree.
 - **`data-tug-persist-value` attribute and `persistKey` prop on `TugInput` / `TugTextarea`** — shipped `8de575c4`; reused for selection-capture element identification.
 - **`TugbankClient` card-state storage** — shipped; writes `CardStateBag` via `putCardState`.
@@ -88,7 +89,7 @@ This plan introduces a `SelectionKeeper` singleton that owns the full concept an
 
 #### Assumptions {#assumptions}
 
-- WebKit emits `applicationWillResignActive` / `applicationWillHide` before clearing selection visibility. (See [Q03] — verify, else we defend via blur-time capture.)
+- WebKit emits `applicationWillResignActive` / `applicationWillHide` before clearing selection visibility. The Swift host emits these events and the JS action-dispatch subscribes to them (see [Q03] for file:line verification). Blur-time capture remains as a secondary defense for window-level transitions where no element blurs.
 - WebKit preserves `el.selectionStart` / `selectionEnd` across hide/unhide and resign/activate *when an element still has focus*. If the user Cmd-H's while an input is focused, WebKit keeps the range internally. Empirically needs confirmation on the exact platform version.
 - `data-*` attributes survive cross-pane moves because the attribute is on a DOM element, not React state, and the element travels with the card's portal slot.
 - The card's `[data-card-host][data-card-id]` div is rendered inside the card's subtree at save and at restore time. (True after `d70ee0d8` and `8de575c4`; any future refactor that breaks this breaks the keeper's boundary scoping.)
@@ -118,7 +119,7 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 **Plan to resolve.** Ship with **Option A**. It matches the user's mental model ("when I come back, my selection is where I left it, which was the active card"). If a case surfaces where a user switches cards after become-active and sees a stale selection, promote to Option C (Option B is eliminated).
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 8](#step-8). Revisit if SC-6 fails after commit 10.
+**Resolution:** OPEN. Recommendation to adopt Option A at [Step 9](#step-9). Revisit if SC-6 fails after Step 12 (card activation wiring) lands.
 
 #### [Q02] On cold-boot reload/relaunch, does the keeper's `apply()` steal focus? {#q02-focus-steal-on-reload}
 
@@ -135,20 +136,16 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 **Resolution:** OPEN. Recommendation to adopt Option B at [Step 6](#step-6). [Q01] and [Q02] together describe "apply only for the currently focused card" — they are consistent.
 
-#### [Q03] Does the Swift host emit `applicationWillResignActive` / `applicationWillHide`? {#q03-will-phase-events}
+#### [Q03] Does the Swift host emit `applicationWillResignActive` / `applicationWillHide`? (DECIDED) {#q03-will-phase-events}
 
-**Question.** `action-dispatch.ts:440–475` handles a switch over the lifecycle event name received from Swift. Does Swift actually send `willResignActive` and `willHide`? If not, capturing at will-phase is impossible from JS.
+**Question.** Does the Swift host emit `willResignActive` and `willHide` such that JS can subscribe at will-phase?
 
-**Why it matters.** Saving at `didResignActive` may read a browser state that has already started tearing down selection visibility. Will-phase is the authoritative moment. Blur-time capture ([Q06]) is a partial fallback but doesn't fire for window-level resign events where no element blurs (Cmd-Tab with focus staying on the same input just grays the highlight — no blur event).
+**Resolution: DECIDED — already emitted and already subscribed.** Verified in source:
+- `tugapp/Sources/AppDelegate.swift:199-211` — AppDelegate emits `applicationWillResignActive` and `applicationWillHide` Control frames.
+- `tugdeck/src/action-dispatch.ts:455,461` — the lifecycle switch handles both events and calls `lifecycle.notifyApplicationWillResignActive()` / `notifyApplicationWillHide()`.
+- `tugdeck/src/lib/app-lifecycle.ts:170,178` — `observeApplicationWillResignActive` and `observeApplicationWillHide` are exported and wired.
 
-**Options.**
-- **Option A — verify and adopt.** Search `tugapp/` for the emission, check it fires on every transition, wire the JS observer.
-- **Option B — add if missing.** If Swift doesn't emit, patch the AppDelegate to hook `applicationWillResignActiveNotification` and `applicationWillHideNotification`, route through `sendControl("app-lifecycle", { event: "willResignActive" })`. Small Swift change; probably < 20 lines. Scoped as [Step 8a](#step-8a) below.
-- **Option C — defer.** Rely on did-phase only plus blur-time capture. Accept that Case γ's root cause (programmatic selection torn down before did-phase save) may remain partially unresolved.
-
-**Plan to resolve.** **[Verify before Step 8.](#step-8)** Grep `tugapp/` for `notifyApplicationWillResignActive` / `notifyApplicationWillHide` and check the AppDelegate emission path. If missing, scope and execute Step 8a. If present, proceed directly to Step 8.
-
-**Resolution:** OPEN, to be resolved at Step 8 kickoff.
+No Swift patch is required. Step 10 (will-phase save) subscribes directly.
 
 #### [Q04] On card/tab activation within the app, is cross-card selection transfer automatic? {#q04-cross-card-activation-transfer}
 
@@ -163,7 +160,7 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 **Plan to resolve.** **Ship Option A.** It's a clean match for `observeCardWillDeactivate` / `observeCardDidActivate` (both exist, both are called today for other reasons). Skip-if-correct ensures that on a quick tab-return the existing selection is left alone.
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 10](#step-10).
+**Resolution:** OPEN. Recommendation to adopt Option A at [Step 12](#step-12).
 
 #### [Q05] When `apply()` is called but the target element is no longer in the DOM, what does it do? {#q05-stale-snapshot-handling}
 
@@ -193,7 +190,7 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 **Plan to resolve.** **Ship Option A.** Debounced 50 ms is the sweet spot. The listener lives on the deck root (captures bubble up from every card's content), scoped to the current card via `findCardRoot(event.target)`.
 
-**Resolution:** OPEN. Recommendation to adopt Option A at [Step 9](#step-9).
+**Resolution:** OPEN. Recommendation to adopt Option A at [Step 11](#step-11).
 
 #### [Q07] What is the `textContext` fallback window size? {#q07-text-context-window}
 
@@ -217,18 +214,14 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Swift host doesn't emit will-phase events | high | med | verify [Q03]; add AppDelegate patch as Step 8a if needed | grep fails to find emission |
 | Skip-if-correct false-negative (paths differ but selection is "the same") | med | med | compare resolved node+offset, not raw path array | integration test for Case γ passes first cycle but fails second |
 | Focus restoration surprises user (steals keystrokes) | med | low | Option B in [Q02] — only restore focus when card was active at save | user feedback; manual testing with cross-app focus sequences |
 | Blur-time capture thrashes on rapid Tab-key focus traversal | low | low | debounce 50 ms per [Q06] | integration test with 5 rapid blurs |
 | Migration drops some users' last selection | low | high (on first migration) | migrate best-effort; on next save, correct state is captured fresh | check post-migration dev logs for `migrate: dropped selection` messages |
+| IME composition in flight during will-phase capture | med | low | document as known limitation; future `isComposing` defer | user reports of garbled selection on Cmd-Tab during Japanese/Chinese input |
+| `activeElement === document.body` disambiguation after transient WKWebView focus loss | med | med | module-level last-focused ref from blur-time listener; prefer last keyed over "none" | integration test where focus transiently lands on body during cold boot |
+| `window.beforeunload` unreliability on WKWebView | low | med | belt-and-suspenders: Swift `applicationShouldTerminate` + `visibilitychange(hidden)` + `beforeunload` all trigger save | save missed across reload — telemetry on save-callback counts |
 | `selectionGuard` retirement breaks drag-clipping | high | low | retirement is API-only; drag code paths unchanged | existing drag tests must stay green |
-
-**Risk R01: Swift will-phase emission missing** {#r01-swift-will-phase}
-
-- **Risk:** If `applicationWillResignActive` / `applicationWillHide` are not emitted by Swift, the keeper cannot capture before WebKit tears down selection. Save is forced to did-phase and may read a cleared state. Case γ's root cause is not fully addressed.
-- **Mitigation:** [Q03] resolution; add a small AppDelegate emission if missing ([Step 8a](#step-8a)).
-- **Residual risk:** If Apple changes WKWebView timing in a future OS version, the will-phase read could become unauthoritative. Blur-time capture ([Q06]) is the partial backstop.
 
 **Risk R02: Skip-if-correct false-negative** {#r02-skip-if-correct-false-negative}
 
@@ -247,6 +240,26 @@ Every open question below has a concrete question, what breaks if we guess wrong
 - **Risk:** On cold-boot read, old-shape bags with multiple per-input selections cannot all be migrated (only one selection per card in the new shape). We pick the first and drop the rest.
 - **Mitigation:** Migration is one-shot — on the next save, the correct current state is captured fresh. Document the migration semantics.
 - **Residual risk:** Very short reload cycles (reload before the user interacts) where the user's prior multi-input selection is lost. Acceptable given the browser's one-selection-at-a-time reality.
+
+Note: `persistKey` / `focusKey` attribute values are used in `querySelector(...)` lookups at apply time. They must be CSS-selector-safe (printable ASCII without whitespace, quotes, or other characters requiring CSS-escaping). A future enhancement could add a runtime validator; for this phase it remains an author-contract responsibility ([D08]).
+
+**Risk R05: IME composition in flight during will-phase capture** {#r05-ime-composition}
+
+- **Risk:** If the user is mid-IME composition (e.g., a half-committed Japanese character) when `applicationWillResignActive` fires, capturing `selectionStart` / `selectionEnd` may read composition-buffer offsets that do not map back correctly after activation. The restored selection can be garbled or displaced by the length of the in-flight composition text.
+- **Mitigation:** Document as a known limitation for this phase. A future enhancement can detect `isComposing` via the `CompositionEvent` state (`compositionstart` / `compositionend`) and defer capture until the composition commits.
+- **Residual risk:** IME users may see garbled or displaced selection on Cmd-Tab or Cmd-H during an active composition. Rare in practice; acceptable for initial rollout.
+
+**Risk R06: `document.activeElement === document.body` disambiguation** {#r06-body-transient-focus}
+
+- **Risk:** WKWebView transiently moves focus to `<body>` during lifecycle transitions (resign/hide). A naive `FocusSnapshot` with only `{ kind: "none" }` and `{ kind: "keyed", focusKey }` cannot distinguish "focus was legitimately on body" from "focus transiently detached during transition." Capturing during this transient window would save `{ kind: "none" }` and the user would see focus lost after return.
+- **Mitigation:** [D03] adds a third `FocusSnapshot` variant `{ kind: "body-transient", lastKeyedFocus?: string }`. A module-level last-focused ref is maintained by the blur-time listener (Step 11). At capture time, if `document.activeElement === document.body`, the keeper emits `body-transient` carrying the most recent keyed focus (if any). On apply, `body-transient` with a resolvable `lastKeyedFocus` restores focus to that element; without a ref or element, it no-ops.
+- **Residual risk:** On the very first launch, before any blur-time event has fired, no `lastKeyedFocus` ref exists. Apply defaults to "do nothing"; the user sees no focus restored and must click to place focus. Rare and recoverable.
+
+**Risk R07: `window.beforeunload` unreliability on WKWebView** {#r07-beforeunload-unreliable}
+
+- **Risk:** WKWebView has known quirks around `beforeunload` firing on programmatic navigation vs. user-initiated close. Relying on `beforeunload` alone would miss save on some unload paths.
+- **Mitigation:** Three redundant save triggers cover the paths: the Swift `applicationShouldTerminate` → `window.tugdeck.saveState()` RPC covers the quit path; `document.visibilitychange(hidden)` covers the tab-background path; `window.beforeunload` is a belt-and-suspenders trigger. All three must fail simultaneously for save to be missed.
+- **Residual risk:** A pathological unload (e.g., crash mid-transition) could still miss the last-moment save. Acceptable; the user loses at most the most recent in-flight edit window.
 
 ---
 
@@ -270,19 +283,26 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 #### [D03] Focus is captured as a separate `FocusSnapshot` alongside selection (DECIDED) {#d03-focus-separate-from-selection}
 
-**Decision:** `CardSelectionState = { selection, focus }`. Focus is a first-class concept with its own save/restore path, not derived from selection.
+**Decision:** `CardSelectionState = { selection, focus }`. Focus is a first-class concept with its own save/restore path, not derived from selection. `FocusSnapshot` is a three-variant tagged union:
 
-**Rationale:** Form-control selection is invisible without focus. DOM selection's visibility is independent of focus. Treating focus as a property of selection (rather than a peer) would require form-control snapshots to carry focus info while DOM snapshots would not — inconsistent.
+```ts
+type FocusSnapshot =
+  | { kind: "none" }
+  | { kind: "keyed"; focusKey: string }
+  | { kind: "body-transient"; lastKeyedFocus?: string };
+```
 
-**Implications:** Keeper captures both in one pass. Apply applies focus first, then selection, skip-if-correct on each. `FocusSnapshot` is `{ kind: "none" } | { kind: "keyed", focusKey: string }`.
+**Rationale:** Form-control selection is invisible without focus. DOM selection's visibility is independent of focus. Treating focus as a property of selection (rather than a peer) would require form-control snapshots to carry focus info while DOM snapshots would not — inconsistent. The third `body-transient` variant models WKWebView's transient `document.activeElement === document.body` state during lifecycle transitions ([R06]). Without this variant, capture at that moment would emit `{ kind: "none" }` and the user would lose focus across every Cmd-Tab cycle that landed mid-transition on body.
 
-#### [D04] Save triggers are will-phase lifecycle events, not did-phase (DECIDED, contingent on [Q03]) {#d04-save-at-will-phase}
+**Implications:** Keeper captures both in one pass. Apply applies focus first, then selection, skip-if-correct on each. On capture: if `activeElement` is a keyed element inside the boundary, emit `keyed`; if it is `document.body`, emit `body-transient` carrying the module-level last-focused ref (maintained by Step 11's blur-time listener); otherwise emit `none`. On apply: `keyed` focuses the element; `body-transient` with a resolvable `lastKeyedFocus` focuses that element; `body-transient` without a ref (or with a missing element) and `none` are no-ops.
+
+#### [D04] Save triggers are will-phase lifecycle events, not did-phase (DECIDED) {#d04-save-at-will-phase}
 
 **Decision:** Primary save triggers are `applicationWillResignActive`, `applicationWillHide`, `window.beforeunload`, and the Swift `saveState` RPC. Did-phase events (`applicationDidResignActive`, `applicationDidHide`) serve as backstops — they still fire `saveAndFlush` in case will-phase is missed.
 
 **Rationale:** Browsers tear down selection visibility during the did-phase. Reading at that point returns whatever remains, which is sometimes nothing. Will-phase is the last authoritative read. Case γ's degradation on the second Cmd-Tab cycle is directly attributable to this timing.
 
-**Implications:** Contingent on [Q03] — Swift must emit will-phase events. If it doesn't, Step 8a adds that emission.
+**Implications:** Swift already emits these events ([Q03]) and the JS side already routes them through `app-lifecycle` observers. No Swift patch is required; the keeper-side work is confined to subscribing.
 
 #### [D05] Apply is skip-if-already-correct (DECIDED) {#d05-skip-if-correct}
 
@@ -314,15 +334,15 @@ Every open question below has a concrete question, what breaks if we guess wrong
 
 **Rationale:** Some elements (`<input>`) want both value-and-selection persistence and focus-preservation. Other elements (a `<button>` that was last focused, or a custom keyboard-focusable `<div>`) want only focus-preservation, not value/selection. Unifying the attributes would force every focus-participating element to declare participation in value/selection persistence it doesn't support.
 
-**Implications:** For form controls, `persistKey` implies both — the keeper prefers `data-tug-persist-value` as the element locator because it is present on every participating form control; it falls back to `data-tug-focus-key` only for non-form-control focus-only cases.
+**Implications:** For form controls, `persistKey` implies both — the keeper prefers `data-tug-persist-value` as the element locator because it is present on every participating form control; it falls back to `data-tug-focus-key` only for non-form-control focus-only cases. Attribute values are used in `querySelector(...)` at apply time and therefore must be CSS-selector-safe: printable ASCII without whitespace, quotes, or other characters that would require CSS-escaping. A future enhancement could add a runtime validator; for now this remains an author-contract responsibility (see the note under [R04] and the explicit entry in [Non-goals](#non-goals)).
 
 #### [D09] `SelectionKeeper` is the sole save/restore owner; `selectionGuard` retains drag-clipping (DECIDED) {#d09-keeper-vs-guard}
 
-**Decision:** `selectionGuard.saveSelection` and `selectionGuard.restoreSelection` cease to be the public API for save/restore once [Step 12](#step-12) lands. Their bodies either move into the keeper as helpers or stay in the guard but are marked `@internal`. The guard retains: boundary registration, drag-selection clipping, selection-change observation. The keeper owns: capture at save triggers, apply at restore triggers, focus tracking.
+**Decision:** `selectionGuard.saveSelection` and `selectionGuard.restoreSelection` cease to be the public API for save/restore once [Step 14](#step-14) lands. Their bodies either move into the keeper as helpers or stay in the guard but are marked `@internal`. The guard retains: boundary registration, drag-selection clipping, selection-change observation. The keeper owns: capture at save triggers, apply at restore triggers, focus tracking.
 
 **Rationale:** One concept, one owner (L-SEL-01). Drag-clipping and persistence are different concerns with different invariants — the former is runtime, the latter is transition-boundary. Collapsing them would bloat either module.
 
-**Implications:** `card-host.tsx`, `action-dispatch.ts`, and any other current callers of the guard's save/restore API switch to keeper calls. A grep after [Step 12](#step-12) confirms zero remaining callers of `saveSelection` / `restoreSelection` outside the keeper module.
+**Implications:** `card-host.tsx`, `action-dispatch.ts`, and any other current callers of the guard's save/restore API switch to keeper calls. A grep after [Step 14](#step-14) confirms zero remaining callers of `saveSelection` / `restoreSelection` outside the keeper module.
 
 #### [D10] Migration drops non-primary per-input selections without user notification (DECIDED) {#d10-migration-drop-policy}
 
@@ -475,7 +495,13 @@ export type SelectionSnapshot =
 
 export type FocusSnapshot =
   | { kind: "none" }
-  | { kind: "keyed"; focusKey: string };
+  | { kind: "keyed"; focusKey: string }
+  // `body-transient` is a rescue mode for lifecycle-induced focus loss.
+  // WKWebView transiently moves focus to <body> during resign/hide; this
+  // variant carries the most-recently-keyed focus (from a module-level
+  // ref maintained by the blur-time listener) so apply can restore the
+  // user's focus intent on activation. See [D03] and [R06].
+  | { kind: "body-transient"; lastKeyedFocus?: string };
 
 export interface CardSelectionState {
   selection: SelectionSnapshot;
@@ -510,8 +536,8 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 
 | Trigger | Owner | Calls | Notes |
 |---|---|---|---|
-| `applicationWillResignActive` | `action-dispatch.ts` | `deckManager.saveAndFlush()` → `saveCurrentCardState` → `keeper.capture` for each registered card | Primary; contingent on [Q03] |
-| `applicationWillHide` | `action-dispatch.ts` | same | Primary; contingent on [Q03] |
+| `applicationWillResignActive` | `action-dispatch.ts` | `deckManager.saveAndFlush()` → `saveCurrentCardState` → `keeper.capture` for each registered card | Primary; Swift emits and JS subscribes (see [Q03]) |
+| `applicationWillHide` | `action-dispatch.ts` | same | Primary; Swift emits and JS subscribes (see [Q03]) |
 | `applicationDidResignActive` | `action-dispatch.ts` (existing) | same | Backstop; fires if will-phase missed |
 | `applicationDidHide` | `action-dispatch.ts` | same | Backstop |
 | `window.beforeunload` | `DeckManager.handleBeforeUnload` (existing) | save callbacks + sync flush | Reload boundary |
@@ -558,9 +584,9 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
     3. Set `version: 2`.
 - *How to detect breakage.* Dev-mode log on `migrateBag` calls; count in telemetry for one release cycle. A spike in "migration dropped selection" logs would indicate poorly-ordered `domInputs` migration; unlikely given the one-selection-at-a-time invariant.
 
-**Rollout plan.** Ship commits 1–14 in order; each green on `bun x tsc --noEmit` + `bun test`. The first behavioral change lands at [Step 7](#step-7) (CardHost adoption); up to that point the keeper exists but is unused. If a regression surfaces after Step 7, revert Step 7 alone and continue.
+**Rollout plan.** Ship commits 1–16 in order; each green on `bun x tsc --noEmit` + `bun test`. The first behavioral change lands at [Step 7](#step-7) (CardHost keeper wires); up to that point the keeper exists but is unused. If a regression surfaces after Step 7, revert Step 7 (and Step 8 if already landed) alone and continue.
 
-**Rollback.** Per-commit revertable. Full rollback: revert the 14-commit series in reverse order; land on pre-selection-plan state (the `8de575c4` partial wire, with the four failure cases visible).
+**Rollback.** Per-commit revertable. Full rollback: revert the 16-commit series in reverse order; land on pre-selection-plan state (the `8de575c4` partial wire, with the four failure cases visible).
 
 ---
 
@@ -586,7 +612,6 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 | `tugdeck/src/components/tugways/tug-textarea.tsx` | same |
 | `tugdeck/src/components/tugways/selection-guard.ts` | Mark `saveSelection` / `restoreSelection` `@internal`; retain drag-clipping exports |
 | `tugdeck/src/components/tugways/hooks/index.ts` | Barrel for keeper if imported as a hook surface (likely just a module import) |
-| `tugapp/AppDelegate.swift` | [Contingent on [Q03]] Emit `willResignActive` / `willHide` via `sendControl("app-lifecycle", ...)` |
 
 #### Symbols to add / modify {#symbols}
 
@@ -611,15 +636,16 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Module docstring for `selection-keeper.ts` covering the three kinds of state, the skip-if-correct policy, and the L-SEL-* tuglaws.
-- [ ] JSDoc for the `SelectionSnapshot`, `FocusSnapshot`, `CardSelectionState` types.
+- [ ] Module docstring for `selection-keeper.ts` covering the three kinds of state and the skip-if-correct policy.
+- [ ] JSDoc for the `SelectionSnapshot`, `FocusSnapshot` (including the `body-transient` rescue variant), and `CardSelectionState` types.
 - [ ] JSDoc on `TugInput`/`TugTextarea` `focusKey` prop, and updates to `persistKey` JSDoc explaining the keeper relationship.
 - [ ] Update `CardHost` module docstring: replace the "Restoration is trigger-driven" section with a pointer to the keeper.
-- [ ] Candidate tuglaws additions — submit as a separate small patch to `tuglaws/tuglaws.md`:
-  - **L-SEL-01** Selection and focus are singletons owned by `SelectionKeeper`.
-  - **L-SEL-02** Selection save runs at the will-phase of every lifecycle-loss event.
-  - **L-SEL-03** Selection apply is skip-if-correct.
 - [ ] Cross-reference: [`tugplan-tide-card-polish.md`](./tugplan-tide-card-polish.md) §5.5.c Commit 1A points here.
+
+Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit criterion):
+- **L-SEL-01** Selection and focus are singletons owned by `SelectionKeeper`.
+- **L-SEL-02** Selection save runs at the will-phase of every lifecycle-loss event.
+- **L-SEL-03** Selection apply is skip-if-correct.
 
 ---
 
@@ -632,15 +658,15 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 | **Unit (capture)** | Capture behavior for each snapshot kind against a synthetic boundary | Every capture helper |
 | **Unit (apply)** | Apply behavior including skip-if-correct and fallback | Every apply helper |
 | **Unit (migration)** | Round-trip v1 → v2 for each bag variant | `migrateBag` |
-| **Integration (transition × kind)** | Full save → lifecycle-fire → restore flow for each combination | [Step 13](#step-13) |
-| **Regression** | The four failure cases (α/β/γ/δ) each reproduced as a bun test | [Step 13](#step-13) |
-| **Contract (grep)** | A compile/grep assertion that no file outside the keeper calls `setSelectionRange` / `setBaseAndExtent` / `.focus()` for persistence purposes | [Step 13](#step-13) |
+| **Integration (transition × kind)** | Full save → lifecycle-fire → restore flow for each combination | [Step 15](#step-15) |
+| **Regression** | The four failure cases (α/β/γ/δ) each reproduced as a bun test | [Step 15](#step-15) |
+| **Contract (grep)** | A compile/grep assertion that no file outside the keeper calls `setSelectionRange` / `setBaseAndExtent` / `.focus()` for persistence purposes | [Step 15](#step-15) |
 
 ---
 
 ### Execution Steps {#execution-steps}
 
-14 steps. Each step has a commit, `References:`, `Depends on:`, artifacts, tasks, tests, and a checkpoint.
+16 steps. Each step has a commit, `References:`, `Depends on:`, artifacts, tasks, tests, and a checkpoint.
 
 #### Step 1: Add `SelectionSnapshot` / `FocusSnapshot` / `CardSelectionState` types {#step-1}
 
@@ -798,27 +824,25 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun x tsc --noEmit`
 - [ ] `bun test`
 
-#### Step 7: `CardHost` adoption {#step-7}
+#### Step 7: `CardHost` — keeper wires {#step-7}
 
 **Depends on:** #step-6
 
-**Commit:** `refactor(card-host): delegate selection save/restore to SelectionKeeper`
+**Commit:** `refactor(card-host): route selection save/restore through SelectionKeeper`
 
 **References:** [D09] keeper sole owner, Spec S01, Table T02, Table T03, (#case-delta)
 
 **Artifacts:**
-- `card-host.tsx` save path: `saveCurrentCardStateRef` calls `keeper.capture(cardId, cardRoot)`; assigns the result to `bag.selection`.
+- `card-host.tsx` save path: `saveCurrentCardStateRef` calls `keeper.capture(cardId, cardRoot)` and assigns the result to `bag.selection` (replaces the direct `selectionGuard.saveSelection` call).
 - `card-host.tsx` restore path: the `useLayoutEffect` on `[hostContentEl]` calls `keeper.apply(cardId, cardRoot, bag.selection)` instead of `selectionGuard.restoreSelection`.
 - `onContentReady` (the post-child-commit restore point) also calls `keeper.apply`.
-- `captureDomInputs` and `applyDomInputSnapshot` are reduced to value + scroll only; selection fields go away.
-- Bag-side: legacy `bag.selection` as `SavedSelection` migrated into `CardSelectionState` on write by `keeper.capture` emitting the new shape.
+- `DomInputSnapshot` still carries selection fields at this step. Those fields are written by the existing capture path but *ignored on read* because the read path now flows through `keeper.apply`. The scrub lands in Step 8.
 
 **Tasks:**
-- [ ] Wire `keeper.capture` in save path.
-- [ ] Wire `keeper.apply` in `useLayoutEffect` and `onContentReady`.
-- [ ] Strip selection fields from `DomInputSnapshot`.
-- [ ] Update `captureDomInputs` / `applyDomInputSnapshot` signatures.
-- [ ] Update JSDoc on the two helpers and the `useLayoutEffect`.
+- [ ] Wire `keeper.capture` in the save path (replace `selectionGuard.saveSelection`).
+- [ ] Wire `keeper.apply` in the `useLayoutEffect` and in `onContentReady` (replace `selectionGuard.restoreSelection`).
+- [ ] Do not yet alter `DomInputSnapshot`; the selection fields remain but go unused on read.
+- [ ] Update JSDoc on the affected helpers and `useLayoutEffect` to name the keeper.
 
 **Tests:**
 - [ ] `card-host-composition.test.tsx` remains green (save/restore observable behavior).
@@ -829,9 +853,36 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun test`
 - [ ] Manual verification: reload an app; prior selection restores. (Per SC-1.)
 
-#### Step 8: Lifecycle wiring — did-phase restore {#step-8}
+#### Step 8: `CardHost` — `DomInputSnapshot` scrub {#step-8}
 
 **Depends on:** #step-7
+
+**Commit:** `refactor(card-host): strip selection fields from DomInputSnapshot`
+
+**References:** [D02] tagged union, [D09] keeper sole owner, Spec S02, (#case-delta)
+
+**Artifacts:**
+- `DomInputSnapshot` reduced to `{ value; scrollTop?; scrollLeft? }` — `selectionStart`, `selectionEnd`, `selectionDirection` fields removed.
+- `captureDomInputs` and `applyDomInputSnapshot` signatures updated accordingly; call sites reviewed to ensure no reader is still expecting selection fields.
+- Migration path reads legacy shape but discards extra fields (the migration step will formalize this).
+
+**Tasks:**
+- [ ] Remove selection fields from `DomInputSnapshot`.
+- [ ] Update `captureDomInputs` / `applyDomInputSnapshot` to value+scroll only.
+- [ ] Search for any lingering readers of the stripped fields; update or remove.
+- [ ] Update JSDoc on the helpers.
+
+**Tests:**
+- [ ] `card-host-composition.test.tsx` remains green.
+- [ ] Unit: a bag whose `domInputs` entries lack selection fields round-trips through capture/apply without error.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit`
+- [ ] `bun test`
+
+#### Step 9: Lifecycle wiring — did-phase restore {#step-9}
+
+**Depends on:** #step-8
 
 **Commit:** `feat(action-dispatch): apply keeper on didBecomeActive and didUnhide`
 
@@ -858,43 +909,20 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun test`
 - [ ] Manual verification: Cmd-Tab cycle (first); selection restores. (Per SC-4.)
 
-#### Step 8a: [Conditional] Swift emission of will-phase events {#step-8a}
+#### Step 10: Lifecycle wiring — will-phase save {#step-10}
 
-**Depends on:** #step-8
-
-**Commit:** `feat(tugapp): emit applicationWillResignActive/WillHide to webview`
-
-**References:** [Q03], [D04] save at will-phase, [R01] Swift will-phase
-
-**Trigger:** this step runs only if the [Q03] resolution is "missing — need to add".
-
-**Artifacts:**
-- `tugapp/.../AppDelegate.swift` gains observers on `applicationWillResignActiveNotification` and `applicationWillHideNotification` that send Control frames `app-lifecycle/willResignActive` and `app-lifecycle/willHide`.
-
-**Tasks:**
-- [ ] Add the Swift observers.
-- [ ] Send Control frame with `{ event: "willResignActive" }` (matching the switch at `action-dispatch.ts:440–475`).
-- [ ] Verify emission in Xcode runtime log.
-
-**Tests:**
-- [ ] Integration from JS side: observe that the JS-side `observeApplicationWillResignActive` subscription fires on Cmd-Tab.
-
-**Checkpoint:**
-- [ ] Build tugapp; manual verification in dev.
-
-#### Step 8b: Lifecycle wiring — will-phase save {#step-8b}
-
-**Depends on:** #step-8a (or directly on #step-8 if 8a is skipped)
+**Depends on:** #step-9
 
 **Commit:** `feat(action-dispatch): save on willResignActive and willHide via keeper`
 
-**References:** [D04] save at will-phase, Table T02, (#case-gamma, #r01-swift-will-phase)
+**References:** [D04] save at will-phase, [Q03], Table T02, (#case-gamma)
 
 **Artifacts:**
 - `action-dispatch.ts` subscribes `observeApplicationWillResignActive` and `observeApplicationWillHide` → `deckManager.saveAndFlush()`. The existing did-phase save remains as a backstop.
+- The Swift host already emits both events ([Q03]); no Swift patch is required.
 
 **Tasks:**
-- [ ] Add subscriptions.
+- [ ] Add JS-side subscriptions via `lifecycle.observeApplicationWillResignActive` / `observeApplicationWillHide`.
 - [ ] Verify that capture at will-phase reads a still-present selection.
 
 **Tests:**
@@ -906,45 +934,52 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun test`
 - [ ] Manual verification: Case γ regression (two Cmd-Tab cycles). (Per SC-5.)
 
-#### Step 9: Blur-time capture safety net {#step-9}
+#### Step 11: Blur-time capture safety net {#step-11}
 
-**Depends on:** #step-8b
+**Depends on:** #step-10
 
 **Commit:** `feat(selection-keeper): add debounced blur-time capture on deck root`
 
-**References:** [Q06] debounce interval, Table T02
+**References:** [Q06] debounce interval, [R06] body-transient focus, Table T02
 
 **Artifacts:**
 - Module-level `focusout` listener on the deck root inside `selection-keeper.ts` (installed via a `selectionKeeper.attach(deckRootEl)` hook called from the existing deck-manager init path).
 - 50 ms debounce.
 - Scoped: the listener resolves the card owning the blurring element via `findCardRoot`; if found, captures and calls `deckManager.setCardState`.
+- Module-level `lastKeyedFocus` ref updated by the listener: on every `focusout` whose target carries `data-tug-persist-value` or `data-tug-focus-key`, record the key. The ref is read by `captureFocus` when `document.activeElement === document.body` to populate `FocusSnapshot.body-transient.lastKeyedFocus` ([D03], [R06]).
 
 **Tasks:**
 - [ ] Add `attach` hook.
 - [ ] Install `focusout` listener.
-- [ ] Debounce.
+- [ ] Debounce at 50 ms.
+- [ ] Maintain the module-level `lastKeyedFocus` ref.
 
 **Tests:**
 - [ ] Unit: blur a keyed element 5 times in 30 ms; assert `capture` is called once.
+- [ ] Unit: after a keyed blur, `captureFocus` with `activeElement === body` emits `{ kind: "body-transient", lastKeyedFocus: "<key>" }`.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
 - [ ] `bun test`
 
-#### Step 10: Card activation wiring {#step-10}
+#### Step 12: Card activation wiring {#step-12}
 
-**Depends on:** #step-9
+**Depends on:** #step-11
 
 **Commit:** `feat(action-dispatch): capture on cardWillDeactivate, apply on cardDidActivate`
 
 **References:** [Q04] cross-card activation, Table T02, Table T03
 
 **Artifacts:**
-- `action-dispatch.ts` subscribes `observeCardWillDeactivate` (capture via save path) and `observeCardDidActivate` (keeper.apply for the activating card).
+- `action-dispatch.ts` subscribes `deckManager.cardLifecycle.observeCardWillDeactivate(null, cb)` for capture (the will-deactivate observer lives on the `cardLifecycle` namespace, not on the top-level `deckManager` surface).
+- For apply, `action-dispatch.ts` uses the existing `deckManager.observeCardDidActivate(null, cb)` pass-through (`observeCardDidActivate` is exposed both on `deckManager` directly and on `deckManager.cardLifecycle`; the top-level pass-through is fine here).
+- On will-deactivate: `keeper.capture` for the deactivating card.
+- On did-activate: `keeper.apply` for the activating card.
 
 **Tasks:**
-- [ ] Add subscriptions.
-- [ ] Ensure capture runs synchronously before state flip.
+- [ ] Subscribe `deckManager.cardLifecycle.observeCardWillDeactivate(null, ...)` for capture.
+- [ ] Subscribe `deckManager.observeCardDidActivate(null, ...)` for apply.
+- [ ] Ensure capture runs synchronously before the activation state flip.
 
 **Tests:**
 - [ ] Integration: simulate card A active → click card B; `keeper.capture` for A, `keeper.apply` for B.
@@ -955,33 +990,9 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun test`
 - [ ] Manual verification: selection transfers between cards cleanly. (Per SC-6.)
 
-#### Step 11: `selectionGuard` deprecation of save/restore API {#step-11}
+#### Step 13: Bag migration {#step-13}
 
-**Depends on:** #step-10
-
-**Commit:** `refactor(selection-guard): mark saveSelection/restoreSelection @internal`
-
-**References:** [D09] keeper sole owner, (#s01-keeper-api, #q05-stale-snapshot-handling)
-
-**Artifacts:**
-- `saveSelection` and `restoreSelection` on `selectionGuard` either move their bodies into `selection-keeper.ts` as helpers (preferred) or remain on the guard marked `@internal` and no longer exported.
-- `grep` of the codebase confirms no call sites outside the keeper.
-
-**Tasks:**
-- [ ] Move or mark.
-- [ ] Update `selection-guard.ts` module docstring.
-
-**Tests:**
-- [ ] Existing `selection-model.test.tsx` tests: ensure the drag-clipping-focused tests still pass; retire any test that targeted the old save/restore API (superseded by keeper tests).
-
-**Checkpoint:**
-- [ ] `bun x tsc --noEmit`
-- [ ] `bun test`
-- [ ] `grep -R 'selectionGuard\.\(saveSelection\|restoreSelection\)' tugdeck/src/ | grep -v selection-keeper.ts` returns empty.
-
-#### Step 12: Bag migration {#step-12}
-
-**Depends on:** #step-11
+**Depends on:** #step-12
 
 **Commit:** `feat(settings-api): migrate v1 CardStateBag to v2 shape on read`
 
@@ -1004,9 +1015,35 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun x tsc --noEmit`
 - [ ] `bun test`
 
-#### Step 13: Integration test harness {#step-13}
+#### Step 14: `selectionGuard` deprecation of save/restore API {#step-14}
 
-**Depends on:** #step-12
+**Depends on:** #step-13
+
+**Commit:** `refactor(selection-guard): mark saveSelection/restoreSelection @internal`
+
+**References:** [D09] keeper sole owner, (#s01-keeper-api, #q05-stale-snapshot-handling)
+
+**Artifacts:**
+- `saveSelection` and `restoreSelection` on `selectionGuard` either move their bodies into `selection-keeper.ts` as helpers (preferred) or remain on the guard marked `@internal` and no longer exported.
+- `grep` of the codebase confirms no call sites outside the keeper.
+
+Depending on Step 13 (bag migration) ensures no legacy v1 bag flows into `keeper.apply` through the retired guard path: by the time the guard's public API is withdrawn, every bag on read has been normalized to v2.
+
+**Tasks:**
+- [ ] Move or mark.
+- [ ] Update `selection-guard.ts` module docstring.
+
+**Tests:**
+- [ ] Existing `selection-model.test.tsx` tests: ensure the drag-clipping-focused tests still pass; retire any test that targeted the old save/restore API (superseded by keeper tests).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit`
+- [ ] `bun test`
+- [ ] `grep -R 'selectionGuard\.\(saveSelection\|restoreSelection\)' tugdeck/src/ | grep -v selection-keeper.ts` returns empty.
+
+#### Step 15: Integration test harness {#step-15}
+
+**Depends on:** #step-14
 
 **Commit:** `test(selection-keeper): integration tests for every transition × kind`
 
@@ -1018,7 +1055,8 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 **Tasks:**
 - [ ] Write tests for α (hide/unhide, form-control), β (Cmd-Tab, form-control), γ (double Cmd-Tab, DOM), δ (reload, form-control with focus).
 - [ ] Write tests for tab activation, cross-pane move, reload with DOM selection.
-- [ ] Write a grep-based contract test: no `setSelectionRange` / `setBaseAndExtent` / `.focus()` usage in `tugdeck/src` outside `selection-keeper.ts`.
+- [ ] Write a **Case γ five-cycle** test: five consecutive Cmd-Tab cycles on `TugPromptEntry`; assert selection remains correctly restored through all five. Document in the test that it specifically guards against accumulated degradation at N > 2 (if skip-if-correct + will-phase capture are not jointly effective, this is where failure first surfaces).
+- [ ] Write a grep-based contract test: no `setSelectionRange` / `setBaseAndExtent` / `.focus()` usage for persistence purposes in `tugdeck/src` outside `selection-keeper.ts`.
 
 **Tests:** (the whole commit is tests)
 
@@ -1026,23 +1064,28 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 - [ ] `bun x tsc --noEmit`
 - [ ] `bun test` — all new tests pass.
 
-#### Step 14: Documentation {#step-14}
+#### Step 16: Documentation {#step-16}
 
-**Depends on:** #step-13
+**Depends on:** #step-15
 
-**Commit:** `docs(selection): tuglaws L-SEL-01/02/03 + cross-references`
+**Commit:** `docs(selection): keeper module docs + cross-references`
 
 **References:** [D01] singleton, [D04] will-phase, [D05] skip-if-correct, (#documentation-plan)
 
 **Artifacts:**
-- Propose L-SEL-01, L-SEL-02, L-SEL-03 as additions to `tuglaws/tuglaws.md` (separate patch if preferred).
-- Update `CardHost` module docstring with the restoration-is-keeper-owned rewrite.
-- Update [`tugplan-tide-card-polish.md`](./tugplan-tide-card-polish.md) §5.5.c Commit 1A section to mark the selection follow-on shipped.
+- Module docstring for `selection-keeper.ts` covering the three kinds of state, skip-if-correct, and the keeper's ownership boundary vs. `selectionGuard`.
+- JSDoc on `SelectionSnapshot` / `FocusSnapshot` / `CardSelectionState` types.
+- JSDoc on `TugInput` / `TugTextarea` `focusKey` prop; updates to `persistKey` JSDoc noting the keeper relationship.
+- `CardHost` module docstring update: replace the "Restoration is trigger-driven" section with a pointer to the keeper.
+- Cross-reference back to this plan from [`tugplan-tide-card-polish.md`](./tugplan-tide-card-polish.md) §5.5.c Commit 1A.
 
 **Tasks:**
-- [ ] Write the tuglaws entries.
-- [ ] Update docstrings.
-- [ ] Cross-reference back to the original plan.
+- [ ] Write the keeper module docstring.
+- [ ] Write JSDoc on the new types and props.
+- [ ] Update `CardHost` docstring.
+- [ ] Add the cross-reference in `tugplan-tide-card-polish.md`.
+
+Note: the proposed tuglaws L-SEL-01 / L-SEL-02 / L-SEL-03 are tracked in the Roadmap / Follow-ons section, not landed in this phase.
 
 **Tests:** N/A (documentation)
 
@@ -1060,9 +1103,10 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 
 - [ ] All 10 success criteria (SC-1 through SC-10) met and verified.
 - [ ] Every open question resolved or explicitly deferred with rationale captured in this doc.
-- [ ] `grep` contract test (Step 13) confirms keeper is the sole writer of selection/focus for persistence.
+- [ ] `grep` contract test (Step 15) confirms keeper is the sole writer of selection/focus for persistence.
 - [ ] Migration log sweep of a dev build with old-shape bags shows no crashes; any "dropped selection" messages are accounted for.
 - [ ] Manual verification of every failure case in `#per-case-walkthrough`: α, β, γ, δ all pass; tab activation, cross-pane move, reload all pass.
+- [ ] Case γ five-cycle test (Step 15) passes.
 
 **Acceptance tests:**
 - [ ] `selection-keeper-integration.test.tsx` passes in full.
@@ -1070,14 +1114,18 @@ Uniqueness scope: per card subtree. Collisions within a card are author error ([
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] Propose tuglaws **L-SEL-01** (selection/focus singletons owned by `SelectionKeeper`), **L-SEL-02** (save at will-phase), **L-SEL-03** (apply is skip-if-correct) as additions to `tuglaws/tuglaws.md` in a separate patch after this phase ships.
 - [ ] Extend textContext fallback to handle insertion/deletion near the anchor (fuzzy match with edit distance ≤ N).
 - [ ] Cross-card selection support (browser one-selection limit still applies, but the keeper could notice cross-card selections at capture time and decide a policy).
 - [ ] Port `selectionGuard`'s drag-clipping behavior into an even narrower module if the boundary continues to be useful after the keeper migration settles.
+- [ ] Runtime validator for `persistKey` / `focusKey` values (CSS-selector safety, [D08]).
+- [ ] IME-aware capture: detect `isComposing` via `CompositionEvent` state and defer will-phase capture until composition commits ([R05]).
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Step 1 types compile | `bun x tsc --noEmit` |
 | Keeper capture/apply unit-tested | `bun test src/__tests__/selection-keeper.test.tsx` |
 | CardHost adoption doesn't regress existing tests | `bun test src/__tests__/card-host-composition.test.tsx` |
-| Case γ regression passes | `bun test -t 'case gamma'` |
+| Case γ regression passes (single cycle) | `bun test -t 'case gamma'` |
+| Case γ five-cycle regression passes | `bun test -t 'case gamma five cycle'` |
 | Phase exit | All SC-1..10 verified manually + `bun test` passes |
