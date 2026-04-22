@@ -179,11 +179,21 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
   // Scroll / selection restore: triggered by `hostContentEl` becoming
   // available. Fires idempotently whenever the host element changes
-  // (mount, cross-pane move, pane re-registration). Applies scroll
-  // regardless of content-case: for a no-content bag this is the only
-  // restore path; for a with-content bag this provides a best-effort
-  // apply before the child commits, and `onContentReady` re-applies the
-  // correct clamp after content renders. L22, L23.
+  // (mount, cross-pane move, pane re-registration).
+  //
+  // **Scroll** applies regardless of content-case: for a no-content bag
+  // this is the only restore path; for a with-content bag this is a
+  // best-effort apply before the child commits, and `onContentReady`
+  // re-applies the correct clamp after content renders.
+  //
+  // **Selection** applies ONLY in the no-content case here. For the
+  // with-content case, `selectionGuard`'s `pathToNode` resolver needs
+  // the child's restored DOM to exist before offsets can resolve — so
+  // selection restoration rides `onContentReady` (sole owner) and this
+  // effect skips it. Attempting selection restore here when content
+  // will shortly re-render would fail to resolve (pre-commit DOM), or
+  // worse, apply to a transient node and get clobbered by the
+  // child's re-render. L22, L23.
   useLayoutEffect(() => {
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
@@ -192,7 +202,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       hostContentEl.scrollLeft = bag.scroll.x;
       hostContentEl.scrollTop = bag.scroll.y;
     }
-    if (bag.selection != null) {
+    if (bag.content === undefined && bag.selection != null) {
       selectionGuard.restoreSelection(hostStackId, bag.selection);
     }
   }, [cardId, hostStackId, hostContentEl, store]);
