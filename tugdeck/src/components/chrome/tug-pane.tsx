@@ -39,7 +39,6 @@ import type { Rect, GuidePosition, SnapResult } from "@/snap";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { useSelectionBoundary } from "@/components/tugways/hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
@@ -424,8 +423,6 @@ export function TugPane({
   const contentRef = useRef<HTMLDivElement>(null);
   const manager = useRequiredResponderChain();
   const keyboardTabNavSenderId = useId();
-
-  useSelectionBoundary(stackId, contentRef);
 
   const cardsRef = useRef(cards);
   cardsRef.current = cards;

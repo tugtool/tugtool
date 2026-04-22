@@ -298,6 +298,31 @@ class SelectionGuard {
   // ---- Boundary registration ----
 
   /**
+   * Return a real viewport rect for a boundary element.
+   *
+   * `CardHost` registers the card-host div, which uses `display: contents`
+   * so that its content portals into the pane's content area without adding
+   * a layout box. A `display: contents` element returns a zero-sized
+   * `DOMRect` from `getBoundingClientRect()`, which would make drag-clip
+   * clamp every pointer to the screen origin. Walk up to the nearest
+   * ancestor (typically `.tug-pane-content`) that *does* produce a box and
+   * return its rect — that's the viewport rect the pre-card-level design
+   * used, preserved verbatim now that boundary identity has moved down a
+   * level.
+   */
+  private getBoundaryRect(boundary: HTMLElement): DOMRect {
+    const rect = boundary.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return rect;
+    let parent: HTMLElement | null = boundary.parentElement;
+    while (parent) {
+      const pRect = parent.getBoundingClientRect();
+      if (pRect.width > 0 || pRect.height > 0) return pRect;
+      parent = parent.parentElement;
+    }
+    return rect;
+  }
+
+  /**
    * Register a card content area as a selection boundary.
    * Called by `useSelectionBoundary` on mount.
    */
@@ -739,9 +764,11 @@ class SelectionGuard {
 
     // ---- Determine which card the click belongs to ----
     //
-    // First check content boundaries (most common), then walk up the DOM to
-    // find deck chrome (title bar, tab bar, etc.) via data-pane-id (pane) or
-    // data-card-id (card host wrapper).
+    // First check content boundaries (most common). For clicks that land on
+    // deck chrome (title bar, tab bar, close button) — which lives outside
+    // the boundary subtree — walk up to the nearest `[data-card-host]`
+    // ancestor and read its `data-card-id`. This is the card-level identity
+    // anchor installed by `CardHost`.
     let clickedCardId: string | null = null;
     for (const [cardId, element] of this.boundaries) {
       if (element.contains(target)) {
@@ -750,15 +777,11 @@ class SelectionGuard {
       }
     }
     if (clickedCardId === null) {
-      let el: Element | null = target instanceof Element ? target : (target as Node).parentElement;
-      while (el) {
-        const cid =
-          el.getAttribute("data-pane-id") ?? el.getAttribute("data-card-id");
-        if (cid !== null && this.boundaries.has(cid)) {
-          clickedCardId = cid;
-          break;
-        }
-        el = el.parentElement;
+      const el = target instanceof Element ? target : (target as Node).parentElement;
+      const cardHost = el?.closest("[data-card-host]");
+      const cid = cardHost?.getAttribute("data-card-id") ?? null;
+      if (cid !== null && this.boundaries.has(cid)) {
+        clickedCardId = cid;
       }
     }
 
@@ -801,7 +824,7 @@ class SelectionGuard {
     const boundary = this.boundaries.get(this.activeCardId);
     if (!boundary) return;
 
-    const rect = boundary.getBoundingClientRect();
+    const rect = this.getBoundaryRect(boundary);
     const x = event.clientX;
     const y = event.clientY;
 
@@ -871,7 +894,7 @@ class SelectionGuard {
     // Use setBaseAndExtent to forcibly pin the focus inside the boundary,
     // overriding the browser's native selection extension.
     try {
-      if (this.isTracking && this.lastPointerY < boundary.getBoundingClientRect().top) {
+      if (this.isTracking && this.lastPointerY < this.getBoundaryRect(boundary).top) {
         // Dragging upward — pin focus to start of boundary
         selection.setBaseAndExtent(
           anchorNode, selection.anchorOffset,
@@ -976,7 +999,7 @@ class SelectionGuard {
 
     // Re-extend selection to the clamped boundary edge after scroll, so the
     // selection tracks newly visible content
-    const newRect = boundary.getBoundingClientRect();
+    const newRect = this.getBoundaryRect(boundary);
     this.clampSelectionToRect(newRect, boundary);
 
     // Schedule next tick
@@ -985,7 +1008,7 @@ class SelectionGuard {
       if (!this.isTracking || this.activeCardId === null) return;
       const currentBoundary = this.boundaries.get(this.activeCardId);
       if (!currentBoundary) return;
-      this.runAutoscrollTick(currentBoundary, currentBoundary.getBoundingClientRect());
+      this.runAutoscrollTick(currentBoundary, this.getBoundaryRect(currentBoundary));
     });
   }
 

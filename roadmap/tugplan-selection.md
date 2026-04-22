@@ -576,25 +576,27 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - `selectionGuard.registerBoundary` continues to take a string key (the key name was already `cardId` in the type). Its internal `boundaries: Map<string, HTMLElement>` now holds one entry per card, not one per pane.
 - Drag-clip / keyboard-extend clipping inside `selection-guard.ts` (see `handlePointerMove`, `handleSelectionChange`) continues to operate correctly because it looks up the boundary of the card under the pointer. The currently-tracked card id (`activeCardId`) is resolved from the pointerdown target (find `[data-card-host]` ancestor) rather than from the pane that was clicked.
 - `activeCardId_highlight` inside selection-guard continues to name the card that owns the active selection — semantics unchanged at this step.
+- New private helper `getBoundaryRect(boundary)` inside `selection-guard.ts`. The card-host div uses `display: contents`, which returns a zero `DOMRect` from `getBoundingClientRect()`. The helper walks up to the nearest ancestor that produces a real box (the pane's content div in practice) so drag-clip/autoscroll keep clamping against the same viewport rect they used pre-Step-2.
 
 **Tasks:**
-- [ ] Remove `useSelectionBoundary(stackId, contentRef)` from `tug-pane.tsx:428`.
-- [ ] Add a `cardRootRef` inside `CardHost` that attaches to the existing `[data-card-host][data-card-id]` div at `card-host.tsx:473-480`.
-- [ ] Call `useSelectionBoundary(cardId, cardRootRef)` from within `CardHost`.
-- [ ] Inside `selection-guard.ts`, change any code that resolves a card-under-pointer via pane lookup to resolve via `el.closest('[data-card-host]')`. Specifically: the `pointerdown` handler's card-tracking path (approximately `selection-guard.ts:456` area — `activateCard`).
-- [ ] Update `selection-model.md` table row for `useSelectionBoundary` to name the card-host div, not `.tug-pane-chrome-content`.
+- [x] Remove `useSelectionBoundary(stackId, contentRef)` from `tug-pane.tsx:428`.
+- [x] Add a `cardRootRef` inside `CardHost` that attaches to the existing `[data-card-host][data-card-id]` div at `card-host.tsx:473-480`.
+- [x] Call `useSelectionBoundary(cardId, cardRootRef)` from within `CardHost`.
+- [x] Inside `selection-guard.ts`, change any code that resolves a card-under-pointer via pane lookup to resolve via `el.closest('[data-card-host]')`. Specifically: the `pointerdown` handler's card-tracking path (approximately `selection-guard.ts:456` area — `activateCard`).
+- [x] Update `selection-model.md` table row for `useSelectionBoundary` to name the card-host div, not `.tug-pane-chrome-content`.
+- [x] Add `getBoundaryRect` helper and route every `boundary.getBoundingClientRect()` through it (`display: contents` zero-rect fallback).
 
 **Upholds:** [L12] card-level selection boundary (verbatim, restored). [L10] selection-guard stays the boundary owner; card-host delegates boundary registration.
 
 **Tests:**
-- [ ] `selection-model.test.tsx`' boundary registration tests: register per card id. Assert that a multi-card pane has N boundaries registered (one per card), not 1.
-- [ ] `selection-guard`' drag-clip test that the clip destination resolves via `closest('[data-card-host]')`.
-- [ ] `card-host-composition.test.tsx` still green.
+- [x] `selection-model.test.tsx`' boundary registration tests: register per card id. Assert that a multi-card pane has N boundaries registered (one per card), not 1.
+- [x] `selection-guard`' drag-clip test that the clip destination resolves via `closest('[data-card-host]')`.
+- [x] `card-host-composition.test.tsx` still green.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Manual probe: render two cards in a single pane and confirm `selectionGuard.boundaries` has two entries at runtime (via a temporary dev-log, removed at the step commit).
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green (2214 pass).
+- [x] Manual probe: render two cards in a single pane and confirm `selectionGuard.boundaries` has two entries at runtime. *Verified: a two-tab Tide pane + a single-card Hello World pane yielded `boundaries.size === 3`, with two entries sharing the Tide pane's `data-pane-id` and one in the other pane. Temporary `window.__selectionGuard` expose was stripped before commit.*
 
 ---
 

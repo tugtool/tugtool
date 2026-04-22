@@ -13,13 +13,14 @@
  */
 import "./setup-rtl";
 
-import React from "react";
-import { describe, it, expect, afterEach, beforeEach, mock } from "bun:test";
+import React, { useRef } from "react";
+import { describe, it, expect, afterEach, beforeEach, mock, spyOn } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { TugPane } from "@/components/chrome/tug-pane";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { useSelectionBoundary } from "@/components/tugways/hooks/use-selection-boundary";
 import { withDeckManager } from "./mock-deck-manager-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import type { TugPaneState } from "@/layout-tree";
@@ -119,56 +120,77 @@ describe("T14 – selectAll dispatch is unhandled at card level", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T15: TugPane content area is registered with SelectionGuard on mount
+// T15: Selection boundaries are registered per card, not per pane
 // ---------------------------------------------------------------------------
+//
+// Before Step 2, `TugPane` registered its content div as the boundary,
+// producing one entry per pane. After Step 2, `CardHost` registers its
+// card-host div, producing one entry per card — so a tab-group pane that
+// hosts N cards has N boundary entries. [L12].
+//
+// These tests use `useSelectionBoundary` directly via probe components to
+// pin the registration contract without pulling in the full DeckCanvas +
+// DeckManager integration surface.
 
-describe("T15 – TugPane registers content area with SelectionGuard", () => {
-  it("content area is registered on mount (saveSelection returns null, not error)", () => {
+function CardHostProbe({ cardId, children }: { cardId: string; children?: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useSelectionBoundary(cardId, ref);
+  return (
+    <div ref={ref} data-card-host data-card-id={cardId}>
+      {children}
+    </div>
+  );
+}
+
+describe("T15 – card-level selection boundary registration", () => {
+  it("TugPane alone does not register a pane-level boundary (registration moved to CardHost)", () => {
     renderWithManager(
-      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15")} />
+      <TugPane {...defaultWindowProps} stackState={makeStackState("pane-t15-a")} />
     );
 
-    expect(selectionGuard.saveSelection("card-t15")).toBeNull();
+    // The pane id is no longer a registered boundary; saveSelection returns
+    // null because the key is unknown, not because there is no selection.
+    expect(selectionGuard.saveSelection("pane-t15-a")).toBeNull();
   });
 
-  it("content area is unregistered on unmount", () => {
-    let unmount!: () => void;
-
-    renderWithManager(
-      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-unmount")} />
-    );
-    const result = renderWithManager(
-      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-unmount2")} />
-    );
-    unmount = result.unmount;
+  it("a multi-card pane registers one boundary per card", () => {
+    const spy = spyOn(selectionGuard, "registerBoundary");
 
     act(() => {
-      unmount();
+      render(
+        <div data-pane-id="pane-t15-multi">
+          <CardHostProbe cardId="tab-one" />
+          <CardHostProbe cardId="tab-two" />
+          <CardHostProbe cardId="tab-three" />
+        </div>
+      );
     });
 
-    expect(selectionGuard.saveSelection("card-t15-unmount2")).toBeNull();
+    expect(spy.mock.calls.length).toBe(3);
+    const calledIds = spy.mock.calls.map((c) => c[0]);
+    expect(calledIds).toEqual(["tab-one", "tab-two", "tab-three"]);
+
+    spy.mockRestore();
   });
 
-  it("content area element passed to SelectionGuard is the tug-pane-content div", () => {
+  it("card-host div is the registered element (saveSelection succeeds for a selection inside)", () => {
     let container!: HTMLElement;
-    const result = renderWithManager(
-      <TugPane {...defaultWindowProps} stackState={makeStackState("card-t15-elem")} />
-    );
-    container = result.container;
+    act(() => {
+      ({ container } = render(
+        <CardHostProbe cardId="card-t15-elem">
+          <span data-testid="inner">hello</span>
+        </CardHostProbe>
+      ));
+    });
 
-    const contentDiv = container.querySelector(
-      "[data-testid='tug-pane-content']"
-    ) as HTMLElement;
-    expect(contentDiv).not.toBeNull();
-
-    const textNode = document.createTextNode("hello");
-    contentDiv.appendChild(textNode);
+    const span = container.querySelector("[data-testid='inner']") as HTMLElement;
+    expect(span).not.toBeNull();
 
     const sel = window.getSelection();
     if (sel) {
       const range = document.createRange();
-      range.setStart(textNode, 0);
-      range.setEnd(textNode, 3);
+      range.setStart(span.firstChild!, 0);
+      range.setEnd(span.firstChild!, 3);
       sel.removeAllRanges();
       sel.addRange(range);
 
@@ -176,7 +198,46 @@ describe("T15 – TugPane registers content area with SelectionGuard", () => {
       expect(saved).not.toBeNull();
 
       sel.removeAllRanges();
-      contentDiv.removeChild(textNode);
+    }
+  });
+
+  it("a pointerdown on deck chrome outside the boundary activates the enclosing card via closest('[data-card-host]')", () => {
+    // Layout: a [data-card-host] wrapper contains both the boundary
+    // element and some chrome (title bar) that sits outside the boundary
+    // subtree. A pointerdown on the chrome must still attribute the event
+    // to the enclosing card and call `activateCard(cardId)`.
+    const host = document.createElement("div");
+    host.setAttribute("data-card-host", "");
+    host.setAttribute("data-card-id", "card-t15-click");
+    const titleBar = document.createElement("div");
+    titleBar.textContent = "close";
+    const boundary = document.createElement("div");
+    host.appendChild(titleBar);
+    host.appendChild(boundary);
+    document.body.appendChild(host);
+
+    selectionGuard.registerBoundary("card-t15-click", boundary);
+    selectionGuard.attach();
+    const activateSpy = spyOn(selectionGuard, "activateCard");
+
+    try {
+      // happy-dom doesn't expose PointerEvent; dispatch a MouseEvent with
+      // type "pointerdown" — the handler reads `target`, `clientX`,
+      // `clientY` only, all of which MouseEvent provides.
+      const event = new MouseEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY: 0,
+      });
+      titleBar.dispatchEvent(event);
+
+      expect(activateSpy).toHaveBeenCalledWith("card-t15-click");
+    } finally {
+      activateSpy.mockRestore();
+      selectionGuard.detach();
+      selectionGuard.unregisterBoundary("card-t15-click");
+      document.body.removeChild(host);
     }
   });
 });

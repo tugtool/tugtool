@@ -58,6 +58,7 @@ import type { ActionEvent } from "../tugways/responder-chain";
 import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { getRegistration } from "../../card-registry";
+import { useSelectionBoundary } from "../tugways/hooks/use-selection-boundary";
 import type { CardStateBag, FormControlSnapshot } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
@@ -350,6 +351,25 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     },
   });
 
+  // Selection boundary is the card-host div itself. Registering here (not
+  // on the pane's content div) gives `selectionGuard` one entry per card,
+  // even when multiple cards share one pane's content element (tab-group
+  // panes). [L12].
+  const cardRootRef = useRef<HTMLDivElement | null>(null);
+  useSelectionBoundary(cardId, cardRootRef);
+
+  // Compose the card-root ref with `responderRef` (a callback ref the
+  // responder chain uses for DOM anchoring). A stable useCallback keeps
+  // React from firing the callback with `null` then the element on every
+  // render. L07.
+  const setCardRootEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      cardRootRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
+
   // ---- Render ----
   if (!registration) {
     return null;
@@ -361,7 +381,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   return (
     <CardPortal hostStackId={hostStackId}>
       <div
-        ref={responderRef}
+        ref={setCardRootEl}
         data-card-host
         data-card-id={cardId}
         style={{

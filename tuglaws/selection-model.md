@@ -145,7 +145,7 @@ On card switch (`activateCard`):
 
 ### Registration
 
-Cards register via `useSelectionBoundary(cardId, contentRef)` → `selectionGuard.registerBoundary(cardId, element)` in `useLayoutEffect`. The boundary element is `.tug-pane-chrome-content`.
+Cards register via `useSelectionBoundary(cardId, cardRootRef)` → `selectionGuard.registerBoundary(cardId, element)` in `useLayoutEffect`. The boundary element is the `[data-card-host][data-card-id]` div rendered by `CardHost`, one per card. A multi-card pane therefore has one boundary entry per card, not one per pane.
 
 ### Save/Restore for Tab Switches
 
@@ -195,5 +195,5 @@ ResponderChainProvider installs several document-level listeners beyond Selectio
 | `use-copyable-text.tsx` | Hook for copyable components (right-click → Copy) |
 | `tug-pane.css` | `::selection` token rules, `::highlight(inactive-selection)`, `data-tug-select` attribute CSS |
 | `globals.css` | `user-select: none` baseline on body |
-| `tug-pane.tsx` | Calls `useSelectionBoundary`, `saveSelection`, `restoreSelection` |
+| `card-host.tsx` | Calls `useSelectionBoundary(cardId, cardRootRef)` on the card-host div |
 | `tug-label.tsx` | First consumer of `useCopyableText` (via `copyable` prop) |
