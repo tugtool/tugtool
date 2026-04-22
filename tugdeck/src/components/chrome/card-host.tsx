@@ -26,6 +26,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyn
 import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
+import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
 import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
@@ -34,10 +35,7 @@ import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { selectionGuard } from "../tugways/selection-guard";
 import type { SavedSelection } from "../tugways/selection-guard";
-import { getRegistration, presentWorkspaceKey } from "../../card-registry";
-import { FeedStore, type FeedStoreFilter } from "../../lib/feed-store";
-import { getConnection } from "../../lib/connection-singleton";
-import { useCardWorkspaceKey } from "../tugways/hooks/use-card-workspace-key";
+import { getRegistration } from "../../card-registry";
 import type { CardStateBag } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
@@ -248,47 +246,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
   // ---- Feed store (per componentId's feedIds, filtered by workspace) ----
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
-  const workspaceKey = useCardWorkspaceKey(hostStackId);
-  const workspaceFilter: FeedStoreFilter = useMemo(
-    () =>
-      workspaceKey
-        ? (_feedId, decoded) =>
-            typeof decoded === "object" &&
-            decoded !== null &&
-            "workspace_key" in decoded &&
-            (decoded as { workspace_key: unknown }).workspace_key === workspaceKey
-        : presentWorkspaceKey,
-    [workspaceKey],
-  );
-
-  const feedStoreRef = useRef<FeedStore | null>(null);
-  if (feedStoreRef.current === null && feedIds.length > 0) {
-    const conn = getConnection();
-    if (conn !== null) {
-      feedStoreRef.current = new FeedStore(conn, feedIds, undefined, workspaceFilter);
-    }
-  }
-
-  useEffect(() => {
-    feedStoreRef.current?.setFilter(workspaceFilter);
-  }, [workspaceFilter]);
-
-  const noopSubscribe = useRef((_listener: () => void) => () => {}).current;
-  const emptyMapRef = useRef(new Map<number, unknown>());
-  const emptySnapshot = useRef(() => emptyMapRef.current).current;
-
-  const feedData = useSyncExternalStore(
-    feedStoreRef.current?.subscribe ?? noopSubscribe,
-    feedStoreRef.current?.getSnapshot ?? emptySnapshot,
-  );
-
-  useEffect(() => {
-    return () => {
-      feedStoreRef.current?.dispose();
-      feedStoreRef.current = null;
-    };
-  }, []);
-
+  const feedData = useCardFeedStore(hostStackId, feedIds);
   const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
   // ---- Card-level responder (handles setProperty routed by cardId) ----

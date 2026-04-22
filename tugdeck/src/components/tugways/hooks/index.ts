@@ -57,3 +57,4 @@ export { usePropertyStore, CardPropertyContext } from "./use-property-store";
 export type { UsePropertyStoreOptions, PropertyStoreRegistrar } from "./use-property-store";
 export { useCardPropertyStore } from "./use-card-property-store";
 export type { UseCardPropertyStoreResult } from "./use-card-property-store";
+export { useCardFeedStore } from "./use-card-feed-store";
