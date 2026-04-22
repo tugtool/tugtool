@@ -155,19 +155,392 @@ These are the concrete findings that invalidate the previous plan and must shape
 
 ### Design decisions {#design-decisions}
 
-*To be written. Every decision below must cite row(s) from Tables A/B/C above.*
+Every decision below cites (a) the audit row(s) it rests on, (b) the tuglaws it upholds, and (c) the collision(s) from [#audit-collisions](#audit-collisions) it resolves. Decisions labeled **DECIDED** are locked; those labeled **PROPOSED** are the author's recommendation pending user sign-off.
+
+#### [D01] Persistence is a **data representation**, not a runtime service (DECIDED) {#d01-data-not-service}
+
+**Decision:** There is no "selection manager" object with `capture()` / `apply()` methods that owns cross-component apply logic. Persistence is a *schema* — a versioned bag shape stored per card — plus per-component adapters that serialize into and out of the schema. Each component that owns state (tide-card engine, `TugInput`, `TugTextarea`, `tug-markdown-view`) implements its own apply logic against its own DOM, because each component already knows how to apply its own state correctly.
+
+**Cites:** [Table A](#audit-table-a) rows on contentEditable selection (dual-owned), form-control selection (card-host DOM-authority), engine `captureState/restoreState`; [Collision #1](#audit-collisions) (dual ownership); [Collision #7](#audit-collisions) (three independent restore paths).
+
+**Upholds:** [L10] one responsibility per layer — each component owns its own apply logic. [L11] responders own the state actions mutate — components that own selection are responders for `cut`/`copy`/`selectAll`/etc.; those same components own restore. [L23] diff-and-mutate minimally — a centralized keeper re-applying selections across components is a "save and restore" pattern; per-component ownership lets each component diff-and-patch its own DOM.
+
+**Rationale:** The previous plan's `SelectionKeeper` tried to own both the data and the apply logic. That put one module in the business of calling `setBaseAndExtent` into DOM trees owned by other modules, which silently conflicted with those modules' own restore logic (tide's engine). Separating **what to remember** (shared schema) from **how to reapply** (component-internal) eliminates the conflict by design.
+
+**Implications:** The bag shape is exported from `layout-tree.ts` as a type only. Components import the type, implement `adapter.capture(boundary): PartOfBag` and `adapter.apply(boundary, PartOfBag): void` as local helpers, and wire those into their own existing mount/unmount/lifecycle plumbing. No central keeper module, no central apply method, no cross-component DOM writes.
+
+---
+
+#### [D02] Per-card bag schema carries five axes (PROPOSED) {#d02-bag-schema}
+
+**Decision:** `CardStateBag` carries these axes, each independent:
+
+| Axis | Type sketch | Owner at apply time |
+|---|---|---|
+| `scroll` | `{ x: number; y: number }` | Card-host — `hostContentEl.scrollLeft/Top` |
+| `content` | `unknown` — opaque per-card payload | Card's content factory, via `useCardPersistence.onRestore` |
+| `formControls` | `Record<persistKey, { value, selectionStart?, selectionEnd?, selectionDirection?, scrollTop?, scrollLeft? }>` | Card-host walk (`applyDomInputSnapshot` equivalent) — existing `domInputs` path, renamed |
+| `domSelection` | `{ anchorPath: number[], anchorOffset, focusPath: number[], focusOffset } \| null` | Component that owns the contentEditable it anchors into; card-host passes it through to the owner via a new callback |
+| `focus` | `{ kind: "none" } \| { kind: "form-control", persistKey: string } \| { kind: "dom", focusKey: string } \| { kind: "component-owned" }` | Card-host for keyed form-controls / focus-key elements; owning component for `component-owned` |
+
+Every axis is optional on the bag — `scroll` without `formControls` is valid, etc.
+
+**Cites:** [Table A](#audit-table-a) rows on each concept; [Collision #4](#audit-collisions) (focus not persisted at element level); [Collision #10](#audit-collisions) (asymmetric save/restore scope — a uniform schema covers all cards equally).
+
+**Upholds:** [L23] user-visible state (scroll, selection, focus, content) is named explicitly in the schema. [L24] the schema is data-zone (semantic, read by non-rendering code for persistence); appearance-zone paint is separate (see [D04]).
+
+**Rationale:** Paths rooted at the **card** boundary, not pane, so that cross-pane moves don't break path validity (the card's internal DOM travels with the card via `CardPortal`). `focus.kind === "component-owned"` is the marker for cards whose content-factory manages its own focus + selection together (tide-card → engine); restoring focus for those cards is the content factory's job, not card-host's.
+
+**Implications:** Bag version bumps from v1 (flat `selection?: SavedSelection | null`) to v2. Migration on read is one function in `settings-api.ts` that wraps v1 selection into `domSelection` under the new shape and leaves everything else blank. v1 bags without selection migrate trivially.
+
+**Open question — see [Q01](#q01-v1-migration-scope).**
+
+---
+
+#### [D03] Card-level selection boundary registration (DECIDED) {#d03-card-level-boundary}
+
+**Decision:** `useSelectionBoundary` is called with the card's `cardId` and its `[data-card-host][data-card-id]` element as the boundary, not with the pane id and the pane content element. `selectionGuard.boundaries` becomes keyed by card id. Where multiple cards exist inside one pane (tabs), each card registers its own boundary; only the active card's boundary matters at any one time for clipping, but the registry holds them all.
+
+**Cites:** [Table A](#audit-table-a) (pane-level `bag.selection` keyed by card id — an existing mismatch); [Collision #2](#audit-collisions) pane-level vs card-level mismatch; [Collision #6](#audit-collisions) `saveSelection(paneId)` writing to `bag.selection` keyed by cardId.
+
+**Upholds:** [L12] "Every card registers its content area as a selection boundary" (verbatim). `selection-model.md` § SelectionGuard ("operates at the card level only"). The tuglaw and the doc already prescribe this; current code drifted. This is restoration, not new design.
+
+**Rationale:** The pane-level registration in `tug-pane.tsx:428` is a long-standing drift from the documented design. User's call on boundary layering was to fix that.
+
+**Implications:** `useSelectionBoundary` callsite moves from `tug-pane.tsx` (keyed on pane) to `CardHost` (keyed on card). `useSelectionBoundary`'s `cardId` parameter was already named correctly; only the caller needs to change. Drag-clipping (`handlePointerMove`, `handleSelectionChange`) continues to operate at pane level for geometry but clamps to the active card's boundary — selectionGuard can look up the active card from the deck-state pointer.
+
+---
+
+#### [D04] Two-paint-layer model: `::selection` for one, CSS Custom Highlights for the rest (DECIDED) {#d04-two-paint-layers}
+
+**Decision:** Paint is split in two:
+
+- **Native `::selection`** paints the active selection on exactly one card — the focused card of the focused pane — operating on `window.getSelection()`. This is the browser's single live selection. The user can cut/copy from it, extend it, interact with it. It's unchanged from today.
+- **CSS Custom Highlights** paint every *other* remembered selection as a dim, inactive highlight. Every card that has a known selection and isn't the focused card contributes its `Range` to the custom-highlight set. All such ranges paint simultaneously via one or more `::highlight(...)` CSS rules. The user cannot interact with these — they are appearance-only. They move in and out of the native slot as the user navigates cards.
+
+The existing `inactive-selection` custom highlight in `selection-guard.ts:301` is the seed. Generalizing it from "one deactivated card during app resign" to "every non-focused card with a known selection, always" is the work.
+
+**Cites:** [Table A](#audit-table-a) "CSS inactive-selection highlight"; [Table B](#audit-table-b) app resign/activate cycle; [Collision #8](#audit-collisions) (dim-highlight cycle is already a separate subsystem, just under-used). `selection-model.md` § Card Switch describes the inter-tab version of this mechanism as already-existing architecture.
+
+**Upholds:** [L06] dim-highlight paint is appearance state — goes through CSS and DOM, never React. The `Highlight` object is mutated imperatively; React is not involved. [L22] the paint owner (selection-guard) subscribes directly to the persistence store, writes to the `Highlight` set; no React round-trip. [L24] paint = appearance zone; the Range data itself = data zone.
+
+**Rationale:** The "one browser selection" constraint I previously misstated is only true for `::selection`. The CSS Custom Highlights API holds arbitrary simultaneous ranges. Prior commits already used this for tab-switch visibility; we generalize.
+
+**Implications:**
+- One tier may be sufficient: every non-focused card's selection paints via `inactive-selection`. If we later want to distinguish "inactive-in-active-pane" from "inactive-other-pane" visually, add a second named highlight. Start with one tier and add tiers only if UX demands.
+- Ranges held in the custom highlight become stale if the underlying DOM mutates (innerHTML rewrite, node split, element removal). The owning component is responsible for notifying `selectionGuard` on DOM mutations that invalidate its range. See [D06] for the owner-publishes model and [R01](#r01-stale-ranges) for the risk.
+- Form-control selection **does not paint via custom highlights**. `<input>` / `<textarea>` selections are internal to the form-control shadow tree and aren't addressable by outer-DOM Ranges. Form-control selections remain invisible when unfocused; this is a browser-platform limitation we accept. See [D05] for how we handle the visibility transition.
+
+**Open question — see [Q02](#q02-paint-tiers).**
+
+---
+
+#### [D05] Component-published selection ranges feed the paint owner (PROPOSED) {#d05-component-publish}
+
+**Decision:** Components that own DOM selection (tide's `TugTextEngine`, `tug-markdown-view`, and any future contentEditable owner) publish their current Range to `selectionGuard` via a narrow API:
+
+```
+selectionGuard.updateCardDomSelection(cardId, range | null)
+```
+
+Components call this when their selection changes *and* when their DOM mutates in a way that invalidates a held Range (e.g., engine's `restoreState` rebuilds innerHTML). SelectionGuard keeps a `Map<cardId, Range>` of current published ranges, maintains the custom-highlight set by subtracting whichever cardId currently holds focus, and paints accordingly.
+
+For form-controls (TugInput, TugTextarea), there is no publish step — their `selectionStart/End` live in the DOM and are captured by the card-host walk on save. They don't participate in the inactive-highlight paint (per [D04]).
+
+**Cites:** [Table C](#audit-table-c) engine `setSelectedRange` call sites (many); [Collision #1](#audit-collisions) dual ownership of tide's DOM selection.
+
+**Upholds:** [L10] engine owns selection logic, selectionGuard owns paint; neither reaches into the other's DOM. [L22] selectionGuard subscribes to component-published state and writes to the DOM highlight directly.
+
+**Rationale:** The alternative is to have selectionGuard poll `window.getSelection()` on every focus change, but that only reads the active selection — we need to remember *every* card's last-known selection, including ones whose cards aren't currently focused. Only the component itself knows its selection after a DOM mutation it just performed. A component-publishes model makes the ownership boundary clean.
+
+**Implications:**
+- Engine's public API gains `onSelectionChanged(cb: (range: Range | null) => void)` and tide-card's wiring subscribes to it, relaying to `selectionGuard.updateCardDomSelection(cardId, range)`.
+- `tug-markdown-view` already tracks its own selection for copy operations; wire it similarly.
+- `TugPromptInput` already wraps the engine; becomes the publisher.
+- This is a *net new* contract, so it applies only to contentEditable-backed components. Form-controls don't need it.
+
+**Open question — see [Q03](#q03-publish-frequency).**
+
+---
+
+#### [D06] Save triggers: will-phase lifecycle, close, beforeunload, saveState RPC (PROPOSED) {#d06-save-triggers}
+
+**Decision:** The save callback registered per card fires on every transition that may dissolve or obscure state:
+
+| Trigger | Wiring |
+|---|---|
+| `applicationWillResignActive` | new subscriber in `action-dispatch.ts` → `deckManager.saveAndFlush()`. Replaces the did-phase save for this event. |
+| `applicationWillHide` | same |
+| `applicationDidResignActive` / `applicationDidHide` | backstop only (if will-phase was missed) |
+| `applicationWillUnhide` / `applicationWillBecomeActive` | no save |
+| `window.beforeunload` | existing `DeckManager.handleBeforeUnload` |
+| `document.visibilitychange(hidden)` | existing `DeckManager.handleVisibilityChange` |
+| Swift `saveState` RPC | existing `window.tugdeck.saveState` → `DeckManager.saveAndFlushSync` |
+| Card close | **new** — `DeckManager._removeCard` invokes the save callback before removing. Closes [Collision #9](#audit-collisions). |
+| Tab switch within pane | existing `tug-pane.tsx:439` `performSelectCard` → `invokeSaveCallback(outgoingCardId)` |
+| Cross-pane card move | existing `DeckManager._moveCardToPane:1269` → `invokeSaveCallback(cardId)` |
+| Card detach | existing `DeckManager._detachCard:1175` |
+
+**Cites:** [Table B](#audit-table-b) lifecycle trigger map; [Collision #3](#audit-collisions) will-phase has no save subscribers; [Collision #9](#audit-collisions) card close doesn't flush.
+
+**Upholds:** [L23] user state must be preserved across bookkeeping operations — saving at will-phase, before the browser tears down visibility; saving at close, before the bag is orphaned.
+
+**Rationale:** Will-phase capture is what prior Case γ diagnostics identified as necessary. Close-flush is what tuglaw L23 demands. Both are additive — no existing trigger is removed.
+
+**Implications:**
+- No change to the save callback *shape* — just more subscribers. Each card's `saveCurrentCardStateRef` runs as before; what changes is that the callback is invoked at more moments.
+- Will-phase save + did-phase save can both fire in a given transition. That's fine; saves are idempotent with respect to the bag (we overwrite). The did-phase save becomes a cheap redundancy rather than the primary path.
+
+---
+
+#### [D07] Restore: per-component handoff at mount, paint on store change (PROPOSED) {#d07-restore-handoff}
+
+**Decision:** On card mount, `CardHost` delivers the bag axes to their owners:
+
+1. `bag.scroll` — card-host writes `hostContentEl.scrollLeft/Top` at layout effect time.
+2. `bag.formControls` — card-host walks `[data-tug-persist-value]` and applies via `applyDomInputSnapshot` (existing logic, slightly renamed).
+3. `bag.content` — card-host calls `onRestore(bag.content)` via `useCardPersistence`; content factory (e.g. tide-card) takes it from there.
+4. `bag.domSelection` — card-host passes to the component that *owns* the boundary via a new persistence callback `onRestoreDomSelection(bag.domSelection)`. For tide-card, this callback no-ops: the engine already restored selection via `bag.content`. For generic contentEditable cards (if any), the callback is the restore path.
+5. `bag.focus` — card-host applies after the content factory has had its re-render cycle (post `onContentReady`), gated by [Q02]'s Option B active-card check and by the component having signaled "ready to receive focus" via an explicit callback.
+
+On app-active / card-active transitions, *no restore runs* for cards whose DOM is still mounted (per [D08]). The dim-highlight paint is updated in response to the store's active-card pointer change; ranges move between custom highlights and `window.getSelection()` without any save/restore round trip.
+
+**Cites:** [Table B](#audit-table-b) reload / mount triggers; [Collision #1](#audit-collisions) (handoff replaces dual ownership); [Collision #10](#audit-collisions) (asymmetric save/restore — asymmetric is now correct: save covers all cards, restore on reload-only, paint handles in-app transitions).
+
+**Upholds:** [L10] each axis goes to its owner. [L23] in-app transitions don't destroy state, so no "restore" fires — just a paint update. [L22] paint updates observe the store directly.
+
+**Rationale:** The previous plan's failure mode was restoring cross-component on every transition. With [D08] (cards stay mounted) plus [D04] (two-paint layers), most transitions need no restore at all — just a visibility toggle.
+
+**Implications:**
+- New callback slot in `CardPersistenceCallbacks`: `onRestoreDomSelection?(snapshot: DomSelectionSnapshot | null): void`. Optional — cards whose engine already owns selection leave it undefined.
+- Restore runs only on cold mount (reload / relaunch / first view after construction).
+- Paint updates run on deck-state `activePaneId` / `activeCardId` change — subscribed via the existing `observeCardDidActivate` / store observers.
+
+---
+
+#### [D08] Cards stay mounted across transitions; save/restore is the cold-boot boundary only (DECIDED) {#d08-no-unmount-transitions}
+
+**Decision:** `CardHost`'s existing `display: isActive ? "contents" : "none"` pattern already keeps every card mounted throughout its deck lifetime. We explicitly adopt this as the contract: no card unmounts on tab switch, pane activation, resign/activate, or hide/unhide. DOM nodes, form-control state, React component state, and observer subscriptions are all preserved across every in-app transition.
+
+The only transitions that destroy DOM are:
+- Reload / relaunch (process or page death)
+- Explicit card close
+- Card-host fundamental unmount (rare — component tree collapse)
+
+For those, bag save-and-restore is the only path. For everything else, the DOM *is* the memory; we update paint and don't touch state.
+
+**Cites:** `card-host.tsx:478` `style={{ display: isActive ? "contents" : "none" }}`; [Table B](#audit-table-b) rows for app-resign and tab-switch showing no DOM destruction.
+
+**Upholds:** [L23] directly — this *is* the L23 preservation path. We don't save-and-restore; we don't disturb.
+
+**Rationale:** The strongest form of L23. The more we rely on DOM as memory, the less save/restore code we need, the fewer race conditions, the fewer edge cases. Save/restore becomes the cold-boot boundary, which is where you can't avoid it — and only there.
+
+**Implications:**
+- Tab switch within pane: no save of outgoing card's bag needed (DOM stays). `tug-pane.tsx:439`'s `invokeSaveCallback(outgoingCardId)` becomes a cheap redundancy, safe to keep but not required.
+- Cross-pane move: save before move remains necessary because the card's persistence bag is the authoritative store for the new pane's first render if the move requires any React state bookkeeping. DOM identity preservation via `CardPortal` is a separate mechanism from the bag; keep the pre-move save as belt-and-suspenders.
+- App resign: save is still needed, because the browser may actually exit or reload. Will-phase save catches it.
+
+---
+
+#### [D09] `selectionGuard` becomes the paint authority + boundary registrar; its save/restore API retires (PROPOSED) {#d09-guard-role}
+
+**Decision:** `selectionGuard`'s responsibilities, after this plan:
+
+**Retained:**
+- Card-level boundary registration (`registerBoundary(cardId, element)` keyed by card id per [D03]).
+- Drag-clipping and keyboard-extension clipping at card boundaries (unchanged).
+- Custom-highlight paint of inactive selections via [D04]'s generalization.
+- `updateCardDomSelection(cardId, range | null)` publish endpoint per [D05].
+- App-resign / app-activate CSS dim cycle — now a special case of the general [D04] paint (just a bigger transition).
+
+**Retired:**
+- `saveSelection(cardId)` and `restoreSelection(cardId, saved)` public methods. With per-component apply ([D01]) and no-restore-on-in-app-transition ([D08]), the guard is no longer the save/restore point for any card. These methods either become `@internal` or move into the one remaining consumer (cold-mount restore for generic contentEditable if any; none today).
+
+**Cites:** [Table C](#audit-table-c) selectionGuard call-site inventory; [Collision #1](#audit-collisions), [Collision #7](#audit-collisions).
+
+**Upholds:** [L10] each concern one owner — guard owns paint and boundary, not persistence. [L23] no more destruction-with-recovery path hidden behind `saveSelection`/`restoreSelection`.
+
+**Implications:**
+- Every caller of `selectionGuard.saveSelection` / `restoreSelection` (today: `card-host.tsx:334,289,245`, `action-dispatch.ts:510`) is removed. The bag's `domSelection` axis is populated directly by the owning component's adapter and consumed by the owning component's restore callback.
+- The guard's `inactiveRanges: Map<cardId, Range>` generalizes from "one per lifecycle transition" to "one per non-focused card, always" — this becomes the paint backing store.
+
+---
+
+#### [D10] Focus persistence: card-level and element-level (DECIDED) {#d10-focus-persistence}
+
+**Decision:** The deck layer already persists the active card (`initialFocusedCardId`). We add element-level focus via `bag.focus`:
+
+- On save, `bag.focus` records which element inside the card had focus:
+  - Form-control or focus-keyed element → `{ kind: "form-control" | "dom", persistKey_or_focusKey }`.
+  - Engine-managed contentEditable with focus → `{ kind: "component-owned" }` (the owning component's `bag.content` carries the detailed state).
+  - No interesting focus → `{ kind: "none" }`.
+- On cold-boot restore, card-host applies focus if and only if this card is the active card of the active pane ([Q02] Option B from the previous plan, which stands — the gate is UX-driven, not implementation-driven). Other cards retain `bag.focus` for later use but do not steal focus speculatively.
+- In-app transitions (tab switch, pane activate) do *not* restore focus from the bag — focus is already live in the DOM (per [D08]) because the card never unmounted. The only movement is the user-driven click that triggered the transition; the browser's native focus-change semantics apply.
+
+**Cites:** [Collision #4](#audit-collisions) focus not persisted at element level; [Collision #5](#audit-collisions) form-control selection invisible without focus.
+
+**Upholds:** [L23] element-level focus is user data — the user put the cursor there. We must preserve it.
+
+**Rationale:** User's direct instruction: full element-level focus persistence is non-negotiable. The element-vs-card split keeps the schema simple while covering every real case.
+
+---
+
+#### [D11] DOM-preserving content restore for engine-managed cards (PROPOSED) {#d11-engine-diff-not-rewrite}
+
+**Decision:** `TugTextEngine.restoreState` stops doing `this.root.innerHTML = parts.join("")` unconditionally. Instead:
+
+1. If the engine's current DOM already reflects the target state (content matches), no-op. This is the steady-state skip.
+2. If the engine's current DOM is empty and is receiving its first content, write innerHTML. (This is mount.)
+3. If the engine's current DOM has content that differs from the target, diff-and-patch — mutate only the nodes that changed, leaving unchanged text nodes and their children in place. A minimal implementation can use DOM reconciliation ideas similar to React's, scoped to the flat parts list (text runs + `<br>` + `<img>` atoms).
+
+The immediate L23 win: when an engine restoreState runs at mount with content identical to what's already there (e.g., HMR replay, spurious re-restore), the existing user selection anchors survive because we don't destroy the text nodes. The longer-term win: innerHTML rewrite disappears from the normal edit path.
+
+**Cites:** [Table C](#audit-table-c) innerHTML write sites; [Collision #1](#audit-collisions) engine's rewrite displaces selection anchors.
+
+**Upholds:** [L23] directly — this is the textbook "diff and mutate minimally" pattern the law describes. "Save and restore" (rewrite + setSelectedRange) is replaced with diff-and-patch.
+
+**Rationale:** This is the riskiest/largest single change in the plan because it touches a 30KB engine module's hot path. But it's the only way to make tide-card selection survive non-trivial restore paths without conflicts. It also improves edit-path performance by removing unnecessary DOM churn.
+
+**Implications:**
+- New engine unit tests for idempotent restoreState (same content → no DOM mutation). Existing captureState/restoreState round-trip tests stay.
+- Fallback path (full innerHTML rewrite) stays available for migration scenarios where the diff is too complex or the initial shape differs fundamentally.
+
+**Open question — see [Q04](#q04-engine-diff-scope).**
+
+---
+
+#### [D12] Tugbank bag version bump + read-side migration (PROPOSED) {#d12-bag-migration}
+
+**Decision:** `CardStateBag` gains `version: 2` on new-shape writes; v1 bags (no version, `selection?: SavedSelection | null`) are migrated on read in `settings-api.ts.readCardStates`:
+
+- v1 `bag.selection` shape → wrapped into `bag.domSelection` at v2 (paths were captured pane-rooted in v1; v2 captures card-rooted — but as a one-time migration, v1 paths are carried through as-is and either work or don't on first restore; subsequent saves write v2 correctly).
+- v1 `bag.domInputs` → renamed to `bag.formControls` (shape identical).
+- v1 content stays in `bag.content` unchanged.
+- v1 with no bag fields migrates to empty v2 trivially.
+
+Writes always produce v2.
+
+**Cites:** [Table A](#audit-table-a) current v1 shape.
+
+**Upholds:** [L23] by preserving the best approximation of user state across the migration. Pre-migration bags keep working.
+
+**Implications:**
+- One migration function (~40 lines) in `settings-api.ts`, called from `readCardStates`.
+- Dev-mode log counts migrations per release cycle so we can flip off the migration once all in-flight bags are v2.
 
 ---
 
 ### Open Questions {#open-questions}
 
-*To be populated during the design phase.*
+Every question has a concrete decision the user must make before the execution plan is written. Questions referenced from design decisions as `[Qnn]`.
+
+#### [Q01] Migration scope for v1 `bag.selection` (OPEN) {#q01-v1-migration-scope}
+
+**Question.** v1 stored `bag.selection` as a `SavedSelection` with paths rooted at the **pane** boundary (pre-[D03]). v2 roots paths at the **card** boundary. Do we:
+- (a) Migrate v1 paths verbatim into v2 `domSelection` and accept that they may fail to resolve on first restore, then get rewritten correctly on the next save.
+- (b) Attempt to re-root v1 paths at card boundaries during migration (requires walking paths and finding the card ancestor).
+- (c) Drop v1 `bag.selection` entirely and accept one-time loss for pre-migration bags.
+
+**Recommendation:** (a). The first restore may be imperfect for a small fraction of bags; the next save fixes it. (b) is brittle; (c) is user-hostile for no gain.
+
+**Resolution gate:** Before the execution plan is written.
+
+#### [Q02] Paint tier count for inactive highlights (OPEN) {#q02-paint-tiers}
+
+**Question.** Do we paint all non-focused cards' remembered selections at one dim level, or do we distinguish "inactive-in-active-pane" (card is in the active pane but not the active card) from "inactive-in-inactive-pane" (card is in a non-active pane)?
+
+**Recommendation:** Start with one tier (the existing `inactive-selection` highlight), evaluate UX, add a second tier only if users complain the current behavior is ambiguous.
+
+**Resolution gate:** Before the execution plan is written; revisitable post-ship.
+
+#### [Q03] Component publish frequency for DOM-selection ranges (OPEN) {#q03-publish-frequency}
+
+**Question.** How often should a component publish its current Range to `selectionGuard.updateCardDomSelection`?
+- (a) On every `selectionchange` (fine-grained, most expensive, always-correct).
+- (b) On focus-leave + DOM mutation (coarse, cheaper, only when the range would become "remembered").
+- (c) Lazy — publish only when asked (selectionGuard queries on deactivate).
+
+**Recommendation:** (b) — publish on focus-out and on DOM mutation that invalidates the existing Range. The `selectionchange` event fires on every caret move; we don't need to re-publish just because the user arrow-keyed.
+
+**Resolution gate:** Before the execution plan is written.
+
+#### [Q04] Engine diff-restore scope (OPEN) {#q04-engine-diff-scope}
+
+**Question.** How thorough should [D11]'s diff-restore in the engine be?
+- (a) "Content-identical fast path" only — skip the innerHTML rewrite if the captured state matches what the engine already has in its DOM; otherwise full rewrite.
+- (b) True flat-parts diff — compare the new `parts.join("")` against the current DOM and mutate only the differences.
+- (c) Full DOM reconciliation over the flat parts list (React-like keyed diff).
+
+**Recommendation:** Ship (a) in this plan; flag (b) and (c) as follow-ons. (a) covers the common "spurious restore" case (content didn't change, don't destroy selection) with minimal risk. (b) covers the edit-time scenario but is a larger engine change. (c) is overkill for a flat part list.
+
+**Resolution gate:** Before the execution plan is written.
+
+#### [Q05] Close-flush timing: before or after destroy lifecycle event (OPEN) {#q05-close-flush-timing}
+
+**Question.** `DeckManager._removeCard` fires `cardWillBeginDestruction` as part of its commit. Does save-on-close fire before or after the will-begin-destruction notification?
+
+**Recommendation:** Before. If the save callback throws or does async work, we want that complete before subscribers react to destruction (some subscribers may release resources the save callback needs — e.g., an editor engine disposing of its DOM).
+
+**Resolution gate:** Before the execution plan is written.
+
+#### [Q06] Engine's selection publish API placement (OPEN) {#q06-engine-publish-api}
+
+**Question.** Where does the engine expose its "publish current Range" hook?
+- (a) On `TugTextEngine` directly — `engine.onSelectionChanged(cb)`.
+- (b) On `TugPromptInput` (the React wrapper) — component-level integration surface.
+- (c) On the `CardPersistenceCallbacks` — card-host pattern extension.
+
+**Recommendation:** (a) for the primary hook (engine is the source), (c) for the wiring glue (engine → `selectionGuard.updateCardDomSelection`). `TugPromptInput` stays thin.
+
+**Resolution gate:** Before the execution plan is written.
 
 ---
 
 ### Risks and mitigations {#risks}
 
-*To be populated during the design phase.*
+#### [R01] Stale `Range` objects held in custom highlights (MED) {#r01-stale-ranges}
+
+- **Risk:** A `Range` held in `selectionGuard.inactiveRanges` becomes invalid when the DOM it anchors into is mutated (engine innerHTML rewrite, React re-render that replaces nodes). Paint becomes nonsense or throws on access.
+- **Mitigation:** Components that mutate their DOM must call `selectionGuard.updateCardDomSelection(cardId, newRange | null)` after every such mutation. [D05] / [Q03] formalize this. [D11]'s diff-instead-of-rewrite engine path reduces how often this is needed.
+- **Residual:** Components that mutate DOM without publishing will silently produce stale highlights. Detect via a sanity check on every access: if the Range's containers are no longer in the document, drop it from the highlight and clear from `inactiveRanges`. A dev-mode warning logs the offending cardId.
+
+#### [R02] IME composition in-flight during will-phase capture (MED) {#r02-ime-composition}
+
+- **Risk:** On `applicationWillResignActive`, the user may be mid-IME-composition (CJK input). `selectionStart/End` during composition reads buffer offsets that may not map back after activation.
+- **Mitigation:** Save handlers that read `selectionStart/End` check `document.activeElement` for an active composition via `isComposing` on tracked CompositionEvent state. If composition is active, defer the save until `compositionend`. The will-phase event itself still fires and dim paint updates; only the precise offsets wait.
+- **Residual:** Process-exit before `compositionend` loses in-flight composition. Browser-platform limit; can't be fully eliminated.
+
+#### [R03] WebKit programmatic-selection degradation on repeated apply (MED) {#r03-programmatic-selection}
+
+- **Risk:** If a component repeatedly calls `setSelectionRange` / `setBaseAndExtent` on the same element across multiple transitions, WebKit may silently degrade the selection (the "Case γ" pattern from the previous plan).
+- **Mitigation:** [D08] + [D07] together eliminate most programmatic re-applies in steady state. Components that restore selection (engine at mount, card-host at reload mount) apply once per mount. Skip-if-already-correct checks inside [D11]'s diff path avoid re-apply when state already matches.
+- **Residual:** Reload still programmaticizes on restore. That's unavoidable — the DOM is new.
+
+#### [R04] CSS Custom Highlights API browser support (LOW) {#r04-highlights-support}
+
+- **Risk:** CSS Custom Highlights API shipped in WebKit 17.4 (March 2024) and Firefox 140 (July 2025). Older environments paint nothing.
+- **Mitigation:** Target is Tug.app (WKWebView on macOS) + modern browsers. Tug.app's WKWebView version is tied to the host OS; WebKit 17.4 requires macOS 14.4+. Confirm minimum supported macOS before committing.
+- **Residual:** A user on macOS 14.3 or earlier sees no dim highlights, but the underlying selection data is still saved and restored correctly — it just doesn't paint on inactive cards. Graceful degradation.
+
+**Open for user confirmation:** What is tugdeck's minimum supported environment?
+
+#### [R05] Engine diff-restore regression surface (HIGH) {#r05-engine-diff-regression}
+
+- **Risk:** [D11]'s engine restoreState diff change is a large behavior change in a hot path. Regression candidates: edit undo, content restore at mount, IME composition, cursor placement after restore.
+- **Mitigation:** Start with Option (a) (content-identical skip only). Extensive engine unit test coverage before shipping. The full (b) / (c) diff is explicitly deferred to a follow-on plan.
+- **Residual:** Unknown until we try. This is the riskiest single change; it gets its own Step with a full regression test matrix.
+
+#### [R06] `_removeCard` save callback may throw (LOW) {#r06-close-throw}
+
+- **Risk:** Save-on-close invokes the card's save callback, which may throw (e.g., serialization failure). Does destruction proceed?
+- **Mitigation:** Wrap the close-save in try/catch; log in dev mode; proceed with destruction regardless. Losing save on close is a worse failure than continuing; at least the deck state stays consistent.
+- **Residual:** A user closes a card whose save throws, and they don't know the bag didn't persist. Accept.
+
+#### [R07] Focus restore at reload interrupts user typing (LOW) {#r07-focus-steal-on-reload}
+
+- **Risk:** After reload, `CardHost` restores focus to the element that had focus at save time. If the user is already typing in a different element by the time restore fires, we steal focus.
+- **Mitigation:** [Q02] Option B (from the previous plan, retained) — restore focus only when this card is the active card of the active pane at mount. Even then, check if focus is already somewhere inside the card; if yes, don't move it.
+- **Residual:** Cold-boot race between user and restore. Rare; acceptable.
 
 ---
 
