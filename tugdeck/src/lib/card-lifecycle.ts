@@ -149,7 +149,7 @@ export class CardLifecycle {
    * Promote `cardId` as the responder chain's key card. No-op when no
    * manager is attached, or when `cardId` is already the key card.
    *
-   * Carved out of `activateCard` so `DeckManager._setFirstResponder` can
+   * Carved out of `activateCard` so `DeckManager._flipFirstResponder` can
    * promote the responder chain as part of the composite-bit commit
    * without double-firing the will/did lifecycle events.
    */

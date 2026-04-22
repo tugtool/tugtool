@@ -180,13 +180,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   // TugPane's pointerdown fires with a window id. Resolve the window's
   // current `activeCardId` and route through `activateCard` — under the
-  // 11.6.1b composite-bit model `_setFirstResponder` handles z-order
-  // bumping, `activePaneId` commit, focused-card persistence, and
-  // lifecycle events atomically. A preceding `focusCard(cardId)` would
-  // pre-mutate `activePaneId`, making `_setFirstResponder` see a
-  // same-bit call and short-circuit the will/didActivate events —
-  // breaking prompt focus when clicking back to a previously-active
-  // card.
+  // composite-bit model `_flipFirstResponder` handles z-order bumping,
+  // `activePaneId` commit, focused-card persistence, and lifecycle
+  // events atomically. A preceding `focusCard(cardId)` would
+  // pre-mutate `activePaneId`, making the helper see a same-bit call
+  // and short-circuit the will/didActivate events — breaking prompt
+  // focus when clicking back to a previously-active card.
   const handleStackActivate = useCallback(
     (paneId: string) => {
       const pane = store.getSnapshot().panes.find((s) => s.id === paneId);
@@ -347,7 +346,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     );
     if (!cardExists) return;
 
-    // On mount, route through `activateCard` — `_setFirstResponder`
+    // On mount, route through `activateCard` — `_flipFirstResponder`
     // treats the layout blob's `activePaneId` as the pre-existing
     // composite bit and delivers initial-sync to late-mounting
     // lifecycle subscribers via `observeCardDidActivate`'s

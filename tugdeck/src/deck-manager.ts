@@ -256,7 +256,14 @@ export class DeckManager implements IDeckManagerStore {
   // ---- CardLifecycle pass-throughs ----
 
   public activateCard = (cardId: string): void => {
-    this._setFirstResponder(cardId);
+    this._flipFirstResponder(cardId, () =>
+      this._commitStandardFirstResponderFlip(cardId),
+    );
+    // Same-bit refresh: re-clicking the already-active card re-syncs
+    // the responder chain against any drift. The flip helper skips
+    // setResponderChainKey in the same-bit branch, so call it here.
+    // Idempotent when the responder chain's key card is already cardId.
+    this.cardLifecycle.setResponderChainKey(cardId);
   };
 
   /**
@@ -511,14 +518,12 @@ export class DeckManager implements IDeckManagerStore {
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
     };
 
-    const oldFR = this.getFirstResponderCardId();
-    const newFR = firstCardId;
-
-    // Single-commit flip (transition 4): `oldFR` is snapshotted before
-    // the mutation, so `_flipFirstResponder` fires the correct deactivate
-    // pair even though the commit puts `activePaneId = paneId` (which
-    // would make a state-derived `oldFR` read return `firstCardId`).
-    this._flipFirstResponder(oldFR, newFR, () => {
+    // Single-commit flip (transition 4). `_flipFirstResponder` reads
+    // `oldFR` internally BEFORE running the commit, so it fires the
+    // correct deactivate pair even though the commit puts
+    // `activePaneId = paneId` (which would make a post-commit
+    // state-derived read return `firstCardId`).
+    this._flipFirstResponder(firstCardId, () => {
       this.deckState = {
         ...this.deckState,
         cards: [...this.deckState.cards, ...seededCards],
@@ -539,25 +544,25 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Close a stack by id.
    *
-   * Plan 11.6.1b ordering: if the closing stack contains the first
-   * responder, flip the composite bit to the new top-of-deck's active
-   * card (or `null` when the deck becomes empty) BEFORE firing
-   * `cardWillBeginDestruction`. Then fire destruction for every card in
-   * the closed stack, mutate to remove the stack and its cards, and
-   * notify.
+   * Ordering: if the closing stack contains the first responder, flip
+   * the composite bit to the new top-of-deck's active card (or `null`
+   * when the deck becomes empty) BEFORE firing
+   * `cardWillBeginDestruction`. Then fire destruction for every card
+   * in the closed stack, mutate to remove the stack and its cards,
+   * and notify.
    */
   _closePane(paneId: string): void {
     const win = this.deckState.panes.find((s) => s.id === paneId);
     if (!win) return;
 
-    const oldFR = this.getFirstResponderCardId();
+    const currentFR = this.getFirstResponderCardId();
     const closedContainsOldFR =
-      oldFR !== null && win.cardIds.includes(oldFR);
+      currentFR !== null && win.cardIds.includes(currentFR);
 
     // Phase 1: flip the first responder to the new top-of-deck BEFORE
     // the destruction events. The closed stack is still in state at
-    // this point — `_flipFirstResponder`'s commit just moves
-    // `activePaneId` off the closing stack.
+    // this point — the commit just moves `activePaneId` off the
+    // closing stack.
     if (closedContainsOldFR) {
       const remainingStacks = this.deckState.panes.filter(
         (s) => s.id !== paneId,
@@ -568,7 +573,7 @@ export class DeckManager implements IDeckManagerStore {
           : null;
       const newFR = newTopStack?.activeCardId ?? null;
       const newActivePaneId = newTopStack?.id;
-      this._flipFirstResponder(oldFR, newFR, () => {
+      this._flipFirstResponder(newFR, () => {
         this.deckState = {
           ...this.deckState,
           ...(newActivePaneId !== undefined
@@ -597,120 +602,38 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Flip the composite first-responder bit to `newFR`. The central
-   * entry point for first-responder transitions. Handles:
+   * Flip the composite first-responder bit to `newFR`, running the
+   * caller's `commit` between the will and did phases. The central
+   * entry point for first-responder transitions.
    *
-   *   - Old-FR lookup via `getFirstResponderCardId()` (reads the
-   *     composite bit from current state).
-   *   - Same-bit refresh (no events) when `oldFR === newFR`: still
-   *     bumps z-order, refreshes the persisted focused-card pointer,
-   *     and re-syncs the responder chain in case it drifted.
-   *   - Full flip: fires `cardWillDeactivate(oldFR)` → `cardWillActivate(newFR)`
-   *     → commits the state mutation (z-order + `activePaneId` +
-   *     target pane's `activeCardId` + persisted pointer) → `notify()`
-   *     → promotes the responder chain → `cardDidDeactivate(oldFR)` →
-   *     `cardDidActivate(newFR)`.
-   *
-   * Piece 1 callers: public `activateCard`, `_closePane`. Piece 2
-   * routes every other mutator that can flip the bit through this
-   * method.
-   */
-  private _setFirstResponder(newFR: string | null): void {
-    const oldFR = this.getFirstResponderCardId();
-
-    if (oldFR === newFR) {
-      if (newFR !== null) {
-        // Same-bit refresh: still bump z-order + persist + re-key
-        // the responder chain so callers can force a refresh when
-        // state has drifted (e.g., post-reload focus restoration).
-        this.focusCard(newFR);
-        this.cardLifecycle.setResponderChainKey(newFR);
-      }
-      return;
-    }
-
-    // Will phase — fires BEFORE any state mutation.
-    if (oldFR !== null) this.cardLifecycle.notifyCardWillDeactivate(oldFR);
-    if (newFR !== null) this.cardLifecycle.notifyCardWillActivate(newFR);
-
-    // Commit state mutation.
-    if (newFR === null) {
-      // Deactivate to null: clear activePaneId without touching z-order
-      // or individual panes' activeCardId fields.
-      this.deckState = { ...this.deckState, activePaneId: undefined };
-      this.notify();
-      this.scheduleSave();
-    } else {
-      // Bump host pane to the end of the panes array (z-order top),
-      // set activePaneId to the host, set host's activeCardId = newFR,
-      // and persist the focused-card pointer. One commit, one notify.
-      const stacks = this.deckState.panes;
-      const hostIdx = stacks.findIndex((s) => s.cardIds.includes(newFR));
-      if (hostIdx === -1) {
-        // newFR has no host stack (shouldn't happen in practice).
-        // Bail without mutating; will/did deactivate already fired
-        // for oldFR, but no activation fires for a non-existent card.
-        return;
-      }
-      const hostStack = stacks[hostIdx];
-      const updatedHost: TugPaneState =
-        hostStack.activeCardId === newFR
-          ? hostStack
-          : { ...hostStack, activeCardId: newFR };
-
-      let newStacks: readonly TugPaneState[];
-      const isAtEnd = hostIdx === stacks.length - 1;
-      if (isAtEnd && updatedHost === hostStack) {
-        newStacks = stacks;
-      } else if (isAtEnd) {
-        newStacks = stacks.map((s, i) => (i === hostIdx ? updatedHost : s));
-      } else {
-        const reordered = [...stacks];
-        reordered.splice(hostIdx, 1);
-        reordered.push(updatedHost);
-        newStacks = reordered;
-      }
-
-      this.deckState = {
-        ...this.deckState,
-        panes: newStacks,
-        activePaneId: updatedHost.id,
-      };
-      putFocusedCardId(newFR);
-      this.notify();
-      this.scheduleSave();
-
-      this.cardLifecycle.setResponderChainKey(newFR);
-    }
-
-    // Did phase — observers read post-mutation state.
-    if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
-    if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
-  }
-
-  /**
-   * Flip the composite first-responder bit from a caller-provided `oldFR`
-   * to `newFR`, running the caller's `commit` in between. The caller is
-   * responsible for all state mutation inside `commit` (including the
-   * changes that take the composite bit from `oldFR` to `newFR`) and for
-   * calling `notify()`/`scheduleSave()`.
-   *
-   * Use this helper instead of `_setFirstResponder` when the mutator
-   * already has composite-bit mutations tangled up with non-composite-bit
-   * mutations (adding/removing cards, reordering stacks) — passing
-   * `oldFR` explicitly lets the helper avoid reading the composite bit
-   * from state that has been partially mutated.
+   * The helper snapshots `oldFR` internally — from
+   * `getFirstResponderCardId()` at entry, before any caller code
+   * runs. Callers should NOT pre-mutate state that affects the
+   * composite bit before calling this method; do all such mutations
+   * inside `commit`.
    *
    * Ordering:
-   *   will-phase → commit → responder-chain promotion → did-phase.
-   * Same-bit (`oldFR === newFR`) runs `commit` with no lifecycle events
-   * and no responder-chain re-promotion.
+   *   - `oldFR === newFR`: run `commit` only. No lifecycle events,
+   *     no responder-chain promotion. Callers that want a same-bit
+   *     refresh (e.g. re-clicking the already-active card to re-sync
+   *     a drifted responder chain) should call
+   *     `cardLifecycle.setResponderChainKey(newFR)` themselves after
+   *     this method returns.
+   *   - `oldFR !== newFR`: `cardWillDeactivate(oldFR)` →
+   *     `cardWillActivate(newFR)` → `commit` →
+   *     `setResponderChainKey(newFR)` → `cardDidDeactivate(oldFR)` →
+   *     `cardDidActivate(newFR)`.
+   *
+   * `commit` owns the state mutation, `notify()`, and `scheduleSave()`
+   * (and any persistence side-effects specific to the caller, e.g.
+   * `putFocusedCardId`). For the standard promote-a-card-to-FR
+   * commit, use `_commitStandardFirstResponderFlip(newFR)`.
    */
   private _flipFirstResponder(
-    oldFR: string | null,
     newFR: string | null,
     commit: () => void,
   ): void {
+    const oldFR = this.getFirstResponderCardId();
     if (oldFR === newFR) {
       commit();
       return;
@@ -721,6 +644,65 @@ export class DeckManager implements IDeckManagerStore {
     if (newFR !== null) this.cardLifecycle.setResponderChainKey(newFR);
     if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
     if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
+  }
+
+  /**
+   * Standard commit body for a first-responder flip: bump `newFR`'s
+   * host pane to z-top, set `activePaneId` and the host's
+   * `activeCardId = newFR`, persist the focused-card pointer, then
+   * notify and schedule a save. No-op on the composite bit when
+   * `newFR === null` (clears `activePaneId` without touching
+   * z-order or individual pane `activeCardId` fields, and does not
+   * persist a focused card).
+   *
+   * Designed to be passed as the `commit` closure to
+   * `_flipFirstResponder`. Use for promote-to-active transitions
+   * where the caller has no other state mutation to bundle.
+   */
+  private _commitStandardFirstResponderFlip(newFR: string | null): void {
+    if (newFR === null) {
+      this.deckState = { ...this.deckState, activePaneId: undefined };
+      this.notify();
+      this.scheduleSave();
+      return;
+    }
+    const stacks = this.deckState.panes;
+    const hostIdx = stacks.findIndex((s) => s.cardIds.includes(newFR));
+    if (hostIdx === -1) {
+      // newFR has no host pane (shouldn't happen in practice). The
+      // helper that wraps this commit has already fired
+      // cardWillActivate(newFR); returning without mutation leaves
+      // the did-phase to run (old behavior preserved) but the
+      // composite bit is unchanged.
+      return;
+    }
+    const hostStack = stacks[hostIdx];
+    const updatedHost: TugPaneState =
+      hostStack.activeCardId === newFR
+        ? hostStack
+        : { ...hostStack, activeCardId: newFR };
+
+    let newStacks: readonly TugPaneState[];
+    const isAtEnd = hostIdx === stacks.length - 1;
+    if (isAtEnd && updatedHost === hostStack) {
+      newStacks = stacks;
+    } else if (isAtEnd) {
+      newStacks = stacks.map((s, i) => (i === hostIdx ? updatedHost : s));
+    } else {
+      const reordered = [...stacks];
+      reordered.splice(hostIdx, 1);
+      reordered.push(updatedHost);
+      newStacks = reordered;
+    }
+
+    this.deckState = {
+      ...this.deckState,
+      panes: newStacks,
+      activePaneId: updatedHost.id,
+    };
+    putFocusedCardId(newFR);
+    this.notify();
+    this.scheduleSave();
   }
 
   /**
@@ -993,10 +975,11 @@ export class DeckManager implements IDeckManagerStore {
     };
 
     const isActiveStack = paneId === this.deckState.activePaneId;
-    const oldFR = this.getFirstResponderCardId();
     // Post-mutation the stack's `activeCardId` is always `cardId`; the
     // composite bit only flips when the stack is the deck's active stack.
-    const newFR = isActiveStack ? cardId : oldFR;
+    // For the inactive-stack case pass the current FR so the helper
+    // recognizes same-bit (no lifecycle events).
+    const newFR = isActiveStack ? cardId : this.getFirstResponderCardId();
 
     const updatedStack: TugPaneState = {
       ...win,
@@ -1004,12 +987,10 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: cardId,
     };
 
-    // Single-commit flip. For the inactive-stack case (transition 5b),
-    // `oldFR === newFR`, so `_flipFirstResponder` runs commit only — no
-    // lifecycle events. Construction fires inside commit so it lands
+    // Single-commit flip. Construction fires inside commit so it lands
     // between the will and did phases for transition 5a, and right after
-    // the commit-notify for transition 5b.
-    this._flipFirstResponder(oldFR, newFR, () => {
+    // the commit-notify for transition 5b (inactive-stack, same-bit).
+    this._flipFirstResponder(newFR, () => {
       this.deckState = {
         ...this.deckState,
         cards: [...this.deckState.cards, newCard],
@@ -1031,9 +1012,9 @@ export class DeckManager implements IDeckManagerStore {
    * `_closePane`. Otherwise removes the card from `deckState.cards` and
    * from the stack's `cardIds`, reassigning `activeCardId` if needed.
    *
-   * Plan 11.6.1b transition 8a: when the removed card is the first
-   * responder, flip the composite bit to the neighbor (via
-   * `_flipFirstResponder`) BEFORE firing `cardWillBeginDestruction`.
+   * Transition 8a: when the removed card is the first responder, flip
+   * the composite bit to the neighbor BEFORE firing
+   * `cardWillBeginDestruction`.
    */
   private _removeCard(paneId: string, cardId: string): void {
     const win = this.deckState.panes.find((s) => s.id === paneId);
@@ -1045,18 +1026,17 @@ export class DeckManager implements IDeckManagerStore {
       return;
     }
 
-    const oldFR = this.getFirstResponderCardId();
-    const wasRemovingFR = oldFR === cardId;
+    const wasRemovingFR = this.getFirstResponderCardId() === cardId;
     const spliced = spliceCardFromStack(win, cardId);
     // `cardIds.length > 1` above guarantees a survivor → activeCardId !== null.
     const newActiveCardId = spliced.activeCardId as string;
 
     // Phase 1 (FR-removal only): flip composite bit to the neighbor
-    // BEFORE destruction, per plan. Commit updates `win.activeCardId`
-    // but leaves `cardId` in `win.cardIds` — destruction in phase 2
+    // BEFORE destruction. Commit updates `win.activeCardId` but
+    // leaves `cardId` in `win.cardIds` — destruction in phase 2
     // removes it. Two commits, two notifies.
     if (wasRemovingFR) {
-      this._flipFirstResponder(oldFR, newActiveCardId, () => {
+      this._flipFirstResponder(newActiveCardId, () => {
         const flippedStack: TugPaneState = {
           ...win,
           activeCardId: newActiveCardId,
@@ -1094,10 +1074,11 @@ export class DeckManager implements IDeckManagerStore {
    * Set the active card in a stack. No-op if `cardId` is not in the
    * stack or is already the stack's `activeCardId`.
    *
-   * Plan 11.6.1b transition 2 vs transition-5b's sibling:
+   * Transition 2 vs transition-5b's sibling:
    *   - When `paneId` is the deck's active stack, flipping the stack's
    *     active-in-stack card also flips the composite first-responder
-   *     bit. Route through `_setFirstResponder` so lifecycle events fire.
+   *     bit. Route through `_flipFirstResponder` with the standard
+   *     commit so lifecycle events fire.
    *   - When `paneId` is not the deck's active stack, flip the stack's
    *     active-in-stack card with a raw mutation — no lifecycle events,
    *     no first-responder change.
@@ -1109,7 +1090,12 @@ export class DeckManager implements IDeckManagerStore {
     if (win.activeCardId === cardId) return;
 
     if (paneId === this.deckState.activePaneId) {
-      this._setFirstResponder(cardId);
+      // Reached only when win.activeCardId !== cardId (guarded above),
+      // so the composite bit is guaranteed to change — the helper's
+      // same-bit branch is unreachable from here.
+      this._flipFirstResponder(cardId, () =>
+        this._commitStandardFirstResponderFlip(cardId),
+      );
       return;
     }
 
@@ -1203,29 +1189,24 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: spliced.activeCardId as string,
     };
 
-    const oldFR = this.getFirstResponderCardId();
-
-    // Phase 1: insert the new stack and patch the source, but leave
-    // `activePaneId` unchanged. `_flipFirstResponder` below handles
-    // the composite-bit commit. Card identity is preserved, so no
-    // construction event fires.
-    this.deckState = {
-      ...this.deckState,
-      panes: [
-        ...this.deckState.panes.map((s) =>
-          s.id === paneId ? updatedSourceStack : s,
-        ),
-        newStack,
-      ],
-    };
-    this.notify();
-    this.scheduleSave();
-
-    // Phase 2: flip to `cardId`. Transition 6 (cardId was already FR)
-    // → same-bit, no events. Transition 6b (cardId was not FR) → full
-    // flip. In both cases the commit sets `activePaneId = newPaneId`.
-    this._flipFirstResponder(oldFR, cardId, () => {
-      this.deckState = { ...this.deckState, activePaneId: newPaneId };
+    // Single-commit flip: insert new pane + patch source + move
+    // `activePaneId` to the new pane, all in one notify. The helper
+    // reads `oldFR` before commit, so transition 6 (cardId was
+    // already FR → same-bit, no events) and transition 6b (cardId
+    // was not FR → full flip) are distinguished correctly. Card
+    // identity is preserved across the detach, so no construction
+    // event fires.
+    this._flipFirstResponder(cardId, () => {
+      this.deckState = {
+        ...this.deckState,
+        panes: [
+          ...this.deckState.panes.map((s) =>
+            s.id === paneId ? updatedSourceStack : s,
+          ),
+          newStack,
+        ],
+        activePaneId: newPaneId,
+      };
       this.notify();
       this.scheduleSave();
       putFocusedCardId(cardId);
@@ -1268,7 +1249,6 @@ export class DeckManager implements IDeckManagerStore {
         : this.deckState.activePaneId;
 
     const spliced = spliceCardFromStack(sourceStack, cardId);
-    const oldFR = this.getFirstResponderCardId();
 
     // Determine the composite first-responder bit after the move.
     let newFR: string | null;
@@ -1291,9 +1271,9 @@ export class DeckManager implements IDeckManagerStore {
       newFR = null;
     }
 
-    // Plan 11.6.1b transition 7 / 7b: flip composite bit iff it changes.
-    // Card identity is preserved across the move, so no destruction event.
-    this._flipFirstResponder(oldFR, newFR, () => {
+    // Transition 7 / 7b: flip composite bit iff it changes. Card
+    // identity is preserved across the move, so no destruction event.
+    this._flipFirstResponder(newFR, () => {
       let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
       if (spliced.activeCardId === null) {
         intermediateStacks = intermediateStacks.filter(

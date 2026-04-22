@@ -1000,12 +1000,12 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   // The focus paths route through `entryDelegate.focus()`, which is
   // idempotent if the editor already holds focus and places a caret
   // if the Selection has been cleared (e.g., by the selection guard).
-  // 11.6.1b: `cardDidActivate` / `cardWillDeactivate` are the sole
-  // focus-management path. The construction focus call is dropped —
-  // construction alone does not make a card first responder (it may
-  // mount inside an inactive stack). The follow-on `_setFirstResponder`
-  // fires `cardDidActivate` when the new card actually becomes FR,
-  // which drives focus via the delegate handler below.
+  // `cardDidActivate` / `cardWillDeactivate` are the sole focus-management
+  // path. The construction focus call is dropped — construction alone
+  // does not make a card first responder (it may mount inside an
+  // inactive stack). The follow-on `_flipFirstResponder` fires
+  // `cardDidActivate` when the new card actually becomes FR, which
+  // drives focus via the delegate handler below.
   //
   // `cardDidMove` / `cardDidResize` re-assert focus only when this card
   // is the deck's composite first responder. The pre-11.6.1b guard
