@@ -547,6 +547,13 @@ export class DeckManager implements IDeckManagerStore {
    * `cardWillBeginDestruction`. Then fire destruction for every card
    * in the closed stack, mutate to remove the stack and its cards,
    * and notify.
+   *
+   * Destruction order within the pane: `cardWillBeginDestruction` fires
+   * once per card in the pane's `cardIds` array order — not z-order
+   * within the pane, not active-card-first. Subscribers that care
+   * about relative destruction order between siblings on the same
+   * pane should subscribe per-id rather than relying on the wildcard
+   * channel's sequence.
    */
   _closePane(paneId: string): void {
     const win = this.deckState.panes.find((s) => s.id === paneId);
@@ -1078,7 +1085,11 @@ export class DeckManager implements IDeckManagerStore {
    *     commit so lifecycle events fire.
    *   - When `paneId` is not the deck's active stack, flip the stack's
    *     active-in-stack card with a raw mutation — no lifecycle events,
-   *     no first-responder change.
+   *     no first-responder change. Subscribers that need to react to
+   *     active-in-pane changes on inactive panes must subscribe to
+   *     deck-state notifications directly (`deckManager.subscribe`)
+   *     and diff `pane.activeCardId` themselves; the card-lifecycle
+   *     channel is silent on this path.
    */
   private _setActiveCardInPane(paneId: string, cardId: string): void {
     const win = this.deckState.panes.find((s) => s.id === paneId);

@@ -42,6 +42,22 @@
  *   - When a close happens on the active card, deactivation fires
  *     before destruction, both sync, then the deck removes.
  *
+ * Observer vs delegate — how to choose:
+ *   - `observeCard*(cardId | null, cb)` returns the observer primitive.
+ *     Callbacks run SYNCHRONOUSLY in the notify call stack, before any
+ *     downstream commit. Use this when you need pre-mutation state
+ *     (a `will*` event in a world where the transition hasn't yet
+ *     committed), or when you need ordering with other synchronous
+ *     observers.
+ *   - `useCardDelegate(cardId, delegate)` defers the user callback
+ *     onto the `MessageChannel` drain queue. The callback runs AFTER
+ *     the commit, past WebKit's gesture focus-lock, and independent of
+ *     React's commit scheduling. Use this for React-context-bound
+ *     focus/DOM work that must survive gesture (`entryDelegate.focus()`
+ *     on `cardDidActivate`, `blur()` on `cardWillDeactivate`). The
+ *     `will*` method names describe observer ordering, not delegate
+ *     timing — see the note on `TugCardDelegate` below.
+ *
  * See roadmap/tugplan-tide-card-polish.md §Step 5.5 for the design.
  */
 
@@ -580,17 +596,56 @@ export function useCardLifecycle(): CardLifecycle | null {
  * Ordering on a card switch A → B (per D3 of the lifecycle-delegates
  * plan): `cardAWillDeactivate` → `cardBWillActivate` → (store +
  * responder updates) → `cardADidDeactivate` → `cardBDidActivate`.
+ *
+ * Semantic note on the `will*` methods: these names describe the
+ * ordering of the underlying synchronous observer — the observer
+ * callback on `observeCardWillDeactivate` / `observeCardWillActivate`
+ * runs BEFORE the state commit. The delegate hook, by contrast,
+ * defers the user callback onto the `MessageChannel` drain queue so
+ * it runs on the next macrotask, AFTER the commit has already
+ * landed. Consumers that need pre-mutation semantics (reading
+ * pre-transition state, ordering with other synchronous work)
+ * should subscribe via `observeCard*` directly rather than going
+ * through `useCardDelegate`.
  */
 export interface TugCardDelegate {
   cardDidFinishConstruction?(cardId: string): void;
+  /**
+   * Runs AFTER the state transition has committed. Name describes the
+   * observer's ordering, not the delegate's. Use `observeCardWillActivate`
+   * for pre-mutation state.
+   */
   cardWillActivate?(cardId: string): void;
   cardDidActivate?(cardId: string): void;
+  /**
+   * Runs AFTER the state transition has committed. Name describes the
+   * observer's ordering, not the delegate's. Use `observeCardWillDeactivate`
+   * for pre-mutation state.
+   */
   cardWillDeactivate?(cardId: string): void;
   cardDidDeactivate?(cardId: string): void;
+  /**
+   * Runs AFTER the position/size mutation has committed. Name describes
+   * the observer's ordering, not the delegate's. Use `observeCardWillMove`
+   * for pre-mutation geometry.
+   */
   cardWillMove?(cardId: string): void;
   cardDidMove?(cardId: string): void;
+  /**
+   * Runs AFTER the resize has committed. Name describes the observer's
+   * ordering, not the delegate's. Use `observeCardWillResize` for
+   * pre-mutation size.
+   */
   cardWillResize?(cardId: string): void;
   cardDidResize?(cardId: string): void;
+  /**
+   * Runs AFTER the card has already been removed from the store. By the
+   * time this delegate method fires, `store.cards` no longer contains the
+   * card. Consumers that need to read the card's pre-destruction data
+   * must capture it synchronously via `observeCardWillBeginDestruction`.
+   * Refs owned by the card's own components are unaffected — they're
+   * held by the consumer, not looked up through the store.
+   */
   cardWillBeginDestruction?(cardId: string): void;
 }
 

@@ -258,14 +258,30 @@ export function useAppLifecycle(): AppLifecycle | null {
  *
  * Apple-style: a single object with optional methods, supplied to
  * `useAppDelegate(delegate)`. Missing methods are no-ops.
+ *
+ * Semantic note on the `applicationWill*` methods: the `will*` names
+ * describe the ordering of the underlying synchronous observer — the
+ * callback on `observeApplicationWillResignActive` etc. runs before
+ * any downstream commit. The delegate hook, by contrast, defers the
+ * user callback onto the `MessageChannel` drain queue so it runs on
+ * the next macrotask. Consumers that need pre-transition semantics
+ * should subscribe via `observeApplication*` directly.
  */
 export interface TugAppDelegate {
+  /** Runs after the lifecycle event has been dispatched. Use
+   * `observeApplicationWillBecomeActive` for synchronous pre-event semantics. */
   applicationWillBecomeActive?(): void;
   applicationDidBecomeActive?(): void;
+  /** Runs after the lifecycle event has been dispatched. Use
+   * `observeApplicationWillResignActive` for synchronous pre-event semantics. */
   applicationWillResignActive?(): void;
   applicationDidResignActive?(): void;
+  /** Runs after the lifecycle event has been dispatched. Use
+   * `observeApplicationWillHide` for synchronous pre-event semantics. */
   applicationWillHide?(): void;
   applicationDidHide?(): void;
+  /** Runs after the lifecycle event has been dispatched. Use
+   * `observeApplicationWillUnhide` for synchronous pre-event semantics. */
   applicationWillUnhide?(): void;
   applicationDidUnhide?(): void;
 }

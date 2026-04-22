@@ -6,14 +6,28 @@
  *
  * Why the intermediate slot: `createPortal(children, container)` unmounts
  * children when `container` changes. React treats a different container as
- * a different mount point. To preserve identity across cross-pane moves
- * (the whole point of Step 11.6.1a), the portal's container must be stable.
+ * a different mount point. To preserve identity across cross-pane moves,
+ * the portal's container must be stable.
  *
  * The slot (`display: contents`) adds no layout box; its children render as
  * if they were direct children of whichever host element the slot is
  * currently parented to. Moving the slot with `appendChild` preserves every
  * descendant DOM node and its listeners / focus state. React's portal
  * container (the slot) never changes, so React never unmounts children.
+ *
+ * Mount ordering: on first render, `children` mount into the slot
+ * immediately — but the slot itself is detached from the document tree.
+ * The slot gets parented to the host pane's content element in
+ * `useLayoutEffect` post-commit. In the common case (the host pane has
+ * already registered its content element with `pane-content-registry`
+ * by the time the portal mounts), the attach happens in the same commit,
+ * so children are reachable from `document.body` by the end of the
+ * commit. In the rarer case where the portal mounts before its host
+ * registers (a layout tree where CardPortal races its own TugPane's
+ * `useLayoutEffect`), the slot stays detached until the content-registry
+ * subscriber fires on a later commit. Consumers must not assume
+ * descendants are laid out, measurable, or reachable via `document`
+ * queries on the very first render — wait for a post-commit effect.
  *
  * @module components/chrome/card-portal
  */
