@@ -29,7 +29,8 @@ import type {
   TugTextInputDelegate,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
-import { useCardPersistence } from "@/components/tugways/use-card-persistence";
+import { useCardPersistence, useCardId } from "@/components/tugways/use-card-persistence";
+import { selectionGuard } from "@/components/tugways/selection-guard";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTugBoxDisabled } from "@/components/tugways/internal/tug-box-context";
@@ -511,6 +512,15 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     useLayoutEffect(() => { completionDirectionRef.current = completionDirection; }, [completionDirection]);
     useLayoutEffect(() => { onRouteChangeRef.current = onRouteChange; }, [onRouteChange]);
 
+    // Enclosing card's id from `CardPersistenceContext`. Null when this
+    // input is rendered outside a `CardHost` (e.g. stand-alone storybook /
+    // unit test). Held in a ref because the engine-lifetime effect below
+    // has empty deps and the relay closure must see the current value at
+    // fire time, not the mount-time capture. [L07]
+    const cardId = useCardId();
+    const cardIdRef = useRef(cardId);
+    cardIdRef.current = cardId;
+
     // Mount engine once [L01, L03]
     useLayoutEffect(() => {
       const el = editorRef.current;
@@ -649,6 +659,20 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
 
       engineRef.current = engine;
 
+      // Wire engine → selectionGuard. Every movement of the engine's
+      // DOM selection is relayed so the guard's card-level paint logic
+      // (installed in Step 5) can keep the `inactive-selection`
+      // highlight in sync without reading engine internals. [D05], [L10].
+      //
+      // The relay reads `cardIdRef.current` at fire time so a stand-alone
+      // input (no enclosing `CardHost`) is silent — nothing to publish
+      // for, nothing to clear.
+      const unsubscribeFromEngine = engine.onSelectionChanged((range) => {
+        const id = cardIdRef.current;
+        if (id === null) return;
+        selectionGuard.updateCardDomSelection(id, range);
+      });
+
       // Apply any state buffered by onRestore that fired before engine creation
       if (pendingRestoreRef.current) {
         engine.restoreState(pendingRestoreRef.current);
@@ -656,6 +680,13 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       }
 
       return () => {
+        unsubscribeFromEngine();
+        const id = cardIdRef.current;
+        if (id !== null) {
+          // Drop the last-known Range from the guard so downstream paint
+          // doesn't linger over a DOM node that's about to unmount.
+          selectionGuard.updateCardDomSelection(id, null);
+        }
         engine.teardown();
         engineRef.current = null;
       };

@@ -43,6 +43,11 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { useCardDirty } from "@/components/chrome/tug-pane";
 import { useCardPersistence } from "@/components/tugways/use-card-persistence";
+import { selectionGuard } from "@/components/tugways/selection-guard";
+import {
+  TugPromptInput,
+  type TugPromptInputDelegate,
+} from "@/components/tugways/tug-prompt-input";
 
 const DEBOUNCE_MS = 1000;
 
@@ -311,5 +316,131 @@ describe("CardHost composition", () => {
     expect(afterMove.bag.scroll).toEqual({ x: 300, y: 400 });
     // And it is a genuinely new write, not the pre-move one cached.
     expect(afterMove).not.toBe(beforeMove);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Engine → selectionGuard wiring (Step 4)
+// ---------------------------------------------------------------------------
+//
+// A `TugPromptInput` mounted inside a `CardHost` must relay every engine
+// selection change to `selectionGuard.updateCardDomSelection(cardId, range)`
+// and clear the entry on unmount. This is the hand-off that lets
+// `selectionGuard` paint remembered selections for non-focused cards
+// (Step 5) without reading engine internals.
+// ---------------------------------------------------------------------------
+
+const promptProbeHandles = {
+  delegate: null as TugPromptInputDelegate | null,
+};
+
+function PromptProbe() {
+  const ref = React.useRef<TugPromptInputDelegate | null>(null);
+  useEffect(() => {
+    promptProbeHandles.delegate = ref.current;
+    return () => {
+      promptProbeHandles.delegate = null;
+    };
+  }, []);
+  return <TugPromptInput ref={ref} />;
+}
+
+describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
+  beforeEach(() => {
+    promptProbeHandles.delegate = null;
+    paneContentRegistry._resetForTests();
+    _resetForTest();
+    selectionGuard.reset();
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    registerCard({
+      componentId: "prompt-probe",
+      defaultMeta: { title: "Prompt Probe", closable: true },
+      contentFactory: () => <PromptProbe />,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    selectionGuard.reset();
+  });
+
+  it("engine.setSelectedRange publishes a Range to selectionGuard.cardRanges under the enclosing cardId", () => {
+    const card: CardState = {
+      id: "c-prompt",
+      componentId: "prompt-probe",
+      title: "Prompt",
+      closable: true,
+    };
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    renderDeck(store);
+
+    const delegate = promptProbeHandles.delegate;
+    expect(delegate).not.toBeNull();
+
+    // Seed the engine with text so the 3–7 offsets resolve to real DOM
+    // positions; without content, `setSelectedRange` has nothing to point at.
+    act(() => {
+      delegate!.restoreState({
+        text: "hello world",
+        atoms: [],
+        selection: null,
+      });
+    });
+    // Prime: at this point the restore-null path has emitted once; guard
+    // has no entry. Verify.
+    expect(selectionGuard.getCardRange("c-prompt")).toBeUndefined();
+
+    act(() => {
+      delegate!.setSelectedRange(3, 7);
+    });
+
+    const range = selectionGuard.getCardRange("c-prompt");
+    expect(range).toBeDefined();
+    expect(range).not.toBeNull();
+    expect(range!.startOffset).toBe(3);
+    expect(range!.endOffset).toBe(7);
+  });
+
+  it("unmount clears the card's entry from selectionGuard.cardRanges", () => {
+    const card: CardState = {
+      id: "c-prompt-unmount",
+      componentId: "prompt-probe",
+      title: "Prompt",
+      closable: true,
+    };
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    const { unmount } = render(
+      <TugTooltipProvider>
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      </TugTooltipProvider>,
+    );
+
+    const delegate = promptProbeHandles.delegate;
+    expect(delegate).not.toBeNull();
+
+    act(() => {
+      delegate!.restoreState({
+        text: "hello world",
+        atoms: [],
+        selection: null,
+      });
+      delegate!.setSelectedRange(1, 5);
+    });
+
+    expect(selectionGuard.getCardRange("c-prompt-unmount")).toBeDefined();
+
+    act(() => {
+      unmount();
+    });
+
+    // After unmount, the engine's cleanup has fired
+    // `updateCardDomSelection(id, null)` and `unregisterBoundary(id)`.
+    // Either path clears the entry; the observable is the same.
+    expect(selectionGuard.getCardRange("c-prompt-unmount")).toBeUndefined();
   });
 });

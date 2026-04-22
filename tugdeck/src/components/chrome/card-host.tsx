@@ -51,7 +51,11 @@ import { CardPropertyContext } from "../tugways/hooks/use-property-store";
 import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
 import { useCardDirtyState } from "../tugways/hooks/use-card-dirty-state";
-import { CardPersistenceContext, type CardPersistenceCallbacks } from "../tugways/use-card-persistence";
+import {
+  CardPersistenceContext,
+  type CardPersistenceCallbacks,
+  type CardPersistenceContextValue,
+} from "../tugways/use-card-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
@@ -329,6 +333,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const feedData = useCardFeedStore(hostStackId, feedIds);
   const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
+  // Stable context value carrying both the cardId and the register
+  // callback. A memoized object is cheaper to stabilize than threading
+  // both through the tree separately, and it lets descendants that only
+  // need the id read it via `useCardId` without subscribing to register.
+  const cardPersistenceContextValue = useMemo<CardPersistenceContextValue>(
+    () => ({ cardId, register: registerPersistenceCallbacks }),
+    [cardId, registerPersistenceCallbacks],
+  );
+
   // Card-level responder for `SET_PROPERTY` dispatched via
   // `manager.sendToTarget(cardId, …)`. `parentId: hostStackId` re-parents
   // the chain to the portaled DOM layout — without the override the
@@ -392,7 +405,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           <ResponderScope>
             <CardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
-                <CardPersistenceContext value={registerPersistenceCallbacks}>
+                <CardPersistenceContext value={cardPersistenceContextValue}>
                   <CardDirtyContext value={markDirty}>
                     {feedsReady ? (
                       // `cardId` is the stable identity content factories key

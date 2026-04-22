@@ -79,19 +79,45 @@ export interface CardPersistenceCallbacks {
 // ---------------------------------------------------------------------------
 
 /**
+ * Value carried by {@link CardPersistenceContext}. CardHost writes this
+ * pair on mount so descendants can both register persistence callbacks
+ * and learn the id of the card they are rendering inside. `cardId` is
+ * separate from the render-time `CardHost` props so content components
+ * (e.g. `TugPromptInput`) can forward the id to non-React singletons
+ * like `selectionGuard` without prop-drilling or reading the deck tree.
+ */
+export interface CardPersistenceContextValue {
+  /** Stable identity of the enclosing card — survives cross-pane moves. */
+  cardId: string;
+  /** Register persistence callbacks for this card. Called once per mount. */
+  register: (callbacks: CardPersistenceCallbacks) => void;
+}
+
+/**
  * Context provided by CardHost to its children.
  *
- * The value is a stable registration function. Card content components call
- * `useCardPersistence()` which reads this context and registers their
- * save/restore callbacks in `useLayoutEffect` (Rule 3 of Rules of Tugways).
+ * The value bundles the enclosing card's id and the stable registration
+ * function. Card content components call `useCardPersistence()` which
+ * reads this context and registers their save/restore callbacks in
+ * `useLayoutEffect` (Rule 3 of Rules of Tugways). Components that need
+ * the card id for out-of-tree wiring read it via {@link useCardId}.
  *
  * null when rendered outside CardHost (no-op in useCardPersistence).
  *
  * Spec S04 ([D02])
  */
 export const CardPersistenceContext = createContext<
-  ((callbacks: CardPersistenceCallbacks) => void) | null
+  CardPersistenceContextValue | null
 >(null);
+
+/**
+ * Hook that returns the enclosing card's id, or `null` when rendered
+ * outside `CardHost`. Card content components use this to wire
+ * themselves into card-scoped singletons (e.g. `selectionGuard`).
+ */
+export function useCardId(): string | null {
+  return useContext(CardPersistenceContext)?.cardId ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // useCardPersistence hook
@@ -122,7 +148,7 @@ export const CardPersistenceContext = createContext<
  */
 export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): void {
   // Read the registration function from context (null outside CardHost).
-  const register = useContext(CardPersistenceContext);
+  const register = useContext(CardPersistenceContext)?.register ?? null;
 
   // Store the caller's options in refs so the registered wrappers never go
   // stale when options change on re-renders (Rule 5).

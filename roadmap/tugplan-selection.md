@@ -660,19 +660,19 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - Step 3's eager publish ([Q03] resolution (a)) is the implementation: the engine publishes on `setSelectedRange`, `restoreState` tail, and its own scoped `selectionchange` listener. Cost is bounded because `updatePaint()` (Step 5) short-circuits when the only change is to the focused card's entry (that range is painted natively via `window.getSelection()`, not via the inactive highlight).
 
 **Tasks:**
-- [ ] Add `cardRanges` and `updateCardDomSelection` to `selection-guard.ts`.
-- [ ] In `TugPromptInput` (search for the engine-creation `useLayoutEffect` around line 640-650), subscribe to `engine.onSelectionChanged` and relay to `selectionGuard.updateCardDomSelection(cardId, range)`.
-- [ ] Ensure the `cardId` is reachable inside `TugPromptInput` — it already has `CardPersistenceContext` (`tug-prompt-input.tsx:349`). If `cardId` isn't currently exposed there, expose it alongside the existing register callback in `CardHost`'s persistence context value at `card-host.tsx:485`.
-- [ ] At unsubscribe / card unmount, call `selectionGuard.updateCardDomSelection(cardId, null)` to clear the Range from the store.
+- [x] Add `cardRanges` and `updateCardDomSelection` to `selection-guard.ts`. *Also added a read-only `getCardRange(cardId)` accessor — Step 5's paint loop and Step 4's tests both need to observe the store without poking private fields. Also wired `cardRanges.delete(cardId)` into both `unregisterBoundary` and `reset` so boundary teardown and test isolation drop entries in lockstep.*
+- [x] In `TugPromptInput` (search for the engine-creation `useLayoutEffect` around line 640-650), subscribe to `engine.onSelectionChanged` and relay to `selectionGuard.updateCardDomSelection(cardId, range)`.
+- [x] Ensure the `cardId` is reachable inside `TugPromptInput` — it already has `CardPersistenceContext` (`tug-prompt-input.tsx:349`). If `cardId` isn't currently exposed there, expose it alongside the existing register callback in `CardHost`'s persistence context value at `card-host.tsx:485`. *Implementation: `CardPersistenceContext` value type changed from `register-fn` to `{ cardId, register }`; added `useCardId()` hook as the canonical read path. `CardHost` provides a memoized `{ cardId, register }` pair; `useCardPersistence` destructures `.register`. Test provider in `use-card-persistence.test.tsx` updated to the new shape.*
+- [x] At unsubscribe / card unmount, call `selectionGuard.updateCardDomSelection(cardId, null)` to clear the Range from the store.
 
 **Upholds:** [L10] engine and selection-guard talk through a narrow interface (`updateCardDomSelection`). [L22] `cardRanges` drives downstream DOM paint (Step 5) via direct store observation, not React round-trip.
 
 **Tests:**
-- [ ] `card-host-composition.test.tsx` grows a test: mount a `TugPromptInput` card, call `engine.setSelectedRange(3, 7)`, assert `selectionGuard.cardRanges.get(cardId)` holds a Range with those offsets.
-- [ ] Unmount clears the entry.
+- [x] `card-host-composition.test.tsx` grows a test: mount a `TugPromptInput` card, call `engine.setSelectedRange(3, 7)`, assert `selectionGuard.cardRanges.get(cardId)` holds a Range with those offsets.
+- [x] Unmount clears the entry.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green (2226 pass).
 
 ---
 

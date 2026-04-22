@@ -228,6 +228,17 @@ class SelectionGuard {
   // on card reactivation. NOT written on every selectionchange.
   private inactiveRanges: Map<string, Range> = new Map();
 
+  // cardId → last-known DOM Range published by the card's owning
+  // component (e.g. TugTextEngine's `onSelectionChanged`). This is the
+  // input to the multi-card paint generalization that Step 5 installs.
+  //
+  // Readable from tests via {@link getCardRange}; components publish via
+  // {@link updateCardDomSelection}. A `null` entry means the component
+  // knows the card has no selection and wants the guard to paint
+  // nothing for it. A missing entry means the component has never
+  // published; the guard has no information and paints nothing either.
+  private cardRanges: Map<string, Range | null> = new Map();
+
   // The card that currently "owns" the active selection (i.e., the
   // focused card). Used to know which card to deactivate when a
   // different card is clicked.
@@ -346,9 +357,44 @@ class SelectionGuard {
       this.inactiveHighlight.delete(range);
     }
     this.inactiveRanges.delete(cardId);
+    this.cardRanges.delete(cardId);
     if (this.activeCardId_highlight === cardId) {
       this.activeCardId_highlight = null;
     }
+  }
+
+  // ---- Card DOM-selection publish ----
+
+  /**
+   * Publish the latest DOM `Range` for a card. Called by the card's
+   * owning component (e.g. a `TugTextEngine` via `onSelectionChanged`)
+   * whenever the card's selection moves, or on unmount to clear the
+   * entry by passing `null`. [D05], [Q06a].
+   *
+   * This step only stores the Range. Step 5 adds the paint step that
+   * renders stored Ranges into the `inactive-selection` CSS Custom
+   * Highlight (for cards other than the focused one) and into
+   * `window.getSelection()` (for the focused card). Separating
+   * "store" from "paint" keeps the component publish API stable while
+   * the paint implementation evolves.
+   */
+  updateCardDomSelection(cardId: string, range: Range | null): void {
+    if (range === null) {
+      this.cardRanges.delete(cardId);
+    } else {
+      this.cardRanges.set(cardId, range);
+    }
+  }
+
+  /**
+   * Read the most-recently-published DOM `Range` for a card. Returns
+   * `undefined` if the card has never published, `null` if the most
+   * recent publish was an explicit clear, and the Range otherwise.
+   * Exposed primarily for tests; production code reads `cardRanges`
+   * indirectly through the paint loop that Step 5 will install.
+   */
+  getCardRange(cardId: string): Range | null | undefined {
+    return this.cardRanges.get(cardId);
   }
 
   // ---- Lifecycle ----
@@ -719,6 +765,7 @@ class SelectionGuard {
     this.removePreventMousedown();
     this.boundaries.clear();
     this.inactiveRanges.clear();
+    this.cardRanges.clear();
     this.activeCardId_highlight = null;
     if (this.inactiveHighlight) {
       this.inactiveHighlight.clear();

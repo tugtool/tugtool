@@ -48,9 +48,15 @@ function makeTestProvider() {
   function getRegistrationCount() { return registrationCount; }
   function getLatestCallbacks() { return latestCallbacks; }
 
-  function Provider({ children }: { children: React.ReactNode }) {
+  function Provider({
+    children,
+    cardId = "test-card",
+  }: {
+    children: React.ReactNode;
+    cardId?: string;
+  }) {
     return (
-      <CardPersistenceContext value={register}>
+      <CardPersistenceContext value={{ cardId, register }}>
         {children}
       </CardPersistenceContext>
     );
