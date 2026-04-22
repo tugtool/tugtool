@@ -180,18 +180,17 @@ Every decision below cites (a) the audit row(s) it rests on, (b) the tuglaws it 
 | `scroll` | `{ x: number; y: number }` | Card-host — `hostContentEl.scrollLeft/Top` |
 | `content` | `unknown` — opaque per-card payload | Card's content factory, via `useCardPersistence.onRestore` |
 | `formControls` | `Record<persistKey, { value, selectionStart?, selectionEnd?, selectionDirection?, scrollTop?, scrollLeft? }>` | Card-host walk (`applyDomInputSnapshot` equivalent) — existing `domInputs` path, renamed |
+| `regionScroll` | `Record<scrollKey, { x: number; y: number }>` | Card-host walk for every element carrying `data-tug-scroll-key="<key>"` — captures nested scrollable regions (e.g. markdown-view virtual scroll) distinct from the card's outer scroll |
 | `domSelection` | `{ anchorPath: number[], anchorOffset, focusPath: number[], focusOffset } \| null` | Component that owns the contentEditable it anchors into; card-host passes it through to the owner via a new callback |
 | `focus` | `{ kind: "none" } \| { kind: "form-control", persistKey: string } \| { kind: "dom", focusKey: string } \| { kind: "component-owned" }` | Card-host for keyed form-controls / focus-key elements; owning component for `component-owned` |
 
-Every axis is optional on the bag — `scroll` without `formControls` is valid, etc.
+Every axis is optional on the bag — `scroll` without `formControls` is valid, etc. `regionScroll` is symmetric with `formControls`: both are keyed by an opt-in DOM attribute (`data-tug-scroll-key` mirrors `data-tug-persist-value`), walked by CardHost at save/restore, and uniqueness of keys within a card subtree is an author contract (same rule as `persistKey`).
 
-**Cites:** [Table A](#audit-table-a) rows on each concept; [Collision 4](#audit-collisions) (focus not persisted at element level); [Collision 10](#audit-collisions) (asymmetric save/restore scope — a uniform schema covers all cards equally).
+**Cites:** [Table A](#audit-table-a) rows on each concept; [Collision 4](#audit-collisions) (focus not persisted at element level); [Collision 10](#audit-collisions) (asymmetric save/restore scope — a uniform schema covers all cards equally). For `regionScroll`: [Table C](#audit-table-c) rows on `scrollLeft/Top =` inside `tug-markdown-view.tsx` show internal scroll mutations not currently surfaced into any bag.
 
 **Upholds:** [L23] user-visible state (scroll, selection, focus, content) is named explicitly in the schema. [L24] the schema is data-zone (semantic, read by non-rendering code for persistence); appearance-zone paint is separate (see [D04]).
 
-**Rationale:** Paths rooted at the **card** boundary, not pane, so that cross-pane moves don't break path validity (the card's internal DOM travels with the card via `CardPortal`). `focus.kind === "component-owned"` is the marker for cards whose content-factory manages its own focus + selection together (tide-card → engine); restoring focus for those cards is the content factory's job, not card-host's.
-
-**Implications:** Bag version bumps from v1 (flat `selection?: SavedSelection | null`) to v2. Migration on read is one function in `settings-api.ts` that wraps v1 selection into `domSelection` under the new shape and leaves everything else blank. v1 bags without selection migrate trivially.
+**Rationale:** Paths rooted at the **card** boundary, not pane, so that cross-pane moves don't break path validity (the card's internal DOM travels with the card via `CardPortal`). `focus.kind === "component-owned"` is the marker for cards whose content-factory manages its own focus + selection together (tide-card → engine); restoring focus for those cards is the content factory's job, not card-host's. `regionScroll` closes the gap where a card has multiple scrollable regions (outer card scroll + internal virtual-list scroll, for example) and only the outer one is currently saved.
 
 **Open question — see [Q01](#q01-v1-migration-scope).**
 
@@ -536,9 +535,9 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 **References:** [D01](#d01-data-not-service), [D02](#d02-bag-schema), [D12](#d12-no-migration), [Collision 2](#audit-collisions), [Collision 6](#audit-collisions); `layout-tree.ts:37-49`, `card-host.tsx:334,245,289,101-120`, `action-dispatch.ts:510`.
 
 **Artifacts:**
-- `tugdeck/src/layout-tree.ts`: `CardStateBag` with these fields only: `scroll?`, `content?`, `formControls?` (renamed from `domInputs`), `domSelection?` (null at Step 1), `focus?` (null at Step 1). `SavedSelection` re-export removed from `layout-tree.ts` (it stays in `selection-guard.ts` for that module's own internal use during the migration period).
+- `tugdeck/src/layout-tree.ts`: `CardStateBag` with these fields only: `scroll?`, `content?`, `formControls?` (renamed from `domInputs`), `regionScroll?` (null at Step 1; shape finalized at Step 9), `domSelection?` (null at Step 1; shape finalized at Step 6), `focus?` (null at Step 1; shape finalized at Step 7). `SavedSelection` re-export removed from `layout-tree.ts` (it stays in `selection-guard.ts` for that module's own internal use during the migration period).
 - `DomInputSnapshot` renamed to `FormControlSnapshot`; selection fields (`selectionStart`/`End`/`Direction`) drop out of the type because Step 8 moves them to a single per-card capture path (they're currently there at `layout-tree.ts:58-60`, redundantly). Keep `value`, `scrollTop`, `scrollLeft`.
-- New types declared with null placeholders: `DomSelectionSnapshot | null` and `FocusSnapshot | null` on the bag (shape finalized at Steps 7–8; just the slot exists at Step 1).
+- New types declared with null placeholders on the bag: `RegionScrollSnapshot | null`, `DomSelectionSnapshot | null`, `FocusSnapshot | null`. Shape is finalized at the step that captures each axis (Steps 6, 7, 9).
 
 **Tasks:**
 - [ ] Rewrite `layout-tree.ts` types. Drop `SavedSelection` import and re-export.
@@ -813,9 +812,45 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 9: Restore `bag.domSelection` on cold-boot mount {#step-9}
+#### Step 9: Capture + restore nested region scroll (`bag.regionScroll`) {#step-9}
 
 **Depends on:** #step-8
+
+**Commit:** `feat(card-host): capture nested region scroll via data-tug-scroll-key`
+
+**References:** [D02](#d02-bag-schema), [L23]; `card-host.tsx:101-120,282-326`, `tug-markdown-view.tsx:441,484,537,632,810`, `lib/smart-scroll.ts:224,248`.
+
+**Artifacts:**
+- `RegionScrollSnapshot` shape finalized in `layout-tree.ts`: `Record<string, { x: number; y: number }>` — the `bag.regionScroll` slot added at Step 1 as a null placeholder is filled in here.
+- New opt-in DOM attribute `data-tug-scroll-key="<key>"` documented in `selection-model.md`. Any scrollable region that wants its scroll preserved across reload carries this attribute. Uniqueness per card subtree is an author contract (same rule as `persistKey`).
+- `captureRegionScrolls(cardRoot): Record<string, { x, y }> | undefined` helper in `card-host.tsx`, mirroring `captureFormControls`: `querySelectorAll('[data-tug-scroll-key]')`, reads each element's `scrollLeft/Top`, keys by the attribute value.
+- `applyRegionScrolls(cardRoot, snapshot)` helper, mirroring `applyFormControlSnapshot`: `querySelector` by key, writes `el.scrollLeft/Top`.
+- `saveCurrentCardStateRef.current` writes `bag.regionScroll`.
+- Mount restore effect reads `bag.regionScroll` and applies after scroll restore.
+- `tug-markdown-view.tsx`'s scroll container gains `data-tug-scroll-key="markdown-view"` (or a more specific key if there are multiple regions inside). Markdown-view's own ad-hoc scroll save/restore at `tug-markdown-view.tsx:441,484,537,632` continues to handle runtime behavior (clamps, auto-scroll-to-bottom) but reload-survival now flows through the bag.
+
+**Tasks:**
+- [ ] Finalize the `regionScroll` type in `layout-tree.ts`.
+- [ ] Implement `captureRegionScrolls` and `applyRegionScrolls` in `card-host.tsx`.
+- [ ] Wire into save path (`saveCurrentCardStateRef.current`) and mount restore effect.
+- [ ] Add `data-tug-scroll-key="markdown-view"` to `tug-markdown-view.tsx`'s scroll container.
+- [ ] Document the attribute in `selection-model.md` (add to the `data-tug-*` attribute table).
+
+**Upholds:** [L23] nested scroll positions are user-visible state that must survive reload. [L10] card-host owns the walk; components opt in via attribute.
+
+**Tests:**
+- [ ] Unit: capture two keyed regions, each with different scroll, round-trip through apply.
+- [ ] Integration: reload a `tug-markdown-view` card with non-zero scroll; assert scroll restores to the same position.
+- [ ] Integration: reload a card with both outer `hostContentEl` scroll AND an inner keyed region scroll; both restore independently.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit`, `bun test` green.
+
+---
+
+#### Step 10: Restore `bag.domSelection` on cold-boot mount {#step-10}
+
+**Depends on:** #step-9
 
 **Commit:** `feat(card-host): restore bag.domSelection to selection-guard at mount`
 
@@ -842,13 +877,13 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 10: Restore `bag.focus` on cold-boot mount with Option B gate {#step-10}
+#### Step 11: Restore `bag.focus` on cold-boot mount and on cross-pane move {#step-11}
 
-**Depends on:** #step-9
+**Depends on:** #step-10
 
 **Commit:** `feat(card-host): restore focus on cold-boot for active card of active pane`
 
-**References:** [D07](#d07-restore-handoff), [D10](#d10-focus-persistence), [R07](#r07-focus-steal-on-reload); `card-host.tsx:265-325`.
+**References:** [D07](#d07-restore-handoff), [D10](#d10-focus-persistence), [R07](#r07-focus-steal-on-reload); `card-host.tsx:265-325`, `card-drag-coordinator.ts`, `deck-manager.ts:1254-1269`.
 
 **Artifacts:**
 - `CardHost` mount effect reads `bag.focus` and applies for the current card **only when** `bag.focus.kind !== "none"` AND the card is the active card of the active pane at mount time.
@@ -858,30 +893,35 @@ The implementation sequence is 15 commits. Each is independently revertable. The
   - `component-owned` → `cardRoot.querySelector('[data-tug-prompt-input-root] [contenteditable]')?.focus()`.
   - `none` → no-op.
 - Pre-check: if the card already has focus on *some* element inside it, don't move focus (avoids stealing focus during a race).
+- **Cross-pane-move refocus.** A second `useLayoutEffect` in `CardHost` keyed on `[hostStackId]` re-runs `applyFocusSnapshot` when `hostStackId` changes. Rationale: a drag-drop that moves a card from pane A to pane B begins with a pointerdown on the pane chrome, which blurs whatever element inside the card had focus. Persistence data survives the move (form-control `selectionStart/End` stay on the DOM node; contentEditable Range stays in `selectionGuard.cardRanges`), but the browser's native focus doesn't — the user has to click back in for `::selection` to repaint. Re-applying `bag.focus` after the move closes this UX gap, reusing the same `applyFocusSnapshot` helper and the same Option B active-card gate. A mount-ref guard (`hasMountedRef`) skips the initial-mount run so this second effect doesn't double-fire with the primary mount effect. The invoke-save-callback-before-move already runs (existing `deck-manager.ts:1269`), so `bag.focus` is fresh at the moment the refocus fires.
 
 **Tasks:**
 - [ ] Add `applyFocusSnapshot(cardRoot, snapshot)` helper inside `card-host.tsx`.
 - [ ] Gate on `isActiveCardOfActivePane` via `store.getSnapshot().panes.find(...).activeCardId === cardId`.
 - [ ] Gate on `!cardRoot.contains(document.activeElement)` so re-focus doesn't fight an already-inside focus.
 - [ ] Run the apply after `onContentReady` (for content bags) and after the layout-effect scroll restore (for no-content bags).
+- [ ] Add a second `useLayoutEffect` keyed on `[hostStackId]` with a `hasMountedRef` guard; on subsequent runs (i.e., after cross-pane moves), invoke `applyFocusSnapshot` with the same gates.
 
-**Upholds:** [L23] focus preserved across reload for the active-card case. [R07] mitigation via the active-card gate.
+**Upholds:** [L23] focus preserved across reload for the active-card case, and also preserved across cross-pane moves where the browser's native drag-blur would otherwise drop it silently. [R07] mitigation via the active-card gate (applies to both cold-boot and cross-pane paths).
 
 **Tests:**
 - [ ] Active card mount with `{ kind: "form-control", persistKey: "email" }` → `<input data-tug-persist-value="email">` is focused.
 - [ ] Inactive card mount with the same bag → focus stays wherever it was.
 - [ ] Active card mount with `{ kind: "component-owned" }` → the contentEditable inside `[data-tug-prompt-input-root]` is focused.
 - [ ] Focus inside the card at mount-time → no re-focus.
+- [ ] **Cross-pane move with focus in a form-control:** drag card from pane A to pane B; after drop, if the card is the active card of the active pane, the previously-focused input regains focus.
+- [ ] **Cross-pane move with user clicking elsewhere mid-drag:** user clicks a different card between drag-start and drop; the refocus effect does NOT steal focus from wherever the user is now (Option B gate + `!cardRoot.contains(document.activeElement)` guard together).
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`, `bun test` green.
 - [ ] Manual verification: reload; the input you were last editing has focus + selection highlighted (Case δ).
+- [ ] Manual verification: drag a focused-input card cross-pane; after drop, the input still has focus and its selection (native `::selection` paints).
 
 ---
 
-#### Step 11: Engine content-identical fast path in `restoreState` {#step-11}
+#### Step 12: Engine content-identical fast path in `restoreState` {#step-12}
 
-**Depends on:** #step-10
+**Depends on:** #step-11
 
 **Commit:** `feat(tug-text-engine): skip innerHTML rewrite when content matches`
 
@@ -913,9 +953,9 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 12: Will-phase save triggers {#step-12}
+#### Step 13: Will-phase save triggers {#step-13}
 
-**Depends on:** #step-11
+**Depends on:** #step-12
 
 **Commit:** `feat(action-dispatch): save on will-resign / will-hide`
 
@@ -945,9 +985,9 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 13: Save-on-close before `cardWillBeginDestruction` {#step-13}
+#### Step 14: Save-on-close before `cardWillBeginDestruction` {#step-14}
 
-**Depends on:** #step-12
+**Depends on:** #step-13
 
 **Commit:** `feat(deck-manager): flush card bag before destruction notification`
 
@@ -974,9 +1014,9 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 14: Integration tests per transition class {#step-14}
+#### Step 15: Integration tests per transition class {#step-15}
 
-**Depends on:** #step-13
+**Depends on:** #step-14
 
 **Commit:** `test(selection): integration tests for every save/restore transition`
 
@@ -1008,9 +1048,9 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 15: Documentation & final cleanup {#step-15}
+#### Step 16: Documentation & final cleanup {#step-16}
 
-**Depends on:** #step-14
+**Depends on:** #step-15
 
 **Commit:** `docs(selection): document two-paint model and final cleanup`
 
@@ -1040,4 +1080,41 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ### Deliverables and Checkpoints {#deliverables}
 
-*To be populated once the execution plan exists beyond the audit and design steps.*
+#### Phase-exit criteria {#phase-exit}
+
+- [ ] All 16 execution steps landed and each step's individual checkpoint passed.
+- [ ] `bun x tsc --noEmit` exits 0 on main.
+- [ ] `bun test` passes in full with the new integration suite from Step 15.
+- [ ] `tugutil validate /u/src/tugtool/roadmap/tugplan-selection.md` passes.
+
+#### Manual verification checklist {#manual-verification}
+
+User-visible behavior that must be confirmed after the plan ships:
+
+- [ ] Reload an app with a DOM selection in a tide card — selection is restored, painted via native `::selection`, on the correct text range.
+- [ ] Reload an app with a selection range in a gallery input — input has focus and the selection range paints.
+- [ ] Two cards in view, one focused; the focused card's selection paints bright (`::selection`); the unfocused card's selection paints dim (`::highlight(inactive-selection)`). Switch focus between them — paint moves with focus.
+- [ ] Cross-pane drag of a focused input card — after drop, focus returns to the previously-focused input and its selection paints.
+- [ ] App resign (Cmd-Tab away) — active card's selection dims. App become-active — selection returns bright.
+- [ ] Tab switch within a pane — outgoing tab's selection dims; incoming tab's selection (if any) paints bright on the active tab.
+- [ ] Close a card mid-edit — last edits persist (save-on-close fires before destruction).
+- [ ] `tug-markdown-view` card scrolled to the middle — reload — scroll position returns (via `regionScroll`).
+- [ ] Reload across two cards, each with a different selection — both restore, correct card's selection bright, other card's dim.
+
+#### Known limitations and follow-ons {#follow-ons}
+
+Items deliberately deferred from this plan. Each has a one-line statement of why it's deferred and what would be required to close it.
+
+- **Engine undo history does not survive reload.** `TugTextEngine.undo()` calls `document.execCommand("undo")` (`tug-text-engine.ts:605`), which relies on the browser's native undo stack. Browser-native undo is lost on reload; Cmd-Z after reload does nothing. Closing this gap requires the engine to maintain its own serializable mutation log (replacing `execCommand("undo")` with an internal stack), which is a separate medium-sized engine refactor. Filed for a follow-on plan.
+
+- **Per-card `onSave` payload audit.** `bag.content` is an opaque per-card slot that each card's content factory fills via `useCardPersistence.onSave`. Component-local React state (accordion expansion, nested tab selection, sort order, filter settings, step-wizard position) is only preserved across reload if the card's author explicitly includes it in the `onSave` payload. After this plan ships, every registered card type's `onSave` should be audited for completeness; gaps are per-card concerns to be fixed in each card's own module. Candidates to audit (high-priority first): `tide`, `git`, `hello`, `gallery-markdown-view`, and any future card type that introduces internal state.
+
+- **Deeper engine diff-restore ([Q04] options (b)/(c)).** This plan ships [Q04] option (a) — the content-identical fast path. The broader flat-parts diff or full DOM reconciliation are more work for a narrower benefit (idempotent same-content restore is already covered by (a)) and are deferred to a separate engine-focused plan.
+
+- **Paint tier expansion ([Q02]).** One dim tier is the shipped choice. If UX feedback later demands distinguishing "inactive-in-active-pane" from "inactive-in-other-pane," add a second named CSS Custom Highlight and a second dim color rule. Revisitable post-ship.
+
+- **Tuglaws additions.** The new persistence pattern deserves a short law: "Persistence is data; apply is component-owned." Consider proposing this as a new law in `tuglaws/tuglaws.md` after the pattern settles in the codebase for a release cycle.
+
+#### Rollback policy {#rollback}
+
+Every execution step is a single commit and is individually revertable. If a regression surfaces mid-plan, revert the offending step and any strictly-dependent steps after it (see each step's `Depends on:` line); the remaining commits stay green because they don't forward-reference unimplemented state.
