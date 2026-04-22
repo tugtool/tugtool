@@ -71,6 +71,10 @@ export function useCardContentRestore(args: UseCardContentRestoreArgs): void {
 
   useLayoutEffect(() => {
     const bag = store.getCardState(cardId);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:restore] cardId=${cardId} hostStackId=${hostStackId} hasBag=${!!bag} bagKeys=${bag ? Object.keys(bag).join(",") : ""} hasContentEl=${!!hostContentEl} hasPersistenceCallbacks=${persistenceCallbacksRef.current !== null}`,
+    );
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
     // `hostContentEl` is captured by closure at effect-run time. The effect

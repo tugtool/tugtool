@@ -156,6 +156,10 @@ export class DeckManager implements IDeckManagerStore {
   private saveCallbacks: Map<string, () => void> = new Map();
 
   private readonly handleVisibilityChange = (): void => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:visibilitychange] hidden=${document.hidden} stateFlushed=${this.stateFlushed} saveCallbacksSize=${this.saveCallbacks.size}`,
+    );
     if (document.hidden) {
       if (this.stateFlushed) return;
       this.saveCallbacks.forEach((cb) => cb());
@@ -168,6 +172,10 @@ export class DeckManager implements IDeckManagerStore {
   private stateFlushed = false;
 
   private readonly handleBeforeUnload = (): void => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:beforeunload] stateFlushed=${this.stateFlushed} reloadPending=${this.reloadPending} saveCallbacksSize=${this.saveCallbacks.size}`,
+    );
     if (this.reloadPending || this.stateFlushed) return;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -898,6 +906,10 @@ export class DeckManager implements IDeckManagerStore {
    * the card id, which is numerically identical to the former tab id from the one-table model.
    */
   private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:flush] sync=${options?.sync === true} keepalive=${options?.keepalive === true} ids=${Array.from(this.dirtyCardIds).join(",")}`,
+    );
     const promises: Promise<void>[] = [];
     for (const cardId of this.dirtyCardIds) {
       const bag = this.cardStateCache.get(cardId);
@@ -924,6 +936,10 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   saveAndFlushSync(): void {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:saveAndFlushSync] saveCallbacksSize=${this.saveCallbacks.size} dirtyCardIdsSize=${this.dirtyCardIds.size}`,
+    );
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyCardStates({ sync: true });
     this.stateFlushed = true;

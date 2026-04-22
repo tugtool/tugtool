@@ -151,12 +151,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
     };
+    // eslint-disable-next-line no-console
+    console.log(
+      `[probe:save] cardId=${cardId} hostStackId=${hostStackId} hasContentEl=${!!contentEl} scroll=${JSON.stringify(scroll)} selection=${!!selection} contentDefined=${content !== undefined} contentPreview=${
+        content === undefined
+          ? "undefined"
+          : JSON.stringify(content).slice(0, 120)
+      }`,
+    );
     store.setCardState(cardId, bag);
   };
 
   useLayoutEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log(`[probe:register] cardId=${cardId}`);
     store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {
+      // eslint-disable-next-line no-console
+      console.log(`[probe:unregister] cardId=${cardId}`);
       store.unregisterSaveCallback(cardId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -135,6 +135,11 @@ if (!container) {
     }
   }
 
+  // eslint-disable-next-line no-console
+  console.log(
+    `[probe:boot] cardStateKeys=[${Array.from(cardStates.keys()).join(",")}] sizes=[${Array.from(cardStates.values()).map((b) => JSON.stringify(b).length).join(",")}] focusedCardId=${focusedCardId ?? "null"}`,
+  );
+
   // Create deck manager with the pre-fetched layout, initial theme, card states,
   // and focused card ID.
   const deck = new DeckManager(
