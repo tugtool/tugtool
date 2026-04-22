@@ -434,7 +434,7 @@ Decomposing into per-concern hooks now — while the vocabulary is stable and `T
 - **Item (f)** `useCardSelectionAndScroll`: **fold into (c), do not ship as its own hook.** The scroll + `selectionchange` listeners (`card-host.tsx:163-189`) exist only to call `markDirty`. Splitting them from the dirty-state hook creates an artificial two-hook seam around one debounce timer and one shared `hostContentEl` dependency. Plan already hedged ("may fold"); commit to folding.
 - **Item (g)** wiring-harness reduction: **target revised.** Original target was 120–150 lines. Realistic post-extraction arithmetic: module docstring with ordering paragraph (~42 lines), imports (~20), props interface (~15), two registry-lookup helpers (~26), and legitimate wiring in the component body (~130) sum to ~230 lines. Further reduction would require extracting the `saveCurrentCardState` closure, the persistence-callback registrar, or the responder — none of which appear in the Work items below. Final target: **~230 lines**, down from 384.
 - **Item (h)** `CardPortal` teardown contract (audit P5): **reframe to investigate-then-document.** A re-read of the unmount chain — `TugPane` unmounts → `paneContentRegistry.unregister(paneId)` in its cleanup → `useSyncExternalStore` in `useHostContentElement` fires → the card's scroll/selectionchange `useEffect` re-runs with `hostContentEl=null` and cleans up listeners → `CardPortal`'s `useLayoutEffect` cleanup removes the slot — suggests the "effects running against detached DOM" window P5 warns about may already be closed by the `useSyncExternalStore` chain. First commit for this item is a **teardown-order investigation with a JSDoc-pinned contract** on `card-portal.tsx` and `pane-content-registry.ts`. Only add an `onHostGone(cb)` subscription if the investigation surfaces a reproducible race; otherwise land the guarantee as documentation.
-- **Item (i)** `waitForPortal(paneId)` helper (audit P12): **conditional on demand.** The existing portal-sensitive tests use `paneContentRegistry.getElement()` directly in synchronous assertions; none use the ad-hoc `await act(() => {})` / `await waitFor(...)` patterns the audit cited. Land only if the new per-hook unit tests in (a)–(e) actually need the helper. If they do not, amend the plan to withdraw — mirroring Step 5.5.a item (d).
+- **Item (i)** `waitForPortal(paneId)` helper (audit P12): ~~**conditional on demand.**~~ **Withdrawn.** A post-implementation check of the test suite confirmed no adoption candidates exist. Commits 1–4's new hook tests use `renderHook` in isolation with no `TugPane` / `CardPortal` stack, so the content registry is never touched. The pre-existing portal-sensitive tests (`card-portal.test.tsx`, `card-identity-preservation.test.tsx`, `tide-card.test.tsx`) use synchronous `paneContentRegistry.getElement()` assertions with no ad-hoc waits. The other `await waitFor` sites in the suite (`tug-pane-banner`, `tide-card-last-error`, `tug-sheet`) wait on WAAPI exit-animation DOM removal, not on registry readiness. Shipping a helper with zero call sites would be dead code, so the work item is struck in the spirit of Step 5.5.a item (d).
 
 **Files:**
 - `tugdeck/src/components/tugways/hooks/use-card-property-store.ts` (new).
@@ -446,7 +446,7 @@ Decomposing into per-concern hooks now — while the vocabulary is stable and `T
 - `tugdeck/src/components/chrome/card-portal.tsx` — teardown-contract JSDoc (audit P5). `onHostGone(cb)` added only if the investigation finds a reproducible race.
 - `tugdeck/src/components/chrome/pane-content-registry.ts` — pinned contract sentence describing the unregister-before-React-unmount guarantee the teardown chain relies on.
 - `tugdeck/src/__tests__/` — one test file per new hook, each exercising the hook in isolation via a minimal host.
-- `tugdeck/src/__tests__/wait-for-portal.ts` (new — conditional on audit P12 demand during hook-test writing).
+- ~~`tugdeck/src/__tests__/wait-for-portal.ts`~~ — struck; item (g) withdrawn post-implementation (no adoption candidates).
 
 **Work:**
 
@@ -462,7 +462,7 @@ e. **Wiring-harness reduction + ordering header.** Call hooks in the pinned effe
 
 f. **`CardPortal` teardown contract (audit P5, reframed).** Investigate the unmount chain end-to-end (TugPane cleanup → `paneContentRegistry.unregister` → `useHostContentElement` re-fire → card effect cleanup → slot removal). Capture the guarantee as a JSDoc paragraph on `card-portal.tsx` and a matching contract line on `pane-content-registry.ts`. If the investigation finds a real race (listener fires on a detached element between registry-unregister and effect-cleanup), add `onHostGone(cb)` to the registry and subscribe the card's cleanup to it. If not, ship documentation only — and note in the commit message that the `onHostGone` option was considered and rejected.
 
-g. **`waitForPortal(paneId)` helper (audit P12, conditional).** Land only if any of the hook unit tests in (a)–(d) need it. If not, amend the plan (mirroring Step 5.5.a item d) to withdraw this work item, citing the absence of adoption candidates in the existing portal-sensitive tests.
+g. ~~**`waitForPortal(paneId)` helper (audit P12, conditional).**~~ **Withdrawn.** Post-implementation check confirmed zero adoption candidates — neither the new per-hook tests (which use `renderHook` in isolation) nor the pre-existing portal-sensitive tests (which use synchronous `paneContentRegistry.getElement()` assertions) have an ad-hoc wait that the helper would replace. See the audit verdict above for the full rationale.
 
 **Execution plan — one commit at a time.** Each commit green on `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint`. Order chosen for risk: smallest independent seam first, tightest coupling last.
 
@@ -478,7 +478,7 @@ g. **`waitForPortal(paneId)` helper (audit P12, conditional).** Land only if any
 
 6. **Commit 6 — `CardPortal` teardown contract.** Covers work item (h, reframed). Teardown-chain investigation notes captured as JSDoc on `card-portal.tsx` + `pane-content-registry.ts`. Adds `onHostGone(cb)` only if the investigation surfaces a reproducible race; commit message is explicit about the decision either way.
 
-7. **Commit 7 (conditional) — `waitForPortal` helper.** Covers work item (i). Lands only if commits 1–4's unit tests needed it. Otherwise amend Step 5.5.b to strike the item and explain why.
+7. ~~**Commit 7 (conditional) — `waitForPortal` helper.**~~ **Withdrawn post-implementation.** Commits 1–4's new hook tests did not need the helper (all use `renderHook` in isolation with no `TugPane` / `CardPortal`), and the pre-existing portal-sensitive tests continue to use synchronous `paneContentRegistry.getElement()` assertions. Item (g) struck in the audit; this commit slot is intentionally empty.
 
 **Verification:**
 - `bun x tsc --noEmit` + `bun test` + `bun run audit:tokens lint` all green after every commit — no chain-of-commits detours.
