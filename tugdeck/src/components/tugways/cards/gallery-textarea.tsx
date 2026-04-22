@@ -39,6 +39,19 @@ export function GalleryTextarea() {
   return (
     <div className="cg-content" data-testid="gallery-textarea">
 
+      {/*
+        `persistKey` opts each textarea into DOM-authority persistence
+        (CardHost captures `.value` / selection / scroll at save time and
+        reapplies on restore). Keys must be unique within this card's
+        content tree; by convention we use a
+        `gallery-textarea/<section>/<variant>` namespace.
+
+        Only *uncontrolled* textareas carry persistKey — the
+        character-counter demos are controlled (React `value` /
+        `onChange`), so their state is owned by React and a DOM-level
+        restore would be immediately overwritten on the next render.
+      */}
+
       {/* ---- Sizes ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Sizes</TugLabel>
@@ -49,6 +62,7 @@ export function GalleryTextarea() {
               size={size}
               rows={3}
               placeholder={`Size: ${size}`}
+              persistKey={`gallery-textarea/size/${size}`}
             />
           ))}
         </div>
@@ -67,6 +81,7 @@ export function GalleryTextarea() {
               rows={3}
               defaultValue={v === "default" ? "" : `Validation: ${v}`}
               placeholder={v === "default" ? "Default (no validation)" : undefined}
+              persistKey={`gallery-textarea/validation/${v}`}
             />
           ))}
         </div>
@@ -87,6 +102,7 @@ export function GalleryTextarea() {
               resize="vertical"
               rows={3}
               placeholder="Drag bottom edge to resize vertically"
+              persistKey="gallery-textarea/resize/vertical"
             />
           </div>
 
@@ -98,6 +114,7 @@ export function GalleryTextarea() {
               resize="horizontal"
               rows={3}
               placeholder="Drag right edge to resize horizontally"
+              persistKey="gallery-textarea/resize/horizontal"
             />
           </div>
 
@@ -109,6 +126,7 @@ export function GalleryTextarea() {
               resize="both"
               rows={3}
               placeholder="Drag any corner to resize freely"
+              persistKey="gallery-textarea/resize/both"
             />
           </div>
 
@@ -130,6 +148,7 @@ export function GalleryTextarea() {
               autoResize
               rows={2}
               placeholder="Type here — the textarea grows to fit your content"
+              persistKey="gallery-textarea/auto-resize/unbounded"
             />
           </div>
 
@@ -142,6 +161,7 @@ export function GalleryTextarea() {
               maxRows={5}
               rows={2}
               placeholder="Grows up to 5 rows, then scrolls"
+              persistKey="gallery-textarea/auto-resize/max-rows-5"
             />
           </div>
 
@@ -151,6 +171,10 @@ export function GalleryTextarea() {
       <TugSeparator />
 
       {/* ---- Character Counter ---- */}
+      {/* Controlled textareas (React owns `value` via state). No
+          persistKey — DOM-level restore would be overwritten on the next
+          render. Preserving these values across reload would require
+          opting the host card into `useCardPersistence`. */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Character Counter</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>
@@ -189,10 +213,10 @@ export function GalleryTextarea() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">States</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
-          <TugTextarea disabled rows={3} defaultValue="Disabled with value" />
-          <TugTextarea disabled rows={3} placeholder="Disabled with placeholder" />
-          <TugTextarea readOnly rows={3} defaultValue="Read-only with value" />
-          <TugTextarea readOnly rows={3} placeholder="Read-only with placeholder" />
+          <TugTextarea disabled rows={3} defaultValue="Disabled with value" persistKey="gallery-textarea/states/disabled-with-value" />
+          <TugTextarea disabled rows={3} placeholder="Disabled with placeholder" persistKey="gallery-textarea/states/disabled-placeholder" />
+          <TugTextarea readOnly rows={3} defaultValue="Read-only with value" persistKey="gallery-textarea/states/readonly-with-value" />
+          <TugTextarea readOnly rows={3} placeholder="Read-only with placeholder" persistKey="gallery-textarea/states/readonly-placeholder" />
         </div>
       </div>
 
@@ -207,10 +231,12 @@ export function GalleryTextarea() {
               <TugTextarea
                 rows={3}
                 placeholder="Subject"
+                persistKey="gallery-textarea/tugbox-cascade/subject"
               />
               <TugTextarea
                 rows={5}
                 placeholder="Message body — disabled via TugBox cascade"
+                persistKey="gallery-textarea/tugbox-cascade/body"
               />
             </div>
           </TugBox>

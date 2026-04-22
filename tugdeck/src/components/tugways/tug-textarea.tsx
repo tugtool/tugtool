@@ -109,6 +109,25 @@ export interface TugTextareaProps
    * @default false
    */
   borderless?: boolean;
+  /**
+   * Opt into DOM-authority persistence. When set, the rendered
+   * `<textarea>` carries `data-tug-persist-value={persistKey}`.
+   * CardHost's save path captures the element's `value`, selection,
+   * and scroll at save time and reapplies them on restore.
+   *
+   * **Uniqueness.** The key must be unique **within the owning card's
+   * content subtree**. Cross-card collisions are impossible: CardHost
+   * scopes its DOM query to the card's own root (the
+   * `[data-card-host][data-card-id]` div), so sibling cards in the
+   * same pane (tabs) and separate card instances each keep their own
+   * isolated bag. Collisions within one card are author error.
+   *
+   * **Uncontrolled only.** Use with uncontrolled textareas (native
+   * `defaultValue` or no value prop). Setting `.value` on a controlled
+   * textarea (`value={state}`) will be immediately overwritten on the
+   * next React render — use `useCardPersistence` for controlled state.
+   */
+  persistKey?: string;
 }
 
 // ---- Shared rendering helper ----
@@ -152,6 +171,7 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
   maxRows,
   focusStyle,
   borderless,
+  persistKey,
   className,
   disabled,
   onChange,
@@ -269,6 +289,7 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
       data-slot="tug-textarea"
       data-focus-style={focusStyle}
       data-borderless={borderless || undefined}
+      data-tug-persist-value={persistKey}
       className={textareaClassName}
       disabled={effectiveDisabled}
       aria-invalid={validation === "invalid" ? "true" : undefined}

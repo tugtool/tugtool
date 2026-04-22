@@ -38,6 +38,28 @@ export interface CardStateBag {
   scroll?: { x: number; y: number };
   selection?: SavedSelection | null;
   content?: unknown;
+  /**
+   * Snapshot of every `<input>` / `<textarea>` inside the card that carries
+   * a `data-tug-persist-value="<key>"` attribute, keyed by the attribute's
+   * value. Captured at save time by walking `hostContentEl.querySelectorAll`.
+   * Reapplied on restore and on any DOM mutation that introduces a matching
+   * element later (to handle late mounts). DOM-authority persistence for
+   * native input state that sits outside `useCardPersistence`'s opt-in path.
+   */
+  domInputs?: Record<string, DomInputSnapshot>;
+}
+
+/**
+ * DOM-authority snapshot of a single native input or textarea. Captured and
+ * reapplied by `CardHost` for any element bearing `data-tug-persist-value`.
+ */
+export interface DomInputSnapshot {
+  value: string;
+  selectionStart?: number;
+  selectionEnd?: number;
+  selectionDirection?: "forward" | "backward" | "none";
+  scrollTop?: number;
+  scrollLeft?: number;
 }
 
 /**

@@ -59,7 +59,7 @@ import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { selectionGuard } from "../tugways/selection-guard";
 import { getRegistration } from "../../card-registry";
-import type { CardStateBag } from "../../layout-tree";
+import type { CardStateBag, DomInputSnapshot } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
@@ -78,6 +78,89 @@ export interface CardHostProps {
    * survives across card switches and cross-pane moves. Defaults to `true`.
    */
   isActive?: boolean;
+}
+
+/**
+ * DOM-authority persistence for native `<input>` and `<textarea>` elements
+ * carrying `data-tug-persist-value="<key>"`. Walks the card's own subtree
+ * and snapshots each element's value + selection + scroll keyed by the
+ * attribute value.
+ *
+ * **Scope matters.** The `root` passed here must be the card-host div
+ * (`[data-card-host][data-card-id]`) — not the pane's content element.
+ * Multiple cards inside one pane (tab-group panes) all portal into the
+ * same pane-content `<div>`, so a query rooted at the pane would
+ * cross-pollinate between sibling cards that happen to share a
+ * `persistKey`. Rooting at the card-host div keeps `persistKey`
+ * uniqueness a per-card concern, which is what the caller already
+ * assumes.
+ *
+ * Only reads from the DOM (uncontrolled-input assumption — controlled
+ * React-owned `value` is the caller's concern via `useCardPersistence`).
+ */
+function captureDomInputs(
+  root: HTMLElement,
+): Record<string, DomInputSnapshot> | undefined {
+  const result: Record<string, DomInputSnapshot> = {};
+  const els = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    "[data-tug-persist-value]",
+  );
+  for (const el of els) {
+    const key = el.getAttribute("data-tug-persist-value");
+    if (!key) continue;
+    result[key] = {
+      value: el.value,
+      selectionStart: el.selectionStart ?? undefined,
+      selectionEnd: el.selectionEnd ?? undefined,
+      selectionDirection: el.selectionDirection ?? undefined,
+      scrollTop: el.scrollTop,
+      scrollLeft: el.scrollLeft,
+    };
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Find this card's own DOM subtree root inside a pane's content element.
+ * The `[data-card-host][data-card-id]` div is rendered by `CardHost`
+ * itself and travels with the card across cross-pane moves (via the
+ * stable `CardPortal` slot), so it is the authoritative per-card
+ * scoping anchor for any DOM walk done by the host.
+ */
+function findCardRoot(
+  hostContentEl: HTMLElement,
+  cardId: string,
+): HTMLElement | null {
+  return hostContentEl.querySelector<HTMLElement>(
+    `[data-card-host][data-card-id="${CSS.escape(cardId)}"]`,
+  );
+}
+
+/**
+ * Apply a saved `DomInputSnapshot` to an element. Idempotent guard at the
+ * call site (via a `WeakSet`) keeps user typing from being overwritten on
+ * subsequent mutation-observer fires.
+ */
+function applyDomInputSnapshot(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  snap: DomInputSnapshot,
+): void {
+  if (el.value !== snap.value) el.value = snap.value;
+  if (snap.scrollTop !== undefined) el.scrollTop = snap.scrollTop;
+  if (snap.scrollLeft !== undefined) el.scrollLeft = snap.scrollLeft;
+  if (snap.selectionStart !== undefined && snap.selectionEnd !== undefined) {
+    try {
+      el.setSelectionRange(
+        snap.selectionStart,
+        snap.selectionEnd,
+        snap.selectionDirection,
+      );
+    } catch {
+      // setSelectionRange rejects on inputs whose type doesn't support
+      // selection (e.g. `type="number"`). Silent is fine — value restore
+      // already succeeded.
+    }
+  }
 }
 
 /**
@@ -205,6 +288,39 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (bag.content === undefined && bag.selection != null) {
       selectionGuard.restoreSelection(hostStackId, bag.selection);
     }
+
+    // DOM-authority input restore. Apply once per element (WeakSet guard)
+    // so user typing after restore is never overwritten by a subsequent
+    // mutation-observer fire. A MutationObserver on the card's own
+    // subtree catches inputs that mount later (e.g., behind feedsReady
+    // or any content factory that defers rendering). The MutationObserver
+    // MUST be scoped to this card's root — not the whole pane — to
+    // prevent cross-card notifications from firing redundant applies
+    // against this card's state.
+    if (!bag.domInputs) return;
+    const snapshots = bag.domInputs;
+    const applied = new WeakSet<Element>();
+
+    const apply = () => {
+      const cardRoot = findCardRoot(hostContentEl, cardId);
+      if (!cardRoot) return;
+      for (const [key, snap] of Object.entries(snapshots)) {
+        const el = cardRoot.querySelector<
+          HTMLInputElement | HTMLTextAreaElement
+        >(`[data-tug-persist-value="${CSS.escape(key)}"]`);
+        if (!el) continue;
+        if (applied.has(el)) continue;
+        applied.add(el);
+        applyDomInputSnapshot(el, snap);
+      }
+    };
+
+    apply();
+    const cardRoot = findCardRoot(hostContentEl, cardId);
+    if (!cardRoot) return;
+    const observer = new MutationObserver(apply);
+    observer.observe(cardRoot, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [cardId, hostStackId, hostContentEl, store]);
 
   // Rewritten every render so closures registered below read the latest
@@ -217,10 +333,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       : undefined;
     const selection = selectionGuard.saveSelection(hostStackId);
     const content = persistenceCallbacksRef.current?.onSave();
+    // Scope DOM-input capture to THIS card's subtree so sibling cards in
+    // the same pane (tab-group) never contaminate each other's values.
+    const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
+    const domInputs = cardRoot ? captureDomInputs(cardRoot) : undefined;
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(selection !== null ? { selection } : {}),
       ...(content !== undefined ? { content } : {}),
+      ...(domInputs !== undefined ? { domInputs } : {}),
     };
     store.setCardState(cardId, bag);
   };
