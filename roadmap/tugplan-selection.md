@@ -448,7 +448,7 @@ Every question has a concrete decision the user must make before the execution p
 - (b) On focus-leave + DOM mutation (coarse, cheaper, only when the range would become "remembered").
 - (c) Lazy — publish only when asked (selectionGuard queries on deactivate).
 
-**Resolution:** DECIDED (b). Publish on focus-out and on DOM mutation that invalidates the existing Range. The `selectionchange` event fires on every caret move; we don't need to re-publish just because the user arrow-keyed.
+**Resolution:** DECIDED (a). Publish eagerly from the engine on every internal selection change — `setSelectedRange`, `restoreState` tail, and a `selectionchange` listener scoped to the engine's root. The operation is a `Map.set` followed by a `updatePaint()` that short-circuits when only the focused card's entry changed (the focused card's range lives in `window.getSelection()` and paints natively; the inactive-highlight rebuild produces an identical output and can skip re-paint). Net cost per caret move: one Map write and a short-circuit check — cheap. Rejected (b) as underspecified: "focus-out" is not a single event in the engine, and a component that publishes only at focus-out loses its range mid-composition if the DOM mutates before the user blurs. Rejected (c) as racy against app-resign.
 
 #### [Q04] Engine diff-restore scope (DECIDED) {#q04-engine-diff-scope}
 
@@ -482,7 +482,7 @@ Every question has a concrete decision the user must make before the execution p
 
 - **Risk:** A `Range` held in `selectionGuard.inactiveRanges` becomes invalid when the DOM it anchors into is mutated (engine innerHTML rewrite, React re-render that replaces nodes). Paint becomes nonsense or throws on access.
 - **Mitigation:** Components that mutate their DOM must call `selectionGuard.updateCardDomSelection(cardId, newRange | null)` after every such mutation. [D05] / [Q03] formalize this. [D11]'s diff-instead-of-rewrite engine path reduces how often this is needed.
-- **Residual:** Components that mutate DOM without publishing will silently produce stale highlights. Detect via a sanity check on every access: if the Range's containers are no longer in the document, drop it from the highlight and clear from `inactiveRanges`. A dev-mode warning logs the offending cardId.
+- **Residual:** Components that mutate DOM without publishing will silently produce stale highlights. Wired in [Step 5](#step-5): `updatePaint()` validates every Range before painting via `document.contains(range.startContainer) && document.contains(range.endContainer)`; stale entries are dropped from `cardRanges` and a dev-mode `console.warn` logs the offending cardId with a "owning component did not re-publish after DOM mutation" message. The Step 5 test list pins this behavior.
 
 #### [R02] IME composition in-flight during will-phase capture (MED) {#r02-ime-composition}
 
@@ -650,7 +650,7 @@ The implementation sequence is 15 commits. Each is independently revertable. The
   Stores the Range in `cardRanges: Map<cardId, Range | null>` (new internal state, separate from the old `inactiveRanges` which is retired in Step 6).
 - `TugPromptInput` subscribes to its engine's `onSelectionChanged` in a `useLayoutEffect` scoped to the engine's lifetime and the `cardId` from `CardPersistenceContext`. On each callback, invokes `selectionGuard.updateCardDomSelection(cardId, range)`. Unsubscribes on unmount.
 - `CardPersistenceCallbacks` gains no new fields at this step; the wiring lives inside `TugPromptInput` and reads `cardId` from the callback-register flow already established in [`CardHost`'s register contract](#audit-table-a).
-- Step 3's publish per focus-out + mutation ([Q03]) becomes concrete: the engine only publishes at the documented trigger points (set / restore / user selectionchange); step-by-step emission already satisfies [Q03] (b) — the engine is the only source for contentEditable selection, and it already fires at the boundary moments.
+- Step 3's eager publish ([Q03] resolution (a)) is the implementation: the engine publishes on `setSelectedRange`, `restoreState` tail, and its own scoped `selectionchange` listener. Cost is bounded because `updatePaint()` (Step 5) short-circuits when the only change is to the focused card's entry (that range is painted natively via `window.getSelection()`, not via the inactive highlight).
 
 **Tasks:**
 - [ ] Add `cardRanges` and `updateCardDomSelection` to `selection-guard.ts`.
@@ -680,14 +680,16 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 **Artifacts:**
 - SelectionGuard paints every entry of `cardRanges` in the `inactive-selection` Highlight **except** the entry whose cardId matches the deck's active-pane's active card. That one range is mirrored into `window.getSelection()` so `::selection` paints it.
 - Paint updates fire on: (a) `cardRanges.set`/`delete` calls via `updateCardDomSelection`; (b) deck-state change on `activePaneId` or the active pane's `activeCardId`, via a new `store.subscribe` subscription installed in `selectionGuard.attach` (already receives `appLifecycle`; extend to take the deck store too or reach it through `getDeckManager()`).
+- `updatePaint()` validates every Range before painting: if `!document.contains(range.startContainer) || !document.contains(range.endContainer)`, the Range is stale (its anchor DOM was detached — the classic [R01](#r01-stale-ranges) failure: an engine or other component mutated its subtree without calling `updateCardDomSelection(cardId, newRange)`). Stale Ranges are dropped from `cardRanges` and, in dev builds (`isDevEnv()`), a `console.warn` logs the offending `cardId` with a "stale range dropped — owning component did not re-publish after DOM mutation" message. Prod builds silently drop. This closes the R01 residual the previous plan left open.
+- **Perf short-circuit.** `updatePaint()` takes an optional `hint: { changedCardId?: string }` parameter. When the only change is to the currently-focused card's entry (`hint.changedCardId === getFocusedCardId() && windowHasFocus`), skip the `inactiveHighlight` rebuild entirely — the focused card's range is painted natively via `window.getSelection()`, and the inactive-highlight set is unchanged. `updateCardDomSelection` passes `{ changedCardId: cardId }`. Deck-state-change callers pass no hint (full rebuild). This bounds the cost of eager publishing ([Q03]): per-caret-move cost is one Map write plus one short-circuit check.
 - The existing `handleApplicationDidResignActive` / `handleApplicationDidBecomeActive` refactor: on resign, the active card's cardId is temporarily dropped from the "focused" position so its Range also paints in the custom highlight (matches current dim behavior); on become-active, the cardId is restored. Internally this can just flip a boolean `windowHasFocus` read by the paint computation; the effect is the same as the old dedicated map but without a separate code path.
 
 **Tasks:**
 - [ ] Add `windowHasFocus` boolean (defaults true, flips on will-resign/did-become).
 - [ ] Add `getFocusedCardId(): string | null` — resolves via deck-state `activePaneId` → `pane.activeCardId`.
-- [ ] `updatePaint()` (new internal method): clears `inactiveHighlight`, rebuilds from `cardRanges` minus the focused card's entry (when `windowHasFocus` is true). Moves the focused-card range into `window.getSelection()`.
-- [ ] `updateCardDomSelection` calls `updatePaint()`.
-- [ ] Subscribe to deck-state changes — on `activeCardId` or `activePaneId` change, call `updatePaint()`.
+- [ ] `updatePaint(hint?: { changedCardId?: string })` (new internal method): if the hint indicates the focused card's entry changed while `windowHasFocus`, short-circuit. Otherwise clear `inactiveHighlight` and rebuild from `cardRanges` minus the focused card's entry (when `windowHasFocus` is true), validating each Range's containers against `document.contains` and dropping stale entries with a dev-warn. Moves the focused-card range into `window.getSelection()`.
+- [ ] `updateCardDomSelection(cardId, range)` calls `updatePaint({ changedCardId: cardId })`.
+- [ ] Subscribe to deck-state changes — on `activeCardId` or `activePaneId` change, call `updatePaint()` (no hint → full rebuild).
 - [ ] Retire `inactiveRanges` and `deactivatedCardId` fields from `selection-guard.ts` — subsumed by `cardRanges` + `windowHasFocus`.
 - [ ] `handleApplicationWillResignActive` / `handleApplicationDidBecomeActive` refactor — they now only flip `windowHasFocus` and call `updatePaint()`. No more manual Range cloning.
 
@@ -698,6 +700,8 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - [ ] App resign: both ranges paint in `inactive-selection`.
 - [ ] App become-active: focused card's range moves back to native; other remains in inactive.
 - [ ] Mutation tests for `updateCardDomSelection(cardId, null)` → removes from paint.
+- [ ] **Stale-range drop**: publish a Range, then detach the anchoring element from the document (simulates an engine-root replacement without a re-publish), trigger an unrelated `updatePaint()` (e.g., a deck-state change), assert the stale entry is removed from `cardRanges` and a dev-warn was emitted.
+- [ ] **Perf short-circuit**: `updatePaint({ changedCardId })` where `changedCardId === getFocusedCardId() && windowHasFocus` does NOT call `inactiveHighlight.clear()` (assert via spy).
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`, `bun test` green.
@@ -928,23 +932,25 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 **References:** [D11](#d11-engine-diff-not-rewrite), [Q04](#q04-engine-diff-scope), [R05](#r05-engine-diff-regression), [L23]; `lib/tug-text-engine.ts:632-660`.
 
 **Artifacts:**
-- `engine.restoreState(state)` computes whether `this.root.innerHTML` already represents `state` exactly (same `parts` sequence would produce the same HTML). If so, skip `this.root.innerHTML = ...` entirely. Still call `setSelectedRange` so the selection aligns (skip-if-correct inside `setSelectedRange` handles the no-op case).
-- Fast-path comparison: serialize `state.text + atoms.map(a => a.label).join('|') + state.selection?.start + state.selection?.end` and memoize as `this._lastRestoredSignature`. If the new state's signature matches, no DOM rewrite.
-- First-call behavior (initial mount): `_lastRestoredSignature === null`, DOM is empty, we still do the initial write.
+- `engine.restoreState(state)` computes the signature of its *current* DOM state (by calling `this.captureState()` and serializing the result) and the signature of the target `state`. If they match, skip `this.root.innerHTML = ...` entirely. Still call `setSelectedRange` so the selection aligns (skip-if-correct inside `setSelectedRange` handles the no-op case).
+- Signature serialization: `state.text + "|" + atoms.map(a => a.type + ":" + a.label + ":" + a.value).join(",") + "|" + (state.selection?.start ?? "") + ":" + (state.selection?.end ?? "")`. Stable for identical states, distinguishes different selection, different atoms, different text.
+- No cached field on the engine instance. The comparison is recomputed on every `restoreState` call. Reason: a cached `_lastRestoredSignature` would need invalidation on every edit path (insert, delete, paste, atom, backspace, newline, drop — many sites), and any missed invalidation silently produces stale DOM after a signature match. Recomputing from `captureState()` reads the ground-truth DOM every call, costs O(text + atoms) which is already the cost of the subsequent rewrite path, and cannot drift.
+- First-call behavior (initial mount): `captureState()` returns `{ text: "", atoms: [], selection: null }` on an empty engine; if the target is also empty, we skip; if the target has content, signatures differ and we write as before.
 
 **Tasks:**
-- [ ] Add `_lastRestoredSignature: string | null` field.
-- [ ] Compute a stable signature from `state` (text, atoms, selection).
-- [ ] Guard `this.root.innerHTML = parts.join("")` with the signature check.
-- [ ] Keep the post-write calls (`this.updateEmpty()`, `this.autoResize()`, `this.setSelectedRange(...)`) to run regardless — they're fast and selection/layout adjust is cheap.
-- [ ] Invalidate the signature cache on any engine edit path so subsequent restores with different content rewrite.
+- [ ] At the top of `restoreState`, call `this.captureState()` and serialize its output to a signature string via the canonical form above.
+- [ ] Serialize `state` to the same form.
+- [ ] If the two signatures match, skip `this.root.innerHTML = parts.join("")` and the `parts` build loop entirely; fall straight through to `setSelectedRange` for selection alignment.
+- [ ] Keep the post-write calls (`this.updateEmpty()`, `this.autoResize()`, `this.setSelectedRange(...)`) to run regardless — they're fast and the selection/layout adjust is cheap and idempotent.
+- [ ] No cached signature field. No invalidation step. No edit-path instrumentation.
 
-**Upholds:** [L23] — the canonical textbook case of "diff and mutate minimally." When content hasn't changed, don't touch the DOM at all.
+**Upholds:** [L23] — the canonical textbook case of "diff and mutate minimally." When content hasn't changed, don't touch the DOM at all. Ground-truth comparison (not cached) eliminates the cache-drift failure mode.
 
 **Tests:**
 - [ ] Two consecutive `restoreState(same)` calls: second produces no DOM mutation (assert via MutationObserver).
 - [ ] `restoreState(different)` writes as before.
-- [ ] After `restoreState(A)`, a user edit, then `restoreState(A)`: the second restore writes (signature invalidated).
+- [ ] `restoreState(A)`, then user edit (via engine's edit APIs), then `restoreState(A)`: the second restore writes (current DOM now differs from A, signature mismatch, full path).
+- [ ] `restoreState(A)` followed by `restoreState(A')` where only selection changed: DOM is unchanged (skipped), `setSelectedRange` still runs and moves the caret.
 - [ ] Selection is applied regardless (`sel.anchorOffset/focusOffset` match).
 
 **Checkpoint:**
@@ -1036,11 +1042,15 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 **Tasks:**
 - [ ] Author every test above.
-- [ ] Add a grep contract test: no `setBaseAndExtent` / `setSelectionRange` / `.focus()` usage for save/restore purposes outside `selection-guard.ts` + `tug-text-engine.ts` + `card-host.tsx` + `use-text-input-responder.tsx`.
+- [ ] Add a grep contract test that encodes the post-refactor invariants. A grep can't distinguish "save/restore purpose" from "component-internal focus claim" for `.focus()`, so the contract targets what *is* mechanical:
+  - `selectionGuard.saveSelection(` and `selectionGuard.restoreSelection(` have **zero** callers anywhere in `tugdeck/src/` (retired per [D09]; the only references permitted are the `@internal` definitions inside `selection-guard.ts`).
+  - `setBaseAndExtent(` appears only in `selection-guard.ts` (drag-clip plus `restoreCardDomSelection`) and `tug-text-engine.ts` (engine-owned selection writes). No other file.
+  - `setSelectionRange(` appears only in `card-host.tsx` (`applyFormControlSnapshot`), `use-text-input-responder.tsx` (contextmenu restore — existing, unchanged), and `tug-text-engine.ts` (engine internals). No other file.
+  - `.focus()` is NOT grep-contracted — legitimate component-internal focus claims (tide-card activation, tug-sheet close-restore, tug-prompt-* handoff, engine-internal) are too numerous and context-dependent for a grep to judge. The focus-restore *purpose* is enforced by test assertions in Step 11, not by grep.
 
 **Tests:** (this step IS tests)
 - [ ] All integration tests green.
-- [ ] Grep contract passes.
+- [ ] Grep contract passes (three grep assertions above).
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`, `bun test` green.
