@@ -616,23 +616,28 @@ The implementation sequence is 15 commits. Each is independently revertable. The
   - Any other path that ends in a `sel.setBaseAndExtent` write (interactive selection from the user's drag / click / keyboard is a separate code path that goes through native selectionchange; see Tasks below).
 
 - Engine publishes `null` when there's no active selection inside its root (e.g., after a `clear`), and a live `Range` object (cloned from `window.getSelection().getRangeAt(0)`) when there is one.
+- Two new private invariants that keep the contract stable across environments: (a) a `_suppressSelectionEmits` flag wrapping atomic multi-write sequences (`setSelectedRange`'s `removeAllRanges` + `addRange`, `restoreState`'s `innerHTML=…` + nested `setSelectedRange`, `clear`'s `innerHTML=""`) so only the outer entry point emits; (b) dedup on anchor/focus endpoints so redundant `selectionchange` fires (happy-dom's synchronous dispatch, or real browsers' async echo after a programmatic write) are collapsed to a single emit.
 
 **Tasks:**
-- [ ] Add `onSelectionChanged` to the engine's public interface at `lib/tug-text-engine.ts:78`.
-- [ ] Implement subscriber list as `Set<(range: Range | null) => void>` with a dispose-function contract.
-- [ ] Add the emit call inside `setSelectedRange` and at the tail of `restoreState`. Each call reads the current `window.getSelection()` if the root has focus; otherwise constructs a Range from the engine's internal selection coords and root.
-- [ ] Add an `input` / `selectionchange` listener on the engine root so the engine publishes selection as the user interactively drags/types. Scope the listener to `this.root` so it doesn't fire for selections outside the engine.
-- [ ] Dispose subscribers in the engine's `destroy` method.
+- [x] Add `onSelectionChanged` to the engine's public interface at `lib/tug-text-engine.ts:78`.
+- [x] Implement subscriber list as `Set<(range: Range | null) => void>` with a dispose-function contract.
+- [x] Add the emit call inside `setSelectedRange` and at the tail of `restoreState`. Each call reads the current `window.getSelection()` if the root has focus; otherwise constructs a Range from the engine's internal selection coords and root.
+- [x] Add an `input` / `selectionchange` listener on the engine root so the engine publishes selection as the user interactively drags/types. Scope the listener to `this.root` so it doesn't fire for selections outside the engine. *Implementation: `selectionchange` fires on `document`, so the listener registers at document scope and `emitSelectionChanged` self-filters via `this.root.contains(anchor)`. No separate `input` listener needed — content-change-driven selection shifts always trigger a `selectionchange`.*
+- [x] Dispose subscribers in the engine's `destroy` method. *The engine's cleanup entry point is named `teardown`; subscribers + dedup state are cleared there.*
+- [x] Expose `onSelectionChanged` on the `TugPromptInputDelegate` (via `tug-prompt-input.tsx`'s `useImperativeHandle`) so cross-component consumers can subscribe through the same API surface as the engine.
 
 **Upholds:** [L11] engine owns its selection state; exposes a hook for non-owner observers to subscribe rather than poking at engine internals. [L10] engine publishes; selection-guard consumes.
 
 **Tests:**
-- [ ] New `tug-text-engine.test.ts` tests: `engine.setSelectedRange(a, b)` fires `onSelectionChanged` with a Range matching `a,b`; `engine.restoreState(...)` fires with the restored range; `engine.clear()` fires `null`.
-- [ ] Unsubscribe actually stops firing.
-- [ ] A user-driven selectionchange (simulated via happy-dom) fires `onSelectionChanged` exactly once with the current Range.
+- [x] New `tug-text-engine.test.ts` tests: `engine.setSelectedRange(a, b)` fires `onSelectionChanged` with a Range matching `a,b`; `engine.restoreState(...)` fires with the restored range; `engine.clear()` fires `null`.
+- [x] Unsubscribe actually stops firing.
+- [x] A user-driven selectionchange (simulated via happy-dom) fires `onSelectionChanged` exactly once with the current Range.
+- [x] Transition-out case (selection moves from inside the root to outside) emits `null` exactly once.
+- [x] Multiple subscribers all fire; unsubscribing one leaves the other intact.
+- [x] `teardown` drops subscribers.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green (2224 pass).
 
 ---
 

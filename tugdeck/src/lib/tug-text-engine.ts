@@ -78,6 +78,20 @@ export interface TugTextInputDelegate {
   setSelectedRange(start: number, end?: number): void;
   selectWordAtPoint(clientX: number, clientY: number): { start: number; end: number } | null;
   readonly hasMarkedText: boolean;
+  /**
+   * Subscribe to changes in the engine's current DOM selection. The
+   * callback fires synchronously with a cloned `Range` whenever the
+   * engine's own selection moves (via `setSelectedRange`, `restoreState`,
+   * `clear`, or a user-driven `selectionchange` whose anchor is inside
+   * the engine's root) and with `null` when the engine has no selection
+   * (e.g., after `clear`). Returns an unsubscribe function.
+   *
+   * Consumers own the Range from the moment they receive it. The engine
+   * does not retain, mutate, or invalidate it. `selectionGuard` uses
+   * this to paint a remembered selection for cards whose native
+   * `::selection` is not currently active. [L11]
+   */
+  onSelectionChanged(cb: (range: Range | null) => void): () => void;
 
   // --- Mutation ---
   insertText(text: string): void;
@@ -363,6 +377,24 @@ export class TugTextEngine {
   // Event handler references for teardown
   private _handlers: Array<{ target: EventTarget; type: string; fn: EventListener; capture?: boolean }> = [];
 
+  // Subscribers to the engine's DOM selection. See `onSelectionChanged`.
+  private _selectionSubscribers = new Set<(range: Range | null) => void>();
+  // Last emitted selection endpoints. Lets `emitSelectionChanged` skip
+  // redundant fires when the browser (or happy-dom in tests) dispatches
+  // a `selectionchange` that doesn't actually move the anchor/focus —
+  // common when a programmatic write fires its own async selectionchange
+  // right after the engine already emitted synchronously.
+  private _lastEmittedHadRange = false;
+  private _lastEmittedAnchorNode: Node | null = null;
+  private _lastEmittedAnchorOffset = 0;
+  private _lastEmittedFocusNode: Node | null = null;
+  private _lastEmittedFocusOffset = 0;
+  // Suppress emissions during atomic multi-write sequences (e.g.
+  // `removeAllRanges` + `addRange`, or `innerHTML=…` + `setSelectedRange`
+  // inside `restoreState`). The outer entry point emits once at the end;
+  // intermediate states stay private.
+  private _suppressSelectionEmits = false;
+
   // IME composition state.
   // _composing is true between compositionstart and compositionend.
   // _compositionJustEnded is set on compositionend and cleared on keyup.
@@ -454,8 +486,82 @@ export class TugTextEngine {
     const range = document.createRange();
     range.setStart(s.node, s.offset);
     range.setEnd(e.node, e.offset);
-    sel.removeAllRanges();
-    sel.addRange(range);
+
+    const wasSuppressed = this._suppressSelectionEmits;
+    this._suppressSelectionEmits = true;
+    try {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } finally {
+      this._suppressSelectionEmits = wasSuppressed;
+    }
+    // If a parent call (e.g. `restoreState`) already owns the emit at
+    // its own tail, don't double-fire; defer to the parent.
+    if (!wasSuppressed) this.emitSelectionChanged();
+  }
+
+  /**
+   * Subscribe to the engine's current DOM selection. See the interface
+   * docstring on {@link TugTextInputDelegate.onSelectionChanged} for the
+   * full contract.
+   */
+  onSelectionChanged(cb: (range: Range | null) => void): () => void {
+    this._selectionSubscribers.add(cb);
+    return () => {
+      this._selectionSubscribers.delete(cb);
+    };
+  }
+
+  /**
+   * Publish the engine's current DOM selection to every subscriber.
+   *
+   * Reads `window.getSelection()` and clones the Range when the anchor
+   * is inside `this.root`; otherwise emits `null`. Each subscriber owns
+   * the cloned Range — the engine does not retain it.
+   *
+   * Deduplicated on anchor/focus endpoints: if the selection hasn't moved
+   * since the last emit, skip. Atomic multi-write entry points (like
+   * `setSelectedRange` and `restoreState`) suppress intermediate fires
+   * via `_suppressSelectionEmits` and emit once at their own tail.
+   */
+  private emitSelectionChanged(): void {
+    if (this._suppressSelectionEmits) return;
+    const sel = window.getSelection();
+    let range: Range | null = null;
+    let anchorNode: Node | null = null;
+    let anchorOffset = 0;
+    let focusNode: Node | null = null;
+    let focusOffset = 0;
+    if (
+      sel !== null &&
+      sel.rangeCount > 0 &&
+      this.root.contains(sel.anchorNode)
+    ) {
+      range = sel.getRangeAt(0).cloneRange();
+      anchorNode = sel.anchorNode;
+      anchorOffset = sel.anchorOffset;
+      focusNode = sel.focusNode;
+      focusOffset = sel.focusOffset;
+    }
+
+    const hadRange = this._lastEmittedHadRange;
+    const sameAsLast =
+      (range === null && !hadRange) ||
+      (range !== null &&
+        hadRange &&
+        anchorNode === this._lastEmittedAnchorNode &&
+        anchorOffset === this._lastEmittedAnchorOffset &&
+        focusNode === this._lastEmittedFocusNode &&
+        focusOffset === this._lastEmittedFocusOffset);
+    if (sameAsLast) return;
+
+    this._lastEmittedHadRange = range !== null;
+    this._lastEmittedAnchorNode = anchorNode;
+    this._lastEmittedAnchorOffset = anchorOffset;
+    this._lastEmittedFocusNode = focusNode;
+    this._lastEmittedFocusOffset = focusOffset;
+
+    for (const cb of this._selectionSubscribers) cb(range);
   }
 
   selectAll(): void {
@@ -592,10 +698,16 @@ export class TugTextEngine {
 
   clear(): void {
     this.cancelTypeahead();
-    this.root.innerHTML = "";
+    this._suppressSelectionEmits = true;
+    try {
+      this.root.innerHTML = "";
+    } finally {
+      this._suppressSelectionEmits = false;
+    }
     this._empty = true;
     this.updateEmpty();
     this.onChange?.();
+    this.emitSelectionChanged();
   }
 
   // =================================================================
@@ -649,14 +761,24 @@ export class TugTextEngine {
         parts.push(ch);
       }
     }
-    this.root.innerHTML = parts.join("");
-    // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
-    this._empty = state.text.length === 0 || state.text === "\n";
-    this.updateEmpty();
-    this.autoResize();
-    if (state.selection) {
-      this.setSelectedRange(state.selection.start, state.selection.end);
+    // Suppress intermediate fires across the DOM rewrite and nested
+    // `setSelectedRange` so subscribers observe a single transition to
+    // the restored state, not a `null`-flash in the middle. The tail
+    // `emitSelectionChanged` below is the sole emit point.
+    this._suppressSelectionEmits = true;
+    try {
+      this.root.innerHTML = parts.join("");
+      // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
+      this._empty = state.text.length === 0 || state.text === "\n";
+      this.updateEmpty();
+      this.autoResize();
+      if (state.selection) {
+        this.setSelectedRange(state.selection.start, state.selection.end);
+      }
+    } finally {
+      this._suppressSelectionEmits = false;
     }
+    this.emitSelectionChanged();
   }
 
   /** Re-evaluate sizing. Called by the component when external conditions change. */
@@ -1586,6 +1708,18 @@ export class TugTextEngine {
       }
     });
 
+    // 10b. Document-level selectionchange — publish the engine's live
+    // selection to `onSelectionChanged` subscribers when the caret or
+    // ranged selection changes. `selectionchange` fires on `document`
+    // (not on elements), so the listener lives at document scope;
+    // `emitSelectionChanged` self-filters (anchor must be inside the
+    // engine's root to emit a non-null range) and deduplicates
+    // (identical endpoints → skip), so selections anywhere else on the
+    // page do not spam subscribers.
+    this.listen(document, "selectionchange", () => {
+      this.emitSelectionChanged();
+    });
+
     // 11. IME composition tracking
     this.listen(root, "compositionstart", () => {
       this._composing = true;
@@ -1628,5 +1762,11 @@ export class TugTextEngine {
       h.target.removeEventListener(h.type, h.fn, h.capture);
     }
     this._handlers.length = 0;
+    this._selectionSubscribers.clear();
+    this._lastEmittedHadRange = false;
+    this._lastEmittedAnchorNode = null;
+    this._lastEmittedAnchorOffset = 0;
+    this._lastEmittedFocusNode = null;
+    this._lastEmittedFocusOffset = 0;
   }
 }

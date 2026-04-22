@@ -419,6 +419,9 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
       selectWordAtPoint(clientX: number, clientY: number) { return engineRef.current?.selectWordAtPoint(clientX, clientY) ?? null; },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
+      onSelectionChanged(cb: (range: Range | null) => void) {
+        return engineRef.current?.onSelectionChanged(cb) ?? (() => {});
+      },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) { engineRef.current?.insertAtom(atom); },
       paste(html: string, plain: string) { engineRef.current?.paste(html, plain); },
