@@ -146,7 +146,7 @@ Rationale:
 3. B reads naturally as "where the user left off" — the user left off with focus on the active card of the active pane. Non-active panes' cards get their focus back when the user visits them, not speculatively on mount.
 4. Implementation is a single guard: `cardId === deckState.panes[activePaneIndex].activeCardId`.
 
-**Cmd-Tab then quit is not a wrinkle.** On Cmd-Tab, `applicationWillResignActive` fires while the WebView still owns focus ([Q03]); the will-phase save captures `focus: { kind: "keyed", focusKey: X }` correctly. If the user later quits from another app, the app terminates; the saved snapshot on disk is already `keyed-X`. Cold boot reads `keyed-X` and Option B refocuses it. The `body-transient` FocusSnapshot variant ([R06]) covers the narrower case where the user's last intentional focus state genuinely was "not on any keyed input" — e.g., clicked card chrome or Tabbed out of all inputs before the will-phase event — so that restore leaves focus alone, not that it failed to capture a known-good focus.
+**Cmd-Tab then quit is not a wrinkle.** `applicationWillResignActive` fires before WebKit clears selection visibility ([D04]). If the WebView still owns focus on a keyed input at that moment, the will-phase save captures `focus: { kind: "keyed", focusKey: X }` directly. If WKWebView has transiently moved focus to `document.body` by then, capture emits `{ kind: "body-transient", lastKeyedFocus: X }` ([D03], [R06]), where `X` is the module-level `lastKeyedFocus` ref maintained by [Step 11]'s synchronous blur handler. Either way, Option B on cold boot reads the persisted key and refocuses it. The `{ kind: "none" }` variant is reserved for the genuine case where the user's last intentional focus state really was "not on any keyed input" (clicked card chrome, Tabbed out of all inputs, first launch before any focus) — apply then leaves focus alone.
 
 Implemented at [Step 6](#step-6). Consistent with [Q01]: both describe "apply only for the currently-focused card."
 
@@ -258,7 +258,7 @@ Rationale:
 4. C2 (minimum-storage adaptive) is the theoretically tidiest, but adds capture-time cost and complexity for marginal bag-size savings over C1.
 5. **C1 is the simple-until-proven-insufficient choice.** Capture stores 80 chars each side (fixed, one code path). Apply escalates 20 → 40 → 80 using substrings of the stored window. No escalation beyond 80; if 80 chars on each side still match multiple positions, apply returns `"failed"` and logs in dev (consistent with [Q05]'s silent-fail-with-dev-warn policy). Storage is bounded at ~160 chars per DOM selection — negligible against the full card bag.
 
-Implemented at [Step 4](#step-4) (DOM capture) and [Step 5](#step-5) (DOM apply). If real-world usage proves 80 chars insufficient for tide cards with highly-repetitive content, revisit as a follow-on — C or C2 can be promoted to.
+Implemented at [Step 3](#step-3) (DOM capture) and [Step 5](#step-5) (DOM apply). If real-world usage proves 80 chars insufficient for tide cards with highly-repetitive content, revisit as a follow-on — C or C2 can be promoted to.
 
 ---
 
@@ -733,7 +733,10 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 **Tasks:**
 - [ ] Add types.
 - [ ] Keep `SavedSelection` exported (it's now a helper type inside the DOM variant).
-- [ ] Update callers of `CardStateBag['selection']` in the codebase to compile against the new shape — behaviorally, calls remain no-ops while Step 7 has not landed.
+- [ ] Update each existing `CardStateBag['selection']` caller to compile against the new shape, emitting `{ selection: { kind: "none" }, focus: { kind: "none" } }` as a stub value until Step 7 wires the keeper. Specific callers to update:
+  - `tugdeck/src/components/chrome/card-host.tsx` — `saveCurrentCardStateRef` (write path) and `useCardContentRestore` (read path). Write the stub object; ignore on read.
+  - `tugdeck/src/settings-api.ts` (or wherever the on-disk bag is serialized/deserialized) — pass through the new shape; no migration logic yet ([Step 13] owns migration).
+  - Any other `bag.selection` consumer surfaced by `grep -R 'bag\.selection\|bag\["selection"\]' tugdeck/src/`.
 
 **Tests:**
 - [ ] Unit test exercising `JSON.stringify(snapshot)` round-trip for each variant.
@@ -811,11 +814,15 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 - [ ] If form control with `data-tug-persist-value`: emit `form-control` snapshot.
 - [ ] Else: fall through to DOM capture.
 - [ ] Focus capture reads `data-tug-focus-key` preferentially, else `data-tug-persist-value`.
+- [ ] **If `document.activeElement === document.body`, emit `{ kind: "body-transient", lastKeyedFocus: <module-level ref, if any> }` per [D03] / [R06].** The module-level ref is maintained by [Step 11]'s synchronous blur handler; read it at capture time. If the ref is empty (no prior keyed focus observed), emit `{ kind: "body-transient", lastKeyedFocus: undefined }` so apply treats it as a no-op.
+- [ ] If `activeElement` is neither a keyed element inside boundary nor `document.body`, emit `{ kind: "none" }`.
 
 **Tests:**
 - [ ] Capture with focus inside an `<input>` carrying persistKey.
 - [ ] Capture with focus on a contenteditable; DOM path returns.
 - [ ] Capture with focus on unkeyed element: focus `kind: "none"`.
+- [ ] Capture with `activeElement === document.body` and `lastKeyedFocus` ref populated: emits `{ kind: "body-transient", lastKeyedFocus: "<key>" }`.
+- [ ] Capture with `activeElement === document.body` and `lastKeyedFocus` ref empty: emits `{ kind: "body-transient", lastKeyedFocus: undefined }`.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
@@ -1009,7 +1016,7 @@ Proposed post-phase tuglaws (tracked in Roadmap / Follow-ons, not a phase-exit c
 **Tests:**
 - [ ] Unit: blur a keyed element 5 times in 30 ms; assert `capture` is called once (debounced path).
 - [ ] Unit: after a keyed blur, `captureFocus` with `activeElement === body` emits `{ kind: "body-transient", lastKeyedFocus: "<key>" }`.
-- [ ] Unit: fire a keyed `focusout`, then 10 ms later (inside the debounce window) call `captureFocus` with `activeElement === body`; assert the emitted `lastKeyedFocus` is the just-blurred key, not the previous ref value (synchronous ref-update).
+- [ ] Unit: spy on `deckManager.setCardState`. Fire a keyed `focusout`, then 10 ms later (inside the 50 ms debounce window) call `captureFocus` with `activeElement === body`. Assert **both**: (a) `setCardState` has **not yet** been called (proving the capture-and-store path is debounced); (b) `captureFocus` emits `{ kind: "body-transient", lastKeyedFocus: <just-blurred key> }` (proving the `lastKeyedFocus` ref was updated synchronously, before the debounce tail). Together these prove "sync ref, debounced store" rather than either alone.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
@@ -1118,7 +1125,7 @@ Depending on Step 13 (bag migration) ensures no legacy v1 bag flows into `keeper
 - [ ] Cross-pane move: assert selection survives pane-activation transfer.
 - [ ] Reload with DOM selection: assert DOM selection restored via `pathToNode` primary or `textContext` fallback.
 - [ ] **Case γ five-cycle stress:** five consecutive Cmd-Tab cycles on `TugPromptEntry`; assert selection remains correctly restored through all five. Guards against accumulated WebKit programmatic-selection degradation at N > 2.
-- [ ] Grep contract: no `setSelectionRange` / `setBaseAndExtent` / `.focus()` usage for persistence purposes in `tugdeck/src` outside `selection-keeper.ts`.
+- [ ] Grep contract: `grep -R 'setSelectionRange\|setBaseAndExtent\|\.focus()' tugdeck/src/` returns matches only in an allow-listed set: `selection-keeper.ts` (owns all persistence apply), `selection-guard.ts` (drag-clipping only; inspect each match to confirm not a persistence path), and any explicit user-interaction handlers (e.g., a click handler that focuses on tab-switch, documented with a `// persistence-allowlist:` comment). Any match outside the allow-list fails the contract. "For persistence purposes" cannot be enforced by regex alone; manual reviewer confirmation is required for `selection-guard.ts` matches until [Step 14]'s deprecation narrows that module to drag-clipping exclusively.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit`
