@@ -1160,26 +1160,26 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - Hook no-ops outside a card context (dev-warn; absent registry → no register). This keeps gallery demos + standalone tests working without requiring a card wrapper.
 
 **Tasks:**
-- [ ] Author the hook with ref-sync pattern per [D13] Q2b (refs re-synced every render; framework reads `.current` at capture time).
-- [ ] Author `<PersistenceScope>` context + accompanying `usePersistenceScopePrefix()` internal hook.
-- [ ] Expose `CardComponentRegistryContext`; wire provider into `card-host.tsx`.
-- [ ] Graceful no-op when rendered outside a card: dev-warn once per hook call site.
+- [x] Author the hook with ref-sync pattern per [D13] Q2b (refs re-synced every render; framework reads `.current` at capture time).
+- [x] Author `<PersistenceScope>` context + accompanying `usePersistenceScopePrefix()` internal hook.
+- [x] Expose `CardComponentRegistryContext`; wire provider into `card-host.tsx`.
+- [x] Graceful no-op when rendered outside a card: dev-warn once per hook call site.
 
 **Upholds:** [L03] (registration in `useLayoutEffect`, before any event-driven consumer); [L02]-adjacent (refs not React state for the function-storage — external-state-aware but not a store); [D13] end-to-end.
 
 **Tests:**
-- [ ] New `use-component-persistence.test.tsx`:
+- [x] New `use-component-persistence.test.tsx`:
   - Mount registers; unmount unregisters.
   - Ref-sync: re-render with updated `captureState` closure — framework sees latest when it reads the ref (not the mount-time closure).
   - `<PersistenceScope prefix="outer">` prepends prefix to child `persistKey`s; nested scopes concatenate.
   - Duplicate `persistKey` within the same card throws in dev (via registry assertion from Step 16).
   - Render outside a card context: hook no-ops; dev-warn fires once.
-- [ ] Existing tests remain green (no consumers of the hook yet except tests).
+- [x] Existing tests remain green (no consumers of the hook yet except tests).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Hook is importable and usable in a smoke test, but no production component uses it yet — behavior unchanged.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green. _(2324 pass / 0 fail.)_
+- [x] Hook is importable and usable in a smoke test, but no production component uses it yet — behavior unchanged. _(Only consumers are `use-component-persistence.test.tsx`; `CardComponentRegistryContext.Provider` threads an empty registry through every CardHost subtree, which carries no observable effect until a caller opts in.)_
 
 ---
 

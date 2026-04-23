@@ -24,6 +24,7 @@ import { registerCard, _resetForTest } from "@/card-registry";
 import type { CardState, TugPaneState, DeckState, CardStateBag } from "@/layout-tree";
 import { DeckManagerContext } from "@/deck-manager-context";
 import type { IDeckManagerStore } from "@/deck-manager-store";
+import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 
@@ -196,6 +197,20 @@ class Store implements IDeckManagerStore {
   };
 
   togglePaneCollapse = (): void => {};
+
+  private componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  getComponentRegistry = (cardId: string): ComponentPersistenceRegistry => {
+    let r = this.componentRegistries.get(cardId);
+    if (!r) {
+      r = new ComponentPersistenceRegistry();
+      this.componentRegistries.set(cardId, r);
+    }
+    return r;
+  };
+  peekComponentRegistry = (
+    cardId: string,
+  ): ComponentPersistenceRegistry | undefined =>
+    this.componentRegistries.get(cardId);
 }
 
 function renderDeck(store: Store) {

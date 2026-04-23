@@ -89,6 +89,7 @@ import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
 import { registerDeckStore } from "@/lib/deck-store-registry";
 import { AppLifecycle, registerAppLifecycle } from "@/lib/app-lifecycle";
 import type { TugTextEditingState } from "@/lib/tug-text-engine";
@@ -197,6 +198,20 @@ class Store implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   };
   togglePaneCollapse = (): void => {};
+
+  private componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  getComponentRegistry = (cardId: string): ComponentPersistenceRegistry => {
+    let r = this.componentRegistries.get(cardId);
+    if (!r) {
+      r = new ComponentPersistenceRegistry();
+      this.componentRegistries.set(cardId, r);
+    }
+    return r;
+  };
+  peekComponentRegistry = (
+    cardId: string,
+  ): ComponentPersistenceRegistry | undefined =>
+    this.componentRegistries.get(cardId);
 }
 
 // ---------------------------------------------------------------------------

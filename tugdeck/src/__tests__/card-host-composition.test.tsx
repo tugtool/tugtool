@@ -43,6 +43,7 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { useCardDirty } from "@/components/chrome/tug-pane";
 import { useCardPersistence } from "@/components/tugways/use-card-persistence";
+import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import {
   TugPromptInput,
@@ -172,6 +173,20 @@ class Store implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   };
   togglePaneCollapse = (): void => {};
+
+  private componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  getComponentRegistry = (cardId: string): ComponentPersistenceRegistry => {
+    let r = this.componentRegistries.get(cardId);
+    if (!r) {
+      r = new ComponentPersistenceRegistry();
+      this.componentRegistries.set(cardId, r);
+    }
+    return r;
+  };
+  peekComponentRegistry = (
+    cardId: string,
+  ): ComponentPersistenceRegistry | undefined =>
+    this.componentRegistries.get(cardId);
 }
 
 // ---------------------------------------------------------------------------

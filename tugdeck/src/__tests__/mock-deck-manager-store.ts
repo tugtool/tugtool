@@ -22,6 +22,7 @@ import React from "react";
 import type { IDeckManagerStore } from "../deck-manager-store";
 import type { DeckState, CardStateBag } from "../layout-tree";
 import { DeckManagerContext } from "../deck-manager-context";
+import { ComponentPersistenceRegistry } from "../components/tugways/component-persistence-registry";
 
 /** Build a minimal no-op DeckManager store mock suitable for unit tests. */
 export function makeMockStore(
@@ -29,6 +30,7 @@ export function makeMockStore(
 ): IDeckManagerStore {
   const cardStateCache = new Map<string, CardStateBag>();
   const saveCallbacks = new Map<string, () => void>();
+  const componentRegistries = new Map<string, ComponentPersistenceRegistry>();
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
@@ -69,6 +71,16 @@ export function makeMockStore(
       saveCallbacks.get(id)?.();
     },
     togglePaneCollapse: () => {},
+    getComponentRegistry: (cardId: string) => {
+      let registry = componentRegistries.get(cardId);
+      if (!registry) {
+        registry = new ComponentPersistenceRegistry();
+        componentRegistries.set(cardId, registry);
+      }
+      return registry;
+    },
+    peekComponentRegistry: (cardId: string) =>
+      componentRegistries.get(cardId),
   };
 
   return { ...base, ...overrides };

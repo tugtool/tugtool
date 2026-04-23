@@ -24,6 +24,7 @@ import type {
 } from "@/lib/card-lifecycle";
 import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
 import { usePaneFocusController } from "@/components/chrome/pane-focus-controller";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,20 @@ class Store implements IDeckManagerStore {
   unregisterSaveCallback = (): void => {};
   invokeSaveCallback = (): void => {};
   togglePaneCollapse = (): void => {};
+
+  private componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  getComponentRegistry = (cardId: string): ComponentPersistenceRegistry => {
+    let r = this.componentRegistries.get(cardId);
+    if (!r) {
+      r = new ComponentPersistenceRegistry();
+      this.componentRegistries.set(cardId, r);
+    }
+    return r;
+  };
+  peekComponentRegistry = (
+    cardId: string,
+  ): ComponentPersistenceRegistry | undefined =>
+    this.componentRegistries.get(cardId);
 }
 
 // ---------------------------------------------------------------------------

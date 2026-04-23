@@ -13,6 +13,7 @@
 
 import type { DeckState, CardStateBag } from "./layout-tree";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
+import type { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
 
 /**
  * Subscribable store interface for DeckManager.
@@ -236,4 +237,22 @@ export interface IDeckManagerStore {
    * collapse are pane-level concerns.)
    */
   togglePaneCollapse: (paneId: string) => void;
+
+  /**
+   * Return the per-card Component Persistence Protocol registry
+   * ([D13], [A9]) for `cardId`, creating it lazily on first call. Used
+   * by `useComponentPersistence` to register capture/restore closures
+   * and by the framework orchestration layer at save/restore time.
+   */
+  getComponentRegistry: (cardId: string) => ComponentPersistenceRegistry;
+
+  /**
+   * Look up a card's component registry without creating one. Returns
+   * `undefined` when the card has never registered an opt-in
+   * component. Used by the capture/restore orchestration so a
+   * non-participating card incurs no allocation.
+   */
+  peekComponentRegistry: (
+    cardId: string,
+  ) => ComponentPersistenceRegistry | undefined;
 }

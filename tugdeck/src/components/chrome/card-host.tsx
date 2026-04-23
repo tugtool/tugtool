@@ -70,6 +70,10 @@ import {
   type CardPersistenceCallbacks,
   type CardPersistenceContextValue,
 } from "../tugways/use-card-persistence";
+import {
+  CardComponentRegistryContext,
+  type CardComponentRegistryContextValue,
+} from "../tugways/use-component-persistence";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
@@ -833,6 +837,23 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [cardId, registerPersistenceCallbacks],
   );
 
+  // Per-card Component Persistence Protocol registry ([D13], [A9]).
+  // Lazily materialized by the deck manager on first child call to
+  // `useComponentPersistence`; we fetch a reference here so the
+  // context provider below carries it to every descendant of this card.
+  // The root context starts with an empty prefix and empty treePath;
+  // `<PersistenceScope>` providers nested beneath extend both.
+  const componentRegistryContextValue = useMemo<
+    CardComponentRegistryContextValue
+  >(
+    () => ({
+      registry: store.getComponentRegistry(cardId),
+      prefix: "",
+      treePath: [],
+    }),
+    [store, cardId],
+  );
+
   // Card-level responder for `SET_PROPERTY` dispatched via
   // `manager.sendToTarget(cardId, …)`. `parentId: hostStackId` re-parents
   // the chain to the portaled DOM layout — without the override the
@@ -897,18 +918,22 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
             <CardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
                 <CardPersistenceContext value={cardPersistenceContextValue}>
-                  <CardDirtyContext value={markDirty}>
-                    {feedsReady ? (
-                      // `cardId` is the stable identity content factories key
-                      // their per-card state off; it survives detach/merge
-                      // whereas `hostStackId` changes on cross-pane moves.
-                      registration.contentFactory(cardId)
-                    ) : (
-                      <div className="tug-pane-loading" data-testid="tug-pane-loading">
-                        Loading...
-                      </div>
-                    )}
-                  </CardDirtyContext>
+                  <CardComponentRegistryContext.Provider
+                    value={componentRegistryContextValue}
+                  >
+                    <CardDirtyContext value={markDirty}>
+                      {feedsReady ? (
+                        // `cardId` is the stable identity content factories key
+                        // their per-card state off; it survives detach/merge
+                        // whereas `hostStackId` changes on cross-pane moves.
+                        registration.contentFactory(cardId)
+                      ) : (
+                        <div className="tug-pane-loading" data-testid="tug-pane-loading">
+                          Loading...
+                        </div>
+                      )}
+                    </CardDirtyContext>
+                  </CardComponentRegistryContext.Provider>
                 </CardPersistenceContext>
               </CardPropertyContext>
             </CardDataProvider>
