@@ -27,6 +27,7 @@ import { registerGalleryCards } from "./components/tugways/cards/gallery-registr
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
+import { attachTugTestSurface } from "./test-surface";
 
 /**
  * `window.tugdeck` — the single namespace the native Swift host uses
@@ -173,6 +174,13 @@ if (!container) {
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // Install `window.__tug` test-harness surface when BOTH
+  // `import.meta.env.DEV` and `window.__tugTestMode === true` hold.
+  // The attach is a no-op otherwise; release builds tree-shake it.
+  // See `test-surface.ts` for the full surface contract
+  // (Spec [#s03-tug-surface]) and attach-site rationale ([D03]/[D08]).
+  attachTugTestSurface(deck);
 
   // Wire the per-card services store to the deck-manager so it can
   // detect card removals and send `close_session` for any held

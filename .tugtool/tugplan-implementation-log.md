@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-04-23T22:53:47Z
+---
+
+## step-6: Created tugdeck/src/test-surface.ts implementing TugTestSurface per Spec [#s03-tug-surface]: 15 methods (version, seedDeckState, reset with 5 axes, click/type/focusElement, getActiveCardId/getFocusedCardId/getCaretState/getFormControlValue/assertHostRootRegistered, getDeckTrace/markDeckTrace/clearDeckTrace/enableDeckTrace). click dispatches pointerdown→mousedown→pointerup→mouseup→click per Spec [#s04]; type uses native-setter + InputEvent per char. window.__tug write double-guarded by import.meta.env?.DEV === true && window.__tugTestMode === true. main.tsx attaches the surface after initActionDispatch.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-5
 date: 2025-04-23T22:45:30Z
 ---
