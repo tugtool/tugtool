@@ -206,6 +206,26 @@ class Store implements IDeckManagerStore {
     this.state = { ...this.state, hasFocus: value };
     this.notify();
   };
+
+  private activationCallbacks = new Map<string, () => void>();
+  private cardHostRoots = new Map<string, HTMLElement>();
+  registerActivationCallback = (cardId: string, cb: () => void): (() => void) => {
+    this.activationCallbacks.set(cardId, cb);
+    return () => {
+      if (this.activationCallbacks.get(cardId) === cb) {
+        this.activationCallbacks.delete(cardId);
+      }
+    };
+  };
+  invokeActivationCallback = (cardId: string): void => {
+    this.activationCallbacks.get(cardId)?.();
+  };
+  registerCardHostRoot = (cardId: string, el: HTMLElement | null): void => {
+    if (el === null) this.cardHostRoots.delete(cardId);
+    else this.cardHostRoots.set(cardId, el);
+  };
+  peekCardHostRoot = (cardId: string): HTMLElement | null =>
+    this.cardHostRoots.get(cardId) ?? null;
 }
 
 // ---------------------------------------------------------------------------

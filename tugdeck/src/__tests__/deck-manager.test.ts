@@ -2832,3 +2832,104 @@ describe("DeckManager window focus/blur wiring", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Focus-transfer channels (Step 23A).
+//
+// `DeckManager` owns two registries that the focus-transfer helper
+// reads and writes: the activation-callback channel (one closure per
+// cardId; last-registration wins) and the card-host-root channel
+// (one live `HTMLElement` per cardId). Tests here pin the contract
+// that `useCardPersistence` and `CardHost` rely on in Step 23A, and
+// that the helper will rely on in Step 23B / 23C.
+// ---------------------------------------------------------------------------
+
+describe("DeckManager focus-transfer channels", () => {
+  describe("activation callbacks", () => {
+    it("invokeActivationCallback fires the registered callback", () => {
+      let fired = 0;
+      manager.registerActivationCallback("c1", () => {
+        fired += 1;
+      });
+      manager.invokeActivationCallback("c1");
+      expect(fired).toBe(1);
+    });
+
+    it("invokeActivationCallback is a silent no-op when nothing is registered", () => {
+      expect(() => manager.invokeActivationCallback("unknown")).not.toThrow();
+    });
+
+    it("last-registration wins per cardId", () => {
+      const log: string[] = [];
+      manager.registerActivationCallback("c1", () => log.push("first"));
+      manager.registerActivationCallback("c1", () => log.push("second"));
+      manager.invokeActivationCallback("c1");
+      expect(log).toEqual(["second"]);
+    });
+
+    it("the unregister function returned by register clears the callback", () => {
+      let fired = 0;
+      const unregister = manager.registerActivationCallback("c1", () => {
+        fired += 1;
+      });
+      unregister();
+      manager.invokeActivationCallback("c1");
+      expect(fired).toBe(0);
+    });
+
+    it("an unregister function only clears its own slot (not a later registration)", () => {
+      const log: string[] = [];
+      const unregisterFirst = manager.registerActivationCallback("c1", () =>
+        log.push("first"),
+      );
+      manager.registerActivationCallback("c1", () => log.push("second"));
+      // The first unregister is called after the second register has
+      // displaced it. Must NOT clear the second registration.
+      unregisterFirst();
+      manager.invokeActivationCallback("c1");
+      expect(log).toEqual(["second"]);
+    });
+
+    it("unregister is idempotent — calling twice does not throw", () => {
+      const unregister = manager.registerActivationCallback("c1", () => {});
+      unregister();
+      expect(() => unregister()).not.toThrow();
+    });
+  });
+
+  describe("card-host root registry", () => {
+    it("peekCardHostRoot returns null when no root is registered", () => {
+      expect(manager.peekCardHostRoot("unknown")).toBeNull();
+    });
+
+    it("registerCardHostRoot(cardId, el) then peek returns the element", () => {
+      const el = document.createElement("div");
+      manager.registerCardHostRoot("c1", el);
+      expect(manager.peekCardHostRoot("c1")).toBe(el);
+    });
+
+    it("registerCardHostRoot(cardId, null) unregisters the entry", () => {
+      const el = document.createElement("div");
+      manager.registerCardHostRoot("c1", el);
+      manager.registerCardHostRoot("c1", null);
+      expect(manager.peekCardHostRoot("c1")).toBeNull();
+    });
+
+    it("re-registering with a new element replaces the old one", () => {
+      const a = document.createElement("div");
+      const b = document.createElement("div");
+      manager.registerCardHostRoot("c1", a);
+      manager.registerCardHostRoot("c1", b);
+      expect(manager.peekCardHostRoot("c1")).toBe(b);
+    });
+
+    it("roots are kept per-cardId independently", () => {
+      const a = document.createElement("div");
+      const b = document.createElement("div");
+      manager.registerCardHostRoot("c1", a);
+      manager.registerCardHostRoot("c2", b);
+      expect(manager.peekCardHostRoot("c1")).toBe(a);
+      expect(manager.peekCardHostRoot("c2")).toBe(b);
+    });
+  });
+});
+

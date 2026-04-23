@@ -31,6 +31,8 @@ export function makeMockStore(
 ): IDeckManagerStore {
   const cardStateCache = new Map<string, CardStateBag>();
   const saveCallbacks = new Map<string, () => void>();
+  const activationCallbacks = new Map<string, () => void>();
+  const cardHostRoots = new Map<string, HTMLElement>();
   const componentRegistries = new Map<string, ComponentPersistenceRegistry>();
   const orchestrator = new CardStateOrchestrator((cardId) =>
     componentRegistries.get(cardId),
@@ -91,6 +93,25 @@ export function makeMockStore(
     restoreCardState: (cardId, bag) =>
       orchestrator.restoreCardState(cardId, bag),
     setHasFocus: () => {},
+    registerActivationCallback: (cardId: string, callback: () => void) => {
+      activationCallbacks.set(cardId, callback);
+      return () => {
+        if (activationCallbacks.get(cardId) === callback) {
+          activationCallbacks.delete(cardId);
+        }
+      };
+    },
+    invokeActivationCallback: (cardId: string) => {
+      activationCallbacks.get(cardId)?.();
+    },
+    registerCardHostRoot: (cardId: string, el: HTMLElement | null) => {
+      if (el === null) {
+        cardHostRoots.delete(cardId);
+      } else {
+        cardHostRoots.set(cardId, el);
+      }
+    },
+    peekCardHostRoot: (cardId: string) => cardHostRoots.get(cardId) ?? null,
   };
 
   return { ...base, ...overrides };

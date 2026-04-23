@@ -58,7 +58,7 @@
  * @module components/chrome/card-host
  */
 
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { CardDataProvider } from "../tugways/hooks/use-card-data";
 import { CardPropertyContext } from "../tugways/hooks/use-property-store";
@@ -1032,17 +1032,47 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const cardRootRef = useRef<HTMLDivElement | null>(null);
   useSelectionBoundary(cardId, cardRootRef);
 
+  // Element-state for the registered card-host root. Captured via the
+  // ref-callback on every mount, unmount, and element-identity change
+  // (e.g. if React's portal reconciler swaps the subtree on a
+  // cross-pane move rather than moving it in place). Tracking the
+  // current element in state — not just a ref — means the effect
+  // below re-runs when the DOM node identity changes, so
+  // `registerCardHostRoot` re-registers the new node and unregisters
+  // the old one in one commit. L07.
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+
   // Compose the card-root ref with `responderRef` (a callback ref the
-  // responder chain uses for DOM anchoring). A stable useCallback keeps
-  // React from firing the callback with `null` then the element on every
-  // render. L07.
+  // responder chain uses for DOM anchoring) and the `rootEl` state
+  // setter (driving the registration effect below). A stable
+  // useCallback keeps React from firing the callback with `null` then
+  // the element on every render. L07.
   const setCardRootEl = useCallback(
     (el: HTMLDivElement | null) => {
       cardRootRef.current = el;
       responderRef(el);
+      setRootEl(el);
     },
     [responderRef],
   );
+
+  // Register the live card-host root with the deck store so the
+  // focus-transfer resolver can scope its DOM queries to this card's
+  // subtree. Keyed on `[cardId, rootEl, store]`: mount registers the
+  // initial element, unmount (cleanup) unregisters it, and an
+  // element-identity change (cleanup → effect body in the same
+  // commit) swaps registrations without leaving a stale entry.
+  // L03 — registration runs in the same commit phase as any event
+  // that could drive an activation, so the resolver never reads a
+  // stale registry. L10 — the store owns the registry; CardHost is
+  // only the caller that keeps it honest.
+  useLayoutEffect(() => {
+    if (rootEl === null) return;
+    store.registerCardHostRoot(cardId, rootEl);
+    return () => {
+      store.registerCardHostRoot(cardId, null);
+    };
+  }, [cardId, rootEl, store]);
 
   // ---- Render ----
   if (!registration) {

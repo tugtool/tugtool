@@ -16,6 +16,8 @@
 
 import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
 
+import { DeckManagerContext } from "../../deck-manager-context";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -45,12 +47,13 @@ export interface UseCardPersistenceOptions<T> {
    * }
    * ```
    *
-   * The callback fires only after the shared `CardHost` activation
-   * effect ([A3]) is installed (M-phase 2). At the step that declares
-   * this field, registering the callback is a no-op; implementors may
-   * register it now in preparation. The has-been-active ref-guard in
-   * [A3] skips the initial activation at mount; the callback fires on
-   * subsequent `false → true` transitions only.
+   * Registration happens in the hook's mount `useLayoutEffect`. Two
+   * channels carry the callback — the persistence callbacks record
+   * and, starting at Step 23A of the focus-transfer refactor, the
+   * deck store's `registerActivationCallback` channel. Dispatch
+   * source depends on the current refactor step; see
+   * {@link CardPersistenceCallbacks.onCardActivated} for the
+   * authoritative reader at each step.
    *
    * Optional. FC (DOM-authority) cards don't need this — `CardHost`
    * re-applies `bag.focus` + `bag.domSelection` directly for them.
@@ -95,19 +98,26 @@ export interface CardPersistenceCallbacks {
    */
   restorePendingRef?: React.RefObject<boolean>;
   /**
-   * Called by the shared `CardHost` activation effect ([A3]) when this
-   * card becomes the focus destination — a `false → true` transition
-   * of `isFocusDestination(cardId)`. Mount is skipped by the
-   * has-been-active guard inside the effect.
+   * Called when this card becomes the focus destination.
    *
-   * The callback fires only after the activation effect is installed
-   * (M-phase 2). While the field is declared but not yet dispatched,
-   * registering it is a no-op — content factories can opt in in advance
-   * without waiting for the dispatcher to land.
+   * **Dispatch channel.** Two channels carry this callback today, and
+   * the authoritative one depends on which step of the focus-transfer
+   * refactor is current:
+   *   - At Step 23A's commit, the Step-23 `[A3]` `useLayoutEffect` in
+   *     `CardHost` reads `persistenceCallbacksRef.current.onCardActivated`
+   *     and dispatches through this record field. The new
+   *     `store.registerActivationCallback` channel is populated in
+   *     parallel (by `useCardPersistence`) but is not yet the
+   *     dispatch source.
+   *   - At Step 23B's commit, the `[A3]` effect is retired and
+   *     dispatch routes exclusively through
+   *     `store.invokeActivationCallback(cardId)`. This field remains
+   *     declared (Step 22 contract stability) and is still populated
+   *     by the hook, but is never read at dispatch time.
    *
    * Optional. FC (DOM-authority) cards leave it unset; `CardHost`
    * handles their reactivation by re-applying `bag.focus` +
-   * `bag.domSelection` directly ([A3]).
+   * `bag.domSelection` directly.
    */
   onCardActivated?: () => void;
 }
@@ -185,8 +195,22 @@ export function useCardId(): string | null {
  * Spec S05 ([D02], [D01], [D02], [D03], #s05-persistence-hook)
  */
 export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): void {
-  // Read the registration function from context (null outside CardHost).
-  const register = useContext(CardPersistenceContext)?.register ?? null;
+  // Read the registration function + cardId from context (null outside
+  // CardHost). `cardId` is needed to route `onCardActivated` through
+  // the deck store's activation-callback channel alongside the
+  // callbacks-record registration.
+  const persistenceCtx = useContext(CardPersistenceContext);
+  const register = persistenceCtx?.register ?? null;
+  const cardId = persistenceCtx?.cardId ?? null;
+
+  // DeckManagerContext is optional from this hook's perspective —
+  // the hook is used in unit tests that render a card content
+  // component without a deck store. When present, we register the
+  // activation callback on the store so Step 23B's helper can
+  // dispatch through `store.invokeActivationCallback`. When absent,
+  // the store-channel registration is skipped; the record-channel
+  // registration still happens below.
+  const store = useContext(DeckManagerContext);
 
   // Store the caller's options in refs so the registered wrappers never go
   // stale when options change on re-renders (Rule 5).
@@ -242,6 +266,32 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [register]);
+
+  // Parallel registration on the deck store's activation-callback
+  // channel. The stable ref-reading wrapper is the same one used for
+  // the callbacks-record; only the destination registry differs. At
+  // Step 23A's commit the Step-23 `[A3]` `useLayoutEffect` still
+  // reads the record field, so both channels are populated in
+  // parallel. Step 23B retires `[A3]` and switches dispatch onto the
+  // store channel; this registration becomes the sole authority.
+  //
+  // Keyed on `[store, cardId]` so a move from one store to another
+  // (tests that swap the provider) or a cardId change re-registers
+  // cleanly. In practice `cardId` is stable across a card's lifetime
+  // (that is the point of the identity), but keying on it keeps the
+  // effect honest if the context value ever changes.
+  //
+  // Rule 3 — `useLayoutEffect` so the registration lands in the
+  // same commit phase as any event that could drive an activation.
+  // Rule 5 — the registered wrapper reads from `onCardActivatedRef`
+  // at call time, so options changes don't require re-registration.
+  useLayoutEffect(() => {
+    if (!store || !cardId) return;
+    const unregister = store.registerActivationCallback(cardId, () => {
+      onCardActivatedRef.current?.();
+    });
+    return unregister;
+  }, [store, cardId]);
 
   // No-deps useLayoutEffect: fires on every commit of this component.
   // When restorePendingRef is true (set by CardHost's Phase 1 effect before

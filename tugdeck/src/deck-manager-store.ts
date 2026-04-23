@@ -297,4 +297,52 @@ export interface IDeckManagerStore {
    * bit is already at `value`.
    */
   setHasFocus: (value: boolean) => void;
+
+  // ---- Focus-transfer channels (focus-transfer.ts seam) ----
+
+  /**
+   * Register a content factory's `onCardActivated` callback for
+   * `cardId`. Returns an unregister function. Last-registration-wins
+   * per cardId: content factories re-register on every mount, and
+   * the previous registration is displaced. Passing an unregister
+   * function back rather than exposing a mirror `unregister…`
+   * method keeps the registration / cleanup pair colocated in the
+   * caller's `useLayoutEffect`. No-op unregister is safe to call
+   * more than once.
+   */
+  registerActivationCallback: (
+    cardId: string,
+    callback: () => void,
+  ) => () => void;
+
+  /**
+   * Fire the registered activation callback for `cardId`. Silently
+   * no-ops when no callback is registered (the card may be
+   * DOM-authority, may not have mounted yet, or may have
+   * unregistered). Callers are expected to have passed
+   * {@link resolveActivationTarget} and received
+   * `{ kind: "dispatch-activated" }` before reaching here.
+   */
+  invokeActivationCallback: (cardId: string) => void;
+
+  /**
+   * Register the live `[data-card-host][data-card-id="…"]` DOM
+   * element for `cardId`. `CardHost` calls this from a callback-ref
+   * composed with a `useLayoutEffect` so the registry is populated
+   * before any activation event can fire. Passing `null` unregisters
+   * the current entry — used both by the cleanup path and by the
+   * re-registration branch when the DOM node identity changes
+   * mid-session (e.g. cross-pane move when CardPortal's reconciler
+   * swaps the subtree rather than moving in place).
+   */
+  registerCardHostRoot: (cardId: string, el: HTMLElement | null) => void;
+
+  /**
+   * Read the registered card-host root element without creating or
+   * mutating anything. Returns `null` when no root is currently
+   * registered (card unmounted or never mounted). Used by
+   * {@link resolveActivationTarget} to scope DOM lookups to the
+   * one subtree that belongs to `cardId`.
+   */
+  peekCardHostRoot: (cardId: string) => HTMLElement | null;
 }

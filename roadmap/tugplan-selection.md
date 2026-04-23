@@ -1538,12 +1538,12 @@ Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E. 23C and 23D touch disjo
 - **Step-23 `[A3]` effect continues to dispatch via `persistenceCallbacksRef.current.onCardActivated`.** With the record-field still populated by `useCardPersistence` for back-compat, the existing effect's behavior is byte-identical. The dispatch-channel handoff to `store.invokeActivationCallback` happens in Step 23B when the effect is removed and replaced with helper wiring.
 
 **Tasks:**
-- [ ] Author `focus-transfer.ts` with the module docstring, `ActivationTarget` type, signatures for the three side-effecting entries (throwing with step pointers), and a working `resolveActivationTarget`.
-- [ ] Extend `IDeckManagerStore` with the four new methods; implement on `DeckManager`.
-- [ ] Update `mock-deck-manager-store.ts` and every per-test `Store` class (`selection-persistence-integration.test.tsx`, `card-host-composition.test.tsx`, `card-identity-preservation.test.tsx`, `pane-focus-controller.test.tsx`, `card-host-activation-effect.test.tsx`) to implement the four new methods.
-- [ ] Add the `registerCardHostRoot` `useLayoutEffect` to `CardHost`.
-- [ ] Thread `useCardPersistence` to route `onCardActivated` through `store.registerActivationCallback`. JSDoc update on the `CardPersistenceCallbacks.onCardActivated` field.
-- [ ] Extend `use-card-persistence.test.tsx`'s `T-P07*` block with a test that `store.invokeActivationCallback(cardId)` fires the registered callback.
+- [x] Author `focus-transfer.ts` with the module docstring, `ActivationTarget` type, signatures for the three side-effecting entries (throwing with step pointers), and a working `resolveActivationTarget`.
+- [x] Extend `IDeckManagerStore` with the four new methods; implement on `DeckManager`.
+- [x] Update `mock-deck-manager-store.ts` and every per-test `Store` class (`selection-persistence-integration.test.tsx`, `card-host-composition.test.tsx`, `card-identity-preservation.test.tsx`, `pane-focus-controller.test.tsx`, `card-host-activation-effect.test.tsx`) to implement the four new methods.
+- [x] Add the `registerCardHostRoot` `useLayoutEffect` to `CardHost`.
+- [x] Thread `useCardPersistence` to route `onCardActivated` through `store.registerActivationCallback`. JSDoc update on the `CardPersistenceCallbacks.onCardActivated` field.
+- [x] Extend `use-card-persistence.test.tsx`'s `T-P07*` block with a test that `store.invokeActivationCallback(cardId)` fires the registered callback.
 
 **Upholds:**
 - **[L10]** — the new module and store API are introduced in a single cohesive commit; responsibilities are set up ahead of the wiring that consumes them.
@@ -1551,15 +1551,15 @@ Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E. 23C and 23D touch disjo
 - **[L03]** — `CardHost`'s root-registration effect is `useLayoutEffect` so the registry is populated before any event that could drive an activation.
 
 **Tests:**
-- [ ] New `tugdeck/src/__tests__/focus-transfer.test.ts`: unit tests for `resolveActivationTarget` only (FC with saved `bag.focus` → `focus-element`; EM with registered callback → `dispatch-activated`; neither → `none`; unknown cardId → `none`). The three side-effecting entries throw; a single smoke test confirms they throw with informative messages.
-- [ ] `deck-manager.test.ts`: new describe block covering the four store methods — last-wins registration, unregister clears, `peekCardHostRoot` returns `null` when unregistered, `invokeActivationCallback` no-ops silently.
-- [ ] `use-card-persistence.test.tsx`: `T-P07e` (new) asserts that `store.invokeActivationCallback(cardId)` fires the registered `onCardActivated`; `T-P07f` (new) asserts that re-rendering with a different `onCardActivated` implementation updates what fires (ref-sync behavior).
-- [ ] All existing tests continue to pass — Step 23's `card-host-activation-effect.test.tsx` and the three integration scenarios (M01/M03/M16) are unchanged and still green.
+- [x] New `tugdeck/src/__tests__/focus-transfer.test.ts`: unit tests for `resolveActivationTarget` only (FC with saved `bag.focus` → `focus-element`; EM with registered callback → `dispatch-activated`; neither → `none`; unknown cardId → `none`). The three side-effecting entries throw; a single smoke test confirms they throw with informative messages.
+- [x] `deck-manager.test.ts`: new describe block covering the four store methods — last-wins registration, unregister clears, `peekCardHostRoot` returns `null` when unregistered, `invokeActivationCallback` no-ops silently.
+- [x] `use-card-persistence.test.tsx`: `T-P07e` (new) asserts that `store.invokeActivationCallback(cardId)` fires the registered `onCardActivated`; `T-P07f` (new) asserts that re-rendering with a different `onCardActivated` implementation updates what fires (ref-sync behavior).
+- [x] All existing tests continue to pass — Step 23's `card-host-activation-effect.test.tsx` and the three integration scenarios (M01/M03/M16) are unchanged and still green.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Grep: `registerActivationCallback` and `registerCardHostRoot` have exactly one implementation each in `deck-manager.ts` and one mock-stub pattern in test files.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
+- [x] Grep: `registerActivationCallback` and `registerCardHostRoot` have exactly one implementation each in `deck-manager.ts` and one mock-stub pattern in test files.
 - [ ] No user-visible behavior change. Manually verify [M01], [M03], [M16] still pass at slow cadence (same state as end-of-Step-23).
 
 ---

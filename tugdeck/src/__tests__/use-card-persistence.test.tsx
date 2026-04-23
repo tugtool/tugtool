@@ -27,6 +27,9 @@ import { render, act } from "@testing-library/react";
 
 import { CardPersistenceContext, useCardPersistence } from "@/components/tugways/use-card-persistence";
 import type { CardPersistenceCallbacks } from "@/components/tugways/use-card-persistence";
+import { DeckManagerContext } from "@/deck-manager-context";
+import { makeMockStore } from "./mock-deck-manager-store";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Test helper: tracks how many times register is called (registration count).
@@ -548,5 +551,98 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     // no-ops silently when the caller didn't opt in.
     expect(typeof callbacks.onCardActivated).toBe("function");
     expect(() => callbacks.onCardActivated!()).not.toThrow();
+  });
+
+  // Helper: a provider that wires BOTH CardPersistenceContext and
+  // DeckManagerContext, so the hook's new store-channel registration
+  // (Step 23A) runs alongside the record-channel registration.
+  function ProviderWithStore({
+    store,
+    cardId,
+    children,
+  }: {
+    store: IDeckManagerStore;
+    cardId: string;
+    children: React.ReactNode;
+  }) {
+    return (
+      <DeckManagerContext.Provider value={store}>
+        <CardPersistenceContext value={{ cardId, register: () => {} }}>
+          {children}
+        </CardPersistenceContext>
+      </DeckManagerContext.Provider>
+    );
+  }
+
+  it("T-P07e: store.invokeActivationCallback(cardId) fires the registered onCardActivated", () => {
+    const store = makeMockStore();
+    const cardId = "card-store-channel";
+
+    let invocations = 0;
+    function CardContent() {
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        onCardActivated: () => {
+          invocations += 1;
+        },
+      });
+      return <div>content</div>;
+    }
+
+    act(() => {
+      render(
+        <ProviderWithStore store={store} cardId={cardId}>
+          <CardContent />
+        </ProviderWithStore>,
+      );
+    });
+
+    // Before the fire, the store channel has the wrapper registered.
+    store.invokeActivationCallback(cardId);
+    store.invokeActivationCallback(cardId);
+    expect(invocations).toBe(2);
+  });
+
+  it("T-P07f: re-rendering with a different onCardActivated updates what store.invokeActivationCallback fires", () => {
+    const store = makeMockStore();
+    const cardId = "card-ref-sync";
+
+    let current: () => void = mock(() => {});
+
+    function CardContent() {
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        onCardActivated: () => current(),
+      });
+      return <div>content</div>;
+    }
+
+    let rerender!: ReturnType<typeof render>["rerender"];
+    act(() => {
+      ({ rerender } = render(
+        <ProviderWithStore store={store} cardId={cardId}>
+          <CardContent />
+        </ProviderWithStore>,
+      ));
+    });
+
+    const v2 = mock(() => {});
+    current = v2;
+
+    act(() => {
+      rerender(
+        <ProviderWithStore store={store} cardId={cardId}>
+          <CardContent />
+        </ProviderWithStore>,
+      );
+    });
+
+    // The store-channel wrapper reads `onCardActivatedRef.current` at
+    // call time, so the caller's latest implementation fires without
+    // re-registration.
+    store.invokeActivationCallback(cardId);
+    expect(v2).toHaveBeenCalledTimes(1);
   });
 });

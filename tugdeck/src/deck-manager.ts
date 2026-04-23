@@ -1008,6 +1008,52 @@ export class DeckManager implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   }
 
+  // ---- Focus-transfer channels (focus-transfer.ts seam) ----
+
+  /**
+   * Content-factory activation callbacks, keyed by cardId. Written by
+   * `useCardPersistence` (through the context-provided register
+   * helper) on every mount of a card whose content component opts in
+   * via `options.onCardActivated`. Last-write-wins per cardId.
+   */
+  private activationCallbacks: Map<string, () => void> = new Map();
+
+  /**
+   * Live `[data-card-host][data-card-id="…"]` elements, keyed by
+   * cardId. Written by `CardHost` from a callback-ref so mount,
+   * unmount, and (if it ever occurs) element-identity changes are all
+   * covered.
+   */
+  private cardHostRoots: Map<string, HTMLElement> = new Map();
+
+  registerActivationCallback(cardId: string, callback: () => void): () => void {
+    this.activationCallbacks.set(cardId, callback);
+    return () => {
+      // Only clear when we still own the slot. A later `register`
+      // for the same cardId will have displaced us; its cleanup
+      // owns the removal.
+      if (this.activationCallbacks.get(cardId) === callback) {
+        this.activationCallbacks.delete(cardId);
+      }
+    };
+  }
+
+  invokeActivationCallback(cardId: string): void {
+    this.activationCallbacks.get(cardId)?.();
+  }
+
+  registerCardHostRoot(cardId: string, el: HTMLElement | null): void {
+    if (el === null) {
+      this.cardHostRoots.delete(cardId);
+    } else {
+      this.cardHostRoots.set(cardId, el);
+    }
+  }
+
+  peekCardHostRoot(cardId: string): HTMLElement | null {
+    return this.cardHostRoots.get(cardId) ?? null;
+  }
+
   /**
    * Return the per-card Component Persistence Protocol registry ([D13],
    * [A9]) for `cardId`, creating it lazily on first call. Used by
