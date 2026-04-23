@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-12
+date: 2025-04-23T23:44:44Z
+---
+
+## step-12: Added tests/in-app/README.md (175 lines) covering run command, one-app-per-file lifecycle, fidelity limits, how-to-add-a-test recipe, lint:no-timers usage, and directory layout. Verified tugdeck/bunfig.toml excludes tests/in-app via [test] root=src and tests/in-app/.gitignore ignores logs/.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-11
 date: 2025-04-23T23:39:14Z
 ---
