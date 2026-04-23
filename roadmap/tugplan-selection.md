@@ -1351,14 +1351,14 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - Helper is framework-local; no global state; no DOM mutation.
 
 **Tasks:**
-- [ ] Author `focus-theft-gate.ts` with `canProgrammaticallyFocus` + `isNonFocusCapturingChrome`.
-- [ ] Import `isFocusDestination` from Step 20 for the second check.
-- [ ] Document the `data-tug-chrome="non-focus-capturing"` opt-in in the file header so chrome element authors can opt in gradually.
+- [x] Author `focus-theft-gate.ts` with `canProgrammaticallyFocus` + `isNonFocusCapturingChrome`.
+- [x] Import `isFocusDestination` from Step 20 for the second check.
+- [x] Document the `data-tug-chrome="non-focus-capturing"` opt-in in the file header so chrome element authors can opt in gradually.
 
 **Upholds:** [A8]; [R07] centralized so no refocus helper re-implements the check.
 
 **Tests:**
-- [ ] New `focus-theft-gate.test.ts` with one test per branch:
+- [x] New `focus-theft-gate.test.ts` with one test per branch:
   - `hasFocus === false` → false.
   - Not a focus destination → false.
   - `activeElement === body` → true.
@@ -1366,12 +1366,12 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
   - `activeElement` has `data-tug-chrome="non-focus-capturing"` → true.
   - `activeElement` is a real input outside target → false.
   - Missing `opts.targetCardHostEl` handled gracefully (treats as no-host-match, falls through to other checks).
-- [ ] Existing tests unchanged.
+- [x] Existing tests unchanged.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Grep for ad-hoc focus-theft logic (`document.hasFocus\|activeElement === body\|activeElement.closest`) inside `card-host.tsx` / `selection-guard.ts` returns only pre-existing callsites (not yet refactored — those routes through `canProgrammaticallyFocus` in M-phase 2 when [A3] lands).
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
+- [x] Grep for ad-hoc focus-theft logic (`document.hasFocus\|activeElement === body\|activeElement.closest`) inside `card-host.tsx` / `selection-guard.ts` returns only pre-existing callsites (not yet refactored — those routes through `canProgrammaticallyFocus` in M-phase 2 when [A3] lands).
 
 ---
 
