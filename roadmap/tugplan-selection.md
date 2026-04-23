@@ -949,24 +949,24 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - First-call behavior (initial mount): `captureState()` returns `{ text: "", atoms: [], selection: null }` on an empty engine; if the target is also empty, we skip; if the target has content, signatures differ and we write as before.
 
 **Tasks:**
-- [ ] At the top of `restoreState`, call `this.captureState()` and serialize its output to a signature string via the canonical form above.
-- [ ] Serialize `state` to the same form.
-- [ ] If the two signatures match, skip `this.root.innerHTML = parts.join("")` and the `parts` build loop entirely; fall straight through to `setSelectedRange` for selection alignment.
-- [ ] Keep the post-write calls (`this.updateEmpty()`, `this.autoResize()`, `this.setSelectedRange(...)`) to run regardless — they're fast and the selection/layout adjust is cheap and idempotent.
-- [ ] No cached signature field. No invalidation step. No edit-path instrumentation.
+- [x] At the top of `restoreState`, call `this.captureState()` and serialize its output to a signature string via the canonical form above. _(Selection is deliberately excluded from the signature — see the implementation comment; including it would break the selection-only-change test.)_
+- [x] Serialize `state` to the same form.
+- [x] If the two signatures match, skip `this.root.innerHTML = parts.join("")` and the `parts` build loop entirely; fall straight through to `setSelectedRange` for selection alignment.
+- [x] Keep the post-write calls (`this.updateEmpty()`, `this.autoResize()`, `this.setSelectedRange(...)`) to run regardless — they're fast and the selection/layout adjust is cheap and idempotent.
+- [x] No cached signature field. No invalidation step. No edit-path instrumentation.
 
 **Upholds:** [L23] — the canonical textbook case of "diff and mutate minimally." When content hasn't changed, don't touch the DOM at all. Ground-truth comparison (not cached) eliminates the cache-drift failure mode.
 
 **Tests:**
-- [ ] Two consecutive `restoreState(same)` calls: second produces no DOM mutation (assert via MutationObserver).
-- [ ] `restoreState(different)` writes as before.
-- [ ] `restoreState(A)`, then user edit (via engine's edit APIs), then `restoreState(A)`: the second restore writes (current DOM now differs from A, signature mismatch, full path).
-- [ ] `restoreState(A)` followed by `restoreState(A')` where only selection changed: DOM is unchanged (skipped), `setSelectedRange` still runs and moves the caret.
-- [ ] Selection is applied regardless (`sel.anchorOffset/focusOffset` match).
+- [x] Two consecutive `restoreState(same)` calls: second produces no DOM mutation (assert via MutationObserver).
+- [x] `restoreState(different)` writes as before.
+- [x] `restoreState(A)`, then user edit (via engine's edit APIs), then `restoreState(A)`: the second restore writes (current DOM now differs from A, signature mismatch, full path). _(Edit simulated by direct text-node mutation; happy-dom lacks `document.execCommand`, so the engine's own `insertText` isn't exercisable in unit tests. The fast path's ground-truth read handles either path.)_
+- [x] `restoreState(A)` followed by `restoreState(A')` where only selection changed: DOM is unchanged (skipped), `setSelectedRange` still runs and moves the caret.
+- [x] Selection is applied regardless (`sel.anchorOffset/focusOffset` match).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
-- [ ] Existing engine test suite green (regression gate for [R05]).
+- [x] `bun x tsc --noEmit`, `bun test` green.
+- [x] Existing engine test suite green (regression gate for [R05]).
 
 ---
 

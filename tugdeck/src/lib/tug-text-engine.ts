@@ -152,6 +152,25 @@ export interface TugTextEditingState {
   selection: { start: number; end: number } | null;
 }
 
+/**
+ * Compute a signature string that uniquely identifies the DOM-producing
+ * parts of a {@link TugTextEditingState} — the text payload and the
+ * atom identities in order. Selection is intentionally excluded so
+ * that a caret-only change between two `restoreState` calls still
+ * hits the fast path and leaves the DOM subtree untouched ([L23]).
+ *
+ * The pipe and colon delimiters are chosen because they cannot appear
+ * inside `atom.type`, `atom.label`, or `atom.value` as produced by
+ * the atom encoder — callers building atoms by hand must keep that
+ * contract.
+ */
+function domSignatureOf(state: TugTextEditingState): string {
+  const atomPart = state.atoms
+    .map((a) => `${a.type}:${a.label}:${a.value}`)
+    .join(",");
+  return `${state.text}|${atomPart}`;
+}
+
 
 // ===================================================================
 // DOM ↔ flat offset helpers
@@ -743,31 +762,52 @@ export class TugTextEngine {
 
   restoreState(state: TugTextEditingState): void {
     this.cancelTypeahead();
-    const parts: string[] = [];
-    let atomIdx = 0;
-    for (let i = 0; i < state.text.length; i++) {
-      const ch = state.text[i];
-      if (ch === TUG_ATOM_CHAR && atomIdx < state.atoms.length) {
-        const a = state.atoms[atomIdx];
-        parts.push(atomImgHTML(a.type, a.label, a.value));
-        atomIdx++;
-      } else if (ch === "\n") {
-        parts.push("<br>");
-      } else if (ch === "<") {
-        parts.push("&lt;");
-      } else if (ch === "&") {
-        parts.push("&amp;");
-      } else {
-        parts.push(ch);
-      }
-    }
+
+    // Content-identical fast path ([D11], [Q04], [L23]). Compare the
+    // target state's text+atoms signature against the current DOM's
+    // signature (read by `captureState`). If they match, the only
+    // legitimate work left is selection alignment — skip the
+    // `parts` build and `innerHTML` rewrite entirely so existing
+    // text nodes, atom `<img>` elements, and any Range anchored in
+    // them survive the call.
+    //
+    // Selection is deliberately NOT part of the signature: selection
+    // changes without text/atom changes must still skip the rewrite
+    // (a caret-only update) while still calling `setSelectedRange`
+    // below. The recompute-from-DOM design ([D11] rationale) avoids
+    // the cache-drift failure mode of a `_lastRestoredSignature`
+    // field that would need invalidation on every edit path.
+    const targetSignature = domSignatureOf(state);
+    const currentSignature = domSignatureOf(this.captureState());
+    const canSkipRewrite = targetSignature === currentSignature;
+
     // Suppress intermediate fires across the DOM rewrite and nested
     // `setSelectedRange` so subscribers observe a single transition to
     // the restored state, not a `null`-flash in the middle. The tail
     // `emitSelectionChanged` below is the sole emit point.
     this._suppressSelectionEmits = true;
     try {
-      this.root.innerHTML = parts.join("");
+      if (!canSkipRewrite) {
+        const parts: string[] = [];
+        let atomIdx = 0;
+        for (let i = 0; i < state.text.length; i++) {
+          const ch = state.text[i];
+          if (ch === TUG_ATOM_CHAR && atomIdx < state.atoms.length) {
+            const a = state.atoms[atomIdx];
+            parts.push(atomImgHTML(a.type, a.label, a.value));
+            atomIdx++;
+          } else if (ch === "\n") {
+            parts.push("<br>");
+          } else if (ch === "<") {
+            parts.push("&lt;");
+          } else if (ch === "&") {
+            parts.push("&amp;");
+          } else {
+            parts.push(ch);
+          }
+        }
+        this.root.innerHTML = parts.join("");
+      }
       // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
       this._empty = state.text.length === 0 || state.text === "\n";
       this.updateEmpty();
