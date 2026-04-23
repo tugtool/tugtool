@@ -188,7 +188,7 @@ beforeEach(() => {
   });
   registerDeckStore(store);
   appLifecycle = makeMockAppLifecycle();
-  selectionGuard.attach(null, appLifecycle);
+  selectionGuard.attach(appLifecycle);
 });
 
 afterEach(() => {

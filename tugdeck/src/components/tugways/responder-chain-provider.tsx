@@ -142,14 +142,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // Both are document-level event systems that live for the duration of
     // the provider. CSS Highlight objects are created eagerly in the
     // SelectionGuard constructor (not here) so they exist before any React
-    // effects fire. attach() only installs event listeners. ([D02])
-    // Passing the card lifecycle subscribes the guard to activation events
-    // (wildcard, initial-sync on attach); detach() unsubscribes. Passing
-    // the app lifecycle subscribes the guard to
-    // applicationDidResignActive / applicationDidBecomeActive so it can
-    // dim / restore the selection highlight across app background/foreground.
+    // effects fire. attach() installs pointer / selection / keyboard
+    // listeners, subscribes to the app lifecycle for resign/become-active
+    // dim transitions, and subscribes to the deck store (via the
+    // `deck-store-registry` singleton) so paint tracks `activePaneId` /
+    // `activeCardId` transitions. ([D02])
     const appLifecycle = getAppLifecycle();
-    selectionGuard.attach(lifecycle, appLifecycle);
+    selectionGuard.attach(appLifecycle);
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {

@@ -201,45 +201,14 @@ describe("T15 – card-level selection boundary registration", () => {
     }
   });
 
-  it("a pointerdown on deck chrome outside the boundary activates the enclosing card via closest('[data-card-host]')", () => {
-    // Layout: a [data-card-host] wrapper contains both the boundary
-    // element and some chrome (title bar) that sits outside the boundary
-    // subtree. A pointerdown on the chrome must still attribute the event
-    // to the enclosing card and call `activateCard(cardId)`.
-    const host = document.createElement("div");
-    host.setAttribute("data-card-host", "");
-    host.setAttribute("data-card-id", "card-t15-click");
-    const titleBar = document.createElement("div");
-    titleBar.textContent = "close";
-    const boundary = document.createElement("div");
-    host.appendChild(titleBar);
-    host.appendChild(boundary);
-    document.body.appendChild(host);
-
-    selectionGuard.registerBoundary("card-t15-click", boundary);
-    selectionGuard.attach();
-    const activateSpy = spyOn(selectionGuard, "activateCard");
-
-    try {
-      // happy-dom doesn't expose PointerEvent; dispatch a MouseEvent with
-      // type "pointerdown" — the handler reads `target`, `clientX`,
-      // `clientY` only, all of which MouseEvent provides.
-      const event = new MouseEvent("pointerdown", {
-        bubbles: true,
-        cancelable: true,
-        clientX: 0,
-        clientY: 0,
-      });
-      titleBar.dispatchEvent(event);
-
-      expect(activateSpy).toHaveBeenCalledWith("card-t15-click");
-    } finally {
-      activateSpy.mockRestore();
-      selectionGuard.detach();
-      selectionGuard.unregisterBoundary("card-t15-click");
-      document.body.removeChild(host);
-    }
-  });
+  // The Step 2 "pointerdown on chrome outside boundary activates the
+  // enclosing card via closest('[data-card-host]')" test was retired
+  // with the `activateCard` method itself. Paint is now driven by the
+  // deck store's `activePaneId` / `activeCardId`, not by
+  // selectionGuard-internal activation — pane-focus-controller.ts is
+  // the production path that activates the clicked card via the deck
+  // manager, which then notifies selectionGuard through the deck-store
+  // subscription.
 });
 
 // ---------------------------------------------------------------------------

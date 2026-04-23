@@ -183,17 +183,30 @@ const MAX_SCROLL_SPEED = 20;
 
 /**
  * SelectionGuard — module-level singleton that enforces selection boundaries
- * at the card level.
+ * at the card level and paints multi-card selection state.
  *
- * ## Architecture (boundary enforcer)
+ * ## Architecture (boundary enforcer + paint authority)
  *
  * Active selection uses native `::selection`. One CSS Custom Highlight
- * (`inactive-selection`) renders dimmed selections for background cards.
+ * (`inactive-selection`) renders dimmed selections for every card that
+ * is not the currently-focused one, so the user sees a "remembered"
+ * selection for every card even while only one card is active.
  *
- * On card switch: the old card's Selection is cloned into `inactive-selection`
- * (dimmed). The new card's saved Range (if any) is restored to the browser
- * Selection. A one-shot mousedown handler prevents the click from collapsing
- * the restored selection.
+ * Paint is driven by three inputs:
+ *   - `cardRanges`: per-card Range, published by the card's owning
+ *     component (e.g. `TugTextEngine.onSelectionChanged`).
+ *   - `windowHasFocus`: flipped by the app-lifecycle observer on
+ *     `applicationDidResignActive` / `applicationDidBecomeActive`.
+ *   - `getDeckStore().getSnapshot().activePaneId → pane.activeCardId`:
+ *     the focused card.
+ *
+ * `updatePaint()` is the pure function of those inputs that mutates the
+ * DOM highlight and native `window.getSelection()`. It fires on every
+ * `cardRanges` update, every deck-store notify, and every resign/activate
+ * transition. When focus genuinely moves to a card that has a saved
+ * Range, a one-shot capture-phase `mousedown` interceptor is installed
+ * before paint so the click that triggered the switch doesn't collapse
+ * the about-to-be-restored selection to the click point.
  *
  * ## Registration
  *
@@ -202,13 +215,16 @@ const MAX_SCROLL_SPEED = 20;
  *
  * ## Lifecycle
  *
- * `attach()` installs document-level event listeners. `detach()` removes them.
+ * `attach()` installs document-level event listeners and subscribes to
+ * the app lifecycle and the deck store. `detach()` releases all of them.
  * Called by `ResponderChainProvider`.
  *
- * ## Selection persistence
+ * ## Legacy selection persistence (retires at a later step)
  *
- * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` for tab
- * switching (saves selection before unmount, restores after remount).
+ * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` are the
+ * pre-publish serialization API. Production callers were stripped at
+ * Step 1 of the selection plan; the methods remain here for test
+ * compatibility and retire at Step 9.
  *
  * ## Testing
  *
@@ -237,11 +253,6 @@ class SelectionGuard {
   // from tests via {@link getCardRange}; components publish via
   // {@link updateCardDomSelection}.
   private cardRanges: Map<string, Range> = new Map();
-
-  // The card that currently "owns" the active selection (i.e., the
-  // focused card). Used to know which card to deactivate when a
-  // different card is clicked.
-  private activeCardId_highlight: string | null = null;
 
   // Whether CSS.highlights is available.
   private highlightsAvailable = false;
@@ -290,13 +301,6 @@ class SelectionGuard {
   private boundPointerUp: (e: PointerEvent) => void;
   private boundSelectionChange: () => void;
   private boundSelectStart: (e: Event) => void;
-
-  // CardLifecycle subscription — installed on attach() when a
-  // card lifecycle is provided. Replaces the deck-canvas-side
-  // `useLayoutEffect(() => selectionGuard.activateCard(focusedCardId), ...)`
-  // so the guard reacts to activations via one subscription rather
-  // than two coupled effects on opposite sides of the tree.
-  private lifecycleUnsubscribe: (() => void) | null = null;
 
   // AppLifecycle subscriptions — installed on attach() when an app
   // lifecycle is provided. Step 5 of the lifecycle-delegates plan
@@ -381,9 +385,6 @@ class SelectionGuard {
       this.stopTracking();
     }
     const hadRange = this.cardRanges.delete(cardId);
-    if (this.activeCardId_highlight === cardId) {
-      this.activeCardId_highlight = null;
-    }
     if (hadRange) this.updatePaint();
   }
 
@@ -561,27 +562,16 @@ class SelectionGuard {
 
   /**
    * Install document-level event listeners.
-   * Called once at app startup by `ResponderChainProvider` (Step 6).
+   * Called once at app startup by `ResponderChainProvider`.
    *
    * CSS Custom Highlights are created eagerly in the constructor (not here)
    * so they exist before any React effects fire.
    *
-   * @param cardLifecycle - optional card lifecycle to subscribe to for
-   *   activation events (drives the highlight bookkeeping). Tests that
-   *   exercise the guard in isolation pass nothing.
    * @param appLifecycle - optional app lifecycle to subscribe to for
-   *   resign/become-active events (drives selection dim/restore).
-   *   Added in Step 5 of the lifecycle-delegates plan; replaces the
-   *   imperative `deactivateApp()` / `activateApp()` public entry
-   *   points that were called from window-global RPC functions.
+   *   resign/become-active events (drives selection dim/restore). Tests
+   *   that exercise the guard in isolation pass nothing.
    */
   attach(
-    cardLifecycle?: {
-      observeCardDidActivate: (
-        cardId: string | null,
-        callback: (cardId: string) => void,
-      ) => () => void;
-    } | null,
     appLifecycle?: {
       observeApplicationDidResignActive: (cb: () => void) => () => void;
       observeApplicationDidBecomeActive: (cb: () => void) => () => void;
@@ -600,17 +590,6 @@ class SelectionGuard {
     if (this.highlightsAvailable && this.inactiveHighlight &&
         typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       CSS.highlights.set("inactive-selection", this.inactiveHighlight);
-    }
-
-    // Wildcard subscription to the card lifecycle so every activation
-    // flips the highlight bookkeeping. Initial-sync fires the
-    // callback immediately for the currently-active card, so the
-    // old explicit-effect path is no longer needed in DeckCanvas.
-    if (cardLifecycle) {
-      this.lifecycleUnsubscribe = cardLifecycle.observeCardDidActivate(
-        null,
-        (cardId) => this.activateCard(cardId),
-      );
     }
 
     // App-lifecycle subscriptions. The guard is the sole consumer of
@@ -690,14 +669,8 @@ class SelectionGuard {
       CSS.highlights.delete("inactive-selection");
     }
     this.cardRanges.clear();
-    this.activeCardId_highlight = null;
     this.windowHasFocus = true;
     this.lastPaintFocusedCardId = null;
-
-    if (this.lifecycleUnsubscribe !== null) {
-      this.lifecycleUnsubscribe();
-      this.lifecycleUnsubscribe = null;
-    }
 
     for (const unsub of this.appLifecycleUnsubscribers) unsub();
     this.appLifecycleUnsubscribers = [];
@@ -708,29 +681,7 @@ class SelectionGuard {
     }
   }
 
-  // ---- Card activation (highlight management) ----
-
-  /**
-   * Mark a card as the focus-tracking target for the pointer / keyboard
-   * clamp logic. The dim / restore paint dance is **not** driven from
-   * here anymore — {@link updatePaint} reads the deck store's focused
-   * card and the `cardRanges` store directly, and the deck-store
-   * subscription installed in `attach()` reruns paint whenever
-   * `activePaneId` / `activeCardId` changes.
-   *
-   * This method remains as a narrow hook from `handlePointerDown`: it
-   * records which card owns the pointer-driven activation attempt so
-   * drag-clip can clamp against that card's boundary. Paint follows
-   * from the deck-store subscription.
-   *
-   * Called from {@link handlePointerDown} (pointer-driven focus) and
-   * from the `cardLifecycle.observeCardDidActivate` wildcard
-   * subscription installed in `attach()`.
-   */
-  activateCard(cardId: string): void {
-    if (this.activeCardId_highlight === cardId) return;
-    this.activeCardId_highlight = cardId;
-  }
+  // ---- App-lifecycle paint transitions ----
 
   /**
    * Handle `applicationDidResignActive`: flip the `windowHasFocus`
@@ -872,7 +823,6 @@ class SelectionGuard {
     this.removePreventMousedown();
     this.boundaries.clear();
     this.cardRanges.clear();
-    this.activeCardId_highlight = null;
     this.windowHasFocus = true;
     this.lastPaintFocusedCardId = null;
     if (this.inactiveHighlight) {
@@ -916,38 +866,6 @@ class SelectionGuard {
     // not dim the frontmost card's selection.
     const targetEl = target instanceof Element ? target : (target as Node).parentElement;
     if (targetEl?.closest("[data-no-activate]")) return;
-
-    // ---- Determine which card the click belongs to ----
-    //
-    // First check content boundaries (most common). For clicks that land on
-    // deck chrome (title bar, tab bar, close button) — which lives outside
-    // the boundary subtree — walk up to the nearest `[data-card-host]`
-    // ancestor and read its `data-card-id`. This is the card-level identity
-    // anchor installed by `CardHost`.
-    let clickedCardId: string | null = null;
-    for (const [cardId, element] of this.boundaries) {
-      if (element.contains(target)) {
-        clickedCardId = cardId;
-        break;
-      }
-    }
-    if (clickedCardId === null) {
-      const el = target instanceof Element ? target : (target as Node).parentElement;
-      const cardHost = el?.closest("[data-card-host]");
-      const cid = cardHost?.getAttribute("data-card-id") ?? null;
-      if (cid !== null && this.boundaries.has(cid)) {
-        clickedCardId = cid;
-      }
-    }
-
-    // ---- Activate the clicked card ----
-    //
-    // activateCard handles all cases: same-card (no-op), card switch
-    // (deactivate old, activate new, restore selection), and first
-    // activation (just set the tracking field).
-    if (clickedCardId) {
-      this.activateCard(clickedCardId);
-    }
 
     // ---- Tracking loop ----
     //

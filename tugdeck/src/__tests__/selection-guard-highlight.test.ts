@@ -251,80 +251,11 @@ describe("T15 – reset() clears inactive highlight state", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// T20: activateCard — card switch deactivates old, activates new
-// ---------------------------------------------------------------------------
-
-describe("T20 – activateCard card switch", () => {
-  let registry: MockHighlightRegistry;
-
-  beforeEach(() => {
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-  });
-
-  afterEach(() => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
-    selectionGuard.reset();
-  });
-
-  // The "activateCard clones / restores selection" pair was retired
-  // with the manual-clone mechanism. Paint is now driven by
-  // `cardRanges` + the deck-store subscription via `updatePaint()`.
-  // See Step 5's own tests for the new dim/restore contract.
-
-  it("is a no-op when highlight API is unavailable", () => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
-    selectionGuard.reset();
-    expect(() => selectionGuard.activateCard("any-card")).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// T21: activateCard — same-card is a no-op
-// ---------------------------------------------------------------------------
-
-describe("T21 – activateCard same-card no-op", () => {
-  let registry: MockHighlightRegistry;
-
-  beforeEach(() => {
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-  });
-
-  afterEach(() => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
-    selectionGuard.reset();
-  });
-
-  it("does not modify inactive highlight when activating the already-active card", () => {
-    const boundary = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    selectionGuard.registerBoundary("card-same", boundary);
-
-    const range = makeRange(boundary, "same card");
-    mockSelection(boundary, range);
-    selectionGuard.activateCard("card-same");
-
-    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
-    expect(inactiveHl.size).toBe(0);
-
-    // Activate same card again — no-op.
-    selectionGuard.activateCard("card-same");
-    expect(inactiveHl.size).toBe(0);
-
-    restoreWindow();
-    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
-  });
-});
-
-// The T23 "saveSelection falls back to inactiveRanges" block was retired
-// with the activateCard-populates-inactiveRanges mechanism. Step 5
-// replaced `inactiveRanges` with `cardRanges` (published by the owning
-// component). `saveSelection`'s fallback now reads `cardRanges`. The
-// legacy `saveSelection` / `restoreSelection` API itself retires at
-// Step 9; new coverage for the publish → paint path lives in Step 5's
-// own test file.
+// T20 – T23 previously pinned the behavior of the public `activateCard`
+// method (card-switch clone + restore, same-card no-op, saveSelection
+// fallback via `inactiveRanges`). That method and its dead-weight
+// state were removed after Step 5 — paint is now entirely driven by
+// `cardRanges` + the deck-store subscription via `updatePaint()`.
+// Step 5's `selection-guard-paint.test.ts` covers the new contract.
+// The legacy `saveSelection` / `restoreSelection` API itself retires
+// at Step 9.
