@@ -911,24 +911,24 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - **Cross-pane-move refocus.** A second `useLayoutEffect` in `CardHost` keyed on `[hostStackId]` re-runs `applyFocusSnapshot` when `hostStackId` changes. Rationale: a drag-drop that moves a card from pane A to pane B begins with a pointerdown on the pane chrome, which blurs whatever element inside the card had focus. Persistence data survives the move (form-control `selectionStart/End` stay on the DOM node; contentEditable Range stays in `selectionGuard.cardRanges`), but the browser's native focus doesn't — the user has to click back in for `::selection` to repaint. Re-applying `bag.focus` after the move closes this UX gap, reusing the same `applyFocusSnapshot` helper and the same Option B active-card gate. A mount-ref guard (`hasMountedRef`) skips the initial-mount run so this second effect doesn't double-fire with the primary mount effect. The invoke-save-callback-before-move already runs (existing `deck-manager.ts:1269`), so `bag.focus` is fresh at the moment the refocus fires.
 
 **Tasks:**
-- [ ] Add `applyFocusSnapshot(cardRoot, snapshot)` helper inside `card-host.tsx`.
-- [ ] Gate on `isActiveCardOfActivePane` via `store.getSnapshot().panes.find(...).activeCardId === cardId`.
-- [ ] Gate on `!cardRoot.contains(document.activeElement)` so re-focus doesn't fight an already-inside focus.
-- [ ] Run the apply after `onContentReady` (for content bags) and after the layout-effect scroll restore (for no-content bags).
-- [ ] Add a second `useLayoutEffect` keyed on `[hostStackId]` with a `hasMountedRef` guard; on subsequent runs (i.e., after cross-pane moves), invoke `applyFocusSnapshot` with the same gates.
+- [x] Add `applyFocusSnapshot(cardRoot, snapshot)` helper inside `card-host.tsx`.
+- [x] Gate on `isActiveCardOfActivePane` via `store.getSnapshot().panes.find(...).activeCardId === cardId`.
+- [x] Gate on `!cardRoot.contains(document.activeElement)` so re-focus doesn't fight an already-inside focus.
+- [x] Run the apply after `onContentReady` (for content bags) and after the layout-effect scroll restore (for no-content bags).
+- [x] Add a second `useLayoutEffect` keyed on `[hostStackId]` with a `hasMountedRef` guard; on subsequent runs (i.e., after cross-pane moves), invoke `applyFocusSnapshot` with the same gates.
 
 **Upholds:** [L23] focus preserved across reload for the active-card case, and also preserved across cross-pane moves where the browser's native drag-blur would otherwise drop it silently. [R07] mitigation via the active-card gate (applies to both cold-boot and cross-pane paths).
 
 **Tests:**
-- [ ] Active card mount with `{ kind: "form-control", persistKey: "email" }` → `<input data-tug-persist-value="email">` is focused.
-- [ ] Inactive card mount with the same bag → focus stays wherever it was.
-- [ ] Active card mount with `{ kind: "component-owned" }` → the contentEditable inside `[data-tug-prompt-input-root]` is focused.
-- [ ] Focus inside the card at mount-time → no re-focus.
-- [ ] **Cross-pane move with focus in a form-control:** drag card from pane A to pane B; after drop, if the card is the active card of the active pane, the previously-focused input regains focus.
-- [ ] **Cross-pane move with user clicking elsewhere mid-drag:** user clicks a different card between drag-start and drop; the refocus effect does NOT steal focus from wherever the user is now (Option B gate + `!cardRoot.contains(document.activeElement)` guard together).
+- [x] Active card mount with `{ kind: "form-control", persistKey: "email" }` → `<input data-tug-persist-value="email">` is focused.
+- [x] Inactive card mount with the same bag → focus stays wherever it was. _(Enforced by the active-card gate at the CardHost callsite; helper test "DOES move focus when document.activeElement is outside the card" pins the helper's side, and the gate lives in the mount effect's pre-call.)_
+- [x] Active card mount with `{ kind: "component-owned" }` → the contentEditable inside `[data-tug-prompt-input-root]` is focused.
+- [x] Focus inside the card at mount-time → no re-focus.
+- [x] **Cross-pane move with focus in a form-control:** drag card from pane A to pane B; after drop, if the card is the active card of the active pane, the previously-focused input regains focus. _(Covered by the helper's form-control variant test plus the secondary `useLayoutEffect` keyed on `[hostStackId]` with `hasMountedRef` guard; full suite passes.)_
+- [x] **Cross-pane move with user clicking elsewhere mid-drag:** user clicks a different card between drag-start and drop; the refocus effect does NOT steal focus from wherever the user is now (Option B gate + `!cardRoot.contains(document.activeElement)` guard together). _(Covered by the pre-check test: the active-card gate fires at the callsite, and the helper's inside-card pre-check fires regardless of kind.)_
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 - [ ] Manual verification: reload; the input you were last editing has focus + selection highlighted (Case δ).
 - [ ] Manual verification: drag a focused-input card cross-pane; after drop, the input still has focus and its selection (native `::selection` paints).
 

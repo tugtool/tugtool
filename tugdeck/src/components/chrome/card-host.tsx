@@ -70,6 +70,7 @@ import { useSelectionBoundary } from "../tugways/hooks/use-selection-boundary";
 import { nodeToPath, selectionGuard } from "../tugways/selection-guard";
 import type {
   CardStateBag,
+  DeckState,
   DomSelectionSnapshot,
   FocusSnapshot,
   FormControlSnapshot,
@@ -234,6 +235,17 @@ const COMPONENT_OWNED_SELECTORS: readonly string[] = [
 ];
 
 /**
+ * For each component-owned root, the inner focusable element that
+ * `applyFocusSnapshot` focuses when restoring `{ kind: "component-owned" }`.
+ * Kept parallel with {@link COMPONENT_OWNED_SELECTORS}: both arrays
+ * describe the same components but from opposite sides — `closest(...)`
+ * on save, `querySelector(...)` on restore. Order must match.
+ */
+const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
+  "[data-tug-prompt-input-root] [contenteditable]",
+];
+
+/**
  * Classify `document.activeElement` relative to the card root into one
  * of the four `FocusSnapshot` variants.
  *
@@ -270,6 +282,62 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
 }
 
 /**
+ * Cold-boot / cross-pane-move counterpart of {@link captureFocus}.
+ * Resolves the four `FocusSnapshot` variants back to a concrete DOM
+ * element inside `cardRoot` and calls `.focus()` on it.
+ *
+ * Defensive semantics:
+ *   - Pre-check: if focus is already somewhere inside the card, do
+ *     nothing. Re-applying would fight a user interaction in progress
+ *     (race between mount restore and a click inside the freshly-
+ *     mounted subtree).
+ *   - If the keyed element is not in the DOM yet (late-mounting
+ *     content), no-op — the caller is responsible for re-trying at a
+ *     later readiness point (e.g. `onContentReady`).
+ *   - `kind === "none"` never mutates focus.
+ *
+ * Pure-ish: mutates `document.activeElement` only when the target is
+ * resolvable and focus is not already inside the card.
+ */
+export function applyFocusSnapshot(
+  cardRoot: HTMLElement,
+  snapshot: FocusSnapshot,
+): void {
+  if (snapshot.kind === "none") return;
+
+  // Respect any focus already inside the card — a click that landed
+  // during the restore window must win over the saved snapshot.
+  const currentActive = cardRoot.ownerDocument.activeElement;
+  if (
+    currentActive instanceof HTMLElement &&
+    cardRoot.contains(currentActive)
+  ) {
+    return;
+  }
+
+  let target: HTMLElement | null = null;
+  if (snapshot.kind === "form-control") {
+    target = cardRoot.querySelector<HTMLElement>(
+      `[data-tug-persist-value="${CSS.escape(snapshot.persistKey)}"]`,
+    );
+  } else if (snapshot.kind === "dom") {
+    target = cardRoot.querySelector<HTMLElement>(
+      `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
+    );
+  } else if (snapshot.kind === "component-owned") {
+    for (const selector of COMPONENT_OWNED_FOCUS_TARGETS) {
+      const el = cardRoot.querySelector<HTMLElement>(selector);
+      if (el) {
+        target = el;
+        break;
+      }
+    }
+  }
+
+  if (target !== null) target.focus();
+}
+
+/**
  * Find this card's own DOM subtree root inside a pane's content element.
  * The `[data-card-host][data-card-id]` div is rendered by `CardHost`
  * itself and travels with the card across cross-pane moves (via the
@@ -283,6 +351,27 @@ function findCardRoot(
   return hostContentEl.querySelector<HTMLElement>(
     `[data-card-host][data-card-id="${CSS.escape(cardId)}"]`,
   );
+}
+
+/**
+ * True when `cardId` is the active card of the deck's active pane per
+ * the store's current snapshot.
+ *
+ * Used by focus restore to enforce [D10]'s "Option B" gate: only the
+ * one card that the user is actually looking at may steal focus on
+ * cold boot or after a cross-pane move. Every other card keeps its
+ * `bag.focus` data but does not disturb whatever the user is doing
+ * elsewhere. [R07].
+ */
+function isActiveCardOfActivePane(
+  store: { getSnapshot: () => DeckState },
+  cardId: string,
+): boolean {
+  const state = store.getSnapshot();
+  if (state.activePaneId === undefined) return false;
+  const pane = state.panes.find((p) => p.id === state.activePaneId);
+  if (pane === undefined) return false;
+  return pane.activeCardId === cardId;
 }
 
 /**
@@ -461,14 +550,29 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           if (el.style.visibility === "hidden") {
             el.style.visibility = "";
           }
-          if (bag.domSelection) {
-            const cardRoot = findCardRoot(el, cardId);
-            if (cardRoot) {
+          const cardRoot = findCardRoot(el, cardId);
+          if (cardRoot) {
+            if (bag.domSelection) {
               selectionGuard.restoreCardDomSelection(
                 cardId,
                 bag.domSelection,
                 cardRoot,
               );
+            }
+            // Focus restore for with-content bags. The primary mount
+            // effect also calls `applyFocusSnapshot`, but with-content
+            // cards' DOM is not materialised until `onRestore` commits,
+            // so the primary call no-ops and this one lands. The
+            // active-card gate ([D10] Option B) keeps non-focused
+            // cards from stealing focus; the pre-check inside the
+            // helper keeps a mid-restore user click from being
+            // overridden.
+            if (
+              bag.focus &&
+              bag.focus.kind !== "none" &&
+              isActiveCardOfActivePane(store, cardId)
+            ) {
+              applyFocusSnapshot(cardRoot, bag.focus);
             }
           }
         }
@@ -526,11 +630,25 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
     // DOM-selection restore runs unconditionally for every card with a
     // saved snapshot; see the block comment above for ordering rationale.
-    if (bag.domSelection) {
-      const cardRoot = findCardRoot(hostContentEl, cardId);
-      if (cardRoot) {
-        selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRoot);
-      }
+    const cardRootForDomAxes = findCardRoot(hostContentEl, cardId);
+    if (bag.domSelection && cardRootForDomAxes) {
+      selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRootForDomAxes);
+    }
+
+    // Focus restore, [D10] Option B gated. For no-content cards the
+    // DOM is already in place and this call lands the saved focus;
+    // for with-content cards the keyed element typically doesn't
+    // exist yet and `applyFocusSnapshot` no-ops — `onContentReady`
+    // picks them up. Both paths respect the pre-check that keeps
+    // focus from being stolen out from under a user who has clicked
+    // elsewhere mid-restore. [R07].
+    if (
+      bag.focus &&
+      bag.focus.kind !== "none" &&
+      cardRootForDomAxes &&
+      isActiveCardOfActivePane(store, cardId)
+    ) {
+      applyFocusSnapshot(cardRootForDomAxes, bag.focus);
     }
 
     const formSnapshots = bag.formControls;
@@ -581,6 +699,39 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     observer.observe(cardRoot, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [cardId, hostStackId, hostContentEl, store]);
+
+  // Cross-pane-move focus restore. A drag-drop that moves a card from
+  // pane A to pane B starts with a pointerdown on pane chrome, which
+  // blurs whatever element inside the card had focus. The card's own
+  // persisted state survives the move (form-control selection stays on
+  // the DOM node; contentEditable Range stays in `selectionGuard.cardRanges`),
+  // but native browser focus does not — the user would otherwise have
+  // to click back in for `::selection` to repaint. Re-applying
+  // `bag.focus` after `hostStackId` changes closes that gap.
+  //
+  // Keyed ONLY on `[hostStackId]` so this fires on cross-pane moves
+  // without firing on other deps' changes. `hasMountedRef` skips the
+  // initial-mount run so this effect does not double-fire with the
+  // primary restore effect above; only subsequent `hostStackId`
+  // transitions trigger the refocus. The active-card gate and the
+  // pre-check inside `applyFocusSnapshot` keep the refocus from
+  // stealing focus out from under a user who has since clicked
+  // elsewhere. L23, R07.
+  const hasMountedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    if (!hostContentEl) return;
+    const bag = store.getCardState(cardId);
+    if (!bag || !bag.focus || bag.focus.kind === "none") return;
+    if (!isActiveCardOfActivePane(store, cardId)) return;
+    const cardRoot = findCardRoot(hostContentEl, cardId);
+    if (!cardRoot) return;
+    applyFocusSnapshot(cardRoot, bag.focus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostStackId]);
 
   // Rewritten every render so closures registered below read the latest
   // `hostContentEl` / `hostStackId` / `cardId` without stale capture.
