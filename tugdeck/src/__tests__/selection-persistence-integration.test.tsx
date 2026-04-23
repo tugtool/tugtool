@@ -88,6 +88,7 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
 import { CardStateOrchestrator } from "@/card-state-orchestrator";
@@ -332,6 +333,26 @@ function makeFormControlCardState(id: string): CardState {
   return { id, componentId: "integ-form", title: "Form Control", closable: true };
 }
 
+// ---- [A9] first-consumer proof: TugCheckbox + persistKey ----
+
+const CHECKBOX_KEY = "integration/done";
+
+function CheckboxCard() {
+  return <TugCheckbox persistKey={CHECKBOX_KEY} label="Done" />;
+}
+
+function registerCheckboxCard() {
+  registerCard({
+    componentId: "integ-checkbox",
+    defaultMeta: { title: "Checkbox", closable: true },
+    contentFactory: () => <CheckboxCard />,
+  });
+}
+
+function makeCheckboxCardState(id: string): CardState {
+  return { id, componentId: "integ-checkbox", title: "Checkbox", closable: true };
+}
+
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
@@ -518,6 +539,74 @@ describe("selection-persistence integration — form-control reload", () => {
     if (!inactiveInput) return;
     expect(inactiveInput.value).toBe("hidden");
     expect(document.activeElement).not.toBe(inactiveInput);
+  });
+});
+
+// ===========================================================================
+// [A9] First-consumer integration proof — TugCheckbox opt-in round-trip.
+// ===========================================================================
+
+describe("selection-persistence integration — [A9] tug-checkbox opt-in", () => {
+  it("save captures bag.components[persistKey]; fresh mount re-applies checked state", () => {
+    registerCheckboxCard();
+
+    // ---- Session A: mount the card, toggle the checkbox, fire save ----
+    const cardId = "card-checkbox";
+    const card = makeCheckboxCardState(cardId);
+    const storeA = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    renderDeck(storeA);
+
+    const buttonA = document.querySelector<HTMLButtonElement>(
+      'button[data-slot="tug-checkbox"]',
+    );
+    expect(buttonA).not.toBeNull();
+    if (!buttonA) return;
+    expect(buttonA.getAttribute("data-state")).toBe("unchecked");
+
+    act(() => {
+      buttonA.click();
+    });
+    expect(buttonA.getAttribute("data-state")).toBe("checked");
+
+    // Fire the save the way the close / will-resign path would.
+    act(() => {
+      storeA.invokeSaveCallback(cardId);
+    });
+
+    const savedBag = storeA.getCardState(cardId);
+    expect(savedBag).not.toBeUndefined();
+    if (!savedBag) return;
+    // The orchestrator wrote the checkbox state into the components
+    // slot of the bag — first visible [A9] round-trip.
+    expect(savedBag.components?.[CHECKBOX_KEY]).toEqual({ checked: true });
+
+    // Tear session A down.
+    cleanup();
+    paneContentRegistry._resetForTests();
+    selectionGuard.reset();
+
+    // ---- Session B: mount with the saved bag pre-populated ----
+    const storeB = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    storeB.setCardState(cardId, savedBag);
+    renderDeck(storeB);
+
+    const buttonB = document.querySelector<HTMLButtonElement>(
+      'button[data-slot="tug-checkbox"]',
+    );
+    expect(buttonB).not.toBeNull();
+    if (!buttonB) return;
+    // The mount-time restore pass ([A9c]) walked the component
+    // registry and applied the saved payload to the new mount's
+    // internal state.
+    expect(buttonB.getAttribute("data-state")).toBe("checked");
   });
 });
 

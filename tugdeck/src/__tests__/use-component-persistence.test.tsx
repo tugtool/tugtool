@@ -217,6 +217,63 @@ describe("useComponentPersistence — uniqueness", () => {
   });
 });
 
+describe("useComponentPersistence — opt-in via optional persistKey", () => {
+  test("persistKey === undefined: no registration, no dev-warn", () => {
+    const consoleWarns: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      consoleWarns.push(args);
+    };
+    try {
+      function OptOut(): null {
+        useComponentPersistence({
+          persistKey: undefined,
+          captureState: () => "captured",
+          restoreState: () => undefined,
+        });
+        return null;
+      }
+
+      const registry = new ComponentPersistenceRegistry();
+      // Even inside a card, a component that opts out registers nothing.
+      const { unmount } = renderUnderCard(registry, <OptOut />);
+      expect(registry.keys().size).toBe(0);
+      expect(consoleWarns).toEqual([]);
+      unmount();
+
+      // Outside a card, opt-out also stays silent.
+      render(<OptOut />);
+      expect(consoleWarns).toEqual([]);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("toggling persistKey from undefined to a string registers the entry", () => {
+    const registry = new ComponentPersistenceRegistry();
+    function Toggle({ persistKey }: { persistKey?: string }): null {
+      useComponentPersistence({
+        persistKey,
+        captureState: () => "X",
+        restoreState: () => undefined,
+      });
+      return null;
+    }
+
+    const { rerender } = renderUnderCard(registry, <Toggle />);
+    expect(registry.keys().size).toBe(0);
+
+    rerender(
+      <CardComponentRegistryContext.Provider
+        value={{ registry, prefix: "", treePath: [] }}
+      >
+        <Toggle persistKey="late" />
+      </CardComponentRegistryContext.Provider>,
+    );
+    expect(registry.keys()).toEqual(new Set(["late"]));
+  });
+});
+
 describe("useComponentPersistence — outside-card graceful no-op", () => {
   const consoleErrors: unknown[][] = [];
   const consoleWarns: unknown[][] = [];

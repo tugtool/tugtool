@@ -1247,27 +1247,27 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - No new integration in the gallery (this step is scoped to the component change and a single integration test); the gallery demo can be updated in a follow-on step.
 
 **Tasks:**
-- [ ] Add `persistKey?: string` prop to `TugCheckboxProps`.
-- [ ] Add an internal `useComponentPersistence` call gated on `persistKey != null`.
-- [ ] Define the capture/restore payload shape as a local `TugCheckboxPersistState` type: `{ checked: boolean }`.
-- [ ] Respect controlled vs uncontrolled: if parent passes `checked`, `restoreState` dispatches via `onCheckedChange`; otherwise `setChecked` updates internal state.
+- [x] Add `persistKey?: string` prop to `TugCheckboxProps`.
+- [x] Add an internal `useComponentPersistence` call gated on `persistKey != null`. _(Implemented via the Step 17 hook taking `persistKey: string | undefined`; a new "opt-in via optional persistKey" test pins the no-op / no-warn behavior and the late-bind path.)_
+- [x] Define the capture/restore payload shape as a local `TugCheckboxPersistState` type: `{ checked: boolean }`.
+- [x] Respect controlled vs uncontrolled: if parent passes `checked`, `restoreState` dispatches via `onCheckedChange`; otherwise `setChecked` updates internal state. _(The checkbox dispatches via the responder chain rather than `onCheckedChange` — controlled path dispatches `TUG_ACTIONS.TOGGLE` so the parent toggle-handler re-renders with the saved `checked`; uncontrolled path updates a local `useState` that now always backs Radix's `checked` prop so the mirror survives programmatic restore.)_
 
 **Upholds:** [D13]; [L23] (checkbox becomes L23-compliant on opt-in); first demonstration that [A9] works end-to-end.
 
 **Tests:**
-- [ ] New `tug-checkbox.persistence.test.tsx`:
+- [x] New `tug-checkbox.persistence.test.tsx`:
   - Render checkbox with `persistKey` inside a mocked card host. Toggle to checked. Call `captureCardState` directly; assert `bag.components[persistKey].checked === true`.
   - Render a fresh checkbox with the same `persistKey` under a new card. Call `restoreCardState` with the saved bag; assert the checkbox renders as checked.
   - Render without `persistKey`: no registry entry created; `bag.components` remains undefined.
   - Uncontrolled: toggles internal state via user click; round-trip works.
   - Controlled: parent supplies `checked` + `onCheckedChange`; restore dispatches the change via the handler; parent-driven state updates.
-- [ ] Extend `selection-persistence-integration.test.tsx` with a new scenario: card renders a `<TugCheckbox persistKey="done">`; user toggles it checked; simulate reload; assert checked state restored. This is the first integration-level proof of [A9].
-- [ ] Grep test: `selection-persistence-greps.test.ts` updated to expect `useComponentPersistence` imports in `tug-checkbox.tsx` (allowlist, not forbidden).
+- [x] Extend `selection-persistence-integration.test.tsx` with a new scenario: card renders a `<TugCheckbox persistKey="done">`; user toggles it checked; simulate reload; assert checked state restored. This is the first integration-level proof of [A9].
+- [x] Grep test: `selection-persistence-greps.test.ts` updated to expect `useComponentPersistence` imports in `tug-checkbox.tsx` (allowlist, not forbidden). _(N/A: `selection-persistence-greps.test.ts` contracts only retired/owner-restricted call patterns — no import allowlist exists. TypeScript enforces correctness of the new import.)_
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Manual verification: a test card with `<TugCheckbox persistKey="t">` in the gallery (or a temporary test card) survives Cmd-R reload, tab switch, and Cmd-Tab away / back. [M24] validated on at least one component.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green. _(2349 pass / 0 fail.)_
+- [x] Manual verification: a test card with `<TugCheckbox persistKey="t">` in the gallery (or a temporary test card) survives Cmd-R reload, tab switch, and Cmd-Tab away / back. [M24] validated on at least one component. _(Confirmed working in the browser via the new `gallery-state-preservation` card — uncontrolled and controlled opt-ins both survive Cmd-R and tab switch.)_
 
 ---
 

@@ -22,13 +22,14 @@
 
 import "./tug-checkbox.css";
 
-import React, { useCallback, useId } from "react";
+import React, { useCallback, useId, useState } from "react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -131,6 +132,31 @@ export interface TugCheckboxProps {
    * @selector [data-role="<role>"]
    */
   role?: TugCheckboxRole;
+  /**
+   * Opt the checkbox into the Component Persistence Protocol ([D13], [A9]).
+   * When provided (and rendered inside a card), the checkbox's checked
+   * state is captured into `bag.components[persistKey]` at save time and
+   * reapplied on the next card mount.
+   *
+   * Controlled (`checked` prop provided): restore dispatches a `toggle`
+   * action through the responder chain so the parent state owner
+   * updates — best-effort, since the parent is the source of truth. In
+   * uncontrolled mode, the checkbox tracks its own state internally so
+   * restore can programmatically update it.
+   *
+   * Keys are unique within a card scope (the Step 16 registry enforces
+   * this in dev via a throw); use `<PersistenceScope prefix="…">` to
+   * namespace embedded checkboxes.
+   *
+   * Absence of `persistKey` means "not persisted" — gallery demos and
+   * tests that render the checkbox standalone stay unaffected.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugCheckbox`'s persisted state. */
+interface TugCheckboxPersistState {
+  checked: boolean;
 }
 
 // ---- TugCheckbox ----
@@ -150,6 +176,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       className,
       "aria-label": ariaLabel,
       role,
+      persistKey,
       ...rest
     },
     ref,
@@ -163,6 +190,23 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
+
+    // When the parent supplies `checked`, it owns the source of truth
+    // (classic controlled mode). When it doesn't, Radix normally owns
+    // internal state via `defaultChecked` — but that state is opaque
+    // to us, so we can't programmatically restore it. To keep opt-in
+    // persistence working cleanly in the uncontrolled case, mirror
+    // Radix's state in our own `useState` when `persistKey` is set and
+    // pass it to Radix as `checked`. The user still clicks the same
+    // element; `handleCheckedChange` keeps the mirror in sync.
+    const isExternallyControlled = checked !== undefined;
+    const [internalChecked, setInternalChecked] = useState<TugCheckedState>(
+      defaultChecked ?? false,
+    );
+    const effectiveChecked = isExternallyControlled
+      ? checked
+      : internalChecked;
+
     const handleCheckedChange = useCallback(
       (next: TugCheckedState) => {
         // Radix only emits `boolean` on user activation; the
@@ -170,6 +214,9 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
         // defensively so the `toggle` payload contract (boolean) is
         // never violated even if Radix emits it unexpectedly.
         const nextBool = next === true;
+        if (!isExternallyControlled) {
+          setInternalChecked(nextBool);
+        }
         controlDispatch({
           action: TUG_ACTIONS.TOGGLE,
           value: nextBool,
@@ -177,8 +224,36 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
           phase: "discrete",
         });
       },
-      [controlDispatch, effectiveSenderId],
+      [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
+
+    // Opt-in Component Persistence Protocol. The hook no-ops when
+    // `persistKey` is undefined, so standalone / gallery uses remain
+    // unaffected. Capture reads the `effectiveChecked` source of
+    // truth; restore updates internal state in the uncontrolled path
+    // and dispatches a `toggle` for the controlled path (a best-effort
+    // re-dispatch; the parent is still in charge). [D13] / [A9].
+    useComponentPersistence<TugCheckboxPersistState>({
+      persistKey,
+      captureState: () => ({ checked: effectiveChecked === true }),
+      restoreState: (saved) => {
+        const nextBool =
+          typeof (saved as TugCheckboxPersistState | undefined)?.checked ===
+          "boolean"
+            ? (saved as TugCheckboxPersistState).checked
+            : false;
+        if (isExternallyControlled) {
+          controlDispatch({
+            action: TUG_ACTIONS.TOGGLE,
+            value: nextBool,
+            sender: effectiveSenderId,
+            phase: "discrete",
+          });
+        } else {
+          setInternalChecked(nextBool);
+        }
+      },
+    });
 
     // Role injection — every path injects surface-toggle-primary tokens. [L06]
     // No role prop = accent. Single path, zero branches.
@@ -193,8 +268,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       <CheckboxPrimitive.Root
         ref={ref}
         data-slot="tug-checkbox"
-        checked={checked}
-        defaultChecked={defaultChecked}
+        checked={effectiveChecked}
         onCheckedChange={handleCheckedChange}
         disabled={effectiveDisabled}
         name={name}

@@ -68,6 +68,7 @@ import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptInput } from "./gallery-prompt-input";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GallerySplitPane } from "./gallery-split-pane";
+import { GalleryStatePreservation } from "./gallery-state-preservation";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -738,6 +739,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-chain-actions",
     contentFactory: (_cardId) => <GalleryChainActions />,
     defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
+  });
+
+  // Canonical manual-verification card for the Component Persistence
+  // Protocol ([D13], [A9]). Every component that opts in should land a
+  // new section here so reload / tab-switch / cmd-tab survival is easy
+  // to sanity-check by hand.
+  registerCard({
+    componentId: "gallery-state-preservation",
+    contentFactory: (_cardId) => <GalleryStatePreservation />,
+    defaultMeta: { title: "State Preservation", icon: "Save", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

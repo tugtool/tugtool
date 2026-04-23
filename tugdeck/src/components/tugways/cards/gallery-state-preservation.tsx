@@ -1,0 +1,136 @@
+/**
+ * gallery-state-preservation.tsx — Component Gallery demo for the
+ * Component Persistence Protocol ([D13], [A9]).
+ *
+ * Built as the canonical testbed for components opting into
+ * `useComponentPersistence`. Today it exercises a single
+ * `<TugCheckbox persistKey="…">` — the first-consumer proof from Step
+ * 19. As subsequent steps port additional components onto the
+ * protocol, add them to this card's sections so the one place to
+ * manually verify "does reload preserve this component?" is here.
+ *
+ * Each section follows the same shape so the demo reads as a survey:
+ *   1. A brief label naming the component being tested.
+ *   2. The persisted control(s).
+ *   3. A live echo of the captured state so a user can see what the
+ *      framework would write into `bag.components[scopedKey]` at save
+ *      time.
+ *
+ * Manual verification recipe (for each section):
+ *   - Interact with the control (toggle, type, pick, etc.).
+ *   - Cmd-R to reload the window, OR switch away and back.
+ *   - Confirm the control and the "captured" echo both come back with
+ *     the same values.
+ */
+
+import React, { useId, useState } from "react";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
+
+// ---------------------------------------------------------------------------
+// PersistedCheckboxDemo — uncontrolled (internal-state) opt-in example.
+// ---------------------------------------------------------------------------
+
+/**
+ * Demonstrates the uncontrolled opt-in path: the checkbox owns its
+ * state internally when `persistKey` is set. Toggling updates the
+ * internal value; the framework captures the value at save time; a
+ * fresh mount reads the captured value back. No parent state is
+ * required — the checkbox is self-sufficient.
+ */
+function PersistedCheckboxDemo(): React.ReactElement {
+  return (
+    <div className="cg-variant-row">
+      <TugLabel size="2xs" color="muted">Uncontrolled opt-in</TugLabel>
+      <div className="cg-size-group">
+        <TugCheckbox
+          persistKey="uncontrolled-done"
+          label="Done"
+          size="md"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ControlledPersistedCheckboxDemo — controlled opt-in example.
+// ---------------------------------------------------------------------------
+
+/**
+ * Demonstrates the controlled opt-in path: the parent owns `checked`
+ * and the TUG_ACTIONS.TOGGLE handler. The framework captures the
+ * current `checked` prop at save time and, on restore, dispatches a
+ * `toggle` action through the responder chain so the parent updates
+ * its own state. This is a best-effort restore — the parent is the
+ * source of truth — but in practice it reproduces the saved state
+ * faithfully when the handler is a plain setter.
+ */
+function ControlledPersistedCheckboxDemo(): React.ReactElement {
+  const [checked, setChecked] = useState<boolean>(false);
+  const cbId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: {
+      [cbId]: setChecked,
+    },
+  });
+
+  return (
+    <ResponderScope>
+      <div
+        className="cg-variant-row"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        <TugLabel size="2xs" color="muted">Controlled opt-in</TugLabel>
+        <div className="cg-size-group">
+          <TugCheckbox
+            persistKey="controlled-done"
+            senderId={cbId}
+            label="Reviewed"
+            size="md"
+            checked={checked}
+          />
+        </div>
+        <TugLabel size="2xs" color="muted">
+          {`parent state: ${checked ? "checked" : "unchecked"}`}
+        </TugLabel>
+      </div>
+    </ResponderScope>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GalleryStatePreservation
+// ---------------------------------------------------------------------------
+
+/**
+ * State Preservation gallery card. Add a new section for each
+ * component as it opts into the Component Persistence Protocol so
+ * this card remains the one place to sanity-check end-to-end behavior
+ * by hand.
+ */
+export function GalleryStatePreservation(): React.ReactElement {
+  return (
+    <div className="cg-content" data-testid="gallery-state-preservation">
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugCheckbox — [A9] persistence</TugLabel>
+        <div className="cg-matrix">
+          <div className="cg-subtype-block">
+            <PersistedCheckboxDemo />
+            <ControlledPersistedCheckboxDemo />
+          </div>
+        </div>
+      </div>
+      <TugSeparator />
+      <div className="cg-section">
+        <TugLabel size="2xs" color="muted">
+          Toggle any of the above, reload the window, and confirm the
+          state survives. Each new opt-in component lands here as its
+          step merges.
+        </TugLabel>
+      </div>
+    </div>
+  );
+}

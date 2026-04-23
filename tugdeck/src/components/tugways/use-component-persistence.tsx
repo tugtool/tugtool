@@ -155,8 +155,16 @@ export interface UseComponentPersistenceOptions<T> {
    * Stable identifier for this component instance's slot in
    * `bag.components`. Must be unique within the card's scope after
    * `<PersistenceScope>` prefixing; duplicates throw in dev.
+   *
+   * Accepts `undefined` so components can expose opt-in persistence
+   * behind an optional prop without contorting their render tree to
+   * avoid the hook call (a conditional `useComponentPersistence` would
+   * violate the Rules of Hooks). The hook still fires every render;
+   * when `persistKey` is missing it skips registration and the
+   * outside-a-card dev-warn, so a non-opting caller pays no cost and
+   * emits no noise.
    */
-  persistKey: string;
+  persistKey: string | undefined;
   /**
    * Return the component's current serializable state. Must be
    * synchronous. Called by the framework at explicit capture moments
@@ -222,13 +230,20 @@ export function useComponentPersistence<T>({
     treePathRef.current = treePath;
   }
 
-  const scopedKey = prefix + persistKey;
+  // Opt-in gate: when the caller passes `persistKey === undefined` the
+  // hook stays a no-op. This lets components expose a `persistKey?`
+  // prop without forking their render tree. `scopedKey` is kept stable
+  // as an empty string when disabled so the effect's dep array is
+  // stable (the effect body early-returns before it's consulted).
+  const isEnabled = typeof persistKey === "string" && persistKey.length > 0;
+  const scopedKey = isEnabled ? prefix + persistKey : "";
 
   // One-shot dev-warn when the hook is used outside a card. A per-mount
   // ref guards the warning so repeated renders don't spam the console.
   const warnedRef = useRef(false);
 
   useLayoutEffect(() => {
+    if (!isEnabled) return;
     if (!registry) {
       if (isDevEnv() && !warnedRef.current) {
         warnedRef.current = true;
@@ -253,5 +268,5 @@ export function useComponentPersistence<T>({
     // treePathRef is immutable for the mount; captureRef/restoreRef are
     // re-synced above and read by the framework via `.current`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registry, scopedKey]);
+  }, [isEnabled, registry, scopedKey]);
 }
