@@ -1469,9 +1469,139 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 
 ---
 
-#### Step 24: Engine-managed cards implement `onCardActivated`; retire redundant refocus paths {#step-24}
+#### Step 23A: Retire the [A3] React effect; synchronous focus-transfer at the gesture source {#step-23a}
 
 **Depends on:** #step-23
+
+**Commit:** `refactor(card-host): replace A3 React effect with synchronous focus-transfer helper`
+
+**References:** [A3](#a3-shared-activation-effect); [A8](#a8-focus-theft-gate); [A2](#a2-on-card-activated); [L22](#); [L23](#); [L10](#); [L07](#); [M01](#m01-tab-switch-fc); [M03](#m03-pane-activation); [M16](#m16-tab-close-handoff); `card-host.tsx`, `pane-focus-controller.ts`, `tug-pane.tsx`, `deck-manager.ts`, `use-card-persistence.tsx`.
+
+**Problem this step closes.** Step 23's [A3] implementation subscribes to `isFocusDestination(cardId)` via `useFocusDestination` and performs DOM-authority writes (focus, selection paint) inside a `useLayoutEffect` that reacts to the React-rendered value. This pattern violates two tuglaws:
+
+- **[L22]** explicitly forbids routing store-driven DOM writes through React's render cycle: *"that injects React's scheduling (re-render → paint → effect) between the data change and the DOM update, causing frame delays and stale-closure bugs."* The activation effect is the round-trip L22 names.
+- **[L23]** forbids "save and restore" of user-visible state: *"The correct approach is to diff and mutate minimally so user-visible state is never disturbed."* Any fix that layers blur-before-activate + restore-after-activate on top of [A3] is still save-and-restore, just with more moving parts.
+
+The observable consequence is a sibling-effect ordering race: on a pane-activation flip, both the outgoing card's deactivation effect and the incoming card's activation effect react to the same `activePaneId` change. React does not order sibling effects, so whichever runs first wins — the incoming card's gate check may see `activeElement` still inside the outgoing card (branch 6 → refuse) if the outgoing effect hasn't yet released focus. The race is timing-sensitive: observable at rapid click cadences, latent at slow cadences when the debounced save has already populated bags and interleavings collapse favorably.
+
+[M01] intra-pane switch and [M16] tab-close handoff pass today because their gesture sources already flush state before mutating the store (`tug-pane.tsx#performSelectCard` calls `invokeSaveCallback(outgoing)`; `_removeCard` routes through `flushSaveCallbackBeforeDestruction`). [M03] pane activation has no such pre-flip flush and is the scenario where the race manifests.
+
+**Design principles.** Step 23A re-architects focus-transfer to satisfy L22, L23, and L10 without exception.
+
+1. **One atomic DOM transition per activation.** `element.focus()` is a single synchronous DOM call; the browser handles the implicit blur inside it. There is no intermediate "nothing focused" state for a racing observer to see — and therefore no race possible.
+2. **Transfer happens at the gesture source.** Whatever code decides "this card is becoming the first responder" is the same code that transfers focus. The store flip and subsequent React renders are consequences of the gesture, not preconditions for focus-transfer.
+3. **No React round-trip.** The helper runs synchronously inside the event handler (or equivalent non-React caller) before `store.activateCard` / `setActiveCardInPane`. By the time React re-renders, the DOM already reflects the end-state.
+4. **One owner.** All activation-driven DOM writes for the focus and DOM-selection axes live in a single module. CardHost participates only as a registrar (it tells the store where its card's DOM lives so the helper can resolve into it); it does not observe `isFocusDestination`.
+
+**Artifacts:**
+
+- **New file `tugdeck/src/focus-transfer.ts`.** Exports three entry points that cover every activation gesture the M-series currently names. All three are synchronous, imperative, React-unaware.
+
+  - `transferFocusForActivation(outgoingCardId: string | null, incomingCardId: string, store: IDeckManagerStore): void` — **synchronous before-mutation** entry point for intra-pane tab switch ([M01]), pane activation ([M03]), tab-close handoff ([M16]). Called by the gesture source *before* it mutates the store. Implementation:
+    1. **Save.** When `outgoingCardId !== null` and `outgoingCardId !== incomingCardId`, invoke `store.invokeSaveCallback(outgoingCardId)`. This captures the outgoing card's live `bag.focus` + `bag.domSelection` while `document.activeElement` still points into its subtree.
+    2. **Resolve.** Call `resolveActivationTarget(incomingCardId, store)` to produce one of: `{ kind: "focus-element", el: HTMLElement }` (DOM-authority card with a resolvable `bag.focus`), `{ kind: "dispatch-activated", cardId }` (content-owning card whose factory registered `onCardActivated`), or `{ kind: "none" }` (nothing to do — e.g. no saved focus snapshot, no registered activation callback).
+    3. **Gate.** Call `canProgrammaticallyFocus(incomingCardId, store.getSnapshot(), { targetCardHostEl })` ([A8]). If unsafe, abort silently; do not transfer. The gate's "focus already inside target" branch is still correct here — the user may have clicked directly into the incoming card's content and the browser will focus that element via its own mousedown default.
+    4. **Transfer.**
+       - `focus-element`: call `el.focus()`. Then call `selectionGuard.restoreCardDomSelection(...)` if `bag.domSelection` is present. One atomic DOM transition; the browser handles blur of the outgoing element implicitly. No separate `blur()` call.
+       - `dispatch-activated`: call the registered `onCardActivated` callback (see below for the registration channel).
+       - `none`: return without touching the DOM.
+
+  - `captureFocusForDragStart(cardId: string, store: IDeckManagerStore): void` — **synchronous before-blur** entry point for the first half of a cross-pane move ([M04], [M05], and the drag shape of [M06]). Called from the pointerdown-capture handler on pane chrome that *may* become a drag (same handler that today fires `onDragStart`). Fires even if the click doesn't become a drag — saves are cheap and idempotent, and the symmetric "save-at-gesture-start" contract is what eliminates the race. Implementation: invokes `store.invokeSaveCallback(cardId)` for the pane's current active card so `bag.focus` / `bag.domSelection` are captured before the browser's mousedown default blurs the live focus out of the card's subtree. **This is the gap the current code has**: `_moveCardToPane` / `_detachCard` already call `invokeSaveCallback` *at drop time* (lines 1379, 1473), which is always too late — by drop, `document.activeElement` has been `document.body` since pointerdown.
+
+  - `transferFocusAfterMove(cardId: string, store: IDeckManagerStore): void` — **synchronous after-commit** entry point for the second half of a cross-pane move. Called from `_detachCard` / `_moveCardToPane` *after* `this.notify()` returns — at which point React's sync commit has already re-parented the CardPortal output into the new pane's content div. Implementation reuses `resolveActivationTarget` + the gate + `el.focus()` + `restoreCardDomSelection` — same four steps as `transferFocusForActivation`'s branches, just without the save step (already done at drag-start). The cardId passed is the moved card; outgoing is conceptually the card itself, so there's no save-of-outgoing branch.
+
+  - `resolveActivationTarget(incomingCardId, store): ActivationTarget` — pure function, reads `store.getCardState(incomingCardId)`, `store.peekCardHostRoot(incomingCardId)` (new store read — see below), and the store's activation-callback registry. Returns the discriminated union above. No DOM writes, no store mutations.
+
+- **Extend `IDeckManagerStore`** with two new registrations, mirroring the existing `registerSaveCallback` / `invokeSaveCallback` pair:
+  - `registerActivationCallback(cardId: string, callback: () => void): void` — EM cards whose factories opt in via `useCardPersistence({ onCardActivated })` route their callback through this. Replaces the current practice of storing `onCardActivated` on the `CardPersistenceCallbacks` record. The helper's `dispatch-activated` branch looks up the callback here by cardId.
+  - `registerCardHostRoot(cardId: string, el: HTMLElement | null): void` / `peekCardHostRoot(cardId: string): HTMLElement | null` — CardHost registers its `[data-card-host][data-card-id="…"]` root element so `resolveActivationTarget` can perform the `querySelector('[data-tug-persist-value="…"]')` resolution without reaching through React context or re-walking pane content registries. Unregister on unmount.
+
+- **Wire the three helpers into every gesture source that currently flips first-responder or re-parents a card's DOM:**
+  1. **`pane-focus-controller.ts`** — Branch A activation, inside the capture-phase `pointerdown` listener. Before `store.activateCard(pane.activeCardId)`: call `transferFocusForActivation(store.getFirstResponderCardId(), pane.activeCardId, store)`. Closes [M03].
+  2. **`tug-pane.tsx#performSelectCard`** — intra-pane tab switch, fired from the tab button's `onClick`. Replace the current explicit `store.invokeSaveCallback(outgoing) + store.setActiveCardInPane(...)` sequence with `transferFocusForActivation(outgoing, newCardId, store) + store.setActiveCardInPane(...)`. The helper's step-1 save subsumes the explicit `invokeSaveCallback`. Closes [M01].
+  3. **`deck-manager.ts#_removeCard`** (and `_closePane`) — tab-close and pane-close handoff. Call `transferFocusForActivation(outgoingCardId, newActiveCardId, this)` before committing the flip to the neighbor. `_closePane`'s save ordering (Step 14) is preserved — the helper's step-1 save is idempotent with `flushSaveCallbackBeforeDestruction`. Closes [M16].
+  4. **`tug-pane.tsx`'s title-bar and tab drag handlers** (`handleTitleBarPointerDown`, tab-drag pointerdown). At the pointerdown capture point, call `captureFocusForDragStart(pane.activeCardId, store)` so the currently-focused element in the pane is snapshotted into `bag.focus` before the browser's mousedown default blurs it. Fires regardless of whether the gesture becomes a drag — saves are cheap.
+  5. **`deck-manager.ts#_detachCard`** and **`_moveCardToPane`** — cross-pane drop. *After* the existing `this.invokeSaveCallback(...)` + state mutation + `this.notify()` sequence completes (React has committed the re-parent), call `transferFocusAfterMove(movedCardId, this)`. The drag-start save from step 4 populated `bag.focus`; this call resolves it into the moved card's *new* DOM subtree (now that CardPortal has re-parented it) and re-focuses the target. Closes [M04], [M05], and the FC/MV aspect of [M06]. **Retires the Step-11 cross-pane `[hostStackId]`-keyed `useLayoutEffect` in `CardHost`** — its responsibility fully moves into the helper.
+
+- **Remove the [A3] activation effect from `card-host.tsx`.** Delete the `useFocusDestination` subscription, the `hasRunActivationEffectRef` / `prevIsFocusDestinationRef` refs, and the `useLayoutEffect` that reacted to their transitions. CardHost no longer observes `isFocusDestination`; it is purely a registrar. Register `cardHostRootRef.current` via `store.registerCardHostRoot(cardId, el)` in a `useLayoutEffect` alongside the existing assembler/save-callback registration.
+
+- **Update `useCardPersistence`** so `onCardActivated` is forwarded to `store.registerActivationCallback(cardId, callback)` instead of being placed on the `CardPersistenceCallbacks` record. This makes the activation callback addressable by cardId from non-React code (the helper) without reaching into React context. The `CardPersistenceCallbacks.onCardActivated` field remains declared for back-compat with Step 22's contract but is no longer the dispatch site; the JSDoc is updated to point at the new registration channel.
+
+- **Retire the `useFocusDestination` hook at its only consumer.** With CardHost no longer subscribing, `useFocusDestination` has no remaining callers in tugdeck. Keep the hook and its unit tests — it remains a valid public subscription for any future React consumer that legitimately needs to *render* based on destination status (a breadcrumb, a status indicator). The selector `isFocusDestination` is also kept; non-React consumers can read it directly through `deckStore.subscribe`.
+
+**Tasks:**
+- [ ] Author `tugdeck/src/focus-transfer.ts` with `transferFocusForActivation`, `captureFocusForDragStart`, `transferFocusAfterMove`, and `resolveActivationTarget`.
+- [ ] Extend `IDeckManagerStore` with `registerActivationCallback` / `invokeActivationCallback` (fire once per activation) / `registerCardHostRoot` / `peekCardHostRoot`; implement on `DeckManager`.
+- [ ] Update `useCardPersistence` to register `onCardActivated` through `store.registerActivationCallback`. Update JSDoc on the `CardPersistenceCallbacks.onCardActivated` field to note the new channel.
+- [ ] Wire CardHost: register its card-host root element via `registerCardHostRoot` in `useLayoutEffect`; unregister on unmount.
+- [ ] Remove the [A3] `useLayoutEffect`, the `isFocusDestinationNow` subscription, and the `hasRunActivationEffectRef` / `prevIsFocusDestinationRef` refs from CardHost.
+- [ ] **Retire Step 11's cross-pane `[hostStackId]`-keyed `useLayoutEffect` in CardHost** (the one added in Step 11 for drag-drop refocus). Its DOM-write responsibility moves entirely into `transferFocusAfterMove`. CardHost keeps the *mount-time* restore effect (cold-boot path is unchanged).
+- [ ] Wire the helper into `pane-focus-controller.ts`'s activation branch (before `store.activateCard`).
+- [ ] Wire the helper into `tug-pane.tsx#performSelectCard` (replacing the explicit `invokeSaveCallback` + `setActiveCardInPane` pair).
+- [ ] Wire `captureFocusForDragStart` into `tug-pane.tsx`'s `handleTitleBarPointerDown` and the tab-drag pointerdown path so drag-start saves `bag.focus` before the browser's mousedown default blurs the live focus.
+- [ ] Wire `transferFocusForActivation` into `deck-manager.ts` for `_removeCard` / `_closePane` — tab-close / pane-close handoff to the neighbor.
+- [ ] Wire `transferFocusAfterMove` into `deck-manager.ts` for `_detachCard` / `_moveCardToPane` after their existing `notify()` call — cross-pane drop.
+- [ ] Dev-only assertion: in `_flipFirstResponder`, when `oldFR !== newFR`, check that `resolveActivationTarget(newFR, this).kind !== "focus-element"` **or** the incoming target already matches `document.activeElement`. If neither, log a dev-warn naming the caller — a flip that bypasses the helper is a bug.
+- [ ] Audit: every call site of `_flipFirstResponder` / `setActiveCardInPane` / `activateCard` / `_detachCard` / `_moveCardToPane` / `_removeCard` / `_closePane` must go through the appropriate helper entry. List the call sites in a code comment at the top of `focus-transfer.ts` so future callers know to route through it.
+- [ ] Retire the three new Step 23 integration test scenarios' use of direct `setActiveCardInPane` for synthesizing activations; rewrite each to dispatch through the real gesture source (simulate a chrome click / tab click / close-button click). The tests become end-to-end proofs that the helper is wired into every gesture source.
+- [ ] Add integration tests for cross-pane drag-drop focus preservation ([M04]) — verifying `captureFocusForDragStart` + `transferFocusAfterMove` together restore focus without the 1-second debounce prerequisite.
+- [ ] Manual-verification matrix: run [M01], [M03], [M16] at both slow (>1 s between clicks) and rapid (<100 ms) cadences. Rapid cadence MUST pass — rapid-click failure is the regression this step explicitly closes. Add [M04] (cross-pane drag immediately after typing, no 1-second wait) as a fourth manual-gate scenario.
+
+**Upholds:**
+- **[L22]** — focus-transfer writes the DOM directly from the gesture handler, not from a `useLayoutEffect` that observes `useSyncExternalStore`. No React scheduling is interposed between the user's gesture and the focus call.
+- **[L23]** — `element.focus()` is a single atomic DOM transition (browser handles blur internally). No "save then restore" pattern; user-visible state is never in an intermediate "nothing focused" state.
+- **[L10]** — all activation-driven focus and selection writes live in `focus-transfer.ts`. CardHost does not own activation; it owns per-card lifecycle and restoration of its *own* axes on mount. `pane-focus-controller` owns gesture classification, not focus behavior. The old distribution of focus-transfer across CardHost effects, the Step-11 cross-pane effect, and two ad-hoc save sites collapses into one module.
+- **[L07]** — the helper reads current state via store getters (stable singletons) and the card-host root via `peekCardHostRoot` (ref-style read). No closures over React-rendered values.
+- **[L03]** — card-host root registration happens in `useLayoutEffect`, so the registry is populated before any event (including the very first activation gesture) can fire.
+- **[A3]** — the plan-level architecture ([A3]) is preserved: "one single authority for reactivation, shared across transitions." Only the *implementation* changes — from a React effect to a non-React gesture-site helper.
+
+**Tests:**
+- [ ] New `tugdeck/src/__tests__/focus-transfer.test.ts`:
+  - `resolveActivationTarget` returns `focus-element` for an FC card with a resolvable `bag.focus`, `dispatch-activated` for an EM card with a registered callback, `none` otherwise.
+  - `transferFocusForActivation` saves the outgoing bag before any focus mutation (assert call order via a spy on `invokeSaveCallback` and a DOM focus observer).
+  - `transferFocusForActivation` is a no-op when `outgoingCardId === incomingCardId` (same-bit guard: no save, no focus transfer).
+  - `transferFocusForActivation` aborts silently when `canProgrammaticallyFocus` returns `false`.
+  - `captureFocusForDragStart` calls `invokeSaveCallback` for the pane's active card (spy-observed) and returns without mutating DOM focus.
+  - `transferFocusAfterMove` resolves and focuses the moved card's target after DOM re-parent (simulated via `cardRoot` appendChild into a different pane content div before the call).
+  - The focus call is a single DOM transition: between save and focus there is no observable "nothing focused" state (assert via a `MutationObserver` or by checking `document.activeElement` is never `document.body` during the synchronous call window).
+- [ ] Rewrite `card-host-activation-effect.test.tsx` → `focus-transfer-call-sites.test.tsx`:
+  - Pane-activation gesture (simulated `pointerdown` on pane chrome) transfers focus via the helper; assert the incoming card's input ends up as `document.activeElement`.
+  - Intra-pane tab-click gesture (simulated click on a tab button) does the same.
+  - Tab-close gesture (simulated click on the close button) does the same, with the neighbor becoming the target.
+  - Cross-pane drag-drop gesture (simulated pointerdown on pane chrome followed by the drag-coordinator's `moveCardToPane` call) — focus is captured at drag-start and restored after drop, *without* any prior debounced save having fired. Closes the 1-second-debounce brittleness Step 11 carried.
+  - Rapid consecutive gestures (3+ activations with no delay between them) each land focus correctly — proof that no React round-trip / sibling-effect ordering is relied upon.
+- [ ] Extend `selection-persistence-integration.test.tsx`'s three new scenarios to dispatch through real gesture sources (not `setActiveCardInPane` directly). Each must pass at both slow and rapid synthetic cadences. Add a fourth scenario for [M04] cross-pane drag.
+- [ ] `use-card-persistence.test.tsx`: update `T-P07*` tests to reflect that `onCardActivated` is registered via `store.registerActivationCallback` rather than placed on the `callbacks` record.
+- [ ] Existing `use-focus-destination.test.tsx` stays green (the hook is kept for future React consumers, still exported, still subscribed via `useSyncExternalStore`).
+- [ ] Existing Step-11 tests that assert the cross-pane `useLayoutEffect` fires are rewritten to target the helper-based path. The contract under test ("focus survives a cross-pane move") is unchanged; only the callsite of the assertion moves.
+- [ ] Full suite must pass with no regressions in mount-time restore, app-lifecycle activation, cold boot, or paint-bucket behavior.
+
+**Deliberately out of scope (retired in later steps):**
+- **App-lifecycle activation ([A4]).** App resign / activate is a different trigger from card activation — it fires at the app-level, not on a card-flip. Its refocus path (tied to [A4] in M-phase 3) stays on its own handler until the matching step.
+- **Cold-boot restore.** Mount-time effect in CardHost is preserved unchanged — cold boot is a mount-phase concern, not an activation-gesture concern. The mount effect never raced ([A3]'s race was between sibling activation effects on an already-mounted tree) and its L22 exposure is bounded to a one-shot at mount.
+- **EM cards' actual `onCardActivated` implementations.** Content factories opt in in Step 24. Step 23A only migrates the registration channel; the callbacks remain optional and unregistered for EM factories at this step's boundary.
+- **Card-drag-coordinator internals.** The drag-detection threshold, ghost-tab rendering, drop-target hit-testing, and the overall drag state machine in `card-drag-coordinator.ts` are not touched. Step 23A only wires pointerdown-capture save (`captureFocusForDragStart`) and post-drop refocus (`transferFocusAfterMove`) into the existing drag path; the drag itself is unchanged.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Grep: `useFocusDestination` has exactly one remaining consumer (the test file); no production consumer in `card-host.tsx` or anywhere else under `tugdeck/src/components/`.
+- [ ] Grep: `canProgrammaticallyFocus` has exactly one production consumer, `focus-transfer.ts`. No call sites inside React components.
+- [ ] Grep: `applyFocusSnapshot` and `restoreCardDomSelection` have production call sites only from `focus-transfer.ts` and the CardHost mount-restore effect. No call sites in `useLayoutEffect`s keyed on activation-related values (`isFocusDestination`, `hostStackId`, `isActive`).
+- [ ] Manual verification, slow cadence: [M01], [M03], [M04], [M16] all pass.
+- [ ] Manual verification, rapid cadence (<100 ms between clicks; cross-pane drag immediately after typing with no 1-second wait): [M01], [M03], [M04], [M16] all pass. **This is the regression-closure gate for Step 23A; rapid-click failure on any of the four blocks merge.**
+
+**Plan-doc updates.**
+
+- The [A3] section in the Architecture Pieces block ([#a3-shared-activation-effect](#a3-shared-activation-effect)) is updated to describe the helper-based implementation. The "one `useLayoutEffect` in `CardHost`" phrasing is replaced with "one synchronous helper invoked at every activation gesture source." The `closes` list is unchanged; [A3] still closes the same M-series transitions, just via a different mechanism.
+- Step 11's description of the cross-pane-move `useLayoutEffect` ([#step-11](#step-11)) gains a trailing note: *"The cross-pane-move refocus effect added in Step 11 was retired in Step 23A and replaced with `captureFocusForDragStart` + `transferFocusAfterMove` in `focus-transfer.ts`. The mount-time portion of Step 11 (cold-boot focus restore) is preserved."* The Step 11 tasks and tests remain marked complete — the contract they pinned still holds; its implementation moved.
+- Step 23's retrospective in the Implementation Summary gains a short note: *"Step 23 landed the [A3] contract as a React effect; Step 23A moved the implementation out of React to satisfy L22/L23 after a sibling-effect ordering race was observed at rapid gesture cadences. Step 23A additionally folded cross-pane move (Step 11's `[hostStackId]` effect) into the same helper for consistency — the L22 exposure and the 1-second-debounce brittleness were the same class of issue. The externally-observable contract for both [A3] and Step 11's cross-pane-refocus is unchanged; the plan wording was aligned with the final shape."*
+
+---
+
+#### Step 24: Engine-managed cards implement `onCardActivated`; retire redundant refocus paths {#step-24}
+
+**Depends on:** #step-23a
 
 **Commit:** `feat(engine-cards): implement onCardActivated for engine reactivation`
 
