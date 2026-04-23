@@ -27,8 +27,8 @@ Tugdeck is the browser frontend (React 19 + Vite + bun). Source lives under `tug
 - grep checkpoint: `deckTrace.record` appears in deck-manager.ts (3×), deck-trace.ts observers (4×), card-host.tsx (7×), deck-commit-beacon.tsx (1×).
 
 ## Hints for upcoming steps
-- Step 3 is observational-only: no code. Launch Tug.app dev, enable trace, reproduce M01/M03/M16, `dumpTable()`, capture output, write root-cause hypothesis.
-- Step 4 authors `roadmap/tugplan-in-app-bridge.md` — Phase 2 tugplan for Swift bridge.
+- Step 3 was fully deferred by the coder agent: all 7 tasks, 1 test (N/A), and 3 checkpoints require launching Tug.app dev build, Safari Web Inspector, and human interaction with real WKWebView. A fresh-spawn agent cannot execute this in an unattended environment. Human must run `window.__deckTrace.enable(true); __deckTrace.clear(); /* repro M01 */; __deckTrace.dumpTable()` three times (once each for M01, M03, M16), paste outputs back into the plan or a notes file, then write the root-cause hypothesis and the patch-[A3]-vs-accelerate-23B decision per [D13]. Phase 1 instrumentation code is healthy: `bun x tsc --noEmit` clean, `bun test src/__tests__/deck-trace.test.ts` 8 pass.
+- Step 4 authors `roadmap/tugplan-in-app-bridge.md` — Phase 2 tugplan for Swift bridge. Step 4 depends on the Step 3 decision (which path Phase 3 tests target). If Step 3 decision is still pending when Step 4 is attempted, Step 4 can still enumerate Phase 2 tasks but must leave the "target fix" reference open for Phase 3.
 - `[A3]` now records `target` via `resolveActivationTarget(cardId, store)` and `focusedEl` (post-body activeElement). When reading a trace and target===null, the card has no resolvable focus target regardless of gate/bag outcome.
 - `_setActiveCardInPane` also calls `_flipFirstResponder` (7th internal caller, not in the plan's six); tagged `_setActiveCardInPane`. Retain this tag in any future refactor.
 - `SaveCallbackSource` type is now imported by `deck-manager-store.ts` — creates a new weak dep edge tugdeck store → deck-trace. If deck-trace ever needs to import from deck-manager-store, move `SaveCallbackSource` to a leaf file.

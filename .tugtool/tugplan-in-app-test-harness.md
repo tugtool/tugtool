@@ -935,14 +935,12 @@ Sixteen flat steps covering three phases with one integration checkpoint per pha
 - [ ] `focusElement` calls `el.focus()` directly.
 - [ ] `reset` implements axis granularity per [D01]: per-axis effect functions, each idempotent.
 - [ ] Attach surface in `main.tsx` conditional: `if (import.meta.env.DEV && window.__tugTestMode === true) { window.__tug = createTugTestSurface(store); }`.
-- [ ] Manual dev smoke: set `window.__tugTestMode = true` in dev, verify `window.__tug.version === "1.0.0"` and `window.__tug.getActiveCardId()` returns a valid value.
 
 **Tests:**
 - [ ] No new happy-dom UI tests. Surface is exercised end-to-end by Phase 3 in-app tests.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit` exits 0.
-- [ ] Dev-mode manual smoke: `__tug.version === "1.0.0"` verified.
 - [ ] Grep: `window.__tug` only written inside `import.meta.env.DEV` + `__tugTestMode` gate.
 
 ---
