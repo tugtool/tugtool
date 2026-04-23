@@ -14,6 +14,7 @@
 import type { DeckState, CardStateBag } from "./layout-tree";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
 import type { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
+import type { CardAssembler } from "./card-state-orchestrator";
 
 /**
  * Subscribable store interface for DeckManager.
@@ -255,4 +256,34 @@ export interface IDeckManagerStore {
   peekComponentRegistry: (
     cardId: string,
   ) => ComponentPersistenceRegistry | undefined;
+
+  /**
+   * Register a card-level assembler with the framework orchestrator
+   * ([A9c]). `CardHost` calls this from a `useLayoutEffect` and uses
+   * the returned unregister function for cleanup. The orchestrator
+   * invokes the assembler's `capture()` for every save trigger
+   * (will-phase, close-before-destroy, `saveState` RPC), layering
+   * component-level state on top to produce the full `CardStateBag`.
+   */
+  registerCardAssembler: (
+    cardId: string,
+    assembler: CardAssembler,
+  ) => () => void;
+
+  /**
+   * Capture the full bag for `cardId` via the orchestrator. Every save
+   * trigger (debounced save callback, close-before-destroy flush,
+   * `saveState` RPC) flows through this entry point so `bag.components`
+   * lands alongside framework-owned axes by construction.
+   */
+  captureCardState: (cardId: string) => CardStateBag;
+
+  /**
+   * Apply `bag.components` to the card's registered components via
+   * the orchestrator. Framework-axis restore (content, scroll, DOM
+   * selection, focus, form controls, region scroll) is driven by the
+   * existing CardHost lifecycle hooks; this entry adds the component
+   * pass.
+   */
+  restoreCardState: (cardId: string, bag: CardStateBag) => void;
 }

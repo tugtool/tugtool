@@ -90,6 +90,7 @@ import { TugInput } from "@/components/tugways/tug-input";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import { registerDeckStore } from "@/lib/deck-store-registry";
 import { AppLifecycle, registerAppLifecycle } from "@/lib/app-lifecycle";
 import type { TugTextEditingState } from "@/lib/tug-text-engine";
@@ -212,6 +213,18 @@ class Store implements IDeckManagerStore {
     cardId: string,
   ): ComponentPersistenceRegistry | undefined =>
     this.componentRegistries.get(cardId);
+
+  private orchestrator = new CardStateOrchestrator((cardId) =>
+    this.componentRegistries.get(cardId),
+  );
+  registerCardAssembler: IDeckManagerStore["registerCardAssembler"] = (
+    cardId,
+    assembler,
+  ) => this.orchestrator.registerAssembler(cardId, assembler);
+  captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
+    this.orchestrator.captureCardState(cardId);
+  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
+    this.orchestrator.restoreCardState(cardId, bag);
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +422,59 @@ describe("selection-persistence integration — form-control reload", () => {
     // Focus re-applied because this card is the active card of the
     // active pane ([D10] Option B gate).
     expect(document.activeElement).toBe(inputB);
+  });
+
+  it("save flows through the orchestrator — bag round-trips identically and bag.components stays undefined without opt-in components", () => {
+    // Step-18 regression: `invokeSaveCallback` routes through
+    // `captureCardState` via CardHost's new save closure. The saved
+    // bag must match what the orchestrator returns directly, and
+    // `bag.components` must stay `undefined` (not an empty object)
+    // when no component opted into [D13] / [A9].
+    registerFormControlCard();
+
+    const cardId = "card-form-orchestrator";
+    const card = makeFormControlCardState(cardId);
+    const store = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    renderDeck(store);
+
+    const input = document.querySelector<HTMLInputElement>(
+      `[data-tug-persist-value="${PERSIST_KEY}"]`,
+    );
+    expect(input).not.toBeNull();
+    if (!input) return;
+    input.value = "orchestrated@example.com";
+    input.setSelectionRange(3, 15, "forward");
+    input.focus();
+
+    // Fire the save trigger the way the close / resign path would.
+    act(() => {
+      store.invokeSaveCallback(cardId);
+    });
+
+    const savedBag = store.getCardState(cardId);
+    expect(savedBag).not.toBeUndefined();
+    if (!savedBag) return;
+    // Direct orchestrator call must produce a bag equal to what the
+    // save callback wrote — the callback is literally
+    // `store.setCardState(id, store.captureCardState(id))`.
+    const fresh = store.captureCardState(cardId);
+    expect(fresh).toEqual(savedBag);
+    // No components opted in, so bag.components never materialized.
+    expect(savedBag.components).toBeUndefined();
+    // And the framework axes are still captured by construction, so
+    // the [M17] RPC parity gap (pre-Step-18 the RPC missed axes the
+    // orchestrator now captures) closes for this card.
+    expect(savedBag.formControls?.[PERSIST_KEY].value).toBe(
+      "orchestrated@example.com",
+    );
+    expect(savedBag.focus).toEqual({
+      kind: "form-control",
+      persistKey: PERSIST_KEY,
+    });
   });
 
   it("focus restore on a non-active card is suppressed by the active-card gate", () => {

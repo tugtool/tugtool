@@ -23,6 +23,7 @@ import type { IDeckManagerStore } from "../deck-manager-store";
 import type { DeckState, CardStateBag } from "../layout-tree";
 import { DeckManagerContext } from "../deck-manager-context";
 import { ComponentPersistenceRegistry } from "../components/tugways/component-persistence-registry";
+import { CardStateOrchestrator } from "../card-state-orchestrator";
 
 /** Build a minimal no-op DeckManager store mock suitable for unit tests. */
 export function makeMockStore(
@@ -31,6 +32,9 @@ export function makeMockStore(
   const cardStateCache = new Map<string, CardStateBag>();
   const saveCallbacks = new Map<string, () => void>();
   const componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  const orchestrator = new CardStateOrchestrator((cardId) =>
+    componentRegistries.get(cardId),
+  );
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
@@ -81,6 +85,11 @@ export function makeMockStore(
     },
     peekComponentRegistry: (cardId: string) =>
       componentRegistries.get(cardId),
+    registerCardAssembler: (cardId, assembler) =>
+      orchestrator.registerAssembler(cardId, assembler),
+    captureCardState: (cardId) => orchestrator.captureCardState(cardId),
+    restoreCardState: (cardId, bag) =>
+      orchestrator.restoreCardState(cardId, bag),
   };
 
   return { ...base, ...overrides };

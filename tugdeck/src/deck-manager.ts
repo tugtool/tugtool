@@ -76,6 +76,10 @@ import {
   type LifecycleCascadeHandle,
 } from "./lib/lifecycle-cascade";
 import { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
+import {
+  CardStateOrchestrator,
+  type CardAssembler,
+} from "./card-state-orchestrator";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -152,6 +156,18 @@ export class DeckManager implements IDeckManagerStore {
    */
   private componentRegistries: Map<string, ComponentPersistenceRegistry> =
     new Map();
+
+  /**
+   * Framework orchestrator for capture/restore ([A9c]). Every save
+   * trigger (debounced callback, close-before-destroy flush,
+   * `saveState` RPC) routes through `captureCardState`; every restore
+   * trigger routes through `restoreCardState`. `CardHost` registers its
+   * per-card assembler with this orchestrator on mount.
+   */
+  private readonly cardStateOrchestrator: CardStateOrchestrator =
+    new CardStateOrchestrator((cardId) =>
+      this.componentRegistries.get(cardId),
+    );
 
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
@@ -979,6 +995,38 @@ export class DeckManager implements IDeckManagerStore {
     if (!registry) return;
     registry.clear();
     this.componentRegistries.delete(cardId);
+  }
+
+  /**
+   * Register a card-level assembler with the framework orchestrator
+   * ([A9c]). Called by `CardHost` from a `useLayoutEffect`; returned
+   * function unregisters on cleanup. The orchestrator invokes the
+   * assembler's `capture()` on every save trigger.
+   */
+  registerCardAssembler(cardId: string, assembler: CardAssembler): () => void {
+    return this.cardStateOrchestrator.registerAssembler(cardId, assembler);
+  }
+
+  /**
+   * Capture the full `CardStateBag` for `cardId` via the orchestrator
+   * — framework axes from the registered assembler, plus component
+   * state harvested parent-first from the card's
+   * `ComponentPersistenceRegistry`. Single entry point for every save
+   * trigger; guarantees `bag.components` lands with every save by
+   * construction ([D13], [M17]).
+   */
+  captureCardState(cardId: string): CardStateBag {
+    return this.cardStateOrchestrator.captureCardState(cardId);
+  }
+
+  /**
+   * Apply `bag.components` to the card's registered components via
+   * the orchestrator. Framework-axis restore (content, scroll, DOM
+   * selection, focus, form controls, region scroll) remains driven
+   * by CardHost's existing lifecycle hooks.
+   */
+  restoreCardState(cardId: string, bag: CardStateBag): void {
+    this.cardStateOrchestrator.restoreCardState(cardId, bag);
   }
 
   /**

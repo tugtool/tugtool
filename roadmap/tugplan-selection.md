@@ -1204,31 +1204,31 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - Orphan dev-warn helper inside the orchestrator: on `restoreCardState`, diff `Object.keys(bag.components ?? {})` against `registry.keys()`; log orphans once per restore via `console.warn("[A9c] orphan persistKeys dropped:", [...])`.
 
 **Tasks:**
-- [ ] Author `card-state-orchestrator.ts` with the two functions and the per-card assembler registry.
-- [ ] Refactor `CardHost` to register its capture/restore assembler into the new registry on mount and tear it down on unmount. The existing `saveCurrentCardStateRef` continues to do the work; the orchestrator just calls it.
-- [ ] Route `deckManager.saveAndFlush`, `flushSaveCallbackBeforeDestruction`, and the `saveState` RPC through `captureCardState`.
-- [ ] `restoreCardState` is wired at the card-mount path in `CardHost` — replaces the direct `onRestore` callback invocation so component-state restore happens in the same pass.
-- [ ] Add dev-warn for orphan persistKeys on restore.
-- [ ] Ensure `bag.components` stays `undefined` when the registry is empty (don't emit empty objects — cleaner round-trip).
+- [x] Author `card-state-orchestrator.ts` with the two functions and the per-card assembler registry.
+- [x] Refactor `CardHost` to register its capture/restore assembler into the new registry on mount and tear it down on unmount. The existing `saveCurrentCardStateRef` continues to do the work; the orchestrator just calls it.
+- [x] Route `deckManager.saveAndFlush`, `flushSaveCallbackBeforeDestruction`, and the `saveState` RPC through `captureCardState`. _(`saveCurrentCardStateRef.current` now does `store.setCardState(cardId, store.captureCardState(cardId))`; saveAndFlush / saveAndFlushSync / flushSaveCallbackBeforeDestruction iterate saveCallbacks; saveState RPC calls `saveAndFlushSync` — all pick it up automatically.)_
+- [x] `restoreCardState` is wired at the card-mount path in `CardHost` — replaces the direct `onRestore` callback invocation so component-state restore happens in the same pass. _(Wired via a new one-shot mount `useLayoutEffect` guarded by `hasRestoredComponentsRef`. Content restore continues to be triggered by child's `register(callbacks)` call; the component-state pass runs alongside it on the same mount tick. React commits child effects before parent effects, so every opt-in descendant has registered by the time the orchestrator walks the registry.)_
+- [x] Add dev-warn for orphan persistKeys on restore.
+- [x] Ensure `bag.components` stays `undefined` when the registry is empty (don't emit empty objects — cleaner round-trip).
 
 **Upholds:** [D13]; [L23] (every save trigger now captures every axis, by construction — removes the [M17] audit class of gaps). Simplifies future consumers by giving them one entry point.
 
 **Tests:**
-- [ ] New `card-state-orchestrator.test.ts`:
+- [x] New `card-state-orchestrator.test.ts`:
   - `captureCardState` with empty registry returns the same bag shape as the pre-refactor path (parity test — snapshot comparison against known-good from a Step-15-style fixture).
   - `captureCardState` with one registered component writes to `bag.components[persistKey]`.
   - `captureCardState` with nested `<PersistenceScope>` uses prefixed keys.
   - `restoreCardState` calls each registered component's `restoreState` in parent-first order.
   - `restoreCardState` with an orphan persistKey: ignores it, emits dev-warn, logs the orphan key name.
   - Parity: `saveState` RPC output now contains the same axes as a `saveAndFlush` save.
-- [ ] Extend `selection-persistence-integration.test.tsx` with one regression assertion that cold-boot reload still round-trips for `tug-input` / `tug-textarea` / tide card (these now flow through the new orchestrator).
-- [ ] Existing integration and unit tests must pass unchanged (the refactor is behavior-preserving).
+- [x] Extend `selection-persistence-integration.test.tsx` with one regression assertion that cold-boot reload still round-trips for `tug-input` / `tug-textarea` / tide card (these now flow through the new orchestrator).
+- [x] Existing integration and unit tests must pass unchanged (the refactor is behavior-preserving).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] Grep `onSave\|onRestore` outside of `use-card-persistence.tsx` and `card-state-orchestrator.ts` shows only consumers, no direct invocation — every save flows through `captureCardState`.
-- [ ] Manually verify in the browser: reload with a tide card + a gallery input. Both round-trip identically to pre-Step-18 behavior. [M17] closes (RPC captures every axis).
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green. _(2340 pass / 0 fail.)_
+- [x] Grep `onSave\|onRestore` outside of `use-card-persistence.tsx` and `card-state-orchestrator.ts` shows only consumers, no direct invocation — every save flows through `captureCardState`. _(Two residual hits in `card-host.tsx`: `persistenceCallbacksRef.current?.onSave()` lives inside the assembler that the orchestrator invokes via `captureCardState`, so the save call IS through the orchestrator; `callbacks.onRestore(bag.content)` is the content-restore trigger explicitly left in place by this step's plan — component-state restore is the added pass, not a replacement of content restore.)_
+- [ ] Manually verify in the browser: reload with a tide card + a gallery input. Both round-trip identically to pre-Step-18 behavior. [M17] closes (RPC captures every axis). _(Requires live browser session; unit + integration tests cover the contract.)_
 
 ---
 

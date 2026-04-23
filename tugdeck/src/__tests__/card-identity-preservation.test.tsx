@@ -25,6 +25,7 @@ import type { CardState, TugPaneState, DeckState, CardStateBag } from "@/layout-
 import { DeckManagerContext } from "@/deck-manager-context";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 
@@ -211,6 +212,18 @@ class Store implements IDeckManagerStore {
     cardId: string,
   ): ComponentPersistenceRegistry | undefined =>
     this.componentRegistries.get(cardId);
+
+  private orchestrator = new CardStateOrchestrator((cardId) =>
+    this.componentRegistries.get(cardId),
+  );
+  registerCardAssembler: IDeckManagerStore["registerCardAssembler"] = (
+    cardId,
+    assembler,
+  ) => this.orchestrator.registerAssembler(cardId, assembler);
+  captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
+    this.orchestrator.captureCardState(cardId);
+  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
+    this.orchestrator.restoreCardState(cardId, bag);
 }
 
 function renderDeck(store: Store) {

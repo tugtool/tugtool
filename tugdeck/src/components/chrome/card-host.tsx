@@ -768,10 +768,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostStackId]);
 
-  // Rewritten every render so closures registered below read the latest
-  // `hostContentEl` / `hostStackId` / `cardId` without stale capture.
-  const saveCurrentCardStateRef = useRef<() => void>(() => {});
-  saveCurrentCardStateRef.current = () => {
+  // Framework-axes assembler. Rewritten every render so closures read
+  // the latest `hostContentEl` / `hostStackId` / `cardId` without stale
+  // capture. This is the "assembler" the CardStateOrchestrator invokes
+  // on every save trigger ([A9c]); the orchestrator layers
+  // `bag.components` on top of whatever this returns.
+  const assembleFrameworkBagRef = useRef<() => CardStateBag>(() => ({}));
+  assembleFrameworkBagRef.current = () => {
     const contentEl = hostContentEl;
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
@@ -808,14 +811,51 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       ...(domSelection !== null ? { domSelection } : {}),
       ...(focus.kind !== "none" ? { focus } : {}),
     };
-    store.setCardState(cardId, bag);
+    return bag;
+  };
+
+  // Canonical save closure consumed by `useCardDirtyState` (debounced
+  // save path) and `registerSaveCallback` (close-before-destroy flush
+  // and app will-phase triggers). Routes through `captureCardState` so
+  // every save trigger picks up both framework axes and opt-in
+  // component state in one call ([A9c] / [M17]).
+  const saveCurrentCardStateRef = useRef<() => void>(() => {});
+  saveCurrentCardStateRef.current = () => {
+    store.setCardState(cardId, store.captureCardState(cardId));
   };
 
   useLayoutEffect(() => {
+    // Register the framework-axes assembler with the orchestrator so
+    // `store.captureCardState(cardId)` can invoke it from every save
+    // trigger. Identity is stable across renders (the assembler object
+    // is built once here); its underlying closure reads the latest
+    // render's state via `assembleFrameworkBagRef.current`.
+    const unregisterAssembler = store.registerCardAssembler(cardId, {
+      capture: () => assembleFrameworkBagRef.current(),
+    });
     store.registerSaveCallback(cardId, () => saveCurrentCardStateRef.current());
     return () => {
       store.unregisterSaveCallback(cardId);
+      unregisterAssembler();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, store]);
+
+  // Component-level restore ([A9c]). Fires once per mount, after child
+  // `useComponentPersistence` hooks have run (React commits effects
+  // child-first, so by the time this parent effect runs every
+  // descendant component has already registered with the card's
+  // registry). Keyed on `[cardId, store]` for identity stability, but
+  // the `hasRestoredComponentsRef` guard keeps it one-shot so
+  // cross-pane moves and re-mounts don't re-apply stale state to
+  // components the user may have already edited.
+  const hasRestoredComponentsRef = useRef(false);
+  useLayoutEffect(() => {
+    if (hasRestoredComponentsRef.current) return;
+    hasRestoredComponentsRef.current = true;
+    const bag = store.getCardState(cardId);
+    if (!bag) return;
+    store.restoreCardState(cardId, bag);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 

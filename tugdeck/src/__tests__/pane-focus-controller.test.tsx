@@ -25,6 +25,7 @@ import type {
 import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import { usePaneFocusController } from "@/components/chrome/pane-focus-controller";
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,18 @@ class Store implements IDeckManagerStore {
     cardId: string,
   ): ComponentPersistenceRegistry | undefined =>
     this.componentRegistries.get(cardId);
+
+  private orchestrator = new CardStateOrchestrator((cardId) =>
+    this.componentRegistries.get(cardId),
+  );
+  registerCardAssembler: IDeckManagerStore["registerCardAssembler"] = (
+    cardId,
+    assembler,
+  ) => this.orchestrator.registerAssembler(cardId, assembler);
+  captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
+    this.orchestrator.captureCardState(cardId);
+  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
+    this.orchestrator.restoreCardState(cardId, bag);
 }
 
 // ---------------------------------------------------------------------------

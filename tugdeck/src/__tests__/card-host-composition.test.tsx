@@ -44,6 +44,7 @@ import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { useCardDirty } from "@/components/chrome/tug-pane";
 import { useCardPersistence } from "@/components/tugways/use-card-persistence";
 import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import {
   TugPromptInput,
@@ -187,6 +188,18 @@ class Store implements IDeckManagerStore {
     cardId: string,
   ): ComponentPersistenceRegistry | undefined =>
     this.componentRegistries.get(cardId);
+
+  private orchestrator = new CardStateOrchestrator((cardId) =>
+    this.componentRegistries.get(cardId),
+  );
+  registerCardAssembler: IDeckManagerStore["registerCardAssembler"] = (
+    cardId,
+    assembler,
+  ) => this.orchestrator.registerAssembler(cardId, assembler);
+  captureCardState: IDeckManagerStore["captureCardState"] = (cardId) =>
+    this.orchestrator.captureCardState(cardId);
+  restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
+    this.orchestrator.restoreCardState(cardId, bag);
 }
 
 // ---------------------------------------------------------------------------
