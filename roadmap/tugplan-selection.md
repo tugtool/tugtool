@@ -1418,6 +1418,107 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 
 ---
 
+#### Step 23: Install [A3] shared activation effect in `CardHost` (FC reactivation) {#step-23}
+
+**Depends on:** #step-22
+
+**Commit:** `feat(card-host): install A3 shared activation effect`
+
+**References:** [A3](#a3-shared-activation-effect); [A1](#a1-focus-destination-selector); [A8](#a8-focus-theft-gate); [A2](#a2-on-card-activated); [M01](#m01-tab-switch-fc); [M03](#m03-pane-activation); [M16](#m16-tab-close-handoff).
+
+**Artifacts:**
+- New `useLayoutEffect` in `card-host.tsx` — the "activation effect." Subscribes to `useFocusDestination(cardId)` from [#step-20](#step-20). Runs on every render; internally gates on `false → true` transitions of that predicate via a `prevIsFocusDestinationRef`.
+- Has-been-active guard: a module-scoped ref `hasBeenFocusDestinationRef` (per-card-instance) starts `false`. The effect no-ops on the first `true` reading — mount-time activation stays owned by the existing cold-boot restore path ([#step-10](#step-10), [#step-11](#step-11)). On all subsequent `false → true` transitions, the activation logic fires.
+- On activation, the effect dispatches by card flavor:
+  - **Content-owning** (`bag.content !== undefined`): call `callbacks.onCardActivated?.()`. At Step 23, no content factory registers this — the branch no-ops. Step 24 wires it for EM cards.
+  - **DOM-authority** (`bag.content === undefined`, i.e. FC and related): re-apply `applyFocusSnapshot(bag.focus)` and then `restoreCardDomSelection(bag.domSelection)`. Focus-theft gate consulted first via `canProgrammaticallyFocus(cardId, deckStore.getState(), { targetCardHostEl: cardHostRef.current })` — abort silently if unsafe.
+- The prior cross-pane refocus effect from [#step-11](#step-11) remains in place at Step 23 for FC (its current behavior is a subset of [A3]'s FC path); redundancy is tolerated for one step. Step 24's reconciliation retires the cross-pane effect for EM and decides the FC disposition (likely retire; [A3] now covers the same trigger).
+- No changes to save paths, persistence schema, or engine.
+
+**Tasks:**
+- [ ] Import `useFocusDestination` ([#step-20](#step-20)), `canProgrammaticallyFocus` ([#step-21](#step-21)), `CardPersistenceCallbacks` with `onCardActivated` ([#step-22](#step-22)).
+- [ ] Add the activation effect in `CardHost`, after the mount-time restore effect and the cross-pane refocus effect. Keyed on the `useFocusDestination` value.
+- [ ] Implement the has-been-active ref-guard such that mount activation is skipped; only post-mount transitions fire the body.
+- [ ] Dispatch body: FC branch re-applies focus + DOM-selection; EM branch calls `onCardActivated?.()`.
+- [ ] Focus-theft gate ([A8]) wraps the FC branch's `applyFocusSnapshot` and the EM branch's `onCardActivated` invocation.
+- [ ] Leave the Step 11 cross-pane effect untouched at this step; Step 24 handles reconciliation.
+
+**Upholds:** [A3]; [L02] (React consumer subscribes to external state via `useSyncExternalStore` inside `useFocusDestination`); [L03] (`useLayoutEffect` so activation applies before any event-driven consumer paints); [R07] centralized via [A8].
+
+**Tests:**
+- [ ] New `card-host-activation-effect.test.tsx`:
+  - Mount-only flow: the activation body does not fire on initial mount (ref-guard skip).
+  - `false → true` transition (simulated by flipping the mocked `isFocusDestination` value): FC branch re-applies focus + selection.
+  - `false → true` transition: content-owning branch calls `onCardActivated` when registered.
+  - Unsafe gate: `canProgrammaticallyFocus` returns `false` → activation body skipped entirely.
+  - `true → false` transition: no-op (no blur applied; deactivation is app-lifecycle's job, not the activation effect's).
+- [ ] Extend `selection-persistence-integration.test.tsx` with three new scenarios:
+  - **[M01] FC intra-pane tab switch:** card A is FC with focus + selection; switch to card B in the same pane; switch back; assert card A regains focus + selection paint.
+  - **[M03] FC pane activation:** two panes, each with an FC card that had focus; click pane B chrome; click back on pane A's chrome (not the input); assert pane A's card regains focus.
+  - **[M16] FC tab close handoff:** pane with two FC cards, card A focused; close card A; assert card B receives focus.
+- [ ] Existing integration tests must continue to pass — no regressions in cold-boot reload, cross-pane move (Step 11's effect still handles this for FC), or any paint-bucket behavior.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Manual verification:
+  - Two FC cards in a pane, one focused with a selection. Switch tabs and return — focus and selection paint restored. [M01] ✓
+  - Two panes with FC cards focused in each. Click pane chrome to switch active pane; return — selection restored. [M03] ✓
+  - Close the active FC tab in a multi-tab pane — focus lands on the new active tab. [M16] ✓
+  - EM cards (tide-card, gallery-prompt-input) may still lose focus across these transitions — closes in Step 24. Not a regression; pre-existing behavior.
+
+---
+
+#### Step 24: Engine-managed cards implement `onCardActivated`; retire redundant refocus paths {#step-24}
+
+**Depends on:** #step-23
+
+**Commit:** `feat(engine-cards): implement onCardActivated for engine reactivation`
+
+**References:** [A2](#a2-on-card-activated); [A3](#a3-shared-activation-effect); [M02](#m02-tab-switch-em); [M06](#m06-cross-pane-em); [M07](#m07-card-detach); [M09](#m09-inactive-mount); [#step-11](#step-11) cross-pane effect (reconciled).
+
+**Artifacts:**
+- Content factories for engine-managed cards register `onCardActivated`:
+  - `tide-card.tsx`: `onCardActivated: () => engineRef.current?.root.focus({ preventScroll: true })`.
+  - `gallery-prompt-input.tsx`: same pattern.
+  - `gallery-prompt-entry.tsx`: same pattern; engine handle obtained from the component's existing ref.
+  - Any other EM-flavored content factory discovered during implementation: same pattern.
+- Engine's existing `setSelectedRange` focus-first path ([#step-11](#step-11)'s engine fix) means the engine republishes its selection on focus, which flows through the Step 3/4 `onSelectionChanged` → `selectionGuard.updateCardDomSelection` → paint chain. Paint re-lights automatically; no extra paint wiring needed at Step 24.
+- Reconcile the Step 11 cross-pane refocus effect in `card-host.tsx`:
+  - For EM cards (`bag.content !== undefined`): the Step 11 effect is now redundant — [A3] fires on the same cross-pane-move trigger (because `isFocusDestination` flips) and dispatches to `onCardActivated`. Delete the Step 11 effect's EM branch.
+  - For FC cards (`bag.content === undefined`): [A3] also covers cross-pane move (same mechanism). The Step 11 effect becomes strictly redundant. Delete the entire effect.
+  - Update in-code comments to point at [A3] as the single refocus authority.
+- M09 (inactive-at-mount EM card): when the engine mounts in an inactive tab (`display: none`), the engine's `setSelectedRange` focus call silently fails (dev-warn installed earlier). On user-activate the tab, `isFocusDestination` flips `false → true` and [A3] calls `onCardActivated`, which re-focuses the engine — paint lights up. Verified by integration test; no additional code needed beyond this step's callbacks.
+
+**Tasks:**
+- [ ] Add `onCardActivated` registration to each engine-managed content factory. Engine handle obtained from the factory's existing ref machinery (already present for `onSave` etc.).
+- [ ] Delete the Step 11 cross-pane refocus effect from `card-host.tsx`. Replace with a one-line comment pointing at [A3].
+- [ ] Verify (via dev-warn logging or ad-hoc trace) that no call path still relies on the Step 11 effect. Grep for its function name / comment markers.
+- [ ] Update any content factory not yet using `useCardPersistence`'s registered ref for engine access — audit during implementation.
+
+**Upholds:** [A2] + [A3] together give content-owning cards a single-owner reactivation path; retires a duplicated mechanism ([R05]-adjacent cleanup).
+
+**Tests:**
+- [ ] Extend `selection-persistence-integration.test.tsx` with four new scenarios:
+  - **[M02] EM intra-pane tab switch:** tide-card or gallery-prompt-input has focus + selection; switch tabs; switch back; assert focus + selection restored.
+  - **[M06] EM cross-pane move:** drag an engine-managed card from pane A to pane B; assert focus returns after drop.
+  - **[M07] EM card detach:** drag an engine-managed card into a new standalone pane; assert focus returns after drop.
+  - **[M09] EM inactive-at-mount:** mount an engine-managed card in an inactive tab; switch to that tab; assert focus lands on the engine root + paint appears.
+- [ ] Regression guard: Step 11's existing integration tests (cold-boot reload, FC cross-pane) must still pass against [A3]'s single-effect path. If any diverges, resolve the divergence — don't paper over it.
+- [ ] Grep test: `selection-persistence-greps.test.ts` extended to assert the Step 11 cross-pane effect is gone (look for its function name or its `data-tug-card-host` + `[hostStackId]`-dep identifier).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Manual verification:
+  - EM intra-pane tab switch — focus + selection restored. [M02] ✓
+  - Drag an EM card between panes — focus returns. [M06] ✓
+  - Drag an EM card out to a standalone pane — focus returns. [M07] ✓
+  - Multi-tab pane with an EM card on a non-active tab; reload; switch to that tab — focus lands, paint appears. [M09] ✓
+- [ ] End of M-phase 2: `bag.components` schema is in place (from Step 16), component persistence protocol is usable (from Steps 17–19), focus-destination predicate is wired (from Step 20), focus-theft gate is centralized (from Step 21), `onCardActivated` is the single EM reactivation path ([A3]+[A2], Steps 22–24). Seven transition-class gaps closed: [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Remaining M-phases build atop this foundation.
+
+---
+
 #### Step NN: Documentation & final cleanup {#step-nn}
 
 **Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the M-series steps are authored.
@@ -2126,7 +2227,10 @@ Not a commitment yet — just a sketch for discussion. Updated to place [A9] as 
    - **[Step 21](#step-21):** [A8] `canProgrammaticallyFocus` focus-theft gate.
    - **[Step 22](#step-22):** [A2] `onCardActivated` field added to `CardPersistenceCallbacks` (declared but not yet dispatched).
    - No consumers; no user-visible behavior change at phase end. Dispatchers land in M-phase 2.
-3. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
+3. **M-phase 2 (core refocus) — AUTHORED as [Steps 23–24](#step-23):**
+   - **[Step 23](#step-23):** install the [A3] shared activation effect in `CardHost`. At end of Step 23, FC cards have working reactivation via `applyFocusSnapshot` + `restoreCardDomSelection` under the [A8] gate. Closes [M01], [M03], [M16].
+   - **[Step 24](#step-24):** engine-managed content factories register `onCardActivated` to re-focus the engine root; Step 11's redundant cross-pane effect retires. Closes [M02], [M06], [M07], [M09].
+   - End of phase: seven transition-class gaps closed; single-owner reactivation path in place.
 4. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
 5. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
 6. **M-phase 5 (teardown):** implement [A7]. Closes [M19].
