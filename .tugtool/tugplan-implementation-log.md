@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-23T21:47:01Z
+---
+
+## step-1: Added tugdeck/src/deck-trace.ts (bounded 512-entry ring buffer with DeckTraceEvent tagged union, record/dump/dumpTable/enable/mark/since/clear API, DEV-gated window.__deckTrace binding) and 8 pure-logic tests in tugdeck/src/__tests__/deck-trace.test.ts.
+
+**Files changed:**
+- in-app-test-harness-7d9c56e-1
+
+---
+
+---
 step: step-2
 date: 2025-04-16T10:34:17Z
 ---
