@@ -1120,26 +1120,26 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - No consumers yet. Registry stays empty during this step; `bag.components` stays undefined on save. Behavior unchanged.
 
 **Tasks:**
-- [ ] Author `component-persistence-registry.ts` with the class, `RegistryEntry` type, and tree-order iteration.
-- [ ] Add `components?: Record<string, unknown>` to `CardStateBag` in `layout-tree.ts`.
-- [ ] Add `getComponentRegistry(cardId)` helper; wire creation + cleanup into the existing card lifecycle in `deck-manager.ts` (alongside Step 14's `flushSaveCallbackBeforeDestruction`).
-- [ ] Update `selection-persistence-greps.test.ts` to include `bag.components` in the allowed-field list.
-- [ ] Ensure the bag round-trip test in `layout-tree.test.ts` covers `components` present/absent/empty-object.
+- [x] Author `component-persistence-registry.ts` with the class, `RegistryEntry` type, and tree-order iteration.
+- [x] Add `components?: Record<string, unknown>` to `CardStateBag` in `layout-tree.ts`.
+- [x] Add `getComponentRegistry(cardId)` helper; wire creation + cleanup into the existing card lifecycle in `deck-manager.ts` (alongside Step 14's `flushSaveCallbackBeforeDestruction`).
+- [x] Update `selection-persistence-greps.test.ts` to include `bag.components` in the allowed-field list. _(N/A: the file has no bag-axis allowlist; `bag.components` is TS-declared in `CardStateBag`, so spelling is enforced by the type system.)_
+- [x] Ensure the bag round-trip test in `layout-tree.test.ts` covers `components` present/absent/empty-object.
 
 **Upholds:** [D13]; [L23] (new schema slot declared explicitly for component state). No runtime behavior change — strictly foundational plumbing.
 
 **Tests:**
-- [ ] New `component-persistence-registry.test.ts`:
+- [x] New `component-persistence-registry.test.ts`:
   - register + `entriesInTreeOrder` returns parent-first order across several depths.
   - duplicate scopedKey throws in dev (`isDevEnv` path).
   - unregister removes the entry; subsequent register succeeds.
   - `clear()` empties the registry; tree-order walk yields nothing.
-- [ ] Extend `layout-tree.test.ts` with JSON round-trip for `{ components: {...} }` and absent-components cases.
+- [x] Extend `layout-tree.test.ts` with JSON round-trip for `{ components: {...} }` and absent-components cases.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] No diff in behavior: running tugdeck end-to-end with the gallery and tide card should be visually and functionally identical to before Step 16.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green. _(2315 pass / 0 fail.)_
+- [x] No diff in behavior: running tugdeck end-to-end with the gallery and tide card should be visually and functionally identical to before Step 16. _(Registry has zero consumers this step; `bag.components` stays undefined on save, so runtime behavior is unchanged by construction.)_
 
 ---
 

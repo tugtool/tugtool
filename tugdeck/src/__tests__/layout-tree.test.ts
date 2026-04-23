@@ -640,6 +640,7 @@ describe("CardStateBag type — additional coverage", () => {
       regionScroll: null,
       domSelection: null,
       focus: null,
+      components: { done: true },
     };
     expect(bag.scroll?.y).toBe(50);
     expect((bag.content as Record<string, string>)["someKey"]).toBe("someValue");
@@ -647,6 +648,7 @@ describe("CardStateBag type — additional coverage", () => {
     expect(bag.regionScroll).toBeNull();
     expect(bag.domSelection).toBeNull();
     expect(bag.focus).toBeNull();
+    expect(bag.components?.["done"]).toBe(true);
   });
 
   test("CardStateBag axes round-trip through JSON", () => {
@@ -693,6 +695,41 @@ describe("CardStateBag type — additional coverage", () => {
     expect(round.formControls?.["a"]).toEqual({ value: "x" });
     expect(round.formControls?.["b"]).toEqual({ value: "y", scrollTop: 3 });
     expect(round.formControls?.["c"]).toEqual({ value: "z", scrollLeft: 4 });
+  });
+
+  test("components axis round-trips with heterogeneous per-key payloads", () => {
+    // bag.components is the Component Persistence Protocol axis ([D13],
+    // [A9]): framework harvests opt-in components keyed by scoped
+    // persistKey. Values are serializable but otherwise opaque to the
+    // framework — round-trip must preserve arbitrary shapes.
+    const bag: CardStateBag = {
+      components: {
+        "checkbox.done": true,
+        "slider.volume": 0.42,
+        "accordion.panel-a": { expanded: true, lastOpenedAt: 123 },
+        "tab-bar": { activeId: "settings" },
+      },
+    };
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.components?.["checkbox.done"]).toBe(true);
+    expect(round.components?.["slider.volume"]).toBe(0.42);
+    expect(round.components?.["accordion.panel-a"]).toEqual({
+      expanded: true,
+      lastOpenedAt: 123,
+    });
+    expect(round.components?.["tab-bar"]).toEqual({ activeId: "settings" });
+  });
+
+  test("components axis round-trips when absent", () => {
+    const bag: CardStateBag = { scroll: { x: 0, y: 0 } };
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.components).toBeUndefined();
+  });
+
+  test("components axis round-trips when empty", () => {
+    const bag: CardStateBag = { components: {} };
+    const round = JSON.parse(JSON.stringify(bag)) as CardStateBag;
+    expect(round.components).toEqual({});
   });
 });
 

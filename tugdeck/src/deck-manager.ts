@@ -75,6 +75,7 @@ import {
   installLifecycleCascade,
   type LifecycleCascadeHandle,
 } from "./lib/lifecycle-cascade";
+import { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -141,6 +142,16 @@ export class DeckManager implements IDeckManagerStore {
    * capture its current state before the page is discarded.
    */
   private saveCallbacks: Map<string, () => void> = new Map();
+
+  /**
+   * Per-card Component Persistence Protocol registries ([D13], [A9]).
+   * Lazily created on first `getComponentRegistry(cardId)` call from a
+   * child component's `useComponentPersistence` hook; cleared when the
+   * card is destroyed (`_removeCard` / `_closePane`). A card that uses
+   * no opt-in components never gets an entry here.
+   */
+  private componentRegistries: Map<string, ComponentPersistenceRegistry> =
+    new Map();
 
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
@@ -597,6 +608,13 @@ export class DeckManager implements IDeckManagerStore {
       cards: this.deckState.cards.filter((c) => !cardIdSet.has(c.id)),
       panes: this.deckState.panes.filter((s) => s.id !== paneId),
     };
+    // Discard per-card component-persistence registries ([A9]) after
+    // destruction notifications have fired — subscribers observing
+    // destruction never have a stake in these registries, but ordering
+    // after the lifecycle event makes the intent explicit.
+    for (const cid of win.cardIds) {
+      this.discardComponentRegistry(cid);
+    }
     this.notify();
     this.scheduleSave();
   }
@@ -920,6 +938,50 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
+   * Return the per-card Component Persistence Protocol registry ([D13],
+   * [A9]) for `cardId`, creating it lazily on first call. Used by
+   * `useComponentPersistence` to register / unregister capture/restore
+   * closures; used by the framework orchestration layer
+   * (`captureCardState` / `restoreCardState`) at save and restore time.
+   *
+   * The registry is discarded in `discardComponentRegistry(cardId)` once
+   * the card is destroyed, so repeated create / destroy cycles of the
+   * same cardId yield fresh registries.
+   */
+  getComponentRegistry(cardId: string): ComponentPersistenceRegistry {
+    let registry = this.componentRegistries.get(cardId);
+    if (!registry) {
+      registry = new ComponentPersistenceRegistry();
+      this.componentRegistries.set(cardId, registry);
+    }
+    return registry;
+  }
+
+  /**
+   * Look up a card's component registry without creating one. Returns
+   * `undefined` when the card has never registered an opt-in component.
+   * Used by the capture/restore orchestration so a non-participating card
+   * incurs no allocation.
+   */
+  peekComponentRegistry(
+    cardId: string,
+  ): ComponentPersistenceRegistry | undefined {
+    return this.componentRegistries.get(cardId);
+  }
+
+  /**
+   * Discard the per-card component registry for `cardId`. Called from
+   * `_removeCard` and `_closePane` alongside `flushSaveCallbackBeforeDestruction`
+   * so a card's registered closures don't outlive the card itself.
+   */
+  private discardComponentRegistry(cardId: string): void {
+    const registry = this.componentRegistries.get(cardId);
+    if (!registry) return;
+    registry.clear();
+    this.componentRegistries.delete(cardId);
+  }
+
+  /**
    * Flush a card's save callback before the card's own destruction
    * runs. Called by close paths (`_removeCard`, `_closePane`) so the
    * card's last unsaved edits land in the bag before
@@ -1108,6 +1170,7 @@ export class DeckManager implements IDeckManagerStore {
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
       panes: this.deckState.panes.map((s) => (s.id === paneId ? finalStack : s)),
     };
+    this.discardComponentRegistry(cardId);
     this.notify();
     this.scheduleSave();
   }

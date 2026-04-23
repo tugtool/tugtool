@@ -53,6 +53,14 @@ export interface CardStateBag {
   domSelection?: DomSelectionSnapshot | null;
   /** Element-level focus snapshot identifying which descendant of the card root held focus at save time. */
   focus?: FocusSnapshot | null;
+  /**
+   * Opt-in per-component state harvested at capture time, keyed by the
+   * scoped `persistKey` each component registered via
+   * `useComponentPersistence`. Populated by the Component Persistence
+   * Protocol ([D13], [A9]); absent when the card uses no opt-in
+   * components, empty when it uses some but none produced state.
+   */
+  components?: Record<string, unknown>;
 }
 
 /**
