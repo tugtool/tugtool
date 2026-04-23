@@ -117,7 +117,19 @@ export interface LaunchTugAppOptions {
 
   /**
    * Test name; used for the `logs/<test-name>.log` capture path when
-   * stdout/stderr redirection is enabled. Optional.
+   * stdout/stderr redirection is enabled. Optional. When set, the
+   * harness opens `tests/in-app/logs/<testName>.log` and pipes the
+   * subprocess's stdout/stderr into it; `app.logPath` is populated so
+   * tests can call `app.tailLog()` on failure.
    */
   testName?: string;
+
+  /**
+   * Override the harness-expected surface version for the handshake.
+   * Defaults to `EXPECTED_SURFACE_VERSION` (the compile-time constant
+   * in `_harness/index.ts`). Tests that want to exercise the
+   * version-skew code path pass a deliberately-wrong value here; in
+   * production test code this is never set.
+   */
+  expectedSurfaceVersion?: string;
 }

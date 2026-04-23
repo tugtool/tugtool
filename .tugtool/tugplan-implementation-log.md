@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-04-23T23:26:27Z
+---
+
+## step-9: Swift TestHarnessListener now probes for stale sockets before bind (unlink on ECONNREFUSED/ENOENT, throw staleSocketInUse when a live listener exists), and closes the listen-FD on first accept so subsequent kernel connects get ECONNREFUSED. Harness index.ts adds per-test log capture (logs/<testName>.log, truncate-on-open, pipe-drainers), public app.logPath + app.tailLog(lines=50), SIGINT/SIGTERM/exit detachable signal handlers, and an expectedSurfaceVersion option plumbed through the version handshake. Three new skipIf-gated in-app tests cover version-skew VersionSkewError, raw Bun.connect ECONNREFUSED after accept, and testName-scoped log capture. bun test tests/in-app: 15 pass / 8 skip / 0 fail. tugdeck baseline 2434 pass preserved.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-8
 date: 2025-04-23T23:14:57Z
 ---

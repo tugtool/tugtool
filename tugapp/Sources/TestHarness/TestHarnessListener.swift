@@ -9,7 +9,9 @@ import Foundation
 //
 //   1. Path parent must be one of /tmp, $HOME, /var/folders.
 //   2. Parent dir `st_uid` must equal `geteuid()`.
-//   3. Stale socket file is unlinked only if its `st_uid` matches.
+//   3. Stale socket file is unlinked only if its `st_uid` matches AND
+//      no live process holds it (probed by attempting `connect()`;
+//      ECONNREFUSED ⇒ stale, success ⇒ hard error).
 //   4. After `bind`, `fchmod(fd, 0600)` and verify via `fstat`.
 //   5. `listen(fd, 1)` — single-connection backlog.
 //
@@ -17,8 +19,12 @@ import Foundation
 // line and throws `TestHarnessSecurityError`. The caller aborts the
 // test-mode launch but keeps the app booting normally.
 //
-// Single-client model: while one connection is active, additional
-// `accept()`d fds are closed immediately with a log line.
+// Single-client model: once a connection is accepted, the listening
+// socket FD is closed. Additional `connect()` attempts from the
+// kernel's perspective hit a path with no listener and receive
+// `ECONNREFUSED`. The bound inode stays at the filesystem path until
+// `close()` unlinks it. This gives the harness test the "second
+// connect gets ECONNREFUSED" guarantee in List [#l03-lifecycle].
 
 // MARK: - Error types
 
@@ -28,6 +34,7 @@ enum TestHarnessSecurityError: Error, CustomStringConvertible {
     case invalidParentDirectory(String)
     case parentDirOwnershipMismatch(String)
     case staleSocketOwnershipMismatch(String)
+    case staleSocketInUse(String)
     case bindFailed(Int32)
     case chmodFailed(Int32)
     case chmodVerifyFailed(UInt16)
@@ -42,6 +49,8 @@ enum TestHarnessSecurityError: Error, CustomStringConvertible {
             return "parentDirOwnershipMismatch(\(path))"
         case .staleSocketOwnershipMismatch(let path):
             return "staleSocketOwnershipMismatch(\(path))"
+        case .staleSocketInUse(let path):
+            return "staleSocketInUse(\(path))"
         case .bindFailed(let errno):
             return "bindFailed(errno=\(errno))"
         case .chmodFailed(let errno):
@@ -150,11 +159,31 @@ final class TestHarnessListener {
         let clientFD = Darwin.accept(socketFD, nil, nil)
         guard clientFD >= 0 else { return }
 
-        // Single-client model. Second connection is closed immediately.
+        // Single-client model. Once the first connection is accepted,
+        // close the listening FD so subsequent `connect()` attempts on
+        // the path receive ECONNREFUSED from the kernel. The bound
+        // inode remains at the filesystem path until `close()` unlinks
+        // it, preserving the path for log messages and cleanup.
+        //
+        // Defensive branch: if `activeConnection` is somehow already
+        // populated (caller held a stale reference, or we raced with
+        // the disconnect callback), close the fresh fd immediately.
+        // This branch is unreachable under normal flow because we stop
+        // listening after the first accept.
         if activeConnection != nil {
             NSLog("tughost.test-harness.refused: already-active-connection fd=%d", clientFD)
             Darwin.close(clientFD)
             return
+        }
+
+        // Stop accepting further connections. Cancel the dispatch
+        // source BEFORE closing the fd so the source doesn't fire a
+        // cancel handler against a closed descriptor.
+        acceptSource?.cancel()
+        acceptSource = nil
+        if socketFD >= 0 {
+            Darwin.close(socketFD)
+            socketFD = -1
         }
 
         let connection = TestHarnessConnection(fd: clientFD)
@@ -221,17 +250,76 @@ private func verifyParentDirectorySafe(path: String) throws {
 }
 
 /// If the socket path already has a file at it, verify its `st_uid`
-/// matches `geteuid()` before unlinking. Otherwise throw.
+/// matches `geteuid()` AND that no live process is holding it before
+/// unlinking. Otherwise throw.
+///
+/// Liveness probe: a `connect()` attempt to the path.
+///   - `ECONNREFUSED` → nothing is listening; unlink and proceed.
+///   - `success` → a previous Tug.app (or an attacker) owns the
+///     listener; throw `staleSocketInUse` and leave the path alone so
+///     the caller can triage without clobbering a live app.
+///   - any other errno → treated as "cannot determine liveness"; we
+///     prefer the conservative path of refusing to unlink.
 private func handleStaleSocket(path: String) throws {
     var st = stat()
-    if stat(path, &st) == 0 {
-        let myUid = geteuid()
-        guard st.st_uid == myUid else {
-            NSLog("tughost.test-harness.security: stale-socket-uid-mismatch path=%@ owner=%d me=%d", path, st.st_uid, myUid)
-            throw TestHarnessSecurityError.staleSocketOwnershipMismatch(path)
-        }
-        unlink(path)
+    guard stat(path, &st) == 0 else {
+        // ENOENT (or other stat failure) — nothing to unlink.
+        return
     }
-    // If stat failed with ENOENT, path is clear — nothing to unlink.
+    let myUid = geteuid()
+    guard st.st_uid == myUid else {
+        NSLog(
+            "tughost.test-harness.security: stale-socket-uid-mismatch path=%@ owner=%d me=%d",
+            path, st.st_uid, myUid
+        )
+        throw TestHarnessSecurityError.staleSocketOwnershipMismatch(path)
+    }
+
+    // Probe liveness. A bare `connect()` against a Unix-domain socket
+    // path with no listener returns ECONNREFUSED; a live listener
+    // accepts and we get a usable FD. We close the probe fd either way.
+    let probeFD = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+    if probeFD < 0 {
+        // Can't probe; refuse to clobber.
+        NSLog(
+            "tughost.test-harness.security: stale-probe-socket-failed path=%@ errno=%d",
+            path, errno
+        )
+        throw TestHarnessSecurityError.staleSocketInUse(path)
+    }
+    defer { Darwin.close(probeFD) }
+
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    _ = withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+        path.withCString { src in
+            strlcpy(dst.baseAddress!.assumingMemoryBound(to: CChar.self), src, dst.count)
+        }
+    }
+    let connectResult = withUnsafePointer(to: &addr) { ptr -> Int32 in
+        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+            Darwin.connect(probeFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+    }
+    if connectResult == 0 {
+        NSLog(
+            "tughost.test-harness.security: stale-socket-in-use path=%@ (live listener refused unlink)",
+            path
+        )
+        throw TestHarnessSecurityError.staleSocketInUse(path)
+    }
+    let probeErrno = errno
+    switch probeErrno {
+    case ECONNREFUSED, ENOENT:
+        // ECONNREFUSED: nothing is listening on this path — stale inode.
+        // ENOENT: path disappeared between stat and connect — stale.
+        unlink(path)
+    default:
+        NSLog(
+            "tughost.test-harness.security: stale-probe-indeterminate path=%@ errno=%d",
+            path, probeErrno
+        )
+        throw TestHarnessSecurityError.staleSocketInUse(path)
+    }
 }
 #endif

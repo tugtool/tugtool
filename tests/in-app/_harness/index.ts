@@ -22,7 +22,14 @@
  * leak socket files.
  */
 
-import { unlinkSync } from "node:fs";
+import {
+  createWriteStream,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  type WriteStream,
+} from "node:fs";
+import { dirname, resolve as pathResolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AppCrashedError, VersionSkewError } from "./errors";
 import { RpcClient, type RpcTransport } from "./rpc";
@@ -39,6 +46,14 @@ import type {
 export const EXPECTED_SURFACE_VERSION = "1.0.0" as const;
 
 /**
+ * Directory (relative to this file) where per-test subprocess logs
+ * are captured when `testName` is set. Mirrors parent plan List
+ * [#l03-lifecycle-behaviors]: "Tug.app stdout/stderr routes to
+ * `tests/in-app/logs/<test>.log`".
+ */
+const LOGS_DIR = pathResolve(import.meta.dir, "..", "logs");
+
+/**
  * Resolved per-run paths for a Tug.app launch.
  */
 interface ResolvedLaunch {
@@ -47,6 +62,8 @@ interface ResolvedLaunch {
   connectTimeoutMs: number;
   connectPollMs: number;
   env: Record<string, string | undefined>;
+  logPath: string | null;
+  expectedSurfaceVersion: string;
 }
 
 /**
@@ -56,9 +73,17 @@ interface ResolvedLaunch {
 export class App {
   readonly version: string;
   readonly socketPath: string;
+  /**
+   * Absolute path to the log file capturing this subprocess's
+   * stdout/stderr, or `null` when `testName` was not provided. Tests
+   * print the tail of this file on failure via `app.tailLog()`.
+   */
+  readonly logPath: string | null;
   private readonly rpc: RpcClient;
   private readonly subprocess: { kill: (signal?: string) => void; exited: Promise<number> };
   private readonly onUnlink: () => void;
+  private readonly logStream: WriteStream | null;
+  private readonly detachSignals: () => void;
   private closed = false;
 
   constructor(args: {
@@ -67,12 +92,18 @@ export class App {
     socketPath: string;
     subprocess: { kill: (signal?: string) => void; exited: Promise<number> };
     onUnlink: () => void;
+    logPath: string | null;
+    logStream: WriteStream | null;
+    detachSignals: () => void;
   }) {
     this.rpc = args.rpc;
     this.version = args.version;
     this.socketPath = args.socketPath;
     this.subprocess = args.subprocess;
     this.onUnlink = args.onUnlink;
+    this.logPath = args.logPath;
+    this.logStream = args.logStream;
+    this.detachSignals = args.detachSignals;
   }
 
   /**
@@ -114,8 +145,42 @@ export class App {
   }
 
   /**
+   * Return the last `lines` lines of the captured log file. Returns
+   * an empty string when log capture is disabled (i.e. `testName`
+   * was not provided). Convenience for `catch` blocks:
+   *
+   *     try { ... } catch (e) {
+   *       console.error(await app.tailLog(50));
+   *       throw e;
+   *     }
+   *
+   * `lines` defaults to 50, matching List [#l03-lifecycle-behaviors].
+   * The file is read synchronously because this is a failure path —
+   * we'd rather block the test teardown than lose output to a race.
+   */
+  tailLog(lines = 50): string {
+    if (!this.logPath) return "";
+    let content: string;
+    try {
+      content = readFileSync(this.logPath, "utf8");
+    } catch {
+      return "";
+    }
+    const all = content.split("\n");
+    // If the file ends with a newline, split yields a trailing "" we
+    // want to drop; otherwise the last element is the final partial line.
+    const withoutTrailingEmpty =
+      all.length > 0 && all[all.length - 1] === ""
+        ? all.slice(0, -1)
+        : all;
+    const tail = withoutTrailingEmpty.slice(-lines);
+    return tail.join("\n");
+  }
+
+  /**
    * SIGTERM the subprocess, wait up to 5s for exit, SIGKILL on
-   * timeout. Unlinks the socket file. Idempotent.
+   * timeout. Unlinks the socket file, flushes the log stream, and
+   * detaches process-level signal handlers. Idempotent.
    */
   async close(): Promise<void> {
     if (this.closed) return;
@@ -143,6 +208,20 @@ export class App {
     } catch {
       // already gone; ignore
     }
+    // Close the log stream after the subprocess has exited; its pipe
+    // writer will have flushed whatever tail it produced by then.
+    try {
+      this.logStream?.end();
+    } catch {
+      // best-effort
+    }
+    // Detach signal handlers — closing a specific App must not leak
+    // SIGINT/SIGTERM listeners past its lifetime.
+    try {
+      this.detachSignals();
+    } catch {
+      // best-effort
+    }
   }
 }
 
@@ -161,8 +240,21 @@ export async function launchTugApp(
 ): Promise<App> {
   const resolved = resolveLaunchOptions(opts);
 
+  // Open the per-test log file BEFORE spawn so the writer is ready
+  // when the first subprocess bytes arrive. `null` when testName is
+  // unset — stdout/stderr are then piped but not tee'd to disk.
+  const logStream = openLogStream(resolved.logPath);
+
   // Spawn Tug.app. Bun's subprocess API is awaited for `.exited`.
   const subprocess = spawnTugApp(resolved);
+
+  // Pipe subprocess stdout/stderr into the log file. The Bun.spawn
+  // configuration asks for "pipe" on both streams so they return
+  // `ReadableStream<Uint8Array>`; we drain them asynchronously.
+  if (logStream) {
+    void pumpToLog(subprocess.stdout, logStream);
+    void pumpToLog(subprocess.stderr, logStream);
+  }
 
   // Register a last-resort unlink in case the harness is killed
   // before `app.close()` runs.
@@ -175,21 +267,44 @@ export async function launchTugApp(
   };
   process.on("exit", onExitUnlink);
 
+  // Install SIGINT / SIGTERM / exit handlers so a Ctrl-C at the
+  // runner or an unexpected exit cleans up the subprocess instead
+  // of leaving it orphaned. Mirrors parent plan List
+  // [#l03-lifecycle-behaviors]. `detachSignals` is called by
+  // `App.close()` so these handlers do not accumulate across
+  // sequential `launchTugApp` calls within one test file.
+  const detachSignals = installSignalHandlers(subprocess);
+
   // Retry Bun.connect until ECONNREFUSED resolves or the window elapses.
-  const socket = await connectWithRetry(
-    resolved.socketPath,
-    resolved.connectTimeoutMs,
-    resolved.connectPollMs,
-    subprocess,
-  );
+  let socket;
+  try {
+    socket = await connectWithRetry(
+      resolved.socketPath,
+      resolved.connectTimeoutMs,
+      resolved.connectPollMs,
+      subprocess,
+    );
+  } catch (err) {
+    detachSignals();
+    try {
+      logStream?.end();
+    } catch {
+      // best-effort
+    }
+    throw err;
+  }
 
   // Bridge Bun.Socket to RpcTransport. `socket.write` accepts strings.
   const transport: RpcTransport = makeSocketTransport(socket, subprocess);
   const rpc = new RpcClient(transport);
 
   // Handshake: first RPC is always `version`. Mismatch → throw.
+  // `expectedSurfaceVersion` override lets the version-skew test
+  // deliberately mismatch without requiring a Swift rebuild.
+  const expectedVersion =
+    resolved.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION;
   const serverVersion = await rpc.call<string>({ method: "version" });
-  const expectedMajor = EXPECTED_SURFACE_VERSION.split(".")[0];
+  const expectedMajor = expectedVersion.split(".")[0];
   const actualMajor = String(serverVersion).split(".")[0];
   if (expectedMajor !== actualMajor) {
     try {
@@ -197,9 +312,15 @@ export async function launchTugApp(
     } catch {
       // already dead
     }
+    detachSignals();
+    try {
+      logStream?.end();
+    } catch {
+      // best-effort
+    }
     throw new VersionSkewError(
-      `surface version mismatch: expected=${EXPECTED_SURFACE_VERSION} actual=${serverVersion}`,
-      EXPECTED_SURFACE_VERSION,
+      `surface version mismatch: expected=${expectedVersion} actual=${serverVersion}`,
+      expectedVersion,
       String(serverVersion),
     );
   }
@@ -210,6 +331,9 @@ export async function launchTugApp(
     socketPath: resolved.socketPath,
     subprocess,
     onUnlink: onExitUnlink,
+    logPath: resolved.logPath,
+    logStream,
+    detachSignals,
   });
 }
 
@@ -230,6 +354,9 @@ const setTimeoutNative = (
 function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   const socketPath = opts.socketPath ?? `/tmp/tugapp-test-${randomUUID()}.sock`;
   const appPath = opts.appPath ?? resolveDefaultAppPath();
+  const logPath = opts.testName
+    ? pathResolve(LOGS_DIR, `${sanitizeTestName(opts.testName)}.log`)
+    : null;
   return {
     appPath,
     socketPath,
@@ -240,6 +367,116 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,
     },
+    logPath,
+    expectedSurfaceVersion: opts.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION,
+  };
+}
+
+/**
+ * Collapse characters that are awkward on a filesystem into `-`. Keeps
+ * the log filename predictable — a test named "foo bar / baz" becomes
+ * `foo-bar---baz.log`.
+ */
+function sanitizeTestName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_.-]/g, "-");
+}
+
+/**
+ * Open a write stream at the given log path (creating the parent dir
+ * if missing). `null` in → `null` out, which disables log capture.
+ */
+function openLogStream(logPath: string | null): WriteStream | null {
+  if (!logPath) return null;
+  try {
+    mkdirSync(dirname(logPath), { recursive: true });
+  } catch {
+    // Directory already exists, or we can't create it. If creation
+    // fails, `createWriteStream` will surface the real error.
+  }
+  // Truncate on open — each test run gets a fresh log. Callers that
+  // want to aggregate across runs should manage their own filename.
+  return createWriteStream(logPath, { flags: "w" });
+}
+
+/**
+ * Drain a Bun-style ReadableStream<Uint8Array> into the log stream.
+ * Swallows errors — log capture must not influence test outcomes.
+ * Returns when the source stream ends.
+ */
+async function pumpToLog(
+  source: ReadableStream<Uint8Array> | null | undefined,
+  sink: WriteStream,
+): Promise<void> {
+  if (!source) return;
+  const reader = source.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value) {
+        try {
+          sink.write(value);
+        } catch {
+          // drop; we don't want writer backpressure to kill the test
+        }
+      }
+    }
+  } catch {
+    // source errored; give up cleanly
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+/**
+ * Register per-launch SIGINT / SIGTERM / exit listeners that terminate
+ * the subprocess if the runner is interrupted or exits unexpectedly.
+ * Returns a detach function that removes these listeners — `App.close()`
+ * calls it so handler counts do not grow across sequential launches.
+ *
+ * Contract (per parent plan List [#l03-lifecycle-behaviors]):
+ *   - `SIGINT` / `SIGTERM`: kill the subprocess (SIGTERM; SIGKILL if
+ *     it refuses to die after a short grace window), unlink the
+ *     socket, then re-emit the signal via `process.exit(128 + sig)`.
+ *   - `exit`: last-resort synchronous `kill("SIGKILL")` for pathological
+ *     exits where the subprocess is still alive.
+ */
+function installSignalHandlers(subprocess: SpawnedTugApp): () => void {
+  const onSignal = (signal: NodeJS.Signals) => {
+    // Best-effort terminate; we cannot await here because signal
+    // handlers on Node/Bun run synchronously before the default
+    // action. The process.on("exit") handler below catches the
+    // pathological case where the subprocess is still alive when
+    // the runner is on its way out.
+    try {
+      subprocess.kill("SIGTERM");
+    } catch {
+      // already dead
+    }
+    // Use the default exit code convention: 128 + signal number. We
+    // don't know the signal number reliably from the name, so fall
+    // back to a simple 1/0 exit. Tests treat the runner's exit code
+    // as opaque; the subprocess cleanup is what matters.
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  const onExit = () => {
+    try {
+      subprocess.kill("SIGKILL");
+    } catch {
+      // already gone
+    }
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  process.on("exit", onExit);
+  return () => {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    process.off("exit", onExit);
   };
 }
 
