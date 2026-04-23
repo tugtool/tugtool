@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-13
+date: 2025-04-23T23:52:30Z
+---
+
+## step-13: Added tests/in-app/m01-tab-switch-fc.test.ts (221 lines) covering intra-pane tab switch on FC cards. Seeds pane with two gallery-input FC cards A/B, focuses A's size/sm input, types alpha, asserts form-control value + expectCaret. Marks trace, clicks tab B, asserts B focused/active + trace ordered-subset [fr-flip→B, destination-flip B→true, focus-call B]. Marks again, clicks tab A, asserts caret restored at offset 5 + same trace triple for return. skipIf-gated on TUGAPP_IN_APP_TEST=1. tsc clean, tests/in-app 29 pass / 9 skip / 0 fail, lint:no-timers clean.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-12
 date: 2025-04-23T23:44:44Z
 ---

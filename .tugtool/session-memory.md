@@ -1,47 +1,50 @@
 # Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck: React 19 + Vite + bun (`tugdeck/src/`; tests `tugdeck/src/__tests__/`). Tugapp: `tugapp/Sources/`; `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace; `bunfig.toml` roots `.` with NO happy-dom preload. Transport: parallel Unix socket ([D02]). Steps 1-3 (deck-trace) landed; Step 4 authored `roadmap/tugplan-in-app-bridge.md`; Steps 5-11 built Phase 2 bridge+harness; Step 12 authored `tests/in-app/README.md` (scaffold finalized).
+Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test.
 
 ## Files touched (condensed)
-- tugdeck: `deck-trace.ts`, `deck-manager.ts` (testMode+seedDeckState), `deck-manager-store.ts` (invokeSaveCallback), `components/chrome/card-host.tsx` + `deck-commit-beacon.tsx` + `deck-canvas.tsx`, `main.tsx` (attachTugTestSurface), `test-surface.ts` (SURFACE_VERSION="1.0.0"). Tests under `src/__tests__/`.
-- tugapp: `Sources/TestHarness/{TestHarnessBridge,TestHarnessListener,TestHarnessConnection,TestHarnessUserScript}.swift`; `MainWindow.swift` + `AppDelegate.swift` DEBUG wiring; `Tug.xcodeproj/project.pbxproj` TestHarness group.
-- roadmap: `tugplan-in-app-bridge.md` (Phase 2 plan).
-- tests/in-app scaffold: `tsconfig.json` (path alias `@/_harness`), `bunfig.toml`, `package.json`, `.gitignore` (logs/), `bun.lock`, `logs/.gitkeep`.
-- tests/in-app/_harness: `errors.ts`+test, `types.ts`, `rpc.ts`+test, `index.ts` (launchTugApp + App: evalJS/waitForCondition/tailLog/close + typed wrappers click/type/focusElement/reset/seedDeckState/getActive/getFocused/getCaret/getFormControlValue/assertHostRootRegistered/getDeckTrace/markDeckTrace/clearDeckTrace/enableDeckTrace/expectFocusedCard/expectCaret), `client.ts` (pure wrappers, locally-mirrored shapes), `matchers.ts`+test (`toContainOrderedSubset` + `registerSubsetMatcher`).
-- tests/in-app tests: `_smoke.test.ts` / `_wait-for-condition.test.ts` / `_version-handshake.test.ts` / `_double-connect.test.ts` / `_log-capture.test.ts` — all `describe.skipIf(!SHOULD_RUN)` gated on `TUGAPP_IN_APP_TEST=1`.
-- tests/in-app/lint-no-timers.ts — bun script for `\bsetTimeout|setInterval\b` bans. `_harness/` and self allowlisted.
-- **tests/in-app/README.md — NEW (Step 12).** Run command, one-app-per-file lifecycle + app.reset(), fidelity pointer, how-to-add-a-test recipe, lint:no-timers note, dir layout.
+- tugdeck: `deck-trace.ts`, `deck-manager.ts` (testMode+seedDeckState), `deck-manager-store.ts` (invokeSaveCallback), `components/chrome/{card-host,deck-commit-beacon,deck-canvas}.tsx`, `main.tsx`, `test-surface.ts` (SURFACE_VERSION "1.0.0"). Tests in `src/__tests__/`.
+- tugapp: `Sources/TestHarness/{TestHarnessBridge,TestHarnessListener,TestHarnessConnection,TestHarnessUserScript}.swift`; `MainWindow.swift`+`AppDelegate.swift` DEBUG wiring; `Tug.xcodeproj/project.pbxproj`.
+- roadmap: `tugplan-in-app-bridge.md`.
+- tests/in-app scaffold: `tsconfig.json` (@/_harness alias), `bunfig.toml`, `package.json`, `.gitignore`, `bun.lock`, `logs/.gitkeep`, `README.md`, `lint-no-timers.ts`.
+- tests/in-app/_harness: `errors.ts`+test, `types.ts`, `rpc.ts`+test, `index.ts`, `client.ts`, `matchers.ts`+test.
+- tests/in-app harness tests: `_smoke / _wait-for-condition / _version-handshake / _double-connect / _log-capture .test.ts` — all `skipIf(!SHOULD_RUN)`.
+- **Step 13 NEW: `tests/in-app/m01-tab-switch-fc.test.ts`** — pane [A,B] componentId "gallery-input"; focus+type "alpha" into A's `sm` input; click tab B; click back to A; assert caret restored at offset 5. Two ordered-subset trace assertions `[fr-flip→X, destination-flip X→true, focus-call X]` scoped by `markDeckTrace`.
 
 ## Patterns established
-- `invokeSaveCallback(id, source)` is the single save-callback entry. `_flipFirstResponder` callers pass a `trigger` string.
-- DEV gate idiom (TS): `import.meta.env?.DEV === true && window.__tugTestMode === true`.
-- Swift DEBUG contract: every `TestHarness/*.swift` opens `#if DEBUG` line 1, closes at EOF.
-- WKUserScript at `atDocumentStart` sets `__tugTestMode = true` before tugdeck JS.
-- RPC: NDJSON, numeric `id`; `version`/`evalJS`/`waitForCondition`; evalJS=5000ms, waitForCondition=2000ms/16ms. `TestHarnessBridge.envSocketPath()` sole reader of `TUGAPP_TEST_SOCKET`.
-- In-app tests pattern: `describe.skipIf(!SHOULD_RUN)` → `launchTugApp()` in try → `close()` in finally. One App per file; `app.reset()` between scenarios within a file.
-- Wrapper idiom: client helpers take `HarnessCaller` (minimal `{evalJS,waitForCondition}`); App methods delegate via `client.X(this as HarnessCaller, ...)`. `callSurface()` IIFE throws if `window.__tug` missing. Script serialization uses `lit()` JSON helper.
-- Matcher idiom: pure `toContainOrderedSubset(actual, expected)` predicate + `registerSubsetMatcher()` for fluent form. `declare module "bun:test" { interface Matchers }` augmentation.
-- Type-duplication rule: client.ts mirrors (does NOT import) tugdeck/src/test-surface.ts shapes (CaretState/ClickOptions/ResetOptions/SeedDeckStateArgs). Drift guarded at runtime by `SURFACE_VERSION` handshake ([D11]).
-- Lint (no-timers): pure-bun script, no eslint. `_harness/` uses `setTimeoutNative` alias indirection.
-- File-name convention (Step 12 README): `_*.test.ts` is reserved for harness-internal protocol/lifecycle tests; user-authored scenarios use `<scenario>.test.ts`.
+- `invokeSaveCallback(id, source)` single entry. `_flipFirstResponder` takes `trigger` string.
+- DEV gate: `import.meta.env?.DEV === true && window.__tugTestMode === true`.
+- Swift `TestHarness/*.swift` opens `#if DEBUG` line 1, closes at EOF.
+- WKUserScript `atDocumentStart` sets `__tugTestMode = true` before tugdeck JS.
+- RPC: NDJSON, numeric id; `version`/`evalJS`/`waitForCondition`; evalJS=5000ms, wfc=2000ms/16ms.
+- Test pattern: `skipIf(!SHOULD_RUN)` → `launchTugApp()` → `close()` in finally. One App per file; `app.reset()` between scenarios.
+- Wrapper idiom: client helpers take `HarnessCaller`; App delegates `client.X(this as HarnessCaller, ...)`. `callSurface()` IIFE + `lit()` JSON helper.
+- Matcher: pure `toContainOrderedSubset` + `registerSubsetMatcher()` at module load for fluent form.
+- client.ts mirrors (NOT imports) test-surface.ts shapes. Drift caught by `SURFACE_VERSION` handshake [D11].
+- Lint no-timers: pure-bun script. `_harness/` uses `setTimeoutNative` alias.
+- File naming: `_*.test.ts` = harness-internal; `<scenario>.test.ts` = user scenarios.
+- **Step 13 scenario idiom:** declare `app` OUTSIDE try so catch can call `app.tailLog(50)` for CI diagnostics. Trace assertions: `mark = markDeckTrace()` before gesture, `getDeckTrace({ since: mark })` after, scoped per transition.
+- **FC-card seeding:** `componentId: "gallery-input"` — renders TugInputs stamped `data-tug-persist-value="gallery-input/size/sm"` etc. Selector `[data-card-id="X"] [data-tug-persist-value="gallery-input/size/sm"]`. PersistKey collisions across cards are OK because lookup scopes by `[data-card-id]` subtree.
+- **Tab selector:** `[data-testid="tug-tab-${cardId}"]` (from `tug-tab-bar.tsx`).
 
 ## Build / test notes
-- `cd tugdeck && bun x tsc --noEmit` — exit 0.
-- `cd tugdeck && bun test` — 2434 pass, 0 fail; zero `tests/in-app/` refs in output.
+- `cd tugdeck && bun x tsc --noEmit` / `bun test` — exit 0 / 2434 pass, 0 fail, zero tests/in-app refs.
 - `cd tests/in-app && bun x tsc --noEmit -p tsconfig.json` — exit 0.
-- `cd tests/in-app && bun test` — 29 pass, 8 skip, 0 fail.
-- `cd tests/in-app && bun run lint:no-timers` — exit 0 clean (5 files scanned).
-- Swift typecheck: `swiftc -typecheck ...` — exit 0.
+- `cd tests/in-app && bun test` — 29 pass, 9 skip (was 8), 0 fail.
+- `cd tests/in-app && bun run lint:no-timers` — clean (6 files, was 5).
+- `bun test tests/in-app/m01-tab-switch-fc.test.ts` — exit 0 (1 skipped default).
+- Swift `swiftc -typecheck ...` — exit 0.
 - `tests/in-app/bunfig.toml` MUST keep `[test] root = "."` + NO happy-dom preload.
-- Tugdeck bunfig roots at `src`, so `tests/in-app/` cannot leak into tugdeck's `bun test`.
 
 ## Hints for upcoming steps
-- Step 12 complete. All 3 checkpoints green (in-app 29/8/0, tugdeck 2434/0 with zero in-app refs, README present+readable).
-- Step 13-15 (M01/M03/M16 tests): import from `@/_harness` — `launchTugApp`, `toContainOrderedSubset`, `registerSubsetMatcher`. Call `registerSubsetMatcher()` at module load to enable `expect(trace).toContainOrderedSubset([...])`. Pattern: `app.seedDeckState(...)` → `app.click/type/focusElement(...)` → `app.expectFocusedCard/expectCaret(...)`. For trace: `const mark = await app.markDeckTrace(); ...; const trace = await app.getDeckTrace({ since: mark });`. README.md shows the canonical shape — copy from it.
+- Step 13 complete. Checkpoint exits 0 (skipped without `TUGAPP_IN_APP_TEST=1`).
+- **Steps 14/15 copy Step 13 skeleton:** `registerSubsetMatcher()` module-top, `launchTugApp({ testName })`, `app` outside try, tail-log in catch, `close()` in finally.
+- Step 14 (M03): pane-title selector = `[data-pane-id="p2"] [data-testid="tug-pane-title"]` (tug-pane.tsx line 155 stamps it). Two seeded panes need non-overlapping `position`. Plan requires asserting a `save-callback` event in trace between click and fr-flip.
+- Step 15 (M16): close-button selector = `[data-testid="tug-tab-close-${cardId}"]` (tug-tab-bar.tsx line 454). Plan requires asserting NO `save-callback` for the closed card between click and fr-flip (card about to be destroyed).
 - `EXPECTED_SURFACE_VERSION` in `_harness/index.ts` must match `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` AND `TestHarnessConnection.surfaceVersion` (currently "1.0.0").
-- `App.logPath` is `null` unless `testName` was passed to `launchTugApp`.
-- Socket path default: `/tmp/tugapp-test-${randomUUID()}.sock`. Swift allow-list: `/tmp`, `/private/tmp`, `/var/folders`, `$HOME`.
-- Deferred [D03]/[D08] from `tugplan-in-app-bridge.md` remain parked.
-- Step 11 manual tasks deferred (binary-size baseline, archive `nm` inspection, dev-launch + test-mode-launch verification) — all require a built debug/release Tug.app which agent cannot run.
-- `_harness/index.ts` uses `setTimeoutNative` alias to hide `setTimeout` from lint-no-timers. Follow that pattern if harness internals need another native timer.
+- `App.logPath` null unless `testName` passed. Always pass `testName` in scenario tests so `tailLog(50)` has output.
+- Socket path default `/tmp/tugapp-test-${randomUUID()}.sock`. Swift allow-list `/tmp`, `/private/tmp`, `/var/folders`, `$HOME`.
+- Deferred [D03]/[D08] from `tugplan-in-app-bridge.md` parked. Step 11 manual tasks deferred (require built Tug.app).
+- `CaretState` input variant after typing: `{ kind:"input", selectionStart:N, selectionEnd:N, selectionDirection:"none", value:"..." }`. `readSelectionDirection` normalizes null→"none".
+- `waitForCondition` + `assertHostRootRegistered(cardId)` is the right wait-for-mount primitive after `seedDeckState`.
