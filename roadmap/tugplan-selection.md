@@ -1436,31 +1436,31 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - No changes to save paths, persistence schema, or engine.
 
 **Tasks:**
-- [ ] Import `useFocusDestination` ([#step-20](#step-20)), `canProgrammaticallyFocus` ([#step-21](#step-21)), `CardPersistenceCallbacks` with `onCardActivated` ([#step-22](#step-22)).
-- [ ] Add the activation effect in `CardHost`, after the mount-time restore effect and the cross-pane refocus effect. Keyed on the `useFocusDestination` value.
-- [ ] Implement the has-been-active ref-guard such that mount activation is skipped; only post-mount transitions fire the body.
-- [ ] Dispatch body: FC branch re-applies focus + DOM-selection; EM branch calls `onCardActivated?.()`.
-- [ ] Focus-theft gate ([A8]) wraps the FC branch's `applyFocusSnapshot` and the EM branch's `onCardActivated` invocation.
-- [ ] Leave the Step 11 cross-pane effect untouched at this step; Step 24 handles reconciliation.
+- [x] Import `useFocusDestination` ([#step-20](#step-20)), `canProgrammaticallyFocus` ([#step-21](#step-21)), `CardPersistenceCallbacks` with `onCardActivated` ([#step-22](#step-22)).
+- [x] Add the activation effect in `CardHost`, after the mount-time restore effect and the cross-pane refocus effect. Keyed on the `useFocusDestination` value.
+- [x] Implement the has-been-active ref-guard such that mount activation is skipped; only post-mount transitions fire the body.
+- [x] Dispatch body: FC branch re-applies focus + DOM-selection; EM branch calls `onCardActivated?.()`.
+- [x] Focus-theft gate ([A8]) wraps the FC branch's `applyFocusSnapshot` and the EM branch's `onCardActivated` invocation.
+- [x] Leave the Step 11 cross-pane effect untouched at this step; Step 24 handles reconciliation.
 
 **Upholds:** [A3]; [L02] (React consumer subscribes to external state via `useSyncExternalStore` inside `useFocusDestination`); [L03] (`useLayoutEffect` so activation applies before any event-driven consumer paints); [R07] centralized via [A8].
 
 **Tests:**
-- [ ] New `card-host-activation-effect.test.tsx`:
+- [x] New `card-host-activation-effect.test.tsx`:
   - Mount-only flow: the activation body does not fire on initial mount (ref-guard skip).
   - `false → true` transition (simulated by flipping the mocked `isFocusDestination` value): FC branch re-applies focus + selection.
   - `false → true` transition: content-owning branch calls `onCardActivated` when registered.
   - Unsafe gate: `canProgrammaticallyFocus` returns `false` → activation body skipped entirely.
   - `true → false` transition: no-op (no blur applied; deactivation is app-lifecycle's job, not the activation effect's).
-- [ ] Extend `selection-persistence-integration.test.tsx` with three new scenarios:
+- [x] Extend `selection-persistence-integration.test.tsx` with three new scenarios:
   - **[M01] FC intra-pane tab switch:** card A is FC with focus + selection; switch to card B in the same pane; switch back; assert card A regains focus + selection paint.
   - **[M03] FC pane activation:** two panes, each with an FC card that had focus; click pane B chrome; click back on pane A's chrome (not the input); assert pane A's card regains focus.
   - **[M16] FC tab close handoff:** pane with two FC cards, card A focused; close card A; assert card B receives focus.
-- [ ] Existing integration tests must continue to pass — no regressions in cold-boot reload, cross-pane move (Step 11's effect still handles this for FC), or any paint-bucket behavior.
+- [x] Existing integration tests must continue to pass — no regressions in cold-boot reload, cross-pane move (Step 11's effect still handles this for FC), or any paint-bucket behavior.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
 - [ ] Manual verification:
   - Two FC cards in a pane, one focused with a selection. Switch tabs and return — focus and selection paint restored. [M01] ✓
   - Two panes with FC cards focused in each. Click pane chrome to switch active pane; return — selection restored. [M03] ✓

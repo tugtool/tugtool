@@ -1067,3 +1067,175 @@ describe("selection-persistence integration — engine-managed card reload", () 
     expect(sel.focusOffset).toBe(8);
   });
 });
+
+// ===========================================================================
+// [A3] Shared activation effect — FC reactivation paths (Step 23).
+//
+// These scenarios pin the three transition classes [A3] closes for FC
+// cards: intra-pane tab switch ([M01]), pane activation ([M03]), tab
+// close handoff ([M16]). All three reduce to the same question — "is
+// this card now the focus destination? if so, re-apply its bag.focus
+// + bag.domSelection." The activation effect answers it.
+// ===========================================================================
+
+describe("selection-persistence integration — [A3] FC reactivation", () => {
+  it("[M01] FC intra-pane tab switch restores focus + selection on return", () => {
+    registerFormControlCard();
+    const cardA = makeFormControlCardState("fc-a");
+    const cardB = makeFormControlCardState("fc-b");
+    const store = new Store({
+      cards: [cardA, cardB],
+      panes: [
+        {
+          id: "pane-1",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["fc-a", "fc-b"],
+          activeCardId: "fc-a",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activePaneId: "pane-1",
+      hasFocus: true,
+    });
+    // Seed bag.focus for card A so the return flip has something to
+    // re-apply. The form-control focus snapshot is keyed by the
+    // TugInput's persistKey.
+    store.setCardState("fc-a", {
+      focus: { kind: "form-control", persistKey: PERSIST_KEY },
+    });
+    renderDeck(store);
+
+    // Switch away — card B becomes active, card A loses destination status.
+    act(() => {
+      store.setActiveCardInPane("pane-1", "fc-b");
+    });
+    // Blur anything that may have been focused, so the return-flip
+    // re-apply is observable on `document.activeElement`.
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    });
+    expect(document.activeElement).toBe(document.body);
+
+    // Switch back — `isFocusDestination("fc-a")` flips false → true.
+    act(() => {
+      store.setActiveCardInPane("pane-1", "fc-a");
+    });
+
+    const inputA = document.querySelector<HTMLInputElement>(
+      `[data-card-id="fc-a"] [data-tug-persist-value="${PERSIST_KEY}"]`,
+    );
+    expect(inputA).not.toBeNull();
+    expect(document.activeElement).toBe(inputA);
+  });
+
+  it("[M03] FC pane activation restores focus on the destination card", () => {
+    registerFormControlCard();
+    const cardA = makeFormControlCardState("fc-a");
+    const cardB = makeFormControlCardState("fc-b");
+    const store = new Store({
+      cards: [cardA, cardB],
+      panes: [
+        {
+          id: "pane-A",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["fc-a"],
+          activeCardId: "fc-a",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+        {
+          id: "pane-B",
+          position: { x: 500, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["fc-b"],
+          activeCardId: "fc-b",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activePaneId: "pane-A",
+      hasFocus: true,
+    });
+    store.setCardState("fc-a", {
+      focus: { kind: "form-control", persistKey: PERSIST_KEY },
+    });
+    renderDeck(store);
+
+    // Activate pane B (fc-a is no longer the focus destination).
+    act(() => {
+      store.setState({ ...store.getSnapshot(), activePaneId: "pane-B" });
+    });
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    });
+    expect(document.activeElement).toBe(document.body);
+
+    // Reactivate pane A — `isFocusDestination("fc-a")` flips back true.
+    act(() => {
+      store.setState({ ...store.getSnapshot(), activePaneId: "pane-A" });
+    });
+
+    const inputA = document.querySelector<HTMLInputElement>(
+      `[data-card-id="fc-a"] [data-tug-persist-value="${PERSIST_KEY}"]`,
+    );
+    expect(inputA).not.toBeNull();
+    expect(document.activeElement).toBe(inputA);
+  });
+
+  it("[M16] FC tab close handoff: closing the active card refocuses the neighbor", () => {
+    registerFormControlCard();
+    const cardA = makeFormControlCardState("fc-a");
+    const cardB = makeFormControlCardState("fc-b");
+    const store = new Store({
+      cards: [cardA, cardB],
+      panes: [
+        {
+          id: "pane-1",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["fc-a", "fc-b"],
+          activeCardId: "fc-a",
+          title: "",
+          acceptsFamilies: ["standard"],
+        },
+      ],
+      activePaneId: "pane-1",
+      hasFocus: true,
+    });
+    // Card B was never the active card, so its bag was never saved.
+    // Seed one directly so the activation effect has a focus target
+    // when the close-handoff makes it the destination.
+    store.setCardState("fc-b", {
+      focus: { kind: "form-control", persistKey: PERSIST_KEY },
+    });
+    renderDeck(store);
+
+    // Simulate closing card A: the pane's activeCardId flips to fc-b
+    // and fc-a is removed from the pane. (This mirrors what
+    // DeckManager does inside `_removeCard`.)
+    act(() => {
+      store.setState({
+        ...store.getSnapshot(),
+        cards: store.getSnapshot().cards.filter((c) => c.id !== "fc-a"),
+        panes: store.getSnapshot().panes.map((p) =>
+          p.id === "pane-1"
+            ? { ...p, cardIds: ["fc-b"], activeCardId: "fc-b" }
+            : p,
+        ),
+      });
+    });
+
+    // The activation effect on fc-b's CardHost fires because this is
+    // its first `false → true` transition *post-mount* (the mount
+    // guard skipped the initial non-destination render). Focus lands
+    // on fc-b's input.
+    const inputB = document.querySelector<HTMLInputElement>(
+      `[data-card-id="fc-b"] [data-tug-persist-value="${PERSIST_KEY}"]`,
+    );
+    expect(inputB).not.toBeNull();
+    expect(document.activeElement).toBe(inputB);
+  });
+});

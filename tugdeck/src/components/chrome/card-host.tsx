@@ -93,6 +93,8 @@ import type {
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
+import { useFocusDestination } from "../../deck-store-hooks";
+import { canProgrammaticallyFocus } from "../../focus-theft-gate";
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -767,6 +769,113 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     applyFocusSnapshot(cardRoot, bag.focus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostStackId]);
+
+  // --- [A3] Shared activation effect ----------------------------------------
+  //
+  // Subscribes to `isFocusDestination(cardId)` via `useFocusDestination` so
+  // every transition of "is this card the focus destination right now?" is
+  // observed by React. The effect body runs only on `false → true`
+  // transitions; `true → false` is a deactivation (an app-lifecycle concern,
+  // not ours). Each reactivation — intra-pane tab switch ([M01]), pane
+  // activation ([M03]), tab close handoff ([M16]) — is handled here.
+  //
+  // Mount guard: the cold-boot restore path (above) already applied focus,
+  // selection, scroll, etc. during the initial mount for the active card.
+  // To avoid double-applying on a reload where this card is the destination
+  // at render 0, skip the first effect run entirely. A card that mounts
+  // *not* as the destination (e.g. a neighbor in a multi-card pane) still
+  // gets its body fired when it later becomes the destination — the skip
+  // is keyed on "first render of this CardHost," not "first true reading."
+  // This distinction is what closes [M16]: the neighbor was mounted all
+  // along but never fired an activation body before; `[A3]` fires it once
+  // the close-handoff flips `isFocusDestination` on.
+  //
+  // Dispatch by card flavor:
+  //   - **Content-owning** (`bag.content !== undefined`): delegate to the
+  //     factory's `onCardActivated` callback. Registration lands when EM
+  //     card factories opt in (Step 24). Until then the branch no-ops.
+  //   - **DOM-authority** (`bag.content === undefined`): re-apply
+  //     `bag.focus` via `applyFocusSnapshot` and republish
+  //     `bag.domSelection` to `selectionGuard` so `::selection` / the
+  //     inactive-selection highlight repaint.
+  //
+  // Both branches gate on {@link canProgrammaticallyFocus} ([A8]) so focus
+  // is never stolen from a user whose caret is elsewhere — the single
+  // source of truth for [R07] avoidance.
+  //
+  // Redundancy note: the Step 11 cross-pane effect above still fires on
+  // `hostStackId` transitions for FC cards. That overlap is intentional
+  // for one step; Step 24 reconciles (retires the cross-pane effect once
+  // [A3] covers the same transitions).
+  //
+  // Uses `useLayoutEffect` (not `useEffect`) so activation applies in the
+  // same paint as the store-driven re-render that produced the transition,
+  // matching the timing expected by `selectionGuard` paint consumers.
+  // L02 (external state via `useSyncExternalStore` inside
+  // `useFocusDestination`), L03 (layout phase), R07 ([A8] gate).
+  const isFocusDestinationNow = useFocusDestination(cardId);
+  const hasRunActivationEffectRef = useRef(false);
+  const prevIsFocusDestinationRef = useRef(false);
+  useLayoutEffect(() => {
+    const isFirstRun = !hasRunActivationEffectRef.current;
+    hasRunActivationEffectRef.current = true;
+    const prev = prevIsFocusDestinationRef.current;
+    prevIsFocusDestinationRef.current = isFocusDestinationNow;
+
+    // Mount: the cold-boot restore path owns initial focus + selection
+    // for a card that is already the destination. Skip regardless of
+    // the bit's value so neighbor cards (not destinations at mount)
+    // also start from a clean slate without firing a spurious body.
+    if (isFirstRun) return;
+
+    // Only react on the false → true transition. `true → false` is a
+    // deactivation; no blur is applied here (that's an app-lifecycle
+    // concern, not the activation effect's).
+    if (!isFocusDestinationNow) return;
+    if (prev) return;
+
+    const hostEl = hostContentElRef.current;
+    const cardRoot = hostEl ? findCardRoot(hostEl, cardId) : null;
+
+    // [A8] focus-theft gate. Consult once; abort silently when unsafe
+    // regardless of card flavor. The gate checks `state.hasFocus`,
+    // re-checks `isFocusDestination` (redundant with our trigger but
+    // cheap), and refuses if the user's caret is on a real element
+    // outside the target card.
+    if (
+      !canProgrammaticallyFocus(cardId, store.getSnapshot(), {
+        targetCardHostEl: cardRoot,
+      })
+    ) {
+      return;
+    }
+
+    const bag = store.getCardState(cardId);
+    if (!bag) return;
+
+    if (bag.content !== undefined) {
+      // Content-owning card: delegate to the factory's activation hook.
+      // No-op until a factory registers `onCardActivated` (Step 24 for
+      // EM cards). The wrapper installed by `useCardPersistence` is
+      // stable; if the caller didn't opt in it silently returns.
+      persistenceCallbacksRef.current?.onCardActivated?.();
+      return;
+    }
+
+    // DOM-authority card: re-apply focus + DOM selection directly.
+    if (!cardRoot) return;
+    if (bag.focus && bag.focus.kind !== "none") {
+      applyFocusSnapshot(cardRoot, bag.focus);
+    }
+    if (bag.domSelection) {
+      selectionGuard.restoreCardDomSelection(
+        cardId,
+        bag.domSelection,
+        cardRoot,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, store, isFocusDestinationNow]);
 
   // Framework-axes assembler. Rewritten every render so closures read
   // the latest `hostContentEl` / `hostStackId` / `cardId` without stale
