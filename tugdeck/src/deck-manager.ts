@@ -80,6 +80,7 @@ import {
   CardStateOrchestrator,
   type CardAssembler,
 } from "./card-state-orchestrator";
+import { deckTrace, type SaveCallbackSource } from "./deck-trace";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -196,7 +197,15 @@ export class DeckManager implements IDeckManagerStore {
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
       if (this.stateFlushed) return;
-      this.saveCallbacks.forEach((cb) => cb());
+      // Route each save through `invokeSaveCallback` (not a direct
+      // `forEach((cb) => cb())`) so the deck-trace picks up a
+      // `save-callback` event with `source: "visibilitychange"` per
+      // List [#l01-recording-sites]. Snapshot the keys first so a
+      // callback that unregisters another card mid-iteration does
+      // not confuse the Map iterator.
+      for (const cardId of Array.from(this.saveCallbacks.keys())) {
+        this.invokeSaveCallback(cardId, "visibilitychange");
+      }
       this.flushDirtyCardStates();
     }
   };
@@ -212,7 +221,12 @@ export class DeckManager implements IDeckManagerStore {
       this.saveTimer = null;
       this.saveLayout();
     }
-    this.saveCallbacks.forEach((cb) => cb());
+    // Route through `invokeSaveCallback` so the deck-trace sees a
+    // `save-callback` event tagged `"beforeunload"` per
+    // [#l01-recording-sites].
+    for (const cardId of Array.from(this.saveCallbacks.keys())) {
+      this.invokeSaveCallback(cardId, "beforeunload");
+    }
     this.flushDirtyCardStates({ sync: true });
   };
 
@@ -294,8 +308,10 @@ export class DeckManager implements IDeckManagerStore {
   // ---- CardLifecycle pass-throughs ----
 
   public activateCard = (cardId: string): void => {
-    this._flipFirstResponder(cardId, () =>
-      this._commitStandardFirstResponderFlip(cardId),
+    this._flipFirstResponder(
+      cardId,
+      () => this._commitStandardFirstResponderFlip(cardId),
+      "activateCard",
     );
     // Same-bit refresh: re-clicking the already-active card re-syncs
     // the responder chain against any drift. The flip helper skips
@@ -594,20 +610,24 @@ export class DeckManager implements IDeckManagerStore {
     // correct deactivate pair even though the commit puts
     // `activePaneId = paneId` (which would make a post-commit
     // state-derived read return `firstCardId`).
-    this._flipFirstResponder(firstCardId, () => {
-      this.deckState = {
-        ...this.deckState,
-        cards: [...this.deckState.cards, ...seededCards],
-        panes: [...this.deckState.panes, win],
-        activePaneId: paneId,
-      };
-      this.notify();
-      this.scheduleSave();
-      for (const c of seededCards) {
-        this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
-      }
-      putFocusedCardId(firstCardId);
-    });
+    this._flipFirstResponder(
+      firstCardId,
+      () => {
+        this.deckState = {
+          ...this.deckState,
+          cards: [...this.deckState.cards, ...seededCards],
+          panes: [...this.deckState.panes, win],
+          activePaneId: paneId,
+        };
+        this.notify();
+        this.scheduleSave();
+        for (const c of seededCards) {
+          this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
+        }
+        putFocusedCardId(firstCardId);
+      },
+      "addCard",
+    );
 
     return firstCardId;
   }
@@ -651,17 +671,21 @@ export class DeckManager implements IDeckManagerStore {
           : null;
       const newFR = newTopStack?.activeCardId ?? null;
       const newActivePaneId = newTopStack?.id;
-      this._flipFirstResponder(newFR, () => {
-        this.deckState = {
-          ...this.deckState,
-          ...(newActivePaneId !== undefined
-            ? { activePaneId: newActivePaneId }
-            : { activePaneId: undefined }),
-        };
-        this.notify();
-        this.scheduleSave();
-        if (newFR !== null) putFocusedCardId(newFR);
-      });
+      this._flipFirstResponder(
+        newFR,
+        () => {
+          this.deckState = {
+            ...this.deckState,
+            ...(newActivePaneId !== undefined
+              ? { activePaneId: newActivePaneId }
+              : { activePaneId: undefined }),
+          };
+          this.notify();
+          this.scheduleSave();
+          if (newFR !== null) putFocusedCardId(newFR);
+        },
+        "_closePane",
+      );
     }
 
     // Phase 2: flush each card's save callback then fire destruction.
@@ -721,10 +745,22 @@ export class DeckManager implements IDeckManagerStore {
   private _flipFirstResponder(
     newFR: string | null,
     commit: () => void,
+    trigger: string,
   ): void {
     const oldFR = this.getFirstResponderCardId();
     if (oldFR === newFR) {
       commit();
+      // Same-bit refresh still counts as a flip trigger for trace
+      // purposes — the composite bit's stored value does not change,
+      // but callers route through this helper specifically because
+      // they produced an intent to flip. Recording here lets a trace
+      // reader see the trigger even when the bit collapsed.
+      deckTrace.record({
+        kind: "fr-flip",
+        from: oldFR,
+        to: newFR,
+        trigger,
+      });
       return;
     }
     if (oldFR !== null) this.cardLifecycle.notifyCardWillDeactivate(oldFR);
@@ -733,6 +769,15 @@ export class DeckManager implements IDeckManagerStore {
     if (newFR !== null) this.cardLifecycle.setResponderChainKey(newFR);
     if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
     if (newFR !== null) this.cardLifecycle.notifyCardDidActivate(newFR);
+    // Record after the composite bit has changed — matches Spec
+    // [#s01-deck-trace-event]'s ordering ("fr-flip after the composite
+    // bit changes"). See list [#l01-recording-sites].
+    deckTrace.record({
+      kind: "fr-flip",
+      from: oldFR,
+      to: newFR,
+      trigger,
+    });
   }
 
   /**
@@ -1004,7 +1049,24 @@ export class DeckManager implements IDeckManagerStore {
     this.saveCallbacks.delete(id);
   }
 
-  invokeSaveCallback(id: string): void {
+  /**
+   * Invoke the registered save callback for `id`, if any, recording a
+   * `save-callback` deck-trace event tagged with the caller-supplied
+   * `source`. `source` is optional for backward compatibility with
+   * mock stores in the test suite (they implement the interface with
+   * the one-arg shape and still type-check); live callers always pass
+   * an explicit tag so the trace preserves the triggering path.
+   *
+   * See Spec [#s01-deck-trace-event] for the `save-callback` event
+   * shape and List [#l01-recording-sites] for the per-source wiring.
+   */
+  invokeSaveCallback(id: string, source?: SaveCallbackSource): void {
+    const tag: SaveCallbackSource = source ?? "manual";
+    deckTrace.record({
+      kind: "save-callback",
+      cardId: id,
+      source: tag,
+    });
     this.saveCallbacks.get(id)?.();
   }
 
@@ -1149,7 +1211,7 @@ export class DeckManager implements IDeckManagerStore {
    */
   private flushSaveCallbackBeforeDestruction(cardId: string): void {
     try {
-      this.invokeSaveCallback(cardId);
+      this.invokeSaveCallback(cardId, "close-handoff");
     } catch (err) {
       if (isDevEnv()) {
         console.warn(
@@ -1162,13 +1224,19 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   saveAndFlushSync(): void {
-    this.saveCallbacks.forEach((cb) => cb());
+    // Route through `invokeSaveCallback` so the trace records one
+    // `save-callback` event per card with `source: "manual"`.
+    for (const cardId of Array.from(this.saveCallbacks.keys())) {
+      this.invokeSaveCallback(cardId, "manual");
+    }
     this.flushDirtyCardStates({ sync: true });
     this.stateFlushed = true;
   }
 
   saveAndFlush(): void {
-    this.saveCallbacks.forEach((cb) => cb());
+    for (const cardId of Array.from(this.saveCallbacks.keys())) {
+      this.invokeSaveCallback(cardId, "manual");
+    }
     this.flushDirtyCardStates();
   }
 
@@ -1178,7 +1246,9 @@ export class DeckManager implements IDeckManagerStore {
       this.saveTimer = null;
     }
     await this.saveLayout();
-    this.saveCallbacks.forEach((cb) => cb());
+    for (const cardId of Array.from(this.saveCallbacks.keys())) {
+      this.invokeSaveCallback(cardId, "manual");
+    }
     await this.flushDirtyCardStates();
     this.reloadPending = true;
   }
@@ -1232,17 +1302,21 @@ export class DeckManager implements IDeckManagerStore {
     // Single-commit flip. Construction fires inside commit so it lands
     // between the will and did phases for transition 5a, and right after
     // the commit-notify for transition 5b (inactive-stack, same-bit).
-    this._flipFirstResponder(newFR, () => {
-      this.deckState = {
-        ...this.deckState,
-        cards: [...this.deckState.cards, newCard],
-        panes: this.deckState.panes.map((s) => (s.id === paneId ? updatedStack : s)),
-      };
-      this.notify();
-      this.scheduleSave();
-      this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
-      if (isActiveStack) putFocusedCardId(cardId);
-    });
+    this._flipFirstResponder(
+      newFR,
+      () => {
+        this.deckState = {
+          ...this.deckState,
+          cards: [...this.deckState.cards, newCard],
+          panes: this.deckState.panes.map((s) => (s.id === paneId ? updatedStack : s)),
+        };
+        this.notify();
+        this.scheduleSave();
+        this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
+        if (isActiveStack) putFocusedCardId(cardId);
+      },
+      "_addCardToPane",
+    );
 
     return cardId;
   }
@@ -1286,21 +1360,25 @@ export class DeckManager implements IDeckManagerStore {
     // leaves `cardId` in `win.cardIds` — destruction in phase 2
     // removes it. Two commits, two notifies.
     if (wasRemovingFR) {
-      this._flipFirstResponder(newActiveCardId, () => {
-        const flippedStack: TugPaneState = {
-          ...win,
-          activeCardId: newActiveCardId,
-        };
-        this.deckState = {
-          ...this.deckState,
-          panes: this.deckState.panes.map((s) =>
-            s.id === paneId ? flippedStack : s,
-          ),
-        };
-        this.notify();
-        this.scheduleSave();
-        putFocusedCardId(newActiveCardId);
-      });
+      this._flipFirstResponder(
+        newActiveCardId,
+        () => {
+          const flippedStack: TugPaneState = {
+            ...win,
+            activeCardId: newActiveCardId,
+          };
+          this.deckState = {
+            ...this.deckState,
+            panes: this.deckState.panes.map((s) =>
+              s.id === paneId ? flippedStack : s,
+            ),
+          };
+          this.notify();
+          this.scheduleSave();
+          putFocusedCardId(newActiveCardId);
+        },
+        "_removeCard",
+      );
     }
 
     // Phase 2: save, then destruction + removal. Save runs first so
@@ -1351,8 +1429,10 @@ export class DeckManager implements IDeckManagerStore {
       // Reached only when win.activeCardId !== cardId (guarded above),
       // so the composite bit is guaranteed to change — the helper's
       // same-bit branch is unreachable from here.
-      this._flipFirstResponder(cardId, () =>
-        this._commitStandardFirstResponderFlip(cardId),
+      this._flipFirstResponder(
+        cardId,
+        () => this._commitStandardFirstResponderFlip(cardId),
+        "_setActiveCardInPane",
       );
       return;
     }
@@ -1421,8 +1501,10 @@ export class DeckManager implements IDeckManagerStore {
     // stack, not detaching).
     if (win.cardIds.length === 1) return null;
 
-    // Fresh-bag invariant: see method docstring.
-    this.invokeSaveCallback(cardId);
+    // Fresh-bag invariant: see method docstring. The `"manual"` tag
+    // on the save-callback trace event distinguishes this pre-move
+    // flush from the close-handoff flush that destruction paths fire.
+    this.invokeSaveCallback(cardId, "manual");
 
     const card = this.deckState.cards.find((c) => c.id === cardId);
     if (!card) return null;
@@ -1466,21 +1548,25 @@ export class DeckManager implements IDeckManagerStore {
     // was not FR → full flip) are distinguished correctly. Card
     // identity is preserved across the detach, so no construction
     // event fires.
-    this._flipFirstResponder(cardId, () => {
-      this.deckState = {
-        ...this.deckState,
-        panes: [
-          ...this.deckState.panes.map((s) =>
-            s.id === paneId ? updatedSourceStack : s,
-          ),
-          newStack,
-        ],
-        activePaneId: newPaneId,
-      };
-      this.notify();
-      this.scheduleSave();
-      putFocusedCardId(cardId);
-    });
+    this._flipFirstResponder(
+      cardId,
+      () => {
+        this.deckState = {
+          ...this.deckState,
+          panes: [
+            ...this.deckState.panes.map((s) =>
+              s.id === paneId ? updatedSourceStack : s,
+            ),
+            newStack,
+          ],
+          activePaneId: newPaneId,
+        };
+        this.notify();
+        this.scheduleSave();
+        putFocusedCardId(cardId);
+      },
+      "_detachCard",
+    );
 
     return newPaneId;
   }
@@ -1515,8 +1601,9 @@ export class DeckManager implements IDeckManagerStore {
     const targetStack = this.deckState.panes.find((s) => s.id === targetPaneId);
     if (!targetStack) return;
 
-    // Fresh-bag invariant: see method docstring.
-    this.invokeSaveCallback(cardId);
+    // Fresh-bag invariant: see method docstring. `"manual"` tag per
+    // the pre-move flush convention shared with `_detachCard`.
+    this.invokeSaveCallback(cardId, "manual");
 
     const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
     const sourceIsActive = this.deckState.activePaneId === sourcePaneId;
@@ -1556,49 +1643,53 @@ export class DeckManager implements IDeckManagerStore {
 
     // Transition 7 / 7b: flip composite bit iff it changes. Card
     // identity is preserved across the move, so no destruction event.
-    this._flipFirstResponder(newFR, () => {
-      let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
-      if (spliced.activeCardId === null) {
-        intermediateStacks = intermediateStacks.filter(
-          (s) => s.id !== sourcePaneId,
+    this._flipFirstResponder(
+      newFR,
+      () => {
+        let intermediateStacks: readonly TugPaneState[] = this.deckState.panes;
+        if (spliced.activeCardId === null) {
+          intermediateStacks = intermediateStacks.filter(
+            (s) => s.id !== sourcePaneId,
+          );
+        } else {
+          const updatedSourceStack: TugPaneState = {
+            ...sourceStack,
+            cardIds: spliced.cardIds,
+            activeCardId: spliced.activeCardId,
+          };
+          intermediateStacks = intermediateStacks.map((s) =>
+            s.id === sourcePaneId ? updatedSourceStack : s,
+          );
+        }
+
+        const clampedIndex = Math.max(
+          0,
+          Math.min(insertAtIndex, targetStack.cardIds.length),
         );
-      } else {
-        const updatedSourceStack: TugPaneState = {
-          ...sourceStack,
-          cardIds: spliced.cardIds,
-          activeCardId: spliced.activeCardId,
+        const newTargetCardIds = [...targetStack.cardIds];
+        newTargetCardIds.splice(clampedIndex, 0, cardId);
+        const updatedTargetStack: TugPaneState = {
+          ...targetStack,
+          cardIds: newTargetCardIds,
+          activeCardId: cardId,
         };
-        intermediateStacks = intermediateStacks.map((s) =>
-          s.id === sourcePaneId ? updatedSourceStack : s,
+        const finalStacks = intermediateStacks.map((s) =>
+          s.id === targetPaneId ? updatedTargetStack : s,
         );
-      }
 
-      const clampedIndex = Math.max(
-        0,
-        Math.min(insertAtIndex, targetStack.cardIds.length),
-      );
-      const newTargetCardIds = [...targetStack.cardIds];
-      newTargetCardIds.splice(clampedIndex, 0, cardId);
-      const updatedTargetStack: TugPaneState = {
-        ...targetStack,
-        cardIds: newTargetCardIds,
-        activeCardId: cardId,
-      };
-      const finalStacks = intermediateStacks.map((s) =>
-        s.id === targetPaneId ? updatedTargetStack : s,
-      );
-
-      this.deckState = {
-        ...this.deckState,
-        panes: finalStacks,
-        ...(postMoveActivePaneId !== undefined
-          ? { activePaneId: postMoveActivePaneId }
-          : { activePaneId: undefined }),
-      };
-      this.notify();
-      this.scheduleSave();
-      if (newFR !== null) putFocusedCardId(newFR);
-    });
+        this.deckState = {
+          ...this.deckState,
+          panes: finalStacks,
+          ...(postMoveActivePaneId !== undefined
+            ? { activePaneId: postMoveActivePaneId }
+            : { activePaneId: undefined }),
+        };
+        this.notify();
+        this.scheduleSave();
+        if (newFR !== null) putFocusedCardId(newFR);
+      },
+      "_moveCardToPane",
+    );
   }
 
   // ---- Collapse management ----

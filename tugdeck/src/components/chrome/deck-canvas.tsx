@@ -63,6 +63,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
+import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getSizePolicy } from "@/card-registry";
 import type { TugPaneState } from "@/layout-tree";
@@ -357,6 +358,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
        * inside containerRef win via innermost-first DOM walk.
        */}
       <div ref={setDeckRef} style={{ position: "absolute", inset: 0 }}>
+      {/*
+        * DeckCommitBeacon: zero-output React commit observer. Mounted
+        * once at the deck root so every React commit of the deck tree
+        * emits a `commit-tick` event into the deck trace. See
+        * deck-commit-beacon.tsx for the rationale.
+        */}
+      <DeckCommitBeacon />
       {/*
         * containerRef wrapper: positioning context for card frames, snap guides,
         * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).

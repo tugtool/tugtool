@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-23T22:02:25Z
+---
+
+## step-2: Added DeckCommitBeacon emitting commit-tick at every React commit; installed document-level focusin/focusout and destination-flip observers from deck-trace.enable(); routed deck-manager _flipFirstResponder, invokeSaveCallback (new source param), and card-host mount/unmount/A3-fire/apply-focus-snapshot through deckTrace.record. Tug.app-dependent manual smoke checkpoint deferred to step-3.
+
+**Files changed:**
+- in-app-test-harness-7d9c56e-1
+
+---
+
+---
 step: step-1
 date: 2025-04-23T21:47:01Z
 ---

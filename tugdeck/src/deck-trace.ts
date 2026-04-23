@@ -74,6 +74,8 @@
  */
 
 import type { ActivationTarget } from "./focus-transfer";
+import { getDeckStore } from "./lib/deck-store-registry";
+import { isFocusDestination } from "./deck-store-selectors";
 
 // ---------------------------------------------------------------------------
 // Event shape (Spec [#s01-deck-trace-event])
@@ -400,7 +402,14 @@ export const deckTrace: DeckTrace = {
     }
   },
   enable(flag) {
-    enabled = flag === true;
+    const next = flag === true;
+    if (next === enabled) return;
+    enabled = next;
+    if (next) {
+      installObservers();
+    } else {
+      uninstallObservers();
+    }
   },
   mark() {
     return seqCounter;
@@ -419,6 +428,145 @@ export const deckTrace: DeckTrace = {
     full = false;
   },
 };
+
+// ---------------------------------------------------------------------------
+// Observers — destination-flip + document-level focusin/focusout
+// ---------------------------------------------------------------------------
+//
+// The observers attach on `enable(true)` and detach on `enable(false)` so
+// traces reflect real user-driven transitions without the instrumentation
+// incurring cost when disabled. Both observers are idempotent and safe to
+// invoke repeatedly.
+//
+// **Destination-flip observer.** Subscribes to the deck store and, on
+// every notify, diffs `isFocusDestination(cardId)` per known card against
+// the previous reading. Flipped cards emit one `destination-flip` event
+// each. The per-card prior-state map is reset to the store's current
+// readings on install so the first post-install notify does not emit a
+// flood of spurious transitions.
+//
+// **Focusin / focusout observer.** Document-level capture-phase listeners
+// record external focus moves (including those WebKit drives back after
+// the deck's own focus() call), so a reader of `dumpTable()` can see
+// every time the browser committed a focus change — not just the ones
+// our own code authored.
+
+/**
+ * Module-scope state for the destination-flip observer. `null` when not
+ * installed; populated with the store-unsubscribe handle and the
+ * previous-readings map while installed.
+ */
+let destinationFlipDispose: (() => void) | null = null;
+
+/**
+ * Module-scope state for the focus-capture observer. `null` when not
+ * installed; populated with a disposer that removes both document-level
+ * listeners while installed.
+ */
+let focusObserverDispose: (() => void) | null = null;
+
+/**
+ * Build the per-card focus-destination readings from the current deck
+ * store snapshot. Used as the baseline on observer install so that the
+ * first post-install notify does not emit `destination-flip` events for
+ * every card (they've all been "flipped from unknown to their current
+ * value" in the eyes of a fresh diff map).
+ */
+function snapshotDestinations(): Map<string, boolean> {
+  const readings = new Map<string, boolean>();
+  const store = getDeckStore();
+  if (!store) return readings;
+  const state = store.getSnapshot();
+  for (const card of state.cards) {
+    readings.set(card.id, isFocusDestination(card.id, state));
+  }
+  return readings;
+}
+
+function installDestinationFlipObserver(): void {
+  if (destinationFlipDispose !== null) return;
+  const store = getDeckStore();
+  if (!store) return;
+  const prevReadings = snapshotDestinations();
+  const unsubscribe = store.subscribe(() => {
+    const state = store.getSnapshot();
+    // Include every card currently in the deck, plus any card we had
+    // been tracking that has since been removed (so a removed card's
+    // last true-reading flips to false exactly once).
+    const seen = new Set<string>();
+    for (const card of state.cards) {
+      seen.add(card.id);
+      const now = isFocusDestination(card.id, state);
+      const prev = prevReadings.get(card.id) ?? false;
+      if (prev !== now) {
+        deckTrace.record({
+          kind: "destination-flip",
+          cardId: card.id,
+          from: prev,
+          to: now,
+        });
+        prevReadings.set(card.id, now);
+      } else if (!prevReadings.has(card.id)) {
+        prevReadings.set(card.id, now);
+      }
+    }
+    for (const [cardId, prev] of prevReadings) {
+      if (seen.has(cardId)) continue;
+      if (prev) {
+        deckTrace.record({
+          kind: "destination-flip",
+          cardId,
+          from: true,
+          to: false,
+        });
+      }
+      prevReadings.delete(cardId);
+    }
+  });
+  destinationFlipDispose = () => {
+    unsubscribe();
+    prevReadings.clear();
+  };
+}
+
+function installFocusObserver(): void {
+  if (focusObserverDispose !== null) return;
+  if (typeof document === "undefined") return;
+  const handleFocusIn = (ev: FocusEvent): void => {
+    deckTrace.record({
+      kind: "focusin",
+      el: formatElement(ev.target ?? null),
+      relatedTarget:
+        ev.relatedTarget !== null ? formatElement(ev.relatedTarget) : null,
+    });
+  };
+  const handleFocusOut = (ev: FocusEvent): void => {
+    deckTrace.record({
+      kind: "focusout",
+      el: formatElement(ev.target ?? null),
+      relatedTarget:
+        ev.relatedTarget !== null ? formatElement(ev.relatedTarget) : null,
+    });
+  };
+  document.addEventListener("focusin", handleFocusIn, { capture: true });
+  document.addEventListener("focusout", handleFocusOut, { capture: true });
+  focusObserverDispose = () => {
+    document.removeEventListener("focusin", handleFocusIn, { capture: true });
+    document.removeEventListener("focusout", handleFocusOut, { capture: true });
+  };
+}
+
+function installObservers(): void {
+  installDestinationFlipObserver();
+  installFocusObserver();
+}
+
+function uninstallObservers(): void {
+  destinationFlipDispose?.();
+  destinationFlipDispose = null;
+  focusObserverDispose?.();
+  focusObserverDispose = null;
+}
 
 // ---------------------------------------------------------------------------
 // `window.__deckTrace` binding — DEV only
