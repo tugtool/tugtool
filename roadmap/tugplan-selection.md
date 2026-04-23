@@ -422,6 +422,34 @@ The immediate L23 win: when an engine restoreState runs at mount with content id
 
 ---
 
+#### [D13] Component persistence protocol: opt-in `persistKey`-keyed capture/restore (DECIDED) {#d13-component-persistence}
+
+**Decision:** Stateful `tugways` components gain a framework-level persistence protocol. Each opt-in component registers via `useComponentPersistence({ persistKey, captureState, restoreState })`. The framework orchestrates capture and restore at explicit moments (`captureCardState` / `restoreCardState`) and harvests all registered components into a new `bag.components: Record<persistKey, unknown>` axis. Card authors no longer hand-serialize individual control state; they opt components in and the framework does the rest.
+
+**Cites:** Component-roster L23 audit (surfaced the per-component gap — 5 of ~30 stateful components had any persistence path before this decision).
+
+**Upholds:** [L23] "preserve user-visible state" — turns a per-card author-diligence concern into a framework guarantee. Decouples card authors from component internals. Makes adding a new stateful component a self-contained act (the component registers itself; cards that use it pick up persistence for free).
+
+**Resolutions (all approved):**
+- **Names:** `captureState` / `restoreState` (component), `captureCardState` / `restoreCardState` (framework), `useComponentPersistence` (hook).
+- **Uniqueness:** enforced at card scope via dev-assertion; nesting supported via `<PersistenceScope prefix="…">` context that auto-prefixes child `persistKey`s.
+- **Closure staleness:** internal ref storage ([L03]-compliant). `useComponentPersistence` stores the passed closures in refs, re-syncs on every render, framework reads the refs at capture time.
+- **Capture / restore order:** parent-first for both. A parent's `captureState` cannot see child state directly; if it needs derived child state, it queries via an explicit observable or a shared store. Trade-off accepted for symmetry and simpler mental model.
+- **Restore timing:** `useLayoutEffect` keyed on mount with a `has-restored` ref-guard; fires after DOM refs exist, before user interaction.
+- **Partial restore:** unknown `persistKey`s are silently ignored with a dev-warn listing orphans. Symmetric to [D12].
+- **Quiescence:** `captureState` must return synchronously. No Promises. Components with pending async state document their own policy (return current-committed, not pending-target).
+- **Bag schema:** `bag.components` coexists with existing axes. Framework-synthesized axes (`formControls`, `regionScroll`, `focus`, `domSelection`, `markedText`) are populated by `CardHost` / `selectionGuard` / engine; `bag.components` is populated by the opt-in component harvest; `bag.content` remains the card's own content blob.
+- **Opt-in:** absence of `persistKey` prop means "not persisted." Backward-compatible with gallery / test uses of the same components.
+- **Relationship with `onCardActivated` ([A2]):** distinct responsibilities. `onCardActivated` is "re-focus on activation"; `captureState`/`restoreState` is "snapshot my interactive state." A component may implement both.
+- **Frequency:** `captureState` fires only at explicit orchestration moments (will-resign, will-hide, tab switch, beforeunload, `saveState` RPC, close-before-destroy). Never per-keystroke.
+
+**Implications:**
+- Current persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) port from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves.
+- `captureCardState` / `restoreCardState` become the **sole** explicit framework entry points for card-level snapshot/restore. All save triggers route through them; no trigger calls per-card `onSave` directly.
+- See architecture piece [A9] for the implementation sketch.
+
+---
+
 ### Open Questions {#open-questions}
 
 Every question has a concrete decision the user must make before the execution plan is written. Questions referenced from design decisions as `[Qnn]`.
@@ -1129,6 +1157,7 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **OS** — outer scroll (`hostContentEl.scrollLeft/Top`).
 - **IS** — inner region scroll (`data-tug-scroll-key` elements).
 - **MT** — marked text / IME composition buffer (new axis introduced by [M12] resolution).
+- **CS** — component state (new axis introduced by [D13]; opt-in per component via `persistKey`, captured into `bag.components`).
 
 ---
 
@@ -1353,6 +1382,76 @@ This section catalogs every known gap so follow-on steps can close them systemat
 
 ---
 
+_M24–M31 below surfaced from the component-roster L23 audit. They are gaps in **component-level** persistence — orthogonal to the transition-class gaps in M01–M23. All route through architecture piece [A9] (Component Persistence Protocol)._
+
+#### [M24] No component-level persistence protocol {#m24-component-protocol}
+
+- **Card types:** any card that embeds stateful components
+- **State axes:** CS (new)
+- **Trigger:** Card author includes a stateful component (e.g., `<TugAccordion>`, `<TugTabBar>`, `<TugSlider>`) and does not manually serialize its state into `bag.content`. User interactions are lost on reload / transition.
+- **Status:** ❌ systemic — ~25 of ~30 stateful components are in this class today.
+- **Mechanism:** `useCardPersistence` is card-scoped. There's no way for a leaf component to declare "I own state and want it persisted" without the containing card author's explicit cooperation. Every new stateful component is a potential L23 violation until every card author that uses it updates their `onSave`.
+- **Closing requires:** [A9] (Component Persistence Protocol) — foundational architectural work. See [D13] for the resolved design.
+
+#### [M25] Intrinsic internal state hidden from card authors {#m25-intrinsic-internal-state}
+
+- **Card types:** cards embedding composite components
+- **State axes:** CS
+- **Trigger:** Card author has no access to internal `useState` inside `tug-tab-bar.overflowTabs`, `tug-option-group.focusedValue`, `tug-sheet` detent state, `tug-popover.internalOpen`, `tug-alert.open`, `tug-context-menu.open`, `tug-popup-button` internal open, `tug-markdown-view.menuState`, `tug-prompt-input.menuState`, `tug-prompt-entry.route`, `tug-prompt-entry.toolsOpen`.
+- **Status:** ❌ broken by design before [D13] — card authors can't serialize what they can't see.
+- **Mechanism:** components encapsulate state as an implementation detail; the encapsulation hides it from the card's `onSave`.
+- **Closing requires:** per component, a decision between (a) this state is intentionally ephemeral (context-menu open, tooltip hover) — no opt-in; or (b) this state is user-visible — component implements [A9]'s `captureState`/`restoreState` for it. Audit + per-component fix under [A9d].
+
+#### [M26] Open-overlay persistence semantics undecided {#m26-overlay-policy}
+
+- **Card types:** cards with sheet / alert / popover / confirm-popover / menu surfaces
+- **State axes:** CS, FX, SR
+- **Trigger:** User opens an overlay (e.g., `tug-sheet` with a form inside), invests interaction, Cmd-Tabs away or switches tabs. On return, overlay is closed; in-flight state lost.
+- **Status:** ❌ broken for modal-like overlays; ⬛ accepted for transient chrome.
+- **Closing requires:** policy per overlay type. Proposal: (a) PERSIST — sheet, alert, confirm-popover, complex popover. Opt into [A9]; restore re-opens with state intact. (b) EPHEMERAL — tooltip, context-menu, simple transient popovers. No opt-in; re-open empty is user-acceptable. Tracked as [A9e]; decided overlay-by-overlay during implementation.
+
+#### [M27] Layout state: split-pane divider, accordion expansion {#m27-layout-state}
+
+- **Card types:** any card using `tug-split-pane` or `tug-accordion`
+- **State axes:** CS
+- **Trigger:** User drags a split-pane divider or expands an accordion section. Reload or app-relaunch resets to default layout.
+- **Status:** ❌ broken.
+- **Closing requires:** [A9] opt-in for both components. Open subquestion: is split-pane divider position truly card-scope, or pane-scope (pane-level layout meta)? If pane-scope: add to `paneState` in the deck store rather than a card's `bag.components`. If card-scope: use [A9]. Defer decision to the execution step that wires split-pane persistence; most likely pane-scope because the splitter often lives in pane chrome.
+
+#### [M28] Banner / bulletin dismiss persistence {#m28-banner-dismiss}
+
+- **Card types:** any context using `tug-banner`, `tug-pane-banner`, `tug-bulletin`
+- **State axes:** user-preference scope (not card/pane/app — user-wide)
+- **Trigger:** User dismisses a banner. On reload / app-relaunch, the banner should stay dismissed.
+- **Status:** ❌ broken — audit needed to confirm no dismiss-state exists today.
+- **Closing requires:** separate from [A9]'s card-scoped protocol. A new user-preferences store, keyed by banner ID, persisted in tugbank under `dev.tugtool.user.dismissals/{bannerId}`. Integrates with `tug-banner` / `tug-bulletin` via a new `useDismissalState(bannerId)` hook. Not strictly a "selection persistence" concern but surfaced during the component audit and belongs in the same plan for L23 completeness.
+
+#### [M29] Scroll-key audit across components {#m29-scroll-key-audit}
+
+- **Card types:** any card using internally-scrollable components
+- **State axes:** IS
+- **Trigger:** Any scrollable sub-region inside a component whose scroll position is user-visible and not captured by the outer-scroll (OS) or markdown-view scroll-key paths today.
+- **Status:** ❓ audit pending. Only `tug-markdown-view` carries `data-tug-scroll-key` today.
+- **Closing requires:** walk every stateful component for scrollable sub-regions (`tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-context-menu` / `tug-completion-menu` scroll). Where user-visible scroll applies, add `data-tug-scroll-key` to the scrolling element. IS-axis machinery (already shipped in Step 9) handles capture/restore.
+
+#### [M30] Virtual-focus / focus-within for composite components {#m30-virtual-focus}
+
+- **Card types:** cards with composite components that manage a "virtual focus" (keyboard-navigation ring on a non-`activeElement` child)
+- **State axes:** CS (not FX)
+- **Trigger:** `tug-radio-group`, `tug-option-group`, `tug-choice-group`, `tug-tab-bar` — real `activeElement` is the wrapper; the focus ring is on an internal item tracked in component state. On transition, `bag.focus` captures the wrapper but loses the ring position.
+- **Status:** ❌ broken.
+- **Closing requires:** each such component opts into [A9] and captures its internal focus index via `captureState`. Restore reapplies the ring. No extension to the `focus` axis needed; this is component state.
+
+#### [M31] `tug-prompt-entry` internal UI state (`route`, `toolsOpen`) {#m31-prompt-entry-ui-state}
+
+- **Card types:** gallery-prompt-entry, tide-card (if it uses prompt-entry)
+- **State axes:** CS
+- **Trigger:** User navigates within a prompt-entry to a non-default route or opens the tools panel; transition resets both to defaults.
+- **Status:** ❌ broken.
+- **Closing requires:** `tug-prompt-entry` opts into [A9] with persistKey and serializes `{ route, toolsOpen }` via `captureState`. Distinct from the engine's content serialization (which continues to live in `bag.content`).
+
+---
+
 #### Resolved design decisions
 
 All M-series open questions are resolved. Decisions are captured here and drive the architecture pieces in the next section.
@@ -1528,6 +1627,133 @@ Every refocus helper — [A3]'s activation effect, [A4]'s app-lifecycle pathway,
 
 **Closes (indirectly):** makes [A3], [A4], [A6] safe.
 
+##### [A9] Component Persistence Protocol {#a9-component-persistence-protocol}
+
+Per [D13] (approved). The foundational architectural piece that closes the entire ⚠️ class surfaced by the component-roster L23 audit ([M24]–[M31]). Framework-owned; components opt in.
+
+Framing: **a weekend's work for stable foundations instead of months-of-work debugging ad-hoc persistence for every new stateful component.**
+
+**A9a. `useComponentPersistence` hook (registration).** Hook signature:
+
+```ts
+function useComponentPersistence<T>(opts: {
+  persistKey: string;
+  captureState: () => T;         // synchronous; returns serializable
+  restoreState: (saved: T) => void;
+}): void;
+```
+
+Internals (per [Q2b] ref-based storage, [L03] compliant):
+
+```ts
+function useComponentPersistence<T>({ persistKey, captureState, restoreState }) {
+  const captureRef = useRef(captureState);
+  const restoreRef = useRef(restoreState);
+  // Sync refs on every render — closure always sees latest React state.
+  captureRef.current = captureState;
+  restoreRef.current = restoreState;
+
+  const registry = useComponentPersistenceRegistry();  // from nearest card context
+  const scopedKey = usePersistenceScopePrefix() + persistKey;
+
+  useLayoutEffect(() => {
+    registry.register(scopedKey, captureRef, restoreRef);
+    return () => registry.unregister(scopedKey);
+  }, [scopedKey, registry]);
+}
+```
+
+**A9b. `<PersistenceScope prefix>` context (nesting).** Wraps a subtree so nested components' `persistKey`s auto-prefix. Enables composite components to embed other opt-in components without the outer component knowing inner `persistKey`s. Collision assertion (at card scope, dev-only):
+
+```ts
+registry.register(scopedKey, ...) {
+  if (this.entries.has(scopedKey)) {
+    if (isDevEnv()) {
+      throw new Error(`[A9] duplicate persistKey within card scope: "${scopedKey}"`);
+    }
+  }
+  this.entries.set(scopedKey, ...);
+}
+```
+
+**A9c. Framework orchestration — `captureCardState` / `restoreCardState`.** Explicit entry points on the card framework. **Every save trigger routes through these; no trigger calls per-card `onSave` directly.**
+
+```ts
+function captureCardState(cardId: string): CardStateBag {
+  const card = cards.get(cardId);
+  const registry = componentRegistries.get(cardId);
+  return {
+    content:      card.callbacks.captureContent?.(),     // was onSave
+    components:   harvestComponents(registry),            // parent-first walk
+    formControls: captureFormControls(cardId),            // CardHost
+    regionScroll: captureRegionScroll(cardId),            // CardHost
+    focus:        captureFocus(cardId),                   // selection-guard + CardHost
+    domSelection: selectionGuard.getRange(cardId),        // selection-guard
+    markedText:   captureMarkedText(cardId),              // engine / FC adapters
+  };
+}
+
+function restoreCardState(cardId: string, bag: CardStateBag): void {
+  const card = cards.get(cardId);
+  const registry = componentRegistries.get(cardId);
+  // Parent-first restore order (per Q3 resolution).
+  card.callbacks.restoreContent?.(bag.content);
+  restoreComponents(registry, bag.components ?? {});   // walks registry parent-first
+  // Framework-synthesized axes are applied by their respective owners
+  // (selection-guard, CardHost) at their own lifecycle points.
+}
+
+function harvestComponents(registry): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  // Parent-first ordering (per Q3 resolution).
+  for (const [key, entry] of registry.entriesInTreeOrder()) {
+    try {
+      out[key] = entry.captureRef.current();
+    } catch (e) {
+      if (isDevEnv()) console.warn(`[A9] captureState threw for "${key}":`, e);
+    }
+  }
+  return out;
+}
+
+function restoreComponents(registry, saved: Record<string, unknown>): void {
+  // Partial restore (per Q5 resolution): ignore orphans, warn in dev.
+  if (isDevEnv()) {
+    const registered = new Set(registry.keys());
+    const orphans = Object.keys(saved).filter((k) => !registered.has(k));
+    if (orphans.length) console.warn(`[A9] orphan persistKeys dropped:`, orphans);
+  }
+  for (const [key, entry] of registry.entriesInTreeOrder()) {
+    if (key in saved) {
+      try {
+        entry.restoreRef.current(saved[key]);
+      } catch (e) {
+        if (isDevEnv()) console.warn(`[A9] restoreState threw for "${key}":`, e);
+      }
+    }
+  }
+}
+```
+
+**A9d. Per-component port / opt-in plan.** The following components gain `persistKey` + `useComponentPersistence` (in priority order, grouped by category):
+
+- **Layout state:** `tug-accordion`, `tug-split-pane` (or pane-scope; see [M27]).
+- **Selection:** `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-popup-button`, `tug-tab-bar`.
+- **Numeric:** `tug-slider`, `tug-value-input`.
+- **Toggles:** `tug-checkbox`, `tug-switch`.
+- **Pickers:** `tug-hue-strip`, `tug-color-strip`.
+- **Overlays with user interaction (per [M26] policy):** `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover`.
+- **Engine-card chrome:** `tug-prompt-entry` (`route`, `toolsOpen`) — see [M31].
+- **Virtual focus within composites:** radio-group, option-group, choice-group, tab-bar — see [M30].
+
+Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) migrate from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves (for `bag.content`).
+
+**A9e. Overlay policy implementation.** Per [M26]: opt in (a) sheet, alert, confirm-popover, complex popover. Opt out (b) tooltip, context-menu, editor-context-menu, transient popovers. Captured state for (a) overlays: `{ open, anchorPath?, invokedAt?, ...per-surface-data }`.
+
+**A9f. Scroll-key audit.** Per [M29]: walk stateful components for internally-scrollable sub-regions; add `data-tug-scroll-key` where user-visible scroll applies. IS-axis machinery (Step 9) handles capture/restore. Scope: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-completion-menu`, `tug-context-menu` if scrollable, any custom scrollable chrome.
+
+**Closes:** [M24], [M25], [M27], [M29], [M30], [M31] directly; enables closing [M26] per-overlay.
+
 ##### Architecture coverage matrix {#architecture-coverage}
 
 | M-entry | Closed by | Residuals |
@@ -1548,28 +1774,39 @@ Every refocus helper — [A3]'s activation effect, [A4]'s app-lifecycle pathway,
 | [M14] | folded into [M13] test expansion | none |
 | [M15] | Step NN deletion | none |
 | [M16] | [A1] + [A3] | none |
-| [M17] | audit fix: `saveState` RPC → `saveAndFlush` | parity test must pass |
+| [M17] | audit fix: `saveState` RPC → `captureCardState` ([A9c]) | parity test must pass |
 | [M18] | save-gate inspects `restorePendingRef.current` | none |
 | [M19] | [A7] | none |
 | [M20] | local overlay fixes + [A3] as safety net | none |
 | [M21] | drag-abort routes through activation | none |
 | [M22] | integration tests assert caret visibility | none |
 | [M23] | scope to single-card; paint doesn't crash cross-card | cross-card selections remain one-owner |
+| [M24] | [A9a] + [A9b] + [A9c] | none |
+| [M25] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
+| [M26] | [A9e] | per-overlay decisions |
+| [M27] | [A9d] (or pane-state if splitter is pane-scope) | open sub-decision |
+| [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
+| [M29] | [A9f] | none |
+| [M30] | [A9d] (virtual-focus captured per component) | none |
+| [M31] | [A9d] (prompt-entry opts in) | none |
 
 ##### Phasing suggestion for M-series execution steps {#m-phasing}
 
-Not a commitment yet — just a sketch for discussion. The M-series steps should probably follow this dependency order:
+Not a commitment yet — just a sketch for discussion. Updated to place [A9] as the **foundational phase** because nearly every subsequent stateful-component fix depends on it.
 
-1. **M-phase 1 (infra, no behavior change):** implement [A1] selector, [A8] focus-theft gate, wire `onCardActivated` into `CardPersistenceCallbacks` ([A2]). Tests green, no behavior difference.
-2. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
-3. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
-4. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
-5. **M-phase 5 (teardown):** implement [A7]. Closes [M19].
-6. **M-phase 6 (IME):** implement [A6]. Platform research → decide between browser API / native IPC / text-fallback. Closes [M12] to platform-possible extent.
-7. **M-phase 7 (audit + verify):** [M17] RPC audit, [M18] restore-pending gate, [M20] overlay audit, [M21] drag-abort verify, [M22] caret-visibility tests, [M23] cross-card verify.
-8. **M-phase 8 (cleanup):** [M13] / [M14] integration test expansion, then Step NN ([M15] deletion + docs).
+1. **M-phase 0 (foundation):** implement [A9] — `useComponentPersistence`, `PersistenceScope`, the component registry, and the framework orchestration entry points `captureCardState` / `restoreCardState`. Migrate current persistence-aware components to the new protocol (port without changing behavior). All existing tests must continue to pass. No user-visible behavior change at the end of this phase; the foundation is simply in place.
+2. **M-phase 1 (transition infra, no behavior change):** implement [A1] selector, [A8] focus-theft gate, wire `onCardActivated` into `CardPersistenceCallbacks` ([A2]). Tests green, no behavior difference.
+3. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
+4. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
+5. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
+6. **M-phase 5 (teardown):** implement [A7]. Closes [M19].
+7. **M-phase 6 (IME):** implement [A6]. Platform research → decide between browser API / native IPC / text-fallback. Closes [M12] to platform-possible extent.
+8. **M-phase 7 (component opt-in):** walk [A9d] component priority list and port each. Closes [M25], [M27], [M30], [M31]. Overlay policy decisions ([A9e], [M26]) made during this phase. Scroll-key audit ([A9f], [M29]) folded in.
+9. **M-phase 8 (banner / bulletin dismiss):** implement the user-preferences store for [M28]. Orthogonal to [A9] (not card-scoped).
+10. **M-phase 9 (audit + verify):** [M17] RPC audit (now routed through `captureCardState`), [M18] restore-pending gate, [M20] overlay audit, [M21] drag-abort verify, [M22] caret-visibility tests, [M23] cross-card verify.
+11. **M-phase 10 (cleanup):** [M13] / [M14] integration test expansion, then Step NN ([M15] deletion + docs).
 
-Each M-phase corresponds to 1–3 execution steps to be authored. The phasing gates "wait on decisions" away from "wait on implementation" so blockers surface early.
+Each M-phase corresponds to 1–3 execution steps to be authored. The phasing gates "wait on decisions" away from "wait on implementation" so blockers surface early. M-phase 0 ([A9] foundation) is authored first so all subsequent phases can assume the protocol is in place.
 
 ---
 
