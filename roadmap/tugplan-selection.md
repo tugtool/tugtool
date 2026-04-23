@@ -1069,9 +1069,11 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 
 ---
 
-#### Step 16: Documentation & final cleanup {#step-16}
+#### Step NN: Documentation & final cleanup {#step-nn}
 
-**Depends on:** #step-15
+**Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the M-series steps are authored.
+
+**Depends on:** all preceding steps, including the M-series closures.
 
 **Commit:** `docs(selection): document two-paint model and final cleanup`
 
@@ -1099,11 +1101,483 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - [ ] `bun x tsc --noEmit`, `bun test` green.
 - [ ] All D-decisions referenced by at least one step via the validator.
 
+### Missing cases inventory {#missing-cases}
+
+Post-implementation analysis of Steps 1–15 surfaced a class of transitions and card-type interactions the original plan did not cover. The plan did cover cold-boot reload and cross-pane moves well, but left **in-session activation transitions** (tab switch, pane activation, app resign / become-active, app hide / unhide) and **content-owning card focus reactivation** without a documented owner or trigger.
+
+This section catalogs every known gap so follow-on steps can close them systematically instead of chasing bug reports.
+
+#### Status legend
+
+- **❌ broken** — user-observable behavior reproducibly wrong.
+- **⚠️ partial** — works for some card types / triggers but not all.
+- **❓ untested** — likely works, but no verification exists; a regression surface.
+- **🔧 missing infra** — required hook / mechanism is absent from the architecture.
+
+#### Card types
+
+- **FC** — form-control cards (`TugInput`, `TugTextarea`) — DOM-authority; state lives on the native input.
+- **EM** — engine-managed contentEditable cards (`tide-card`, `gallery-prompt-input`, `gallery-prompt-entry`) — `TugTextEngine` owns text, atoms, selection, focus; state serialized via `bag.content`.
+- **MV** — markdown-view cards (`tug-markdown-view`) — copy-only selection; virtualized internal scroll.
+- **ST** — stateless cards (`hello`, gallery demos without persistKey) — no state to preserve.
+
+#### State axes
+
+- **TV** — text value / content payload.
+- **SR** — selection range (flat offsets for FC, DOM `Range` for EM, native `Selection` for MV).
+- **FX** — element focus (`document.activeElement`).
+- **OS** — outer scroll (`hostContentEl.scrollLeft/Top`).
+- **IS** — inner region scroll (`data-tug-scroll-key` elements).
+- **MT** — marked text / IME composition buffer (new axis introduced by [M12] resolution).
+
+---
+
+#### [M01] Intra-pane tab switch: form-control card loses focus on return {#m01-tab-switch-fc}
+
+- **Card types:** FC
+- **State axes:** FX, SR (via paint dependency)
+- **Trigger:** User switches from an FC card (via tab bar click or drag) to another tab in the same pane, then returns to the original.
+- **Status:** ❌ broken
+- **Evidence:** User-reported; `display: none` on the inactive tab unfocuses the input; on return nothing re-focuses.
+- **Mechanism:** `CardHost` wraps each card in `<div style={{ display: isActive ? "contents" : "none" }}>`. Browsers move focus off any element inside a `display: none` subtree. Neither the primary mount effect (deps `[cardId, hostStackId, hostContentEl]`) nor the cross-pane refocus effect (deps `[hostStackId]`) fires on `isActive` transitions. The input's internal `selectionStart/End` persists on the node, but the browser paints the highlight only when the input is focused.
+- **Closing requires:** a third `CardHost` `useLayoutEffect` keyed on `[isActive]` with a has-been-active ref-guard that skips the initial activation; on subsequent `false → true` transitions, re-apply `bag.focus` for FC (and `dom`) kinds only.
+
+#### [M02] Intra-pane tab switch: engine-managed card loses focus and caret on return {#m02-tab-switch-em}
+
+- **Card types:** EM
+- **State axes:** FX, SR paint
+- **Trigger:** Same as M01 but for EM cards (tide-card, gallery-prompt-input).
+- **Status:** ❌ broken
+- **Evidence:** Hypothesized from the same mechanism as M01. Needs direct user repro to confirm symptoms.
+- **Mechanism:** `display: none` unfocuses the engine's contentEditable root. The engine's own selection lives on `window.getSelection()` and may be cleared by WebKit when the anchoring element is hidden. `selectionGuard.cardRanges` retains its Range (guarded by `document.contains`), but native `::selection` doesn't paint without focus on the root, and no caret blinks.
+- **Closing requires:** a mechanism for content-owning cards to re-focus on reactivation. Options: (a) new `onCardActivated` callback in `CardPersistenceCallbacks` that the content factory implements (e.g., `engine.focus()`); (b) card-lifecycle subscription (`observeCardDidActivate`) inside the component. See [M08] for the infra decision.
+
+#### [M03] Pane activation change: card's `isActive` doesn't flip {#m03-pane-activation}
+
+- **Card types:** FC, EM
+- **State axes:** FX, SR paint
+- **Trigger:** User has two panes open with cards that had focus. Clicking in pane B to make it active doesn't toggle `isActive` on pane A's active card — it's still the active card of its pane. When the user clicks back on pane A's chrome (not the input), the input isn't re-focused.
+- **Status:** ❌ broken (hypothesized; needs repro)
+- **Mechanism:** The pane-activation path changes `activePaneId` in the deck store and flips composite-first-responder. `CardHost.isActive` only reflects "active within my own pane," not "my pane is the active pane." The [M01]/[M02] refocus trigger (`[isActive]` dep) misses this transition entirely.
+- **Closing requires:** a `CardHost` subscription to the deck store tracking `isActiveCardOfActivePane(store, cardId)` via `useSyncExternalStore` or direct `subscribe`; refocus on `false → true` transitions of that derived value. Overlaps with [M01] — a single mechanism can cover both if it tracks the "am I the focus destination right now?" predicate, not the narrower `isActive` prop.
+
+#### [M04] App resign → become-active: focus not restored to previously-focused element {#m04-app-resign-return}
+
+- **Card types:** FC, EM
+- **State axes:** FX
+- **Trigger:** User types in a card, Cmd-Tabs away to another app (app resigns), Cmd-Tabs back (app becomes active). The previously-focused input is no longer focused; for FC, its selection highlight is gone (paint requires focus).
+- **Status:** ❌ broken
+- **Evidence:** Code inspection: `windowHasFocus` flips via `selectionGuard.handleApplicationDid{Resign,Become}Active` (Step 5), which drives paint of `cardRanges` (EM case) via the custom highlight. No FX restore path exists. For FC cards, inputs don't participate in `cardRanges` and native paint requires focus — the selection is in `selectionStart/End` but invisible.
+- **Mechanism:** Step 13 wires `saveAndFlush` on will-resign (so `bag.focus` is correct), but no counterpart re-applies `bag.focus` on become-active.
+- **Closing requires:** on `applicationDidBecomeActive` / `applicationDidUnhide`, re-apply `bag.focus` for the active card of the active pane — same mechanism as [M01]/[M03]. Needs the [R07] active-card gate to avoid focus theft if the user has since clicked elsewhere.
+
+#### [M05] App hide → unhide: same as M04 {#m05-app-hide-unhide}
+
+- **Card types:** FC, EM
+- **State axes:** FX
+- **Trigger:** macOS Cmd-H (`applicationWillHide` / `applicationDidUnhide`).
+- **Status:** ❌ broken (same mechanism as M04)
+- **Closing requires:** Same fix as M04; the `onCardActivated` hook (or deck-store-subscribed focus restore) should fire on unhide too.
+
+#### [M06] Cross-pane move: focus not restored for content-owning cards {#m06-cross-pane-em}
+
+- **Card types:** EM
+- **State axes:** FX, SR paint
+- **Trigger:** User drags an engine-managed card from pane A to pane B (or detaches it into a new standalone pane). The pointerdown on pane chrome blurs the engine root; the drop reparents the DOM; the engine root never regains focus.
+- **Status:** ⚠️ partial
+- **Evidence:** Step 11's cross-pane-move refocus effect explicitly skips content-owning cards per the architectural gate landed in the tide-bug fix — CardHost doesn't call `applyFocusSnapshot` for them. The engine has no equivalent reactivation hook.
+- **Closing requires:** Same shared mechanism as [M02] ([M08]'s infra decision). Once engine-managed cards have an `onCardActivated` path, cross-pane-move refocus becomes an instance of it.
+
+#### [M07] Card detach: same focus gap as M06 {#m07-card-detach}
+
+- **Card types:** EM, FC
+- **State axes:** FX, SR paint
+- **Trigger:** User drags a card out of its pane into a new standalone pane (`DeckManager._detachCard`).
+- **Status:** ⚠️ partial — FC is covered by the existing cross-pane refocus effect (Step 11) via the detached card's new `hostStackId`; EM is broken for the same reason as M06.
+- **Closing requires:** closes automatically once M06 is closed.
+
+#### [M08] No `onCardActivated` hook for content-owning cards {#m08-on-card-activated}
+
+- **Card types:** EM (but the hook would be general)
+- **State axes:** infra
+- **Trigger:** N/A — this is an infrastructure gap that blocks M02, M04, M05, M06.
+- **Status:** 🔧 missing infra
+- **Mechanism:** `CardPersistenceCallbacks` has `onSave` / `onRestore` / `onContentReady` / `restorePendingRef`. There is no signal for "your card just became the focus destination; if you want to re-focus yourself, now is the time." The `card-lifecycle.ts` observer API does expose `observeCardDidActivate`, but content factories don't wire it for focus-restore purposes today.
+- **Closing requires:** a design decision between (a) adding a new optional callback `onCardActivated?(): void` to `CardPersistenceCallbacks` — content factory calls `engine.root.focus()` in it; or (b) having content factories subscribe to `observeCardDidActivate` themselves. Option (a) is more discoverable and keeps lifecycle-awareness contained to the persistence protocol; option (b) is leaner but spreads the knowledge. Pending decision.
+
+#### [M09] Card mounts in an inactive tab: engine's `setSelectedRange` focus fails silently {#m09-inactive-mount}
+
+- **Card types:** EM
+- **State axes:** FX, SR
+- **Trigger:** Reload with a multi-card pane where the engine-managed card is NOT the active tab. The card mounts with `display: none` on its wrapper. Engine's `setSelectedRange` calls `this.root.focus({preventScroll: true})`; since the root is in a `display: none` subtree, `.focus()` no-ops. The dev-warn we added in `tug-text-engine.ts` fires. The selection is set on an unfocused (and invisible) element.
+- **Status:** ❌ broken for this specific scenario (scoped)
+- **Evidence:** Follows directly from the dev-warn we installed — the warning text explicitly names this failure mode.
+- **Mechanism:** Our architectural gate (M-fix) keeps CardHost from stepping on the engine's selection. But for inactive-mount cards, the engine's own focus-first doesn't land. On user-activate (they click the tab), nothing re-focuses.
+- **Closing requires:** [M08]'s hook plus engine wiring to re-focus on `onCardActivated`. Same root cause cluster.
+
+#### [M10] Markdown-view copy selection is never persisted {#m10-markdown-selection}
+
+- **Card types:** MV
+- **State axes:** SR
+- **Trigger:** User selects text in a markdown-view card (for copy). Any transition (reload, tab switch, pane switch, resign) loses the selection.
+- **Status:** ❌ broken (by omission) — **must close per [L23]** ("preserve user-visible state"). Ephemerality is not a permitted exception; a copy-selection a user just made is user-visible state.
+- **Mechanism:** Markdown-view regions don't carry a `persistKey`, don't use `useCardPersistence`, and don't participate in `selectionGuard.cardRanges` (no `onSelectionChanged` publish). The selection exists in `window.getSelection()` but nothing captures it.
+- **Closing requires:** `tug-markdown-view` gains a `persistKey` and uses `useCardPersistence`. It subscribes to `document.selectionchange`, filters to selections whose `commonAncestorContainer` is within its root, and calls `selectionGuard.updateCardDomSelection(cardId, range)` (publish path identical to engine-managed cards). On save, its `onSave` writes `bag.domSelection`. On restore, the existing cold-boot restore in `CardHost` replays the range via `restoreCardDomSelection`. Two additions beyond the publish wiring: the card's restore must be idempotent against mid-restore DOM mutation (markdown re-render), and the `::highlight(inactive-selection)` paint already covers the visual side once the range is in `cardRanges`. See architecture piece [A5].
+
+#### [M11] Card close → reopen: no "reopen" path exists {#m11-card-close-reopen}
+
+- **Card types:** all
+- **State axes:** all
+- **Trigger:** User closes a card with unsaved edits (Step 14 flushes to the bag), then wants to reopen it.
+- **Status:** ✅ closed — not a feature.
+- **Decision:** Close-then-reopen is not a product feature and no support is needed. Step 14's flush-on-close continues to write the bag for robustness (protects against accidental close with in-flight edits recoverable via history), but no UI path to reopen will be built. This entry is informational only and needs no follow-on work.
+- **Closing requires:** No action. Retained in the inventory for traceability.
+
+#### [M12] IME composition mid-transition unresolved {#m12-ime-composition}
+
+- **Card types:** EM, FC
+- **State axes:** TV, SR, **MT (new: marked-text composition buffer)**
+- **Trigger:** User is mid-CJK-composition when an app-resign or tab-switch fires; save captures buffer offsets that may not map back after composition ends, and the in-flight composition buffer is lost entirely.
+- **Status:** ❌ broken — IME composition **must** be retained per [L23] / user direction (M-Q5 resolution).
+- **Evidence:** [R02] identified the risk; the plan's original mitigation (defer save until `compositionend`) loses the user's in-flight keystrokes on every qualifying transition. Not good enough.
+- **Closing requires:** a new persisted axis `bag.markedText` that serializes the composition buffer (the native "marked text"), composition anchor offset, and platform hints.
+  - **EM:** `TugTextEngine` surfaces composition state via `engine.getCompositionState()` (marked text string + offset). Save captures `bag.markedText` when `engine.isComposing`. Restore: if `bag.markedText` is non-null on mount/activation, the engine re-enters composition mode at the stored offset with the stored marked text (implementation detail: may require `Selection.setBaseAndExtent` + a programmatic `compositionstart/update` via the input method bridge; or a native-shell IPC if the browser path is insufficient).
+  - **FC:** input elements don't programmatically surface marked text. Save deferral (wait for `compositionend`) is the fallback for FC; on save-during-composition the save queue marks the card "pending composition end" and retries. A second fallback — pre-composition snapshot restore — covers the process-exit residual.
+  - **Platform research required:** confirm which of the composition re-entry mechanisms (Web API, native IME bridge via `tugapp`) is viable in the Tide shell. See architecture piece [A6].
+  - **Residual:** unclean process termination mid-composition is unrecoverable — accepted limitation.
+
+#### [M13] Integration test coverage for in-session transitions {#m13-integration-tests}
+
+- **Card types:** all
+- **State axes:** all
+- **Trigger:** N/A (test coverage gap)
+- **Status:** ❌ missing
+- **Mechanism:** Step 15 landed integration tests for cold-boot reload (FC and EM) and paint-bucket transitions (tab switch, app resign/activate, simultaneous-paint). **No integration tests exist for:**
+  - Tab switch within a pane → return (FC or EM).
+  - Pane activation change → return.
+  - App resign / become-active focus restore (beyond paint).
+  - Cross-pane move for EM cards.
+  - Card detach / merge.
+  - Inactive-at-mount card activated post-hoc.
+- **Closing requires:** extend `selection-persistence-integration.test.tsx` as each M-step lands. Each closing step should add its own integration test pinning the specific repro.
+
+#### [M14] Scroll persistence across in-session transitions: untested {#m14-scroll-untested}
+
+- **Card types:** all (MV particularly)
+- **State axes:** OS, IS
+- **Trigger:** Tab switch within pane, pane activation, app resign/activate.
+- **Status:** ❓ untested
+- **Mechanism:** `display: none` does not clear element `scrollLeft/Top` in most browsers. Outer scroll and region scrolls should persist. No direct user report of breakage, but no test either.
+- **Closing requires:** either fold into [M13]'s expanded integration test suite, or an explicit per-transition scroll-round-trip test in `card-host-region-scroll.test.ts` / `card-host-composition.test.tsx`.
+
+#### [M15] `saveSelection` / `restoreSelection` / `SavedSelection` legacy surface {#m15-legacy-api}
+
+- **Card types:** N/A
+- **State axes:** N/A (cleanup)
+- **Trigger:** Grep.
+- **Status:** ⚠️ pending (tracked by Step 15's grep contract)
+- **Mechanism:** Legacy API remains in `selection-guard.ts` for test compatibility. Step NN's documentation pass nominally removes them; this entry ensures the deletion doesn't slip.
+- **Closing requires:** Step NN performs the deletion; `selection-persistence-greps.test.ts` extends to also assert zero references (including tests) once the API is gone.
+
+#### [M16] Tab close of the active tab → focus handoff to the newly-active tab {#m16-tab-close-handoff}
+
+- **Card types:** FC, EM
+- **State axes:** FX, SR paint
+- **Trigger:** User closes the currently-active tab of a pane. The pane picks a new active card (typically the neighbor or most-recent). That new active card should receive focus + restore its selection paint.
+- **Status:** ❌ broken (hypothesized; same root cause as M01/M03 — no activation hook)
+- **Mechanism:** Closing a card routes through `_removeCard` → Step 14's flush path → React unmount. The pane's new `activeCardId` flips, causing `isActive` to flip `false → true` on the neighbor. Same missing `[isActive]`-triggered refocus as M01/M02. No current code refocuses the neighbor.
+- **Closing requires:** nothing new beyond [M01] / [M02] / [A3]'s shared activation effect — tab-close handoff is just another transition that flips `isFocusDestination`. Verify via integration test.
+
+#### [M17] `saveState` RPC from native does not capture focus or selection {#m17-savestate-rpc}
+
+- **Card types:** FC, EM, MV
+- **State axes:** FX, SR, MT
+- **Trigger:** Native shell (tugapp) calls into the web frontend via the `saveState` RPC to request a snapshot (e.g., on window-close or "save to crash recovery").
+- **Status:** ⚠️ partial — verify path, then fix gap.
+- **Evidence:** [D06] lists `saveState` RPC as a save trigger, but the save-site inventory (Table C) should be audited to confirm the handler invokes `deckManager.saveAndFlush()` (which captures all axes) rather than a narrower subset. If it only captures content and misses `bag.focus` / `bag.domSelection` / `bag.markedText`, the native-requested snapshot under-captures state compared to beforeunload.
+- **Closing requires:** audit the RPC handler; if it's scoped to content-only, expand to invoke the same `saveAndFlush` path the will-phase listeners use. Parity check should be the test: `saveState` RPC output === `beforeunload` save output (for a stable steady state).
+
+#### [M18] Async content-load race: save fires before `onContentReady` {#m18-async-content-ready-race}
+
+- **Card types:** EM (content factories that async-load content)
+- **State axes:** TV, SR, FX
+- **Trigger:** Card mounts, sets `restorePendingRef = true`, kicks off an async content load. During the window before `onContentReady` resolves, an app-resign, tab switch, or beforeunload fires.
+- **Status:** ❓ untested; likely subtle bug.
+- **Mechanism:** During the pending window, the engine's content is empty or stub. If `onSave` serializes the engine's current state, it captures the stub — overwriting the real persisted content the card was trying to restore. `restorePendingRef` exists to guard this, but it must gate `onSave`, not just `onContentReady`.
+- **Closing requires:** the card-host save gate must inspect `restorePendingRef.current`; if the restore is pending, either (a) skip the save (preserving the last-good bag in tugbank) or (b) defer the save until `onContentReady` resolves. Option (a) is simpler; option (b) needs a short timeout to avoid indefinite defer. Recommend (a) with a dev-warn if skipped during a beforeunload.
+
+#### [M19] Pane close / deck-level teardown: flush path coverage {#m19-pane-teardown-flush}
+
+- **Card types:** all
+- **State axes:** all
+- **Trigger:** User closes an entire pane (not just a card within it), or the deck itself is torn down (e.g., deck switch, workspace close).
+- **Status:** ❓ untested — verify coverage before declaring.
+- **Mechanism:** Step 14's flush-before-destruction is wired to `_removeCard` and `_closePane`. Audit whether `_closePane` iterates every card through `flushSaveCallbackBeforeDestruction` before removing them, or whether it bulk-clears without per-card flush. If higher-level deck-switch paths exist (e.g., `deckManager.reset()`), audit those too.
+- **Closing requires:** walk every code path that removes cards from `deckState.cards`; ensure each routes through the flush gate. Add an invariant/guard in `_removeCard` that makes bypassing the flush a dev-error. See architecture piece [A7].
+
+#### [M20] Modal overlay (command palette, context menu, drag ghost) dismiss → focus return {#m20-overlay-focus-return}
+
+- **Card types:** FC, EM
+- **State axes:** FX, SR paint
+- **Trigger:** User opens a modal/overlay (command palette, right-click context menu, drag-and-drop ghost). Focus moves to the overlay. On dismiss, focus should return to the previously-focused card.
+- **Status:** ❓ untested; likely partial.
+- **Mechanism:** Browsers' default behavior sometimes restores focus after `<dialog>` close, but custom overlays and synthetic overlays (div-based command palettes) typically need explicit focus-return. Tugdeck's current overlay surfaces (if any) may or may not implement this. Not directly a "persistence" problem, but it overlaps: the same `bag.focus` / activation path can serve as fallback if an overlay forgets to restore focus.
+- **Closing requires:** audit existing overlay code (gallery modals, context menus, command palettes) for explicit focus-return. The `isFocusDestination` predicate from [A1] serves as the fallback: on overlay dismiss, if `document.activeElement === document.body`, the activation effect reactivates the active card. This is a safety net, not a primary mechanism — overlays should still restore focus locally.
+
+#### [M21] Drag aborted (escape / invalid drop) → card state preservation {#m21-drag-aborted}
+
+- **Card types:** FC, EM
+- **State axes:** FX, SR paint
+- **Trigger:** User starts dragging a card, then presses Escape or drops on an invalid target. The card returns to its original pane; its state should be unchanged.
+- **Status:** ❓ untested.
+- **Mechanism:** If the drag preview mechanism reparents the DOM during drag (versus using a ghost element), aborting may not restore the DOM state cleanly. Even with a ghost, the pointerdown on the original card likely blurred the engine root; abort doesn't re-focus.
+- **Closing requires:** verify drag preview uses a ghost (not live DOM reparent). If live reparent: add a drag-abort path that routes through the activation mechanism to refocus. Integration test: drag card, press Escape, assert focus + selection paint unchanged.
+
+#### [M22] Engine caret visibility after refocus: paint vs. blink {#m22-caret-visibility}
+
+- **Card types:** EM
+- **State axes:** FX (visual only; no state impact)
+- **Trigger:** After any refocus path (cold-boot, tab switch, cross-pane move, app-activate), does the caret blink (user's visual confirmation of focus)?
+- **Status:** ❓ untested — needs visual verification.
+- **Mechanism:** `::selection` paint and caret blink are browser-native and tied to `document.activeElement` plus `document.hasFocus()`. If a refocus path sets DOM selection without landing `.focus()` cleanly, the caret may be missing even when `cardRanges` paints. The dev-warn in `setSelectedRange` catches the silent-focus-fail; a complementary test would confirm caret blinks by asserting `document.activeElement === engineRoot` + `document.hasFocus() === true` after each activation path.
+- **Closing requires:** extend integration tests to assert both conditions. No new mechanism; this is a verification entry.
+
+#### [M23] Selection spanning multiple cards {#m23-cross-card-selection}
+
+- **Card types:** any two of {FC, EM, MV}
+- **State axes:** SR
+- **Trigger:** User clicks in card A, shift-clicks or drag-selects into card B.
+- **Status:** ❓ expected-scoped-to-one; verify.
+- **Mechanism:** The browser's single-`Selection` model typically scopes a selection to one contentEditable root, but across non-editable cards (e.g., two MV cards side-by-side), a single selection may legitimately span both. `selectionGuard.updateCardDomSelection(cardId, range)` assumes one card owns one range; a cross-card selection would get mis-attributed (whoever publishes last wins).
+- **Closing requires:** verify WebKit/Chromium behavior across common multi-card layouts. If cross-card selections are possible: introduce `selectionGuard.updateMultiCardSelection(cardIds[], range)` or decide that the paint system treats cross-card ranges as multiple sub-ranges (one per card). Most likely outcome: document as "expected one card per selection" and ensure paint doesn't crash when the range's `commonAncestorContainer` isn't under any registered card root.
+
+---
+
+#### Resolved design decisions
+
+All M-series open questions are resolved. Decisions are captured here and drive the architecture pieces in the next section.
+
+- **[M-Q1] Shared-mechanism vs per-axis fix → CONFIRMED shared.** [M01] / [M03] / [M04] / [M05] / [M06] / [M07] / [M09] all reduce to "this card just became the focus destination; restore its focus and paint." A single `CardHost` subscription tracking the `isFocusDestination` predicate (derived from the deck store) closes them all. Per-axis fixes would duplicate the same ref-guard, the same focus-theft gate, and the same app-lifecycle wiring in five places. Shared is the directive. See architecture piece [A1] / [A3].
+
+- **[M-Q2] `onCardActivated` as callback or observation → option (a) CONFIRMED.** Add a new optional callback `onCardActivated?: () => void` to `CardPersistenceCallbacks`. Content-owning cards (EM) implement it — typical body: `engine.root.focus({ preventScroll: true })` followed by engine-published selection. FC cards need no callback; `CardHost` handles FC reactivation directly by re-applying `bag.focus` + `bag.domSelection`. Placement in `CardPersistenceCallbacks` keeps lifecycle-awareness colocated with the existing save/restore protocol rather than scattering it across content factories that each subscribe to `card-lifecycle.ts`. See architecture piece [A2].
+
+- **[M-Q3] Markdown-view copy-selection → MUST close per [L23].** A user's copy-selection is user-visible state; losing it on any transition violates the tuglaw. Previously-defensible "ephemerality" is not a permitted exception. `tug-markdown-view` gains `persistKey` + `useCardPersistence` + `selectionchange` publish. See [M10] for the updated closing requirements and architecture piece [A5] for the implementation shape.
+
+- **[M-Q4] Card reopen → NOT a feature.** Close-then-reopen is not in scope; no UI path exists and none is planned. Step 14 continues to flush-on-close for robustness only (not for reopen). [M11] is closed as informational — no follow-on work.
+
+- **[M-Q5] IME composition save → MUST retain, likely via `bag.markedText`.** Deferring save until `compositionend` is not sufficient: in-flight keystrokes from the user are user-visible state and must survive transitions. A new persisted axis `bag.markedText` captures the native marked-text buffer + composition anchor. Platform research required to determine whether browser APIs permit programmatic composition re-entry, or whether a native IPC bridge (via tugapp) is needed. See [M12] updated closing requirements and architecture piece [A6].
+
+---
+
+#### Architecture to close the gaps {#missing-architecture}
+
+The M-series resolutions converge on a small number of shared mechanisms. Most of the broken cases ([M01], [M02], [M03], [M04], [M05], [M06], [M07], [M09], [M16]) are the same problem — "this card just became the focus destination; restore its focus + paint" — seen from different triggers. This section sketches the architectural pieces that, together, close the inventory. Each piece is labeled [A#] and cross-referenced from the M-entries above.
+
+**Status:** DRAFT. These pieces need design review before M-series execution steps can be authored.
+
+##### [A1] `isFocusDestination` derived selector on the deck store {#a1-focus-destination-selector}
+
+A pure derived predicate:
+
+```
+isFocusDestination(cardId) ⇔
+  card's pane is the active pane
+  AND card is the active card of that pane
+  AND document.hasFocus()  // app is foreground
+```
+
+Implemented as a selector over `deckState` + `activePaneId`. Exposed two ways:
+
+- React: `useFocusDestination(cardId)` via `useSyncExternalStore` (per [L02]).
+- Non-React: `deckStore.subscribe(() => isFocusDestination(cardId))` for `selectionGuard` / engine wiring.
+
+**Closes (indirectly):** underpins [A3], [A4].
+
+##### [A2] `onCardActivated` callback in `CardPersistenceCallbacks` {#a2-on-card-activated}
+
+Add a new optional callback to the existing persistence protocol:
+
+```ts
+interface CardPersistenceCallbacks {
+  onSave?: () => CardStateBag;
+  onRestore?: (bag: CardStateBag) => void;
+  onContentReady?: () => void;
+  onCardActivated?: () => void;  // NEW
+  restorePendingRef?: MutableRefObject<boolean>;
+}
+```
+
+Content factories that own focus (EM) implement `onCardActivated` to re-focus their root. Typical body:
+
+```ts
+onCardActivated: () => {
+  engine.root.focus({ preventScroll: true });
+  // engine's onSelectionChanged publishes the current range → selection-guard paints
+},
+```
+
+DOM-authority cards (FC) do not implement `onCardActivated`; `CardHost` handles them in [A3] by re-applying `bag.focus` + `bag.domSelection` directly.
+
+**Closes:** [M02], [M06], [M07], [M09] (by giving content-owning cards a reactivation entry point).
+
+##### [A3] Shared `CardHost` activation effect {#a3-shared-activation-effect}
+
+One `useLayoutEffect` in `CardHost`, keyed on `isFocusDestination(cardId)` subscribed via `useSyncExternalStore`. On every `false → true` transition:
+
+1. **Consult focus-theft gate [A8]**; abort if unsafe.
+2. **Has-been-active ref-guard:** skip the first activation (mount already handled it via the cold-boot restore path).
+3. **Dispatch by card flavor:**
+   - Content-owning card (`bag.content !== undefined`): invoke `callbacks.onCardActivated?.()`. That's all. The content factory's implementation handles focus + any internal state.
+   - DOM-authority card (`bag.content === undefined`): re-apply `applyFocusSnapshot(bag.focus)` then `restoreCardDomSelection(bag.domSelection)`. Same path as cold-boot restore, but triggered by activation instead of mount.
+
+This effect is the single replacement for the three dep-sets we currently use (`[cardId, hostStackId, hostContentEl]` primary mount; `[hostStackId]` cross-pane refocus). Those earlier effects continue to run for mount-specific work (scroll restore, unmask); the activation effect is additive.
+
+**Closes:** [M01], [M03], [M04] + [M05] (via [A4]'s wiring into `isFocusDestination`), [M06], [M07], [M09], [M16].
+
+##### [A4] App-lifecycle activation pathway {#a4-app-lifecycle-activation}
+
+`isFocusDestination` includes `document.hasFocus()` in its definition. App resign → foreground → `hasFocus` flips `false → true`, which naturally transitions the predicate for the current active card. [A3]'s subscriber fires automatically.
+
+Implementation details:
+
+- Wire an `observeApplicationDidBecomeActive` / `observeApplicationDidUnhide` listener in `deck-store` (or a thin coordinator) that calls `deckStore.notify()` — this causes the `useSyncExternalStore` subscribers to re-read the selector and observe the `false → true` transition.
+- Paint-only response (app-resign dims paint, app-become-active brightens) already lives in `selectionGuard.handleApplicationDid{Resign,Become}Active`. This architecture piece is strictly about the _focus_ axis, which paint currently does not cover.
+
+**Closes:** [M04], [M05].
+
+##### [A5] Markdown-view selection publish {#a5-markdown-view-publish}
+
+`tug-markdown-view` joins the contentEditable paint path:
+
+1. Add `persistKey` prop to the component; wire `useCardPersistence({ onSave, onRestore })`.
+2. In a `useEffect` (or `useLayoutEffect` per [L03]), subscribe to `document.selectionchange`. Filter: `range.commonAncestorContainer.compareDocumentPosition(rootEl)` within bounds. If match, call `selectionGuard.updateCardDomSelection(cardId, range)`.
+3. `onSave` writes `bag.domSelection` from the current `selectionGuard.cardRanges.get(cardId)`.
+4. `onRestore` is a no-op — the existing cold-boot restore path in `CardHost` replays the range via `restoreCardDomSelection`.
+
+Markdown-view owns no text value (content is immutable in-session), so no `bag.content` / `onCardActivated` is needed.
+
+**Closes:** [M10] per [L23].
+
+##### [A6] `bag.markedText` axis + composition persistence {#a6-marked-text-persistence}
+
+Schema extension:
+
+```ts
+interface CardStateBag {
+  // ... existing axes ...
+  markedText?: {
+    text: string;                     // the composition buffer
+    anchorOffset: number;             // offset within the container
+    anchorPath: number[];             // DOM path to the anchor container
+    platform: "webkit" | "chromium";  // for re-entry heuristics
+  };
+}
+```
+
+EM save:
+
+- If `engine.isComposing`: capture `bag.markedText` from `engine.getCompositionState()`. Research: whether the engine can read the native marked-text string (webkit exposes partial info via `CompositionEvent.data`; may need event-time capture into engine state).
+- If not composing: `bag.markedText = undefined`.
+
+EM restore:
+
+- If `bag.markedText` is set at activation / mount: engine attempts composition re-entry. Implementation paths (in priority order):
+  1. **Browser API path:** `Selection.setBaseAndExtent` to the anchor, then dispatch synthetic `compositionstart`/`compositionupdate` events. Likely non-standard and won't reliably cause the native IME to re-open the mark.
+  2. **Native IPC path (tugapp):** tugapp calls into the macOS input context (`NSTextInputContext`) to re-enter composition with the saved marked text. Research required; this is the fallback if (1) doesn't land cleanly.
+  3. **Text-only fallback:** insert the marked-text string as plain text at the anchor and set cursor at the end. Loses the "draft" property (user can't continue composing onto it) but preserves the characters. Final fallback.
+
+FC save:
+
+- Defer save during composition: if `compositionStart` has fired and `compositionend` has not, `saveCurrentCardStateRef.current` enqueues the save for post-`compositionend` delivery. On `compositionend`, flush the deferred save.
+- Process-exit mid-composition: the last pre-composition bag is preserved; the in-flight composition buffer is lost. Accepted residual.
+
+**Closes:** [M12] to the extent the platform permits. Residuals documented.
+
+##### [A7] Unified flush-on-teardown gate {#a7-unified-flush-gate}
+
+Every path that removes cards from `deckState.cards` routes through `flushSaveCallbackBeforeDestruction` (Step 14's helper):
+
+- `_removeCard` ✅ (already wired in Step 14).
+- `_closePane` ✅ (already wired in Step 14, but audit: does it iterate every card before pane-level clear?).
+- Any future deck-reset / workspace-switch path: must call the helper per card.
+
+Add an invariant guard at the bottom of `_removeCard` / `_closePane`: if the flush helper was not called for a card being removed, log a dev-error. Consider a single chokepoint `destroyCard(cardId)` that bundles "flush + lifecycle notify + delete from state" so bypassing is difficult.
+
+**Closes:** [M19].
+
+##### [A8] `canProgrammaticallyFocus` helper — central focus-theft gate {#a8-focus-theft-gate}
+
+A shared helper consulted by every programmatic refocus path:
+
+```ts
+function canProgrammaticallyFocus(
+  targetCardId: string,
+  store: DeckStore,
+): boolean {
+  if (!document.hasFocus()) return false;
+  const active = document.activeElement;
+  // OK to focus if body, or within the target card's host, or inside a non-focus-capturing chrome element
+  if (active === document.body) return true;
+  if (targetCardHostEl(targetCardId)?.contains(active)) return true;
+  if (isNonFocusCapturingChrome(active)) return true;  // pane drag handles, tab bar buttons between clicks, etc.
+  return false;  // user has moved focus to another card or real UI — don't steal
+}
+```
+
+Every refocus helper — [A3]'s activation effect, [A4]'s app-lifecycle pathway, Step 11's cross-pane effect — consults this before calling `.focus()`. Centralizes [R07] (focus-steal avoidance).
+
+**Closes (indirectly):** makes [A3], [A4], [A6] safe.
+
+##### Architecture coverage matrix {#architecture-coverage}
+
+| M-entry | Closed by | Residuals |
+|---------|-----------|-----------|
+| [M01] | [A1] + [A3] + [A8] | none |
+| [M02] | [A1] + [A2] + [A3] + [A8] | none |
+| [M03] | [A1] + [A3] + [A8] | none |
+| [M04] | [A1] + [A3] + [A4] + [A8] | none |
+| [M05] | [A1] + [A3] + [A4] + [A8] | none |
+| [M06] | [A1] + [A2] + [A3] + [A8] | none |
+| [M07] | [A1] + [A2] + [A3] + [A8] | none |
+| [M08] | [A2] (direct) | closed by adding the callback |
+| [M09] | [A1] + [A2] + [A3] + [A8] | none |
+| [M10] | [A5] | none |
+| [M11] | (no action — not a feature) | informational |
+| [M12] | [A6] | process-exit mid-composition unrecoverable |
+| [M13] | integration tests added per M-step | none |
+| [M14] | folded into [M13] test expansion | none |
+| [M15] | Step NN deletion | none |
+| [M16] | [A1] + [A3] | none |
+| [M17] | audit fix: `saveState` RPC → `saveAndFlush` | parity test must pass |
+| [M18] | save-gate inspects `restorePendingRef.current` | none |
+| [M19] | [A7] | none |
+| [M20] | local overlay fixes + [A3] as safety net | none |
+| [M21] | drag-abort routes through activation | none |
+| [M22] | integration tests assert caret visibility | none |
+| [M23] | scope to single-card; paint doesn't crash cross-card | cross-card selections remain one-owner |
+
+##### Phasing suggestion for M-series execution steps {#m-phasing}
+
+Not a commitment yet — just a sketch for discussion. The M-series steps should probably follow this dependency order:
+
+1. **M-phase 1 (infra, no behavior change):** implement [A1] selector, [A8] focus-theft gate, wire `onCardActivated` into `CardPersistenceCallbacks` ([A2]). Tests green, no behavior difference.
+2. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
+3. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
+4. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
+5. **M-phase 5 (teardown):** implement [A7]. Closes [M19].
+6. **M-phase 6 (IME):** implement [A6]. Platform research → decide between browser API / native IPC / text-fallback. Closes [M12] to platform-possible extent.
+7. **M-phase 7 (audit + verify):** [M17] RPC audit, [M18] restore-pending gate, [M20] overlay audit, [M21] drag-abort verify, [M22] caret-visibility tests, [M23] cross-card verify.
+8. **M-phase 8 (cleanup):** [M13] / [M14] integration test expansion, then Step NN ([M15] deletion + docs).
+
+Each M-phase corresponds to 1–3 execution steps to be authored. The phasing gates "wait on decisions" away from "wait on implementation" so blockers surface early.
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 #### Phase-exit criteria {#phase-exit}
 
-- [ ] All 16 execution steps landed and each step's individual checkpoint passed.
+- [ ] All execution steps landed — Steps 1–15 (original plan), the M-series steps that close the [missing cases inventory](#missing-cases), and Step NN (final cleanup). Each step's individual checkpoint passed.
 - [ ] `bun x tsc --noEmit` exits 0 on main.
 - [ ] `bun test` passes in full with the new integration suite from Step 15.
 - [ ] `tugutil validate /u/src/tugtool/roadmap/tugplan-selection.md` passes.
