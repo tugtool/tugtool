@@ -1271,6 +1271,153 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 
 ---
 
+#### Step 20: `isFocusDestination` derived selector on the deck store {#step-20}
+
+**Depends on:** #step-19
+
+**Commit:** `feat(deck-store): add isFocusDestination selector and hasFocus slice`
+
+**References:** [A1](#a1-focus-destination-selector); [L02] (useSyncExternalStore for React consumers); `deck-store.ts`.
+
+**Artifacts:**
+- Extend `DeckState` with a new `hasFocus: boolean` field, initialized from `document.hasFocus()` at store construction. Window `focus` / `blur` event listeners are installed at deck-store module init; each sets `state.hasFocus` and calls `deckStore.notify()`. The listeners are idempotent and guarded against double-install (module-scope flag).
+- New pure selector in `tugdeck/src/deck-store-selectors.ts` (new file, or extend an existing `deck-store` module if natural):
+  ```ts
+  export function isFocusDestination(
+    cardId: string,
+    state: DeckState,
+  ): boolean {
+    if (!state.hasFocus) return false;
+    const paneId = state.cards.get(cardId)?.paneId;
+    if (!paneId) return false;
+    if (state.activePaneId !== paneId) return false;
+    const pane = state.panes.get(paneId);
+    if (!pane) return false;
+    return pane.activeCardId === cardId;
+  }
+  ```
+- New React hook `useFocusDestination(cardId: string): boolean` in `deck-store-hooks.ts`. Implementation uses `useSyncExternalStore` with the deck store's `subscribe` and a getSnapshot that invokes `isFocusDestination(cardId, deckStore.getState())`.
+- Non-React consumers call `deckStore.subscribe(() => { if (isFocusDestination(cardId, deckStore.getState())) {…} })`. Documented in a short header comment on the selector.
+- No consumers yet. The selector is exported and importable; tests exercise it; behavior unchanged at phase end.
+
+**Tasks:**
+- [ ] Add `hasFocus: boolean` to the `DeckState` type; default initialized from `document.hasFocus()` (or `true` for non-browser test environments).
+- [ ] Install window `focus` / `blur` listeners at module init; mutate state + notify. Guard against double-install.
+- [ ] Author `isFocusDestination(cardId, state)` as a pure selector in `deck-store-selectors.ts`.
+- [ ] Author `useFocusDestination(cardId)` hook in `deck-store-hooks.ts`.
+- [ ] Add header-comment usage examples for both React and non-React consumers.
+
+**Upholds:** [A1]; [L02] (React consumers read external state through `useSyncExternalStore`); [L23] adjacent (predicate becomes the single source of truth for "who deserves focus right now").
+
+**Tests:**
+- [ ] New `deck-store-selectors.test.ts`:
+  - `isFocusDestination` returns false when `hasFocus === false`.
+  - returns false when `activePaneId` doesn't match the card's pane.
+  - returns false when `pane.activeCardId !== cardId`.
+  - returns true only when all three conditions hold.
+  - returns false for an unknown `cardId`.
+- [ ] New `use-focus-destination.test.tsx`:
+  - Hook returns the selector's current value.
+  - Re-renders the subscriber on `hasFocus` flips (simulate via `window.dispatchEvent(new Event("focus"))` / `"blur"`).
+  - Re-renders on active-pane or active-card changes.
+- [ ] Existing tests must all pass unchanged.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] No behavior change end-to-end — the selector is pure, the hook has no consumers yet.
+
+---
+
+#### Step 21: `canProgrammaticallyFocus` focus-theft gate {#step-21}
+
+**Depends on:** #step-20
+
+**Commit:** `feat(selection): add canProgrammaticallyFocus focus-theft gate`
+
+**References:** [A8](#a8-focus-theft-gate); [R07](#r07-focus-steal-on-reload); `deck-store-selectors.ts` ([#step-20](#step-20)).
+
+**Artifacts:**
+- New file `tugdeck/src/focus-theft-gate.ts` exporting:
+  - `canProgrammaticallyFocus(targetCardId: string, state: DeckState, opts?: { targetCardHostEl?: HTMLElement | null }): boolean` — returns `true` iff it's safe for a programmatic refocus helper to call `.focus()` on the target card's content root.
+  - `isNonFocusCapturingChrome(el: Element | null): boolean` — predicate identifying chrome elements that can hold `activeElement` without counting as "user has moved focus" (pane drag handles marked `data-tug-chrome="non-focus-capturing"`, tab bar buttons between clicks, etc.). Starts as a conservative allowlist — callers can opt elements in by adding the data attribute.
+- Decision branches (all return `false` unless noted):
+  1. `!state.hasFocus` → false (app is backgrounded).
+  2. `!isFocusDestination(targetCardId, state)` → false (the target isn't even supposed to be the focus destination right now).
+  3. `document.activeElement === document.body` → true (nothing to steal).
+  4. `opts.targetCardHostEl?.contains(document.activeElement)` → true (focus already inside the target card, refocus is a no-op or a refinement).
+  5. `isNonFocusCapturingChrome(document.activeElement)` → true (focus is transient on chrome).
+  6. Otherwise → false (the user has focus somewhere real; don't steal).
+- Helper is framework-local; no global state; no DOM mutation.
+
+**Tasks:**
+- [ ] Author `focus-theft-gate.ts` with `canProgrammaticallyFocus` + `isNonFocusCapturingChrome`.
+- [ ] Import `isFocusDestination` from Step 20 for the second check.
+- [ ] Document the `data-tug-chrome="non-focus-capturing"` opt-in in the file header so chrome element authors can opt in gradually.
+
+**Upholds:** [A8]; [R07] centralized so no refocus helper re-implements the check.
+
+**Tests:**
+- [ ] New `focus-theft-gate.test.ts` with one test per branch:
+  - `hasFocus === false` → false.
+  - Not a focus destination → false.
+  - `activeElement === body` → true.
+  - `activeElement` inside `targetCardHostEl` → true.
+  - `activeElement` has `data-tug-chrome="non-focus-capturing"` → true.
+  - `activeElement` is a real input outside target → false.
+  - Missing `opts.targetCardHostEl` handled gracefully (treats as no-host-match, falls through to other checks).
+- [ ] Existing tests unchanged.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Grep for ad-hoc focus-theft logic (`document.hasFocus\|activeElement === body\|activeElement.closest`) inside `card-host.tsx` / `selection-guard.ts` returns only pre-existing callsites (not yet refactored — those routes through `canProgrammaticallyFocus` in M-phase 2 when [A3] lands).
+
+---
+
+#### Step 22: `onCardActivated` field in `CardPersistenceCallbacks` {#step-22}
+
+**Depends on:** #step-21
+
+**Commit:** `feat(card-host): add onCardActivated callback to persistence protocol`
+
+**References:** [A2](#a2-on-card-activated); [D13](#d13-component-persistence); `use-card-persistence.tsx`.
+
+**Artifacts:**
+- Extend `CardPersistenceCallbacks` (in `use-card-persistence.tsx` or the authoritative protocol module) with:
+  ```ts
+  /**
+   * Called when this card transitions to being the focus destination
+   * (isFocusDestination becomes true). Typical implementation for
+   * content-owning cards: engine.root.focus({ preventScroll: true }).
+   * Not called at mount; the has-been-active ref-guard in [A3] skips
+   * the initial activation. No-op for cards that don't need special
+   * reactivation handling (FC cards are handled by CardHost directly).
+   */
+  onCardActivated?: () => void;
+  ```
+- `useCardPersistence` hook accepts the new field and stores it alongside existing callbacks. No dispatcher yet — the field is declared but never invoked at this step. The dispatcher lands in M-phase 2 as part of [A3]'s activation effect (Step 23).
+- JSDoc updated to note: "The callback fires only after the shared `CardHost` activation effect ([A3]) is installed (M-phase 2). At Step 22, registering the callback is a no-op; implementors may register it now in preparation."
+
+**Tasks:**
+- [ ] Add the optional `onCardActivated?: () => void` field to the `CardPersistenceCallbacks` interface.
+- [ ] Ensure `useCardPersistence` forwards the field into the stored callbacks record.
+- [ ] Verify that existing call sites of `useCardPersistence` continue to compile (the field is optional).
+
+**Upholds:** [A2]; [D13] protocol shape; keeps the field declarative so content factories can start registering `onCardActivated` in preparation for M-phase 2 without needing to ship in the same commit.
+
+**Tests:**
+- [ ] Type-only: add a compile-time assertion in `use-card-persistence.test.tsx` that `useCardPersistence({ persistKey: "t", onCardActivated: () => {} })` type-checks.
+- [ ] No behavior test (the callback isn't dispatched yet). A TODO comment in the test file points forward to M-phase 2 Step 23's dispatcher test.
+- [ ] Existing tests must pass unchanged.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] No user-visible behavior change. M-phase 1 ends cleanly with [A1] + [A8] + [A2]-field in place, ready for M-phase 2 to wire [A3].
+
+---
+
 #### Step NN: Documentation & final cleanup {#step-nn}
 
 **Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the M-series steps are authored.
@@ -1974,7 +2121,11 @@ Not a commitment yet — just a sketch for discussion. Updated to place [A9] as 
    - **[Step 18](#step-18):** framework orchestration — `captureCardState` / `restoreCardState`; save triggers rerouted; closes [M17].
    - **[Step 19](#step-19):** first-consumer proof — `tug-checkbox` opts into the protocol; closes [M24] at the per-component proof-of-concept level.
    - No user-visible behavior change through Step 18 (pure refactor). Step 19 is the first user-observable application of the protocol.
-2. **M-phase 1 (transition infra, no behavior change):** implement [A1] selector, [A8] focus-theft gate, wire `onCardActivated` into `CardPersistenceCallbacks` ([A2]). Tests green, no behavior difference.
+2. **M-phase 1 (transition infra, no behavior change) — AUTHORED as [Steps 20–22](#step-20):**
+   - **[Step 20](#step-20):** [A1] `isFocusDestination` selector + `hasFocus` slice on the deck store; `useFocusDestination` hook.
+   - **[Step 21](#step-21):** [A8] `canProgrammaticallyFocus` focus-theft gate.
+   - **[Step 22](#step-22):** [A2] `onCardActivated` field added to `CardPersistenceCallbacks` (declared but not yet dispatched).
+   - No consumers; no user-visible behavior change at phase end. Dispatchers land in M-phase 2.
 3. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
 4. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
 5. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
