@@ -1,35 +1,39 @@
-# Session Memory — in-app-test-harness-7d9c56e-1
+# Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck is the browser frontend (React 19 + Vite + bun). Source lives under `tugdeck/src/`; tests colocate under `tugdeck/src/__tests__/`. Bun is the package manager + test runner. Deck orchestration is in `deck-manager.ts` / `deck-manager-store.ts`; focus activation in `focus-transfer.ts`; card mount/unmount in `components/chrome/card-host.tsx`; deck root render in `components/chrome/deck-canvas.tsx`. Tugplan at `.tugtool/tugplan-in-app-test-harness.md`. Phase 1 instrumentation complete through Step 2; Step 3 is observational (no code).
+Tugdeck: browser frontend (React 19 + Vite + bun). Source at `tugdeck/src/`; tests at `tugdeck/src/__tests__/`. Phase 1 instrumentation (deck-trace) landed in Steps 1-2; Step 3 deferred (observational). Phase 2 work is spread across parent plan Steps 5-11 (TS + Swift) plus `roadmap/tugplan-in-app-bridge.md` (Swift-side bridge). Tugapp (macOS host): Swift under `tugapp/Sources/` with `ControlSocket.swift` as the template for AF_UNIX listeners. Tugcast: axum WebSocket server at `tugrust/crates/tugcast/src/server.rs`, TCP + bearer auth (NOT local-only). tugplan-skeleton at `tuglaws/tugplan-skeleton.md` is v2.
 
 ## Files touched
-- tugdeck/src/deck-trace.ts — ring buffer + observers. `enable(true)` idempotently installs destination-flip (per-card diff on store notify) + document-level focusin/focusout (capture phase). `enable(false)` tears down. `formatElement()` exported.
-- tugdeck/src/__tests__/deck-trace.test.ts — 8 pure-logic tests (step 1).
-- tugdeck/src/deck-manager.ts — `_flipFirstResponder` takes `trigger: string` (last arg); 7 internal callers pass tags (`activateCard`, `addCard`, `_closePane`, `_setActiveCardInPane`, `_addCardToPane`, `_removeCard`, `_detachCard`, `_moveCardToPane`). `invokeSaveCallback(id, source?)` emits `save-callback` before invoking registered callback. Visibilitychange/beforeunload/saveAndFlushSync/saveAndFlush/prepareForReload rewritten from `forEach((cb)=>cb())` to `for cardId of keys { invokeSaveCallback(cardId, source) }` so trace sees tagged events. `flushSaveCallbackBeforeDestruction` → `close-handoff`; `_detachCard`/`_moveCardToPane` pre-move flush → `manual`.
-- tugdeck/src/deck-manager-store.ts — `IDeckManagerStore.invokeSaveCallback` signature now `(id: string, source?: SaveCallbackSource) => void` (optional param keeps existing test mocks type-compatible).
-- tugdeck/src/components/chrome/card-host.tsx — [A3] effect emits `a3-fire` on every return path (first-run/not-destination/prev-was-true/gate-refused/no-bag/no-host/null=completed). Helper `traceApplyFocusSnapshot(site, cardId, cardRoot, snapshot)` wraps the three applyFocusSnapshot call sites (cold-boot/cross-pane-move/a3-dom-authority) and emits `focus-call` with activeBefore/activeAfter/hidden/targetSelector. Two `restoreCardDomSelection` sites emit `selection-restore`. Cold-boot `applyFocusSnapshot` emits extra `selection-restore` tagged via=applyFocusSnapshot per [#l01-recording-sites]. `registerCardHostRoot` useLayoutEffect emits `card-host-mount`/`card-host-unmount` (added `hostStackId` to dep array).
-- tugdeck/src/components/chrome/deck-commit-beacon.tsx — NEW. `<DeckCommitBeacon/>` renders null; no-deps useLayoutEffect increments counter + emits `commit-tick`.
-- tugdeck/src/components/chrome/deck-canvas.tsx — Imports + renders `<DeckCommitBeacon/>` once inside the deck root div.
+- tugdeck/src/deck-trace.ts — ring buffer + observers (Phase 1 Step 1).
+- tugdeck/src/__tests__/deck-trace.test.ts — 8 pure-logic ring-buffer tests.
+- tugdeck/src/deck-manager.ts — `_flipFirstResponder(trigger)`, `invokeSaveCallback(id, source)` (Phase 1 Step 2).
+- tugdeck/src/deck-manager-store.ts — IDeckManagerStore.invokeSaveCallback signature now `(id, source?)`.
+- tugdeck/src/components/chrome/card-host.tsx — mount/unmount trace, `[A3]` a3-fire-on-every-path, focus-call wrappers, selection-restore (Phase 1 Step 2).
+- tugdeck/src/components/chrome/deck-commit-beacon.tsx — <DeckCommitBeacon/> commit-tick emitter.
+- tugdeck/src/components/chrome/deck-canvas.tsx — mounts DeckCommitBeacon.
+- roadmap/tugplan-in-app-bridge.md — NEW (Step 4). Phase 2 tugplan for Swift bridge + `tests/in-app/` scaffold. 898 lines, skeleton-v2 conformant. Decisions: [D01] file-scope `#if DEBUG`; [D02] parallel Unix socket (tugcast-reuse rejected); [D03] T-1/T-2 stay in parent Phase 2; [D04] boot timing; [D05] hand-written RPC client; [D06] socket security; [D07] structured errors; [D08] CGEventPost deferred.
 
 ## Patterns established
-- `invokeSaveCallback(id, source)` is the single entry point for all save-callback fires; direct `saveCallbacks.forEach` is forbidden (would skip trace recording).
-- Helper wrappers (`traceApplyFocusSnapshot`, `emitA3`) keep call sites clean while guaranteeing trace events fire on every path including early returns.
-- DEV gate idiom remains `import.meta.env?.DEV === true`. Session-memory-only; `deckTrace` trace itself is enable-flag gated, not DEV-gated.
-- Observer install gate: `installObservers()` only if first transition false→true; `uninstallObservers()` on true→false. Idempotent via module-scope disposer refs.
-- When using `isFirstRun` on a `useLayoutEffect`, still record the trace event before returning — `a3-fire` MUST fire on EVERY run for the trace to be useful.
+- `invokeSaveCallback(id, source)` is the single entry point for save-callback fires; bypassing it skips trace recording.
+- `_flipFirstResponder` callers MUST pass a tag (6 internal + `_setActiveCardInPane` as 7th not in original plan).
+- Trace helper wrappers (`traceApplyFocusSnapshot`, `emitA3`) guarantee events on every code path including early returns.
+- DEV gate idiom: `import.meta.env?.DEV === true`.
+- Phase 2 transport decision: **parallel Unix socket** (not tugcast). Tugcast is TCP + bearer; its `ws_handler` runs in all builds so a DEBUG-only verb leaves dispatch in release binaries. `ControlSocket.swift` is the template (socket(AF_UNIX), sockaddr_un, DispatchSourceRead).
+- Phase 2 Swift files live under `tugapp/Sources/TestHarness/` with `#if DEBUG` at line 1 of every file (partial-file gating forbidden).
+- Phase 2 TS double-guard: `import.meta.env.DEV && window.__tugTestMode === true` at every attach point.
+- tugplan cross-references to the parent plan use the parent's anchor IDs fully qualified in prose.
 
 ## Build / test notes
 - `cd tugdeck && bun x tsc --noEmit` — exits 0 clean.
-- `cd tugdeck && bun test` — 2427 pass, 0 fail, ~10.4s (unchanged from baseline; no new tests per Step 2 plan).
-- No linter/formatter configured in tugdeck; tsc is the only gate.
-- Test preload: happy-dom + src/__tests__/setup-silence.ts.
-- grep checkpoint: `deckTrace.record` appears in deck-manager.ts (3×), deck-trace.ts observers (4×), card-host.tsx (7×), deck-commit-beacon.tsx (1×).
+- `cd tugdeck && bun test` — 2427 pass, 0 fail (baseline after Phase 1).
+- `tugutil validate <absolute-path>` — validates a tugplan; warnings for uncited decisions exit 0, but cleaner to cite them in at least one step's References.
+- `tugutil validate` requires absolute paths when run via agent bash (working dir resets between calls).
+- No linter/formatter for tugdeck; tsc is the gate.
 
 ## Hints for upcoming steps
-- Step 3 was fully deferred by the coder agent: all 7 tasks, 1 test (N/A), and 3 checkpoints require launching Tug.app dev build, Safari Web Inspector, and human interaction with real WKWebView. A fresh-spawn agent cannot execute this in an unattended environment. Human must run `window.__deckTrace.enable(true); __deckTrace.clear(); /* repro M01 */; __deckTrace.dumpTable()` three times (once each for M01, M03, M16), paste outputs back into the plan or a notes file, then write the root-cause hypothesis and the patch-[A3]-vs-accelerate-23B decision per [D13]. Phase 1 instrumentation code is healthy: `bun x tsc --noEmit` clean, `bun test src/__tests__/deck-trace.test.ts` 8 pass.
-- Step 4 authors `roadmap/tugplan-in-app-bridge.md` — Phase 2 tugplan for Swift bridge. Step 4 depends on the Step 3 decision (which path Phase 3 tests target). If Step 3 decision is still pending when Step 4 is attempted, Step 4 can still enumerate Phase 2 tasks but must leave the "target fix" reference open for Phase 3.
-- `[A3]` now records `target` via `resolveActivationTarget(cardId, store)` and `focusedEl` (post-body activeElement). When reading a trace and target===null, the card has no resolvable focus target regardless of gate/bag outcome.
-- `_setActiveCardInPane` also calls `_flipFirstResponder` (7th internal caller, not in the plan's six); tagged `_setActiveCardInPane`. Retain this tag in any future refactor.
-- `SaveCallbackSource` type is now imported by `deck-manager-store.ts` — creates a new weak dep edge tugdeck store → deck-trace. If deck-trace ever needs to import from deck-manager-store, move `SaveCallbackSource` to a leaf file.
-- Test mocks of `IDeckManagerStore.invokeSaveCallback` still use `(id: string) => void` signature and type-check fine; don't "fix" them to add the source param unless a test needs to assert on source.
+- Step 5 (parent plan): `DeckManager.testMode?: boolean` constructor flag. `this.testMode` guard at every tugbank I/O site. `seedDeckState(args)` method: atomic state replace, cold-boot restore if `focusCardId` set. Mock stores in `mock-deck-manager-store.ts` likely need new optional field (no behavior change).
+- Step 6 (parent plan): `window.__tug` surface at `tugdeck/src/test-surface.ts`. Full `TugTestSurface` interface per parent Spec [#s03-tug-surface]. Double guard. Version constant `"1.0.0"`.
+- Step 7 (parent plan): Swift bridge + first `evalJS` round-trip. See `roadmap/tugplan-in-app-bridge.md` Steps 3-7 for the Swift-side breakdown. Transport is parallel Unix socket per [D02].
+- `roadmap/tugplan-in-app-bridge.md` decisions NOT yet cited in any step are [D03] and [D08] (both resolved to "deferred" / "placement" — cited in this plan's own Step 1 and Step 8 respectively to satisfy validate).
+- Step 3 of the parent plan (M01/M03/M16 trace repro) was deferred by user; the decision about patched-[A3]-vs-accelerated-23B carries into Phase 3 tests — not blocking Phase 2 work.
+- `SaveCallbackSource` type is imported by `deck-manager-store.ts` (weak dep edge). If deck-trace ever imports from deck-manager-store, move the type to a leaf file.

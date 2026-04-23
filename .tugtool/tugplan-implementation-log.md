@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-23T22:36:22Z
+---
+
+## step-4: Authored roadmap/tugplan-in-app-bridge.md (898 lines) — Phase 2 tugplan for the in-app test bridge. Transport decision [D02] records parallel Unix socket over tugcast reuse (tugcast ws_handler ships in every build, violates 'no code for this verb ships' bar; ControlSocket.swift provides working AF_UNIX template). T-1/T-2 remain in parent plan; CGEventPost deferred.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-2
 date: 2025-04-23T22:02:25Z
 ---
