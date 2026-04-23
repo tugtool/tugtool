@@ -15,6 +15,10 @@
 		AA0000010000000000000006 /* TugConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* TugConfig.swift */; };
 		AA0000010000000000000009 /* ControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000009 /* ControlSocket.swift */; };
 		AA000001000000000000000A /* TugbankClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000A /* TugbankClient.swift */; };
+		AA000001000000000000000B /* TestHarnessBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000B /* TestHarnessBridge.swift */; };
+		AA000001000000000000000C /* TestHarnessListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000C /* TestHarnessListener.swift */; };
+		AA000001000000000000000D /* TestHarnessConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000D /* TestHarnessConnection.swift */; };
+		AA000001000000000000000E /* TestHarnessUserScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000E /* TestHarnessUserScript.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +32,10 @@
 		AA0000020000000000000008 /* TugConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugConfig.swift; sourceTree = "<group>"; };
 		AA0000020000000000000009 /* ControlSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSocket.swift; sourceTree = "<group>"; };
 		AA000002000000000000000A /* TugbankClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugbankClient.swift; sourceTree = "<group>"; };
+		AA000002000000000000000B /* TestHarnessBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessBridge.swift; sourceTree = "<group>"; };
+		AA000002000000000000000C /* TestHarnessListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessListener.swift; sourceTree = "<group>"; };
+		AA000002000000000000000D /* TestHarnessConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessConnection.swift; sourceTree = "<group>"; };
+		AA000002000000000000000E /* TestHarnessUserScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessUserScript.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -63,8 +71,20 @@
 				AA000002000000000000000A /* TugbankClient.swift */,
 				AA0000020000000000000008 /* TugConfig.swift */,
 				AA0000020000000000000009 /* ControlSocket.swift */,
+				AA0000060000000000000002 /* TestHarness */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		AA0000060000000000000002 /* TestHarness */ = {
+			isa = PBXGroup;
+			children = (
+				AA000002000000000000000B /* TestHarnessBridge.swift */,
+				AA000002000000000000000C /* TestHarnessListener.swift */,
+				AA000002000000000000000D /* TestHarnessConnection.swift */,
+				AA000002000000000000000E /* TestHarnessUserScript.swift */,
+			);
+			path = TestHarness;
 			sourceTree = "<group>";
 		};
 		AA0000070000000000000001 /* Products */ = {
@@ -147,6 +167,10 @@
 				AA000001000000000000000A /* TugbankClient.swift in Sources */,
 				AA0000010000000000000006 /* TugConfig.swift in Sources */,
 				AA0000010000000000000009 /* ControlSocket.swift in Sources */,
+				AA000001000000000000000B /* TestHarnessBridge.swift in Sources */,
+				AA000001000000000000000C /* TestHarnessListener.swift in Sources */,
+				AA000001000000000000000D /* TestHarnessConnection.swift in Sources */,
+				AA000001000000000000000E /* TestHarnessUserScript.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

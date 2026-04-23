@@ -1,57 +1,73 @@
 # Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck: browser frontend (React 19 + Vite + bun). Source at `tugdeck/src/`; tests at `tugdeck/src/__tests__/`. Phase 1 instrumentation (deck-trace) landed in Steps 1-2; Step 3 deferred (observational); Step 4 authored Phase 2 Swift tugplan; Step 5 landed testMode + seedDeckState; Step 6 landed `window.__tug` test surface. Phase 2 work continues through parent plan Steps 7-11 (Swift bridge + harness library). `roadmap/tugplan-in-app-bridge.md` is the Swift-side bridge plan. Tugapp (macOS host): Swift under `tugapp/Sources/` with `ControlSocket.swift` as the template for AF_UNIX listeners. Tugcast: axum WebSocket server at `tugrust/crates/tugcast/src/server.rs`, TCP + bearer auth (NOT local-only). tugplan-skeleton at `tuglaws/tugplan-skeleton.md` is v2.
+Tugdeck: React 19 + Vite + bun. Source at `tugdeck/src/`; tests at `tugdeck/src/__tests__/`. Phase 1 (deck-trace) landed Steps 1-2; Step 3 deferred; Step 4 authored the Swift bridge sub-tugplan `roadmap/tugplan-in-app-bridge.md`; Step 5 landed testMode + seedDeckState; Step 6 landed `window.__tug`; Step 7 landed full Phase 2: Swift bridge (TestHarness/) + bun harness (tests/in-app/) + smoke test. Tugapp (macOS host): Swift under `tugapp/Sources/`; the DEBUG-only `tugapp/Sources/TestHarness/` now contains 4 new Swift files bracketed by `#if DEBUG` at file scope. `tests/in-app/` is a new workspace independent from tugdeck's bun test run; `bunfig.toml` roots `.` and does NOT preload happy-dom. tugcast axum+TCP is NOT the transport; parallel Unix socket per [D02].
 
 ## Files touched
 - tugdeck/src/deck-trace.ts — ring buffer + observers (Phase 1 Step 1).
-- tugdeck/src/__tests__/deck-trace.test.ts — 8 pure-logic ring-buffer tests.
-- tugdeck/src/deck-manager.ts — Step 2: `_flipFirstResponder(trigger)`, `invokeSaveCallback(id, source)`. Step 5: `testMode: boolean` field + 7th constructor option `{ testMode? }`; three private wrappers `putLayoutGuarded` / `putCardStateGuarded` / `putFocusedCardIdGuarded`; every tugbank write call site now routes through a guard; `seedDeckState(args)` public method.
-- tugdeck/src/deck-manager-store.ts — IDeckManagerStore.invokeSaveCallback signature now `(id, source?)`.
-- tugdeck/src/components/chrome/card-host.tsx — mount/unmount trace, `[A3]` a3-fire-on-every-path, focus-call wrappers, selection-restore (Phase 1 Step 2).
-- tugdeck/src/components/chrome/deck-commit-beacon.tsx — <DeckCommitBeacon/> commit-tick emitter.
+- tugdeck/src/__tests__/deck-trace.test.ts — 8 pure-logic tests.
+- tugdeck/src/deck-manager.ts — testMode flag; putLayout/CardState/FocusedCardIdGuarded; seedDeckState(args).
+- tugdeck/src/deck-manager-store.ts — IDeckManagerStore.invokeSaveCallback signature.
+- tugdeck/src/components/chrome/card-host.tsx — mount/unmount trace, `[A3]` emit wrappers.
+- tugdeck/src/components/chrome/deck-commit-beacon.tsx — commit-tick emitter.
 - tugdeck/src/components/chrome/deck-canvas.tsx — mounts DeckCommitBeacon.
-- tugdeck/src/main.tsx — Step 5: `declare global` adds `__tugTestMode?: boolean`; passes `{ testMode: isTestMode }` to DeckManager. Step 6: imports `attachTugTestSurface`; calls it right after `initActionDispatch(connection, deck)`.
-- tugdeck/src/test-surface.ts — NEW (Step 6). Full `TugTestSurface` interface per Spec [#s03-tug-surface]; `createTugTestSurface(deck)` factory; `attachTugTestSurface(deck)` with double-guard `import.meta.env?.DEV === true && window.__tugTestMode === true`. `SURFACE_VERSION = "1.0.0"`. Event synthesis per Spec [#s04-event-synthesis]: `click` dispatches pointerdown→mousedown→pointerup→mouseup→click; `type` uses native-setter + InputEvent; `focusElement` is direct `el.focus()`. `reset(opts)` axes: storage/deck/selectionGuard/orchestrator/trace, each idempotent. `getCaretState` variants: `input` (activeElement is keyed form-control) and `range` (selectionGuard.getCardRange + nodeToPath). `getFormControlValue` queries cardHostRoot for `[data-tug-persist-value]` with `CSS.escape(persistKey)`.
-- tugdeck/src/__tests__/deck-manager.test.ts — +7 tests: testMode default-false, addCard no-fetch under testMode, empty-deck under testMode, seedDeckState atomic-replace + notify, cardStates merge, focusCardId activate, ignore focusCardId when not in state.
-- roadmap/tugplan-in-app-bridge.md — Phase 2 Swift bridge plan (Step 4). 898 lines, skeleton-v2 conformant.
+- tugdeck/src/main.tsx — `__tugTestMode` read; testMode passthrough; attachTugTestSurface(deck).
+- tugdeck/src/test-surface.ts — TugTestSurface interface + createTugTestSurface(deck).
+- tugdeck/src/__tests__/deck-manager.test.ts — +7 tests for testMode / seedDeckState.
+- roadmap/tugplan-in-app-bridge.md — Phase 2 Swift bridge plan (Step 4).
+- tugapp/Sources/TestHarness/TestHarnessBridge.swift — NEW (Step 7). Top-level coordinator; `envSocketPath()`; owns listener + connection lifecycle. `#if DEBUG` file scope.
+- tugapp/Sources/TestHarness/TestHarnessListener.swift — NEW (Step 7). Unix-socket listener per [D06] security contract: parent-dir allow-list (/tmp, /private/tmp, /var/folders, $HOME), uid checks, fchmod(0600), fstat verify, listen(fd, 1). Throws `TestHarnessSecurityError` on violation.
+- tugapp/Sources/TestHarness/TestHarnessConnection.swift — NEW (Step 7). Per-connection NDJSON handler; dispatches version/evalJS/waitForCondition. Surface version "1.0.0". Hard timeouts via `EvalCompletionState` / `PollState` lock-guarded race winners. `isTruthy` helper treats nil/NSNull/false/0/"" as falsy.
+- tugapp/Sources/TestHarness/TestHarnessUserScript.swift — NEW (Step 7). `install(into: WKWebViewConfiguration)` adds `window.__tugTestMode = true` at `atDocumentStart` and enables `developerExtrasEnabled`.
+- tugapp/Sources/MainWindow.swift — Step 7: added `#if DEBUG` block calling `TestHarnessUserScript.install(into: config)` when `TestHarnessBridge.envSocketPath() != nil`; added `#if DEBUG` `testHarnessWebView()` accessor.
+- tugapp/Sources/AppDelegate.swift — Step 7: added `#if DEBUG` `testHarnessBridge` field; `applicationDidFinishLaunching` starts bridge and attaches webView when `TUGAPP_TEST_SOCKET` is set; teardown closes bridge on `applicationShouldTerminate`.
+- tugapp/Tug.xcodeproj/project.pbxproj — Step 7: added 4 PBXBuildFile + 4 PBXFileReference + TestHarness group; wired into Sources build phase.
+- tests/in-app/tsconfig.json — NEW (Step 7). bun-types + ES2022 + bundler moduleResolution. No tugdeck import paths.
+- tests/in-app/.gitignore — NEW. `logs/` + `node_modules/`.
+- tests/in-app/bunfig.toml — NEW. `[test] root = "."`; NO happy-dom preload.
+- tests/in-app/package.json — NEW (auto-generated by `bun add`). Holds bun-types dep.
+- tests/in-app/bun.lock — NEW (auto-generated).
+- tests/in-app/logs/.gitkeep — NEW.
+- tests/in-app/_harness/errors.ts — NEW. TimeoutError / AppCrashedError / VersionSkewError classes (Spec [#s02-error-classes]).
+- tests/in-app/_harness/types.ts — NEW. RPC Request / Response<T> union; EvalJsOptions / WaitForConditionOptions / LaunchTugAppOptions.
+- tests/in-app/_harness/rpc.ts — NEW. `RpcClient` class with NDJSON framing, id correlation, `translateError` mapping wire names → JS classes. Distributive `RequestWithoutId` helper preserves the discriminated-union variants.
+- tests/in-app/_harness/index.ts — NEW. `launchTugApp` (Bun.spawn + Bun.connect with retry + version handshake), `App` class with `evalJS` / `waitForCondition` / `close`. `EXPECTED_SURFACE_VERSION = "1.0.0"`.
+- tests/in-app/_smoke.test.ts — NEW. Skipped unless `TUGAPP_IN_APP_TEST=1`; asserts `evalJS("1+1") === 2` and `app.version === "1.0.0"`.
+- tests/in-app/_harness/errors.test.ts — NEW. Pure-logic error-class unit tests.
+- tests/in-app/_harness/rpc.test.ts — NEW. RpcClient correlation, framing, error translation, close-rejects-all tests.
 
 ## Patterns established
 - `invokeSaveCallback(id, source)` is the single entry point for save-callback fires.
-- `_flipFirstResponder` callers MUST pass a tag (`trigger` string).
-- Trace helper wrappers (`traceApplyFocusSnapshot`, `emitA3`) guarantee events on every code path including early returns.
-- DEV gate idiom: `import.meta.env?.DEV === true` (or `import.meta.env.DEV` in main.tsx).
-- Phase 2 transport decision: **parallel Unix socket** (not tugcast). `ControlSocket.swift` is the template.
-- Phase 2 Swift files live under `tugapp/Sources/TestHarness/` with `#if DEBUG` at line 1.
-- Phase 2 TS double-guard: `import.meta.env.DEV && window.__tugTestMode === true` at every attach point.
-- **testMode guard pattern**: tugbank I/O routes through `this.putLayoutGuarded` / `putCardStateGuarded` / `putFocusedCardIdGuarded`.
-- **seedDeckState contract**: atomic state replace, merge cardStates, fire construction for NEW card ids, discard registries for DEPARTED card ids, single `notify()`, then `activateCard(focusCardId)` if the card exists.
-- `window.__tugTestMode` is declared in the `Window` augmentation in main.tsx. Callers read `window.__tugTestMode === true` so `undefined` is never truthy.
-- **Test surface attach**: declare `window.__tug?` via `declare global` in `test-surface.ts`; assignment happens inside `attachTugTestSurface(deck)` which double-gates on DEV + testMode. `main.tsx` calls `attachTugTestSurface(deck)` exactly once after `initActionDispatch`.
-- **Test surface dependencies**: bound to a `DeckManager` closure (not `IDeckManagerStore`, because `seedDeckState` is concrete-only). Reads `deckTrace` + `selectionGuard` singletons directly.
-- **Event-synthesis shape**: `PointerEventInit` + `MouseEventInit` share a base (`bubbles: true, cancelable: true, composed: true, button: 0`, modifiers). `buttons: 1` for pressed phase, `buttons: 0` for released phase.
-- **Native-setter pattern**: `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype | HTMLTextAreaElement.prototype, "value").set` then `.call(el, newValue)`; follow with `InputEvent("input", { inputType: "insertText", data: ch })` per character.
+- `_flipFirstResponder` callers pass a `trigger` string.
+- DEV gate idiom in TS: `import.meta.env?.DEV === true && window.__tugTestMode === true`.
+- **Phase 2 transport: parallel Unix socket** ([D02]). `ControlSocket.swift` was the template for `TestHarnessListener.swift`.
+- **Swift DEBUG-guard contract**: every TestHarness/*.swift file opens with `#if DEBUG` at line 1 and closes with `#endif` at EOF. MainWindow.swift + AppDelegate.swift references to `TUGAPP_TEST_SOCKET` / `TestHarness*` live inside `#if DEBUG ... #endif` blocks. Verified via `grep -L '^#if DEBUG' tugapp/Sources/TestHarness/*.swift` → empty.
+- **Two-layer TS gate**: `import.meta.env.DEV && window.__tugTestMode === true` at every attach point. The Swift `WKUserScript` at `atDocumentStart` sets `__tugTestMode = true` before any tugdeck JS runs (Spec [#s05-wkuserscript-injection]).
+- **RPC protocol**: NDJSON, one object per line; every request has numeric `id`, response shares it. Methods: `version` / `evalJS` / `waitForCondition`. Server-side hard timeouts: evalJS default 5000ms, waitForCondition default 2000ms / 16ms poll.
+- **Completion-race discipline**: Swift side uses `NSLock`-backed `EvalCompletionState` / `PollState` so exactly one of (timeout, completion handler, poll winner) resolves the RPC.
+- **Discriminated-union Omit trick**: `type RequestWithoutId = Request extends infer R ? (R extends {id: number} ? Omit<R, "id"> : never) : never` — plain `Omit<Request, "id">` collapses the union.
+- **Single `TestHarnessBridge.envSocketPath()`** is the one place `ProcessInfo.processInfo.environment["TUGAPP_TEST_SOCKET"]` is read. All callers hit that accessor — easier to grep for guard coverage.
 
 ## Build / test notes
 - `cd tugdeck && bun x tsc --noEmit` — exits 0 clean.
-- `cd tugdeck && bun test` — 2434 pass, 0 fail (Step 6 added no new tests per plan instructions).
-- `tugutil validate <absolute-path>` — validates a tugplan; warnings for uncited decisions exit 0.
-- `tugutil validate` requires absolute paths when run via agent bash (working dir resets between calls).
-- No linter/formatter for tugdeck; tsc is the gate.
-- DeckManager test file uses `globalThis.fetch` noop stub.
-- **Step 6 tests deferred by plan text**: "No new happy-dom UI tests. Surface is exercised end-to-end by Phase 3 in-app tests." Only tsc + grep + manual smoke are required as checkpoints.
+- `cd tugdeck && bun test` — 2434 pass, 0 fail (unchanged; Step 7 added no tugdeck-side tests).
+- `cd tests/in-app && bun x tsc --noEmit -p tsconfig.json` — exits 0 (requires bun-types installed via `bun add -d bun-types` at setup time).
+- `cd tests/in-app && bun test _harness/` — 15 pass, 0 fail (errors.test + rpc.test).
+- `cd tests/in-app && bun test _smoke.test.ts` — 2 skip (SHOULD_RUN is gated on `TUGAPP_IN_APP_TEST=1`).
+- Swift type-check (both DEBUG and release): `swiftc -typecheck -sdk "$(xcrun --sdk macosx --show-sdk-path)" -target arm64-apple-macos13.0 [-D DEBUG] Sources/*.swift Sources/TestHarness/*.swift` — exits 0 clean.
+- `xcodebuild -scheme Tug -configuration Debug build` — Swift phase succeeds; Copy-Rust-binaries shell phase fails because the worktree has no `tugrust/target/Debug/` — expected and out of scope for Step 7.
+- `grep -L '^#if DEBUG' tugapp/Sources/TestHarness/*.swift` returns empty (every file starts with `#if DEBUG`).
+- tugdeck's `bunfig.toml` has `root = "src"` so `tests/in-app/` is structurally excluded from tugdeck's bun test walk.
+- `tests/in-app/bunfig.toml` has `[test] root = "."` and NO happy-dom preload; it must stay that way (happy-dom is not valid for in-app UI tests per parent plan constraints).
 
 ## Hints for upcoming steps
-- Step 7 (parent plan): Transport + first `evalJS` round-trip. Swift bridge. See `roadmap/tugplan-in-app-bridge.md` Steps 3-7 for the Swift-side breakdown. Parallel Unix socket per [D02].
-- Step 8: `waitForCondition` primitive + structured errors + timeouts. Pure Swift; surface already exposes synchronous reads for it to poll.
-- Step 9: Version handshake + lifecycle + log capture. Swift reads `window.__tug.version` via `evalJS` and asserts `"1.0.0"` major match.
-- Step 10: Bun harness library wrappers at `tests/in-app/_harness/`. Typed wrappers over `evalJS`/`waitForCondition`; `toContainOrderedSubset` matcher. The TS wrappers should import the `TugTestSurface` interface/types from `tugdeck/src/test-surface.ts` — exports include: `TugTestSurface`, `CaretState`, `ClickOptions`, `ResetOptions`, `SeedDeckStateArgs`, `SURFACE_VERSION`.
-- `DeckManager` constructor has 7 positional args; the 7th is `options?: { testMode?: boolean }`.
-- In test mode, `DeckManager` constructor discards stale `initialLayout` / `initialCardStates` / `initialFocusedCardId`.
-- `seedDeckState` method is public on DeckManager but NOT on IDeckManagerStore interface — test-only entry point.
-- `test-surface.ts` uses `CSS.escape` for persistKey lookups. `cardStatesRecordToMap` converts the JSON-transported `Record<string, CardStateBag>` shape back to the `Map` that `DeckManager.seedDeckState` consumes.
-- `makeEmptyDeckState()` returns `{ cards: [], panes: [], hasFocus: document.hasFocus() }` — no panes (invariant 3 forbids empty panes).
-- `getActiveCardId()` in the test surface maps to `deck.getFirstResponderCardId()` — the composite FR bit — because that is what the user perceives as "active". `getFocusedCardId()` maps to `deck.getFocusedCardId()` (top of z-order).
-- `reset` axes are applied in this order: `storage`, `deck`, `selectionGuard`, `orchestrator`, `trace`. `orchestrator` axis piggybacks on an empty `seedDeckState` to drop registries.
-- No new tests written for Step 6 (per plan's "No new happy-dom UI tests" instruction). Phase 3 tests (Steps 13-15) will exercise the surface end-to-end through the Swift bridge.
-- Deferred [D03] and [D08] decisions from `roadmap/tugplan-in-app-bridge.md` remain parked.
+- Step 8 (`waitForCondition` primitive + structured errors + timeouts): the primitive is already implemented on the Swift side (`TestHarnessConnection.dispatchWaitForCondition`) and exposed as `App.waitForCondition(script, opts)`. Step 8 may add test-file wrappers or wire in the specific timeout semantics — read Step 8's tasks/tests section carefully before re-implementing.
+- Step 9 (version handshake + lifecycle + log capture): the version handshake is implemented (both sides: Swift `TestHarnessConnection` responds with `"1.0.0"`; harness `launchTugApp` asserts major match and throws `VersionSkewError`). Step 9 likely expands log capture (per-test `logs/<test>.log`) and possibly surface-lifecycle hooks. `LaunchTugAppOptions.testName` already exists but isn't consumed — Step 9 should wire it to stdout/stderr redirection.
+- Step 10 (bun harness library wrappers + `toContainOrderedSubset`): `tests/in-app/_harness/matchers.ts` is NOT yet written. Step 10 adds it plus gesture / reset / seed wrappers. Import types from `tugdeck/src/test-surface.ts` — exports include `TugTestSurface`, `CaretState`, `ClickOptions`, `ResetOptions`, `SeedDeckStateArgs`, `SURFACE_VERSION`. Also per plan: add a no-`setTimeout`/`setInterval` eslint rule scoped to `tests/in-app/`.
+- Step 11 (Phase 2 Integration Checkpoint): consumes the Swift bridge's step-8 checkpoint (smoke test 10x, binary-size delta, release grep for TestHarness identifiers). The 10x smoke run requires a built debug Tug.app at `/Applications/Tug.app/Contents/MacOS/Tug` (or `TUGAPP_DEBUG_PATH`). Set `TUGAPP_IN_APP_TEST=1` to run; otherwise the smoke test skips by design.
+- `EXPECTED_SURFACE_VERSION = "1.0.0"` in `tests/in-app/_harness/index.ts` must stay in lockstep with `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` AND `TestHarnessConnection.surfaceVersion` in Swift. Any bump must update all three.
+- Socket path default in harness: `/tmp/tugapp-test-${randomUUID()}.sock`. Swift-side allow-list includes `/tmp`, `/private/tmp`, `/var/folders`, `$HOME`. On macOS `/tmp` is symlinked to `/private/tmp` — both are in the allow-list so either resolution works.
+- `TestHarnessConnection.attach(webView:)` is what starts the read handler — connection objects are NOT reading until the webView is attached. `TestHarnessBridge.attach(webView:)` is idempotent and propagates to an already-connected client.
+- The Bun-side `RpcTransport` bridge uses a shared mutable state object (`sharedState`) that's filled in during `connectWithRetry` and read by `makeSocketTransport`. This is slightly clever but keeps the socket setup and transport construction in separate scopes with clear ownership. Don't regret-refactor it in Step 8/10 without reading why.
+- `tests/in-app/package.json` currently carries only `bun-types`. If a future step needs additional deps, add them via `cd tests/in-app && bun add -d <pkg>`.
+- Deferred [D03] and [D08] decisions from `roadmap/tugplan-in-app-bridge.md` remain parked (CGEventPost, T-1/T-2 placement already resolved).

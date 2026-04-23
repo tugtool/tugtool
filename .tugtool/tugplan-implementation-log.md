@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-04-23T23:08:33Z
+---
+
+## step-7: Swift DEBUG-only Unix-socket bridge (TestHarnessBridge/Listener/Connection/UserScript under tugapp/Sources/TestHarness/, all #if DEBUG-bracketed at file scope) + TypeScript harness library (tests/in-app/_harness/ with errors.ts, types.ts, rpc.ts, index.ts exposing launchTugApp + App class with evalJS). WKUserScript injects __tugTestMode at atDocumentStart. AppDelegate launches bridge when TUGAPP_IN_APP_TEST=1 + TUGAPP_TEST_SOCKET set. Harness RPC framing is newline-delimited JSON with request IDs, timeout support, and structured error translation. 15 _harness unit tests pass; smoke test gated on built debug binary (deferred). tugdeck baseline 2434 pass / 0 fail preserved.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-6
 date: 2025-04-23T22:53:47Z
 ---

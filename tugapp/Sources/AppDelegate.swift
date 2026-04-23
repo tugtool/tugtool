@@ -12,6 +12,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
 
+    #if DEBUG
+    /// In-app test harness bridge, active only when
+    /// `TUGAPP_TEST_SOCKET` env var is set. DEBUG-only.
+    private var testHarnessBridge: TestHarnessBridge?
+    #endif
+
     // File menu state
     private var closeMenuItem: NSMenuItem!
 
@@ -66,6 +72,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.bridgeDelegate = self
         loadPreferences()
         lap("loadPreferences")
+
+        #if DEBUG
+        // In-app test harness: if TUGAPP_TEST_SOCKET is set, start
+        // the Unix-socket listener and hand it the live WKWebView.
+        // All gated by `#if DEBUG`; zero bytes ship to release.
+        if let socketPath = TestHarnessBridge.envSocketPath() {
+            let bridge = TestHarnessBridge(socketPath: socketPath)
+            bridge.start()
+            bridge.attach(webView: window.testHarnessWebView())
+            self.testHarnessBridge = bridge
+            lap("testHarnessBridge started")
+        }
+        #endif
 
         buildMenuBar()
         lap("buildMenuBar")
@@ -172,6 +191,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // by the time this completion handler runs. Safe to tear down.
                 self.window.cleanupBridge()
                 self.processManager.stop()
+                #if DEBUG
+                self.testHarnessBridge?.close()
+                self.testHarnessBridge = nil
+                #endif
                 NSApp.reply(toApplicationShouldTerminate: true)
             }
         }
