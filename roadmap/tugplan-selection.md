@@ -1016,18 +1016,18 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - Save callback is wrapped in try/catch at the DeckManager callsite so a throwing save callback doesn't block destruction (per [R06]).
 
 **Tasks:**
-- [ ] Add `invokeSaveCallback(cardId)` call before destruction notifications at `deck-manager.ts:1061` and `:596`.
-- [ ] Wrap the invoke in try/catch and dev-warn on throw.
-- [ ] Update `_removeCard`'s docstring to name the invariant.
+- [x] Add `invokeSaveCallback(cardId)` call before destruction notifications at `deck-manager.ts:1061` and `:596`. _(Via a new `flushSaveCallbackBeforeDestruction` helper that also owns the try/catch and dev-warn so both callsites share one policy.)_
+- [x] Wrap the invoke in try/catch and dev-warn on throw.
+- [x] Update `_removeCard`'s docstring to name the invariant.
 
 **Upholds:** [L23] — last unsaved edits of a closing card are preserved.
 
 **Tests:**
-- [ ] `deck-manager.test.ts`: close a card that registered a save callback; assert the callback ran before the destruction lifecycle event.
-- [ ] Save callback throws; destruction still proceeds; dev warn logged.
+- [x] `deck-manager.test.ts`: close a card that registered a save callback; assert the callback ran before the destruction lifecycle event.
+- [x] Save callback throws; destruction still proceeds; dev warn logged.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 

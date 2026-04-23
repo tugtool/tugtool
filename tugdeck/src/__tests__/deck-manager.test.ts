@@ -378,6 +378,119 @@ describe("DeckManager.handlePaneClosed", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Save-on-close: save callback runs before cardWillBeginDestruction.
+// ([L23], [Q05]; Step 14 of roadmap/tugplan-selection.md.)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager save-on-close", () => {
+  it("fires the card's save callback BEFORE cardWillBeginDestruction (last-card close path)", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const paneId = hostStack(manager.getDeckState(), cardId).id;
+
+    const log: string[] = [];
+    manager.registerSaveCallback(cardId, () => log.push(`save:${cardId}`));
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`destroy:${id}`),
+    );
+
+    manager.handlePaneClosed(paneId);
+
+    // Save must land before destruction so subscribers that release
+    // engine state or session bindings can't cut the ground out from
+    // under the save.
+    expect(log).toEqual([`save:${cardId}`, `destroy:${cardId}`]);
+    expect(manager.getDeckState().cards.length).toBe(0);
+  });
+
+  it("fires save before destruction for every card in a multi-card pane", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const c1 = manager.addCard("hello") as string;
+    manager.addCard("terminal") as string;
+    const paneId = hostStack(manager.getDeckState(), c1).id;
+
+    const log: string[] = [];
+    // Grab the two cards currently in the pane.
+    const cardIds = hostStack(manager.getDeckState(), c1).cardIds;
+    for (const id of cardIds) {
+      manager.registerSaveCallback(id, () => log.push(`save:${id}`));
+    }
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`destroy:${id}`),
+    );
+
+    manager.handlePaneClosed(paneId);
+
+    // `_closePane` flushes every save, then fires every destruction.
+    // Saves must all appear before any destruction notification.
+    const firstDestroyIdx = log.findIndex((e) => e.startsWith("destroy:"));
+    const lastSaveIdx = (() => {
+      let i = -1;
+      log.forEach((e, idx) => { if (e.startsWith("save:")) i = idx; });
+      return i;
+    })();
+    expect(firstDestroyIdx).toBeGreaterThan(lastSaveIdx);
+    expect(log.filter((e) => e.startsWith("save:")).length).toBe(cardIds.length);
+    expect(log.filter((e) => e.startsWith("destroy:")).length).toBe(cardIds.length);
+  });
+
+  it("fires save before destruction on the surviving-pane remove path", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const c1 = manager.addCard("hello") as string;
+    const c2 = manager.addCard("terminal") as string;
+    // Collapse both cards into one pane so `removeCard` hits the
+    // survivor path (len > 1) rather than the pane-close path.
+    const sourcePane = hostStack(manager.getDeckState(), c1).id;
+    const targetPane = hostStack(manager.getDeckState(), c2).id;
+    manager.moveCardToPane(sourcePane, c1, targetPane, 0);
+    expect(hostStack(manager.getDeckState(), c1).id).toBe(targetPane);
+    expect(hostStack(manager.getDeckState(), c1).cardIds.length).toBe(2);
+
+    const log: string[] = [];
+    manager.registerSaveCallback(c1, () => log.push(`save:${c1}`));
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, (id) =>
+      log.push(`destroy:${id}`),
+    );
+
+    manager.removeCard(targetPane, c1);
+
+    expect(log).toEqual([`save:${c1}`, `destroy:${c1}`]);
+    // The other card survives.
+    expect(manager.getDeckState().cards.find((c) => c.id === c2)).toBeDefined();
+  });
+
+  it("a throwing save callback does not block destruction and surfaces a dev warn", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const paneId = hostStack(manager.getDeckState(), cardId).id;
+
+    manager.registerSaveCallback(cardId, () => {
+      throw new Error("save boom");
+    });
+    let destroyed = false;
+    manager.cardLifecycle.observeCardWillBeginDestruction(null, () => {
+      destroyed = true;
+    });
+
+    const warnSpy = spyOn(console, "warn");
+    try {
+      expect(() => manager.handlePaneClosed(paneId)).not.toThrow();
+      expect(destroyed).toBe(true);
+      expect(manager.getDeckState().cards.length).toBe(0);
+      // Dev-warn contains the card id so the author can locate the
+      // offending save callback.
+      const args = warnSpy.mock.calls.map((c) => c.join(" "));
+      const hit = args.some((s) => s.includes(cardId) && s.toLowerCase().includes("save"));
+      expect(hit).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T33: moveCard updates position and size
 // ---------------------------------------------------------------------------
 

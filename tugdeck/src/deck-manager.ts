@@ -582,8 +582,12 @@ export class DeckManager implements IDeckManagerStore {
       });
     }
 
-    // Phase 2: fire destruction for each card in the closed stack, then
-    // remove the stack and its cards from state.
+    // Phase 2: flush each card's save callback then fire destruction.
+    // Save-on-close runs BEFORE destruction so the card's last bag
+    // lands before subscribers tear down dependent state. [L23], [Q05].
+    for (const cid of win.cardIds) {
+      this.flushSaveCallbackBeforeDestruction(cid);
+    }
     for (const cid of win.cardIds) {
       this.cardLifecycle.notifyCardWillBeginDestruction(cid);
     }
@@ -915,6 +919,37 @@ export class DeckManager implements IDeckManagerStore {
     this.saveCallbacks.get(id)?.();
   }
 
+  /**
+   * Flush a card's save callback before the card's own destruction
+   * runs. Called by close paths (`_removeCard`, `_closePane`) so the
+   * card's last unsaved edits land in the bag before
+   * `cardWillBeginDestruction` subscribers tear down dependent state
+   * (engine teardown, session release, etc.). Per [Q05] the save
+   * runs BEFORE the destruction notification — the reverse order
+   * would let a destruction subscriber invalidate the state the save
+   * callback is trying to read.
+   *
+   * The callback is wrapped in `try/catch` ([R06]) so a single
+   * throwing save never blocks the destruction. In dev, a throw is
+   * logged with enough context to find the offending card; in
+   * production the failure is swallowed silently — the alternative
+   * (blocking destruction and leaving the deck in an inconsistent
+   * state) is strictly worse.
+   */
+  private flushSaveCallbackBeforeDestruction(cardId: string): void {
+    try {
+      this.invokeSaveCallback(cardId);
+    } catch (err) {
+      if (isDevEnv()) {
+        console.warn(
+          `[deck-manager] save callback threw during close for card "${cardId}"; ` +
+            `destruction proceeds regardless.`,
+          err,
+        );
+      }
+    }
+  }
+
   saveAndFlushSync(): void {
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyCardStates({ sync: true });
@@ -1008,6 +1043,14 @@ export class DeckManager implements IDeckManagerStore {
    * `_closePane`. Otherwise removes the card from `deckState.cards` and
    * from the stack's `cardIds`, reassigning `activeCardId` if needed.
    *
+   * **Save-on-close invariant ([L23], [Q05]):** the card's save
+   * callback fires BEFORE `notifyCardWillBeginDestruction`, so the
+   * last unsaved bag (scroll, DOM-selection, focus, form-controls,
+   * region-scroll, engine content) lands in tugbank before
+   * destruction subscribers release any dependent state. A throwing
+   * save callback is caught and dev-warned; destruction proceeds
+   * regardless per [R06].
+   *
    * Transition 8a: when the removed card is the first responder, flip
    * the composite bit to the neighbor BEFORE firing
    * `cardWillBeginDestruction`.
@@ -1049,7 +1092,10 @@ export class DeckManager implements IDeckManagerStore {
       });
     }
 
-    // Phase 2: destruction + removal.
+    // Phase 2: save, then destruction + removal. Save runs first so
+    // the card's last bag is flushed before subscribers tear down
+    // dependent state. [L23], [Q05].
+    this.flushSaveCallbackBeforeDestruction(cardId);
     this.cardLifecycle.notifyCardWillBeginDestruction(cardId);
     const currentStack =
       this.deckState.panes.find((s) => s.id === paneId) ?? win;
