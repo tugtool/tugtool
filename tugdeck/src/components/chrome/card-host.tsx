@@ -442,8 +442,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
       // Install onContentReady so scroll is applied after the child
       // commits restored content — at that point the content's dimensions
-      // are valid and scroll clamps correctly. DOM-selection restore is
-      // wired in a later step (see selection plan Step 10).
+      // are valid and scroll clamps correctly. DOM-selection is also
+      // re-restored here because engine-less content factories may
+      // materialize their DOM as part of `onRestore`, so the paths in
+      // `bag.domSelection` only resolve once the child has committed.
+      // For engine-managed cards the engine's own publish (via
+      // `onSelectionChanged` inside `setSelectedRange`) runs during
+      // `onRestore` and naturally wins — our call is either redundant
+      // (paths still resolve and re-publish the same Range) or a no-op
+      // (paths stale after innerHTML rewrite, `pathToNode` returns null).
       callbacks.onContentReady = () => {
         const el = hostContentElRef.current;
         if (el) {
@@ -453,6 +460,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           }
           if (el.style.visibility === "hidden") {
             el.style.visibility = "";
+          }
+          if (bag.domSelection) {
+            const cardRoot = findCardRoot(el, cardId);
+            if (cardRoot) {
+              selectionGuard.restoreCardDomSelection(
+                cardId,
+                bag.domSelection,
+                cardRoot,
+              );
+            }
           }
         }
       };
@@ -468,14 +485,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [cardId, store],
   );
 
-  // Scroll / form-control / region-scroll restore: triggered by
-  // `hostContentEl` becoming available. Fires idempotently whenever the
-  // host element changes (mount, cross-pane move, pane re-registration).
+  // Scroll / DOM-selection / form-control / region-scroll restore:
+  // triggered by `hostContentEl` becoming available. Fires idempotently
+  // whenever the host element changes (mount, cross-pane move, pane
+  // re-registration).
   //
   // **Outer scroll** applies regardless of content-case: for a no-content
   // bag this is the only restore path; for a with-content bag this is a
   // best-effort apply before the child commits, and `onContentReady`
   // re-applies the correct clamp after content renders.
+  //
+  // **DOM selection** is published to `selectionGuard` for every card
+  // that carries a saved `bag.domSelection`, regardless of whether this
+  // card is the active card of the active pane — the Step 5 paint
+  // authority buckets each card's Range into either native `::selection`
+  // or the `inactive-selection` custom highlight. For engine-managed
+  // cards the engine's own restore (inside `onContentReady`) re-publishes
+  // after innerHTML settles and wins by running after this call; for
+  // engine-less cards this is the only publish and it seeds `cardRanges`.
   //
   // **Form controls** and **region scrolls** both replay via the same
   // MutationObserver so elements that mount late (behind feedsReady or
@@ -487,8 +514,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // a `Set<key>` — so unrelated subtree mutations after the first
   // apply never clobber a scroll position the user has since changed.
   //
-  // DOM-selection restore is not wired here; that axis is owned by the
-  // selection-guard paint authority (see selection plan Step 10). L22, L23.
+  // L22 (paint observes the store), L23 (preserve user-visible state).
   useLayoutEffect(() => {
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
@@ -496,6 +522,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (bag.scroll !== undefined) {
       hostContentEl.scrollLeft = bag.scroll.x;
       hostContentEl.scrollTop = bag.scroll.y;
+    }
+
+    // DOM-selection restore runs unconditionally for every card with a
+    // saved snapshot; see the block comment above for ordering rationale.
+    if (bag.domSelection) {
+      const cardRoot = findCardRoot(hostContentEl, cardId);
+      if (cardRoot) {
+        selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRoot);
+      }
     }
 
     const formSnapshots = bag.formControls;

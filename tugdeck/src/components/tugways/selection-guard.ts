@@ -30,6 +30,7 @@
 
 import { getDeckStore } from "../../lib/deck-store-registry";
 import { isDevEnv } from "../../lib/dev-env";
+import type { DomSelectionSnapshot } from "../../layout-tree";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -426,6 +427,48 @@ class SelectionGuard {
    */
   getCardRange(cardId: string): Range | undefined {
     return this.cardRanges.get(cardId);
+  }
+
+  /**
+   * Cold-boot restore: resolve a saved {@link DomSelectionSnapshot}
+   * back into a live `Range` and publish it for `cardId`.
+   *
+   * Paths are walked from `cardRoot` via `pathToNode`. If either path
+   * no longer resolves to a valid node, the snapshot is stale (DOM
+   * shape diverged from save time) and the method is a silent no-op —
+   * the guard is left with whatever state it had, and the engine /
+   * browser can re-populate via fresh user interaction.
+   *
+   * `snapshot === null` means "save time recorded no selection" and
+   * is treated as a no-op (not a clear) so this method does not fight
+   * an engine that has already published during `onRestore(bag.content)`.
+   *
+   * Order discipline at the callsite (see `CardHost` mount effect and
+   * the tail of `registerPersistenceCallbacks`): for engine-managed
+   * cards the engine's own `restoreState` → `setSelectedRange` →
+   * `onSelectionChanged` → `updateCardDomSelection` wins by running
+   * after this method. For engine-less cards, this method's publish is
+   * the only publish, and it seeds `cardRanges` directly.
+   */
+  restoreCardDomSelection(
+    cardId: string,
+    snapshot: DomSelectionSnapshot | null | undefined,
+    cardRoot: HTMLElement,
+  ): void {
+    if (snapshot === null || snapshot === undefined) return;
+    const anchorNode = pathToNode(cardRoot, [...snapshot.anchorPath]);
+    const focusNode = pathToNode(cardRoot, [...snapshot.focusPath]);
+    if (anchorNode === null || focusNode === null) return;
+    const range = new Range();
+    try {
+      range.setStart(anchorNode, snapshot.anchorOffset);
+      range.setEnd(focusNode, snapshot.focusOffset);
+    } catch {
+      // Offsets out of range (node text shrunk since save). Skip
+      // silently — the card keeps whatever live Range it had.
+      return;
+    }
+    this.updateCardDomSelection(cardId, range);
   }
 
   // ---- Paint ----

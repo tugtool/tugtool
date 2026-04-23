@@ -877,18 +877,18 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - For engine-managed cards (tide), the engine's `restoreState` during `onRestore(bag.content)` calls `setSelectedRange` which in turn triggers `engine.onSelectionChanged` → `updateCardDomSelection` (Step 3 + 4). If the engine's restore happens after `selectionGuard.restoreCardDomSelection`, the engine's publish wins (overwrites `cardRanges[cardId]`). Order: content restore (step in `registerPersistenceCallbacks`) → `selectionGuard.restoreCardDomSelection` (new). Engine publish overwrites; for engine-less cards, selectionGuard's initial write wins.
 
 **Tasks:**
-- [ ] Add `restoreCardDomSelection` to `selection-guard.ts`.
-- [ ] Call it from `CardHost`'s mount effect (after scroll restore, around `card-host.tsx:287`).
-- [ ] Also call from `CardHost`'s `onContentReady` tail in `registerPersistenceCallbacks` (`card-host.tsx:236`) for with-content bags.
+- [x] Add `restoreCardDomSelection` to `selection-guard.ts`.
+- [x] Call it from `CardHost`'s mount effect (after scroll restore, around `card-host.tsx:287`).
+- [x] Also call from `CardHost`'s `onContentReady` tail in `registerPersistenceCallbacks` (`card-host.tsx:236`) for with-content bags.
 
 **Upholds:** [L23] user-visible selection survives reload for non-engine cards (engine owns its own via content restore path). [L10] resolution happens in selection-guard, which owns Range ↔ DOM translation.
 
 **Tests:**
-- [ ] Mount a card with a pre-populated `bag.domSelection`, assert `selectionGuard.cardRanges.get(cardId)` matches after mount.
-- [ ] Mount an inactive card (not the active card of active pane) with `bag.domSelection`, assert the Range paints in `inactive-selection` (via Step 5 paint rule).
+- [x] Mount a card with a pre-populated `bag.domSelection`, assert `selectionGuard.cardRanges.get(cardId)` matches after mount.
+- [x] Mount an inactive card (not the active card of active pane) with `bag.domSelection`, assert the Range paints in `inactive-selection` (via Step 5 paint rule).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 
