@@ -217,32 +217,12 @@ describe("T14 – unregisterBoundary cleans up inactive highlight state", () => 
     selectionGuard.reset();
   });
 
-  it("removes the card's inactive Range on unregister", () => {
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Make card A active with a selection, then switch to card B
-    // so card A's selection goes to inactive. Keep mock active for deactivation.
-    const rangeA = makeRange(boundaryA, "will be cleaned");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-    selectionGuard.activateCard("card-b");
-    restoreWindow();
-
-    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
-    expect(inactiveHl.size).toBe(1);
-
-    // Unregister card A — its inactive range should be removed.
-    selectionGuard.unregisterBoundary("card-a");
-    expect(inactiveHl.size).toBe(0);
-
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
+  // The "inactive range on unregister" test was retired with the
+  // activateCard-populates-inactive-highlight mechanism. In the Step 5
+  // model, `cardRanges` is published by owning components (e.g.
+  // TugTextEngine.onSelectionChanged); paint reads `cardRanges` and
+  // `updatePaint()` in `unregisterBoundary` flushes any stale entries.
+  // Step 5's own tests pin the new contract.
 
   it("is a no-op when the card has no highlight state (does not throw)", () => {
     expect(() => selectionGuard.unregisterBoundary("card-no-range")).not.toThrow();
@@ -260,34 +240,11 @@ describe("T15 – reset() clears inactive highlight state", () => {
     selectionGuard.reset();
   });
 
-  it("clears all ranges from inactive highlight on reset", () => {
-    const registry = installMockHighlightApi();
-    selectionGuard.attach();
-
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Create selection in A, switch to B so A goes to inactive.
-    // Keep mock active for deactivation.
-    const rangeA = makeRange(boundaryA, "reset me");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-    selectionGuard.activateCard("card-b");
-    restoreWindow();
-
-    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
-    expect(inactiveHl.size).toBe(1);
-
-    selectionGuard.reset();
-    expect(inactiveHl.size).toBe(0);
-
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
+  // "clears all ranges from inactive highlight on reset" retired with
+  // activateCard-populates-highlight. `reset()` in the Step 5 model
+  // calls `inactiveHighlight.clear()` directly; Step 5's own tests pin
+  // the new paint-from-cardRanges contract and verify that reset wipes
+  // everything together.
 
   it("reset() is safe to call when no highlight API is available", () => {
     expect(() => selectionGuard.reset()).not.toThrow();
@@ -312,58 +269,10 @@ describe("T20 – activateCard card switch", () => {
     selectionGuard.reset();
   });
 
-  it("deactivating a card clones its selection into inactive-selection", () => {
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Activate card A with a selection.
-    const rangeA = makeRange(boundaryA, "card A text");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-
-    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
-    expect(inactiveHl.size).toBe(0);
-
-    // Switch to card B — card A's selection goes to inactive.
-    // Keep the mock selection active so activateCard can read it
-    // when deactivating card A.
-    selectionGuard.activateCard("card-b");
-    expect(inactiveHl.size).toBe(1);
-
-    restoreWindow();
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
-
-  it("activating a card with a saved inactive range restores it and removes from inactive", () => {
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Card A gets a selection, then we switch to B (keep mock active for deactivation).
-    const rangeA = makeRange(boundaryA, "card A restore");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-    selectionGuard.activateCard("card-b");
-
-    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
-    expect(inactiveHl.size).toBe(1);
-
-    // Switch back to A — its range should be removed from inactive.
-    restoreWindow();
-    selectionGuard.activateCard("card-a");
-    expect(inactiveHl.size).toBe(0);
-
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
+  // The "activateCard clones / restores selection" pair was retired
+  // with the manual-clone mechanism. Paint is now driven by
+  // `cardRanges` + the deck-store subscription via `updatePaint()`.
+  // See Step 5's own tests for the new dim/restore contract.
 
   it("is a no-op when highlight API is unavailable", () => {
     selectionGuard.detach();
@@ -412,74 +321,10 @@ describe("T21 – activateCard same-card no-op", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// T23: saveSelection falls back to inactiveRanges
-// ---------------------------------------------------------------------------
-
-describe("T23 – saveSelection inactiveRanges fallback", () => {
-  let registry: MockHighlightRegistry;
-
-  beforeEach(() => {
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-  });
-
-  afterEach(() => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
-    selectionGuard.reset();
-  });
-
-  it("saveSelection returns saved state from inactiveRanges when browser Selection is empty", () => {
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Card A gets a selection, then we switch to B (A goes inactive).
-    // Keep mock active for deactivation.
-    const rangeA = makeRange(boundaryA, "fallback text");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-    selectionGuard.activateCard("card-b");
-
-    // Now card A has no browser Selection but has an inactiveRange.
-    mockEmptySelection();
-    const saved = selectionGuard.saveSelection("card-a");
-    expect(saved).not.toBeNull();
-    expect(saved!.anchorPath.length).toBeGreaterThan(0);
-    expect(saved!.focusPath.length).toBeGreaterThan(0);
-
-    restoreWindow();
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
-
-  it("saveSelection returns null after unregisterBoundary (inactiveRanges cleaned up)", () => {
-    const boundaryA = makeBoundary();
-    const boundaryB = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
-    selectionGuard.registerBoundary("card-a", boundaryA);
-    selectionGuard.registerBoundary("card-b", boundaryB);
-
-    // Card A gets a selection, switch to B, then unregister A.
-    // Keep mock active for deactivation.
-    const rangeA = makeRange(boundaryA, "will be cleaned");
-    mockSelection(boundaryA, rangeA);
-    selectionGuard.activateCard("card-a");
-    selectionGuard.activateCard("card-b");
-    restoreWindow();
-    selectionGuard.unregisterBoundary("card-a");
-
-    mockEmptySelection();
-    const saved = selectionGuard.saveSelection("card-a");
-    expect(saved).toBeNull();
-
-    restoreWindow();
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
-    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
-  });
-});
+// The T23 "saveSelection falls back to inactiveRanges" block was retired
+// with the activateCard-populates-inactiveRanges mechanism. Step 5
+// replaced `inactiveRanges` with `cardRanges` (published by the owning
+// component). `saveSelection`'s fallback now reads `cardRanges`. The
+// legacy `saveSelection` / `restoreSelection` API itself retires at
+// Step 9; new coverage for the publish → paint path lives in Step 5's
+// own test file.

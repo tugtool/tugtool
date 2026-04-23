@@ -1709,14 +1709,28 @@ export class TugTextEngine {
     });
 
     // 10b. Document-level selectionchange — publish the engine's live
-    // selection to `onSelectionChanged` subscribers when the caret or
-    // ranged selection changes. `selectionchange` fires on `document`
-    // (not on elements), so the listener lives at document scope;
-    // `emitSelectionChanged` self-filters (anchor must be inside the
-    // engine's root to emit a non-null range) and deduplicates
-    // (identical endpoints → skip), so selections anywhere else on the
-    // page do not spam subscribers.
+    // selection to `onSelectionChanged` subscribers when the user moves
+    // the caret or extends a ranged selection inside this engine's root.
+    //
+    // Important: only fire for selections *inside* the root. A
+    // selection that moves *out* of the root (e.g. the user clicks a
+    // different card) is not a transition we want to publish — our
+    // subscribers want to remember the last in-root Range so the
+    // guard can paint it dim while the card is backgrounded, then
+    // restore it to native `::selection` on return. Emitting `null`
+    // on focus-out would drop that state immediately. Programmatic
+    // clears (`clear()` / `restoreState({selection: null})`) still
+    // emit `null` explicitly at their call site; only the listener
+    // filters.
     this.listen(document, "selectionchange", () => {
+      const sel = window.getSelection();
+      if (
+        sel === null ||
+        sel.rangeCount === 0 ||
+        !this.root.contains(sel.anchorNode)
+      ) {
+        return;
+      }
       this.emitSelectionChanged();
     });
 

@@ -28,6 +28,9 @@
  * See tuglaws/selection-model.md for the full system documentation.
  */
 
+import { getDeckStore } from "../../lib/deck-store-registry";
+import { isDevEnv } from "../../lib/dev-env";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -223,14 +226,9 @@ class SelectionGuard {
   // CSS Highlight for inactive cards' dimmed selections.
   private inactiveHighlight: Highlight | null = null;
 
-  // cardId → cloned Range for cards whose selection is dimmed in the
-  // inactive-selection highlight. Written on card deactivation, removed
-  // on card reactivation. NOT written on every selectionchange.
-  private inactiveRanges: Map<string, Range> = new Map();
-
   // cardId → last-known DOM Range published by the card's owning
   // component (e.g. TugTextEngine's `onSelectionChanged`). This is the
-  // input to the multi-card paint generalization that Step 5 installs.
+  // input to the multi-card paint generalization in `updatePaint`.
   //
   // Only real Ranges are stored: `updateCardDomSelection(id, null)`
   // removes the entry rather than writing a sentinel. "No entry" covers
@@ -247,6 +245,30 @@ class SelectionGuard {
 
   // Whether CSS.highlights is available.
   private highlightsAvailable = false;
+
+  // Whether the app window currently holds focus. Flipped to `false`
+  // on `applicationDidResignActive` and back to `true` on
+  // `applicationDidBecomeActive`. Read by `updatePaint`: when `false`,
+  // every card's Range — including the focused card's — paints in the
+  // `inactive-selection` highlight, matching the browser's own
+  // window-blur dim. Replaces the old `deactivatedCardId` field that
+  // tracked one card's Range across the resign/activate transition.
+  private windowHasFocus = true;
+
+  // Deck-store subscription installed by `attach()` when a deck store
+  // is registered. Fires on any state change; the handler calls
+  // `updatePaint()` so paint keeps up with `activePaneId` /
+  // `activeCardId` transitions that change which card's Range belongs
+  // in native `::selection` vs. the `inactive-selection` highlight.
+  private deckStoreUnsubscribe: (() => void) | null = null;
+
+  // Last focused card id observed by the deck-store subscription
+  // handler. Held so the handler can detect *transitions* (focus
+  // moved from A → B) and install the one-shot mousedown interceptor
+  // only for genuine switches that will restore a saved Range via
+  // `setBaseAndExtent`. Every-notify paint calls still happen, but
+  // the interceptor is scoped to real focus changes.
+  private lastPaintFocusedCardId: string | null = null;
 
   // One-shot mousedown prevention handler reference (for cleanup in reset).
   private boundPreventMousedown: ((e: MouseEvent) => void) | null = null;
@@ -347,25 +369,22 @@ class SelectionGuard {
    * Called by `useSelectionBoundary` on unmount cleanup.
    *
    * Clears every card-scoped data structure in lockstep so no card-
-   * specific state survives past its boundary: the `inactive-selection`
-   * highlight entry, the `inactiveRanges` Map, and the `cardRanges`
-   * Map. Any future card-scoped map added to this class must be cleared
-   * here too.
+   * specific state survives past its boundary: the `cardRanges` Map
+   * entry and any lingering interactive-tracking state. Any future
+   * card-scoped map added to this class must be cleared here too.
+   * A final `updatePaint()` flushes the inactive highlight so stale
+   * Ranges don't linger until the next publish.
    */
   unregisterBoundary(cardId: string): void {
     this.boundaries.delete(cardId);
     if (this.activeCardId === cardId) {
       this.stopTracking();
     }
-    const range = this.inactiveRanges.get(cardId);
-    if (range && this.inactiveHighlight) {
-      this.inactiveHighlight.delete(range);
-    }
-    this.inactiveRanges.delete(cardId);
-    this.cardRanges.delete(cardId);
+    const hadRange = this.cardRanges.delete(cardId);
     if (this.activeCardId_highlight === cardId) {
       this.activeCardId_highlight = null;
     }
+    if (hadRange) this.updatePaint();
   }
 
   // ---- Card DOM-selection publish ----
@@ -389,6 +408,7 @@ class SelectionGuard {
     } else {
       this.cardRanges.set(cardId, range);
     }
+    this.updatePaint({ changedCardId: cardId });
   }
 
   /**
@@ -397,11 +417,144 @@ class SelectionGuard {
    * (either never published, or the last publish was an explicit clear
    * — the two cases are indistinguishable by design, see
    * {@link cardRanges}). Exposed primarily for tests; production code
-   * reads `cardRanges` indirectly through the paint loop that Step 5
-   * will install.
+   * reads `cardRanges` indirectly through {@link updatePaint}.
    */
   getCardRange(cardId: string): Range | undefined {
     return this.cardRanges.get(cardId);
+  }
+
+  // ---- Paint ----
+
+  /**
+   * Resolve the id of the card whose selection belongs in native
+   * `::selection`: the active card of the active pane. Returns `null`
+   * when no pane is active, no deck store is registered (tests that
+   * bootstrap only the guard), or the active pane has no active card.
+   * Does not consider window focus — callers that want focus-gated
+   * behavior read {@link windowHasFocus} alongside.
+   */
+  private getFocusedCardId(): string | null {
+    const store = getDeckStore();
+    if (store === null) return null;
+    const state = store.getSnapshot();
+    if (state.activePaneId === undefined) return null;
+    const pane = state.panes.find((p) => p.id === state.activePaneId);
+    if (pane === undefined) return null;
+    return pane.activeCardId;
+  }
+
+  /**
+   * Rebuild the `inactive-selection` CSS Custom Highlight and sync the
+   * native `window.getSelection()` to reflect the current state of
+   * {@link cardRanges}, {@link windowHasFocus}, and the deck-store's
+   * focused card. [L06] is the anchor: paint is appearance-zone, driven
+   * by singleton state mutations on the DOM highlight and the native
+   * selection — no React render involved. [L22] is why paint is driven
+   * by a store subscription rather than a `useSyncExternalStore`-style
+   * round-trip.
+   *
+   * ## Rules
+   *
+   * - Every entry of `cardRanges` whose Range is still anchored to
+   *   live DOM (`document.contains(startContainer) && document.contains(endContainer)`)
+   *   paints in the `inactive-selection` highlight, **except** when the
+   *   entry's cardId is the focused card *and* the window has focus.
+   *   In that case the Range paints natively via `window.getSelection()`
+   *   instead.
+   * - Stale Ranges (one or both endpoints detached from the document —
+   *   see [R01](#r01-stale-ranges): an engine mutated its subtree
+   *   without calling `updateCardDomSelection(cardId, newRange)`) are
+   *   dropped from `cardRanges` and, in dev builds, logged with a
+   *   `[selection-guard]` warning naming the offending `cardId`.
+   * - When `windowHasFocus` is `false`, every live Range paints in the
+   *   inactive highlight — including the focused card's. This matches
+   *   the browser's own window-blur dim without needing a separate
+   *   "deactivatedCardId" tracking field.
+   *
+   * ## Hint and short-circuit
+   *
+   * Callers may pass `{ changedCardId }` to indicate that only one
+   * card's entry changed. When `changedCardId` matches the focused
+   * card *and* the window has focus, the inactive-highlight set is by
+   * construction unchanged (the focused card's Range doesn't paint
+   * there), so the rebuild loop is skipped. Native `::selection`
+   * already reflects the user's live selection in the focused engine —
+   * no intervention needed. This bounds the cost of eager publishing
+   * ([Q03]) to one `Map.set` + one short-circuit check per caret move.
+   *
+   * Deck-state-change callers pass no hint → full rebuild. Calls from
+   * `handleApplicationDid{Resign,Become}Active` likewise pass no hint,
+   * because the focus flip affects every entry's destination.
+   */
+  private updatePaint(hint?: { changedCardId?: string }): void {
+    if (!this.inactiveHighlight) return;
+
+    const focusedCardId =
+      this.windowHasFocus ? this.getFocusedCardId() : null;
+
+    // Short-circuit: if the only change is to the focused card's
+    // entry, and the window has focus, the `inactive-selection` set
+    // does not change and native `::selection` is already current.
+    if (
+      hint?.changedCardId !== undefined &&
+      focusedCardId !== null &&
+      hint.changedCardId === focusedCardId
+    ) {
+      return;
+    }
+
+    // Full rebuild: clear the highlight, walk cardRanges, and repopulate.
+    this.inactiveHighlight.clear();
+    for (const [cardId, range] of this.cardRanges) {
+      if (
+        !document.contains(range.startContainer) ||
+        !document.contains(range.endContainer)
+      ) {
+        // Stale range — its anchor DOM has been detached. The owning
+        // component mutated the subtree without publishing a fresh
+        // Range. Drop the entry so we don't paint against dead nodes,
+        // and in dev surface the cardId so the offender can be found.
+        this.cardRanges.delete(cardId);
+        if (isDevEnv()) {
+          console.warn(
+            `[selection-guard] stale range dropped for card "${cardId}" ` +
+              `— owning component did not re-publish after DOM mutation`,
+          );
+        }
+        continue;
+      }
+      if (cardId === focusedCardId) {
+        // Focused card's Range paints natively (below), not in the
+        // inactive highlight.
+        continue;
+      }
+      this.inactiveHighlight.add(range);
+    }
+
+    // Sync native `::selection` to the focused card's Range. When
+    // there is no focused card or the focused card has not published
+    // a Range, leave native selection alone — the user's click or
+    // interactive selection is the source of truth.
+    if (focusedCardId !== null) {
+      const range = this.cardRanges.get(focusedCardId);
+      if (range !== undefined) {
+        const sel = window.getSelection();
+        if (sel !== null) {
+          try {
+            sel.setBaseAndExtent(
+              range.startContainer,
+              range.startOffset,
+              range.endContainer,
+              range.endOffset,
+            );
+          } catch {
+            // Offsets may be out of range if the DOM mutated between
+            // the publish and this paint. Best-effort only — a later
+            // publish will re-sync.
+          }
+        }
+      }
+    }
   }
 
   // ---- Lifecycle ----
@@ -476,6 +629,44 @@ class SelectionGuard {
         ),
       );
     }
+
+    // Deck-store subscription. Fires on every state notify. The handler
+    // asks for a full rebuild without a hint because any deck-state
+    // change is potentially an `activePaneId` / `activeCardId` change,
+    // which moves which card's Range belongs in native selection. The
+    // rebuild loop is O(cards × 1 `document.contains` check) — cheap.
+    // [L22] direct store observation drives DOM mutation; no React
+    // round-trip.
+    //
+    // When focus genuinely moves to a card that has a saved Range,
+    // install a one-shot capture-phase `mousedown` interceptor before
+    // painting. `updatePaint` will `setBaseAndExtent` the saved Range
+    // into native `::selection`, restoring the UX the user had on
+    // that card before switching away; the interceptor stops the
+    // click's own `mousedown` from immediately collapsing that
+    // restoration to the click point. If the newly-focused card has
+    // no saved Range (fresh card, never selected), no interceptor is
+    // installed — the click's caret-placement proceeds normally.
+    const deckStore = getDeckStore();
+    if (deckStore !== null) {
+      this.deckStoreUnsubscribe = deckStore.subscribe(() => {
+        const newFocused = this.getFocusedCardId();
+        if (newFocused !== this.lastPaintFocusedCardId) {
+          if (
+            newFocused !== null &&
+            this.cardRanges.has(newFocused)
+          ) {
+            this.installPreventMousedown();
+          }
+          this.lastPaintFocusedCardId = newFocused;
+        }
+        this.updatePaint();
+      });
+      // Initial sync so the first paint reflects the store's current
+      // active card, not the constructor-default (no focused card).
+      this.lastPaintFocusedCardId = this.getFocusedCardId();
+      this.updatePaint();
+    }
   }
 
   /**
@@ -498,8 +689,10 @@ class SelectionGuard {
     if (this.highlightsAvailable && typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       CSS.highlights.delete("inactive-selection");
     }
-    this.inactiveRanges.clear();
+    this.cardRanges.clear();
     this.activeCardId_highlight = null;
+    this.windowHasFocus = true;
+    this.lastPaintFocusedCardId = null;
 
     if (this.lifecycleUnsubscribe !== null) {
       this.lifecycleUnsubscribe();
@@ -508,153 +701,60 @@ class SelectionGuard {
 
     for (const unsub of this.appLifecycleUnsubscribers) unsub();
     this.appLifecycleUnsubscribers = [];
+
+    if (this.deckStoreUnsubscribe !== null) {
+      this.deckStoreUnsubscribe();
+      this.deckStoreUnsubscribe = null;
+    }
   }
 
   // ---- Card activation (highlight management) ----
 
   /**
-   * Activate a card — make it the "focused" card for selection purposes.
+   * Mark a card as the focus-tracking target for the pointer / keyboard
+   * clamp logic. The dim / restore paint dance is **not** driven from
+   * here anymore — {@link updatePaint} reads the deck store's focused
+   * card and the `cardRanges` store directly, and the deck-store
+   * subscription installed in `attach()` reruns paint whenever
+   * `activePaneId` / `activeCardId` changes.
    *
-   * When switching FROM a different card:
-   *   1. Clone the old card's current DOM Selection Range into the
-   *      inactive-selection highlight (dimmed visual).
-   *   2. Clear the browser Selection (the old card's selection is now
-   *      only in the inactive highlight).
-   *   3. Restore the new card's saved Range (if any) to the browser
-   *      Selection and remove it from inactive-selection.
-   *   4. Install preventMousedown so the activation click doesn't
-   *      collapse the restored selection.
+   * This method remains as a narrow hook from `handlePointerDown`: it
+   * records which card owns the pointer-driven activation attempt so
+   * drag-clip can clamp against that card's boundary. Paint follows
+   * from the deck-store subscription.
    *
-   * When the same card is re-activated (no-op) or when no card was
-   * previously active: just update the tracking field.
-   *
-   * Called from handlePointerDown (pointer-driven focus) and from
-   * DeckCanvas's useLayoutEffect (all focus-change paths).
+   * Called from {@link handlePointerDown} (pointer-driven focus) and
+   * from the `cardLifecycle.observeCardDidActivate` wildcard
+   * subscription installed in `attach()`.
    */
   activateCard(cardId: string): void {
-    // No-op if already the active card.
     if (this.activeCardId_highlight === cardId) return;
-
-    const previousCardId = this.activeCardId_highlight;
-
-    // ---- Deactivate the previous card ----
-    if (previousCardId && this.inactiveHighlight) {
-      // Clone the current DOM Selection into inactive-selection for the
-      // old card, so it renders dimmed.
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        const anchorNode = sel.anchorNode;
-        const boundary = previousCardId ? this.boundaries.get(previousCardId) : null;
-        if (anchorNode && boundary && boundary.contains(anchorNode)) {
-          const range = sel.getRangeAt(0).cloneRange();
-          if (boundary.contains(range.startContainer) && boundary.contains(range.endContainer)) {
-            // Remove any previous inactive range for this card.
-            const oldInactive = this.inactiveRanges.get(previousCardId);
-            if (oldInactive) this.inactiveHighlight.delete(oldInactive);
-            this.inactiveRanges.set(previousCardId, range);
-            this.inactiveHighlight.add(range);
-          }
-        }
-      }
-      // Clear the browser Selection — the old card's selection is now
-      // represented only by the inactive highlight.
-      const sel2 = window.getSelection();
-      if (sel2) sel2.removeAllRanges();
-    }
-
-    // ---- Activate the new card ----
     this.activeCardId_highlight = cardId;
-
-    // If the new card has a saved inactive range, restore it to the
-    // browser Selection and remove from inactive-selection.
-    if (this.inactiveHighlight) {
-      const savedRange = this.inactiveRanges.get(cardId);
-      if (savedRange && !savedRange.collapsed) {
-        // Remove from inactive highlight.
-        this.inactiveHighlight.delete(savedRange);
-        this.inactiveRanges.delete(cardId);
-
-        // Restore to browser Selection — native ::selection paints it.
-        const sel = window.getSelection();
-        if (sel) {
-          sel.removeAllRanges();
-          sel.addRange(savedRange.cloneRange());
-        }
-
-        // Prevent the activation click from collapsing the restored selection.
-        this.installPreventMousedown();
-      } else if (savedRange) {
-        // Collapsed range — just clean up, don't restore.
-        this.inactiveHighlight.delete(savedRange);
-        this.inactiveRanges.delete(cardId);
-      }
-    }
   }
 
-  // ---- App activation state ----
-
-  // The card that was active before app deactivation.
-  private deactivatedCardId: string | null = null;
-
   /**
-   * Handle `applicationDidResignActive`: dim the active card's
-   * selection by cloning its DOM Selection Range into the
-   * inactive-selection highlight and clearing the browser Selection.
-   *
-   * Invoked by the observer subscription installed in `attach()`.
-   * Not a public entry point — the app-lifecycle delegate is the
-   * single path into this behavior.
+   * Handle `applicationDidResignActive`: flip the `windowHasFocus`
+   * flag to `false` and repaint. With the flag off, {@link updatePaint}
+   * paints every card's Range — including the focused card's — in the
+   * inactive highlight, matching the browser's own window-blur dim
+   * without any manual Range cloning.
    */
   private handleApplicationDidResignActive(): void {
-    if (!this.inactiveHighlight) return;
-
-    this.deactivatedCardId = this.activeCardId_highlight;
-
-    if (this.activeCardId_highlight) {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        const boundary = this.boundaries.get(this.activeCardId_highlight);
-        if (boundary && sel.anchorNode && boundary.contains(sel.anchorNode)) {
-          const range = sel.getRangeAt(0).cloneRange();
-          if (boundary.contains(range.startContainer) && boundary.contains(range.endContainer)) {
-            const oldInactive = this.inactiveRanges.get(this.activeCardId_highlight);
-            if (oldInactive) this.inactiveHighlight.delete(oldInactive);
-            this.inactiveRanges.set(this.activeCardId_highlight, range);
-            this.inactiveHighlight.add(range);
-          }
-        }
-        sel.removeAllRanges();
-      }
-    }
+    if (!this.windowHasFocus) return;
+    this.windowHasFocus = false;
+    this.updatePaint();
   }
 
   /**
-   * Handle `applicationDidBecomeActive`: restore the active card's
-   * selection from the saved Range in inactive-selection and remove
-   * it from the dim highlight.
-   *
-   * Invoked by the observer subscription installed in `attach()`.
+   * Handle `applicationDidBecomeActive`: flip `windowHasFocus` back to
+   * `true` and repaint. The focused card's Range returns to native
+   * `::selection`; all other cards' Ranges remain in the inactive
+   * highlight.
    */
   private handleApplicationDidBecomeActive(): void {
-    if (!this.inactiveHighlight) return;
-    if (!this.deactivatedCardId) return;
-
-    const range = this.inactiveRanges.get(this.deactivatedCardId);
-    if (range && !range.collapsed) {
-      this.inactiveHighlight.delete(range);
-      this.inactiveRanges.delete(this.deactivatedCardId);
-
-      const sel = window.getSelection();
-      if (sel) {
-        sel.removeAllRanges();
-        sel.addRange(range.cloneRange());
-      }
-    } else if (range) {
-      this.inactiveHighlight.delete(range);
-      this.inactiveRanges.delete(this.deactivatedCardId);
-    }
-
-    this.deactivatedCardId = null;
+    if (this.windowHasFocus) return;
+    this.windowHasFocus = true;
+    this.updatePaint();
   }
 
   // ---- Selection persistence (Phase 5b infrastructure) ----
@@ -695,14 +795,14 @@ class SelectionGuard {
       }
     }
 
-    // Fallback: use the stored Range from the inactive-selection highlight.
-    // This covers the case where the browser Selection was cleared (e.g.
-    // the user clicked user-select:none chrome) but the card still has a
-    // dimmed selection in the inactive highlight.
-    const storedRange = this.inactiveRanges.get(cardId);
-    if (storedRange) {
-      const startNode = storedRange.startContainer;
-      const endNode = storedRange.endContainer;
+    // Fallback: use the most-recently-published Range from `cardRanges`.
+    // This covers the case where the browser Selection was cleared
+    // (e.g., the user clicked `user-select: none` chrome) but the card
+    // still has a selection the owning component has published.
+    const publishedRange = this.cardRanges.get(cardId);
+    if (publishedRange) {
+      const startNode = publishedRange.startContainer;
+      const endNode = publishedRange.endContainer;
       if (
         startNode !== boundary && endNode !== boundary &&
         boundary.contains(startNode) && boundary.contains(endNode)
@@ -712,9 +812,9 @@ class SelectionGuard {
         if (anchorPath && focusPath && anchorPath.length > 0 && focusPath.length > 0) {
           return {
             anchorPath,
-            anchorOffset: storedRange.startOffset,
+            anchorOffset: publishedRange.startOffset,
             focusPath,
-            focusOffset: storedRange.endOffset,
+            focusOffset: publishedRange.endOffset,
           };
         }
       }
@@ -771,9 +871,10 @@ class SelectionGuard {
     this.stopTracking();
     this.removePreventMousedown();
     this.boundaries.clear();
-    this.inactiveRanges.clear();
     this.cardRanges.clear();
     this.activeCardId_highlight = null;
+    this.windowHasFocus = true;
+    this.lastPaintFocusedCardId = null;
     if (this.inactiveHighlight) {
       this.inactiveHighlight.clear();
     }

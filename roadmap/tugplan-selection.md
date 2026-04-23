@@ -692,26 +692,30 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - The existing `handleApplicationDidResignActive` / `handleApplicationDidBecomeActive` refactor: on resign, the active card's cardId is temporarily dropped from the "focused" position so its Range also paints in the custom highlight (matches current dim behavior); on become-active, the cardId is restored. Internally this can just flip a boolean `windowHasFocus` read by the paint computation; the effect is the same as the old dedicated map but without a separate code path.
 
 **Tasks:**
-- [ ] Add `windowHasFocus` boolean (defaults true, flips on will-resign/did-become).
-- [ ] Add `getFocusedCardId(): string | null` — resolves via deck-state `activePaneId` → `pane.activeCardId`.
-- [ ] `updatePaint(hint?: { changedCardId?: string })` (new internal method): if the hint indicates the focused card's entry changed while `windowHasFocus`, short-circuit. Otherwise clear `inactiveHighlight` and rebuild from `cardRanges` minus the focused card's entry (when `windowHasFocus` is true), validating each Range's containers against `document.contains` and dropping stale entries with a dev-warn. Moves the focused-card range into `window.getSelection()`.
-- [ ] `updateCardDomSelection(cardId, range)` calls `updatePaint({ changedCardId: cardId })`.
-- [ ] Subscribe to deck-state changes — on `activeCardId` or `activePaneId` change, call `updatePaint()` (no hint → full rebuild).
-- [ ] Retire `inactiveRanges` and `deactivatedCardId` fields from `selection-guard.ts` — subsumed by `cardRanges` + `windowHasFocus`.
-- [ ] `handleApplicationWillResignActive` / `handleApplicationDidBecomeActive` refactor — they now only flip `windowHasFocus` and call `updatePaint()`. No more manual Range cloning.
+- [x] Add `windowHasFocus` boolean (defaults true, flips on will-resign/did-become).
+- [x] Add `getFocusedCardId(): string | null` — resolves via deck-state `activePaneId` → `pane.activeCardId`. *Implementation: reads the process-wide `getDeckStore()`; returns `null` when no store is registered so tests that bootstrap only the guard no-op cleanly.*
+- [x] `updatePaint(hint?: { changedCardId?: string })` (new internal method): if the hint indicates the focused card's entry changed while `windowHasFocus`, short-circuit. Otherwise clear `inactiveHighlight` and rebuild from `cardRanges` minus the focused card's entry (when `windowHasFocus` is true), validating each Range's containers against `document.contains` and dropping stale entries with a dev-warn. Moves the focused-card range into `window.getSelection()`.
+- [x] `updateCardDomSelection(cardId, range)` calls `updatePaint({ changedCardId: cardId })`.
+- [x] Subscribe to deck-state changes — on `activeCardId` or `activePaneId` change, call `updatePaint()` (no hint → full rebuild). *Implementation: new `lib/deck-store-registry.ts` singleton (mirrors `lib/card-lifecycle.ts`/`lib/app-lifecycle.ts`); `DeckManager` constructor calls `registerDeckStore(this)` before rendering; `selectionGuard.attach` reads `getDeckStore()` and subscribes. `detach` releases the subscription. An initial `updatePaint()` after subscribing syncs paint to the store's current active card.*
+- [x] Retire `inactiveRanges` and `deactivatedCardId` fields from `selection-guard.ts` — subsumed by `cardRanges` + `windowHasFocus`. *`saveSelection`'s legacy fallback path now reads `cardRanges` instead of `inactiveRanges`; the API itself retires at Step 9.*
+- [x] `handleApplicationWillResignActive` / `handleApplicationDidBecomeActive` refactor — they now only flip `windowHasFocus` and call `updatePaint()`. No more manual Range cloning. *Note: the plan names `handleApplicationWillResignActive` but the current wiring still subscribes to the did-phase events (will-phase triggers are Step 13's concern). The bodies are refactored per the plan; the subscription point changes in Step 13.*
+- [x] Share `isDevEnv` as a `lib/dev-env.ts` helper so `selection-guard` (and any other module that needs the dev gate) can import it. `deck-manager.ts` now imports the shared helper instead of defining its own copy.
+- [x] **Fix: engine must not emit `null` on focus-out.** The Step 3 listener was emitting `null` whenever the selection moved outside the engine's root — which immediately dropped `cardRanges[cardId]` and made the dim-on-switch UX impossible (nothing to paint). The listener now early-returns for out-of-root selections; only programmatic clears (`clear()` / `restoreState({selection: null})`) still emit `null` at their own call sites. The `tug-text-engine.test.ts` transition-out test is rewritten to pin the new contract.
+- [x] **Fix: restore `preventMousedown` on focus-change.** The click that triggers a card switch was collapsing `setBaseAndExtent`'s restoration to the click point. The deck-store subscription handler now tracks the last-painted focus id; when focus genuinely moves to a card that has a saved `cardRange`, it installs the one-shot capture-phase mousedown interceptor *before* calling `updatePaint`. Cards without a saved Range get normal click-to-caret behavior. Three new T29 tests pin: interceptor installed on restore-worthy focus-change; not installed when the new card has no saved Range; not installed when the store fires without a focus change.
 
 **Upholds:** [L06] paint is appearance-zone — CSS Highlight mutation, no React. [L22] paint subscribes to the deck store and writes to the DOM highlight directly.
 
 **Tests:**
-- [ ] Register two cards, publish a Range for each, flip `activeCardId` between them, assert only the currently-active card's range is in `window.getSelection()` and the other is in `inactive-selection`.
-- [ ] App resign: both ranges paint in `inactive-selection`.
-- [ ] App become-active: focused card's range moves back to native; other remains in inactive.
-- [ ] Mutation tests for `updateCardDomSelection(cardId, null)` → removes from paint.
-- [ ] **Stale-range drop**: publish a Range, then detach the anchoring element from the document (simulates an engine-root replacement without a re-publish), trigger an unrelated `updatePaint()` (e.g., a deck-state change), assert the stale entry is removed from `cardRanges` and a dev-warn was emitted.
-- [ ] **Perf short-circuit**: `updatePaint({ changedCardId })` where `changedCardId === getFocusedCardId() && windowHasFocus` does NOT call `inactiveHighlight.clear()` (assert via spy).
+- [x] Register two cards, publish a Range for each, flip `activeCardId` between them, assert only the currently-active card's range is in `window.getSelection()` and the other is in `inactive-selection`.
+- [x] App resign: both ranges paint in `inactive-selection`.
+- [x] App become-active: focused card's range moves back to native; other remains in inactive.
+- [x] Mutation tests for `updateCardDomSelection(cardId, null)` → removes from paint.
+- [x] **Stale-range drop**: publish a Range, then detach the anchoring element from the document (simulates an engine-root replacement without a re-publish), trigger an unrelated `updatePaint()` (e.g., a deck-state change), assert the stale entry is removed from `cardRanges` and a dev-warn was emitted.
+- [x] **Perf short-circuit**: `updatePaint({ changedCardId })` where `changedCardId === getFocusedCardId() && windowHasFocus` does NOT call `inactiveHighlight.clear()` (assert via spy).
+- [x] Retired 5 legacy `selection-guard-highlight.test.ts` cases that pinned the old `activateCard`-populates-`inactiveRanges` mechanism; their spiritual successors live in the new `selection-guard-paint.test.ts`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green (2227 pass).
 - [ ] Manual probe: open a tide card and a gallery card side-by-side, select in tide, switch to gallery — tide's selection paints dim; switch back — goes bright.
 
 ---

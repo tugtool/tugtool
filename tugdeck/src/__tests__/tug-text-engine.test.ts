@@ -165,7 +165,14 @@ describe("TugTextEngine.onSelectionChanged", () => {
     }
   });
 
-  it("transition from inside → outside the root emits null exactly once", () => {
+  it("transition from inside → outside the root does not emit (cardRange persists)", () => {
+    // When the user moves the selection out of the engine's root —
+    // e.g. by clicking a different card — the engine deliberately
+    // does NOT publish `null`. Subscribers (selection-guard) want to
+    // remember the last in-root Range so the guard can paint it dim
+    // while the card is backgrounded and restore it on return. The
+    // engine only emits `null` for programmatic clears (clear(),
+    // restoreState({selection: null})); focus-out alone is silent.
     const outside = document.createElement("div");
     outside.textContent = "elsewhere";
     document.body.appendChild(outside);
@@ -173,11 +180,15 @@ describe("TugTextEngine.onSelectionChanged", () => {
       const emissions: (Range | null)[] = [];
       ctx.engine.onSelectionChanged((r) => emissions.push(r));
 
-      // First: selection lands inside the root → emit range.
+      // Selection inside root — emit.
       setSelectionIn(ctx.root, 1, 3);
       document.dispatchEvent(new Event("selectionchange"));
+      expect(emissions.length).toBe(1);
+      expect(emissions[0]).not.toBeNull();
 
-      // Then: user clicks outside → emit null once (transition-out).
+      // User clicks outside → selection moves out of the root.
+      // No emission — the in-root range stays "last known" for
+      // subscribers until the user returns or the engine is cleared.
       const range = document.createRange();
       range.setStart(outside.firstChild!, 1);
       range.setEnd(outside.firstChild!, 4);
@@ -186,17 +197,7 @@ describe("TugTextEngine.onSelectionChanged", () => {
       sel?.addRange(range);
       document.dispatchEvent(new Event("selectionchange"));
 
-      // A second outside-change does not emit again (already null).
-      const range2 = document.createRange();
-      range2.setStart(outside.firstChild!, 0);
-      range2.setEnd(outside.firstChild!, 2);
-      sel?.removeAllRanges();
-      sel?.addRange(range2);
-      document.dispatchEvent(new Event("selectionchange"));
-
-      expect(emissions.length).toBe(2);
-      expect(emissions[0]).not.toBeNull();
-      expect(emissions[1]).toBeNull();
+      expect(emissions.length).toBe(1);
     } finally {
       document.body.removeChild(outside);
     }

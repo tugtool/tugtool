@@ -69,6 +69,8 @@ import {
   AppLifecycleContext,
   registerAppLifecycle,
 } from "./lib/app-lifecycle";
+import { registerDeckStore } from "./lib/deck-store-registry";
+import { isDevEnv } from "./lib/dev-env";
 import {
   installLifecycleCascade,
   type LifecycleCascadeHandle,
@@ -79,21 +81,6 @@ const SAVE_DEBOUNCE_MS = 500;
 
 /** Cascade step between consecutive new stacks (pixels) */
 const CASCADE_STEP = 30;
-
-/**
- * True when running outside a production build. Used to gate dev-only
- * assertions (deck-state invariant checks) so production pays no cost.
- * Permissive: returns true in any environment without `NODE_ENV=production`
- * (browsers, worker contexts, test runners).
- */
-function isDevEnv(): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (globalThis as any).process?.env?.NODE_ENV !== "production";
-  } catch {
-    return true;
-  }
-}
 
 /**
  * Pure helper: remove `cardId` from the stack's `cardIds` and pick a new
@@ -336,6 +323,11 @@ export class DeckManager implements IDeckManagerStore {
     registerCardLifecycle(this.cardLifecycle);
     this.appLifecycle = new AppLifecycle();
     registerAppLifecycle(this.appLifecycle);
+    // Expose this store to non-React singletons (notably `selectionGuard`,
+    // which `ResponderChainProvider` attaches from a `useLayoutEffect`
+    // that sits outside the `DeckManagerContext` provider and so cannot
+    // reach the store through React context).
+    registerDeckStore(this);
     this.lifecycleCascade = installLifecycleCascade(
       this.cardLifecycle,
       this.appLifecycle,
