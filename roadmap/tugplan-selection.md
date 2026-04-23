@@ -552,7 +552,9 @@ Every question has a concrete decision the user must make before the execution p
 
 ### Execution Steps {#execution-steps}
 
-The implementation sequence is 15 commits. Each is independently revertable. The compile target stays green end-to-end; the user-visible save/restore behavior may regress briefly between commits (from Step 1 through Step 10) and comes back fully correct at Step 10. Integration tests at Step 14 pin every transition.
+The implementation sequence begins with 15 commits (Steps 1–15) landing the selection/focus/scroll persistence subsystem. Each is independently revertable. The compile target stays green end-to-end; the user-visible save/restore behavior may regress briefly between commits (from Step 1 through Step 10) and comes back fully correct at Step 10. Integration tests at Step 14 pin every transition.
+
+Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Protocol foundation ([A9] / [D13]). The M-series continues beyond Step 19 (subsequent phases authored as separate step blocks); Step NN performs the final documentation + cleanup pass.
 
 #### Step 1: Replace `CardStateBag` shape; strip old-shape callers {#step-1}
 
@@ -1094,6 +1096,178 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 **Checkpoint:**
 - [x] `bun x tsc --noEmit`, `bun test` green.
 - [ ] Manual verification checklist (see [#deliverables](#deliverables).
+
+---
+
+#### Step 16: Component persistence registry + `bag.components` schema {#step-16}
+
+**Depends on:** #step-15
+
+**Commit:** `feat(card-host): add component persistence registry + bag.components`
+
+**References:** [D13](#d13-component-persistence), [A9a](#a9-component-persistence-protocol); `layout-tree.ts` `CardStateBag` shape; new module boundary.
+
+**Artifacts:**
+- New file `tugdeck/src/components/tugways/component-persistence-registry.ts`: class `ComponentPersistenceRegistry` with:
+  - `register(scopedKey: string, captureRef: RefObject<() => unknown>, restoreRef: RefObject<(saved: unknown) => void>, treePath: number[]): void`
+  - `unregister(scopedKey: string): void`
+  - `entriesInTreeOrder(): Array<[string, RegistryEntry]>` — parent-first walk per [D13] / Q3 resolution.
+  - `keys(): Set<string>`
+  - `clear(): void`
+  - Internal: `Map<scopedKey, RegistryEntry>`; dev-only dup-check that throws `Error` (per [D13] / Q1 resolution).
+- `CardStateBag.components?: Record<string, unknown>` added to the bag type in `layout-tree.ts`. Optional; absent means no component state was captured (valid for cards that use no opt-in components).
+- Per-card registry storage: `Map<cardId, ComponentPersistenceRegistry>` owned by the deck-manager (or a small standalone module). Exposed via `getComponentRegistry(cardId)` helper. Created lazily on first `register` call; cleared on `_removeCard` + `_closePane`.
+- No consumers yet. Registry stays empty during this step; `bag.components` stays undefined on save. Behavior unchanged.
+
+**Tasks:**
+- [ ] Author `component-persistence-registry.ts` with the class, `RegistryEntry` type, and tree-order iteration.
+- [ ] Add `components?: Record<string, unknown>` to `CardStateBag` in `layout-tree.ts`.
+- [ ] Add `getComponentRegistry(cardId)` helper; wire creation + cleanup into the existing card lifecycle in `deck-manager.ts` (alongside Step 14's `flushSaveCallbackBeforeDestruction`).
+- [ ] Update `selection-persistence-greps.test.ts` to include `bag.components` in the allowed-field list.
+- [ ] Ensure the bag round-trip test in `layout-tree.test.ts` covers `components` present/absent/empty-object.
+
+**Upholds:** [D13]; [L23] (new schema slot declared explicitly for component state). No runtime behavior change — strictly foundational plumbing.
+
+**Tests:**
+- [ ] New `component-persistence-registry.test.ts`:
+  - register + `entriesInTreeOrder` returns parent-first order across several depths.
+  - duplicate scopedKey throws in dev (`isDevEnv` path).
+  - unregister removes the entry; subsequent register succeeds.
+  - `clear()` empties the registry; tree-order walk yields nothing.
+- [ ] Extend `layout-tree.test.ts` with JSON round-trip for `{ components: {...} }` and absent-components cases.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] No diff in behavior: running tugdeck end-to-end with the gallery and tide card should be visually and functionally identical to before Step 16.
+
+---
+
+#### Step 17: `useComponentPersistence` hook + `<PersistenceScope>` {#step-17}
+
+**Depends on:** #step-16
+
+**Commit:** `feat(tugways): add useComponentPersistence hook and PersistenceScope`
+
+**References:** [D13](#d13-component-persistence), [A9a](#a9-component-persistence-protocol), [A9b](#a9-component-persistence-protocol); [L03] (useLayoutEffect for registration).
+
+**Artifacts:**
+- New file `tugdeck/src/components/tugways/use-component-persistence.tsx` exporting:
+  - `useComponentPersistence<T>({ persistKey, captureState, restoreState }): void` — opt-in hook. Internals per [A9a]: two refs (`captureRef`, `restoreRef`); re-sync on every render; `useLayoutEffect` registers with the nearest `ComponentPersistenceRegistry` on mount, unregisters on unmount.
+  - `<PersistenceScope prefix: string>` — React context provider that prepends `prefix + "/"` to every nested `persistKey` registered under it. Scopes nest additively (a prefix-`"outer"` scope containing a prefix-`"inner"` scope produces `"outer/inner/myKey"`).
+  - Internal context `CardComponentRegistryContext` — carries the per-card registry reference down the tree. Provided by `CardHost` wrapping every card's children.
+- `card-host.tsx` wraps card children in `<CardComponentRegistryContext.Provider value={registryForThisCard}>`. No other change in CardHost yet.
+- Hook no-ops outside a card context (dev-warn; absent registry → no register). This keeps gallery demos + standalone tests working without requiring a card wrapper.
+
+**Tasks:**
+- [ ] Author the hook with ref-sync pattern per [D13] Q2b (refs re-synced every render; framework reads `.current` at capture time).
+- [ ] Author `<PersistenceScope>` context + accompanying `usePersistenceScopePrefix()` internal hook.
+- [ ] Expose `CardComponentRegistryContext`; wire provider into `card-host.tsx`.
+- [ ] Graceful no-op when rendered outside a card: dev-warn once per hook call site.
+
+**Upholds:** [L03] (registration in `useLayoutEffect`, before any event-driven consumer); [L02]-adjacent (refs not React state for the function-storage — external-state-aware but not a store); [D13] end-to-end.
+
+**Tests:**
+- [ ] New `use-component-persistence.test.tsx`:
+  - Mount registers; unmount unregisters.
+  - Ref-sync: re-render with updated `captureState` closure — framework sees latest when it reads the ref (not the mount-time closure).
+  - `<PersistenceScope prefix="outer">` prepends prefix to child `persistKey`s; nested scopes concatenate.
+  - Duplicate `persistKey` within the same card throws in dev (via registry assertion from Step 16).
+  - Render outside a card context: hook no-ops; dev-warn fires once.
+- [ ] Existing tests remain green (no consumers of the hook yet except tests).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Hook is importable and usable in a smoke test, but no production component uses it yet — behavior unchanged.
+
+---
+
+#### Step 18: Framework orchestration — `captureCardState` / `restoreCardState` {#step-18}
+
+**Depends on:** #step-17
+
+**Commit:** `refactor(deck): route save triggers through captureCardState`
+
+**References:** [D13](#d13-component-persistence), [A9c](#a9-component-persistence-protocol); existing save-trigger wiring in `action-dispatch.ts` (Step 13), `deck-manager.ts` (Step 14's `flushSaveCallbackBeforeDestruction`), `card-host.tsx` `saveCurrentCardStateRef`.
+
+**Artifacts:**
+- New file `tugdeck/src/card-state-orchestrator.ts` exporting:
+  - `captureCardState(cardId: string): CardStateBag` — invokes the card's existing per-card assembler (the framework-axes capture that currently lives in `saveCurrentCardStateRef`) + walks the component registry parent-first, merging results into `bag.components`.
+  - `restoreCardState(cardId: string, bag: CardStateBag): void` — dispatches to card's `onRestore` (existing path, populates `bag.content`) + walks the component registry parent-first to apply `bag.components`; silently ignores orphan persistKeys with a dev-warn listing them (per [D13] / Q5 resolution).
+- Per-card **assembler handle** registered from `CardHost`: new lightweight ref-storage mechanism where `CardHost` exposes its current `saveCurrentCardStateRef.current` and `restore()` closures to the orchestrator via a registry keyed on `cardId`. The orchestrator calls through; card-host retains the capture logic.
+- Save-trigger rewiring:
+  - `deckManager.saveAndFlush()` continues to exist as the public API but internally iterates cards and calls `captureCardState(cardId)` for each. No caller-visible API change.
+  - `flushSaveCallbackBeforeDestruction(cardId)` (Step 14) internally calls `captureCardState(cardId)` then writes the bag via tugbank — behavior identical to today, now flowing through the new entry point.
+  - Will-phase subscribers (`applicationWillResignActive`, `applicationWillHide`, `applicationDidResignActive` backstop) from Step 13 remain wired to `deckManager.saveAndFlush`; no change needed.
+  - `saveState` RPC handler (audit target of [M17]) is updated in this step to call `captureCardState` for each card and return the assembled bags. (This closes [M17] proactively as part of the refactor — the RPC now captures every axis the orchestrator captures, by construction.)
+- Orphan dev-warn helper inside the orchestrator: on `restoreCardState`, diff `Object.keys(bag.components ?? {})` against `registry.keys()`; log orphans once per restore via `console.warn("[A9c] orphan persistKeys dropped:", [...])`.
+
+**Tasks:**
+- [ ] Author `card-state-orchestrator.ts` with the two functions and the per-card assembler registry.
+- [ ] Refactor `CardHost` to register its capture/restore assembler into the new registry on mount and tear it down on unmount. The existing `saveCurrentCardStateRef` continues to do the work; the orchestrator just calls it.
+- [ ] Route `deckManager.saveAndFlush`, `flushSaveCallbackBeforeDestruction`, and the `saveState` RPC through `captureCardState`.
+- [ ] `restoreCardState` is wired at the card-mount path in `CardHost` — replaces the direct `onRestore` callback invocation so component-state restore happens in the same pass.
+- [ ] Add dev-warn for orphan persistKeys on restore.
+- [ ] Ensure `bag.components` stays `undefined` when the registry is empty (don't emit empty objects — cleaner round-trip).
+
+**Upholds:** [D13]; [L23] (every save trigger now captures every axis, by construction — removes the [M17] audit class of gaps). Simplifies future consumers by giving them one entry point.
+
+**Tests:**
+- [ ] New `card-state-orchestrator.test.ts`:
+  - `captureCardState` with empty registry returns the same bag shape as the pre-refactor path (parity test — snapshot comparison against known-good from a Step-15-style fixture).
+  - `captureCardState` with one registered component writes to `bag.components[persistKey]`.
+  - `captureCardState` with nested `<PersistenceScope>` uses prefixed keys.
+  - `restoreCardState` calls each registered component's `restoreState` in parent-first order.
+  - `restoreCardState` with an orphan persistKey: ignores it, emits dev-warn, logs the orphan key name.
+  - Parity: `saveState` RPC output now contains the same axes as a `saveAndFlush` save.
+- [ ] Extend `selection-persistence-integration.test.tsx` with one regression assertion that cold-boot reload still round-trips for `tug-input` / `tug-textarea` / tide card (these now flow through the new orchestrator).
+- [ ] Existing integration and unit tests must pass unchanged (the refactor is behavior-preserving).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Grep `onSave\|onRestore` outside of `use-card-persistence.tsx` and `card-state-orchestrator.ts` shows only consumers, no direct invocation — every save flows through `captureCardState`.
+- [ ] Manually verify in the browser: reload with a tide card + a gallery input. Both round-trip identically to pre-Step-18 behavior. [M17] closes (RPC captures every axis).
+
+---
+
+#### Step 19: First-consumer proof — opt `tug-checkbox` into the protocol {#step-19}
+
+**Depends on:** #step-18
+
+**Commit:** `feat(tug-checkbox): opt into component persistence protocol`
+
+**References:** [D13](#d13-component-persistence), [A9d](#a9-component-persistence-protocol); [M24](#m24-component-protocol) (validates closure).
+
+**Artifacts:**
+- `tug-checkbox.tsx` gains optional `persistKey?: string` prop. When provided (and when rendered inside a card), the component calls `useComponentPersistence` with `{ persistKey, captureState: () => ({ checked }), restoreState: (saved) => setChecked(saved.checked) }`.
+- `captureState` returns `{ checked: boolean }`. `restoreState` accepts `{ checked: boolean }` and updates internal state (for uncontrolled mode) or calls the controlled-mode `onCheckedChange` (for controlled mode — in which case the parent is in charge; the restore is a best-effort re-dispatch).
+- Component documents that passing `persistKey` without a `defaultChecked` means "start unchecked" on a fresh card, and "restore the last checked value" on a reload.
+- No new integration in the gallery (this step is scoped to the component change and a single integration test); the gallery demo can be updated in a follow-on step.
+
+**Tasks:**
+- [ ] Add `persistKey?: string` prop to `TugCheckboxProps`.
+- [ ] Add an internal `useComponentPersistence` call gated on `persistKey != null`.
+- [ ] Define the capture/restore payload shape as a local `TugCheckboxPersistState` type: `{ checked: boolean }`.
+- [ ] Respect controlled vs uncontrolled: if parent passes `checked`, `restoreState` dispatches via `onCheckedChange`; otherwise `setChecked` updates internal state.
+
+**Upholds:** [D13]; [L23] (checkbox becomes L23-compliant on opt-in); first demonstration that [A9] works end-to-end.
+
+**Tests:**
+- [ ] New `tug-checkbox.persistence.test.tsx`:
+  - Render checkbox with `persistKey` inside a mocked card host. Toggle to checked. Call `captureCardState` directly; assert `bag.components[persistKey].checked === true`.
+  - Render a fresh checkbox with the same `persistKey` under a new card. Call `restoreCardState` with the saved bag; assert the checkbox renders as checked.
+  - Render without `persistKey`: no registry entry created; `bag.components` remains undefined.
+  - Uncontrolled: toggles internal state via user click; round-trip works.
+  - Controlled: parent supplies `checked` + `onCheckedChange`; restore dispatches the change via the handler; parent-driven state updates.
+- [ ] Extend `selection-persistence-integration.test.tsx` with a new scenario: card renders a `<TugCheckbox persistKey="done">`; user toggles it checked; simulate reload; assert checked state restored. This is the first integration-level proof of [A9].
+- [ ] Grep test: `selection-persistence-greps.test.ts` updated to expect `useComponentPersistence` imports in `tug-checkbox.tsx` (allowlist, not forbidden).
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `bun test` full suite green.
+- [ ] Manual verification: a test card with `<TugCheckbox persistKey="t">` in the gallery (or a temporary test card) survives Cmd-R reload, tab switch, and Cmd-Tab away / back. [M24] validated on at least one component.
 
 ---
 
@@ -1794,7 +1968,12 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 
 Not a commitment yet — just a sketch for discussion. Updated to place [A9] as the **foundational phase** because nearly every subsequent stateful-component fix depends on it.
 
-1. **M-phase 0 (foundation):** implement [A9] — `useComponentPersistence`, `PersistenceScope`, the component registry, and the framework orchestration entry points `captureCardState` / `restoreCardState`. Migrate current persistence-aware components to the new protocol (port without changing behavior). All existing tests must continue to pass. No user-visible behavior change at the end of this phase; the foundation is simply in place.
+1. **M-phase 0 (foundation) — AUTHORED as [Steps 16–19](#step-16):**
+   - **[Step 16](#step-16):** component persistence registry + `bag.components` schema.
+   - **[Step 17](#step-17):** `useComponentPersistence` hook + `<PersistenceScope>`.
+   - **[Step 18](#step-18):** framework orchestration — `captureCardState` / `restoreCardState`; save triggers rerouted; closes [M17].
+   - **[Step 19](#step-19):** first-consumer proof — `tug-checkbox` opts into the protocol; closes [M24] at the per-component proof-of-concept level.
+   - No user-visible behavior change through Step 18 (pure refactor). Step 19 is the first user-observable application of the protocol.
 2. **M-phase 1 (transition infra, no behavior change):** implement [A1] selector, [A8] focus-theft gate, wire `onCardActivated` into `CardPersistenceCallbacks` ([A2]). Tests green, no behavior difference.
 3. **M-phase 2 (core refocus):** implement [A3] activation effect in `CardHost`. Closes [M01], [M02], [M03], [M06], [M07], [M09], [M16]. Adds integration tests for each.
 4. **M-phase 3 (app lifecycle):** implement [A4] wiring. Closes [M04], [M05].
