@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-04-23T23:36:06Z
+---
+
+## step-10: Added tests/in-app/_harness/client.ts (typed wrappers over evalJS/waitForCondition per Spec [#s03-tug-surface]) and exposed App helpers including expectFocusedCard (waitForCondition strict equality) and expectCaret (waitForCondition deep-equal via server-side JSON.stringify). Added toContainOrderedSubset matcher in matchers.ts with partial-match semantics (pure predicate + expect.extend registration), covered by 14 new matchers.test.ts tests. Added lint-no-timers.ts bun script that rejects setTimeout/setInterval usage outside _harness/ (eslint not in use in this workspace; pure-bun script avoids pulling eslint in for one rule). Yellow drift: package.json gained scripts.lint:no-timers entry. tsc clean; in-app suite 29 pass / 8 skip / 0 fail.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-9
 date: 2025-04-23T23:26:27Z
 ---

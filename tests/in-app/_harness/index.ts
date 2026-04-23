@@ -38,6 +38,35 @@ import type {
   LaunchTugAppOptions,
   WaitForConditionOptions,
 } from "./types";
+import * as client from "./client";
+import type {
+  CaretState,
+  ClickOptions,
+  DeckTraceEvent,
+  HarnessCaller,
+  ResetOptions,
+  SeedDeckStateArgs,
+} from "./client";
+
+// Re-export the client-side helpers and matcher for test authors. The
+// pattern mirrors the parent plan's Spec [#s03-tug-surface] sketch —
+// tests import `{ launchTugApp, toContainOrderedSubset }` from
+// `@/_harness` and use `app.<method>` for everything else.
+export {
+  toContainOrderedSubset,
+  registerSubsetMatcher,
+  type ExpectedEntry,
+  type MatcherResult,
+} from "./matchers";
+export type {
+  CaretState,
+  ClickOptions,
+  ClientMethodNames,
+  DeckTraceEvent,
+  HarnessCaller,
+  ResetOptions,
+  SeedDeckStateArgs,
+} from "./client";
 
 /**
  * The harness's compile-time expected surface version. Must match the
@@ -142,6 +171,131 @@ export class App {
       timeoutMs: opts?.timeoutMs,
       pollMs: opts?.pollMs,
     });
+  }
+
+  // -------------------------------------------------------------------
+  // Typed wrappers (parent plan Spec [#s03-tug-surface])
+  //
+  // Every method below is a thin delegate to `./client.ts`. The
+  // wrapper logic — script serialization, `window.__tug` access
+  // guards — lives there so the App class stays a readable facade
+  // and the wire-format is unit-testable against a mock caller.
+  // -------------------------------------------------------------------
+
+  /**
+   * Dispatch a full pointerdown → mousedown → pointerup → mouseup →
+   * click sequence on the element matched by `selector`. Prefer this
+   * over raw DOM clicks — production handlers condition on the whole
+   * sequence (see Spec [#s04-event-synthesis]).
+   */
+  click(selector: string, opts?: ClickOptions): Promise<void> {
+    return client.click(this as HarnessCaller, selector, opts);
+  }
+
+  /**
+   * Type `text` into an `<input>` / `<textarea>` using the
+   * native-setter pattern (Spec [#s04-event-synthesis]).
+   */
+  type(selector: string, text: string): Promise<void> {
+    return client.type_(this as HarnessCaller, selector, text);
+  }
+
+  /**
+   * Direct `.focus()` on the element matched by `selector`. Escape
+   * hatch for browser paths where synthesized pointerdown cannot
+   * drive default focus ([D09] fidelity limits).
+   */
+  focusElement(selector: string): Promise<void> {
+    return client.focusElement(this as HarnessCaller, selector);
+  }
+
+  /**
+   * Granular per-axis reset ([D01]). Every axis defaults to false;
+   * opt in exactly what a test case needs.
+   */
+  reset(opts: ResetOptions): Promise<void> {
+    return client.reset(this as HarnessCaller, opts);
+  }
+
+  /**
+   * Replace `DeckState` atomically and optionally merge card-state
+   * bags or drive cold-boot focus restore.
+   */
+  seedDeckState(args: SeedDeckStateArgs): Promise<void> {
+    return client.seedDeckState(this as HarnessCaller, args);
+  }
+
+  /** Read the deck's current active card (first-responder). */
+  getActiveCardId(): Promise<string | null> {
+    return client.getActiveCardId(this as HarnessCaller);
+  }
+
+  /** Read the deck's current focused card id. */
+  getFocusedCardId(): Promise<string | null> {
+    return client.getFocusedCardId(this as HarnessCaller);
+  }
+
+  /** Read the caret / selection snapshot for `cardId`. */
+  getCaretState(cardId: string): Promise<CaretState | null> {
+    return client.getCaretState(this as HarnessCaller, cardId);
+  }
+
+  /** Read a persisted form-control's value by its persist key. */
+  getFormControlValue(
+    cardId: string,
+    persistKey: string,
+  ): Promise<string | null> {
+    return client.getFormControlValue(this as HarnessCaller, cardId, persistKey);
+  }
+
+  /** `true` iff the deck has registered a card-host root for `cardId`. */
+  assertHostRootRegistered(cardId: string): Promise<boolean> {
+    return client.assertHostRootRegistered(this as HarnessCaller, cardId);
+  }
+
+  /** Pull the DeckTrace ring; `since` filters by `seq > that`. */
+  getDeckTrace(opts?: { since?: number }): Promise<readonly DeckTraceEvent[]> {
+    return client.getDeckTrace(this as HarnessCaller, opts);
+  }
+
+  /** Stamp the trace sequence counter; pair with `getDeckTrace({ since })`. */
+  markDeckTrace(): Promise<number> {
+    return client.markDeckTrace(this as HarnessCaller);
+  }
+
+  /** Drop all buffered trace events. Preserves the enable flag. */
+  clearDeckTrace(): Promise<void> {
+    return client.clearDeckTrace(this as HarnessCaller);
+  }
+
+  /** Toggle trace recording on / off. */
+  enableDeckTrace(flag: boolean): Promise<void> {
+    return client.enableDeckTrace(this as HarnessCaller, flag);
+  }
+
+  /**
+   * Block until `getFocusedCardId() === cardId`. Wraps
+   * `waitForCondition`; default budget 2000ms (override via `opts`).
+   * Throws `TimeoutError` on budget exceeded.
+   */
+  expectFocusedCard(
+    cardId: string,
+    opts?: WaitForConditionOptions,
+  ): Promise<void> {
+    return client.expectFocusedCard(this as HarnessCaller, cardId, opts);
+  }
+
+  /**
+   * Block until `getCaretState(cardId)` deep-equals `expected`
+   * (compared via server-side `JSON.stringify`). Wraps
+   * `waitForCondition`; throws `TimeoutError` on budget exceeded.
+   */
+  expectCaret(
+    cardId: string,
+    expected: CaretState,
+    opts?: WaitForConditionOptions,
+  ): Promise<void> {
+    return client.expectCaret(this as HarnessCaller, cardId, expected, opts);
   }
 
   /**
