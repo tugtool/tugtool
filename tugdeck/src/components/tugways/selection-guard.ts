@@ -1,18 +1,28 @@
 /**
- * selection-guard.ts -- SelectionGuard singleton (boundary enforcer).
+ * selection-guard.ts -- SelectionGuard singleton (boundary enforcer + paint authority).
  *
- * Architecture: SelectionGuard operates at the CARD LEVEL only. It:
- *   - Prevents selections from escaping card boundaries
- *   - Handles card-switch dimming (inactive-selection CSS Highlight)
- *   - Handles card-switch restoration (restore browser Selection on click-back)
- *   - Manages app activation/deactivation dimming
+ * Architecture: SelectionGuard operates at the CARD LEVEL only. It owns
+ * two responsibilities:
  *
- * It does NOT reach inside cards to manage content selection. Active
- * selection rendering uses native ::selection. Components own their own
- * selection behavior.
+ *   1. **Boundary enforcement.** Clips selection at runtime when a
+ *      drag or keyboard extension escapes a card's registered
+ *      boundary (the `[data-card-host][data-card-id]` div registered
+ *      by `CardHost` via `useSelectionBoundary`).
+ *   2. **Multi-card paint authority.** Reads every card's published
+ *      `Range` from `cardRanges`, the deck-store's focused card, and
+ *      `windowHasFocus`, and paints each Range either natively (for
+ *      the focused card when the window has focus) or into the
+ *      `inactive-selection` CSS Custom Highlight (every other case).
+ *      Runs on every `updateCardDomSelection` publish, every
+ *      deck-store notify, and every app resign/become-active.
  *
- * Only ONE CSS Custom Highlight: "inactive-selection" for dimmed cards.
- * No "card-selection" highlight — native ::selection handles the active card.
+ * It does NOT reach inside cards to manage content selection.
+ * Components publish their selection via `updateCardDomSelection` and
+ * own everything downstream of that.
+ *
+ * Only ONE CSS Custom Highlight: "inactive-selection" for every card
+ * whose Range is not the currently-focused one. Native `::selection`
+ * carries the focused card.
  *
  * Three-layer selection containment system:
  *   1. CSS `user-select: none` baseline (globals.css) prevents selection
@@ -224,12 +234,13 @@ const MAX_SCROLL_SPEED = 20;
  * the app lifecycle and the deck store. `detach()` releases all of them.
  * Called by `ResponderChainProvider`.
  *
- * ## Legacy selection persistence (retires at a later step)
+ * ## Legacy selection persistence (retires at Step 16)
  *
  * `saveSelection(cardId)` / `restoreSelection(cardId, saved)` are the
  * pre-publish serialization API. Production callers were stripped at
  * Step 1 of the selection plan; the methods remain here for test
- * compatibility and retire at Step 9.
+ * compatibility and retire at Step 16 per the plan's `@internal` /
+ * removal pass.
  *
  * ## Testing
  *

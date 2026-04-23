@@ -18,28 +18,38 @@
  *
  * ## Restoration
  *
- * Restoration is trigger-driven, not React-dep-gated. Two deterministic
- * moments drive the two slices:
+ * CardHost orchestrates restore for every axis of `CardStateBag`;
+ * per-axis translation is delegated to the axis's owner (see [L10]).
+ * Restoration is trigger-driven, not React-dep-gated:
  *
  *   1. **Content restore** fires inside `registerPersistenceCallbacks`,
  *      synchronously when the child content component calls
  *      `register(callbacks)` from its own `useLayoutEffect`. The child's
  *      mount moment *is* the trigger: there is no effect dep array to
  *      re-evaluate, no version counter, no ref gate. For bags that
- *      carry content, the harness installs an `onContentReady` callback
- *      (applies scroll once the child re-renders with restored state)
- *      and calls `onRestore(bag.content)`.
- *   2. **Scroll + form-control restore** lives in a `useLayoutEffect`
- *      keyed on `[cardId, hostStackId, hostContentEl]`. It fires when
- *      the host element appears or changes (cross-pane move, pane
- *      re-registration). For content-less bags, this is the only
- *      restore path. For bags with content, this provides a best-effort
- *      pre-commit apply; `onContentReady` re-applies the correct scroll
- *      clamp after the child commits. Both applications are idempotent.
+ *      carry `content`, the harness installs an `onContentReady`
+ *      callback (re-applies scroll, DOM-selection, and focus after the
+ *      child re-renders with restored state) and calls
+ *      `onRestore(bag.content)`.
+ *   2. **Mount restore effect** (a `useLayoutEffect` keyed on
+ *      `[cardId, hostStackId, hostContentEl]`) applies `bag.scroll`
+ *      to `hostContentEl`, publishes `bag.domSelection` to
+ *      `selectionGuard` (translation via `restoreCardDomSelection`),
+ *      applies `bag.focus` via `applyFocusSnapshot` when this card is
+ *      the active card of the active pane ([D10]), and replays
+ *      `bag.formControls` + `bag.regionScroll` via a single
+ *      `MutationObserver` scoped to the card root so late-mounting
+ *      elements restore when they appear.
+ *   3. **Cross-pane-move focus effect** (a secondary `useLayoutEffect`
+ *      keyed on `[hostStackId]` with a `hasMountedRef` guard) re-runs
+ *      `applyFocusSnapshot` on subsequent `hostStackId` transitions to
+ *      close the gap where a drag-drop blurs the card's focused
+ *      element before the drop re-parents the DOM into the new pane.
  *
- * Other axes have their own owners: DOM-selection restore is owned by
- * the selection-guard paint authority, not by this harness. Focus
- * restore is wired at a later step; see the selection plan.
+ * Paint of the restored DOM selection is not CardHost's job — that's
+ * selection-guard's paint authority, driven by its deck-store
+ * subscription. CardHost's responsibility is to hand the snapshot to
+ * the axis's owner at the right moment; the owner paints.
  *
  * Neither path uses `persistenceCallbacksRef` as a dep — refs do not
  * trigger re-renders, and a dep array is not how we coordinate. The

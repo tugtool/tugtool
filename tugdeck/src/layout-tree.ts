@@ -63,8 +63,10 @@ export interface CardStateBag {
  *
  *   - `value` — the control's text value. Always present.
  *   - `scrollTop` / `scrollLeft` — scroll inside textareas (and
- *     horizontally-scrolling single-line inputs). Omitted when zero
- *     is the browser default; set only when non-zero.
+ *     horizontally-scrolling single-line inputs). Always captured
+ *     alongside `value`; zeros round-trip as zeros. (Optional on the
+ *     type so consumers that synthesize snapshots by hand can omit
+ *     them.)
  *   - `selectionStart` / `selectionEnd` / `selectionDirection` —
  *     the caret or highlighted range inside the control. Omitted
  *     for control types that do not support a text selection (e.g.
