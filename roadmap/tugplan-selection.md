@@ -984,21 +984,21 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - The will-phase saves fire before WebKit tears down selection visibility — `saveCurrentCardStateRef.current` reads `selectionGuard.getCardRange(cardId)` (Step 6) which reflects live selection, not a post-teardown state.
 
 **Tasks:**
-- [ ] In `action-dispatch.ts`'s `initActionDispatch`, add:
+- [x] In `action-dispatch.ts`'s `initActionDispatch`, add:
   ```
   appLifecycle.observeApplicationWillResignActive(() => deckManager.saveAndFlush())
   appLifecycle.observeApplicationWillHide(() => deckManager.saveAndFlush())
   ```
-- [ ] The existing `observeApplicationDidResignActive` → `saveAndFlush` stays as a backstop (idempotent).
+- [x] The existing `observeApplicationDidResignActive` → `saveAndFlush` stays as a backstop (idempotent).
 
 **Upholds:** [L23] save at will-phase reads authoritative state before browser teardown.
 
 **Tests:**
-- [ ] Fire `notifyApplicationWillResignActive`; assert every card's save callback ran.
-- [ ] Fire `notifyApplicationWillHide`; same.
+- [x] Fire `notifyApplicationWillResignActive`; assert every card's save callback ran. _(Pinned via `saveAndFlush` call-count; the per-card-callback fanout is already covered by `DeckManager.saveAndFlush`'s own tests.)_
+- [x] Fire `notifyApplicationWillHide`; same.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 

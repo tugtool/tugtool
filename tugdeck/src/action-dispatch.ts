@@ -474,7 +474,23 @@ export function initActionDispatch(
     }
   });
 
-  // Save all card states when the app resigns active (backgrounded).
+  // Save all card states around app backgrounding.
+  //
+  // Primary triggers are the **will-phase** events (`willResignActive`,
+  // `willHide`). Firing on the will-phase is the [L23] win: the save
+  // callbacks read `document.activeElement`, `selectionStart/End`, and
+  // `selectionGuard.getCardRange(cardId)` *before* WebKit tears down
+  // selection visibility and blurs the active input when the app
+  // loses key status. A did-phase save would read a post-teardown
+  // state and record `focus: none` with no selection. (See
+  // [Collision 3](#audit-collisions) in `roadmap/tugplan-selection.md`.)
+  //
+  // The **did-phase** `didResignActive` subscriber stays as an
+  // idempotent backstop: if a will-phase event never arrived (older
+  // host, test harness, unexpected teardown path), the did-phase save
+  // still flushes whatever state is readable. Repeating a save is
+  // harmless — `saveAndFlush` is debounce-free and idempotent.
+  //
   // Selection repaint on the symmetric become-active / unhide events is
   // owned by the selection-guard paint authority (see selection plan).
   //
@@ -485,6 +501,12 @@ export function initActionDispatch(
   const appLifecycle = getAppLifecycle();
   if (appLifecycle !== null) {
     disposers.push(
+      appLifecycle.observeApplicationWillResignActive(() => {
+        deckManager.saveAndFlush();
+      }),
+      appLifecycle.observeApplicationWillHide(() => {
+        deckManager.saveAndFlush();
+      }),
       appLifecycle.observeApplicationDidResignActive(() => {
         deckManager.saveAndFlush();
       }),
