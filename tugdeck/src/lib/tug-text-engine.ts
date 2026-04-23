@@ -11,6 +11,7 @@
 import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
 import type { AtomSegment } from "./tug-atom-img";
 import { getTokenValue } from "@/theme-tokens";
+import { isDevEnv } from "./dev-env";
 
 // ===================================================================
 // Types
@@ -505,6 +506,54 @@ export class TugTextEngine {
     const range = document.createRange();
     range.setStart(s.node, s.offset);
     range.setEnd(e.node, e.offset);
+
+    // Focus the root BEFORE setting the selection when it isn't
+    // already focused. WebKit has a long-standing quirk: calling
+    // `.focus()` on a `contentEditable` *after* a selection has been
+    // programmatically set inside it fires an asynchronous
+    // selectionchange that collapses the caret to position 0.
+    // Focusing first lets that reset fire against an empty selection,
+    // so our subsequent `addRange` sticks. The natural browser
+    // contract is also that programmatically setting a selection
+    // inside an element implies focus on that element.
+    //
+    // The guard on `this.root.contains(document.activeElement)` keeps
+    // us from yanking focus back when the engine is not the current
+    // active element's owner (IME composition widgets, tooltips,
+    // etc., where focus legitimately lives outside the root).
+    const willFocus =
+      document.activeElement !== this.root &&
+      !this.root.contains(document.activeElement);
+    if (willFocus) {
+      this.root.focus({ preventScroll: true });
+      // Dev-warn if `.focus()` silently failed — an element inside a
+      // `visibility: hidden`, `display: none`, or `inert` ancestor
+      // subtree cannot receive focus, and `.focus()` no-ops without
+      // returning any error. Setting selection on such a root leaves
+      // the Range anchored on an unfocused element; when focus later
+      // lands (e.g. from a downstream restore path) WebKit discards
+      // the orphaned selection. This warn surfaces the silent failure
+      // so the regression can be caught in dev instead of observed as
+      // selection-loss in production.
+      if (
+        isDevEnv() &&
+        document.activeElement !== this.root &&
+        !this.root.contains(document.activeElement)
+      ) {
+        console.warn(
+          "[tug-text-engine] setSelectedRange: root.focus() did not " +
+            "land — document.activeElement is still " +
+            `${document.activeElement?.tagName ?? "null"}. The engine's ` +
+            "root is likely inside a `visibility: hidden`, " +
+            "`display: none`, or `inert` ancestor. The selection " +
+            "will be set on an unfocused element and WebKit may " +
+            "collapse it when focus eventually lands. Switch the " +
+            "ancestor mask to `opacity: 0` (non-interactive but " +
+            "focusable) or remove the unfocusable ancestor before " +
+            "the engine's restoreState runs.",
+        );
+      }
+    }
 
     const wasSuppressed = this._suppressSelectionEmits;
     this._suppressSelectionEmits = true;

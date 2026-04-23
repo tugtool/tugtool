@@ -238,3 +238,79 @@ describe("TugTextEngine.onSelectionChanged", () => {
     expect(b.length).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// setSelectedRange focus-before-selection contract.
+//
+// WebKit collapses a programmatically-set selection when `.focus()` is
+// called on a contentEditable *after* the selection has been applied:
+// the focus-establishment path fires an async `selectionchange` that
+// resets the caret to position 0 and clobbers the saved range. The
+// engine sidesteps the quirk by focusing the root BEFORE calling
+// `sel.addRange`. These tests pin that ordering.
+// ---------------------------------------------------------------------------
+
+describe("TugTextEngine.setSelectedRange focuses root before setting selection", () => {
+  let ctx!: ReturnType<typeof makeEngine>;
+  let otherInput!: HTMLInputElement;
+
+  beforeEach(() => {
+    ctx = makeEngine();
+    ctx.root.textContent = "hello world";
+    // Provide a plausible alternative focus target so we can assert
+    // focus is moved onto the engine root when it starts elsewhere.
+    otherInput = document.createElement("input");
+    otherInput.type = "text";
+    document.body.appendChild(otherInput);
+  });
+
+  afterEach(() => {
+    ctx.dispose();
+    otherInput.remove();
+  });
+
+  it("focuses the root when focus is elsewhere at call time", () => {
+    otherInput.focus();
+    expect(document.activeElement).toBe(otherInput);
+
+    ctx.engine.setSelectedRange(2, 5);
+
+    expect(document.activeElement).toBe(ctx.root);
+  });
+
+  it("does not move focus when the root is already focused", () => {
+    ctx.root.focus();
+    expect(document.activeElement).toBe(ctx.root);
+
+    ctx.engine.setSelectedRange(0, 3);
+
+    expect(document.activeElement).toBe(ctx.root);
+  });
+
+  it("does not yank focus when an element inside the root is the active element (IME / nested widgets)", () => {
+    // Simulate a nested focusable inside the engine root. Focusing it
+    // models the IME / composition case the guard is there to allow.
+    const nested = document.createElement("input");
+    nested.type = "text";
+    ctx.root.appendChild(nested);
+    nested.focus();
+    expect(document.activeElement).toBe(nested);
+
+    ctx.engine.setSelectedRange(0, 3);
+
+    // Focus stays on the nested element — the engine doesn't steal it.
+    expect(document.activeElement).toBe(nested);
+  });
+
+  it("after the call the native selection matches the requested offsets", () => {
+    otherInput.focus();
+    ctx.engine.setSelectedRange(2, 5);
+
+    const sel = window.getSelection();
+    expect(sel).not.toBeNull();
+    if (!sel) return;
+    expect(sel.rangeCount).toBe(1);
+    expect(sel.anchorOffset).toBe(2);
+    expect(sel.focusOffset).toBe(5);
+  });
+});

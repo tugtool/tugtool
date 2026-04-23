@@ -87,9 +87,11 @@ import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { registerDeckStore } from "@/lib/deck-store-registry";
 import { AppLifecycle, registerAppLifecycle } from "@/lib/app-lifecycle";
+import type { TugTextEditingState } from "@/lib/tug-text-engine";
 
 // ---------------------------------------------------------------------------
 // Minimal rendering-harness Store
@@ -666,5 +668,213 @@ describe("selection-persistence integration — paint-bucket transitions", () =>
     expect(hl.has(r1)).toBe(true);
     expect(hl.has(r2)).toBe(true);
     expect(hl.size).toBe(2);
+  });
+});
+
+// ===========================================================================
+// #1 + #9. Engine-managed (tide-like) card reload preserves selection.
+//
+// Pins the [D07] contract for content-owning cards:
+//   - `bag.content` carries the engine's flat-offset selection
+//     (`captureState`), which is the sole source of truth for
+//     engine-managed cards.
+//   - `bag.domSelection` and `bag.focus` are NOT saved for these
+//     cards — CardHost's save-side gate sees `bag.content !==
+//     undefined` and skips the redundant captures.
+//   - On restore, CardHost does NOT call `restoreCardDomSelection`
+//     or `applyFocusSnapshot`. The engine's own `restoreState` (via
+//     `setSelectedRange`) focuses its root and sets the selection
+//     end-to-end.
+//
+// This test is the regression gate that would have caught the
+// tide-card-reload selection-loss bug earlier — the failure mode
+// only manifests in the composition of three layers (CardHost +
+// engine + WebKit focus quirks), which per-layer unit tests cannot
+// see.
+// ===========================================================================
+
+function EnginePromptCard() {
+  return <TugPromptInput persistState />;
+}
+
+function registerEnginePromptCard() {
+  registerCard({
+    componentId: "engine-prompt",
+    defaultMeta: { title: "Engine Prompt", closable: true },
+    contentFactory: () => <EnginePromptCard />,
+  });
+}
+
+function makeEnginePromptCardState(id: string): CardState {
+  return {
+    id,
+    componentId: "engine-prompt",
+    title: "Engine Prompt",
+    closable: true,
+  };
+}
+
+describe("selection-persistence integration — engine-managed card reload", () => {
+  it("save gates off domSelection/focus for content-owning cards; bag.content owns both", () => {
+    registerEnginePromptCard();
+
+    const cardId = "engine-card";
+    const card = makeEnginePromptCardState(cardId);
+    const store = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    renderDeck(store);
+
+    // Locate the engine root (contentEditable) inside the rendered
+    // TugPromptInput.
+    const editor = document.querySelector<HTMLElement>(
+      `[data-card-id="${cardId}"] [data-tug-prompt-input-root] [contenteditable]`,
+    );
+    expect(editor).not.toBeNull();
+    if (!editor) return;
+
+    // Plant text + a non-collapsed selection the way a typing user
+    // would. Direct DOM manipulation + native selection API is the
+    // shortest path in happy-dom; the engine's selectionchange
+    // listener relays the range up to selection-guard naturally.
+    editor.textContent = "hello world";
+    const textNode = editor.firstChild as Text;
+    const r = document.createRange();
+    r.setStart(textNode, 2);
+    r.setEnd(textNode, 8);
+    const sel = window.getSelection();
+    expect(sel).not.toBeNull();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(r);
+    editor.focus();
+
+    // Trigger save — same entry point as `saveAndFlush` uses.
+    act(() => {
+      store.invokeSaveCallback(cardId);
+    });
+
+    const savedBag = store.getCardState(cardId);
+    expect(savedBag).not.toBeUndefined();
+    if (!savedBag) return;
+
+    // bag.content carries the engine's captured selection.
+    expect(savedBag.content).not.toBeUndefined();
+    const content = savedBag.content as TugTextEditingState;
+    expect(content.text).toBe("hello world");
+    expect(content.selection).toEqual({ start: 2, end: 8 });
+
+    // The architectural gate: CardHost did NOT save `bag.domSelection`
+    // or `bag.focus` for the engine-managed card. The engine's
+    // `bag.content.selection` is the sole source of truth. Without
+    // this gate, a second CardHost-driven restore would race the
+    // engine on mount and (WebKit focus-with-selection quirk) collapse
+    // the just-restored selection.
+    expect(savedBag.domSelection).toBeUndefined();
+    expect(savedBag.focus).toBeUndefined();
+  });
+
+  it("fresh mount with a saved engine bag reapplies the engine's selection via the engine's own restore path", () => {
+    registerEnginePromptCard();
+
+    const cardId = "engine-card-restore";
+    const card = makeEnginePromptCardState(cardId);
+
+    // Pre-populate a store with a bag that only carries `bag.content`
+    // (the shape the save gate produces for engine-managed cards).
+    // No `bag.domSelection`, no `bag.focus` — CardHost must not
+    // rely on those axes for this class of card.
+    const content: TugTextEditingState = {
+      text: "hello world",
+      atoms: [],
+      selection: { start: 2, end: 8 },
+    };
+    const store = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    store.setCardState(cardId, { content });
+
+    renderDeck(store);
+
+    // After mount, the engine should have restored text + set the
+    // native selection via `setSelectedRange`. Find the contentEditable
+    // and assert its selection matches the saved bag.
+    const editor = document.querySelector<HTMLElement>(
+      `[data-card-id="${cardId}"] [data-tug-prompt-input-root] [contenteditable]`,
+    );
+    expect(editor).not.toBeNull();
+    if (!editor) return;
+    expect(editor.textContent).toBe("hello world");
+
+    const sel = window.getSelection();
+    expect(sel).not.toBeNull();
+    if (!sel) return;
+    expect(sel.rangeCount).toBe(1);
+    expect(sel.anchorOffset).toBe(2);
+    expect(sel.focusOffset).toBe(8);
+
+    // Note: we deliberately do NOT assert `document.activeElement ===
+    // editor` here. happy-dom's focus semantics for contentEditable
+    // diverge from WebKit (focus-establishment side effects, focus-
+    // event ordering), and the focus-before-addRange contract that
+    // matters for the user-visible bug lives in `tug-text-engine`'s
+    // own unit tests (`setSelectedRange focuses root before setting
+    // selection`) which exercise the focus path directly. The
+    // integration assertion that matters here is that the selection
+    // Range is restored to the saved offsets — which it is.
+  });
+
+  it("pre-existing (pre-fix) bag with both content.selection and domSelection still restores via content only — CardHost's restore gate ignores domSelection when content is present", () => {
+    registerEnginePromptCard();
+
+    const cardId = "engine-card-legacy";
+    const card = makeEnginePromptCardState(cardId);
+
+    // Legacy bag shape from before the save-side gate landed — both
+    // `bag.content` AND `bag.domSelection` present. The restore gate
+    // must ignore `bag.domSelection` when `bag.content` is defined.
+    // A tainted `domSelection` that doesn't match the engine's would
+    // otherwise clobber the engine's correctly-set range.
+    const content: TugTextEditingState = {
+      text: "hello world",
+      atoms: [],
+      selection: { start: 2, end: 8 },
+    };
+    const store = new Store({
+      cards: [card],
+      panes: [makePane("pane-1", [card])],
+      activePaneId: "pane-1",
+    });
+    store.setCardState(cardId, {
+      content,
+      domSelection: {
+        // A deliberately wrong path; if CardHost honours it, the
+        // engine's range gets clobbered to {0, 0}.
+        anchorPath: [0, 0],
+        anchorOffset: 0,
+        focusPath: [0, 0],
+        focusOffset: 0,
+      },
+      focus: { kind: "component-owned" },
+    });
+
+    renderDeck(store);
+
+    const editor = document.querySelector<HTMLElement>(
+      `[data-card-id="${cardId}"] [data-tug-prompt-input-root] [contenteditable]`,
+    );
+    expect(editor).not.toBeNull();
+    if (!editor) return;
+
+    const sel = window.getSelection();
+    expect(sel).not.toBeNull();
+    if (!sel) return;
+    // Engine's selection wins; domSelection was correctly ignored.
+    expect(sel.anchorOffset).toBe(2);
+    expect(sel.focusOffset).toBe(8);
   });
 });

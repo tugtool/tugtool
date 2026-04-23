@@ -540,16 +540,21 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       if (callbacks.restorePendingRef === undefined) return;
 
       // Install onContentReady so scroll is applied after the child
-      // commits restored content — at that point the content's dimensions
-      // are valid and scroll clamps correctly. DOM-selection is also
-      // re-restored here because engine-less content factories may
-      // materialize their DOM as part of `onRestore`, so the paths in
-      // `bag.domSelection` only resolve once the child has committed.
-      // For engine-managed cards the engine's own publish (via
-      // `onSelectionChanged` inside `setSelectedRange`) runs during
-      // `onRestore` and naturally wins — our call is either redundant
-      // (paths still resolve and re-publish the same Range) or a no-op
-      // (paths stale after innerHTML rewrite, `pathToNode` returns null).
+      // commits restored content — at that point the content's
+      // dimensions are valid and scroll clamps correctly. This is
+      // also where the pre-restore opacity mask is lifted.
+      //
+      // DOM-selection and focus restore are NOT called here. This
+      // branch runs only when `bag.content !== undefined` — i.e.
+      // content-owning cards — and per [D07] those cards' content
+      // factory owns selection and focus end-to-end. The engine's
+      // `setSelectedRange` inside its own `restoreState` both
+      // focuses the root and sets the selection; any second
+      // `.focus()` or `setBaseAndExtent` call from CardHost would
+      // race the engine and, under WebKit's focus-with-selection
+      // quirk, collapse the just-restored selection. The save-side
+      // gate also keeps `bag.domSelection` / `bag.focus` absent from
+      // freshly-saved content-owning bags for symmetry.
       callbacks.onContentReady = () => {
         const el = hostContentElRef.current;
         if (el) {
@@ -557,40 +562,32 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
             el.scrollLeft = bag.scroll.x;
             el.scrollTop = bag.scroll.y;
           }
-          if (el.style.visibility === "hidden") {
-            el.style.visibility = "";
-          }
-          const cardRoot = findCardRoot(el, cardId);
-          if (cardRoot) {
-            if (bag.domSelection) {
-              selectionGuard.restoreCardDomSelection(
-                cardId,
-                bag.domSelection,
-                cardRoot,
-              );
-            }
-            // Focus restore for with-content bags. The primary mount
-            // effect also calls `applyFocusSnapshot`, but with-content
-            // cards' DOM is not materialised until `onRestore` commits,
-            // so the primary call no-ops and this one lands. The
-            // active-card gate ([D10] Option B) keeps non-focused
-            // cards from stealing focus; the pre-check inside the
-            // helper keeps a mid-restore user click from being
-            // overridden.
-            if (
-              bag.focus &&
-              bag.focus.kind !== "none" &&
-              isActiveCardOfActivePane(store, cardId)
-            ) {
-              applyFocusSnapshot(cardRoot, bag.focus);
-            }
+          // Un-mask the host content now that scroll has been
+          // re-applied. See the pre-mask block below for the
+          // rationale behind `opacity: 0` (vs `visibility: hidden`).
+          if (el.style.opacity === "0") {
+            el.style.opacity = "";
           }
         }
       };
-      // Pre-hide the host to mask the pre-restore scroll position while
-      // the child re-renders with restored content.
+      // Pre-mask the host to hide the pre-restore scroll position
+      // while the child re-renders with restored content.
+      //
+      // We use `opacity: 0`, NOT `visibility: hidden`, even though
+      // the goal is the same (full transparency while the restore
+      // settles). Elements inside a `visibility: hidden` subtree
+      // are not focusable: `.focus()` silently no-ops. For
+      // engine-managed cards (tide, gallery prompt-input) the
+      // engine's `setSelectedRange` focuses its content-editable
+      // root *before* calling `sel.addRange` so WebKit doesn't
+      // orphan the selection. If the root is unfocusable during
+      // that call, the focus step fails and the selection is set
+      // on an unfocused element — WebKit later discards the caret
+      // when focus finally lands, collapsing the user's selection.
+      // `opacity: 0` keeps the element focusable while still
+      // producing a fully-transparent mask for the flash window.
       if (hostContentElRef.current && bag.scroll !== undefined) {
-        hostContentElRef.current.style.visibility = "hidden";
+        hostContentElRef.current.style.opacity = "0";
       }
 
       callbacks.restorePendingRef.current = true;
@@ -633,28 +630,46 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
     if (!bag) return;
+    // Content-owning cards manage selection and focus through their
+    // own restore path ([D07]); CardHost does not touch those axes
+    // for such cards. See `saveCurrentCardStateRef.current` for the
+    // matching save-side gate.
+    const ownsSelectionAndFocus = bag.content !== undefined;
     if (bag.scroll !== undefined) {
       hostContentEl.scrollLeft = bag.scroll.x;
       hostContentEl.scrollTop = bag.scroll.y;
     }
 
-    // DOM-selection restore runs unconditionally for every card with a
-    // saved snapshot; see the block comment above for ordering rationale.
+    // DOM-selection restore — skipped for content-owning cards (the
+    // content owner publishes via `engine.onSelectionChanged` during
+    // its own `restoreState` and is the authoritative source). For
+    // cards without `bag.content` (form-control cards, generic
+    // contentEditable cards) CardHost's publish is the only
+    // selection-guard seed. The `bag.domSelection` field is absent
+    // from freshly-saved content-owning bags per the save-side gate;
+    // this branch's extra `!ownsSelectionAndFocus` check covers
+    // pre-fix bags still in tugbank.
     const cardRootForDomAxes = findCardRoot(hostContentEl, cardId);
-    if (bag.domSelection && cardRootForDomAxes) {
+    if (
+      bag.domSelection &&
+      !ownsSelectionAndFocus &&
+      cardRootForDomAxes
+    ) {
       selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRootForDomAxes);
     }
 
-    // Focus restore, [D10] Option B gated. For no-content cards the
-    // DOM is already in place and this call lands the saved focus;
-    // for with-content cards the keyed element typically doesn't
-    // exist yet and `applyFocusSnapshot` no-ops — `onContentReady`
-    // picks them up. Both paths respect the pre-check that keeps
-    // focus from being stolen out from under a user who has clicked
-    // elsewhere mid-restore. [R07].
+    // Focus restore, [D10] Option B gated. Skipped for
+    // content-owning cards — the engine focuses its own root inside
+    // `setSelectedRange`, and a second `.focus()` here would race
+    // the engine and (WebKit's focus-with-selection quirk) collapse
+    // the just-restored selection. For non-content cards the active-
+    // card-of-active-pane gate prevents focus theft across panes
+    // ([R07]) and the helper's own pre-check keeps focus from being
+    // yanked away from a user who has clicked mid-restore.
     if (
       bag.focus &&
       bag.focus.kind !== "none" &&
+      !ownsSelectionAndFocus &&
       cardRootForDomAxes &&
       isActiveCardOfActivePane(store, cardId)
     ) {
@@ -736,6 +751,12 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (!hostContentEl) return;
     const bag = store.getCardState(cardId);
     if (!bag || !bag.focus || bag.focus.kind === "none") return;
+    // Content-owning cards manage focus themselves ([D07]). CardHost
+    // must not drive focus for them even on a cross-pane move; the
+    // engine's own onSelectionChanged-driven publish plus the deck-
+    // store's focus-change subscription in selection-guard keep the
+    // card's selection painted correctly across the move.
+    if (bag.content !== undefined) return;
     if (!isActiveCardOfActivePane(store, cardId)) return;
     const cardRoot = findCardRoot(hostContentEl, cardId);
     if (!cardRoot) return;
@@ -757,8 +778,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
     const regionScroll = cardRoot ? captureRegionScrolls(cardRoot) : undefined;
-    const domSelection = cardRoot ? captureDomSelection(cardId, cardRoot) : null;
-    const focus: FocusSnapshot = cardRoot ? captureFocus(cardRoot) : { kind: "none" };
+    // [D07] — content-owning cards (any card whose factory writes
+    // `bag.content` via `useCardPersistence`) own their own selection
+    // and focus. The content payload carries whatever the owner needs
+    // (for tide-card: `bag.content.selection` flat offsets, and
+    // engine-driven focus via `setSelectedRange`). CardHost must step
+    // out: a second source of truth for selection / focus would race
+    // the owner's restore on mount and clobber it. For cards without
+    // a content payload (form-control cards, markdown-view cards)
+    // CardHost is the sole authority on these axes.
+    const ownsSelectionAndFocus = content !== undefined;
+    const domSelection =
+      cardRoot && !ownsSelectionAndFocus
+        ? captureDomSelection(cardId, cardRoot)
+        : null;
+    const focus: FocusSnapshot =
+      cardRoot && !ownsSelectionAndFocus
+        ? captureFocus(cardRoot)
+        : { kind: "none" };
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(content !== undefined ? { content } : {}),
