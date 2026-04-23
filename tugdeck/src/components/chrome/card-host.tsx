@@ -71,6 +71,7 @@ import { nodeToPath, selectionGuard } from "../tugways/selection-guard";
 import type {
   CardStateBag,
   DomSelectionSnapshot,
+  FocusSnapshot,
   FormControlSnapshot,
 } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
@@ -94,10 +95,33 @@ export interface CardHostProps {
 }
 
 /**
+ * Input types that accept a text selection via
+ * `selectionStart` / `selectionEnd` / `setSelectionRange`. Reading or
+ * writing those properties on other types (e.g. `checkbox`, `radio`,
+ * `number`, `email`, `range`) throws `InvalidStateError` in real
+ * browsers; happy-dom returns `null`. This set matches the HTML spec's
+ * "input type with selection APIs" list.
+ */
+const SELECTION_CAPABLE_INPUT_TYPES: ReadonlySet<string> = new Set([
+  "text",
+  "search",
+  "tel",
+  "url",
+  "password",
+]);
+
+function supportsTextSelection(
+  el: HTMLInputElement | HTMLTextAreaElement,
+): boolean {
+  if (el instanceof HTMLTextAreaElement) return true;
+  return SELECTION_CAPABLE_INPUT_TYPES.has(el.type);
+}
+
+/**
  * DOM-authority persistence for native `<input>` and `<textarea>` elements
  * carrying `data-tug-persist-value="<key>"`. Walks the card's own subtree
- * and snapshots each element's value and scroll keyed by the attribute
- * value. Selection offsets are captured separately.
+ * and snapshots each element's value, scroll, and selection offsets keyed
+ * by the attribute value.
  *
  * **Scope matters.** The `root` passed here must be the card-host div
  * (`[data-card-host][data-card-id]`) — not the pane's content element.
@@ -108,10 +132,18 @@ export interface CardHostProps {
  * uniqueness a per-card concern, which is what the caller already
  * assumes.
  *
+ * Selection is captured *regardless of focus* so the user's range
+ * survives app resign and cross-card saves. Restore pairs with focus
+ * restore (see [D10]): an unfocused input with selection state holds
+ * it internally, and `::selection` paints the moment focus arrives.
+ *
  * Only reads from the DOM (uncontrolled-input assumption — controlled
  * React-owned `value` is the caller's concern via `useCardPersistence`).
+ * Selection reads on types that don't support it (checkbox, radio,
+ * number, etc.) are skipped via a capability check; residual errors
+ * are swallowed so one misbehaving input never blocks save.
  */
-function captureFormControls(
+export function captureFormControls(
   root: HTMLElement,
 ): Record<string, FormControlSnapshot> | undefined {
   const result: Record<string, FormControlSnapshot> = {};
@@ -121,11 +153,30 @@ function captureFormControls(
   for (const el of els) {
     const key = el.getAttribute("data-tug-persist-value");
     if (!key) continue;
-    result[key] = {
+    const snap: FormControlSnapshot = {
       value: el.value,
       scrollTop: el.scrollTop,
       scrollLeft: el.scrollLeft,
     };
+    if (supportsTextSelection(el)) {
+      try {
+        const { selectionStart, selectionEnd, selectionDirection } = el;
+        if (selectionStart !== null) snap.selectionStart = selectionStart;
+        if (selectionEnd !== null) snap.selectionEnd = selectionEnd;
+        if (
+          selectionDirection === "forward" ||
+          selectionDirection === "backward" ||
+          selectionDirection === "none"
+        ) {
+          snap.selectionDirection = selectionDirection;
+        }
+      } catch {
+        // Some inputs report as selection-capable via .type but still
+        // throw on property access (custom element polyfills, JSDOM
+        // edge cases). Drop silently — the other axes still survive.
+      }
+    }
+    result[key] = snap;
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -167,6 +218,57 @@ export function captureDomSelection(
 }
 
 /**
+ * Selectors that identify a focus-bearing element belonging to a
+ * component that owns its own focus + selection state together. Focus
+ * on any such element serializes as `{ kind: "component-owned" }` — the
+ * component's `bag.content` carries the detail; `CardHost`'s
+ * responsibility is only to remember which component had focus.
+ *
+ * New owning components add their marker attribute here. Keep selectors
+ * tag-agnostic (attribute-based) so authors cannot accidentally match
+ * bystander DOM.
+ */
+const COMPONENT_OWNED_SELECTORS: readonly string[] = [
+  "[data-tug-prompt-input-root]",
+];
+
+/**
+ * Classify `document.activeElement` relative to the card root into one
+ * of the four `FocusSnapshot` variants.
+ *
+ *   - Focus outside the card root (including `document.body`) → `none`.
+ *   - `[data-tug-persist-value]` wins over the other markers because
+ *     a keyed form-control's focus is implicit in its persistKey (see
+ *     [D10]) — no separate focus key needed.
+ *   - `[data-tug-focus-key]` → `dom`; keyed via the attribute value.
+ *   - Matches a component-owned selector → `component-owned`.
+ *   - Anything else → `none`.
+ *
+ * Pure read; does not mutate focus, selection, or any DOM state.
+ */
+export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
+  const active = cardRoot.ownerDocument.activeElement;
+  if (!(active instanceof HTMLElement)) return { kind: "none" };
+  if (!cardRoot.contains(active)) return { kind: "none" };
+
+  const persistKey = active.getAttribute("data-tug-persist-value");
+  if (persistKey !== null && persistKey !== "") {
+    return { kind: "form-control", persistKey };
+  }
+
+  const focusKey = active.getAttribute("data-tug-focus-key");
+  if (focusKey !== null && focusKey !== "") {
+    return { kind: "dom", focusKey };
+  }
+
+  for (const selector of COMPONENT_OWNED_SELECTORS) {
+    if (active.closest(selector)) return { kind: "component-owned" };
+  }
+
+  return { kind: "none" };
+}
+
+/**
  * Find this card's own DOM subtree root inside a pane's content element.
  * The `[data-card-host][data-card-id]` div is rendered by `CardHost`
  * itself and travels with the card across cross-pane moves (via the
@@ -186,12 +288,36 @@ function findCardRoot(
  * Apply a saved `FormControlSnapshot` to an element. Idempotent guard at the
  * call site (via a `WeakSet`) keeps user typing from being overwritten on
  * subsequent mutation-observer fires.
+ *
+ * Order matters: value is restored first so `setSelectionRange` lands
+ * against the correct string length; scroll is restored last so the
+ * browser's own scroll-into-view side effect from `setSelectionRange`
+ * does not override the saved scroll position.
+ *
+ * Selection restore is no-op when the element's type does not support
+ * it, and any residual error from `setSelectionRange` is swallowed —
+ * one misbehaving input must not abort the rest of the restore walk.
  */
-function applyFormControlSnapshot(
+export function applyFormControlSnapshot(
   el: HTMLInputElement | HTMLTextAreaElement,
   snap: FormControlSnapshot,
 ): void {
   if (el.value !== snap.value) el.value = snap.value;
+  if (
+    supportsTextSelection(el) &&
+    snap.selectionStart !== undefined &&
+    snap.selectionEnd !== undefined
+  ) {
+    try {
+      el.setSelectionRange(
+        snap.selectionStart,
+        snap.selectionEnd,
+        snap.selectionDirection,
+      );
+    } catch {
+      // See captureFormControls for the matching symmetry.
+    }
+  }
   if (snap.scrollTop !== undefined) el.scrollTop = snap.scrollTop;
   if (snap.scrollLeft !== undefined) el.scrollLeft = snap.scrollLeft;
 }
@@ -354,11 +480,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
     const domSelection = cardRoot ? captureDomSelection(cardId, cardRoot) : null;
+    const focus: FocusSnapshot = cardRoot ? captureFocus(cardRoot) : { kind: "none" };
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(content !== undefined ? { content } : {}),
       ...(formControls !== undefined ? { formControls } : {}),
       ...(domSelection !== null ? { domSelection } : {}),
+      ...(focus.kind !== "none" ? { focus } : {}),
     };
     store.setCardState(cardId, bag);
   };

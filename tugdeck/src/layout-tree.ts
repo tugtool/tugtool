@@ -51,20 +51,39 @@ export interface CardStateBag {
   regionScroll?: RegionScrollSnapshot | null;
   /** Content-editable range snapshot captured from the card's owning boundary. */
   domSelection?: DomSelectionSnapshot | null;
-  /** Element-level focus snapshot. Shape finalized at a later step. */
+  /** Element-level focus snapshot identifying which descendant of the card root held focus at save time. */
   focus?: FocusSnapshot | null;
 }
 
 /**
- * DOM-authority snapshot of a single native input or textarea's value and
- * scroll. Captured and reapplied by `CardHost` for any element bearing
- * `data-tug-persist-value`. Selection offsets are not captured here; they
- * ride the separate per-card capture path.
+ * DOM-authority snapshot of a single native `<input>` or `<textarea>`.
+ *
+ * Captured and reapplied by `CardHost` for any element bearing
+ * `data-tug-persist-value="<key>"`. The snapshot covers three axes:
+ *
+ *   - `value` — the control's text value. Always present.
+ *   - `scrollTop` / `scrollLeft` — scroll inside textareas (and
+ *     horizontally-scrolling single-line inputs). Omitted when zero
+ *     is the browser default; set only when non-zero.
+ *   - `selectionStart` / `selectionEnd` / `selectionDirection` —
+ *     the caret or highlighted range inside the control. Omitted
+ *     for control types that do not support a text selection (e.g.
+ *     `<input type="checkbox">` / `"radio"` / `"number"` in most
+ *     browsers), or when the field is unreadable at save time.
+ *
+ * Focus is NOT recorded here — element-level focus rides
+ * `bag.focus` (see [D10]). Selection persists regardless of focus
+ * at save time; the restore path ([Step 10]) re-anchors the caret
+ * after value restore and leaves paint to the browser once focus
+ * lands on the element.
  */
 export interface FormControlSnapshot {
   value: string;
   scrollTop?: number;
   scrollLeft?: number;
+  selectionStart?: number;
+  selectionEnd?: number;
+  selectionDirection?: "forward" | "backward" | "none";
 }
 
 /**
@@ -90,10 +109,36 @@ export interface DomSelectionSnapshot {
 }
 
 /**
- * Placeholder type for the element-level focus axis. Populated at the step
- * that wires focus capture; currently always `null`.
+ * Element-level focus snapshot.
+ *
+ * Captured by `CardHost` from `document.activeElement` at save time and
+ * narrowed to the descendant of the card's boundary that held focus.
+ * Four variants cover every real case:
+ *
+ *   - `form-control` — a `<input>` or `<textarea>` carrying
+ *     `data-tug-persist-value="<key>"`. Focus travels with the
+ *     persistKey; restore re-focuses that element after its value is
+ *     re-applied.
+ *   - `dom` — a non-form-control focusable element carrying an opt-in
+ *     `data-tug-focus-key="<key>"` marker (e.g. a button, a card-local
+ *     menu trigger). Keyed lookup on restore.
+ *   - `component-owned` — focus belongs to a component that manages
+ *     its own focus plus selection together (tide card's prompt-input
+ *     contentEditable, for example). The owning component's
+ *     `bag.content` carries whatever state it needs; `CardHost` merely
+ *     notes that the component was focused.
+ *   - `none` — no interesting focus inside the card (or focus is on
+ *     `document.body`, or outside the card root entirely).
+ *
+ * Applied on cold-boot restore only, and only for the active card of
+ * the active pane (see [D10]). In-app transitions preserve focus by
+ * leaving the DOM mounted (see [D08]).
  */
-export type FocusSnapshot = Record<string, never>;
+export type FocusSnapshot =
+  | { kind: "none" }
+  | { kind: "form-control"; persistKey: string }
+  | { kind: "dom"; focusKey: string }
+  | { kind: "component-owned" };
 
 /**
  * A card — the content identity that survives cross-pane moves.

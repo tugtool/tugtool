@@ -777,23 +777,23 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - `TugInput` / `TugTextarea` continue to carry `data-tug-persist-value` (not `data-tug-focus-key`) — focus of a form-control is implicit from persistKey.
 
 **Tasks:**
-- [ ] Add `FocusSnapshot` type to `layout-tree.ts`.
-- [ ] Implement `captureFocus(cardRoot): FocusSnapshot` helper inside `card-host.tsx`.
-- [ ] Wire `captureFocus(cardRoot)` into `saveCurrentCardStateRef.current`.
-- [ ] Register a `component-owned` predicate — initially: `el instanceof HTMLElement && el.closest('[data-tug-prompt-input-root]')` (add this marker attribute in TugPromptInput at Step 7 too).
-- [ ] Document `data-tug-focus-key` in `selection-model.md`.
+- [x] Add `FocusSnapshot` type to `layout-tree.ts`.
+- [x] Implement `captureFocus(cardRoot): FocusSnapshot` helper inside `card-host.tsx`.
+- [x] Wire `captureFocus(cardRoot)` into `saveCurrentCardStateRef.current`.
+- [x] Register a `component-owned` predicate — initially: `el instanceof HTMLElement && el.closest('[data-tug-prompt-input-root]')` (add this marker attribute in TugPromptInput at Step 7 too).
+- [x] Document `data-tug-focus-key` in `selection-model.md`.
 
 **Upholds:** [L23] element-level focus is now user-data-preserving per saved state. [L10] card-host owns focus capture; engines/components mark themselves via attribute or component-owned selector.
 
 **Tests:**
-- [ ] `<input data-tug-persist-value="email">` focused → `{ kind: "form-control", persistKey: "email" }`.
-- [ ] `<button data-tug-focus-key="save">` focused → `{ kind: "dom", focusKey: "save" }`.
-- [ ] `[data-tug-prompt-input-root] [contenteditable]` focused → `{ kind: "component-owned" }`.
-- [ ] `document.body` focus → `{ kind: "none" }`.
-- [ ] Focus outside the card root → `{ kind: "none" }`.
+- [x] `<input data-tug-persist-value="email">` focused → `{ kind: "form-control", persistKey: "email" }`.
+- [x] `<button data-tug-focus-key="save">` focused → `{ kind: "dom", focusKey: "save" }`.
+- [x] `[data-tug-prompt-input-root] [contenteditable]` focused → `{ kind: "component-owned" }`.
+- [x] `document.body` focus → `{ kind: "none" }`.
+- [x] Focus outside the card root → `{ kind: "none" }`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 
@@ -812,18 +812,18 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - On restore, if the element is not focused at the moment of apply, the selection persists internally in the form-control. When the card's focus restore (Step 10) lands on that element, the browser paints `::selection`.
 
 **Tasks:**
-- [ ] Add back selection fields to `FormControlSnapshot` (they were dropped in Step 1 for separation of concerns; now the separation is clear, add them back here).
-- [ ] `captureFormControls` reads all three fields defensively (some `<input type=...>` don't support `selectionStart`; wrap in try/catch).
-- [ ] `applyFormControlSnapshot` calls `setSelectionRange` after value assignment; wrapped in try/catch.
+- [x] Add back selection fields to `FormControlSnapshot` (they were dropped in Step 1 for separation of concerns; now the separation is clear, add them back here).
+- [x] `captureFormControls` reads all three fields defensively (some `<input type=...>` don't support `selectionStart`; wrap in try/catch).
+- [x] `applyFormControlSnapshot` calls `setSelectionRange` after value assignment; wrapped in try/catch.
 
 **Upholds:** [L23] form-control selection is user-data-preserving.
 
 **Tests:**
-- [ ] Save→load round-trip on an `<input>` with `value="hello world"`, `selectionStart=6`, `selectionEnd=11`, direction `forward`.
-- [ ] `type="checkbox"` with `persistKey` set: save doesn't throw, restore doesn't throw, selection fields are absent.
+- [x] Save→load round-trip on an `<input>` with `value="hello world"`, `selectionStart=6`, `selectionEnd=11`, direction `forward`.
+- [x] `type="checkbox"` with `persistKey` set: save doesn't throw, restore doesn't throw, selection fields are absent.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 

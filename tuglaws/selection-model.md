@@ -63,6 +63,25 @@ Controls (buttons, checkboxes, switches, sliders, etc.) refuse focus on click vi
 | TugPromptInput | **Accepts focus** — contentEditable |
 | TugMarkdownView | **Accepts focus** — tabIndex=0 for keyboard shortcuts |
 
+## Focus Persistence Attributes
+
+`CardHost`'s save path captures `document.activeElement` into `bag.focus`
+(a `FocusSnapshot`) so cold-boot restore can return the cursor to the
+element the user left it on. Three opt-in attributes drive classification
+(see `card-host.tsx`'s `captureFocus`):
+
+| Attribute | Kind at save | Purpose |
+|-----------|--------------|---------|
+| `data-tug-persist-value="<key>"` | `{ kind: "form-control", persistKey }` | Native `<input>` / `<textarea>`. The attribute that already persists the element's `value` doubles as its focus key — authors do not add a second attribute. |
+| `data-tug-focus-key="<key>"` | `{ kind: "dom", focusKey }` | Any non-form-control focusable element (button, tab, custom focusable `tabindex=0` widget) that wants its focus restored. The value must be unique within the card subtree. |
+| `data-tug-prompt-input-root` (and other component-owned markers) | `{ kind: "component-owned" }` | Marker attribute on the outer container of a component that owns its own focus + selection state together (e.g. `TugPromptInput`). The owning component's `bag.content` carries the detail. |
+
+Focus outside the card root, on `document.body`, or on a descendant that
+matches none of the above serializes as `{ kind: "none" }` and does not
+appear in the bag. Restore applies `bag.focus` only for the active card
+of the active pane on cold boot; in-app transitions leave focus alone
+(the DOM never unmounts).
+
 ## Context Menu Hierarchy
 
 Every right-click in the app produces a context menu — never the browser's native menu:

@@ -1069,6 +1069,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         <div
           ref={composedContainerRef}
           data-slot="tug-prompt-input"
+          data-tug-prompt-input-root
           className={cn(
             "tug-prompt-input",
             disabled && "tug-prompt-input-disabled",
