@@ -1052,19 +1052,19 @@ The implementation sequence is 15 commits. Each is independently revertable. The
   - **component-owned focus variant** — tide-card with focus inside contentEditable; reload; focus lands back in the contentEditable.
 
 **Tasks:**
-- [ ] Author every test above.
-- [ ] Add a grep contract test that encodes the post-refactor invariants. A grep can't distinguish "save/restore purpose" from "component-internal focus claim" for `.focus()`, so the contract targets what *is* mechanical:
-  - `selectionGuard.saveSelection(` and `selectionGuard.restoreSelection(` have **zero** callers anywhere in `tugdeck/src/` (retired per [D09]; the only references permitted are the `@internal` definitions inside `selection-guard.ts`).
-  - `setBaseAndExtent(` appears only in `selection-guard.ts` (drag-clip plus `restoreCardDomSelection`) and `tug-text-engine.ts` (engine-owned selection writes). No other file.
-  - `setSelectionRange(` appears only in `card-host.tsx` (`applyFormControlSnapshot`), `use-text-input-responder.tsx` (contextmenu restore — existing, unchanged), and `tug-text-engine.ts` (engine internals). No other file.
+- [x] Author every test above. _(See the coverage-map header of `selection-persistence-integration.test.tsx`: scenarios where a lower-layer unit test fully pins the contract are cross-referenced rather than re-implemented; composition-specific scenarios — form-control reload round-trip, cross-pane-move Range preservation, tab-switch paint bucket flip, app resign/activate, two-pane simultaneous paint — are exercised directly against a real `DeckCanvas` / `CardHost` tree.)_
+- [x] Add a grep contract test that encodes the post-refactor invariants. A grep can't distinguish "save/restore purpose" from "component-internal focus claim" for `.focus()`, so the contract targets what *is* mechanical:
+  - `selectionGuard.saveSelection(` and `selectionGuard.restoreSelection(` have **zero** callers anywhere in `tugdeck/src/` (retired per [D09]; the only references permitted are the `@internal` definitions inside `selection-guard.ts`). _(Implemented with a production-only allowlist. Test files still call the legacy API and those tests retire with the API itself at Step 16.)_
+  - `setBaseAndExtent(` appears only in `selection-guard.ts` (drag-clip plus `restoreCardDomSelection`) and `tug-text-engine.ts` (engine-owned selection writes). No other file. _(Implemented with allowlist `selection-guard.ts` + `text-selection-adapter.ts`. The engine uses `removeAllRanges` + `addRange`, not `setBaseAndExtent`; `text-selection-adapter.ts` is the other legitimate owner the plan's shortlist missed.)_
+  - `setSelectionRange(` appears only in `card-host.tsx` (`applyFormControlSnapshot`), `use-text-input-responder.tsx` (contextmenu restore — existing, unchanged), and `tug-text-engine.ts` (engine internals). No other file. _(Implemented with allowlist `card-host.tsx` + `use-text-input-responder.tsx` + `text-selection-adapter.ts`. The engine does not call `setSelectionRange`; `text-selection-adapter.ts` is the other legitimate owner.)_
   - `.focus()` is NOT grep-contracted — legitimate component-internal focus claims (tide-card activation, tug-sheet close-restore, tug-prompt-* handoff, engine-internal) are too numerous and context-dependent for a grep to judge. The focus-restore *purpose* is enforced by test assertions in Step 11, not by grep.
 
 **Tests:** (this step IS tests)
-- [ ] All integration tests green.
-- [ ] Grep contract passes (three grep assertions above).
+- [x] All integration tests green.
+- [x] Grep contract passes (three grep assertions above).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 - [ ] Manual verification checklist (see [#deliverables](#deliverables).
 
 ---
