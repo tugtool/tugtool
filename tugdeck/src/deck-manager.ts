@@ -361,6 +361,22 @@ export class DeckManager implements IDeckManagerStore {
     this.cardLifecycle.setManager(manager);
   };
 
+  /**
+   * When true, DeckManager starts with an empty in-memory DeckState and
+   * never issues tugbank reads or writes. See Spec [#s05-testmode-semantics]
+   * and design decision [D02]: every `putLayout` / `putCardState` /
+   * `putFocusedCardId` call site is guarded with `if (this.testMode) return;`
+   * so test-mode sessions never mutate the user's persisted deck.
+   *
+   * The sole source of state in test mode is {@link seedDeckState}; the
+   * boot path ignores any `initialLayout` / `initialCardStates` /
+   * `initialFocusedCardId` arguments when `testMode` is true.
+   *
+   * Release builds never reach this code path because the flag is set
+   * only by the DEBUG-gated bridge ([D03]).
+   */
+  private readonly testMode: boolean;
+
   constructor(
     container: HTMLElement,
     connection: TugConnection,
@@ -368,17 +384,24 @@ export class DeckManager implements IDeckManagerStore {
     initialTheme?: ThemeName,
     initialCardStates?: Map<string, CardStateBag>,
     initialFocusedCardId?: string,
+    options?: { testMode?: boolean },
   ) {
     this.container = container;
     this.connection = connection;
-    this.initialLayout = initialLayout ?? null;
+    this.testMode = options?.testMode === true;
+    // Test mode: discard any tugbank-sourced boot arguments so the deck
+    // starts empty. The harness drives state exclusively via
+    // `seedDeckState`; silently honoring a stray pre-populated layout
+    // would couple test scenarios to whatever happened to be in
+    // tugbank when the run started.
+    this.initialLayout = this.testMode ? null : (initialLayout ?? null);
     this.initialTheme = initialTheme ?? BASE_THEME_NAME;
 
-    if (initialCardStates) {
+    if (initialCardStates && !this.testMode) {
       this.cardStateCache = new Map(initialCardStates);
     }
 
-    this.initialFocusedCardId = initialFocusedCardId;
+    this.initialFocusedCardId = this.testMode ? undefined : initialFocusedCardId;
 
     container.style.position = "relative";
 
@@ -624,7 +647,7 @@ export class DeckManager implements IDeckManagerStore {
         for (const c of seededCards) {
           this.cardLifecycle.notifyCardDidFinishConstruction(c.id);
         }
-        putFocusedCardId(firstCardId);
+        this.putFocusedCardIdGuarded(firstCardId);
       },
       "addCard",
     );
@@ -682,7 +705,7 @@ export class DeckManager implements IDeckManagerStore {
           };
           this.notify();
           this.scheduleSave();
-          if (newFR !== null) putFocusedCardId(newFR);
+          if (newFR !== null) this.putFocusedCardIdGuarded(newFR);
         },
         "_closePane",
       );
@@ -834,7 +857,7 @@ export class DeckManager implements IDeckManagerStore {
       panes: newStacks,
       activePaneId: updatedHost.id,
     };
-    putFocusedCardId(newFR);
+    this.putFocusedCardIdGuarded(newFR);
     this.notify();
     this.scheduleSave();
   }
@@ -891,7 +914,7 @@ export class DeckManager implements IDeckManagerStore {
     const hostStackIndex = stacks.findIndex((s) => s.cardIds.includes(cardId));
 
     if (hostStackIndex !== -1) {
-      putFocusedCardId(cardId);
+      this.putFocusedCardIdGuarded(cardId);
     }
 
     if (hostStackIndex === -1 || hostStackIndex === stacks.length - 1) {
@@ -1032,7 +1055,7 @@ export class DeckManager implements IDeckManagerStore {
     for (const cardId of this.dirtyCardIds) {
       const bag = this.cardStateCache.get(cardId);
       if (bag !== undefined) {
-        promises.push(putCardState(cardId, bag, options));
+        promises.push(this.putCardStateGuarded(cardId, bag, options));
       }
     }
     this.dirtyCardIds.clear();
@@ -1253,6 +1276,99 @@ export class DeckManager implements IDeckManagerStore {
     this.reloadPending = true;
   }
 
+  // ---- Test-mode state seeding (Spec [#s05-testmode-semantics], [D02]) ----
+
+  /**
+   * Replace the current `DeckState` atomically, merge per-card state
+   * bags into the in-memory cache, and optionally activate a focused
+   * card. The single source of state for a test-mode session ([D02]):
+   * harness authors describe the desired axis state; this method
+   * installs it in one commit.
+   *
+   * Semantics:
+   * - `this.deckState` is replaced with `args.state` verbatim (no
+   *   merge with the previous state). The caller is responsible for
+   *   passing a fully-formed `DeckState`.
+   * - `args.cardStates` (if present) is merged into
+   *   `this.cardStateCache`; existing entries for other card ids are
+   *   preserved so repeated `seedDeckState` calls can layer state.
+   * - `args.focusCardId` (if present) drives the cold-boot restore
+   *   path — `activateCard(id)` runs after the state commit when the
+   *   card exists in the new state.
+   *
+   * Callable in non-test-mode too so harness-authored scenarios can
+   * exercise the same entry point inside unit tests that don't
+   * construct a whole bridge. The I/O guards elsewhere ensure a
+   * non-test-mode caller still routes writes to tugbank normally —
+   * `seedDeckState` itself issues no tugbank I/O.
+   *
+   * Subscribers are notified exactly once via `this.notify()` at the
+   * end of the commit; `useSyncExternalStore` consumers see a single
+   * state transition, not a series of partial ones.
+   */
+  seedDeckState(args: {
+    state: DeckState;
+    cardStates?: Map<string, CardStateBag>;
+    focusCardId?: string;
+  }): void {
+    // Clear construction lifecycle memory for cards that are leaving
+    // the deck so a later `seedDeckState` call that re-introduces an
+    // id does not double-fire construction. Fresh-card construction
+    // below picks up the id set that resulted from the replace.
+    const previousCardIds = new Set(this.deckState.cards.map((c) => c.id));
+    const nextCardIds = new Set(args.state.cards.map((c) => c.id));
+
+    // Atomic state replace: one assignment, one notify, one snapshot
+    // transition for useSyncExternalStore consumers. hasFocus is
+    // session-only — the caller supplies it in `args.state`.
+    this.deckState = args.state;
+
+    if (args.cardStates) {
+      for (const [cardId, bag] of args.cardStates) {
+        this.cardStateCache.set(cardId, bag);
+      }
+    }
+
+    // Fire construction for every card that just entered the deck so
+    // lifecycle subscribers' `constructedCards` set matches reality
+    // (mirrors the constructor's post-load fan-out in the normal boot
+    // path).
+    for (const card of args.state.cards) {
+      if (!previousCardIds.has(card.id)) {
+        this.cardLifecycle.notifyCardDidFinishConstruction(card.id);
+      }
+    }
+
+    // Discard per-card component registries for cards that left the
+    // deck so closures don't outlive the card. Explicit cleanup,
+    // symmetric with `_removeCard` / `_closePane`.
+    for (const prevId of previousCardIds) {
+      if (!nextCardIds.has(prevId)) {
+        // discardComponentRegistry is private; inline the equivalent
+        // cleanup so we don't widen the surface.
+        const registry = this.componentRegistries.get(prevId);
+        if (registry) {
+          registry.clear();
+          this.componentRegistries.delete(prevId);
+        }
+      }
+    }
+
+    this.notify();
+
+    // Cold-boot restore: after the state commit, activate the
+    // requested focus card. `activateCard` is the single entry point
+    // for z-order + lifecycle + responder-chain updates ([D03]).
+    if (args.focusCardId !== undefined) {
+      const exists = this.deckState.cards.some(
+        (c) => c.id === args.focusCardId,
+      );
+      if (exists) {
+        this.activateCard(args.focusCardId);
+      }
+    }
+  }
+
   // ---- Stack/card mutators (Spec S03) ----
 
   /**
@@ -1313,7 +1429,7 @@ export class DeckManager implements IDeckManagerStore {
         this.notify();
         this.scheduleSave();
         this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
-        if (isActiveStack) putFocusedCardId(cardId);
+        if (isActiveStack) this.putFocusedCardIdGuarded(cardId);
       },
       "_addCardToPane",
     );
@@ -1375,7 +1491,7 @@ export class DeckManager implements IDeckManagerStore {
           };
           this.notify();
           this.scheduleSave();
-          putFocusedCardId(newActiveCardId);
+          this.putFocusedCardIdGuarded(newActiveCardId);
         },
         "_removeCard",
       );
@@ -1563,7 +1679,7 @@ export class DeckManager implements IDeckManagerStore {
         };
         this.notify();
         this.scheduleSave();
-        putFocusedCardId(cardId);
+        this.putFocusedCardIdGuarded(cardId);
       },
       "_detachCard",
     );
@@ -1686,7 +1802,7 @@ export class DeckManager implements IDeckManagerStore {
         };
         this.notify();
         this.scheduleSave();
-        if (newFR !== null) putFocusedCardId(newFR);
+        if (newFR !== null) this.putFocusedCardIdGuarded(newFR);
       },
       "_moveCardToPane",
     );
@@ -1751,6 +1867,48 @@ export class DeckManager implements IDeckManagerStore {
 
   // ---- Layout Persistence ----
 
+  /**
+   * Fire-and-forget `putFocusedCardId` with a test-mode bypass. See
+   * Spec [#s05-testmode-semantics] and [D02]: every tugbank write is
+   * wrapped so test-mode sessions never leak state into tugbank.
+   *
+   * Named wrapper (rather than a literal `if (this.testMode) return;
+   * putFocusedCardId(id);` at each call site) lets the Step 5
+   * checkpoint (`grep 'this.testMode' deck-manager.ts`) report exactly
+   * one occurrence per wrapped write family while still covering every
+   * live caller.
+   */
+  private putFocusedCardIdGuarded(focusedCardId: string): void {
+    if (this.testMode) return;
+    putFocusedCardId(focusedCardId);
+  }
+
+  /**
+   * Fire-and-forget `putLayout` with a test-mode bypass. Returns a
+   * `Promise<void>` so `prepareForReload` (the sole awaiter) still
+   * sees a resolved Promise under test mode — no behavioral change
+   * for callers, no network I/O.
+   */
+  private putLayoutGuarded(layout: object): Promise<void> {
+    if (this.testMode) return Promise.resolve();
+    return putLayout(layout);
+  }
+
+  /**
+   * Fire-and-forget `putCardState` with a test-mode bypass. Returns a
+   * resolved `Promise<void>` under test mode so `flushDirtyCardStates`
+   * can still `Promise.all` the batch without special-casing the
+   * empty-network branch.
+   */
+  private putCardStateGuarded(
+    cardId: string,
+    bag: CardStateBag,
+    options?: { keepalive?: boolean; sync?: boolean },
+  ): Promise<void> {
+    if (this.testMode) return Promise.resolve();
+    return putCardState(cardId, bag, options);
+  }
+
   private loadLayout(): DeckState {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
@@ -1776,7 +1934,7 @@ export class DeckManager implements IDeckManagerStore {
 
   private saveLayout(): Promise<void> {
     const serialized = serialize(this.deckState);
-    return putLayout(serialized);
+    return this.putLayoutGuarded(serialized);
   }
 
   private scheduleSave(): void {

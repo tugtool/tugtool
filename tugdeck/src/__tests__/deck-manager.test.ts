@@ -2933,3 +2933,327 @@ describe("DeckManager focus-transfer channels", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Step 5: DeckManager.testMode + seedDeckState
+//
+// Pin the Spec [#s05-testmode-semantics] contract:
+//   - Construction with `{ testMode: true }` skips tugbank reads and
+//     makes every tugbank write a no-op (guarded `putLayout`,
+//     `putCardState`, `putFocusedCardId`).
+//   - `seedDeckState` replaces state atomically, merges cardStates
+//     into the cache, activates `focusCardId` via the cold-boot
+//     restore path, and notifies subscribers exactly once per commit.
+//
+// These tests share the outer file's no-op fetch + managed lifecycle
+// helpers by constructing the manager explicitly (not through the
+// outer `beforeEach`), so each test controls its own options /
+// fetch-spy.
+// ---------------------------------------------------------------------------
+
+describe("DeckManager testMode flag", () => {
+  let tmContainer: HTMLDivElement;
+  let tmConnection: ReturnType<typeof makeMockConnection>;
+  let tmManager: DeckManager | null = null;
+
+  beforeEach(() => {
+    _resetForTest();
+    tmContainer = makeContainer();
+    tmConnection = makeMockConnection();
+    tmManager = null;
+  });
+
+  afterEach(() => {
+    tmManager?.destroy();
+    tmManager = null;
+    tmContainer.remove();
+    _resetForTest();
+  });
+
+  it("testMode constructor option defaults to false (backwards-compatible)", () => {
+    tmManager = new DeckManager(tmContainer, tmConnection);
+    // Default-false means the standard code path runs; we can't
+    // observe the private field directly, but we can verify behavior:
+    // a write issues `fetch`. Install a spy to confirm the non-test
+    // path calls through.
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      fetchCalls.push(typeof input === "string" ? input : input.toString());
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        json: async () => ({}),
+      } as unknown as Response);
+    }) as unknown as typeof fetch;
+
+    try {
+      registerCard(makeRegistration("hello"));
+      const cardId = tmManager.addCard("hello") as string;
+      // `addCard` routes through `putFocusedCardId` via the guarded
+      // wrapper; with testMode=false that fires a real PUT.
+      expect(cardId).not.toBeNull();
+      expect(fetchCalls.some((u) => u.includes("dev.tugtool.deck.state")))
+        .toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("testMode=true: addCard issues NO tugbank PUTs (no layout, no cardstate, no focusedCardId)", () => {
+    tmManager = new DeckManager(
+      tmContainer,
+      tmConnection,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { testMode: true },
+    );
+
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      fetchCalls.push(typeof input === "string" ? input : input.toString());
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        json: async () => ({}),
+      } as unknown as Response);
+    }) as unknown as typeof fetch;
+
+    try {
+      registerCard(makeRegistration("hello"));
+      tmManager.addCard("hello");
+      // No PUT for focusedCardId during addCard.
+      expect(fetchCalls.some((u) => u.includes("dev.tugtool.deck.state")))
+        .toBe(false);
+      // No PUT for layout (scheduleSave is still called but saveLayout
+      // is guarded — we can't synchronously drain the debounce here,
+      // so verify via the card-state path as well: setCardState +
+      // flushDirtyCardStates should also produce no PUTs.
+      expect(fetchCalls.some((u) => u.includes("dev.tugtool.deck.layout")))
+        .toBe(false);
+      expect(fetchCalls.some((u) => u.includes("dev.tugtool.deck.cardstate")))
+        .toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("testMode=true: starts with an empty DeckState even when initialLayout is supplied", () => {
+    // Deliberately pass a stale layout blob that names an unregistered
+    // card — under testMode the arg is ignored, so no filter warning
+    // should fire and the deck starts empty.
+    const staleLayout = {
+      schemaVersion: 1,
+      cards: [{ id: "ghost", componentId: "hello", title: "Ghost", closable: true }],
+      panes: [
+        {
+          id: "p1",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["ghost"],
+          activeCardId: "ghost",
+        },
+      ],
+    };
+
+    tmManager = new DeckManager(
+      tmContainer,
+      tmConnection,
+      staleLayout,
+      undefined,
+      undefined,
+      "ghost",
+      { testMode: true },
+    );
+
+    const state = tmManager.getDeckState();
+    expect(state.cards.length).toBe(0);
+    expect(state.panes.length).toBe(0);
+    // initialFocusedCardId is also discarded under testMode.
+    expect(tmManager.initialFocusedCardId).toBeUndefined();
+  });
+});
+
+describe("DeckManager.seedDeckState", () => {
+  let sdContainer: HTMLDivElement;
+  let sdConnection: ReturnType<typeof makeMockConnection>;
+  let sdManager: DeckManager | null = null;
+
+  beforeEach(() => {
+    _resetForTest();
+    sdContainer = makeContainer();
+    sdConnection = makeMockConnection();
+    sdManager = null;
+  });
+
+  afterEach(() => {
+    sdManager?.destroy();
+    sdManager = null;
+    sdContainer.remove();
+    _resetForTest();
+  });
+
+  it("atomically replaces state and fires subscribers exactly once per call", () => {
+    sdManager = new DeckManager(
+      sdContainer,
+      sdConnection,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { testMode: true },
+    );
+
+    let notifyCount = 0;
+    sdManager.subscribe(() => {
+      notifyCount += 1;
+    });
+
+    registerCard(makeRegistration("hello"));
+
+    const card: CardT = {
+      id: "card-1",
+      componentId: "hello",
+      title: "Seeded",
+      closable: true,
+    };
+    const pane: StackT = {
+      id: "pane-1",
+      position: { x: 10, y: 10 },
+      size: { width: 400, height: 300 },
+      cardIds: ["card-1"],
+      activeCardId: "card-1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const nextState: DeckStateT = {
+      cards: [card],
+      panes: [pane],
+      activePaneId: undefined,
+      hasFocus: true,
+    };
+
+    sdManager.seedDeckState({ state: nextState });
+
+    expect(notifyCount).toBe(1);
+    expect(sdManager.getDeckState().cards).toEqual([card]);
+    expect(sdManager.getDeckState().panes).toEqual([pane]);
+    validateDeckState(sdManager.getDeckState());
+  });
+
+  it("merges cardStates into the in-memory cache", () => {
+    sdManager = new DeckManager(
+      sdContainer,
+      sdConnection,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { testMode: true },
+    );
+    registerCard(makeRegistration("hello"));
+
+    const card: CardT = {
+      id: "card-1",
+      componentId: "hello",
+      title: "Seeded",
+      closable: true,
+    };
+    const pane: StackT = {
+      id: "pane-1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      cardIds: ["card-1"],
+      activeCardId: "card-1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const bag: import("../layout-tree").CardStateBag = {
+      scroll: { x: 0, y: 123 },
+    };
+
+    sdManager.seedDeckState({
+      state: {
+        cards: [card],
+        panes: [pane],
+        activePaneId: undefined,
+        hasFocus: true,
+      },
+      cardStates: new Map([["card-1", bag]]),
+    });
+
+    expect(sdManager.getCardState("card-1")).toEqual(bag);
+  });
+
+  it("activates focusCardId via the cold-boot restore path when the card exists", () => {
+    sdManager = new DeckManager(
+      sdContainer,
+      sdConnection,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { testMode: true },
+    );
+    registerCard(makeRegistration("hello"));
+
+    const card: CardT = {
+      id: "card-focus",
+      componentId: "hello",
+      title: "Focus",
+      closable: true,
+    };
+    const pane: StackT = {
+      id: "pane-focus",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      cardIds: ["card-focus"],
+      activeCardId: "card-focus",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+
+    sdManager.seedDeckState({
+      state: {
+        cards: [card],
+        panes: [pane],
+        activePaneId: undefined,
+        hasFocus: true,
+      },
+      focusCardId: "card-focus",
+    });
+
+    // `activateCard` flips the composite bit via
+    // `_flipFirstResponder` / `_commitStandardFirstResponderFlip`,
+    // which sets `activePaneId` on the host pane.
+    expect(sdManager.getFirstResponderCardId()).toBe("card-focus");
+    expect(sdManager.getDeckState().activePaneId).toBe("pane-focus");
+  });
+
+  it("silently ignores focusCardId when the card is not in the seeded state", () => {
+    sdManager = new DeckManager(
+      sdContainer,
+      sdConnection,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { testMode: true },
+    );
+
+    sdManager.seedDeckState({
+      state: {
+        cards: [],
+        panes: [],
+        activePaneId: undefined,
+        hasFocus: true,
+      },
+      focusCardId: "not-present",
+    });
+
+    expect(sdManager.getFirstResponderCardId()).toBeNull();
+  });
+});
+

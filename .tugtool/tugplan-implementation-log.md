@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-04-23T22:45:30Z
+---
+
+## step-5: Added DeckManager.testMode constructor flag that gates all 9 tugbank-write call sites via three guarded wrappers (putLayoutGuarded / putCardStateGuarded / putFocusedCardIdGuarded). Added seedDeckState(args) public method for atomic replace + single store notify. main.tsx reads window.__tugTestMode behind import.meta.env.DEV + strict === true double-guard and forwards it to DeckManager. 7 new deck-manager tests cover backward-compat, no-fetch behavior, stale-layout discard, seed atomic replace, cardStates merge, focusCardId activation, ignore-when-absent. Baseline 2427 → 2434 pass, 0 fail.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-4
 date: 2025-04-23T22:36:22Z
 ---
