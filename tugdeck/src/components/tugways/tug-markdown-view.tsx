@@ -1233,6 +1233,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       <div
         ref={composedScrollRef}
         data-slot="tug-markdown-view"
+        data-tug-scroll-key="markdown-view"
         className={cn("tugx-md-scroll-container", className)}
         tabIndex={0}
       >

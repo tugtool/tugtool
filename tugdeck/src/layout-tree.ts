@@ -47,7 +47,7 @@ export interface CardStateBag {
    * native input state that sits outside `useCardPersistence`'s opt-in path.
    */
   formControls?: Record<string, FormControlSnapshot>;
-  /** Nested-region scroll snapshot. Shape finalized at a later step. */
+  /** Nested-region scroll snapshot keyed by `data-tug-scroll-key`. */
   regionScroll?: RegionScrollSnapshot | null;
   /** Content-editable range snapshot captured from the card's owning boundary. */
   domSelection?: DomSelectionSnapshot | null;
@@ -87,10 +87,19 @@ export interface FormControlSnapshot {
 }
 
 /**
- * Placeholder type for the nested-region scroll axis. Populated at the
- * step that wires region-scroll capture; currently always `null`.
+ * Scroll positions of nested scrollable regions inside a card, keyed
+ * by the element's `data-tug-scroll-key="<key>"` attribute.
+ *
+ * Distinct from `bag.scroll`, which captures the card's *outer*
+ * host-content scroll (one per card). `regionScroll` covers inner
+ * scrollers — most notably `tug-markdown-view`'s virtual-list
+ * container — that the user has scrolled independently.
+ *
+ * Uniqueness of keys within a card subtree is an author contract
+ * (same rule as `data-tug-persist-value`): `CardHost` walks the card
+ * root and writes the last-encountered value per key.
  */
-export type RegionScrollSnapshot = Record<string, never>;
+export type RegionScrollSnapshot = Record<string, { x: number; y: number }>;
 
 /**
  * Serialized form of a DOM selection anchored inside a card's boundary.

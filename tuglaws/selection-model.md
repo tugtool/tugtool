@@ -82,6 +82,22 @@ appear in the bag. Restore applies `bag.focus` only for the active card
 of the active pane on cold boot; in-app transitions leave focus alone
 (the DOM never unmounts).
 
+## Scroll Persistence Attributes
+
+A card's *outer* scroll (the host-content element) is always saved into
+`bag.scroll` and needs no attribute. *Inner* scrollable regions — most
+notably `tug-markdown-view`'s virtual-list container — opt in via
+`data-tug-scroll-key="<key>"` so their independent scroll positions
+also survive reload (captured into `bag.regionScroll`).
+
+| Attribute | Saved into | Purpose |
+|-----------|------------|---------|
+| `data-tug-scroll-key="<key>"` | `bag.regionScroll[key] = { x, y }` | Inner scrollable region whose `scrollLeft` / `scrollTop` should survive reload. The key must be unique within the card subtree (same author contract as `data-tug-persist-value`). Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls. |
+
+The component's own runtime scroll logic (clamps, sticky-to-bottom,
+virtualization) continues to handle in-session behavior; this attribute
+only affects cold-boot restore.
+
 ## Context Menu Hierarchy
 
 Every right-click in the app produces a context menu — never the browser's native menu:

@@ -73,6 +73,7 @@ import type {
   DomSelectionSnapshot,
   FocusSnapshot,
   FormControlSnapshot,
+  RegionScrollSnapshot,
 } from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
@@ -323,6 +324,61 @@ export function applyFormControlSnapshot(
 }
 
 /**
+ * DOM-authority persistence for nested scrollable regions inside a card.
+ *
+ * Walks the card subtree for every element carrying
+ * `data-tug-scroll-key="<key>"` and snapshots its `scrollLeft` /
+ * `scrollTop`. Symmetric with {@link captureFormControls}: same
+ * opt-in / keyed model, same scope rules — roots at the card-host
+ * div so sibling cards in a tab-group pane cannot cross-pollinate.
+ *
+ * Returns `undefined` when no matching regions exist, so `saveCurrentCardStateRef`
+ * can omit the axis from the bag entirely and keep empty-card bags
+ * light.
+ *
+ * `bag.scroll` covers the outer `hostContentEl` scroll; this helper
+ * handles the inner virtualized scrollers that the user scrolled
+ * independently (e.g. `tug-markdown-view`).
+ */
+export function captureRegionScrolls(
+  root: HTMLElement,
+): RegionScrollSnapshot | undefined {
+  const result: RegionScrollSnapshot = {};
+  const els = root.querySelectorAll<HTMLElement>("[data-tug-scroll-key]");
+  for (const el of els) {
+    const key = el.getAttribute("data-tug-scroll-key");
+    if (!key) continue;
+    result[key] = { x: el.scrollLeft, y: el.scrollTop };
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Apply a saved {@link RegionScrollSnapshot} to every matching
+ * `data-tug-scroll-key` element currently in the card subtree.
+ * Unknown keys in the snapshot are skipped; extra regions in the DOM
+ * without a saved entry are left alone.
+ *
+ * Called from the mount restore effect (after `hostContentEl` scroll)
+ * and re-applied when the card's subtree grows via `MutationObserver`
+ * so late-mounting scrollers (any that appear behind a content-factory
+ * readiness gate) restore correctly.
+ */
+export function applyRegionScrolls(
+  root: HTMLElement,
+  snapshot: RegionScrollSnapshot,
+): void {
+  for (const [key, pos] of Object.entries(snapshot)) {
+    const el = root.querySelector<HTMLElement>(
+      `[data-tug-scroll-key="${CSS.escape(key)}"]`,
+    );
+    if (!el) continue;
+    el.scrollLeft = pos.x;
+    el.scrollTop = pos.y;
+  }
+}
+
+/**
  * Look up the host pane's content element from the registry, reactively:
  * re-fires when the element is registered, replaced, or unregistered.
  */
@@ -412,14 +468,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     [cardId, store],
   );
 
-  // Scroll / form-control restore: triggered by `hostContentEl` becoming
-  // available. Fires idempotently whenever the host element changes
-  // (mount, cross-pane move, pane re-registration).
+  // Scroll / form-control / region-scroll restore: triggered by
+  // `hostContentEl` becoming available. Fires idempotently whenever the
+  // host element changes (mount, cross-pane move, pane re-registration).
   //
-  // **Scroll** applies regardless of content-case: for a no-content bag
-  // this is the only restore path; for a with-content bag this is a
+  // **Outer scroll** applies regardless of content-case: for a no-content
+  // bag this is the only restore path; for a with-content bag this is a
   // best-effort apply before the child commits, and `onContentReady`
   // re-applies the correct clamp after content renders.
+  //
+  // **Form controls** and **region scrolls** both replay via the same
+  // MutationObserver so elements that mount late (behind feedsReady or
+  // any content-factory readiness gate) restore when they appear.
+  // The observer MUST be scoped to this card's root — not the whole
+  // pane — so sibling cards in a tab-group pane cannot cross-notify.
+  // Both branches guard against re-applying to elements they have
+  // already touched: form controls via a `WeakSet`, region scrolls via
+  // a `Set<key>` — so unrelated subtree mutations after the first
+  // apply never clobber a scroll position the user has since changed.
   //
   // DOM-selection restore is not wired here; that axis is owned by the
   // selection-guard paint authority (see selection plan Step 10). L22, L23.
@@ -432,29 +498,44 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       hostContentEl.scrollTop = bag.scroll.y;
     }
 
-    // DOM-authority form-control restore. Apply once per element (WeakSet
-    // guard) so user typing after restore is never overwritten by a
-    // subsequent mutation-observer fire. A MutationObserver on the card's
-    // own subtree catches inputs that mount later (e.g., behind feedsReady
-    // or any content factory that defers rendering). The MutationObserver
-    // MUST be scoped to this card's root — not the whole pane — to
-    // prevent cross-card notifications from firing redundant applies
-    // against this card's state.
-    if (!bag.formControls) return;
-    const snapshots = bag.formControls;
-    const applied = new WeakSet<Element>();
+    const formSnapshots = bag.formControls;
+    const regionSnapshot = bag.regionScroll ?? undefined;
+    if (!formSnapshots && !regionSnapshot) return;
+
+    const formApplied = new WeakSet<Element>();
+    const regionApplied = new Set<string>();
 
     const apply = () => {
       const cardRoot = findCardRoot(hostContentEl, cardId);
       if (!cardRoot) return;
-      for (const [key, snap] of Object.entries(snapshots)) {
-        const el = cardRoot.querySelector<
-          HTMLInputElement | HTMLTextAreaElement
-        >(`[data-tug-persist-value="${CSS.escape(key)}"]`);
-        if (!el) continue;
-        if (applied.has(el)) continue;
-        applied.add(el);
-        applyFormControlSnapshot(el, snap);
+      if (formSnapshots) {
+        for (const [key, snap] of Object.entries(formSnapshots)) {
+          const el = cardRoot.querySelector<
+            HTMLInputElement | HTMLTextAreaElement
+          >(`[data-tug-persist-value="${CSS.escape(key)}"]`);
+          if (!el) continue;
+          if (formApplied.has(el)) continue;
+          formApplied.add(el);
+          applyFormControlSnapshot(el, snap);
+        }
+      }
+      if (regionSnapshot) {
+        // Only apply regions we haven't applied yet. `applyRegionScrolls`
+        // would otherwise re-slam the scroll on every subtree mutation,
+        // fighting the user after they scrolled post-restore.
+        const pending: RegionScrollSnapshot = {};
+        let hasPending = false;
+        for (const [key, pos] of Object.entries(regionSnapshot)) {
+          if (regionApplied.has(key)) continue;
+          const el = cardRoot.querySelector<HTMLElement>(
+            `[data-tug-scroll-key="${CSS.escape(key)}"]`,
+          );
+          if (!el) continue;
+          regionApplied.add(key);
+          pending[key] = pos;
+          hasPending = true;
+        }
+        if (hasPending) applyRegionScrolls(cardRoot, pending);
       }
     };
 
@@ -479,12 +560,14 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // the same pane (tab-group) never contaminate each other's values.
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
+    const regionScroll = cardRoot ? captureRegionScrolls(cardRoot) : undefined;
     const domSelection = cardRoot ? captureDomSelection(cardId, cardRoot) : null;
     const focus: FocusSnapshot = cardRoot ? captureFocus(cardRoot) : { kind: "none" };
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(content !== undefined ? { content } : {}),
       ...(formControls !== undefined ? { formControls } : {}),
+      ...(regionScroll !== undefined ? { regionScroll } : {}),
       ...(domSelection !== null ? { domSelection } : {}),
       ...(focus.kind !== "none" ? { focus } : {}),
     };
