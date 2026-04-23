@@ -13,7 +13,7 @@ import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
 describe("DeckState", () => {
   test("DeckState with empty cards and panes is valid", () => {
-    const state: DeckState = { cards: [], panes: [] };
+    const state: DeckState = { cards: [], panes: [], hasFocus: true };
     expect(state.cards.length).toBe(0);
     expect(state.panes.length).toBe(0);
   });
@@ -106,7 +106,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards: [card], panes: [stack] };
+    const state: DeckState = { cards: [card], panes: [stack], hasFocus: true };
 
     const serialized = serialize(state);
     const json = JSON.stringify(serialized);
@@ -139,7 +139,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards, panes: [stack] };
+    const state: DeckState = { cards, panes: [stack], hasFocus: true };
 
     const json = JSON.stringify(serialize(state));
     const restored = deserialize(json, 1920, 1080);
@@ -152,7 +152,7 @@ describe("serialize and deserialize (v4 wire)", () => {
   });
 
   test("serialize emits version: 4", () => {
-    const out = serialize({ cards: [], panes: [] }) as { version: number };
+    const out = serialize({ cards: [], panes: [], hasFocus: true }) as { version: number };
     expect(out.version).toBe(4);
   });
 
@@ -176,6 +176,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       cards: [card],
       panes: [pane],
       activePaneId: "w1",
+      hasFocus: true,
     };
     const first = serialize(state);
     const restored = deserialize(JSON.stringify(first), 1920, 1080);
@@ -389,7 +390,9 @@ describe("TugPaneState collapsed field", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [stack] }));
+    const json = JSON.stringify(
+      serialize({ cards: [card], panes: [stack], hasFocus: true }),
+    );
     const restored = deserialize(json, 1920, 1080);
     expect(restored.panes[0].collapsed).toBe(true);
   });
@@ -409,7 +412,7 @@ describe("CardStateBag type", () => {
 
 describe("DeckState focusedCardId persistence", () => {
   test("serialize does not emit focusedCardId in the layout blob", () => {
-    const state: DeckState = { cards: [], panes: [] };
+    const state: DeckState = { cards: [], panes: [], hasFocus: true };
     const blob = serialize(state) as Record<string, unknown>;
     expect("focusedCardId" in blob).toBe(false);
   });
@@ -510,7 +513,9 @@ describe("deserialize edge cases", () => {
         acceptsFamilies: ["standard"],
       },
     ];
-    const json = JSON.stringify(serialize({ cards, panes: paneList }));
+    const json = JSON.stringify(
+      serialize({ cards, panes: paneList, hasFocus: true }),
+    );
     const restored = deserialize(json, 1920, 1080);
     expect(restored.panes.length).toBe(2);
     expect(restored.panes[0].activeCardId).toBe("a2");
@@ -622,7 +627,11 @@ describe("collapsed field serialization", () => {
       acceptsFamilies: ["standard"],
       collapsed: true,
     };
-    const serialized = serialize({ cards: [card], panes: [stack] }) as {
+    const serialized = serialize({
+      cards: [card],
+      panes: [stack],
+      hasFocus: true,
+    }) as {
       panes: Array<{ collapsed?: boolean }>;
     };
     expect(serialized.panes[0].collapsed).toBe(true);
@@ -812,13 +821,14 @@ describe("validateDeckState", () => {
   }
 
   test("accepts the empty deck", () => {
-    expect(() => validateDeckState({ cards: [], panes: [] })).not.toThrow();
+    expect(() => validateDeckState({ cards: [], panes: [], hasFocus: true })).not.toThrow();
   });
 
   test("accepts a well-formed single-card, single-pane deck", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
   });
@@ -831,6 +841,7 @@ describe("validateDeckState", () => {
         makeStack("s2", ["c3"], "c3"),
       ],
       activePaneId: "s2",
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
   });
@@ -839,6 +850,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1", "ghost"], "c1")],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/missing card id "ghost"/);
@@ -851,6 +863,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1", "c2"], "c1"),
         makeStack("s2", ["c2"], "c2"),
       ],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/appears in both pane/);
@@ -860,6 +873,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("orphan")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/"orphan" is orphaned/);
@@ -872,6 +886,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s-empty", [], "x"),
       ],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(/empty cardIds/);
@@ -881,6 +896,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
       panes: [makeStack("s1", ["c1", "c2"], "ghost")],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
@@ -893,6 +909,7 @@ describe("validateDeckState", () => {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
       activePaneId: "no-such-stack",
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
@@ -904,6 +921,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c1", "terminal")],
       panes: [makeStack("s1", ["c1"], "c1")],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate card id "c1"/);
   });
@@ -915,6 +933,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s1", ["c2"], "c2"),
       ],
+      hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
   });

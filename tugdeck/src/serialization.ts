@@ -253,6 +253,10 @@ function parseV4(
     cards: filteredCards,
     panes,
     ...(activePaneId !== undefined ? { activePaneId } : {}),
+    // Session-only; deserialize always seeds true and DeckManager overrides
+    // with the live `document.hasFocus()` reading at construction. Not
+    // persisted to disk.
+    hasFocus: true,
   };
 }
 
@@ -383,7 +387,7 @@ function migrateV1ToDeckState(
     });
   }
 
-  return { cards, panes };
+  return { cards, panes, hasFocus: true };
 }
 
 // ---- Default Layout ----
@@ -394,7 +398,11 @@ function migrateV1ToDeckState(
  * Returns an empty DeckState. The pre-Phase-5 five-card default layout used
  * component IDs that are not registered in Phase 5. An empty canvas is the
  * correct default until Phase 9 registers real cards.
+ *
+ * `hasFocus` is seeded true here as a safe default for non-browser
+ * contexts (tests, SSR). `DeckManager` overrides it in its
+ * constructor with the live `document.hasFocus()` reading.
  */
 export function buildDefaultLayout(): DeckState {
-  return { cards: [], panes: [] };
+  return { cards: [], panes: [], hasFocus: true };
 }

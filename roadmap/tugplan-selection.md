@@ -1301,31 +1301,31 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - No consumers yet. The selector is exported and importable; tests exercise it; behavior unchanged at phase end.
 
 **Tasks:**
-- [ ] Add `hasFocus: boolean` to the `DeckState` type; default initialized from `document.hasFocus()` (or `true` for non-browser test environments).
-- [ ] Install window `focus` / `blur` listeners at module init; mutate state + notify. Guard against double-install.
-- [ ] Author `isFocusDestination(cardId, state)` as a pure selector in `deck-store-selectors.ts`.
-- [ ] Author `useFocusDestination(cardId)` hook in `deck-store-hooks.ts`.
-- [ ] Add header-comment usage examples for both React and non-React consumers.
+- [x] Add `hasFocus: boolean` to the `DeckState` type; default initialized from `document.hasFocus()` (or `true` for non-browser test environments).
+- [x] Install window `focus` / `blur` listeners at module init; mutate state + notify. Guard against double-install.
+- [x] Author `isFocusDestination(cardId, state)` as a pure selector in `deck-store-selectors.ts`.
+- [x] Author `useFocusDestination(cardId)` hook in `deck-store-hooks.ts`.
+- [x] Add header-comment usage examples for both React and non-React consumers.
 
 **Upholds:** [A1]; [L02] (React consumers read external state through `useSyncExternalStore`); [L23] adjacent (predicate becomes the single source of truth for "who deserves focus right now").
 
 **Tests:**
-- [ ] New `deck-store-selectors.test.ts`:
+- [x] New `deck-store-selectors.test.ts`:
   - `isFocusDestination` returns false when `hasFocus === false`.
   - returns false when `activePaneId` doesn't match the card's pane.
   - returns false when `pane.activeCardId !== cardId`.
   - returns true only when all three conditions hold.
   - returns false for an unknown `cardId`.
-- [ ] New `use-focus-destination.test.tsx`:
+- [x] New `use-focus-destination.test.tsx`:
   - Hook returns the selector's current value.
   - Re-renders the subscriber on `hasFocus` flips (simulate via `window.dispatchEvent(new Event("focus"))` / `"blur"`).
   - Re-renders on active-pane or active-card changes.
-- [ ] Existing tests must all pass unchanged.
+- [x] Existing tests must all pass unchanged.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] No behavior change end-to-end — the selector is pure, the hook has no consumers yet.
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
+- [x] No behavior change end-to-end — the selector is pure, the hook has no consumers yet.
 
 ---
 

@@ -226,6 +226,12 @@ class Store implements IDeckManagerStore {
     this.orchestrator.captureCardState(cardId);
   restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
     this.orchestrator.restoreCardState(cardId, bag);
+
+  setHasFocus = (value: boolean): void => {
+    if (this.state.hasFocus === value) return;
+    this.state = { ...this.state, hasFocus: value };
+    this.notify();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +394,7 @@ describe("selection-persistence integration — form-control reload", () => {
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     renderDeck(storeA);
 
@@ -427,6 +434,7 @@ describe("selection-persistence integration — form-control reload", () => {
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     storeB.setCardState(cardId, savedBag);
     renderDeck(storeB);
@@ -459,6 +467,7 @@ describe("selection-persistence integration — form-control reload", () => {
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     renderDeck(store);
 
@@ -511,6 +520,7 @@ describe("selection-persistence integration — form-control reload", () => {
         makePane("pane-active", [activeCard], { x: 500, y: 0 }),
       ],
       activePaneId: "pane-active",
+      hasFocus: true,
     });
     store.setCardState("card-inactive", {
       formControls: {
@@ -557,6 +567,7 @@ describe("selection-persistence integration — [A9] tug-checkbox opt-in", () =>
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     renderDeck(storeA);
 
@@ -594,6 +605,7 @@ describe("selection-persistence integration — [A9] tug-checkbox opt-in", () =>
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     storeB.setCardState(cardId, savedBag);
     renderDeck(storeB);
@@ -628,6 +640,7 @@ describe("selection-persistence integration — cross-pane move", () => {
         makePane("pane-B", [otherCard], { x: 500, y: 0 }),
       ],
       activePaneId: "pane-A",
+      hasFocus: true,
     });
 
     renderDeck(store);
@@ -706,6 +719,7 @@ describe("selection-persistence integration — paint-bucket transitions", () =>
         },
       ],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     registerDeckStore(store);
     selectionGuard.attach(appLifecycle);
@@ -757,6 +771,7 @@ describe("selection-persistence integration — paint-bucket transitions", () =>
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     registerDeckStore(store);
     selectionGuard.attach(appLifecycle);
@@ -804,6 +819,7 @@ describe("selection-persistence integration — paint-bucket transitions", () =>
         makePane("pane-b", [c2], { x: 500, y: 0 }),
       ],
       activePaneId: "pane-a",
+      hasFocus: true,
     });
     registerDeckStore(store);
     selectionGuard.attach(appLifecycle);
@@ -894,6 +910,7 @@ describe("selection-persistence integration — engine-managed card reload", () 
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     renderDeck(store);
 
@@ -965,6 +982,7 @@ describe("selection-persistence integration — engine-managed card reload", () 
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     store.setCardState(cardId, { content });
 
@@ -1018,6 +1036,7 @@ describe("selection-persistence integration — engine-managed card reload", () 
       cards: [card],
       panes: [makePane("pane-1", [card])],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
     store.setCardState(cardId, {
       content,

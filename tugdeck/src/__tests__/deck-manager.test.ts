@@ -2777,3 +2777,58 @@ describe("DeckManager fresh-bag invariant on cross-pane transitions", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Module-scope window focus / blur listeners drive `DeckState.hasFocus` ([A1]).
+// These tests pin the wiring: a DOM event fires → the live registered deck
+// store's `hasFocus` bit flips → subscribers notify. The deck-store
+// selectors and React hook are covered in their own test files.
+// ---------------------------------------------------------------------------
+
+describe("DeckManager window focus/blur wiring", () => {
+  it("a window `blur` event flips `hasFocus` to false and notifies subscribers", () => {
+    expect(manager.getSnapshot().hasFocus).toBe(true);
+
+    let notifies = 0;
+    const unsubscribe = manager.subscribe(() => {
+      notifies += 1;
+    });
+
+    window.dispatchEvent(new Event("blur"));
+
+    expect(manager.getSnapshot().hasFocus).toBe(false);
+    expect(notifies).toBeGreaterThanOrEqual(1);
+
+    unsubscribe();
+  });
+
+  it("a subsequent window `focus` event flips `hasFocus` back to true", () => {
+    // Start blurred.
+    window.dispatchEvent(new Event("blur"));
+    expect(manager.getSnapshot().hasFocus).toBe(false);
+
+    window.dispatchEvent(new Event("focus"));
+    expect(manager.getSnapshot().hasFocus).toBe(true);
+  });
+
+  it("setHasFocus(same) is a no-op and does not re-notify", () => {
+    // Ensure we start in a known state.
+    manager.setHasFocus(true);
+
+    let notifies = 0;
+    const unsubscribe = manager.subscribe(() => {
+      notifies += 1;
+    });
+
+    manager.setHasFocus(true);
+    expect(notifies).toBe(0);
+
+    manager.setHasFocus(false);
+    expect(notifies).toBe(1);
+
+    manager.setHasFocus(false);
+    expect(notifies).toBe(1);
+
+    unsubscribe();
+  });
+});
+

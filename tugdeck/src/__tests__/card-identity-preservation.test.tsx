@@ -224,6 +224,12 @@ class Store implements IDeckManagerStore {
     this.orchestrator.captureCardState(cardId);
   restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
     this.orchestrator.restoreCardState(cardId, bag);
+
+  setHasFocus = (value: boolean): void => {
+    if (this.state.hasFocus === value) return;
+    this.state = { ...this.state, hasFocus: value };
+    this.notify();
+  };
 }
 
 function renderDeck(store: Store) {
@@ -285,7 +291,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const cX: CardState = { id: "card-x", componentId: "probe-hello", title: "X", closable: true };
     const cY: CardState = { id: "card-y", componentId: "probe-other", title: "Y", closable: true };
     const stack = makeStack("stack-B", [cX, cY], 0);
-    const store = new Store({ cards: [cX, cY], panes: [stack] });
+    const store = new Store({ cards: [cX, cY], panes: [stack], hasFocus: true });
     renderDeck(store);
 
     // Two cards in the stack → two Probe mounts on initial render.
@@ -303,7 +309,7 @@ describe("Card content identity preservation (two-table model)", () => {
   it("addCardToPane mounts the new card's content without unmounting the existing card", () => {
     const cOrig: CardState = { id: "card-orig", componentId: "probe-hello", title: "Orig", closable: true };
     const stack = makeStack("stack-A", [cOrig]);
-    const store = new Store({ cards: [cOrig], panes: [stack] });
+    const store = new Store({ cards: [cOrig], panes: [stack], hasFocus: true });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(1);
@@ -321,7 +327,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const cStay: CardState = { id: "card-stay", componentId: "probe-hello", title: "Stay", closable: true };
     const cMove: CardState = { id: "card-move", componentId: "probe-other", title: "Move", closable: true };
     const stack = makeStack("stack-C", [cStay, cMove], 0);
-    const store = new Store({ cards: [cStay, cMove], panes: [stack] });
+    const store = new Store({ cards: [cStay, cMove], panes: [stack], hasFocus: true });
     renderDeck(store);
 
     expect(probeStats.mountTotal).toBe(2);
@@ -345,7 +351,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
     const stackSrc = makeStack("stack-src", [srcA, mv], 1);
     const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
-    const store = new Store({ cards: [srcA, mv, tgt], panes: [stackSrc, stackTgt] });
+    const store = new Store({ cards: [srcA, mv, tgt], panes: [stackSrc, stackTgt], hasFocus: true });
     renderDeck(store);
 
     // 3 total cards → 3 mounts.
@@ -367,7 +373,7 @@ describe("Card content identity preservation (two-table model)", () => {
     const tgt: CardState = { id: "card-tgt-1", componentId: "probe-hello", title: "Tgt", closable: true };
     const stackSrc = makeStack("stack-src", [srcA, mv], 1);
     const stackTgt = makeStack("stack-tgt", [tgt], 0, { x: 500, y: 0 });
-    const store = new Store({ cards: [srcA, mv, tgt], panes: [stackSrc, stackTgt] });
+    const store = new Store({ cards: [srcA, mv, tgt], panes: [stackSrc, stackTgt], hasFocus: true });
     renderDeck(store);
 
     // Before the move, the moved card's DOM is inside the source stack's

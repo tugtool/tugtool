@@ -38,7 +38,7 @@ export function makeMockStore(
 
   const base: IDeckManagerStore = {
     subscribe: () => () => {},
-    getSnapshot: (): DeckState => ({ cards: [], panes: [] }),
+    getSnapshot: (): DeckState => ({ cards: [], panes: [], hasFocus: true }),
     getVersion: () => 0,
     handlePaneMoved: () => {},
     handlePaneClosed: () => {},
@@ -90,6 +90,7 @@ export function makeMockStore(
     captureCardState: (cardId) => orchestrator.captureCardState(cardId),
     restoreCardState: (cardId, bag) =>
       orchestrator.restoreCardState(cardId, bag),
+    setHasFocus: () => {},
   };
 
   return { ...base, ...overrides };

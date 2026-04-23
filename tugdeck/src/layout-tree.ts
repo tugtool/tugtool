@@ -207,6 +207,12 @@ export interface TugPaneState {
  * - `panes` holds every pane frame; each pane's `cardIds` partitions
  *   `cards`.
  * - `activePaneId` identifies the deck's currently-active pane, if any.
+ * - `hasFocus` tracks whether the tugdeck window is the OS-foreground
+ *   window. Session-only (never serialized): the deck store seeds it
+ *   from `document.hasFocus()` at construction and flips it on window
+ *   `focus` / `blur` events. Consumers that gate behavior on "is this
+ *   card the focus destination" read it through the
+ *   `isFocusDestination` selector (see `deck-store-selectors.ts`).
  *
  * Reload-focus restoration is handled out-of-band: `putFocusedCardId`
  * writes a single-field row to tugbank, and `DeckManager` reads it back
@@ -218,6 +224,13 @@ export interface DeckState {
   cards: readonly CardState[];
   panes: readonly TugPaneState[];
   activePaneId?: string;
+  /**
+   * True when the tugdeck window owns OS focus (foreground). Seeded
+   * from `document.hasFocus()` at store construction; toggled by
+   * window `focus` / `blur` events installed at deck-store module
+   * init. Not serialized — session state only.
+   */
+  hasFocus: boolean;
 }
 
 // ---- Invariant validation ----

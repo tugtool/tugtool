@@ -162,6 +162,7 @@ beforeEach(() => {
     ],
     panes: [makePane("pane-1", ["card-a", "card-b"], "card-a")],
     activePaneId: "pane-1",
+    hasFocus: true,
   });
   registerDeckStore(store);
   selectionGuard.attach(makeMockAppLifecycle());

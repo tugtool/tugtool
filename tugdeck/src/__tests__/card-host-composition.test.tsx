@@ -200,6 +200,12 @@ class Store implements IDeckManagerStore {
     this.orchestrator.captureCardState(cardId);
   restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
     this.orchestrator.restoreCardState(cardId, bag);
+
+  setHasFocus = (value: boolean): void => {
+    if (this.state.hasFocus === value) return;
+    this.state = { ...this.state, hasFocus: value };
+    this.notify();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +269,7 @@ describe("CardHost composition", () => {
 
   it("debounced save: scroll → markDirty → setCardState fires with the composed bag", async () => {
     const card: CardState = { id: "c1", componentId: "probe", title: "Probe", closable: true };
-    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])], hasFocus: true });
     renderDeck(store);
 
     const contentEl = getContentEl("p1");
@@ -285,7 +291,7 @@ describe("CardHost composition", () => {
 
   it("direct invokeSaveCallback produces the same bag shape as the debounced path", () => {
     const card: CardState = { id: "c1", componentId: "probe", title: "Probe", closable: true };
-    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])], hasFocus: true });
     renderDeck(store);
 
     const contentEl = getContentEl("p1");
@@ -313,6 +319,7 @@ describe("CardHost composition", () => {
         makeStack("paneA", [card, sentinelA], { x: 0, y: 0 }),
         makeStack("paneB", [sentinelB], { x: 500, y: 0 }),
       ],
+      hasFocus: true,
     });
     renderDeck(store);
 
@@ -400,7 +407,7 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
       title: "Prompt",
       closable: true,
     };
-    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])], hasFocus: true });
     renderDeck(store);
 
     const delegate = promptProbeHandles.delegate;
@@ -437,7 +444,7 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
       title: "Prompt",
       closable: true,
     };
-    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])] });
+    const store = new Store({ cards: [card], panes: [makeStack("p1", [card])], hasFocus: true });
     const { unmount } = render(
       <TugTooltipProvider>
         <ResponderChainProvider>

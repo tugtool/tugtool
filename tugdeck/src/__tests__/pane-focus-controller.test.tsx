@@ -147,6 +147,13 @@ class Store implements IDeckManagerStore {
     this.orchestrator.captureCardState(cardId);
   restoreCardState: IDeckManagerStore["restoreCardState"] = (cardId, bag) =>
     this.orchestrator.restoreCardState(cardId, bag);
+
+  setHasFocus = (value: boolean): void => {
+    if (this.state.hasFocus === value) return;
+    this.state = { ...this.state, hasFocus: value };
+    this.version += 1;
+    for (const l of this.listeners) l();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +251,7 @@ function classificationStore(): Store {
       paneState("paneB", ["cB"]),
     ],
     activePaneId: "paneA",
+    hasFocus: true,
   });
 }
 
@@ -311,6 +319,7 @@ describe("pane-focus-controller — attribute authority", () => {
       cards: [card("c1"), card("c2")],
       panes: [paneState("p1", ["c1"]), paneState("p2", ["c2"])],
       activePaneId: "p1",
+      hasFocus: true,
     });
     const container = renderHost(store, ["p1", "p2"]);
     expect(pane(container, "p1").dataset.focused).toBe("true");
@@ -321,6 +330,7 @@ describe("pane-focus-controller — attribute authority", () => {
     const store = new Store({
       cards: [card("c1"), card("c2")],
       panes: [paneState("p1", ["c1"]), paneState("p2", ["c2"])],
+      hasFocus: true,
     });
     const container = renderHost(store, ["p1", "p2"]);
     expect(pane(container, "p1").dataset.focused).toBe("false");
@@ -332,6 +342,7 @@ describe("pane-focus-controller — attribute authority", () => {
       cards: [card("c1"), card("c2")],
       panes: [paneState("p1", ["c1"]), paneState("p2", ["c2"])],
       activePaneId: "p1",
+      hasFocus: true,
     });
     const container = renderHost(store, ["p1", "p2"]);
     expect(pane(container, "p1").dataset.focused).toBe("true");
@@ -349,6 +360,7 @@ describe("pane-focus-controller — attribute authority", () => {
       cards: [card("c1")],
       panes: [paneState("p1", ["c1"])],
       activePaneId: "p1",
+      hasFocus: true,
     });
     let container!: HTMLElement;
     let rerender!: (ui: React.ReactElement) => void;
@@ -383,6 +395,7 @@ describe("pane-focus-controller — attribute authority", () => {
       cards: [card("c1"), card("c2")],
       panes: [paneState("p1", ["c1"]), paneState("p2", ["c2"])],
       activePaneId: "p1",
+      hasFocus: true,
     });
     let container!: HTMLElement;
     let rerender!: (ui: React.ReactElement) => void;
@@ -416,6 +429,7 @@ describe("pane-focus-controller — attribute authority", () => {
       cards: [card("c1"), card("c2")],
       panes: [paneState("p1", ["c1"]), paneState("p2", ["c2"])],
       activePaneId: "p1",
+      hasFocus: true,
     });
     let unmount!: () => void;
     act(() => {
@@ -562,6 +576,7 @@ describe("pane-focus-controller — classification listener", () => {
       cards: [card("cA")],
       panes: [paneState("paneA", ["cA"])],
       activePaneId: "paneA",
+      hasFocus: true,
     });
     let container!: HTMLElement;
     act(() => {

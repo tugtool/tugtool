@@ -185,6 +185,7 @@ beforeEach(() => {
     ],
     panes: [makePane("pane-1", ["card-a", "card-b"], "card-a")],
     activePaneId: "pane-1",
+    hasFocus: true,
   });
   registerDeckStore(store);
   appLifecycle = makeMockAppLifecycle();
@@ -247,6 +248,7 @@ describe("T24 – multi-card paint", () => {
       cards: store.getSnapshot().cards,
       panes: [makePane("pane-1", ["card-a", "card-b"], "card-b")],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
 
     expect(hl.has(rangeA)).toBe(true);
@@ -379,6 +381,7 @@ describe("T27 – stale Range drop", () => {
         cards: store.getSnapshot().cards,
         panes: [makePane("pane-1", ["card-a", "card-b"], "card-a")],
         activePaneId: "pane-1",
+        hasFocus: true,
       });
     } finally {
       console.warn = originalWarn;
@@ -467,6 +470,7 @@ describe("T29 – focus-change mousedown interceptor", () => {
       cards: store.getSnapshot().cards,
       panes: [makePane("pane-1", ["card-a", "card-b"], "card-b")],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
 
     // The one-shot interceptor is now in place. The next mousedown
@@ -492,6 +496,7 @@ describe("T29 – focus-change mousedown interceptor", () => {
       cards: store.getSnapshot().cards,
       panes: [makePane("pane-1", ["card-a", "card-b"], "card-b")],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
 
     const event = dispatchMousedown();
@@ -511,6 +516,7 @@ describe("T29 – focus-change mousedown interceptor", () => {
       cards: store.getSnapshot().cards,
       panes: [makePane("pane-1", ["card-a", "card-b"], "card-a")],
       activePaneId: "pane-1",
+      hasFocus: true,
     });
 
     const event = dispatchMousedown();

@@ -286,4 +286,15 @@ export interface IDeckManagerStore {
    * pass.
    */
   restoreCardState: (cardId: string, bag: CardStateBag) => void;
+
+  /**
+   * Flip the session-only `DeckState.hasFocus` slice ([A1]). Wired up
+   * from the module-scope window `focus` / `blur` listeners installed
+   * by `DeckManager`; tests may call this directly to simulate
+   * foreground transitions without dispatching DOM events. Must be an
+   * arrow property (stable identity, auto-bound `this`) so it can be
+   * passed as a listener callback without `.bind()`. No-op when the
+   * bit is already at `value`.
+   */
+  setHasFocus: (value: boolean) => void;
 }

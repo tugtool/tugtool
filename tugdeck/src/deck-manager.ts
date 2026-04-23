@@ -69,7 +69,7 @@ import {
   AppLifecycleContext,
   registerAppLifecycle,
 } from "./lib/app-lifecycle";
-import { registerDeckStore } from "./lib/deck-store-registry";
+import { registerDeckStore, getDeckStore } from "./lib/deck-store-registry";
 import { isDevEnv } from "./lib/dev-env";
 import {
   installLifecycleCascade,
@@ -86,6 +86,30 @@ const SAVE_DEBOUNCE_MS = 500;
 
 /** Cascade step between consecutive new stacks (pixels) */
 const CASCADE_STEP = 30;
+
+/**
+ * Module-scope guard so the window `focus` / `blur` listeners that
+ * drive `DeckState.hasFocus` install exactly once per JS context, even
+ * if a test (or a future multi-deck scenario) constructs more than one
+ * `DeckManager`. Handlers read the live store via
+ * {@link getDeckStore} rather than closing over a specific instance,
+ * so they remain correct across deck-store replacement.
+ */
+let focusListenersInstalled = false;
+
+function installDeckStoreFocusListeners(): void {
+  if (focusListenersInstalled) return;
+  if (typeof window === "undefined") return;
+  focusListenersInstalled = true;
+  const onFocus = (): void => {
+    getDeckStore()?.setHasFocus(true);
+  };
+  const onBlur = (): void => {
+    getDeckStore()?.setHasFocus(false);
+  };
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("blur", onBlur);
+}
 
 /**
  * Pure helper: remove `cardId` from the stack's `cardIds` and pick a new
@@ -367,7 +391,21 @@ export class DeckManager implements IDeckManagerStore {
     this.moveCardToPane = this._moveCardToPane.bind(this);
     this.togglePaneCollapse = this._togglePaneCollapse.bind(this);
 
-    this.deckState = this.loadLayout();
+    this.deckState = {
+      ...this.loadLayout(),
+      // `hasFocus` is session-only state; the loaded layout carries a
+      // placeholder value. Overwrite it with the live foreground
+      // reading so the selector is correct on the very first render.
+      hasFocus:
+        typeof document !== "undefined" && typeof document.hasFocus === "function"
+          ? document.hasFocus()
+          : true,
+    };
+
+    // Install window focus/blur listeners exactly once per JS context.
+    // Safe to call unconditionally — the module-scope flag short-circuits
+    // subsequent constructions.
+    installDeckStoreFocusListeners();
 
     // Fire CONSTRUCTION for every card loaded from the saved layout so the
     // lifecycle's `constructedCards` set matches reality and later-subscribing
@@ -424,6 +462,23 @@ export class DeckManager implements IDeckManagerStore {
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
   }
+
+  // ---- App-foreground tracking ([A1]) ----
+
+  /**
+   * Flip the session-only `hasFocus` slice when the window gains or
+   * loses OS foreground. Idempotent: a no-op when the bit is already
+   * at `value`, so spurious duplicate events don't churn React
+   * subscribers. Called from the module-scope listeners installed by
+   * {@link installDeckStoreFocusListeners}; tests may call this
+   * directly to simulate focus transitions without dispatching DOM
+   * events.
+   */
+  public setHasFocus = (value: boolean): void => {
+    if (this.deckState.hasFocus === value) return;
+    this.deckState = { ...this.deckState, hasFocus: value };
+    this.notify();
+  };
 
   // ---- Store notification ----
 
