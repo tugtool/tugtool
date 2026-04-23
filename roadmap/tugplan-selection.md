@@ -1400,21 +1400,21 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - JSDoc updated to note: "The callback fires only after the shared `CardHost` activation effect ([A3]) is installed (M-phase 2). At Step 22, registering the callback is a no-op; implementors may register it now in preparation."
 
 **Tasks:**
-- [ ] Add the optional `onCardActivated?: () => void` field to the `CardPersistenceCallbacks` interface.
-- [ ] Ensure `useCardPersistence` forwards the field into the stored callbacks record.
-- [ ] Verify that existing call sites of `useCardPersistence` continue to compile (the field is optional).
+- [x] Add the optional `onCardActivated?: () => void` field to the `CardPersistenceCallbacks` interface.
+- [x] Ensure `useCardPersistence` forwards the field into the stored callbacks record.
+- [x] Verify that existing call sites of `useCardPersistence` continue to compile (the field is optional).
 
 **Upholds:** [A2]; [D13] protocol shape; keeps the field declarative so content factories can start registering `onCardActivated` in preparation for M-phase 2 without needing to ship in the same commit.
 
 **Tests:**
-- [ ] Type-only: add a compile-time assertion in `use-card-persistence.test.tsx` that `useCardPersistence({ persistKey: "t", onCardActivated: () => {} })` type-checks.
-- [ ] No behavior test (the callback isn't dispatched yet). A TODO comment in the test file points forward to M-phase 2 Step 23's dispatcher test.
-- [ ] Existing tests must pass unchanged.
+- [x] Type-only: add a compile-time assertion in `use-card-persistence.test.tsx` that `useCardPersistence({ persistKey: "t", onCardActivated: () => {} })` type-checks.
+- [x] No behavior test (the callback isn't dispatched yet). A TODO comment in the test file points forward to M-phase 2 Step 23's dispatcher test.
+- [x] Existing tests must pass unchanged.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
-- [ ] `bun test` full suite green.
-- [ ] No user-visible behavior change. M-phase 1 ends cleanly with [A1] + [A8] + [A2]-field in place, ready for M-phase 2 to wire [A3].
+- [x] `bun x tsc --noEmit` exits 0.
+- [x] `bun test` full suite green.
+- [x] No user-visible behavior change. M-phase 1 ends cleanly with [A1] + [A8] + [A2]-field in place, ready for M-phase 2 to wire [A3].
 
 ---
 

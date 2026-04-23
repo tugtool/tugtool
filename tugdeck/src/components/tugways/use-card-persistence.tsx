@@ -34,6 +34,28 @@ export interface UseCardPersistenceOptions<T> {
   onSave: () => T;
   /** Called by CardHost on tab activation with the previously saved state. */
   onRestore: (state: T) => void;
+  /**
+   * Called when this card transitions to being the focus destination —
+   * i.e. `isFocusDestination` flips from `false` to `true`. Typical
+   * implementation for content-owning cards:
+   *
+   * ```ts
+   * onCardActivated: () => {
+   *   engine.root.focus({ preventScroll: true });
+   * }
+   * ```
+   *
+   * The callback fires only after the shared `CardHost` activation
+   * effect ([A3]) is installed (M-phase 2). At the step that declares
+   * this field, registering the callback is a no-op; implementors may
+   * register it now in preparation. The has-been-active ref-guard in
+   * [A3] skips the initial activation at mount; the callback fires on
+   * subsequent `false → true` transitions only.
+   *
+   * Optional. FC (DOM-authority) cards don't need this — `CardHost`
+   * re-applies `bag.focus` + `bag.domSelection` directly for them.
+   */
+  onCardActivated?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +94,22 @@ export interface CardPersistenceCallbacks {
    * callbacks object so no new context or side channel is needed. ([D03])
    */
   restorePendingRef?: React.RefObject<boolean>;
+  /**
+   * Called by the shared `CardHost` activation effect ([A3]) when this
+   * card becomes the focus destination — a `false → true` transition
+   * of `isFocusDestination(cardId)`. Mount is skipped by the
+   * has-been-active guard inside the effect.
+   *
+   * The callback fires only after the activation effect is installed
+   * (M-phase 2). While the field is declared but not yet dispatched,
+   * registering it is a no-op — content factories can opt in in advance
+   * without waiting for the dispatcher to land.
+   *
+   * Optional. FC (DOM-authority) cards leave it unset; `CardHost`
+   * handles their reactivation by re-applying `bag.focus` +
+   * `bag.domSelection` directly ([A3]).
+   */
+  onCardActivated?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,8 +192,10 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   // stale when options change on re-renders (Rule 5).
   const onSaveRef = useRef<(() => T) | undefined>(undefined);
   const onRestoreRef = useRef<((state: T) => void) | undefined>(undefined);
+  const onCardActivatedRef = useRef<(() => void) | undefined>(undefined);
   onSaveRef.current = options.onSave;
   onRestoreRef.current = options.onRestore;
+  onCardActivatedRef.current = options.onCardActivated;
 
   // Ref-flag mechanism ([D02], [D03], Spec S02):
   // CardHost sets restorePendingRef.current = true before calling onRestore.
@@ -181,6 +221,12 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
     const callbacks: CardPersistenceCallbacks = {
       onSave: () => onSaveRef.current?.() as unknown,
       onRestore: (state: unknown) => onRestoreRef.current?.(state as T),
+      // Forward through a stable ref-reading wrapper so the latest
+      // caller-supplied implementation fires even when `options`
+      // changes across re-renders (Rule 5). `undefined` when the
+      // caller didn't provide it — the dispatcher in [A3] checks for
+      // presence before invoking.
+      onCardActivated: () => onCardActivatedRef.current?.(),
       restorePendingRef,
     };
 

@@ -400,3 +400,153 @@ describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", 
   });
 });
 
+// ---------------------------------------------------------------------------
+// T-P07: `onCardActivated` is declared + forwarded — Step 22 ([A2]).
+//
+// At Step 22, the field is threaded through the hook but no dispatcher
+// exists yet; the shared CardHost activation effect lands in Step 23
+// as part of [A3] and becomes the first caller. These tests pin the
+// declarative shape so content factories can register in advance.
+//
+// TODO(step-23): extend this suite with a behavior test: once [A3]
+// wires the dispatcher, verify that `onCardActivated` fires on
+// `false → true` transitions of `isFocusDestination(cardId)` and is
+// skipped on the initial mount activation.
+// ---------------------------------------------------------------------------
+
+describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
+  it("T-P07a: accepts the onCardActivated option (compile-time shape)", () => {
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    function CardContent() {
+      // Compile-time assertion: the hook's option type accepts the new
+      // optional field. Any type regression here fails `tsc --noEmit`.
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        onCardActivated: () => {},
+      });
+      return <div>content</div>;
+    }
+
+    act(() => {
+      render(
+        <Provider>
+          <CardContent />
+        </Provider>
+      );
+    });
+
+    const callbacks = getLatestCallbacks();
+    expect(callbacks).not.toBeNull();
+    // The hook forwards a stable wrapper on the callbacks record so the
+    // activation effect ([A3], Step 23) can invoke it without checking
+    // option-presence first.
+    expect(typeof callbacks!.onCardActivated).toBe("function");
+  });
+
+  it("T-P07b: invoking registered onCardActivated calls the caller's latest implementation", () => {
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    let invocations = 0;
+    function CardContent() {
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        onCardActivated: () => {
+          invocations += 1;
+        },
+      });
+      return <div>content</div>;
+    }
+
+    act(() => {
+      render(
+        <Provider>
+          <CardContent />
+        </Provider>
+      );
+    });
+
+    const callbacks = getLatestCallbacks()!;
+    // Simulate the Step 23 dispatcher firing the callback.
+    callbacks.onCardActivated!();
+    callbacks.onCardActivated!();
+    expect(invocations).toBe(2);
+  });
+
+  it("T-P07c: updating onCardActivated across re-renders does not re-register; wrapper reads latest (Rule 5)", () => {
+    const { Provider, getRegistrationCount, getLatestCallbacks } =
+      makeTestProvider();
+
+    // Indirect through a module-scope var so the test can swap the
+    // implementation without React prop changes re-registering.
+    let current: () => void = mock(() => {});
+
+    function CardContent() {
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        onCardActivated: () => current(),
+      });
+      return <div>content</div>;
+    }
+
+    let rerender!: ReturnType<typeof render>["rerender"];
+    act(() => {
+      ({ rerender } = render(
+        <Provider>
+          <CardContent />
+        </Provider>,
+      ));
+    });
+
+    expect(getRegistrationCount()).toBe(1);
+
+    const v2 = mock(() => {});
+    current = v2;
+
+    act(() => {
+      rerender(
+        <Provider>
+          <CardContent />
+        </Provider>,
+      );
+    });
+
+    // Re-render did not re-register.
+    expect(getRegistrationCount()).toBe(1);
+
+    // The stable wrapper now delegates to the new implementation.
+    const callbacks = getLatestCallbacks()!;
+    callbacks.onCardActivated!();
+    expect(v2).toHaveBeenCalledTimes(1);
+  });
+
+  it("T-P07d: callers that omit onCardActivated get a no-op wrapper that does not throw", () => {
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    function CardContent() {
+      useCardPersistence({
+        onSave: () => ({}),
+        onRestore: () => {},
+        // onCardActivated intentionally omitted.
+      });
+      return <div>content</div>;
+    }
+
+    act(() => {
+      render(
+        <Provider>
+          <CardContent />
+        </Provider>,
+      );
+    });
+
+    const callbacks = getLatestCallbacks()!;
+    // The wrapper is present (matches the onSave/onRestore pattern) but
+    // no-ops silently when the caller didn't opt in.
+    expect(typeof callbacks.onCardActivated).toBe("function");
+    expect(() => callbacks.onCardActivated!()).not.toThrow();
+  });
+});
