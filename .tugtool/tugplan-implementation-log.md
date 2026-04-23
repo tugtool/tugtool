@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-04-23T23:14:57Z
+---
+
+## step-8: Added tests/in-app/_wait-for-condition.test.ts with three in-app smoke tests (eval-error Error-name-and-message propagation, waitForCondition TimeoutError on never-truthy, waitForCondition immediate-return-value). All three are skipIf-gated on TUGAPP_IN_APP_TEST=1 per the established _smoke.test.ts pattern. Swift-side waitForCondition polling + evalJS server-side timeout + rpc.ts translateError and AppCrashedError-on-EOF handlers were all already delivered in step-7's scaffold — step-8 is the end-to-end verification layer. bun test tests/in-app: 15 pass / 5 skip / 0 fail.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-7
 date: 2025-04-23T23:08:33Z
 ---
