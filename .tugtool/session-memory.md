@@ -1,7 +1,7 @@
 # Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck: React 19 + Vite + bun. Source `tugdeck/src/`; tests `tugdeck/src/__tests__/`. Phase 1 (deck-trace) Steps 1-2 landed; Step 3 deferred; Step 4 authored `roadmap/tugplan-in-app-bridge.md`; Step 5 testMode + seedDeckState; Step 6 `window.__tug`; Step 7 Phase 2 bridge+harness+smoke; Step 8 in-app smoke tests; Step 9 version-skew + double-connect + log-capture; Step 10 client wrappers + matchers + lint. Tugapp: `tugapp/Sources/`; `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace; `bunfig.toml` roots `.`. Transport: parallel Unix socket per [D02].
+Tugdeck: React 19 + Vite + bun. Source `tugdeck/src/`; tests `tugdeck/src/__tests__/`. Phase 1 (deck-trace) Steps 1-2 landed; Step 3 deferred; Step 4 authored `roadmap/tugplan-in-app-bridge.md`; Step 5 testMode + seedDeckState; Step 6 `window.__tug`; Step 7 Phase 2 bridge+harness+smoke; Step 8 in-app smoke tests; Step 9 version-skew + double-connect + log-capture; Step 10 client wrappers + matchers + lint; Step 11 Phase 2 verification-only checkpoint. Tugapp: `tugapp/Sources/`; `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace; `bunfig.toml` roots `.`. Transport: parallel Unix socket per [D02].
 
 ## Files touched
 - tugdeck/src/deck-trace.ts — ring buffer + observers.
@@ -57,7 +57,7 @@ Tugdeck: React 19 + Vite + bun. Source `tugdeck/src/`; tests `tugdeck/src/__test
 - `tests/in-app/bunfig.toml` has `[test] root = "."` + NO happy-dom preload — must stay.
 
 ## Hints for upcoming steps
-- Step 11 (Phase 2 Integration Checkpoint): verify Phase 2 artifacts; run `bun test tests/in-app/` (all prior skipIf tests will run when `TUGAPP_IN_APP_TEST=1` + debug Tug.app available at `TUGAPP_DEBUG_PATH` or `/Applications/Tug.app/Contents/MacOS/Tug`). Binary-size baseline check is manual.
+- Step 11 complete. Automated checks all green (tugdeck tsc, tugdeck tests 2434/0, in-app tsc, in-app tests 29pass/8skip/0fail, lint:no-timers clean). Manual tasks 1, 2, 3, 4 deferred: binary-size baseline (no pre-plan baseline artifact), Xcode archive `nm` inspection, dev-mode launch verification, test-mode launch+evalJS verification — all require a built debug/release Tug.app on a macOS dev box which the agent cannot run. [D13] style decision: manual checkpoints deferred and tracked; next-step work not blocked.
 - Step 12 (scaffold + README): `tests/in-app/_smoke.test.ts` already exists from Step 7. Step 12 adds README.md covering: `bun test tests/in-app/` command, one-app-per-file lifecycle, pointer to fidelity-limits, `bun run lint:no-timers` command.
 - Step 13-15 (M01/M03/M16 tests): import from `@/_harness` — `launchTugApp`, `toContainOrderedSubset`, `registerSubsetMatcher`. Call `registerSubsetMatcher()` at module load to enable `expect(trace).toContainOrderedSubset([...])`. Use `app.seedDeckState(...)` → `app.click(...)` / `app.type(...)` / `app.focusElement(...)` → `app.expectFocusedCard(...)` / `app.expectCaret(...)`. Get trace via `mark = await app.markDeckTrace(); ...; const trace = await app.getDeckTrace({ since: mark });`.
 - Client mirrors `CaretState` shape — keep in sync if tugdeck `SURFACE_VERSION` bumps. `ClientMethodNames` union is authoring-time reminder of surface coverage.

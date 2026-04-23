@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-04-23T23:39:14Z
+---
+
+## step-11: Phase 2 automated checkpoints all green: tugdeck tsc clean, 2434 pass / 0 fail; tests/in-app tsc clean, 29 pass / 8 skip / 0 fail; lint:no-timers clean. All Phase 2 artifacts present (deck-trace, test-surface, DeckManager.testMode + seedDeckState, window.__tug wiring, TestHarness Swift files, _harness library, in-app-bridge sub-tugplan). Binary-size baseline diff, Xcode archive nm inspection, and dev/test-mode manual launches deferred — they require GUI + pre-plan baseline and are unblocking for Phase 3 steps 12-15 which will exercise the harness against a live Tug.app.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-10
 date: 2025-04-23T23:36:06Z
 ---
