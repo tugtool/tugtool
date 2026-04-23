@@ -737,19 +737,19 @@ The implementation sequence is 15 commits. Each is independently revertable. The
 - `DomSelectionSnapshot` type finalized in `layout-tree.ts` (was `null` placeholder at Step 1).
 
 **Tasks:**
-- [ ] Add `getCardRange` to `selection-guard.ts`.
-- [ ] Expose `nodeToPath` as a public helper inside `selection-guard.ts` (was private), or import it from there to `card-host.tsx`.
-- [ ] In `saveCurrentCardStateRef.current`, capture `domSelection`.
-- [ ] Add unit test for the serializer.
+- [x] Add `getCardRange` to `selection-guard.ts`. _(landed in Step 5; re-verified.)_
+- [x] Expose `nodeToPath` as a public helper inside `selection-guard.ts` (was private), or import it from there to `card-host.tsx`.
+- [x] In `saveCurrentCardStateRef.current`, capture `domSelection`.
+- [x] Add unit test for the serializer.
 
 **Upholds:** [L10] selection-guard owns the live Range; card-host owns serialization shape into the bag.
 
 **Tests:**
-- [ ] Serialize a Range anchored inside a card root, assert the paths and offsets round-trip.
-- [ ] Range whose endpoints fall outside the card root → `domSelection: null`.
+- [x] Serialize a Range anchored inside a card root, assert the paths and offsets round-trip.
+- [x] Range whose endpoints fall outside the card root → `domSelection: null`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit`, `bun test` green.
+- [x] `bun x tsc --noEmit`, `bun test` green.
 
 ---
 

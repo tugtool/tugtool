@@ -67,7 +67,12 @@ import { TUG_ACTIONS } from "../tugways/action-vocabulary";
 import { useDeckManager } from "../../deck-manager-context";
 import { getRegistration } from "../../card-registry";
 import { useSelectionBoundary } from "../tugways/hooks/use-selection-boundary";
-import type { CardStateBag, FormControlSnapshot } from "../../layout-tree";
+import { nodeToPath, selectionGuard } from "../tugways/selection-guard";
+import type {
+  CardStateBag,
+  DomSelectionSnapshot,
+  FormControlSnapshot,
+} from "../../layout-tree";
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
@@ -123,6 +128,42 @@ function captureFormControls(
     };
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Serialize the card's currently-published Range (if any) into a
+ * `DomSelectionSnapshot` rooted at `cardRoot`.
+ *
+ * `selectionGuard` owns the live Range (published by the card's content
+ * component — e.g. `TugTextEngine.onSelectionChanged`). CardHost owns
+ * the serialization shape into the bag: indices walked from the
+ * card-boundary root, so paths survive cross-pane moves where the
+ * card's DOM subtree travels intact but its surrounding pane changes.
+ *
+ * Returns `null` when:
+ *   - the card has no published Range;
+ *   - either endpoint is not a descendant of `cardRoot` (stale Range
+ *     whose owner failed to re-publish after a DOM mutation, or a
+ *     selection that genuinely escaped the boundary — either way, not
+ *     serializable against this root).
+ *
+ * Pure read. Does not mutate `selectionGuard` state or the DOM.
+ */
+export function captureDomSelection(
+  cardId: string,
+  cardRoot: HTMLElement,
+): DomSelectionSnapshot | null {
+  const range = selectionGuard.getCardRange(cardId);
+  if (!range) return null;
+  const anchorPath = nodeToPath(cardRoot, range.startContainer);
+  const focusPath = nodeToPath(cardRoot, range.endContainer);
+  if (anchorPath === null || focusPath === null) return null;
+  return {
+    anchorPath,
+    anchorOffset: range.startOffset,
+    focusPath,
+    focusOffset: range.endOffset,
+  };
 }
 
 /**
@@ -312,10 +353,12 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // the same pane (tab-group) never contaminate each other's values.
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
+    const domSelection = cardRoot ? captureDomSelection(cardId, cardRoot) : null;
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
       ...(content !== undefined ? { content } : {}),
       ...(formControls !== undefined ? { formControls } : {}),
+      ...(domSelection !== null ? { domSelection } : {}),
     };
     store.setCardState(cardId, bag);
   };

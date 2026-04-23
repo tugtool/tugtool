@@ -141,8 +141,12 @@ function hasCustomSelectAncestor(node: Node, boundary: HTMLElement): boolean {
  * Compute the index path from `root` to `node`.
  * Returns an array of child indices, or null if `node` is not a descendant
  * of `root`.
+ *
+ * Exported for `CardHost`'s bag-save path, which resolves a Range from
+ * {@link SelectionGuard.getCardRange} into a `DomSelectionSnapshot`
+ * rooted at the card boundary.
  */
-function nodeToPath(root: HTMLElement, node: Node): number[] | null {
+export function nodeToPath(root: HTMLElement, node: Node): number[] | null {
   const path: number[] = [];
   let current: Node | null = node;
 

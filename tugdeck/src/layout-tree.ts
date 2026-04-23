@@ -49,7 +49,7 @@ export interface CardStateBag {
   formControls?: Record<string, FormControlSnapshot>;
   /** Nested-region scroll snapshot. Shape finalized at a later step. */
   regionScroll?: RegionScrollSnapshot | null;
-  /** Content-editable range snapshot. Shape finalized at a later step. */
+  /** Content-editable range snapshot captured from the card's owning boundary. */
   domSelection?: DomSelectionSnapshot | null;
   /** Element-level focus snapshot. Shape finalized at a later step. */
   focus?: FocusSnapshot | null;
@@ -74,10 +74,20 @@ export interface FormControlSnapshot {
 export type RegionScrollSnapshot = Record<string, never>;
 
 /**
- * Placeholder type for the content-editable selection axis. Populated at
- * the step that wires DOM-selection capture; currently always `null`.
+ * Serialized form of a DOM selection anchored inside a card's boundary.
+ *
+ * Paths are arrays of child indices rooted at the card's registered
+ * boundary element (see {@link useSelectionBoundary}). Offsets mirror
+ * `Range`'s start/end offsets at the resolved nodes. Captured by
+ * `CardHost` from `selectionGuard.getCardRange(cardId)` at save time
+ * and resolved back to a `Range` via `pathToNode` on restore.
  */
-export type DomSelectionSnapshot = Record<string, never>;
+export interface DomSelectionSnapshot {
+  anchorPath: readonly number[];
+  anchorOffset: number;
+  focusPath: readonly number[];
+  focusOffset: number;
+}
 
 /**
  * Placeholder type for the element-level focus axis. Populated at the step
