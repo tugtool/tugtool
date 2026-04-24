@@ -727,13 +727,115 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
   if (!spawnFn) {
     throw new Error("launchTugApp: Bun.spawn is unavailable (run via `bun test`)");
   }
-  return spawnFn({
-    cmd: [resolved.appPath],
-    env: resolved.env,
+
+  // Launch via `/usr/bin/open` (LaunchServices) instead of spawning
+  // the Mach-O binary directly.
+  //
+  // ## Why this detour exists
+  //
+  // macOS TCC (the Accessibility-permissions daemon) needs the target
+  // process to be attached to the user's GUI launchd session so the
+  // user-level `tccd` is reachable. A `Bun.spawn` of the bare Mach-O
+  // exec inherits bun's session, which doesn't have that attachment —
+  // the spawned Tug.app's WebKit helpers log
+  // `user tccd unavailable, XPC_ERROR_CONNECTION_INVALID` and every
+  // `AXIsProcessTrusted()` returns false regardless of the user grant.
+  //
+  // `open` goes through LaunchServices, which bootstraps the launched
+  // app into the proper GUI session where tccd is reachable — so
+  // TCC can actually evaluate the grant against the binary's code
+  // signature. Once in that session, `CGEvent.post` works.
+  //
+  // ## Lifecycle
+  //
+  // `open -W` blocks until the launched app exits, so the Bun
+  // subprocess handle's `.exited` promise resolves exactly when Tug.app
+  // quits. `open --stdout` / `--stderr` route the app's output to the
+  // per-test log file directly; the harness's `pumpToLog` on the
+  // Bun pipes is a no-op in this mode (streams are empty) and is kept
+  // only so the caller path doesn't need two branches.
+  //
+  // ## Kill semantics
+  //
+  // SIGTERM to the `open -W` wrapper doesn't reliably propagate to the
+  // launched app. We instead send the kill signal directly to Tug.app
+  // via `pkill -x Tug`; the wrapper exits once the app it was waiting
+  // on does. Single-client test loop keeps the `-x` match unambiguous
+  // (there's only one Tug process at a time).
+  const bundlePath = resolved.appPath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
+  const envArgs: string[] = [];
+  for (const [k, v] of Object.entries(resolved.env)) {
+    if (typeof v !== "string") continue;
+    envArgs.push("--env", `${k}=${v}`);
+  }
+  const logPathForRedirect = resolved.logPath ?? "/dev/null";
+
+  const subprocess = spawnFn({
+    cmd: [
+      "/usr/bin/open",
+      "-n",              // new instance
+      "-W",              // wait-apps (blocks until Tug.app quits)
+      // NO -g: Tug.app MUST be foreground so CGEvent.post mouse
+      // events hit its window. CGEvent events route through
+      // windowserver by screen coord → window-on-top; a backgrounded
+      // Tug.app sits behind whatever was active (terminal, IDE) and
+      // the clicks land on the wrong app.
+      "--stdout", logPathForRedirect,
+      "--stderr", logPathForRedirect,
+      ...envArgs,
+      bundlePath,
+    ],
+    // `open` itself doesn't need the TUGAPP_* env vars (they go to
+    // the app via --env); forwarding PATH is enough.
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      USER: process.env.USER ?? "",
+    },
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
   });
+
+  // Wrap `.kill` so SIGTERM reliably reaches the Tug.app process.
+  const originalKill = subprocess.kill.bind(subprocess);
+  const wrappedKill = (signal?: string): void => {
+    const sig = signal ?? "SIGTERM";
+    // `pkill -x Tug` matches the executable name exactly. The
+    // harness's test-in-app recipe already pkills Tug between test
+    // files, so this is idempotent.
+    try {
+      const spawnSync = (
+        globalThis as unknown as {
+          Bun?: {
+            spawnSync: (opts: Record<string, unknown>) => { exitCode: number };
+          };
+        }
+      ).Bun?.spawnSync;
+      spawnSync?.({
+        cmd: ["/usr/bin/pkill", sig === "SIGKILL" ? "-KILL" : "-TERM", "-x", "Tug"],
+        stdout: "ignore",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+    } catch {
+      // ignore — the fallback below still runs
+    }
+    // Also signal the `open -W` wrapper so its `.exited` resolves
+    // promptly on the harness side.
+    try {
+      originalKill(sig);
+    } catch {
+      // already dead
+    }
+  };
+
+  return {
+    kill: wrappedKill,
+    exited: subprocess.exited,
+    stdout: subprocess.stdout,
+    stderr: subprocess.stderr,
+  };
 }
 
 interface BunSocketLike {

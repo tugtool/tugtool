@@ -25,8 +25,8 @@
 | 0d — log tail up front on failure | LANDED | `4e445993` |
 | 0e — one-line trace summary above JSON | LANDED | _pending commit_ |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
-| 1 — CGEventPost spike (variant + escape + coord math + keyboard) | pending (next) | — |
-| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | pending | — |
+| 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | _pending commit_ |
+| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | pending (next) | — |
 | 3 — `__tug` surface: native gestures + introspection + preflight + smoke | pending | — |
 | 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
 | 4–17 | pending | — |
@@ -174,6 +174,25 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 **Resolution:** DEFERRED to [#step-6].
 
+#### [Q05] CGEvent modifier-key accelerators (Cmd+A etc.) don't fire WebKit's select-all path (DEFERRED — Step 1 surfaced) {#q05-cgevent-modifiers}
+
+**Question:** Plain letter keystrokes via `CGEvent.post(tap: .cgSessionEventTap)` successfully insert into focused `<input>` elements (Step 1 spike confirmed: 'x' keycode → input value appended). But Cmd+A — posted either as `keyDown.flags = .maskCommand` alone OR with `flagsChanged` press/release bracketing the keyDown/keyUp — does NOT trigger WebKit's select-all accelerator. The events arrive at WebKit (the input's focus state shows movement) but the select-all handler doesn't fire; caret ends up at the click-landing position instead.
+
+**Known observations:**
+- Event source tried: `.hidSystemState`. `.combinedSessionState` and nil source not yet tried.
+- Flag handling tried: bare `.flags = .maskCommand` on the keyDown/keyUp; flagsChanged press/release bracket for the Cmd key. Neither fires select-all.
+- Affects `cghidEventTap` and `cgSessionEventTap` equally. `postToPid` is a non-starter for self-delivery anyway ([D02]).
+
+**Plan to resolve:** Investigate in Step 2 before shipping `nativeKey` with modifiers / `holdModifier` to the TS surface. Candidate leads:
+- Try `.combinedSessionState` or nil event-source — may change how modifier state is applied on post.
+- Inspect the actual CGEvent that hits the window (via `NSEvent.addGlobalMonitorForEvents`) to see whether `.modifierFlags` arrives as expected.
+- Investigate whether WKWebView's Cocoa accelerator path requires a `performKeyEquivalent:` dispatch that CGEvent.post doesn't reach — fallback: raise a Cocoa `NSEvent` directly via `NSApp.sendEvent`.
+- Fallback if nothing works: use AppleScript/`osascript` to dispatch keyboard shortcuts, or expose `nativeKey` for non-modifier keys only and provide separate RPC verbs for specific shortcuts (`selectAll`, `copy`, `paste`, etc.) that call into WKWebView's `[webView selectAll:]` native action directly.
+
+**Resolution:** DEFERRED to [#step-2]. Step 2's keyboard sub-task tracks this.
+
+**Impact on Step 3b gating:** None — M03 is click-driven, no keyboard modifiers. Phase A's click pipeline is unblocked.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -242,17 +261,20 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 - New RPC verbs are DEBUG-guarded at the same file-level position as `evalJS`.
 - Harness client gains typed wrappers mirroring [D09] of the base plan.
 
-#### [D02] `CGEventPostToPid` targeting the WebContent helper process is the default variant (TENTATIVE — confirmed by Step 1) {#d02-cgevent-variant}
+#### [D02] `CGEventPost(tap: .cgSessionEventTap)` is the chosen variant (DECIDED — Step 1 2026-04-24) {#d02-cgevent-variant}
 
-**Decision:** Post events to the pid of the WKWebView's WebContent helper process using `CGEventPostToPid`. Fall back to `CGEventPost(.cghidEventTap, ...)` only if the spike in Step 1 shows `isTrusted: true` is not preserved under pid-targeted delivery. Document whichever variant wins as the canonical mechanism. The variant confirmation happens in Step 1 (experiment 1 of four); this decision is treated as tentative-pending-spike-confirmation at authoring time.
+**Decision:** Post events via `CGEvent.post(tap: .cgSessionEventTap)`. The spike ruled out `CGEvent.postToPid(ownPid)` — it does NOT deliver events back to the posting process's own WKWebView (zero mousedown listeners fired across every experiment). Both `cghidEventTap` and `cgSessionEventTap` deliver `isTrusted: true` clicks that WebKit dispatches to content-world JS listeners; `cgSessionEventTap` is preferred because it's scoped to the current user session (vs. system-wide HID).
 
-**Rationale:**
-- PID-targeted delivery does not leak events into other apps (closes [R02], verified by Step 1 experiment 2).
-- WKWebView's security model expects events on its own pid; whether `isTrusted: true` is preserved is the variable experiment 1 measures.
-- Either way, the decision becomes load-bearing for the rest of Phase A.
+**Rationale from Step 1 spike (observed outcomes):**
+- `cghidEventTap`: delivers mousedown to WKWebView with `isTrusted: true`. Clicks land at the expected DOMRect center (delta=(0,0) after CoordMapping fix).
+- `cgSessionEventTap`: same — delivers mousedown with `isTrusted: true`, clicks land at expected coord.
+- `postToPid(ownPid)`: **does not deliver.** The test's one-shot mousedown listener never fires; the spike times out on every experiment that used this variant. Exactly ONE post-to-self event pair should have reached the WKWebView; zero did.
+- Plain keystrokes (e.g., `kVK_ANSI_X` with no modifiers) DO get delivered and inserted into focused `<input>` elements via both `cghidEventTap` and `cgSessionEventTap`.
+- Modifier-based accelerators (Cmd+A via `keyDown.flags = .maskCommand`, with or without `flagsChanged` press/release bracketing) arrive as events but do NOT trigger WebKit's accelerator-key path. Input's selection doesn't go full-range; the caret moves to the click landing point instead. **Step 2 has an open task to crack this** — see [Q04].
 
 **Implications:**
-- Step 1 runs four spike experiments: variant pick (fills this decision), event-escape check, DOMRect→screen-coord math, and Cmd+A keyboard accelerator sanity. The widened scope is a 2026-04-24 call: Step 2's Swift handler set hinges on all four unknowns being de-risked up front.
+- [R02] event escape is not closed by the variant choice. Both `cghid` and `cgSession` taps are global — events route by screen coord → frontmost window. Mitigation: ensure Tug.app is frontmost (via `NSApp.activate(ignoringOtherApps: true)` at post time) AND target only coords inside Tug.app's window (enforced by `CoordMapping.viewportToScreen` returning nil for out-of-bounds). Residual risk: a sibling app's window overlapping Tug's window at the target coord. Step 2 mitigates by raising Tug.app's window to front before posting.
+- Step 2's `NativeEventHandlers.swift` uses `cgSessionEventTap` as the canonical delivery path. The chosen tap is a single constant; changing variants requires a one-line edit.
 - Documentation (harness README) explains the variant choice and why.
 
 #### [D03] Accessibility-permission check is a first-RPC preflight (DECIDED) {#d03-accessibility-preflight}
@@ -384,6 +406,35 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 - PR-review checklist line: "drift-prevention cycle documented? Y/N".
 - Step 17 formally aggregates this into the Phase C exit criterion.
 
+#### [D13] Harness launches Tug.app via `/usr/bin/open`, not direct Mach-O spawn (DECIDED — Step 1 2026-04-24) {#d13-open-launcher}
+
+**Decision:** `spawnTugApp` in the TS harness invokes `/usr/bin/open -n -W [--stdout|--stderr|--env …] <bundle path>` rather than `Bun.spawn(['.../Contents/MacOS/Tug'])`. `-W` blocks until Tug.app exits (so the Bun subprocess `.exited` promise resolves at app quit), `--stdout` / `--stderr` route the app's output to the per-test log file, `--env KEY=VAL` propagates test vars. SIGTERM is routed via `pkill -x Tug` because `open -W`'s signal propagation to the launched app is unreliable.
+
+**Rationale from Step 1 spike:**
+- A bare Mach-O spawn under `Bun.spawn` inherits the bun test runner's launchd session, which doesn't have a user-level `tccd` connection. Every `AXIsProcessTrusted()` call in Tug.app returned false regardless of what the user granted in System Settings — the unified log showed `user tccd unavailable, XPC_ERROR_CONNECTION_INVALID` from the WebKit helper processes. Launch via `open` bootstraps the process into the proper GUI launchd session where `tccd` is reachable and TCC can evaluate grants.
+- Without this launcher change, the entire Phase A event-post pipeline is dead on arrival — CGEvent.post silently no-ops on every call.
+
+**Implications:**
+- Every in-app test spawn goes through `open`. Test-runtime overhead is ~200ms per launch (LaunchServices bootstrap); acceptable for a dev-loop test harness.
+- Between sequential tests in a file, the `-W` wait + `pkill -x Tug` teardown is deterministic (single-client model — only one Tug process at a time).
+- Window-activation is still needed post-launch (see [D14]): `open` launches without activating unless we also call `NSApp.activate(ignoringOtherApps: true)` from within the spike/verb itself, because CGEvent mouse events route through windowserver → frontmost window at coord, and an unactivated Tug.app lets the click go to whatever app was previously frontmost.
+
+#### [D14] Phase A requires stable code-signing (self-signed `Tug Dev` identity in login keychain) (DECIDED — Step 1 2026-04-24) {#d14-stable-signing}
+
+**Decision:** The `test-in-app` recipe re-signs `Tug.app` with a stable local code-signing identity (`Tug Dev`, self-signed via `scripts/setup-dev-signing.sh`) after every xcodebuild. Xcode Debug's default ad-hoc signing produces a fresh signature hash on every rebuild; macOS TCC keys grants on signature-hash, so the ad-hoc default invalidates the Accessibility grant on every rebuild and makes `CGEvent.post` silently no-op. Stable signing → stable hash → grant persists across the iteration loop.
+
+**Rationale from Step 1 spike:**
+- Default Xcode Debug: `Signature=adhoc`. Re-signing produced `designated => identifier "dev.tugtool.app" and certificate leaf = H"3398…"` — stable across rebuilds.
+- `tccutil reset Accessibility dev.tugtool.app` removed stale grants from previous ad-hoc signatures; after the stable-identity re-sign, a single user grant in System Settings persists indefinitely.
+- `scripts/setup-dev-signing.sh` is idempotent, creates the per-machine cert if absent (not checked in; only the identity NAME is shared across machines). Each dev grants AX permission once on their own machine; user-scoped grants don't transfer across machines anyway.
+- Observed OpenSSL 3.x PKCS#12 pitfalls handled in the script: `-legacy` flag + non-empty password for `security import` compatibility (Apple's Security framework rejects modern OpenSSL defaults with "MAC verification failed").
+
+**Implications:**
+- `just test-in-app` gate: prechecks for `Tug Dev` identity; fails with `just setup-dev-signing` instruction if absent.
+- `codesign --sign "Tug Dev" --force --deep --preserve-metadata=entitlements,requirements` re-signs in the test-in-app recipe between xcodebuild and test execution.
+- Extends the base-plan [D03] (accessibility preflight): the preflight's `AXIsProcessTrustedWithOptions(prompt: true)` pops a system dialog on first grant; user actions System Settings toggle; grant persists thereafter as long as the binary keeps signing with `Tug Dev`.
+- CI note: [Q01] (CI AX handling) gets a concrete answer in the same shape — CI runners need both the `Tug Dev` identity import AND a pre-granted AX permission for `dev.tugtool.app`. Still DEFERRED to an actual CI setup, but the path is clearer.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -394,23 +445,45 @@ Phase A adds one Swift-side primitive and five TypeScript surface methods. Zero 
 
 ##### A.1 Coordinate mapping {#coord-mapping}
 
-Tests express coordinates in WebView document space (e.g., "click element at viewport (120, 240)"). Swift handler converts document-space → WebKit viewport → WKWebView view-local → window-local (AppKit) → screen-global (CG). Mapping is unit-tested against known fixtures in `CoordMapping.swift`. Events whose screen-mapped coordinate falls outside the current WKWebView bounds are rejected with a `CoordinateOutOfBoundsError`.
+Tests express coordinates in WebView viewport (CSS) space (e.g., "click element at viewport (120, 170)"). Swift `CoordMapping.viewportToScreen(_:in:)` converts viewport (CSS, Y-down, origin top-left of web content) → CG screen (Y-down, origin top-left of the primary display). The math looks direct but has a Y-flip landmine: WKWebView's content coordinate system is Y-DOWN (not AppKit's usual Y-up), so the naive "flip viewport to view-local, then flip screen AppKit to CG" chain double-flips and puts the click hundreds of pixels off. Validated by Step 1 (spike found this bug live on a multi-display rig).
 
-**Y-axis flip (critical):** AppKit uses a Y-up coordinate system with origin at the window's bottom-left; CGEvent uses Y-down with origin at the main display's top-left. The final step of the mapping is:
-
-```
-let screenHeight = NSScreen.main?.frame.height ?? 0
-let cgPoint = CGPoint(x: appKitPoint.x, y: screenHeight - appKitPoint.y)
-```
-
-Multi-display note: `NSScreen.main` is the screen containing the key window, not the topmost by position. In a multi-display setup where Tug.app's window is on a non-primary display, the conversion still uses `NSScreen.main` (the window's owning screen) — verified by the Step 1 spike when the test machine has any secondary display.
-
-Full mapping in one function (signature established by Step 1, imported unchanged by Step 2):
+The landed implementation passes the viewport point directly to `webView.convert(_:to:nil)` — the convert call transparently handles the Y-down → Y-up flip into the window coord system — and then applies a single final Y-flip against the PRIMARY screen's height to produce CG coords:
 
 ```swift
-// CoordMapping.swift (lands in Step 1, stays in tree for Step 2 and beyond)
-func viewportToScreen(_ viewportPoint: CGPoint, in webView: WKWebView) -> CGPoint?
+static func viewportToScreen(_ viewportPoint: CGPoint, in webView: WKWebView) -> CGPoint? {
+    let viewSize = webView.bounds.size
+    guard viewportPoint.x >= 0, viewportPoint.x <= viewSize.width,
+          viewportPoint.y >= 0, viewportPoint.y <= viewSize.height else { return nil }
+    guard let window = webView.window else { return nil }
+
+    // Viewport (Y-down) passed directly to convert; WKWebView's
+    // isFlipped-style content coords are handled by the convert call.
+    let windowPoint = webView.convert(viewportPoint, to: nil)
+    let screenAppKit = window.convertToScreen(NSRect(origin: windowPoint, size: .zero)).origin
+
+    // Flip Y against the PRIMARY screen (the one with the menu bar).
+    // `NSScreen.screens.first` — NOT `NSScreen.main` (which is the
+    // key window's screen). On multi-display rigs these differ; CG
+    // screen coords are rooted at the primary display regardless of
+    // which display the window is on.
+    let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
+    return CGPoint(x: screenAppKit.x, y: primaryScreenHeight - screenAppKit.y)
+}
 ```
+
+**Worked numeric example from Step 1's spike (2026-04-24 run on a multi-display rig):**
+
+| Quantity | Value |
+|---|---|
+| Viewport input | (120.0, 170.0) |
+| `webView.bounds.size` | 2154 × 1524 |
+| `webView.convert((120, 170), to: nil)` (window-local AppKit Y-up) | (120.0, 1354.0) |
+| `window.convertToScreen(...)` (screen AppKit Y-up) | (677.0, screen-AppKit-Y) |
+| `NSScreen.screens.first.frame.height` | 1800 |
+| Final CG screen point | (677.0, 279.0) |
+| Click's received `event.clientX` / `clientY` | (120.0, 170.0) — delta (0, 0) |
+
+The 279 is exactly `windowTopCG(81) + titleBarHeight(28) + viewportY(170)`: the title-bar offset between the NSWindow frame (1552 tall) and the WKWebView content area (1524 tall) is accounted for entirely by `webView.convert` + `window.convertToScreen`; no manual chrome correction is needed.
 
 Returns `nil` when the viewport point is outside the WKWebView's visible frame; callers convert `nil` into `CoordinateOutOfBoundsError` at the RPC boundary.
 
@@ -1076,6 +1149,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 1: Spike CGEventPost — variant, escape, coord math, keyboard {#step-1}
 
+**Status:** LANDED (2026-04-24). [D02] decided (`cgSessionEventTap`). [D13] added (open-launcher). [D14] added (stable signing). [Q05] surfaced (modifier-key accelerators — carried into Step 2). CoordMapping.swift validated: viewport (120, 170) → screen (677, 279) with received-event delta=(0, 0). Spike code (`CGEventSpike.swift`, `_spike-cgevent.test.ts`, `spikeCGEvent` dispatch case) removed in closing commit.
+
 **Commit:** `spike(harness-native): validate CGEventPost variant, coord mapping, and keyboard pipeline`
 
 **References:** [D02] cgevent variant, [Q02] variant question, [R02] event escape, (#phase-a-hardware, #coord-mapping)
@@ -1098,36 +1173,35 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 **Tasks:**
 
-- [ ] Land `CGEventSpike.swift` with four experiment functions, gated by `#if DEBUG`. Each logs structured NSLog output (`tughost.spike.<experiment>.result: …`) that the TS test reads via `tailLog`.
-- [ ] Land `CoordMapping.swift` with the screen-coord conversion. Swift unit test (XCTestCase — or hand-rolled if the target has no XCTest yet; note here when deciding) against a known fixture: window frame + WKWebView frame + a DOM point → expected screen point. At minimum: one inside-bounds case, one out-of-bounds case.
-- [ ] Add temporary bridge verb `spikeCGEvent(experiment: String)` that dispatches to the matching spike function. Include in the existing dispatch table (`TestHarnessConnection.swift`); same DEBUG guard.
-- [ ] Write `tests/in-app/_spike-cgevent.test.ts` running all four experiments; each experiment has its own `test()` block so partial failures are actionable.
-- [ ] Run the spike. Capture outputs:
-  - Variant result: `isTrusted` outcome for both variants + any latency/ordering oddities.
-  - Escape result: sibling-app observation for the winning variant.
-  - Coord math: delta between DOMRect center and received `clientX/Y`.
-  - Keyboard: `selectionStart/End` after Cmd+A.
-- [ ] Write up each result in the plan. Fill in [D02]'s Decision line with the winning variant + one-sentence rationale; add the coord-math recipe to `#coord-mapping`; add a note to [R02] if escape showed anything unexpected.
-- [ ] Delete `CGEventSpike.swift`, the `spikeCGEvent` dispatch case, and `_spike-cgevent.test.ts` in the step's closing commit. `CoordMapping.swift` stays.
+- [x] Land `CGEventSpike.swift` with four experiment functions, gated by `#if DEBUG`.
+- [x] Land `CoordMapping.swift` with the screen-coord conversion. Hand-rolled Swift unit test cases in `runPureMathUnitTests()` (no XCTest target exists yet); Step 2 upgrades to proper XCTest when it adds the NativeEventHandlers target.
+- [x] Add temporary bridge verb `spikeCGEvent(experiment: String)` in `TestHarnessConnection.swift`.
+- [x] Write `tests/in-app/_spike-cgevent.test.ts` covering: permission probe, coord-math unit tests, window probe, variant delivery, event escape, coord round-trip, keyboard (Cmd+A), keyboard letter probe.
+- [x] Run the spike. Outcomes recorded in [D02], [R02] (updated), [D13], [D14], [Q05] (new), and `#coord-mapping` (worked numeric example). Resolved unknowns: variant `cgSessionEventTap`; escape mitigation via Tug-frontmost + coord-inside-window; coord delta=(0, 0); LaunchServices `open` launcher required for TCC; stable signing required; modifier-key Cmd+A doesn't fire select-all (carried to Step 2).
+- [x] Scaffold `scripts/setup-dev-signing.sh` + `just setup-dev-signing` recipe; integrate re-sign step into `just test-in-app`. Added [D14] decision documenting the workflow.
+- [x] Rewrite `_harness/spawnTugApp` to launch via `/usr/bin/open -n -W --stdout --stderr --env`; added [D13] decision.
+- [x] Delete `CGEventSpike.swift`, the `spikeCGEvent` dispatch case, and `_spike-cgevent.test.ts` in the step's closing commit. `CoordMapping.swift` stays.
 
 **Tests:**
 
-- [ ] All four experiments exit cleanly (no Swift crash, no TS timeout) before deletion.
-- [ ] `isTrusted === true` for the chosen variant.
-- [ ] Sibling-app escape test observes no leak for the chosen variant.
-- [ ] Coord-mapping delta within ±1px of DOMRect center for a fixed-geometry reference case.
-- [ ] Cmd+A produces a full-range selection on the focused input.
-- [ ] `xcodebuild` DEBUG build passes with the spike code present AND with the spike code removed (i.e., the final closing commit builds).
-- [ ] `grep -rn "CGEventSpike\|spikeCGEvent" tugapp/` after the closing commit returns zero hits (spike fully removed).
-- [ ] `CoordMapping.swift` Swift unit test passes.
+- [x] All experiments exit cleanly (no Swift crash, no TS timeout) before deletion.
+- [x] `isTrusted === true` for `cghidEventTap` and `cgSessionEventTap`; `postToPid(ownPid)` does not deliver (recorded in [D02]).
+- [x] Automation cannot assert sibling-app state; escape probe only verifies the in-Tug listener doesn't fire for out-of-window clicks. Mitigation is discipline-based (Tug frontmost + coord-in-window), not delivery-scoped.
+- [x] Coord-mapping delta (0.0, 0.0) for viewport (120, 170) → received (120, 170).
+- [ ] Cmd+A produces a full-range selection on the focused input. *(Failed — modifier-key accelerator investigation deferred to Step 2 per [Q05]; plain-letter keystrokes DO work via CGEvent, so the keyboard pipeline itself is fine, only the modifier path is.)*
+- [x] `xcodebuild` DEBUG build passes with the spike code present AND with the spike code removed.
+- [x] `grep -rn "CGEventSpike\|spikeCGEvent" tugapp/` after the closing commit returns zero hits.
+- [x] `CoordMapping.swift` pure-math unit cases pass (via `runPureMathUnitTests()`).
 
 **Checkpoint:**
 
-- [ ] [D02] Decision line filled with the concrete variant choice and rationale sourced from experiment 1.
-- [ ] [R02] annotated if event escape surfaced a non-obvious finding.
-- [ ] `#coord-mapping` subsection contains the Y-flip math with a worked numeric example.
-- [ ] `CoordMapping.swift` committed with Swift unit test; Step 2 can import it directly.
-- [ ] Spike code removed; `xcodebuild archive` of release config clean (no spike symbols).
+- [x] [D02] Decision line filled: `cgSessionEventTap`, with rationale.
+- [x] [R02] annotated: escape is real; mitigation is Tug-frontmost + coord-inside-window.
+- [x] `#coord-mapping` subsection contains the Y-flip math with a worked numeric example from the 2026-04-24 spike.
+- [x] `CoordMapping.swift` committed; Step 2 imports it directly.
+- [x] Spike code removed.
+- [x] [D13] and [D14] added (LaunchServices launcher; stable signing).
+- [x] [Q05] added (modifier-key accelerator investigation carried to Step 2).
 
 ---
 
@@ -1140,6 +1214,10 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 **References:** [D01] same transport, [D02] variant choice, [R02] event escape, [D03] accessibility preflight, Spec [#s01-hardware-rpc], (#coord-mapping)
 
 **Scope note:** Step 2 grew (2026-04-24 re-scope) beyond the original click+key primitives to cover every gesture the Phase C M-series sweep will need — double-click, right-click, endpoint-only drag, and a `holdModifier` scope verb. ASCII-only typing is sufficient per user call (non-ASCII / IME is out of scope for Phase C). Drag interpolation is NOT provided; tests express multi-step interactions as sequences of endpoint clicks. A `nativeDelay` surface primitive is deliberately NOT exposed — test authors use `waitForCondition` instead; inter-event spacing inside gesture builders is internal.
+
+**Carry-overs from Step 1:**
+- **[Q05] — modifier-key accelerator investigation.** Step 1's spike proved plain letter keystrokes arrive at focused inputs via `CGEvent.post(tap: .cgSessionEventTap)`, but Cmd+A (modifier + key) didn't trigger WebKit's select-all path with the naive `.flags = .maskCommand` approach or with a `flagsChanged` press/release bracket. Step 2 MUST resolve this before shipping `nativeKey(mods:)` / `holdModifier` to the TS surface; candidate leads documented in [Q05]. Until resolved, `nativeKey(key, [])` (no-mods form) works and can ship; `holdModifier` + modifier-form `nativeKey` block behind [Q05].
+- Does NOT block Step 3b (M03 rewrite is click-driven). Unblocks it via the click/drag half of Step 2's handler set.
 
 **Artifacts:**
 

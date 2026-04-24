@@ -19,6 +19,7 @@
 		AA000001000000000000000C /* TestHarnessListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000C /* TestHarnessListener.swift */; };
 		AA000001000000000000000D /* TestHarnessConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000D /* TestHarnessConnection.swift */; };
 		AA000001000000000000000E /* TestHarnessUserScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000E /* TestHarnessUserScript.swift */; };
+		AA000001000000000000000F /* CoordMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000F /* CoordMapping.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		AA000002000000000000000C /* TestHarnessListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessListener.swift; sourceTree = "<group>"; };
 		AA000002000000000000000D /* TestHarnessConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessConnection.swift; sourceTree = "<group>"; };
 		AA000002000000000000000E /* TestHarnessUserScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessUserScript.swift; sourceTree = "<group>"; };
+		AA000002000000000000000F /* CoordMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordMapping.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -83,6 +85,7 @@
 				AA000002000000000000000C /* TestHarnessListener.swift */,
 				AA000002000000000000000D /* TestHarnessConnection.swift */,
 				AA000002000000000000000E /* TestHarnessUserScript.swift */,
+				AA000002000000000000000F /* CoordMapping.swift */,
 			);
 			path = TestHarness;
 			sourceTree = "<group>";
@@ -171,6 +174,7 @@
 				AA000001000000000000000C /* TestHarnessListener.swift in Sources */,
 				AA000001000000000000000D /* TestHarnessConnection.swift in Sources */,
 				AA000001000000000000000E /* TestHarnessUserScript.swift in Sources */,
+				AA000001000000000000000F /* CoordMapping.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

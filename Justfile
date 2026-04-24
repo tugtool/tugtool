@@ -244,18 +244,48 @@ zombie-cleanup:
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
 
+# One-time per-machine setup: create the `Tug Dev` self-signed code-
+# signing identity in the login keychain. `test-in-app` re-signs
+# Tug.app with this identity after xcodebuild so the signature hash
+# stays stable across rebuilds — the Accessibility permission grant
+# persists across runs instead of being invalidated on every rebuild
+# (which is what ad-hoc signing does).
+#
+# Idempotent: no-op if `Tug Dev` already exists.
+setup-dev-signing:
+    scripts/setup-dev-signing.sh
+
 # Run the in-app tests (harness smoke + M01/M03/M16) against a fresh
 # DEBUG Tug.app. Boots the app in dev mode via an isolated scratch
 # tugbank so your real ~/.tugbank.db is untouched. Requires tmux and
-# a prior `just build` (for tugbank / tugutil on PATH).
+# a prior `just build` (for tugbank / tugutil on PATH), plus a
+# one-time `just setup-dev-signing` to install the local code-signing
+# identity.
 test-in-app:
     #!/usr/bin/env bash
     set -euo pipefail
     REPO_ROOT="$(pwd)"
     SCRATCH_DB="$(mktemp -t tugapp-inapp.XXXX).db"
+    SIGNING_IDENTITY="Tug Dev"
 
     command -v tmux >/dev/null || { echo "tmux not on PATH — brew install tmux"; exit 1; }
     command -v tugbank >/dev/null || { echo "tugbank not on PATH — run 'just build' first"; exit 1; }
+
+    # Verify the per-machine code-signing identity exists. Without it,
+    # xcodebuild would fall back to ad-hoc signing and the Accessibility
+    # grant would be invalidated on every rebuild (CGEvent.post silently
+    # no-ops without the grant).
+    #
+    # Note: we use `find-identity -p codesigning` WITHOUT `-v` — a self-
+    # signed identity registers as CSSMERR_TP_NOT_TRUSTED (no system-wide
+    # root trust), which the `-v` filter hides. codesign doesn't care:
+    # setup-dev-signing.sh whitelists codesign via `-T /usr/bin/codesign`
+    # on import.
+    if ! security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
+        echo "error: '$SIGNING_IDENTITY' code-signing identity not found in login keychain." >&2
+        echo "       Run: just setup-dev-signing" >&2
+        exit 1
+    fi
 
     echo "==> [1/7] Rust debug binaries"
     (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
@@ -297,6 +327,17 @@ test-in-app:
         -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     [ -x "$APP_BIN" ] || { echo "Tug.app binary missing: $APP_BIN"; exit 1; }
+
+    # Re-sign the built app bundle with the stable local identity so
+    # the signature hash doesn't change between rebuilds — preserves
+    # the Accessibility grant across the test loop. `--force` replaces
+    # xcodebuild's ad-hoc signature; `--deep` ensures nested frameworks
+    # (if any) get the same identity; `--preserve-metadata=...` keeps
+    # the entitlements + designated-requirement string intact.
+    echo "==> [4b/7] Re-sign with '$SIGNING_IDENTITY' for stable AX grant"
+    codesign --sign "$SIGNING_IDENTITY" --force --deep \
+        --preserve-metadata=entitlements,requirements \
+        "$APP_DIR" 2>&1 | grep -v 'replacing existing signature' || true
     echo "    Tug.app binary: $APP_BIN"
 
     echo "==> [5/7] Scratch tugbank (dev mode + source tree at $REPO_ROOT)"
