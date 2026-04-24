@@ -201,3 +201,47 @@ describe("deckTrace.mark()", () => {
     expect(dumped[0]!.seq).toBe(before + 1);
   });
 });
+
+describe("deckTrace.record stamps caller loc", () => {
+  test("loc points at the test file (not deck-trace itself)", () => {
+    deckTrace.record({ kind: "commit-tick", count: 0 });
+    const events = deckTrace.dump();
+    expect(events).toHaveLength(1);
+    const loc = events[0]!.loc;
+    expect(typeof loc).toBe("string");
+    // The caller is this test file. deck-trace.ts frames are skipped
+    // by captureCallerLoc, so the first non-internal frame should be
+    // deck-trace.test.ts on bun/JSC's stack.
+    expect(loc).toMatch(/deck-trace\.test\.ts:\d+:\d+$/);
+  });
+
+  test("loc is stamped on every variant, not just commit-tick", () => {
+    deckTrace.record({
+      kind: "fr-flip",
+      from: "a",
+      to: "b",
+      trigger: "activateCard",
+    });
+    deckTrace.record({
+      kind: "destination-flip",
+      cardId: "b",
+      from: false,
+      to: true,
+    });
+    deckTrace.record({
+      kind: "save-callback",
+      cardId: "a",
+      source: "manual",
+    });
+    for (const e of deckTrace.dump()) {
+      expect(typeof e.loc).toBe("string");
+      // Every event's loc should either be empty (capture failure,
+      // tolerated) or reference a .ts / .tsx file and not the trace
+      // module itself.
+      if (e.loc!.length > 0) {
+        expect(e.loc).toMatch(/\.tsx?:\d+:\d+$/);
+        expect(e.loc).not.toMatch(/deck-trace\.ts:/);
+      }
+    }
+  });
+});

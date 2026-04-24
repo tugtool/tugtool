@@ -54,6 +54,46 @@ describe("toContainOrderedSubset — pass cases", () => {
     expect(result.pass).toBe(true);
   });
 
+  test("partial match: loc field on actual does not constrain expected", () => {
+    // Step 0a adds `loc` to DeckTraceEvent. The matcher must continue
+    // to ignore fields the expected subset does not name; otherwise
+    // every existing test that asserts trace shape without `loc`
+    // would suddenly fail once the deck-trace module starts stamping
+    // it.
+    const result = toContainOrderedSubset(
+      [
+        {
+          kind: "fr-flip",
+          to: "c2",
+          trigger: "activateCard",
+          timestamp: 123.456,
+          seq: 42,
+          loc: "deck-manager.ts:189:3",
+        },
+      ],
+      [{ kind: "fr-flip", to: "c2" }],
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  test("partial match: explicit loc in expected does enforce the match", () => {
+    // If a test wants to assert that a specific emission site fired
+    // (e.g. `deck-manager.ts:189:3` vs `:234:5`), it can name `loc`
+    // in the expected entry and the matcher enforces it like any
+    // other field.
+    const result = toContainOrderedSubset(
+      [
+        {
+          kind: "fr-flip",
+          to: "c2",
+          loc: "deck-manager.ts:234:5",
+        },
+      ],
+      [{ kind: "fr-flip", to: "c2", loc: "deck-manager.ts:189:3" }],
+    );
+    expect(result.pass).toBe(false);
+  });
+
   test("empty expected subset trivially matches any trace", () => {
     const result = toContainOrderedSubset(
       [{ kind: "fr-flip", trigger: "x" }],

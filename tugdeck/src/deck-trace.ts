@@ -119,17 +119,19 @@ export type SelectionRestoreVia =
 
 /**
  * The tagged union of events recordable in the deck trace. Every
- * event variant carries `{ timestamp, seq }` in addition to its
+ * event variant carries `{ timestamp, seq, loc? }` in addition to its
  * kind-specific payload; `timestamp` is `performance.now()` (or
  * `Date.now()` when `performance` is unavailable), `seq` is a
- * module-scoped monotonic counter.
+ * module-scoped monotonic counter, `loc` is the caller's `file.tsx:line:col`
+ * captured via `new Error().stack` at record time (empty string when
+ * the engine does not expose a usable stack frame).
  *
  * String-valued element fields (e.g. `focusin.el`) are formatted by
  * {@link formatElement} into `tag#id.class[data-card-id=foo]`-style
  * strings at record time so the trace never retains live DOM
  * references past the recording moment.
  */
-export type DeckTraceEvent = { timestamp: number; seq: number } & (
+export type DeckTraceEvent = { timestamp: number; seq: number; loc?: string } & (
   | {
       kind: "fr-flip";
       from: string | null;
@@ -200,21 +202,21 @@ export type DeckTraceEvent = { timestamp: number; seq: number } & (
 
 /**
  * The payload shape of {@link DeckTrace.record} — the caller provides
- * the variant-specific fields; the module stamps `timestamp` and
- * `seq` on ingest.
+ * the variant-specific fields; the module stamps `timestamp`, `seq`,
+ * and `loc` on ingest.
  */
 export type DeckTraceEventInput =
-  | Omit<Extract<DeckTraceEvent, { kind: "fr-flip" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "destination-flip" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "card-host-mount" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "card-host-unmount" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "a3-fire" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "focus-call" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "focusin" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "save-callback" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, "timestamp" | "seq">
-  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, "timestamp" | "seq">;
+  | Omit<Extract<DeckTraceEvent, { kind: "fr-flip" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "destination-flip" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "card-host-mount" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "card-host-unmount" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "a3-fire" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "focus-call" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "focusin" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "save-callback" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, "timestamp" | "seq" | "loc">
+  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, "timestamp" | "seq" | "loc">;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -297,6 +299,53 @@ function now(): number {
   return Date.now();
 }
 
+/**
+ * Pluck the last `*.ts` / `*.tsx` `file:line:col` match out of a stack
+ * frame string. Tolerant of both V8 format (`    at name (url:line:col)`)
+ * and JSC format (`name@url:line:col`) — both end with `:line:col` and
+ * both can be scanned for the trailing `.ts[x]` file token.
+ *
+ * Returns `null` when no match — the caller falls through to the next
+ * frame or returns an empty-string loc.
+ */
+function extractLocFromFrame(frame: string): string | null {
+  const matches = [...frame.matchAll(/([A-Za-z0-9._-]+\.tsx?):(\d+):(\d+)/g)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1]!;
+  return `${last[1]}:${last[2]}:${last[3]}`;
+}
+
+/**
+ * Capture the caller's `file.tsx:line:col` at record time via
+ * `new Error().stack`. Walks frames until it finds one that does not
+ * reference `deck-trace` (the module's own call sites), then extracts
+ * the short form via {@link extractLocFromFrame}.
+ *
+ * Returns the empty string when the engine does not expose a usable
+ * stack (older browsers, edge-case synthetic calls). The `loc` field
+ * on `DeckTraceEvent` is typed as optional so matchers can accept
+ * empty-string locations without tightening their assertions.
+ */
+function captureCallerLoc(): string {
+  let stack: string | undefined;
+  try {
+    stack = new Error().stack;
+  } catch {
+    return "";
+  }
+  if (typeof stack !== "string") return "";
+  const lines = stack.split("\n");
+  // Skip frames inside deck-trace.ts itself; do NOT skip `deck-trace.test.ts`
+  // or other files that merely share the prefix. The trailing `:` anchors
+  // the match to the file-colon-line form on both V8 and JSC stacks.
+  for (const line of lines) {
+    if (line.includes("deck-trace.ts:")) continue;
+    const loc = extractLocFromFrame(line);
+    if (loc !== null) return loc;
+  }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // Ring buffer + public API
 // ---------------------------------------------------------------------------
@@ -320,11 +369,12 @@ let seqCounter = 0;
 /** Recording gate. `record` short-circuits when this is false. */
 let enabled = false;
 
-function appendEvent(input: DeckTraceEventInput): void {
+function appendEvent(input: DeckTraceEventInput, loc: string): void {
   const stamped = {
     ...input,
     timestamp: now(),
     seq: ++seqCounter,
+    loc,
   } as DeckTraceEvent;
   if (full) {
     buffer[head] = stamped;
@@ -399,7 +449,8 @@ export interface DeckTrace {
 export const deckTrace: DeckTrace = {
   record(event) {
     if (!enabled) return;
-    appendEvent(event);
+    const loc = captureCallerLoc();
+    appendEvent(event, loc);
   },
   dump() {
     return readOrdered();
