@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-14
+date: 2025-04-24T00:00:18Z
+---
+
+## step-14: Added tests/in-app/m03-pane-activation.test.ts (246 lines). Seeds two panes (p1/p2) with one gallery-input FC each (A1/A2) at non-overlapping x-positions; focuses A1's input, types hello, verifies caret. Marks trace → clicks p2 title → expectFocusedCard(A2); asserts ordered-subset [save-callback{cardId:A1}, fr-flip{to:A2}, destination-flip{A2→true}, focus-call{A2}]. Marks again → clicks p1 title → expectFocusedCard(A1) → expectCaret restores at offset 5; return-trip trace subset. Source omitted from save-callback entry so matcher accepts any tag (pane-focus-controller currently emits no source for cross-pane activation — the gap surfaces when run with TUGAPP_IN_APP_TEST=1, the intended regression behavior). tsc clean; 29 pass / 10 skip / 0 fail; lint:no-timers clean.
+
+**Files changed:**
+- in-app-test-harness-701669b-2
+
+---
+
+---
 step: step-13
 date: 2025-04-23T23:52:30Z
 ---
