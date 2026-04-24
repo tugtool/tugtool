@@ -365,7 +365,7 @@ test-in-app:
     export TUGAPP_DEBUG_PATH="$APP_BIN"
     cd tests/in-app
     STATUS=0
-    for f in _smoke.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
+    for f in _smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
         echo "---- $f ----"
         bun test "$f" || STATUS=$?
         # Between files, kill any stragglers before the next spawn so

@@ -33,21 +33,36 @@ import {
 import { dirname, resolve as pathResolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { AppCrashedError, VersionSkewError } from "./errors";
+import {
+  AccessibilityPermissionMissingError,
+  AppCrashedError,
+  VersionSkewError,
+} from "./errors";
 import { RpcClient, type RpcTransport } from "./rpc";
 import type {
+  AccessibilityStatus,
   EvalJsOptions,
   LaunchTugAppOptions,
+  NativeModifier,
+  NativeMouseButton,
+  ScreenRect,
+  ViewportPoint,
   WaitForConditionOptions,
 } from "./types";
 import * as client from "./client";
 import type {
+  ActiveElementInfo,
   CaretState,
   ClickOptions,
   DeckTraceEvent,
+  ElementBounds,
+  ElementStateSnapshot,
   HarnessCaller,
+  NativeClickOptions,
+  NativeDragOptions,
   ResetOptions,
   SeedDeckStateArgs,
+  SelectionSnapshot,
 } from "./client";
 
 // Re-export the client-side helpers and matcher for test authors. The
@@ -61,14 +76,27 @@ export {
   type MatcherResult,
 } from "./matchers";
 export type {
+  ActiveElementInfo,
   CaretState,
   ClickOptions,
   ClientMethodNames,
   DeckTraceEvent,
+  ElementBounds,
+  ElementStateSnapshot,
   HarnessCaller,
+  NativeClickOptions,
+  NativeDragOptions,
   ResetOptions,
   SeedDeckStateArgs,
+  SelectionSnapshot,
 } from "./client";
+export type {
+  AccessibilityStatus,
+  NativeModifier,
+  NativeMouseButton,
+  ScreenRect,
+  ViewportPoint,
+} from "./types";
 
 /**
  * The harness's compile-time expected surface version. Must match the
@@ -104,6 +132,7 @@ interface ResolvedLaunch {
   env: Record<string, string | undefined>;
   logPath: string | null;
   expectedSurfaceVersion: string;
+  skipAccessibilityPreflight: boolean;
 }
 
 /**
@@ -182,6 +211,27 @@ export class App {
       timeoutMs: opts?.timeoutMs,
       pollMs: opts?.pollMs,
     });
+  }
+
+  /**
+   * Untyped RPC call — passes `method` + `params` straight through to
+   * the RPC transport. Used by `./client.ts` for the verb family that
+   * doesn't round-trip JS (native gestures, AX preflight,
+   * `getElementScreenBounds`). Tests should reach for the typed
+   * wrappers on `App` below instead of calling this directly.
+   */
+  rpcCall<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<T> {
+    // Build the request object with method + params. The RPC client
+    // attaches `id` and serializes. We cast to the Request union's
+    // shape here — client helpers (the only callers) have already
+    // validated the method/params pair against their typed signature.
+    return this.rpc.call<T>({
+      method,
+      ...params,
+    } as unknown as Parameters<RpcClient["call"]>[0]);
   }
 
   // -------------------------------------------------------------------
@@ -307,6 +357,241 @@ export class App {
     opts?: WaitForConditionOptions,
   ): Promise<void> {
     return client.expectCaret(this as HarnessCaller, cardId, expected, opts);
+  }
+
+  // -------------------------------------------------------------------
+  // Introspection (SURFACE_VERSION 1.1.0)
+  // -------------------------------------------------------------------
+
+  /** Read `textContent` (or `.value` for form controls) of `selector`. */
+  getElementText(selector: string): Promise<string> {
+    return client.getElementText(this as HarnessCaller, selector);
+  }
+
+  /** Read `.value` of an `<input>` / `<textarea>` / `<select>`. */
+  getElementValue(selector: string): Promise<string> {
+    return client.getElementValue(this as HarnessCaller, selector);
+  }
+
+  /** Read an attribute; `null` when unset. */
+  getElementAttribute(
+    selector: string,
+    name: string,
+  ): Promise<string | null> {
+    return client.getElementAttribute(this as HarnessCaller, selector, name);
+  }
+
+  /** Viewport-relative bounds for `selector`. */
+  getElementBounds(selector: string): Promise<ElementBounds> {
+    return client.getElementBounds(this as HarnessCaller, selector);
+  }
+
+  /**
+   * Screen-CG bounds for `selector` — computed Swift-side via
+   * `CoordMapping`. Use when a test wants to name an exact pixel in
+   * screen space (e.g. for a subsequent `nativeClick`); prefer
+   * `nativeClickAtElement(selector)` when you only need "click this".
+   */
+  getElementScreenBounds(selector: string): Promise<ScreenRect> {
+    return client.getElementScreenBounds(this as HarnessCaller, selector);
+  }
+
+  /** Compact state bundle: tagName, disabled, readOnly, checked, visible, isFocused. */
+  getElementState(selector: string): Promise<ElementStateSnapshot> {
+    return client.getElementState(this as HarnessCaller, selector);
+  }
+
+  /** Describe `document.activeElement`; `null` when `body` is active. */
+  getActiveElement(): Promise<ActiveElementInfo | null> {
+    return client.getActiveElement(this as HarnessCaller);
+  }
+
+  /**
+   * Read the current selection. With `cardId`, scoped to that card's
+   * host subtree (matches `getCaretState` shape but adds
+   * contentEditable ranges). Without, page-wide.
+   */
+  getSelection(cardId?: string): Promise<SelectionSnapshot | null> {
+    return client.getSelection(this as HarnessCaller, cardId);
+  }
+
+  /** Resolved CSS value for `property` on `selector`. */
+  getComputedStyleValue(
+    selector: string,
+    property: string,
+  ): Promise<string> {
+    return client.getComputedStyleValue(
+      this as HarnessCaller,
+      selector,
+      property,
+    );
+  }
+
+  /**
+   * Register `selector` as a selection boundary under `cardId`.
+   * Mirrors what a real card does via `useSelectionBoundary` on
+   * mount. Tests that inject ad-hoc fixture overlays outside of a
+   * real card need this so tugdeck's `selectionGuard.handleSelectStart`
+   * doesn't preventDefault their drag-selections.
+   */
+  registerSelectionBoundary(
+    cardId: string,
+    selector: string,
+  ): Promise<void> {
+    return client.registerSelectionBoundary(
+      this as HarnessCaller,
+      cardId,
+      selector,
+    );
+  }
+
+  /** Inverse of {@link App.registerSelectionBoundary}. */
+  unregisterSelectionBoundary(cardId: string): Promise<void> {
+    return client.unregisterSelectionBoundary(this as HarnessCaller, cardId);
+  }
+
+  // -------------------------------------------------------------------
+  // Accessibility preflight ([D03])
+  // -------------------------------------------------------------------
+
+  /**
+   * Probe TCC for the Accessibility grant on the launched Tug.app
+   * binary. Returns `{ trusted, bundlePath, bundleId }`.
+   *
+   * `launchTugApp` calls this automatically as the last step of the
+   * handshake and throws `AccessibilityPermissionMissingError` on
+   * denial — tests rarely need to invoke it directly. Expose it here
+   * so a test that toggles the grant mid-run (via `tccutil reset`
+   * + re-grant through System Settings) can re-check without
+   * re-spawning.
+   */
+  checkAccessibilityPermission(opts?: {
+    prompt?: boolean;
+  }): Promise<AccessibilityStatus> {
+    return client.checkAccessibilityPermission(this as HarnessCaller, opts);
+  }
+
+  // -------------------------------------------------------------------
+  // Native gestures (Phase A, [D02] trusted CGEvent posts)
+  // -------------------------------------------------------------------
+
+  /** Single trusted click at a viewport point. */
+  nativeClick(
+    viewportPoint: ViewportPoint,
+    opts?: NativeClickOptions,
+  ): Promise<void> {
+    return client.nativeClick(this as HarnessCaller, viewportPoint, opts);
+  }
+
+  /** Single trusted click at the center of `selector`. */
+  nativeClickAtElement(
+    selector: string,
+    opts?: NativeClickOptions,
+  ): Promise<void> {
+    return client.nativeClickAtElement(this as HarnessCaller, selector, opts);
+  }
+
+  /** Double click at a viewport point (pinned inter-click interval). */
+  nativeDoubleClick(
+    viewportPoint: ViewportPoint,
+    opts?: { button?: NativeMouseButton },
+  ): Promise<void> {
+    return client.nativeDoubleClick(this as HarnessCaller, viewportPoint, opts);
+  }
+
+  /** Double click at the center of `selector`. */
+  nativeDoubleClickAtElement(
+    selector: string,
+    opts?: { button?: NativeMouseButton },
+  ): Promise<void> {
+    return client.nativeDoubleClickAtElement(
+      this as HarnessCaller,
+      selector,
+      opts,
+    );
+  }
+
+  /** Right-button single click at a viewport point. */
+  nativeRightClick(viewportPoint: ViewportPoint): Promise<void> {
+    return client.nativeRightClick(this as HarnessCaller, viewportPoint);
+  }
+
+  /** Right-button single click at the center of `selector`. */
+  nativeRightClickAtElement(selector: string): Promise<void> {
+    return client.nativeRightClickAtElement(this as HarnessCaller, selector);
+  }
+
+  /** Endpoint-only drag (mouseDown → one drag → mouseUp). */
+  nativeDrag(
+    from: ViewportPoint,
+    to: ViewportPoint,
+    opts?: NativeDragOptions,
+  ): Promise<void> {
+    return client.nativeDrag(this as HarnessCaller, from, to, opts);
+  }
+
+  /**
+   * Element-anchored drag. `to` may be a viewport point or another
+   * selector — handy for card-to-card drag assertions.
+   */
+  nativeDragElement(
+    fromSelector: string,
+    to: ViewportPoint | { selector: string },
+    opts?: NativeDragOptions,
+  ): Promise<void> {
+    return client.nativeDragElement(
+      this as HarnessCaller,
+      fromSelector,
+      to,
+      opts,
+    );
+  }
+
+  /** Bare mouseDown primitive — for unusual sequences. Prefer `nativeClick`. */
+  nativeMouseDown(
+    viewportPoint: ViewportPoint,
+    opts?: { button?: NativeMouseButton },
+  ): Promise<void> {
+    return client.nativeMouseDown(this as HarnessCaller, viewportPoint, opts);
+  }
+
+  /** Bare mouseUp primitive — for unusual sequences. */
+  nativeMouseUp(
+    viewportPoint: ViewportPoint,
+    opts?: { button?: NativeMouseButton },
+  ): Promise<void> {
+    return client.nativeMouseUp(this as HarnessCaller, viewportPoint, opts);
+  }
+
+  // -------------------------------------------------------------------
+  // Native keyboard
+  // -------------------------------------------------------------------
+
+  /** Post a single keystroke with optional modifiers. */
+  nativeKey(
+    key: string,
+    modifiers?: readonly NativeModifier[],
+  ): Promise<void> {
+    return client.nativeKey(this as HarnessCaller, key, modifiers);
+  }
+
+  /** Type ASCII text (non-ASCII is rejected with a typed error). */
+  nativeType(text: string): Promise<void> {
+    return client.nativeType(this as HarnessCaller, text);
+  }
+
+  /**
+   * Run `thunk` with `modifiers` held down. Inner `app.native*` calls
+   * inside the thunk buffer into a single atomic `holdModifier` RPC
+   * — Swift presses modifiers, dispatches inner verbs, releases.
+   * See `client.holdModifier` for constraints (no `evalJS` or
+   * `waitForCondition` inside the thunk; no nested scopes).
+   */
+  holdModifier(
+    modifiers: readonly NativeModifier[],
+    thunk: (inner: HarnessCaller) => Promise<void>,
+  ): Promise<void> {
+    return client.holdModifier(this as HarnessCaller, modifiers, thunk);
   }
 
   /**
@@ -551,6 +836,78 @@ export async function launchTugApp(
     throw err;
   }
 
+  // Accessibility preflight ([D03]). The launched Tug.app binary
+  // needs the macOS Accessibility grant for `CGEvent.post` to deliver
+  // trusted events — without it, every native-gesture verb silently
+  // no-ops, producing confusing test timeouts. Probe up-front and
+  // throw a typed error with actionable guidance (which bundle to
+  // add in System Settings) so the failure attribution is crisp.
+  //
+  // Tests that are known to use only `evalJS` / `waitForCondition`
+  // (no native gestures) can opt out by passing
+  // `skipAccessibilityPreflight: true` in launchTugAppOptions; the
+  // default is strict.
+  if (!resolved.skipAccessibilityPreflight) {
+    let ax: AccessibilityStatus;
+    try {
+      ax = await rpc.call<AccessibilityStatus>({
+        method: "checkAccessibilityPermission",
+        // Let macOS show the System Settings dialog on the first
+        // probe per process — it's the most actionable guidance.
+        prompt: true,
+      });
+    } catch (err) {
+      try {
+        subprocess.kill("SIGKILL");
+      } catch {
+        // already dead
+      }
+      detachSignals();
+      try {
+        logStream?.end();
+      } catch {
+        // best-effort
+      }
+      try {
+        onExitUnlink();
+      } catch {
+        // already gone
+      }
+      throw err;
+    }
+    if (!ax.trusted) {
+      try {
+        subprocess.kill("SIGKILL");
+      } catch {
+        // already dead
+      }
+      detachSignals();
+      try {
+        logStream?.end();
+      } catch {
+        // best-effort
+      }
+      try {
+        onExitUnlink();
+      } catch {
+        // already gone
+      }
+      throw new AccessibilityPermissionMissingError(
+        [
+          "Tug.app is missing macOS Accessibility permission — native-event tests cannot proceed.",
+          "Grant the permission in System Settings → Privacy & Security → Accessibility and re-run.",
+          `    Bundle path: ${ax.bundlePath}`,
+          `    Bundle id:   ${ax.bundleId}`,
+          "",
+          "If the bundle is already in the list but the grant is stale",
+          "(common after a re-sign), toggle it off + on, or run:",
+          "    tccutil reset Accessibility " + ax.bundleId,
+          "and re-run the test suite.",
+        ].join("\n"),
+      );
+    }
+  }
+
   return new App({
     rpc,
     version: String(serverVersion),
@@ -599,6 +956,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     },
     logPath,
     expectedSurfaceVersion: opts.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION,
+    skipAccessibilityPreflight: opts.skipAccessibilityPreflight ?? false,
   };
 }
 

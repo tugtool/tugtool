@@ -37,7 +37,10 @@ const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: double-connect refused", () => {
   test("second connect to the active harness socket is refused", async () => {
-    const app = await launchTugApp();
+    // This test exercises only the RPC transport, no CGEvent path.
+    // Opt out of the Step-3 AX preflight so it doesn't couple to
+    // the macOS Accessibility grant state.
+    const app = await launchTugApp({ skipAccessibilityPreflight: true });
     try {
       // Sanity: the first connection is usable.
       const one = await app.evalJS<number>("1");

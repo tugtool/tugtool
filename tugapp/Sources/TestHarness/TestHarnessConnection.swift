@@ -1,4 +1,6 @@
 #if DEBUG
+import AppKit
+import ApplicationServices
 import Foundation
 import WebKit
 
@@ -25,14 +27,19 @@ final class TestHarnessConnection {
     /// Surface version reported by the `version` RPC. Must match
     /// `SURFACE_VERSION` in `tugdeck/src/test-surface.ts`.
     ///
-    /// `1.1.0` (Step 2, 2026-04-24): adds native-gesture and
+    /// `1.1.0` (Steps 2-3, 2026-04-24): adds native-gesture and
     /// keyboard verbs to the dispatch table (`nativeClick`,
     /// `nativeDoubleClick`, `nativeRightClick`, `nativeDrag`,
     /// `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`,
-    /// `holdModifier`). Existing `version` / `evalJS` /
-    /// `waitForCondition` verbs unchanged. Major version still `1`,
-    /// so harnesses built against `1.0.0` continue to handshake
-    /// cleanly against `1.1.0` (minor version is additive).
+    /// `holdModifier`), the accessibility preflight verb
+    /// (`checkAccessibilityPermission`), and the Swift-side
+    /// introspection verb (`getElementScreenBounds`). The additive
+    /// `__tug.*` introspection group lives on the JS side and does
+    /// not widen the RPC surface (see `tugdeck/src/test-surface.ts`).
+    /// Existing `version` / `evalJS` / `waitForCondition` verbs are
+    /// unchanged. Major version still `1`, so harnesses built against
+    /// `1.0.0` continue to handshake cleanly against `1.1.0` (minor
+    /// version is additive).
     static let surfaceVersion = "1.1.0"
 
     private let fileHandle: FileHandle
@@ -117,8 +124,172 @@ final class TestHarnessConnection {
              "nativeType",
              "holdModifier":
             dispatchNativeVerb(id: id, verbObj: obj)
+        case "checkAccessibilityPermission":
+            dispatchCheckAccessibilityPermission(id: id, verbObj: obj)
+        case "getElementScreenBounds":
+            guard let selector = obj["selector"] as? String else {
+                respondError(id: id, name: "ProtocolError", message: "getElementScreenBounds: missing 'selector'")
+                return
+            }
+            dispatchGetElementScreenBounds(id: id, selector: selector)
         default:
             respondError(id: id, name: "NotImplemented", message: "Unknown method: \(method)")
+        }
+    }
+
+    // MARK: - Accessibility preflight ([D03])
+
+    /// Probe the macOS Accessibility-permission bit for this process
+    /// and return `{ trusted, bundlePath, bundleId }`.
+    ///
+    /// On first call per launch, `prompt: true` instructs macOS to
+    /// show the "open System Settings → Privacy & Security →
+    /// Accessibility" dialog if the grant is missing. The call itself
+    /// returns immediately with the current state; the dialog is
+    /// non-blocking. Subsequent calls within the same process skip
+    /// the dialog (macOS rate-limits it).
+    ///
+    /// `bundlePath` / `bundleId` are echoed back so the TS side can
+    /// render an actionable error message naming exactly which binary
+    /// the user must grant. Bundle path ≠ the Mach-O exec path the
+    /// user usually sees — TCC keys grants on the bundle, not the
+    /// exec, and the user needs to drag the `.app` (not the inner
+    /// binary) into the Accessibility list.
+    private func dispatchCheckAccessibilityPermission(id: Int, verbObj: [String: Any]) {
+        // Must be on the main thread — `AXIsProcessTrustedWithOptions`
+        // with `prompt: true` spins up UI on the main run loop. The
+        // readabilityHandler that invokes us runs on a background
+        // thread, so hop explicitly.
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            // `prompt` defaults to true so a fresh install sees the
+            // System Settings dialog on the first preflight call.
+            // Tests that want a silent probe (to re-check after a
+            // grant without nuisance-popup) can pass `{ prompt: false }`.
+            let prompt = (verbObj["prompt"] as? Bool) ?? true
+            let key = "AXTrustedCheckOptionPrompt"
+            let options: NSDictionary = [key: prompt]
+            // Re-invoke the Accessibility API with the prompt option.
+            // The CF cast matches `AXIsProcessTrustedWithOptions`'
+            // signature (takes a CFDictionary).
+            let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+
+            let bundle = Bundle.main
+            let bundlePath = bundle.bundlePath
+            let bundleId = bundle.bundleIdentifier ?? "<unknown>"
+
+            let payload: [String: Any] = [
+                "value": [
+                    "trusted": trusted,
+                    "bundlePath": bundlePath,
+                    "bundleId": bundleId,
+                ] as [String: Any],
+            ]
+            self.respond(id: id, ok: true, payload: payload)
+        }
+    }
+
+    // MARK: - Swift-side introspection: getElementScreenBounds
+
+    /// Resolve `selector` → `getBoundingClientRect()` via `evalJS`,
+    /// then convert the rect's corners into screen CG coords via
+    /// `CoordMapping.viewportToScreen`.
+    ///
+    /// Response shape: `{ x, y, width, height }` in CG screen coords,
+    /// where `{x, y}` is the top-left corner. Dimensions come from the
+    /// corner-to-corner difference after both corners are converted
+    /// (so a width/height derived directly from viewport units gets
+    /// applied AFTER the Y-flip, not before — the top/bottom corners
+    /// swap on the CG axis, so the Y-span is preserved exactly).
+    ///
+    /// Error modes:
+    /// - No matching element → `EvalError` from the inner `evalJS` (the
+    ///   JS throws a recognizable error the harness translates).
+    /// - Element's rect has a corner outside the WKWebView viewport →
+    ///   `CoordinateOutOfBoundsError` with the offending viewport
+    ///   corner. Useful signal: the element is offscreen due to scroll
+    ///   or a layout bug.
+    /// - WKWebView detached → `AppCrashedError`.
+    private func dispatchGetElementScreenBounds(id: Int, selector: String) {
+        guard let webView = webView else {
+            respondError(id: id, name: "AppCrashedError", message: "WKWebView unavailable")
+            return
+        }
+        // Inline script: query selector, throw on miss, serialize rect
+        // as a plain object. JSON-stringify-safe. The `Array` return
+        // shape wraps x/y/width/height so the WKWebView marshals them
+        // consistently across versions (some 10.x WebKits flatten Float
+        // fields awkwardly when returned as objects at top level).
+        let escaped = selector
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        (function() {
+          var el = document.querySelector("\(escaped)");
+          if (el === null) {
+            throw new Error("[tug] getElementScreenBounds: selector matched no element: \(escaped)");
+          }
+          var r = el.getBoundingClientRect();
+          return [r.left, r.top, r.width, r.height];
+        })()
+        """
+        let completionState = EvalCompletionState()
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self = self else { return }
+                guard completionState.markCompleted() else { return }
+                if let error = error as NSError? {
+                    let jsMessage = error.userInfo["WKJavaScriptExceptionMessage"] as? String
+                        ?? error.localizedDescription
+                    self.respondError(id: id, name: "EvalError", message: jsMessage)
+                    return
+                }
+                guard let arr = result as? [Any], arr.count == 4,
+                      let x = (arr[0] as? NSNumber)?.doubleValue ?? (arr[0] as? Double),
+                      let y = (arr[1] as? NSNumber)?.doubleValue ?? (arr[1] as? Double),
+                      let w = (arr[2] as? NSNumber)?.doubleValue ?? (arr[2] as? Double),
+                      let h = (arr[3] as? NSNumber)?.doubleValue ?? (arr[3] as? Double) else {
+                    self.respondError(
+                        id: id,
+                        name: "ProtocolError",
+                        message: "getElementScreenBounds: expected [x,y,w,h] from page, got: \(result ?? "nil")",
+                    )
+                    return
+                }
+                // Convert top-left and bottom-right corners. The CG
+                // top-left corner is the AppKit point whose Y is the
+                // smallest (flip inverts Y ordering), so we take the
+                // min of the two converted Ys to get the real "top".
+                let topLeft = CGPoint(x: x, y: y)
+                let bottomRight = CGPoint(x: x + w, y: y + h)
+                guard let cgTL = CoordMapping.viewportToScreen(topLeft, in: webView) else {
+                    self.respondError(
+                        id: id,
+                        name: "CoordinateOutOfBoundsError",
+                        message: "top-left viewport corner (\(x), \(y)) is outside the WKWebView's visible frame",
+                    )
+                    return
+                }
+                guard let cgBR = CoordMapping.viewportToScreen(bottomRight, in: webView) else {
+                    self.respondError(
+                        id: id,
+                        name: "CoordinateOutOfBoundsError",
+                        message: "bottom-right viewport corner (\(x + w), \(y + h)) is outside the WKWebView's visible frame",
+                    )
+                    return
+                }
+                let outX = min(cgTL.x, cgBR.x)
+                let outY = min(cgTL.y, cgBR.y)
+                let outW = abs(cgBR.x - cgTL.x)
+                let outH = abs(cgBR.y - cgTL.y)
+                let rect: [String: Any] = [
+                    "x": outX,
+                    "y": outY,
+                    "width": outW,
+                    "height": outH,
+                ]
+                self.respond(id: id, ok: true, payload: ["value": rect])
+            }
         }
     }
 
@@ -140,9 +311,29 @@ final class TestHarnessConnection {
             respondError(id: id, name: "AppCrashedError", message: "WKWebView unavailable")
             return
         }
-        DispatchQueue.main.async { [weak self] in
+        // CRITICAL: native verbs post CGEvents and sleep between them
+        // (see `nativeDrag`'s interpolation loop). Running them on the
+        // main thread blocks WebKit's run loop — which means WebKit
+        // cannot dispatch the posted events to JS until our handler
+        // returns. That causes all events in a burst to arrive
+        // coalesced by WebKit's event merger (documented behavior for
+        // rapid consecutive mousemoves), collapsing an 8-step drag
+        // into one `mousemove` at the destination and breaking drag-
+        // selection extension.
+        //
+        // Post from a background queue so the main thread stays on
+        // the run loop and WebKit can dispatch events as they arrive.
+        // CGEvent.post is thread-safe — it goes to the windowserver
+        // via an IOHIDEventTap, not through any app-local state.
+        //
+        // Coord resolution and `NSApp.activate` still need the main
+        // thread (see `NativeEventHandlers.activateSelf` /
+        // `resolveScreenPoint`). Those calls marshal onto main
+        // synchronously via DispatchQueue.main.sync inside
+        // `NativeEventHandlers`.
+        let handlers = NativeEventHandlers(webView: webView)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let handlers = NativeEventHandlers(webView: webView)
             do {
                 try self.executeNativeVerb(verbObj, handlers: handlers)
                 self.respond(id: id, ok: true, payload: ["value": NSNull()])

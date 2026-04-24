@@ -15,7 +15,119 @@
  * Method names the harness can invoke over the bridge. Kept as a
  * string-literal union so callers get type narrowing in `switch`.
  */
-export type RpcMethod = "evalJS" | "waitForCondition" | "version";
+export type RpcMethod =
+  | "evalJS"
+  | "waitForCondition"
+  | "version"
+  | "checkAccessibilityPermission"
+  | "getElementScreenBounds"
+  | "nativeClick"
+  | "nativeDoubleClick"
+  | "nativeRightClick"
+  | "nativeDrag"
+  | "nativeMouseDown"
+  | "nativeMouseUp"
+  | "nativeKey"
+  | "nativeType"
+  | "holdModifier";
+
+/**
+ * Viewport-space point passed to the native-gesture verbs. `{x, y}` is
+ * in CSS viewport coords (Y-down, origin top-left of the WKWebView).
+ * Swift-side `CoordMapping.viewportToScreen` does the conversion to
+ * screen CG before `CGEvent.post`.
+ */
+export interface ViewportPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Accepted button-string values on the wire. The Swift side decodes
+ * via `MouseButton(rawValue:)`.
+ */
+export type NativeMouseButton = "left" | "right";
+
+/**
+ * Accepted modifier-string values on the wire. The Swift side decodes
+ * via `ModifierKey(rawValue:)`.
+ */
+export type NativeModifier = "cmd" | "shift" | "alt" | "ctrl";
+
+/**
+ * Inner verb envelopes nested inside a `holdModifier` request.
+ * Identical to the top-level native verbs (minus `id` / `timeoutMs`)
+ * since the Swift-side `executeHoldModifier` dispatches each inner
+ * verb through `executeNativeVerb(_, handlers:)`.
+ */
+export type InnerNativeVerb =
+  | {
+      method: "nativeClick";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+      clickCount?: number;
+      mouseDownDelayMs?: number;
+      mouseUpDelayMs?: number;
+    }
+  | {
+      method: "nativeDoubleClick";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      method: "nativeRightClick";
+      viewportPoint: ViewportPoint;
+    }
+  | {
+      method: "nativeDrag";
+      from: ViewportPoint;
+      to: ViewportPoint;
+      button?: NativeMouseButton;
+      mouseDownDelayMs?: number;
+      mouseUpDelayMs?: number;
+    }
+  | {
+      method: "nativeMouseDown";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      method: "nativeMouseUp";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      method: "nativeKey";
+      key: string;
+      modifiers?: readonly NativeModifier[];
+    }
+  | {
+      method: "nativeType";
+      text: string;
+    };
+
+/**
+ * Screen-space rect returned by `getElementScreenBounds`. All values
+ * in CG screen coords (Y-down, primary-screen-relative) — suitable
+ * for passing directly to CGEvent.post via `nativeClick`'s underlying
+ * machinery (tests rarely need to; prefer `app.nativeClickAtElement`
+ * which routes through viewport-space internally).
+ */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Result of `checkAccessibilityPermission`.
+ */
+export interface AccessibilityStatus {
+  trusted: boolean;
+  bundlePath: string;
+  bundleId: string;
+}
 
 /**
  * The request shape sent from harness → Swift, NDJSON-framed. Every
@@ -39,6 +151,79 @@ export type Request =
   | {
       id: number;
       method: "version";
+    }
+  | {
+      id: number;
+      method: "checkAccessibilityPermission";
+      /**
+       * Whether macOS should show the "grant in System Settings"
+       * dialog when the bit is missing. Default true on the first
+       * call; explicit `false` allows silent re-probe after a grant.
+       */
+      prompt?: boolean;
+    }
+  | {
+      id: number;
+      method: "getElementScreenBounds";
+      selector: string;
+    }
+  | {
+      id: number;
+      method: "nativeClick";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+      clickCount?: number;
+      mouseDownDelayMs?: number;
+      mouseUpDelayMs?: number;
+    }
+  | {
+      id: number;
+      method: "nativeDoubleClick";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      id: number;
+      method: "nativeRightClick";
+      viewportPoint: ViewportPoint;
+    }
+  | {
+      id: number;
+      method: "nativeDrag";
+      from: ViewportPoint;
+      to: ViewportPoint;
+      button?: NativeMouseButton;
+      mouseDownDelayMs?: number;
+      mouseUpDelayMs?: number;
+    }
+  | {
+      id: number;
+      method: "nativeMouseDown";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      id: number;
+      method: "nativeMouseUp";
+      viewportPoint: ViewportPoint;
+      button?: NativeMouseButton;
+    }
+  | {
+      id: number;
+      method: "nativeKey";
+      key: string;
+      modifiers?: readonly NativeModifier[];
+    }
+  | {
+      id: number;
+      method: "nativeType";
+      text: string;
+    }
+  | {
+      id: number;
+      method: "holdModifier";
+      modifiers: readonly NativeModifier[];
+      innerVerbs: readonly InnerNativeVerb[];
     };
 
 /**
@@ -132,4 +317,14 @@ export interface LaunchTugAppOptions {
    * production test code this is never set.
    */
   expectedSurfaceVersion?: string;
+
+  /**
+   * Skip the `checkAccessibilityPermission` preflight during launch.
+   * Defaults to false (strict) so native-gesture tests get a crisp
+   * failure when the grant is missing. Tests that use only `evalJS` /
+   * `waitForCondition` — e.g. the existing version-handshake /
+   * double-connect / wait-for-condition harness tests — pass `true`
+   * to avoid coupling those suites to the AX grant state.
+   */
+  skipAccessibilityPreflight?: boolean;
 }

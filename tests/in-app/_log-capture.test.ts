@@ -49,7 +49,13 @@ describe.skipIf(!SHOULD_RUN)("in-app: log capture", () => {
     const marker = `PROBE_LOG_CAPTURE_${Date.now()}`;
     const testName = "log-capture-probe";
 
-    const app = await launchTugApp({ testName });
+    // Pure stdout-capture test — no CGEvent path. Opt out of the
+    // Step-3 AX preflight to avoid coupling to the Accessibility
+    // grant state.
+    const app = await launchTugApp({
+      testName,
+      skipAccessibilityPreflight: true,
+    });
     expect(app.logPath).toBeTruthy();
     const logPath = app.logPath as string;
 

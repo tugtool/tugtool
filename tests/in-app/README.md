@@ -87,12 +87,93 @@ subprocess boot.
 ## Fidelity envelope
 
 The harness is **not a visual renderer**. It cannot assert caret
-blink, paint correctness, perceived snappiness, or
-`isTrusted: true`-gated behaviors. See the "Fidelity limits" section
-of the parent plan ([`roadmap/tugplan-in-app-bridge.md#fidelity-limits`](../../roadmap/tugplan-in-app-bridge.md#fidelity-limits))
+blink, paint correctness, or perceived snappiness. It *can* drive
+`isTrusted: true` paths (WebKit's hardware-event default-focus, drag
+selection, double-click-to-select-word, modifier-key combinations)
+via the Phase A native-gesture family — see the next section. See
+the "Fidelity limits" section of the parent plan
+([`roadmap/tugplan-in-app-bridge.md#fidelity-limits`](../../roadmap/tugplan-in-app-bridge.md#fidelity-limits))
 for the full envelope. When a bug falls outside this envelope, mark
 the residual as "manual verification required" in the test comment
 and do not paper over it with a weaker proxy assertion.
+
+## Phase A surface: native gestures, keyboard, introspection
+
+Beyond the JS-synthesized gesture drivers (`app.click`, `app.type`,
+`app.focusElement`), the Phase A harness exposes a trusted-event
+family backed by Swift's `CGEvent.post` ([D02] + [Q05]):
+
+**Native gestures** (point is `{x, y}` in CSS viewport coords):
+
+| Method | Purpose |
+|--------|---------|
+| `nativeClick(point, opts?)` / `nativeClickAtElement(selector, opts?)` | Single trusted click. `opts`: `button`, `clickCount`, `mouseDownDelayMs`, `mouseUpDelayMs`. |
+| `nativeDoubleClick(point)` / `nativeDoubleClickAtElement(selector)` | Pinned 80ms-interval double click; drives WebKit word-select. |
+| `nativeRightClick(point)` / `nativeRightClickAtElement(selector)` | Right-button click for context-menu paths. |
+| `nativeDrag(from, to, opts?)` / `nativeDragElement(fromSel, to, opts?)` | Endpoint-only drag (mouseDown → one mouseDragged → mouseUp). |
+| `nativeMouseDown(point)` / `nativeMouseUp(point)` | Primitives — reach for these only when a click isn't atomic enough. |
+
+**Native keyboard:**
+
+| Method | Purpose |
+|--------|---------|
+| `nativeKey(key, modifiers?)` | One keystroke. `key` is a VirtualKeyMap entry (`"a"`, `"!"`, `"Enter"`, `"ArrowLeft"`, etc.). `modifiers` is a subset of `["cmd", "shift", "alt", "ctrl"]`. |
+| `nativeType(text)` | ASCII string typed keystroke-by-keystroke. Non-ASCII rejects with `NativeTypeAsciiOnlyError`. |
+| `holdModifier(mods, async thunk)` | Press modifiers, run inner verbs, release — all in one atomic Swift-side call (see below). |
+
+**`holdModifier` pattern:**
+
+```ts
+// Hold Cmd while executing multiple keystrokes as one sequence.
+await app.holdModifier(["cmd"], async (inner) => {
+  await inner.rpcCall("nativeKey", { key: "a" });     // Cmd+A
+  await inner.rpcCall("nativeKey", { key: "c" });     // Cmd+C
+});
+
+// Simpler shape for a single inner keystroke: just pass the
+// modifier directly to `nativeKey`.
+await app.nativeKey("a", ["cmd"]);
+```
+
+Inner verbs inside a `holdModifier` thunk must be native gestures
+only — `evalJS` / `waitForCondition` / nested `holdModifier` all
+reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
+nesting scopes.
+
+**Introspection** (pure DOM reads; no CGEvent):
+
+| Method | Returns |
+|--------|---------|
+| `getElementText(selector)` | `textContent` (or `.value` for form controls). |
+| `getElementValue(selector)` | `.value` of `<input>` / `<textarea>` / `<select>`. |
+| `getElementAttribute(selector, name)` | `attribute` or `null`. |
+| `getElementBounds(selector)` | Viewport-rel `{x, y, width, height}`. |
+| `getElementScreenBounds(selector)` | Screen-CG `{x, y, width, height}` via `CoordMapping`. |
+| `getElementState(selector)` | `{tagName, disabled, readOnly, checked, visible, isFocused}`. |
+| `getActiveElement()` | `{tagName, id, cardId, persistKey, selector}` or `null`. |
+| `getSelection(cardId?)` | Selection snapshot (form-control or contentEditable range). |
+| `getComputedStyleValue(selector, property)` | Resolved CSS value. |
+
+## Accessibility permission preflight
+
+Phase A's trusted events are posted via `CGEvent.post`, which
+requires Tug.app to hold the macOS Accessibility grant (System
+Settings → Privacy & Security → Accessibility). `launchTugApp`
+preflights this on every spawn and throws
+`AccessibilityPermissionMissingError` if the grant is missing,
+with actionable guidance naming the bundle path / id + a
+`tccutil reset` recipe for stale grants.
+
+Protocol-only tests (`_smoke.test.ts`, `_double-connect.test.ts`,
+`_log-capture.test.ts`, `_wait-for-condition.test.ts`) pass
+`skipAccessibilityPreflight: true` so they stay independent of the
+grant state. Scenario tests (M01/M03/M16, and the Phase A
+`_smoke-native.test.ts`) leave the default strict — if the grant is
+missing, the failure attribution is instant.
+
+See [`scripts/setup-dev-signing.sh`](../../scripts/setup-dev-signing.sh)
+for the one-time stable-signing setup ([D14]) that makes the grant
+persist across rebuilds.
 
 ## Adding a new test
 

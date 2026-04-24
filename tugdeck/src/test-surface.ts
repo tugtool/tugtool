@@ -60,8 +60,22 @@ import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard
  * issuing any other RPC.
  *
  * Matched on major. Minor bumps denote additive fields only.
+ *
+ * `1.1.0` (harness extensions, 2026-04-24): adds the introspection
+ * family — {@link TugTestSurface.getElementText},
+ * {@link TugTestSurface.getElementValue},
+ * {@link TugTestSurface.getElementAttribute},
+ * {@link TugTestSurface.getElementBounds},
+ * {@link TugTestSurface.getElementState},
+ * {@link TugTestSurface.getActiveElement},
+ * {@link TugTestSurface.getSelection},
+ * {@link TugTestSurface.getComputedStyleValue}. The native-gesture
+ * and keyboard-control families live out-of-band on the RPC bridge
+ * (see `tugapp/Sources/TestHarness/NativeEventHandlers.swift`) — JS
+ * cannot post `CGEvent`s, so there is nothing for `__tug` to expose
+ * for those verbs. Major stays `1`; additive.
  */
-export const SURFACE_VERSION = "1.0.0" as const;
+export const SURFACE_VERSION = "1.1.0" as const;
 
 /**
  * Snapshot of the caret / selection for a single card, as returned by
@@ -141,6 +155,95 @@ export interface SeedDeckStateArgs {
 }
 
 /**
+ * Viewport-relative DOMRect shape returned by
+ * {@link TugTestSurface.getElementBounds}. Flat POD so it survives
+ * JSON transport over the `evalJS` bridge. `{x, y}` is the top-left
+ * corner in CSS viewport coords (Y-down). Callers that need SCREEN
+ * coords (for naming a pixel to pass to `nativeClick`) read
+ * `app.getElementScreenBounds(selector)` on the harness side — that
+ * hop goes through Swift's `CoordMapping` and is not derivable from
+ * these viewport values alone.
+ */
+export interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Compact bundle of per-element state flags returned by
+ * {@link TugTestSurface.getElementState}. The field set covers the
+ * state surfaces tests actually branch on: enabled/disabled,
+ * read-only, checked, visible (layout-bounds + `offsetParent`), plus
+ * the tag name and focus bit.
+ *
+ * `visible` is a layout-probed boolean — an element with zero width or
+ * height, or a detached `offsetParent`, is considered not visible. It
+ * does NOT check `visibility: hidden` / `opacity: 0` / CSS-clipped
+ * ancestors; callers that need finer-grained paint assertions use
+ * {@link TugTestSurface.getComputedStyleValue}.
+ */
+export interface ElementStateSnapshot {
+  tagName: string;
+  disabled: boolean;
+  readOnly: boolean;
+  checked: boolean;
+  visible: boolean;
+  isFocused: boolean;
+}
+
+/**
+ * Description of `document.activeElement` returned by
+ * {@link TugTestSurface.getActiveElement}. `null` when the body is the
+ * active element (no explicit focus).
+ *
+ * `cardId` is the nearest ancestor's `data-card-id`; `persistKey` is
+ * the element's own `data-tug-persist-value`. Both default to `null`
+ * when absent. `selector` is a best-effort locator ("#id" if the
+ * element has an id, else "tag[data-card-id=...]" when inside a card)
+ * — useful for logging but NOT intended as a round-trip selector that
+ * the harness re-uses.
+ */
+export interface ActiveElementInfo {
+  tagName: string;
+  id: string | null;
+  cardId: string | null;
+  persistKey: string | null;
+  selector: string;
+}
+
+/**
+ * Selection snapshot returned by {@link TugTestSurface.getSelection}.
+ * Superset of {@link CaretState} — covers the page-wide `Selection`
+ * object (contentEditable, arbitrary spans) in addition to form
+ * controls. `null` when no selection is active.
+ *
+ * `kind` discriminates:
+ *   - `"input"` — the focused element is a form control and the
+ *     selection is its `selectionStart`/`End` range.
+ *   - `"range"` — there is a live `Selection` with at least one
+ *     range; we serialize the first range's text + collapsed flag.
+ *     `cardId` is populated if the range's start node sits inside a
+ *     `[data-card-id]` subtree.
+ */
+export type SelectionSnapshot =
+  | {
+      kind: "input";
+      selectionStart: number;
+      selectionEnd: number;
+      selectionDirection: "forward" | "backward" | "none";
+      value: string;
+      cardId: string | null;
+    }
+  | {
+      kind: "range";
+      text: string;
+      isCollapsed: boolean;
+      cardId: string | null;
+    };
+
+/**
  * `window.__tug` — the in-app test harness surface. Every method is
  * synchronous or returns a JSON-serializable value so the Swift-side
  * `evalJS` round-trip never has to marshal custom types.
@@ -175,6 +278,32 @@ export interface TugTestSurface {
   markDeckTrace(): number;
   clearDeckTrace(): void;
   enableDeckTrace(flag: boolean): void;
+
+  // ---- Introspection (SURFACE_VERSION 1.1.0, harness Phase A) ----
+  getElementText(selector: string): string;
+  getElementValue(selector: string): string;
+  getElementAttribute(selector: string, name: string): string | null;
+  getElementBounds(selector: string): ElementBounds;
+  getElementState(selector: string): ElementStateSnapshot;
+  getActiveElement(): ActiveElementInfo | null;
+  getSelection(cardId?: string): SelectionSnapshot | null;
+  getComputedStyleValue(selector: string, property: string): string;
+
+  /**
+   * Register an element as a selection boundary on behalf of a test
+   * harness. Mirrors `useSelectionBoundary`'s call into
+   * `selectionGuard.registerBoundary(cardId, element)` — the same
+   * mechanism a real card uses on mount so WebKit's drag-selection
+   * isn't blocked by `selectionGuard.handleSelectStart`.
+   *
+   * Needed because in-app smoke tests inject ad-hoc fixture
+   * overlays outside of any real card; without registering the
+   * overlay as a boundary, `selectstart` is preventDefault'd and
+   * drag selection never begins. The companion
+   * {@link TugTestSurface.unregisterSelectionBoundary} cleans up.
+   */
+  registerSelectionBoundary(cardId: string, selector: string): void;
+  unregisterSelectionBoundary(cardId: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +689,210 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     enableDeckTrace(flag: boolean): void {
       deckTrace.enable(flag);
+    },
+
+    // ---- introspection (SURFACE_VERSION 1.1.0) ----
+
+    getElementText(selector: string): string {
+      const el = queryRequired(selector);
+      // Form controls don't meaningfully have `.textContent` — return
+      // their `.value` so tests can write a uniform assertion against
+      // whatever kind of element a selector happens to resolve to.
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement
+      ) {
+        return el.value;
+      }
+      return el.textContent ?? "";
+    },
+
+    getElementValue(selector: string): string {
+      const el = queryRequired(selector);
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement
+      ) {
+        return el.value;
+      }
+      throw new Error(
+        `[tug] getElementValue: selector must match <input>/<textarea>/<select>: ${selector}`,
+      );
+    },
+
+    getElementAttribute(selector: string, name: string): string | null {
+      const el = queryRequired(selector);
+      return el.getAttribute(name);
+    },
+
+    getElementBounds(selector: string): ElementBounds {
+      const el = queryRequired(selector);
+      const r = el.getBoundingClientRect();
+      // Flatten the live DOMRect (whose `toJSON` is non-standard
+      // across browsers) into a plain POD for stable JSON transport.
+      return { x: r.left, y: r.top, width: r.width, height: r.height };
+    },
+
+    getElementState(selector: string): ElementStateSnapshot {
+      const el = queryRequired(selector);
+      const rect = el.getBoundingClientRect();
+      // Layout-visibility probe: non-zero layout box AND attached to
+      // the render tree (`offsetParent` is null for `display:none`
+      // descendants; `<body>` is a special case that has no
+      // offsetParent yet is still visible).
+      const hasSize = rect.width > 0 && rect.height > 0;
+      const attached = el.offsetParent !== null || el === document.body;
+      const visible = hasSize && attached;
+      // `disabled` / `readOnly` / `checked` exist on
+      // HTMLInputElement/Textarea/Select/Button — branch via
+      // instanceof so we return stable false rather than reading
+      // undefined on non-form elements.
+      const disabled =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLButtonElement ||
+        el instanceof HTMLSelectElement
+          ? el.disabled
+          : false;
+      const readOnly =
+        el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+          ? el.readOnly
+          : false;
+      const checked =
+        el instanceof HTMLInputElement &&
+        (el.type === "checkbox" || el.type === "radio")
+          ? el.checked
+          : false;
+      return {
+        tagName: el.tagName,
+        disabled,
+        readOnly,
+        checked,
+        visible,
+        isFocused: document.activeElement === el,
+      };
+    },
+
+    getActiveElement(): ActiveElementInfo | null {
+      const active = document.activeElement;
+      if (
+        active === null ||
+        active === document.body ||
+        !(active instanceof HTMLElement)
+      ) {
+        return null;
+      }
+      const cardEl = active.closest("[data-card-id]");
+      const cardId =
+        cardEl instanceof HTMLElement
+          ? cardEl.getAttribute("data-card-id")
+          : null;
+      const persistKey = active.getAttribute("data-tug-persist-value");
+      const id = active.id !== "" ? active.id : null;
+      // Best-effort selector: id is stable when present; otherwise
+      // scope by cardId and tag. We don't promise it re-resolves.
+      const selector =
+        id !== null
+          ? `#${CSS.escape(id)}`
+          : cardId !== null
+          ? `[data-card-id="${CSS.escape(cardId)}"] ${active.tagName.toLowerCase()}`
+          : active.tagName.toLowerCase();
+      return {
+        tagName: active.tagName,
+        id,
+        cardId,
+        persistKey,
+        selector,
+      };
+    },
+
+    getSelection(cardId?: string): SelectionSnapshot | null {
+      if (cardId !== undefined) {
+        // Card-scoped: mirrors getCaretState(cardId)'s form-control
+        // variant and augments with a contentEditable fallback.
+        const cardRoot = deck.peekCardHostRoot(cardId);
+        if (cardRoot === null) return null;
+        const input = activeFormControlIn(cardRoot);
+        if (input !== null) {
+          return {
+            kind: "input",
+            selectionStart: input.selectionStart ?? 0,
+            selectionEnd: input.selectionEnd ?? 0,
+            selectionDirection: readSelectionDirection(input),
+            value: input.value,
+            cardId,
+          };
+        }
+        const sel = window.getSelection();
+        if (sel === null || sel.rangeCount === 0) return null;
+        const range = sel.getRangeAt(0);
+        if (!cardRoot.contains(range.startContainer)) return null;
+        return {
+          kind: "range",
+          text: range.toString(),
+          isCollapsed: range.collapsed,
+          cardId,
+        };
+      }
+
+      // Page-wide: prefer the focused form control when possible.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement
+      ) {
+        const cardEl = active.closest("[data-card-id]");
+        const containingCardId =
+          cardEl instanceof HTMLElement
+            ? cardEl.getAttribute("data-card-id")
+            : null;
+        return {
+          kind: "input",
+          selectionStart: active.selectionStart ?? 0,
+          selectionEnd: active.selectionEnd ?? 0,
+          selectionDirection: readSelectionDirection(active),
+          value: active.value,
+          cardId: containingCardId,
+        };
+      }
+      const sel = window.getSelection();
+      if (sel === null || sel.rangeCount === 0) return null;
+      const range = sel.getRangeAt(0);
+      let containingCardId: string | null = null;
+      const startNode = range.startContainer;
+      // Selection anchors inside text nodes; walk up to the nearest
+      // element to query `closest("[data-card-id]")`.
+      const elStart =
+        startNode.nodeType === Node.ELEMENT_NODE
+          ? (startNode as Element)
+          : startNode.parentElement;
+      if (elStart !== null) {
+        const cardEl = elStart.closest("[data-card-id]");
+        if (cardEl instanceof HTMLElement) {
+          containingCardId = cardEl.getAttribute("data-card-id");
+        }
+      }
+      return {
+        kind: "range",
+        text: range.toString(),
+        isCollapsed: range.collapsed,
+        cardId: containingCardId,
+      };
+    },
+
+    getComputedStyleValue(selector: string, property: string): string {
+      const el = queryRequired(selector);
+      return window.getComputedStyle(el).getPropertyValue(property);
+    },
+
+    registerSelectionBoundary(cardId: string, selector: string): void {
+      const el = queryRequired(selector);
+      selectionGuard.registerBoundary(cardId, el);
+    },
+
+    unregisterSelectionBoundary(cardId: string): void {
+      selectionGuard.unregisterBoundary(cardId);
     },
   };
 }

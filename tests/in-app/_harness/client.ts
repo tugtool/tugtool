@@ -20,7 +20,16 @@
  * pure boolean expression. Parent plan [D12] ban.
  */
 
-import type { EvalJsOptions, WaitForConditionOptions } from "./types";
+import type {
+  AccessibilityStatus,
+  EvalJsOptions,
+  InnerNativeVerb,
+  NativeModifier,
+  NativeMouseButton,
+  ScreenRect,
+  ViewportPoint,
+  WaitForConditionOptions,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Mirrored surface types
@@ -113,12 +122,22 @@ export type DeckTraceEvent = {
  * Minimal transport the client helpers need. Anything that can
  * round-trip `evalJS` / `waitForCondition` satisfies this shape,
  * which keeps unit tests free from subprocess plumbing.
+ *
+ * `rpcCall` is the untyped escape hatch for non-`evalJS` RPC verbs
+ * (native gestures, accessibility preflight, `getElementScreenBounds`).
+ * Each typed client helper knows which `method`/params shape it wants
+ * to send and how to interpret the response; the caller just ferries
+ * JSON-serializable objects to/from Swift via the RPC transport.
  */
 export interface HarnessCaller {
   evalJS<T = unknown>(script: string, opts?: EvalJsOptions): Promise<T>;
   waitForCondition<T = unknown>(
     script: string,
     opts?: WaitForConditionOptions,
+  ): Promise<T>;
+  rpcCall<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
   ): Promise<T>;
 }
 
@@ -431,6 +450,510 @@ export async function expectCaret(
 }
 
 // ---------------------------------------------------------------------------
+// Introspection wrappers (SURFACE_VERSION 1.1.0)
+//
+// Thin delegates that round-trip through `evalJS` to the page-side
+// `window.__tug.*` introspection surface. Unlike the RPC-verb family
+// below, nothing here touches CGEvent / AX / accessibility — every
+// call is a pure DOM read that could be reproduced by pasting the
+// same expression into the WebKit inspector.
+// ---------------------------------------------------------------------------
+
+export interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ElementStateSnapshot {
+  tagName: string;
+  disabled: boolean;
+  readOnly: boolean;
+  checked: boolean;
+  visible: boolean;
+  isFocused: boolean;
+}
+
+export interface ActiveElementInfo {
+  tagName: string;
+  id: string | null;
+  cardId: string | null;
+  persistKey: string | null;
+  selector: string;
+}
+
+export type SelectionSnapshot =
+  | {
+      kind: "input";
+      selectionStart: number;
+      selectionEnd: number;
+      selectionDirection: "forward" | "backward" | "none";
+      value: string;
+      cardId: string | null;
+    }
+  | {
+      kind: "range";
+      text: string;
+      isCollapsed: boolean;
+      cardId: string | null;
+    };
+
+export function getElementText(
+  caller: HarnessCaller,
+  selector: string,
+  evalOpts?: EvalJsOptions,
+): Promise<string> {
+  const script = callSurface(`window.__tug.getElementText(${lit(selector)})`);
+  return caller.evalJS<string>(script, evalOpts);
+}
+
+export function getElementValue(
+  caller: HarnessCaller,
+  selector: string,
+  evalOpts?: EvalJsOptions,
+): Promise<string> {
+  const script = callSurface(`window.__tug.getElementValue(${lit(selector)})`);
+  return caller.evalJS<string>(script, evalOpts);
+}
+
+export function getElementAttribute(
+  caller: HarnessCaller,
+  selector: string,
+  name: string,
+  evalOpts?: EvalJsOptions,
+): Promise<string | null> {
+  const script = callSurface(
+    `window.__tug.getElementAttribute(${lit(selector)}, ${lit(name)})`,
+  );
+  return caller.evalJS<string | null>(script, evalOpts);
+}
+
+export function getElementBounds(
+  caller: HarnessCaller,
+  selector: string,
+  evalOpts?: EvalJsOptions,
+): Promise<ElementBounds> {
+  const script = callSurface(`window.__tug.getElementBounds(${lit(selector)})`);
+  return caller.evalJS<ElementBounds>(script, evalOpts);
+}
+
+export function getElementState(
+  caller: HarnessCaller,
+  selector: string,
+  evalOpts?: EvalJsOptions,
+): Promise<ElementStateSnapshot> {
+  const script = callSurface(`window.__tug.getElementState(${lit(selector)})`);
+  return caller.evalJS<ElementStateSnapshot>(script, evalOpts);
+}
+
+export function getActiveElement(
+  caller: HarnessCaller,
+  evalOpts?: EvalJsOptions,
+): Promise<ActiveElementInfo | null> {
+  const script = callSurface(`window.__tug.getActiveElement()`);
+  return caller.evalJS<ActiveElementInfo | null>(script, evalOpts);
+}
+
+export function getSelection(
+  caller: HarnessCaller,
+  cardId?: string,
+  evalOpts?: EvalJsOptions,
+): Promise<SelectionSnapshot | null> {
+  const script = callSurface(
+    cardId === undefined
+      ? `window.__tug.getSelection()`
+      : `window.__tug.getSelection(${lit(cardId)})`,
+  );
+  return caller.evalJS<SelectionSnapshot | null>(script, evalOpts);
+}
+
+export function getComputedStyleValue(
+  caller: HarnessCaller,
+  selector: string,
+  property: string,
+  evalOpts?: EvalJsOptions,
+): Promise<string> {
+  const script = callSurface(
+    `window.__tug.getComputedStyleValue(${lit(selector)}, ${lit(property)})`,
+  );
+  return caller.evalJS<string>(script, evalOpts);
+}
+
+/**
+ * Register `selector` as a selection boundary under the given
+ * `cardId`. Thin wrapper over tugdeck's
+ * `selectionGuard.registerBoundary` — see
+ * {@link import("../../tugdeck/src/test-surface").TugTestSurface.registerSelectionBoundary}.
+ *
+ * Real cards register their content area on mount so that
+ * `selectionGuard.handleSelectStart` allows WebKit's drag-selection
+ * to begin. Test harnesses that inject ad-hoc fixture elements
+ * outside of any real card need to register them explicitly — the
+ * overlay is otherwise treated as "outside any boundary" and
+ * `selectstart` gets preventDefault'd, suppressing drag selection.
+ */
+export function registerSelectionBoundary(
+  caller: HarnessCaller,
+  cardId: string,
+  selector: string,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `window.__tug.registerSelectionBoundary(${lit(cardId)}, ${lit(selector)})`,
+  );
+  return caller.evalJS<void>(script, evalOpts);
+}
+
+export function unregisterSelectionBoundary(
+  caller: HarnessCaller,
+  cardId: string,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `window.__tug.unregisterSelectionBoundary(${lit(cardId)})`,
+  );
+  return caller.evalJS<void>(script, evalOpts);
+}
+
+// ---------------------------------------------------------------------------
+// RPC-verb wrappers (native gestures, accessibility preflight,
+// Swift-computed screen bounds)
+//
+// These hop to Swift directly via `rpcCall` instead of rendering JS
+// into `evalJS`. Swift owns the `CGEvent` post, AX-TCC probe, and
+// `CoordMapping` translation — there's nothing the WKWebView side can
+// usefully add to the plumbing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe the macOS Accessibility-permission bit for the launched
+ * Tug.app binary. Returns `{ trusted, bundlePath, bundleId }`.
+ *
+ * `prompt: true` (default) shows the "grant in System Settings"
+ * dialog on the first call per process. Tests that want a silent
+ * re-check pass `prompt: false`. The returned boolean is synchronous:
+ * macOS does not block the call on dialog dismissal.
+ */
+export function checkAccessibilityPermission(
+  caller: HarnessCaller,
+  opts?: { prompt?: boolean },
+): Promise<AccessibilityStatus> {
+  const params: Record<string, unknown> = {};
+  if (opts?.prompt !== undefined) params.prompt = opts.prompt;
+  return caller.rpcCall<AccessibilityStatus>(
+    "checkAccessibilityPermission",
+    params,
+  );
+}
+
+/**
+ * Resolve `selector` to a screen-CG rect via the Swift bridge — a
+ * `getBoundingClientRect()` in viewport space, then corner-by-corner
+ * through `CoordMapping.viewportToScreen`. Useful for tests that want
+ * to name an exact screen point (tooltip offsets, drag over
+ * overlay-hidden targets). Prefer `app.nativeClickAtElement(selector)`
+ * when all you need is "click the center of this element".
+ */
+export function getElementScreenBounds(
+  caller: HarnessCaller,
+  selector: string,
+): Promise<ScreenRect> {
+  return caller.rpcCall<ScreenRect>("getElementScreenBounds", { selector });
+}
+
+// ---- native gestures ----
+
+export interface NativeClickOptions {
+  button?: NativeMouseButton;
+  clickCount?: number;
+  mouseDownDelayMs?: number;
+  mouseUpDelayMs?: number;
+}
+
+export interface NativeDragOptions {
+  button?: NativeMouseButton;
+  mouseDownDelayMs?: number;
+  mouseUpDelayMs?: number;
+}
+
+export function nativeClick(
+  caller: HarnessCaller,
+  viewportPoint: ViewportPoint,
+  opts?: NativeClickOptions,
+): Promise<void> {
+  return caller.rpcCall<void>(
+    "nativeClick",
+    buildNativeClickParams(viewportPoint, opts),
+  );
+}
+
+export async function nativeClickAtElement(
+  caller: HarnessCaller,
+  selector: string,
+  opts?: NativeClickOptions,
+): Promise<void> {
+  const p = await centerOfElement(caller, selector);
+  await nativeClick(caller, p, opts);
+}
+
+export function nativeDoubleClick(
+  caller: HarnessCaller,
+  viewportPoint: ViewportPoint,
+  opts?: { button?: NativeMouseButton },
+): Promise<void> {
+  const params: Record<string, unknown> = { viewportPoint };
+  if (opts?.button !== undefined) params.button = opts.button;
+  return caller.rpcCall<void>("nativeDoubleClick", params);
+}
+
+export async function nativeDoubleClickAtElement(
+  caller: HarnessCaller,
+  selector: string,
+  opts?: { button?: NativeMouseButton },
+): Promise<void> {
+  const p = await centerOfElement(caller, selector);
+  await nativeDoubleClick(caller, p, opts);
+}
+
+export function nativeRightClick(
+  caller: HarnessCaller,
+  viewportPoint: ViewportPoint,
+): Promise<void> {
+  return caller.rpcCall<void>("nativeRightClick", { viewportPoint });
+}
+
+export async function nativeRightClickAtElement(
+  caller: HarnessCaller,
+  selector: string,
+): Promise<void> {
+  const p = await centerOfElement(caller, selector);
+  await nativeRightClick(caller, p);
+}
+
+/**
+ * Endpoint-only drag: mouseDown at `from`, one mouseDragged event at
+ * `to`, mouseUp at `to`. No intermediate interpolation (plan Step 1
+ * decision [Q03]). For WebKit paths where the drag semantics need
+ * intermediate frames to paint, bump `mouseDownDelayMs` — it's the
+ * gap between mouseDown and mouseDragged where WebKit gets to process
+ * the initial-selection anchor.
+ */
+export function nativeDrag(
+  caller: HarnessCaller,
+  from: ViewportPoint,
+  to: ViewportPoint,
+  opts?: NativeDragOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = { from, to };
+  if (opts?.button !== undefined) params.button = opts.button;
+  if (opts?.mouseDownDelayMs !== undefined)
+    params.mouseDownDelayMs = opts.mouseDownDelayMs;
+  if (opts?.mouseUpDelayMs !== undefined)
+    params.mouseUpDelayMs = opts.mouseUpDelayMs;
+  return caller.rpcCall<void>("nativeDrag", params);
+}
+
+/**
+ * `to` may be `{x, y}` directly OR `{selector}` which the wrapper
+ * resolves via `getElementBounds` → element center.
+ */
+export async function nativeDragElement(
+  caller: HarnessCaller,
+  fromSelector: string,
+  to: ViewportPoint | { selector: string },
+  opts?: NativeDragOptions,
+): Promise<void> {
+  const fromPoint = await centerOfElement(caller, fromSelector);
+  const toPoint =
+    "selector" in to ? await centerOfElement(caller, to.selector) : to;
+  await nativeDrag(caller, fromPoint, toPoint, opts);
+}
+
+export function nativeMouseDown(
+  caller: HarnessCaller,
+  viewportPoint: ViewportPoint,
+  opts?: { button?: NativeMouseButton },
+): Promise<void> {
+  const params: Record<string, unknown> = { viewportPoint };
+  if (opts?.button !== undefined) params.button = opts.button;
+  return caller.rpcCall<void>("nativeMouseDown", params);
+}
+
+export function nativeMouseUp(
+  caller: HarnessCaller,
+  viewportPoint: ViewportPoint,
+  opts?: { button?: NativeMouseButton },
+): Promise<void> {
+  const params: Record<string, unknown> = { viewportPoint };
+  if (opts?.button !== undefined) params.button = opts.button;
+  return caller.rpcCall<void>("nativeMouseUp", params);
+}
+
+// ---- native keyboard ----
+
+/**
+ * Post a single named-key keystroke with optional modifiers. `key`
+ * must exist in Swift's `VirtualKeyMap` — ASCII chars (`"a"`, `"!"`)
+ * or named keys (`"Enter"`, `"ArrowLeft"`, `"Escape"`).
+ */
+export function nativeKey(
+  caller: HarnessCaller,
+  key: string,
+  modifiers?: readonly NativeModifier[],
+): Promise<void> {
+  const params: Record<string, unknown> = { key };
+  if (modifiers !== undefined) params.modifiers = modifiers;
+  return caller.rpcCall<void>("nativeKey", params);
+}
+
+/**
+ * Type an ASCII string. Non-ASCII input is rejected by the Swift
+ * side with `NativeTypeAsciiOnlyError` before any events are posted.
+ */
+export function nativeType(
+  caller: HarnessCaller,
+  text: string,
+): Promise<void> {
+  return caller.rpcCall<void>("nativeType", { text });
+}
+
+/**
+ * Press every modifier in `modifiers`, run `thunk`, release them in
+ * reverse order — all as a single atomic Swift-side call. The inner
+ * thunk receives a BUFFERED caller: every `nativeClick` / `nativeKey`
+ * / etc. inside the thunk pushes to the buffer instead of posting
+ * immediately. When the thunk resolves, the accumulated verbs ship
+ * as one `holdModifier` RPC.
+ *
+ * Why the buffered caller: if each inner verb RPC'd separately,
+ * Swift would release the modifier between inner verbs (each call's
+ * `NativeEventHandlers` instance is fresh), and the whole point of
+ * `holdModifier` is that inner verbs see the modifier already down.
+ *
+ * Nested `holdModifier` calls are not supported — the buffered caller
+ * rejects re-entry. Tests that need nested modifier scopes should
+ * flatten the modifier set (`["cmd", "shift"]` instead of two
+ * nested scopes).
+ */
+export async function holdModifier(
+  caller: HarnessCaller,
+  modifiers: readonly NativeModifier[],
+  thunk: (inner: HarnessCaller) => Promise<void>,
+): Promise<void> {
+  const buffer: InnerNativeVerb[] = [];
+  let finalized = false;
+  const buffered: HarnessCaller = {
+    evalJS<T>(_script: string, _opts?: EvalJsOptions): Promise<T> {
+      throw new Error(
+        "[tug] holdModifier: evalJS is not supported inside a holdModifier thunk — " +
+          "modifier state lives entirely in Swift's CGEventSource, so evalJS mid-scope " +
+          "cannot observe the held flag. Route introspection outside the scope.",
+      );
+    },
+    waitForCondition<T>(
+      _script: string,
+      _opts?: WaitForConditionOptions,
+    ): Promise<T> {
+      throw new Error(
+        "[tug] holdModifier: waitForCondition is not supported inside a holdModifier thunk — " +
+          "Swift dispatches every inner verb in one synchronous pass; a wait would deadlock.",
+      );
+    },
+    rpcCall<T>(
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<T> {
+      if (finalized) {
+        return Promise.reject(
+          new Error(
+            "[tug] holdModifier: inner RPC issued after the thunk returned",
+          ),
+        );
+      }
+      if (method === "holdModifier") {
+        return Promise.reject(
+          new Error(
+            "[tug] holdModifier: nested scopes are not supported — flatten the modifier set",
+          ),
+        );
+      }
+      if (!isNativeVerbMethod(method)) {
+        return Promise.reject(
+          new Error(
+            `[tug] holdModifier: only native verbs may run inside a holdModifier thunk (got "${method}")`,
+          ),
+        );
+      }
+      buffer.push({ method, ...params } as InnerNativeVerb);
+      // Inner verbs have no useful return value (all native verbs
+      // return null/void); resolve with undefined cast to T.
+      return Promise.resolve(undefined as unknown as T);
+    },
+  };
+  try {
+    await thunk(buffered);
+  } finally {
+    finalized = true;
+  }
+  if (buffer.length === 0) return;
+  await caller.rpcCall<void>("holdModifier", {
+    modifiers,
+    innerVerbs: buffer,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// RPC-verb internals
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve `selector` → an element-center point in CSS viewport coords.
+ * Used by every `*AtElement` wrapper. Throws the page-side
+ * "[tug] getElementBounds selector matched no element" error on miss.
+ */
+async function centerOfElement(
+  caller: HarnessCaller,
+  selector: string,
+): Promise<ViewportPoint> {
+  const rect = await getElementBounds(caller, selector);
+  return {
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2,
+  };
+}
+
+function buildNativeClickParams(
+  viewportPoint: ViewportPoint,
+  opts?: NativeClickOptions,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = { viewportPoint };
+  if (opts?.button !== undefined) params.button = opts.button;
+  if (opts?.clickCount !== undefined) params.clickCount = opts.clickCount;
+  if (opts?.mouseDownDelayMs !== undefined)
+    params.mouseDownDelayMs = opts.mouseDownDelayMs;
+  if (opts?.mouseUpDelayMs !== undefined)
+    params.mouseUpDelayMs = opts.mouseUpDelayMs;
+  return params;
+}
+
+function isNativeVerbMethod(method: string): boolean {
+  switch (method) {
+    case "nativeClick":
+    case "nativeDoubleClick":
+    case "nativeRightClick":
+    case "nativeDrag":
+    case "nativeMouseDown":
+    case "nativeMouseUp":
+    case "nativeKey":
+    case "nativeType":
+      return true;
+    default:
+      return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Type-level sanity: client wrappers are exhaustive.
 // ---------------------------------------------------------------------------
 
@@ -455,4 +978,15 @@ export type ClientMethodNames =
   | "getDeckTrace"
   | "markDeckTrace"
   | "clearDeckTrace"
-  | "enableDeckTrace";
+  | "enableDeckTrace"
+  // Introspection (SURFACE_VERSION 1.1.0)
+  | "getElementText"
+  | "getElementValue"
+  | "getElementAttribute"
+  | "getElementBounds"
+  | "getElementState"
+  | "getActiveElement"
+  | "getSelection"
+  | "getComputedStyleValue"
+  | "registerSelectionBoundary"
+  | "unregisterSelectionBoundary";

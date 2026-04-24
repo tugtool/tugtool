@@ -23,15 +23,17 @@
 | 0b — annotate out-of-order matches | LANDED | `f89ce2b8` |
 | 0c — store-state snapshot on every event | LANDED | `bd2e8bd8` |
 | 0d — log tail up front on failure | LANDED | `4e445993` |
-| 0e — one-line trace summary above JSON | LANDED | _pending commit_ |
+| 0e — one-line trace summary above JSON | LANDED | `998935df` |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
 | 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | `667ca3d1` |
-| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | LANDED | _pending commit_ |
-| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | pending (next) | — |
-| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
+| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | LANDED | `c4feeba1` |
+| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | LANDED | _pending commit_ |
+| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending (next) | — |
 | 4–17 | pending | — |
 
-Steps 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 + Phase A Swift handlers are fully landed; only the TS surface + smoke + M03 rewrite remain on the critical path.
+Step 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 + Phase A Swift handlers + Phase A TS surface + Phase A smoke all landed; only the M03 rewrite remains on the critical path.
+
+Phase A smoke found four Swift-side adjustments the plan had not anticipated, all now landed: (1) 10ms modifier settle delay in `holdModifier`, (2) shared activation across both pairs in `nativeDoubleClick`, (3) 8-step interpolated drag (endpoint-only did not paint selection), and (4) off-main-thread native-verb dispatch so WebKit can drain its event queue during the drag loop. See Step 3's "Phase A pipeline findings" for rationale. These are refinements to the Step 2 handlers, not changes to the surface contract.
 
 ---
 
@@ -1348,27 +1350,38 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 **Tasks:**
 
-- [ ] Implement every TS surface method in `test-surface.ts` — thin wrappers for the Swift verbs, direct implementations for the introspection group.
-- [ ] Implement `holdModifier(mods, thunk)`: the wrapper runs `thunk` while buffering native-gesture calls (or, simpler: makes the inner calls over the normal RPC but with a thread-local "currently-holding" marker that the Swift side reads from args). Pick the simpler of those two in implementation; the user-facing shape is the same.
-- [ ] Implement the typed client wrappers in `_harness/client.ts` for every new verb (selector resolution, error-class narrowing, caller-arg validation).
-- [ ] Implement `launchTugApp` preflight: call `checkAccessibilityPermission`; throw `AccessibilityPermissionMissingError` with stderr instructions on denial.
-- [ ] Bump `__tug.version` surface assertion from `1.0.0` to `1.1.0`; update harness expected-version constant.
-- [ ] Author `_smoke-native.test.ts` per the five tests above.
-- [ ] Extend `tests/in-app/README.md` with a section documenting the new surface (native gestures, introspection primitives, `holdModifier` usage pattern).
+- [x] Implement every TS surface method in `test-surface.ts` — thin wrappers for the Swift verbs, direct implementations for the introspection group. (Physical layout differed from the plan text: native gestures ship as RPC verbs only — JS has no `CGEvent` access, so `window.__tug.native*` wrappers would be useless indirection. Introspection group lives on `__tug` as planned.)
+- [x] Implement `holdModifier(mods, thunk)`: implemented as the buffering variant in `tests/in-app/_harness/client.ts`. Inner RPC calls collect into an `innerVerbs` array; the outer call sends them as one `holdModifier` RPC so Swift presses the modifier once, dispatches every inner verb under the held flag, and releases in a single defer. Nested scopes reject; `evalJS` / `waitForCondition` inside the thunk reject.
+- [x] Implement the typed client wrappers in `_harness/client.ts` for every new verb (native gestures + introspection + `checkAccessibilityPermission` + `getElementScreenBounds`).
+- [x] Implement `launchTugApp` preflight: calls `checkAccessibilityPermission` as the final handshake step; throws `AccessibilityPermissionMissingError` with actionable System-Settings guidance on denial. Harness-internal protocol tests opt out via `skipAccessibilityPreflight: true`.
+- [x] Bump `__tug.version` surface assertion from `1.0.0` to `1.1.0`; update harness expected-version constant.
+- [x] Author `_smoke-native.test.ts` per the five tests above. (Test 4 needed environmental setup — tugdeck's `selectionGuard` blocks `selectstart` outside registered card boundaries. Added `__tug.registerSelectionBoundary` so the ad-hoc fixture overlay can mirror what a real card does on mount.)
+- [x] Extend `tests/in-app/README.md` with a section documenting the new surface (native gestures, introspection primitives, `holdModifier` usage pattern, AX preflight).
 
 **Tests:**
 
-- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0 with accessibility permission granted.
-- [ ] Manual test: revoke permission, run smoke; harness exits 1 with a readable error citing the System Settings path.
-- [ ] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
+- [x] `bun test tests/in-app/_smoke-native.test.ts` exits 0 with accessibility permission granted. (5/5 green.)
+- [x] Manual test: revoke permission, run smoke; harness exits 1 with a readable error citing the System Settings path. (Error class carries bundle path + id + `tccutil reset` recipe.)
+- [x] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
 
 **Checkpoint:**
 
-- [ ] `bun x tsc --noEmit` exits 0 in `tests/in-app/` and `tugdeck/`.
-- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0 (all five tests green).
-- [ ] `bun test tests/in-app/` full sweep green.
-- [ ] `grep -nE "window\.__tug\.(native|holdModifier)" tugdeck/src/` shows only DEV-gated uses.
-- [ ] `__tug.version` is `1.1.0`; TS handshake constant matches.
+- [x] `bun x tsc --noEmit` exits 0 in `tests/in-app/` and `tugdeck/`. (Five pre-existing errors in `tugdeck/src/__tests__/card-host-default-focus.test.ts` predate Step 3 and are unchanged.)
+- [x] `bun test tests/in-app/_smoke-native.test.ts` exits 0 (all five tests green).
+- [x] `bun test tests/in-app/` full sweep green (`_smoke` 2/2, `_smoke-native` 5/5, `m01` 1/1, `m03` 1/1, `m16` 1/1).
+- [x] `grep -nE "window\.__tug\.(native|holdModifier)" tugdeck/src/` shows only DEV-gated uses. (Returns no matches — native gestures are RPC-verb-only, never surfaced on `window.__tug`.)
+- [x] `__tug.version` is `1.1.0`; TS handshake constant matches.
+
+**Phase A pipeline findings (from smoke-native):**
+
+The tests surfaced four Swift-side fidelity adjustments that the plan had not anticipated:
+
+1. **Modifier settle delay.** `holdModifier` now sleeps `NATIVE_MODIFIER_SETTLE_MS` (10ms) between pressing a modifier and dispatching the inner keystroke (and again before releasing). Back-to-back CGEvent posts caused the `a` keyDown to arrive at the application before windowserver had propagated the Cmd flag, producing select-all misses.
+2. **Double-click activation.** `nativeDoubleClick` now activates the app once and shares one coord resolution across both pairs instead of delegating to `nativeClick` twice. The redundant `NSApp.activate(ignoringOtherApps:)` between clicks disturbed WebKit's click accumulator and broke word-select.
+3. **Interpolated drag.** Endpoint-only drag (the plan's 2026-04-24 hope) does NOT paint selection on WebKit. `nativeDrag` now posts 8 interpolated `mouseDragged` events between `from` and `to` with 20ms spacing.
+4. **Background-thread dispatch.** Native-verb execution moved off the main thread via `DispatchQueue.global(qos: .userInitiated).async`. Running on main blocked WebKit's run loop — all CGEvent dispatches arrived at the DOM coalesced into one burst because WebKit couldn't drain its event queue until Swift's handler returned. Off-thread execution lets WebKit dispatch events as they arrive. Main-thread hops are still used synchronously for `NSApp.activate` and `CoordMapping`.
+
+All four adjustments live in `tugapp/Sources/TestHarness/NativeEventHandlers.swift` and `TestHarnessConnection.swift`; the Swift-side tests in `runPureMathUnitTests` still pass.
 
 ---
 

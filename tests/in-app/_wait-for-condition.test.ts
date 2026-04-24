@@ -41,7 +41,10 @@ const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: evalJS error translation", () => {
   test("evalJS that throws surfaces as an Error with matching name/message", async () => {
-    const app = await launchTugApp();
+    // Pure RPC-protocol test — no CGEvent path. Opt out of the
+    // Step-3 AX preflight to keep this suite independent of the
+    // macOS Accessibility grant state.
+    const app = await launchTugApp({ skipAccessibilityPreflight: true });
     try {
       // Throw a named JS error. WebKit reports it through the
       // evaluateJavaScript completion handler; Swift serializes
@@ -72,7 +75,10 @@ describe.skipIf(!SHOULD_RUN)("in-app: evalJS error translation", () => {
 
 describe.skipIf(!SHOULD_RUN)("in-app: waitForCondition", () => {
   test("times out when the condition is never truthy", async () => {
-    const app = await launchTugApp();
+    // Pure RPC-protocol test — no CGEvent path. Opt out of the
+    // Step-3 AX preflight to keep this suite independent of the
+    // macOS Accessibility grant state.
+    const app = await launchTugApp({ skipAccessibilityPreflight: true });
     try {
       // `false` is always falsy; the server polls until its deadline
       // elapses and responds with { ok: false, error: { name:
@@ -107,7 +113,10 @@ describe.skipIf(!SHOULD_RUN)("in-app: waitForCondition", () => {
   });
 
   test("returns the truthy value for an immediately-truthy expression", async () => {
-    const app = await launchTugApp();
+    // Pure RPC-protocol test — no CGEvent path. Opt out of the
+    // Step-3 AX preflight to keep this suite independent of the
+    // macOS Accessibility grant state.
+    const app = await launchTugApp({ skipAccessibilityPreflight: true });
     try {
       // `42` is truthy on the very first poll; the server returns the
       // JSON-serialized value without waiting a tick.

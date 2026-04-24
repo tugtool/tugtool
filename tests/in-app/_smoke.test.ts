@@ -22,9 +22,15 @@ import { launchTugApp, EXPECTED_SURFACE_VERSION } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 
+// This suite predates Phase A native-events and exercises ONLY the
+// `evalJS` protocol — no CGEvent path. Opt out of the AX preflight
+// (harness Step 3) so the smoke tests don't couple their green state
+// to the macOS Accessibility grant.
+const NO_AX = { skipAccessibilityPreflight: true } as const;
+
 describe.skipIf(!SHOULD_RUN)("smoke: launchTugApp → evalJS → close", () => {
   test("evalJS('1 + 1') returns 2", async () => {
-    const app = await launchTugApp();
+    const app = await launchTugApp(NO_AX);
     try {
       const result = await app.evalJS<number>("1 + 1");
       expect(result).toBe(2);
@@ -34,7 +40,7 @@ describe.skipIf(!SHOULD_RUN)("smoke: launchTugApp → evalJS → close", () => {
   });
 
   test("handshake reports the expected surface version", async () => {
-    const app = await launchTugApp();
+    const app = await launchTugApp(NO_AX);
     try {
       expect(app.version).toBe(EXPECTED_SURFACE_VERSION);
     } finally {

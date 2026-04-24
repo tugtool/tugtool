@@ -43,6 +43,22 @@ import WebKit
 /// window on all tested macOS versions.
 let NATIVE_DOUBLE_CLICK_INTERVAL_MS: Int = 80
 
+/// Delay inserted between modifier-key posts and the inner events
+/// they wrap. windowserver's modifier-state table is updated on
+/// each `CGEvent.post`, but WebKit's key-event handler reads the
+/// modifier bits from the arriving `NSEvent`'s `.modifierFlags`,
+/// which requires windowserver to have produced a `flagsChanged`
+/// event AND routed it to the application thread before the next
+/// keystroke arrives. Back-to-back posts with no delay at all can
+/// race — the `a` keyDown sometimes lands at the app before the
+/// Cmd flag has propagated, and Cmd+A silently degrades to a plain
+/// "a" insertion.
+///
+/// 10ms is empirically enough on Apple Silicon + M1 Max Intel
+/// macOS 13-15; values under 5ms start to flake, values over 25ms
+/// are wasteful but harmless.
+let NATIVE_MODIFIER_SETTLE_MS: Int = 10
+
 // MARK: - Enums
 
 enum MouseButton: String {
@@ -206,27 +222,60 @@ final class NativeEventHandlers {
         sleepMs(mouseUpDelayMs)
     }
 
-    /// Convenience: two click pairs separated by the pinned interval,
-    /// with `clickState` progressing 1 → 2 (WebKit's accumulator).
+    /// Two click pairs separated by the pinned interval, with
+    /// `mouseEventClickState` progressing 1 → 2 (WebKit's accumulator).
+    ///
+    /// Does NOT delegate to `nativeClick`: the redundant
+    /// `activateSelf()` between the two pairs can disturb WebKit's
+    /// click-accumulator, producing two single-clicks instead of one
+    /// double-click. Activating once up-front and posting all four
+    /// events through the same source keeps the accumulator
+    /// coherent.
     func nativeDoubleClick(
         viewportPoint: CGPoint,
         button: MouseButton = .left,
     ) throws {
-        try nativeClick(
-            viewportPoint: viewportPoint,
-            button: button,
-            clickCount: 1,
-            mouseDownDelayMs: 20,
-            mouseUpDelayMs: 0,
-        )
+        activateSelf()
+        let screenPoint = try resolveScreenPoint(viewportPoint)
+
+        try postClickPair(at: screenPoint, button: button, clickCount: 1)
         sleepMs(NATIVE_DOUBLE_CLICK_INTERVAL_MS)
-        try nativeClick(
-            viewportPoint: viewportPoint,
-            button: button,
-            clickCount: 2,
-            mouseDownDelayMs: 20,
-            mouseUpDelayMs: 20,
-        )
+        try postClickPair(at: screenPoint, button: button, clickCount: 2)
+    }
+
+    /// Post a single mouseDown/mouseUp pair at an already-resolved
+    /// screen point. Helper for `nativeDoubleClick` so the double-
+    /// click path can share one activation + one coord resolution
+    /// across both pairs. Inter-pair spacing is the caller's
+    /// responsibility.
+    private func postClickPair(
+        at screenPoint: CGPoint,
+        button: MouseButton,
+        clickCount: Int,
+    ) throws {
+        guard let down = CGEvent(
+            mouseEventSource: source,
+            mouseType: button.downType,
+            mouseCursorPosition: screenPoint,
+            mouseButton: button.cgButton,
+        ) else {
+            throw NativeEventError.eventCreationFailed("mouseDown")
+        }
+        guard let up = CGEvent(
+            mouseEventSource: source,
+            mouseType: button.upType,
+            mouseCursorPosition: screenPoint,
+            mouseButton: button.cgButton,
+        ) else {
+            throw NativeEventError.eventCreationFailed("mouseUp")
+        }
+        if clickCount > 1 {
+            down.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
+            up.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
+        }
+        down.post(tap: .cgSessionEventTap)
+        sleepMs(20)
+        up.post(tap: .cgSessionEventTap)
     }
 
     /// Convenience: right-button click for context-menu paths.
@@ -240,12 +289,29 @@ final class NativeEventHandlers {
         )
     }
 
-    // MARK: - Drag (endpoint-only)
+    // MARK: - Drag (interpolated)
 
-    /// Post an endpoint-only drag: `mouseDown` at `from`, one
-    /// `mouseDragged` event at `to`, `mouseUp` at `to`. No
-    /// interpolation — per the 2026-04-24 user call, endpoint
-    /// semantics are enough for every Phase C scenario.
+    /// Post a drag: `mouseDown` at `from`, a series of interpolated
+    /// `mouseDragged` events along the path from `from` → `to`,
+    /// `mouseUp` at `to`.
+    ///
+    /// **Why interpolation, not endpoint-only:** The plan's 2026-04-24
+    /// authoring hoped endpoint-only drag (one `mouseDragged` at the
+    /// destination) would suffice for every Phase C scenario. The
+    /// Phase A smoke-native drag test proved that hope wrong — a
+    /// single `mouseDragged` event on a WebKit contentEditable
+    /// anchors the selection at `from` but never extends it: WebKit
+    /// dispatches `selectstart`, then sees the `mouseUp` and commits
+    /// a zero-length selection. A sequence of events along the path
+    /// makes WebKit's drag-selection extend as the pointer moves.
+    ///
+    /// `interpolationSteps` controls how many intermediate dragged
+    /// events are posted. Default 8 is empirically enough for a
+    /// 40-100px horizontal drag in a `contenteditable` on
+    /// Apple Silicon macOS 13-15; longer drags scale linearly if you
+    /// pass more. 0 falls back to the old endpoint-only behavior
+    /// (one `mouseDragged` at `to`) for tests that want to test
+    /// exactly that.
     ///
     /// Both `from` and `to` must lie inside the WKWebView's
     /// viewport; either being out-of-bounds fails fast with
@@ -256,6 +322,7 @@ final class NativeEventHandlers {
         button: MouseButton = .left,
         mouseDownDelayMs: Int = 20,
         mouseUpDelayMs: Int = 20,
+        interpolationSteps: Int = 8,
     ) throws {
         activateSelf()
         let fromScreen = try resolveScreenPoint(from)
@@ -269,14 +336,6 @@ final class NativeEventHandlers {
         ) else {
             throw NativeEventError.eventCreationFailed("drag mouseDown")
         }
-        guard let dragged = CGEvent(
-            mouseEventSource: source,
-            mouseType: button.draggedType,
-            mouseCursorPosition: toScreen,
-            mouseButton: button.cgButton,
-        ) else {
-            throw NativeEventError.eventCreationFailed("drag mouseDragged")
-        }
         guard let up = CGEvent(
             mouseEventSource: source,
             mouseType: button.upType,
@@ -288,7 +347,38 @@ final class NativeEventHandlers {
 
         down.post(tap: .cgSessionEventTap)
         sleepMs(mouseDownDelayMs)
-        dragged.post(tap: .cgSessionEventTap)
+
+        // Interpolated dragged events. We ALWAYS post at least one
+        // event at `to` (the final step), so even with
+        // `interpolationSteps == 0` the drag has one mouseDragged
+        // at the destination.
+        let steps = max(1, interpolationSteps)
+        for i in 1...steps {
+            let t = Double(i) / Double(steps)
+            let stepScreen = CGPoint(
+                x: fromScreen.x + (toScreen.x - fromScreen.x) * t,
+                y: fromScreen.y + (toScreen.y - fromScreen.y) * t,
+            )
+            guard let dragged = CGEvent(
+                mouseEventSource: source,
+                mouseType: button.draggedType,
+                mouseCursorPosition: stepScreen,
+                mouseButton: button.cgButton,
+            ) else {
+                throw NativeEventError.eventCreationFailed("drag mouseDragged step \(i)")
+            }
+            dragged.post(tap: .cgSessionEventTap)
+            // 20ms/step gives WebKit enough gap between events that
+            // windowserver doesn't coalesce them in its event queue.
+            // Lower values (8ms) cause all 8 drag events to merge
+            // into a single mousemove at the destination, which
+            // defeats the interpolation and regresses to the
+            // endpoint-only behavior that fails to paint selection.
+            sleepMs(20)
+        }
+        // Final settle before mouseUp: give the last mouseDragged
+        // time to be processed so the selection commits correctly.
+        sleepMs(mouseDownDelayMs)
         up.post(tap: .cgSessionEventTap)
         sleepMs(mouseUpDelayMs)
     }
@@ -416,7 +506,21 @@ final class NativeEventHandlers {
         for mod in modifiers {
             postKeyEvent(keyCode: mod.keyCode, keyDown: true)
         }
+        // Let the modifier bits propagate to the app's main thread
+        // before the inner keystroke arrives. See
+        // `NATIVE_MODIFIER_SETTLE_MS` for the rationale.
+        if !modifiers.isEmpty {
+            sleepMs(NATIVE_MODIFIER_SETTLE_MS)
+        }
         defer {
+            if !modifiers.isEmpty {
+                // Same reasoning in reverse: give the inner events
+                // time to land before the modifier release arrives
+                // so WebKit's handler sees the flag on the inner
+                // event. Without this, a fast release can clobber
+                // the flag on the already-queued 'a' keyUp.
+                sleepMs(NATIVE_MODIFIER_SETTLE_MS)
+            }
             for mod in modifiers.reversed() {
                 postKeyEvent(keyCode: mod.keyCode, keyDown: false)
             }
@@ -429,13 +533,47 @@ final class NativeEventHandlers {
     /// Raise Tug.app to frontmost. CGEvent mouse events route via
     /// windowserver → frontmost window at the target screen coord,
     /// so Tug.app must be on top for clicks to land on its WKWebView.
+    ///
+    /// Safe to call from any queue. `NSApp.activate` is main-thread-
+    /// only, so we marshal via a synchronous hop.
     private func activateSelf() {
-        NSApp.activate(ignoringOtherApps: true)
+        if Thread.isMainThread {
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            DispatchQueue.main.sync {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
     }
 
     /// Resolve a viewport (CSS) coord to screen CG, or throw
     /// `coordinateOutOfBounds`.
+    ///
+    /// `CoordMapping.viewportToScreen` reaches into AppKit
+    /// (`webView.convert`, `window.convertToScreen`, `NSScreen`) —
+    /// those are main-thread-only. Callers from a background queue
+    /// get a synchronous main-thread hop; callers already on main
+    /// execute inline.
     private func resolveScreenPoint(_ viewport: CGPoint) throws -> CGPoint {
+        if Thread.isMainThread {
+            return try resolveScreenPointOnMain(viewport)
+        }
+        var result: Result<CGPoint, Error>!
+        DispatchQueue.main.sync {
+            do {
+                result = .success(try self.resolveScreenPointOnMain(viewport))
+            } catch {
+                result = .failure(error)
+            }
+        }
+        switch result {
+        case .success(let p): return p
+        case .failure(let e): throw e
+        case .none: throw NativeEventError.webViewUnavailable
+        }
+    }
+
+    private func resolveScreenPointOnMain(_ viewport: CGPoint) throws -> CGPoint {
         guard let webView = self.webView else {
             throw NativeEventError.webViewUnavailable
         }
