@@ -24,6 +24,7 @@ import {
   DECK_TRACE_CAPACITY,
   type DeckTraceEvent,
 } from "../deck-trace";
+import { registerDeckStore } from "../lib/deck-store-registry";
 
 /**
  * Record `n` `commit-tick` events with increasing `count`, returning
@@ -242,6 +243,112 @@ describe("deckTrace.record stamps caller loc", () => {
         expect(e.loc).toMatch(/\.tsx?:\d+:\d+$/);
         expect(e.loc).not.toMatch(/deck-trace\.ts:/);
       }
+    }
+  });
+});
+
+describe("deckTrace.record stamps store snapshot", () => {
+  test("store is null when no DeckManager is registered", () => {
+    // beforeEach clears the trace and enables recording, but does
+    // NOT register a store — so the registry sits at its default
+    // null. captureStoreSnapshot must tolerate this rather than
+    // crashing the record call.
+    registerDeckStore(null);
+    deckTrace.record({ kind: "commit-tick", count: 0 });
+    const events = deckTrace.dump();
+    expect(events).toHaveLength(1);
+    expect(events[0]!.store).toBeNull();
+  });
+
+  test("store carries activePaneId, derived activeCardId, and hasFocus when registered", () => {
+    const fakeState = {
+      cards: [
+        { id: "c1", componentId: "noop", paneId: "p1", flags: {}, componentState: {} },
+        { id: "c2", componentId: "noop", paneId: "p1", flags: {}, componentState: {} },
+      ],
+      panes: [
+        {
+          id: "p1",
+          position: { x: 0, y: 0 },
+          size: { width: 100, height: 100 },
+          cardIds: ["c1", "c2"],
+          activeCardId: "c2",
+          title: "",
+          acceptsFamilies: [],
+        },
+      ],
+      activePaneId: "p1",
+      hasFocus: true,
+    } as const;
+    const fakeStore = {
+      subscribe: (_: () => void) => () => {},
+      getSnapshot: () => fakeState as unknown as ReturnType<NonNullable<Parameters<typeof registerDeckStore>[0]>["getSnapshot"]>,
+      getVersion: () => 0,
+    } as unknown as Parameters<typeof registerDeckStore>[0];
+    registerDeckStore(fakeStore);
+    try {
+      deckTrace.record({
+        kind: "fr-flip",
+        from: "c1",
+        to: "c2",
+        trigger: "activateCard",
+      });
+      const events = deckTrace.dump();
+      expect(events).toHaveLength(1);
+      const store = events[0]!.store;
+      expect(store).not.toBeNull();
+      expect(store!.activePaneId).toBe("p1");
+      expect(store!.activeCardId).toBe("c2");
+      expect(store!.hasFocus).toBe(true);
+    } finally {
+      // Reset the singleton so later tests see the default null state.
+      registerDeckStore(null);
+    }
+  });
+
+  test("store handles missing active pane / null activePaneId gracefully", () => {
+    const fakeState = {
+      cards: [],
+      panes: [],
+      // No activePaneId — this is the empty-deck state.
+      hasFocus: false,
+    } as const;
+    const fakeStore = {
+      subscribe: (_: () => void) => () => {},
+      getSnapshot: () => fakeState as unknown as ReturnType<NonNullable<Parameters<typeof registerDeckStore>[0]>["getSnapshot"]>,
+      getVersion: () => 0,
+    } as unknown as Parameters<typeof registerDeckStore>[0];
+    registerDeckStore(fakeStore);
+    try {
+      deckTrace.record({ kind: "commit-tick", count: 0 });
+      const events = deckTrace.dump();
+      expect(events).toHaveLength(1);
+      const store = events[0]!.store;
+      expect(store).not.toBeNull();
+      expect(store!.activePaneId).toBeNull();
+      expect(store!.activeCardId).toBeNull();
+      expect(store!.hasFocus).toBe(false);
+    } finally {
+      registerDeckStore(null);
+    }
+  });
+
+  test("store snapshot tolerates getSnapshot throwing (captureStoreSnapshot returns null)", () => {
+    const fakeStore = {
+      subscribe: (_: () => void) => () => {},
+      getSnapshot: () => {
+        throw new Error("deliberate failure for test");
+      },
+      getVersion: () => 0,
+    } as unknown as Parameters<typeof registerDeckStore>[0];
+    registerDeckStore(fakeStore);
+    try {
+      deckTrace.record({ kind: "commit-tick", count: 0 });
+      const events = deckTrace.dump();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.store).toBeNull();
+    } finally {
+      registerDeckStore(null);
     }
   });
 });

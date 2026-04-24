@@ -76,6 +76,53 @@ describe("toContainOrderedSubset — pass cases", () => {
     expect(result.pass).toBe(true);
   });
 
+  test("partial match: store field on actual does not constrain expected", () => {
+    // Step 0c adds `store` to DeckTraceEvent. Same semantics as `loc`:
+    // if the expected subset does not name `store`, the matcher must
+    // ignore it on the actual entry.
+    const result = toContainOrderedSubset(
+      [
+        {
+          kind: "destination-flip",
+          cardId: "c2",
+          from: false,
+          to: true,
+          timestamp: 1,
+          seq: 1,
+          loc: "deck-manager.ts:234:5",
+          store: { activePaneId: "p1", activeCardId: "c1", hasFocus: true },
+        },
+      ],
+      [{ kind: "destination-flip", cardId: "c2", to: true }],
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  test("partial match: explicit store in expected does enforce the match", () => {
+    // A test can assert the store snapshot exactly the same way
+    // it can assert `loc` — useful for ordering diagnoses where
+    // the question is "was activeCardId already c2 when this
+    // event fired, or still c1?"
+    const result = toContainOrderedSubset(
+      [
+        {
+          kind: "destination-flip",
+          cardId: "c2",
+          to: true,
+          store: { activePaneId: "p1", activeCardId: "c1", hasFocus: true },
+        },
+      ],
+      [
+        {
+          kind: "destination-flip",
+          cardId: "c2",
+          store: { activeCardId: "c2" },
+        },
+      ],
+    );
+    expect(result.pass).toBe(false);
+  });
+
   test("partial match: explicit loc in expected does enforce the match", () => {
     // If a test wants to assert that a specific emission site fired
     // (e.g. `deck-manager.ts:189:3` vs `:234:5`), it can name `loc`

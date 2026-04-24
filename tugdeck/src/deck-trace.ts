@@ -118,20 +118,55 @@ export type SelectionRestoreVia =
   | "applyFocusSnapshot";
 
 /**
+ * Snapshot of the DeckManager store at the moment a trace event is
+ * recorded. Surfaces the pieces of state that drive activation /
+ * first-responder decisions so an ordering diagnosis ("did
+ * destination-flip fire while the store still thought A was active?")
+ * does not require inferring state transitions from adjacent events.
+ *
+ * Null when `getDeckStore()` returns null — i.e. the trace module
+ * recorded an event before the `DeckManager` constructor ran and
+ * registered its store. This is a transient pre-registration state
+ * during boot; once any pane is mounted, the snapshot is populated
+ * on every subsequent record call.
+ *
+ * `activeCardId` is derived: it is the `activeCardId` of the pane
+ * whose id equals `activePaneId`. Null when no active pane exists
+ * or when the active pane has no active card.
+ *
+ * `hasFocus` mirrors `state.hasFocus` — whether the tugdeck window
+ * owns OS foreground focus. `isFocusDestination(cardId)` returns
+ * true only when `hasFocus === true` and `cardId === activeCardId`;
+ * matcher readers can reconstruct that bit from the snapshot alone.
+ */
+export interface DeckTraceStoreSnapshot {
+  activePaneId: string | null;
+  activeCardId: string | null;
+  hasFocus: boolean;
+}
+
+/**
  * The tagged union of events recordable in the deck trace. Every
- * event variant carries `{ timestamp, seq, loc? }` in addition to its
- * kind-specific payload; `timestamp` is `performance.now()` (or
+ * event variant carries `{ timestamp, seq, loc?, store? }` in addition
+ * to its kind-specific payload; `timestamp` is `performance.now()` (or
  * `Date.now()` when `performance` is unavailable), `seq` is a
  * module-scoped monotonic counter, `loc` is the caller's `file.tsx:line:col`
  * captured via `new Error().stack` at record time (empty string when
- * the engine does not expose a usable stack frame).
+ * the engine does not expose a usable stack frame), `store` is a
+ * {@link DeckTraceStoreSnapshot} captured synchronously at record
+ * time (null when no store is registered).
  *
  * String-valued element fields (e.g. `focusin.el`) are formatted by
  * {@link formatElement} into `tag#id.class[data-card-id=foo]`-style
  * strings at record time so the trace never retains live DOM
  * references past the recording moment.
  */
-export type DeckTraceEvent = { timestamp: number; seq: number; loc?: string } & (
+export type DeckTraceEvent = {
+  timestamp: number;
+  seq: number;
+  loc?: string;
+  store?: DeckTraceStoreSnapshot | null;
+} & (
   | {
       kind: "fr-flip";
       from: string | null;
@@ -203,20 +238,21 @@ export type DeckTraceEvent = { timestamp: number; seq: number; loc?: string } & 
 /**
  * The payload shape of {@link DeckTrace.record} — the caller provides
  * the variant-specific fields; the module stamps `timestamp`, `seq`,
- * and `loc` on ingest.
+ * `loc`, and `store` on ingest.
  */
+type StampedFields = "timestamp" | "seq" | "loc" | "store";
 export type DeckTraceEventInput =
-  | Omit<Extract<DeckTraceEvent, { kind: "fr-flip" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "destination-flip" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "card-host-mount" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "card-host-unmount" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "a3-fire" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "focus-call" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "focusin" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "save-callback" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, "timestamp" | "seq" | "loc">
-  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, "timestamp" | "seq" | "loc">;
+  | Omit<Extract<DeckTraceEvent, { kind: "fr-flip" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "destination-flip" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "card-host-mount" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "card-host-unmount" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "a3-fire" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "focus-call" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "focusin" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "save-callback" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -346,6 +382,39 @@ function captureCallerLoc(): string {
   return "";
 }
 
+/**
+ * Capture a {@link DeckTraceStoreSnapshot} synchronously at record
+ * time. Returns `null` when the deck store registry has not yet
+ * bound a store (pre-DeckManager boot) or when the snapshot throws
+ * unexpectedly — both are transient conditions we tolerate rather
+ * than propagating up into the caller's record call.
+ *
+ * Derives `activeCardId` by looking up the active pane's `activeCardId`
+ * in `state.panes` — this matches {@link isFocusDestination}'s model
+ * exactly, so readers of the trace can reconstruct "was this card the
+ * focus destination at record time?" from the snapshot alone.
+ */
+function captureStoreSnapshot(): DeckTraceStoreSnapshot | null {
+  const store = getDeckStore();
+  if (store === null) return null;
+  try {
+    const state = store.getSnapshot();
+    const activePaneId = state.activePaneId ?? null;
+    let activeCardId: string | null = null;
+    if (activePaneId !== null) {
+      const pane = state.panes.find((p) => p.id === activePaneId);
+      activeCardId = pane?.activeCardId ?? null;
+    }
+    return {
+      activePaneId,
+      activeCardId,
+      hasFocus: state.hasFocus,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Ring buffer + public API
 // ---------------------------------------------------------------------------
@@ -369,12 +438,17 @@ let seqCounter = 0;
 /** Recording gate. `record` short-circuits when this is false. */
 let enabled = false;
 
-function appendEvent(input: DeckTraceEventInput, loc: string): void {
+function appendEvent(
+  input: DeckTraceEventInput,
+  loc: string,
+  store: DeckTraceStoreSnapshot | null,
+): void {
   const stamped = {
     ...input,
     timestamp: now(),
     seq: ++seqCounter,
     loc,
+    store,
   } as DeckTraceEvent;
   if (full) {
     buffer[head] = stamped;
@@ -450,7 +524,8 @@ export const deckTrace: DeckTrace = {
   record(event) {
     if (!enabled) return;
     const loc = captureCallerLoc();
-    appendEvent(event, loc);
+    const store = captureStoreSnapshot();
+    appendEvent(event, loc, store);
   },
   dump() {
     return readOrdered();
