@@ -269,8 +269,29 @@ test-in-app:
 
     echo "==> [4/7] Build Tug.app (Debug)"
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' build
+    # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile phase
+    # headers + indented command-line invocations) even on a clean build.
+    # Capture the full log to a temp file, then on success show only the
+    # signal (warnings, errors, BUILD banner). On failure, dump the full
+    # log so the user can diagnose — nothing is hidden when it matters.
+    XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
+    if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' build \
+        > "$XCODE_LOG" 2>&1; then
+        # Print warnings, compiler/linker errors, and the BUILD banner.
+        # `grep || true` tolerates a clean build (no matches).
+        grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
+        # If the build was fully clean, grep prints nothing — surface the
+        # banner explicitly so the user sees a success signal.
+        grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
+        rm -f "$XCODE_LOG"
+    else
+        status=$?
+        echo "==> xcodebuild failed (status $status), full log:"
+        cat "$XCODE_LOG"
+        rm -f "$XCODE_LOG"
+        exit "$status"
+    fi
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
         -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
