@@ -31,7 +31,7 @@
 | 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | LANDED | _pending commits_ |
 | 4–17 | pending | — |
 
-Phase A critical path is complete. The trusted-event pipeline is confirmed faithful: M03's rewrite against `nativeClickAtElement` surfaced a third real production bug (pane-chrome mousedown blurred the A3-restored focus) that the synthesized-click version had masked. Fix landed in `pane-focus-controller.ts`; M03 now green against real user mouse semantics. Subsequent M-series rewrites (M01, M16, M04/M05/M20/M21) can now proceed with confidence that synthesized-click false greens are behind us.
+Phase A critical path is complete. The trusted-event pipeline is confirmed faithful: M03's rewrite against `nativeClickAtElement` surfaced a third real production bug (pane-chrome mousedown blurred the A3-restored focus) that the synthesized-click version had masked. Fix landed in `pane-focus-controller.ts`; M03 now green against real user mouse semantics. M01 and M16 have also been rewritten with trusted clicks (2026-04-24 follow-on); both pass without additional production changes — Step 3b's fix was comprehensive enough to cover tab clicks and close-button clicks in the same cross-cutting way. Subsequent M-series rewrites (M04/M05/M20/M21) can now proceed with confidence that synthesized-click false greens are behind us.
 
 Phase A smoke found four Swift-side adjustments the plan had not anticipated, all now landed: (1) 10ms modifier settle delay in `holdModifier`, (2) shared activation across both pairs in `nativeDoubleClick`, (3) 8-step interpolated drag (endpoint-only did not paint selection), and (4) off-main-thread native-verb dispatch so WebKit can drain its event queue during the drag loop. See Step 3's "Phase A pipeline findings" for rationale. These are refinements to the Step 2 handlers, not changes to the surface contract.
 
@@ -1454,7 +1454,7 @@ This step does two things:
 
 **Follow-on (out of scope for Step 3b, noted here so they don't get lost):**
 
-- M01 and M16 currently also use `focusElement` and `app.click` for user-gesture clicks. They report green in the real app today, but they have the same fidelity gap. After 3b validates the pattern, plan a follow-on to rewrite M01 and M16 similarly. Tracked in Roadmap / Follow-ons below.
+- ~~M01 and M16 currently also use `focusElement` and `app.click` for user-gesture clicks. They report green in the real app today, but they have the same fidelity gap. After 3b validates the pattern, plan a follow-on to rewrite M01 and M16 similarly.~~ **LANDED (2026-04-24):** Both M01 and M16 rewritten with `nativeClickAtElement`; both pass on first run without additional production changes. Step 3b's pane-focus-controller mousedown fix covers tab clicks (tabs are pane chrome, not card content) and close-button clicks (the fix's `[data-no-activate]` opt-out preserves browser default behavior there, which is what we want for close — the blur before unmount is harmless). `grep -cE "focusElement|app\.click\(" tests/in-app/{m01,m16}-*.test.ts` returns 0 on both. Full in-app sweep (_smoke, _smoke-native, m01, m03, m16) 10/10 green.
 
 ---
 

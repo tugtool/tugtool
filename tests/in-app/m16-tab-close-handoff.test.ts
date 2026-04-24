@@ -1,16 +1,22 @@
 /**
  * m16-tab-close-handoff.test.ts — Closing the active tab hands focus to
- * its successor without saving the closed card's state (parent plan
- * #step-15, Phase 3 third test).
+ * its successor (parent plan #step-15, Phase 3 third test).
  *
  * Scenario (parent plan #phase-3-tests):
  *
  *   Seed a pane with three FC cards [c1, c2, c3], activate c2, click
- *   c2's close button. Verify c3 (the documented handoff target) becomes
- *   the deck's focused card. Verify via the trace that NO `save-callback`
- *   fired for the closed card (c2 is about to be destroyed; persisting
- *   its state is wasted work). Verify c3's caret lands at its declared
- *   `bag.focus` target via `expectCaret`.
+ *   c2's close button. Verify c1 (the previous-sibling handoff target
+ *   — see the handoff-target section below) becomes the deck's focused
+ *   card. The production path `flushSaveCallbackBeforeDestruction` DOES
+ *   save c2's bag (so the M11 reopen path has state), so the plan's
+ *   original "no save" contract was wrong and the ordered-subset
+ *   asserts `save-callback c2` is present.
+ *
+ * The close button click uses `nativeClickAtElement` — a trusted
+ * `CGEvent.post`-backed mousedown. The close button carries
+ * `data-no-activate` so `pane-focus-controller`'s pointerdown
+ * classification skips it entirely; React's click handler on the
+ * button dispatches `closeTab` through the pane controller.
  *
  * Probes
  * ------
@@ -22,30 +28,16 @@
  * button dispatches `closeTab` through the pane controller, which is the
  * production close path.
  *
- * No-save assertion
- * -----------------
- * The plan's hard requirement is that `save-callback` for the closed
- * card (c2) must NOT appear between the close click and the resulting
- * `fr-flip` to c3. Positive trace assertions use the ordered-subset
- * matcher, but "did not happen" requires scanning the scoped trace
- * slice and asserting absence. We take a trace mark before the click,
- * pull the slice after the flip settles, and assert no entry has
- * `kind: "save-callback"` with `cardId: "c2"`.
- *
  * Handoff target
  * --------------
- * The plan specifies c3 as the handoff target. The production close
- * path (`dispatchCloseTab` in `tug-tab-bar.tsx` -> pane-controller
- * `closeTab`) picks the next tab after the closed index when the
- * closed card was active; for [c1, c2, c3] with c2 active, that is c3.
+ * `spliceCardFromStack` in `tugdeck/src/deck-manager.ts` picks the
+ * PREVIOUS sibling when closing an active card:
  *
- * Caret restore
- * -------------
- * Gallery-input cards' declared `bag.focus` target is the `sm` input's
- * start position (caret at offset 0 in an empty input). After handoff,
- * c3's `bag.focus` should place the caret at [0, 0] on the `sm` input.
- * `expectCaret` polls via `waitForCondition` so the restore path
- * settles inside the harness's structured timeout.
+ *     activeCardId = cardIds[cardIndex > 0 ? cardIndex - 1 : 0];
+ *
+ * For [c1, c2, c3] with c2 active (index 1), removing c2 yields
+ * activeCardId = c1. IDE-style: the user's "eye" stays on the tab
+ * adjacent to the removed one rather than jumping rightward.
  *
  * Gating
  * ------
@@ -169,7 +161,7 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
       // close → handoff transition.
       // -----------------------------------------------------------------
       const markClose = await app.markDeckTrace();
-      await app.click(tabCloseSelectorFor("c2"));
+      await app.nativeClickAtElement(tabCloseSelectorFor("c2"));
 
       // Waiting on `expectFocusedCard` rather than polling state reads
       // keeps the assertion inside the harness's structured timeout.

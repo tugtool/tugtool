@@ -4,14 +4,20 @@
  *
  * Scenario (parent plan #phase-3-tests):
  *
- *   Seed a pane with two FC cards (A, B). Focus the form-control input
- *   inside card A, type "alpha", click tab B, verify B is the focused
- *   card with its own (empty) caret state, click back to tab A, verify
- *   A's caret is restored at offset 5 (end of "alpha").
+ *   Seed a pane with two FC cards (A, B). Click into card A's form-
+ *   control input and type "alpha", click tab B, verify B is the
+ *   focused card with its own (empty) caret state, click back to tab
+ *   A, verify A's caret is restored at offset 5 (end of "alpha").
  *
  *   The trace assertion asserts the "activate A → activate B → activate
  *   A again" ordered triple of (fr-flip, destination-flip → true,
  *   focus-call) groups (parent plan #step-13 task list).
+ *
+ * Every user-gesture click is a trusted `nativeClickAtElement` —
+ * `CGEvent.post`-backed `isTrusted: true` mousedown — so the browser's
+ * hardware-event default focus-change on mousedown runs the same way
+ * it does for a real user's mouse. Typing uses JS-synthesized input
+ * events (keystroke-into-focused-input is isTrusted-independent).
  *
  * Probes
  * ------
@@ -125,12 +131,16 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
       );
 
       // -----------------------------------------------------------------
-      // Gesture 1: focus the input inside A, type "alpha".
+      // Gesture 1: click into A's input to focus it, type "alpha".
+      //
+      // Wait for focus to actually land before typing: the mousedown
+      // default focus-change is async relative to the RPC return, so a
+      // fast follow-up could race and insert text into body.
       // -----------------------------------------------------------------
-      // Plan task: "Activate card A, type 'alpha'". `focusElement` is
-      // the [D09] escape hatch — `.focus()` matches the production path
-      // (WebKit does not grant default focus to synthetic pointerdown).
-      await app.focusElement(inputSelectorFor("A"));
+      await app.nativeClickAtElement(inputSelectorFor("A"));
+      await app.waitForCondition<boolean>(
+        `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(inputSelectorFor("A"))})`,
+      );
       await app.type(inputSelectorFor("A"), "alpha");
 
       // Sanity: the input's persisted value reads back as "alpha".
@@ -154,7 +164,7 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
       // subset assertion below scopes to just the A→B transition.
       // -----------------------------------------------------------------
       const markSwitchToB = await app.markDeckTrace();
-      await app.click(tabSelectorFor("B"));
+      await app.nativeClickAtElement(tabSelectorFor("B"));
 
       // Waiting on `expectFocusedCard` rather than polling state reads
       // keeps the assertion inside the harness's structured timeout.
@@ -203,7 +213,7 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
       // Gesture 3: click tab A. Fresh mark for the B→A transition.
       // -----------------------------------------------------------------
       const markSwitchToA = await app.markDeckTrace();
-      await app.click(tabSelectorFor("A"));
+      await app.nativeClickAtElement(tabSelectorFor("A"));
 
       await app.expectFocusedCard("A");
       expect(await app.getActiveCardId()).toBe("A");
@@ -239,6 +249,15 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
         process.stderr.write(
           `\n[m01-tab-switch-fc] Tug.app log tail (last 200 lines):\n${tail}\n`,
         );
+      }
+      // Dump the full deck-trace ring to a sibling file so post-
+      // mortem diagnosis has the event sequence that produced the
+      // wrong focus / caret outcome. Matches the M03/M16 pattern.
+      const tracePath = await app.dumpTraceToFile(
+        "logs/m01-tab-switch-fc-trace.json",
+      );
+      if (tracePath !== null) {
+        process.stderr.write(`[m01-tab-switch-fc] trace dumped to ${tracePath}\n`);
       }
       throw err;
     } finally {
