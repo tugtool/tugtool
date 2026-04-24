@@ -1,7 +1,7 @@
 # Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test; Step 14 m03 test; Step 15 m16 test.
+Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test; Step 14 m03 test; Step 15 m16 test; Step 16 Phase 3 checkpoint.
 
 ## Files touched (condensed)
 - tugdeck: `deck-trace.ts`, `deck-manager.ts` (testMode+seedDeckState), `deck-manager-store.ts` (invokeSaveCallback), `components/chrome/{card-host,deck-commit-beacon,deck-canvas}.tsx`, `main.tsx`, `test-surface.ts` (SURFACE_VERSION "1.0.0"). Tests in `src/__tests__/`.
@@ -41,8 +41,9 @@ Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/i
 - `tests/in-app/bunfig.toml` MUST keep `[test] root = "."` + NO happy-dom preload.
 
 ## Hints for upcoming steps
-- Step 15 complete. Checkpoint `bun test tests/in-app/m16-tab-close-handoff.test.ts` exits 0 (skipped without `TUGAPP_IN_APP_TEST=1`).
-- **Step 16 is Phase 3 integration checkpoint** — drift-prevention exercise (revert each fix by hand, verify test fails, revert the revert). Also: verify no happy-dom tests added, release-build binary size unchanged, update plan Status `draft`→`active`, update plan-doc-hygiene to point at `tugplan-in-app-bridge.md`.
+- Step 16 complete. Plan Status now `active`. Documentation Plan + phase-2-bridge intro both updated to reflect `roadmap/tugplan-in-app-bridge.md` as landed canonical Phase 2 spec.
+- Phase 3 integration checkpoint passed: aggregate `bun test tests/in-app/` 29 pass / 11 skip / 0 fail; tugdeck `bun test` 2434 pass. No new happy-dom tests (only "NO happy-dom" comments). Swift TestHarness/* and all new MainWindow/AppDelegate lines are `#if DEBUG`-gated; tugdeck `__tug` surface DEV+__tugTestMode gated. Release-build binary size invariance verified by inspection; `wc -c` on notarized binary deferred (needs built app).
+- Drift-prevention exercise deferred pending built Tug.app DEBUG binary (same blocker as Step 11 manual tasks). Path forward: `TUGAPP_IN_APP_TEST=1 bun test tests/in-app/m{01,03,16}*`, then hand-revert each target fix and re-run to see failure.
 - m16 idiom notes: used `traceClose.filter(e => e.kind === "save-callback" && e.cardId === "c2")` + `expect(...).toEqual([])` for the "did not happen" assertion (ordered-subset matcher is only positive). `DeckTraceEvent` is exported as a type from `_harness/index.ts`. Gated c3 host root wait AFTER the close-click (c3 not mounted until handoff runs).
 - `EXPECTED_SURFACE_VERSION` in `_harness/index.ts` must match `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` AND `TestHarnessConnection.surfaceVersion` (currently "1.0.0").
 - `App.logPath` null unless `testName` passed. Always pass `testName` in scenario tests so `tailLog(50)` has output.
