@@ -4,15 +4,22 @@
  *
  * Scenario (parent plan #phase-3-tests):
  *
- *   Seed two panes each with one FC card (A1 in p1, A2 in p2). Focus
- *   the form-control input inside A1 and type a short string so A1
- *   carries a non-trivial caret position. Click pane 2's title bar;
- *   the pane-focus-controller's capture-phase pointerdown handler
+ *   Seed two panes each with one FC card (A1 in p1, A2 in p2). Click
+ *   into A1's form-control input and type a short string so A1 carries
+ *   a non-trivial caret position. Click pane 2's title bar; the
+ *   pane-focus-controller's capture-phase pointerdown handler
  *   classifies this as a Branch-A activation and calls
  *   `store.activateCard(A2)`. Verify A2 becomes the deck's focused
  *   card. Verify A1's state was saved between the click and the
  *   `fr-flip` (ordered-subset trace assertion). Click pane 1's title
  *   bar to return; verify A1's caret is restored at the typed offset.
+ *
+ * Every user-gesture click is a trusted `nativeClickAtElement` —
+ * `CGEvent.post`-backed `isTrusted: true` mousedown — so the browser's
+ * hardware-event default focus-change on mousedown runs the same way
+ * it does for a real user's mouse. Typing uses JS-synthesized input
+ * events (keystroke-into-focused-input is isTrusted-independent and
+ * has no mousedown-default path to miss).
  *
  * Probes
  * ------
@@ -53,9 +60,6 @@ import {
 // Matcher registration (once per module load)
 // ---------------------------------------------------------------------------
 
-// Enables `expect(trace).toContainOrderedSubset([...])` below. The
-// pure-predicate form remains available on the named import for test
-// authors who prefer not to extend `expect`.
 registerSubsetMatcher();
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
@@ -96,8 +100,6 @@ function paneTitleSelectorFor(paneId: string): string {
 
 describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and saves outgoing card", () => {
   test("focus A1, click pane 2 title, A2 focused; click pane 1 title, A1's caret restored", async () => {
-    // `app` is declared outside the try so the `catch` block can tail
-    // the subprocess log before rethrowing.
     const app = await launchTugApp({ testName: "m03-pane-activation" });
     try {
       // Deck-trace defaults to disabled; flip it on before any events
@@ -150,14 +152,19 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       );
 
       // -----------------------------------------------------------------
-      // Gesture 1: focus A1's input and type "hello" so A1 carries a
-      // non-trivial caret position. The plan's final assertion — "A1's
-      // caret restored at its saved offset" — requires a saved offset
-      // distinct from 0 to be meaningful. Typing 5 chars gives us a
-      // caret at offset 5 after insertion; the restore assertion below
-      // checks that same offset lands back on the return trip.
+      // Gesture 1: click into A1's input to focus it, then type "hello"
+      // so A1 carries a non-trivial caret position. The restore
+      // assertion at the end needs a non-zero offset to be meaningful;
+      // 5 chars give us selectionStart=selectionEnd=5.
+      //
+      // Wait for focus to actually land before typing: the mousedown
+      // default focus-change is async relative to the RPC return, so a
+      // fast follow-up could race and insert text into body.
       // -----------------------------------------------------------------
-      await app.focusElement(inputSelectorFor("A1"));
+      await app.nativeClickAtElement(inputSelectorFor("A1"));
+      await app.waitForCondition<boolean>(
+        `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(inputSelectorFor("A1"))})`,
+      );
       await app.type(inputSelectorFor("A1"), "hello");
 
       // Sanity: the input's persisted value reads back as "hello" and
@@ -181,10 +188,8 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       // activation transition.
       // -----------------------------------------------------------------
       const markSwitchToP2 = await app.markDeckTrace();
-      await app.click(paneTitleSelectorFor("p2"));
+      await app.nativeClickAtElement(paneTitleSelectorFor("p2"));
 
-      // Waiting on `expectFocusedCard` rather than polling state reads
-      // keeps the assertion inside the harness's structured timeout.
       await app.expectFocusedCard("A2");
       expect(await app.getActiveCardId()).toBe("A2");
 
@@ -219,7 +224,7 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       // plan's core correctness check.
       // -----------------------------------------------------------------
       const markSwitchToP1 = await app.markDeckTrace();
-      await app.click(paneTitleSelectorFor("p1"));
+      await app.nativeClickAtElement(paneTitleSelectorFor("p1"));
 
       await app.expectFocusedCard("A1");
       expect(await app.getActiveCardId()).toBe("A1");
@@ -257,6 +262,17 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
         process.stderr.write(
           `\n[m03-pane-activation] Tug.app log tail (last 200 lines):\n${tail}\n`,
         );
+      }
+      // Dump the full deck-trace ring to a sibling file so post-
+      // mortem diagnosis has the event sequence that produced the
+      // wrong focus / caret outcome. Path is relative to the test's
+      // cwd (tests/in-app/), so `logs/...` lands next to the
+      // subprocess-log files.
+      const tracePath = await app.dumpTraceToFile(
+        "logs/m03-pane-activation-trace.json",
+      );
+      if (tracePath !== null) {
+        process.stderr.write(`[m03-pane-activation] trace dumped to ${tracePath}\n`);
       }
       throw err;
     } finally {

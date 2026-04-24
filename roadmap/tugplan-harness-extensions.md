@@ -27,13 +27,15 @@
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
 | 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | `667ca3d1` |
 | 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | LANDED | `c4feeba1` |
-| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | LANDED | _pending commit_ |
-| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending (next) | — |
+| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | LANDED | `b087ec60` |
+| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | LANDED | _pending commits_ |
 | 4–17 | pending | — |
 
-Step 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 + Phase A Swift handlers + Phase A TS surface + Phase A smoke all landed; only the M03 rewrite remains on the critical path.
+Phase A critical path is complete. The trusted-event pipeline is confirmed faithful: M03's rewrite against `nativeClickAtElement` surfaced a third real production bug (pane-chrome mousedown blurred the A3-restored focus) that the synthesized-click version had masked. Fix landed in `pane-focus-controller.ts`; M03 now green against real user mouse semantics. Subsequent M-series rewrites (M01, M16, M04/M05/M20/M21) can now proceed with confidence that synthesized-click false greens are behind us.
 
 Phase A smoke found four Swift-side adjustments the plan had not anticipated, all now landed: (1) 10ms modifier settle delay in `holdModifier`, (2) shared activation across both pairs in `nativeDoubleClick`, (3) 8-step interpolated drag (endpoint-only did not paint selection), and (4) off-main-thread native-verb dispatch so WebKit can drain its event queue during the drag loop. See Step 3's "Phase A pipeline findings" for rationale. These are refinements to the Step 2 handlers, not changes to the surface contract.
+
+Step 3b surfaced one additional production gap — documented in `roadmap/m-series-reconciliation.md` "Step 3b" section — and fixed it in `pane-focus-controller.ts`: a document-level capture-phase `mousedown` listener now `preventDefault()`s on pane-chrome clicks to stop WebKit's default focus-clearing from blurring whatever the A3 activation effect just restored. Card-content clicks are untouched (inputs still focus normally).
 
 ---
 
@@ -1420,40 +1422,35 @@ This step does two things:
 
 **Tasks:**
 
-- [ ] Apply the rewrite to `tests/in-app/m03-pane-activation.test.ts` per Artifacts above.
-- [ ] Verify the rewrite is total:
-  ```
-  grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts
-  ```
-  Must return `0`. (Note the `\(` — we want to catch `app.click(` call sites, not `nativeClickAtElement` or comments.)
-- [ ] Run `just test-in-app` and capture the log to `/tmp/m03-trusted.log`.
-- [ ] **If M03 passes:** Phase A pipeline confirmed faithful for this scenario. Add a one-line comment at the top of `m03-pane-activation.test.ts` citing Step 3b's commit and the Phase A dependency. Proceed to checkpoint.
-- [ ] **If M03 fails:**
-  - [ ] Read the failure's trace artifact (`tests/in-app/logs/m03-pane-activation-trace.json` — the test's catch block should dump it, same pattern as M16 did in Step 0f; if it doesn't yet, add a `dumpTraceToFile` call in the catch block as part of this rewrite).
-  - [ ] Diagnose via the trace. Likely questions (each answerable from the trace's `loc`, `store`, ordering, and event shapes):
-    - Did `save-callback cardId=A1` fire on the first click? If no, `pane-focus-controller`'s capture-phase pointerdown didn't reach `invokeSaveCallback` — check whether the capture-phase listener actually ran (look at event ordering vs. mousedown default) and whether `getFirstResponderCardId()` returned A1 at capture time.
-    - If save fired, did the captured bag actually contain `focus: { kind: "form-control", persistKey: … }` for the `sm` input? `captureFocus(cardRoot)` reads `document.activeElement` — was it still inside A1 at pointerdown-capture time? Real mousedown default fires AFTER pointerdown, so this should be yes, but a real hardware event may order differently from our expectation on WebKit. Dump the bag contents if needed (add a temporary `console.log(store.getCardState("A1"))` after the first click; remove before commit).
-    - On the return trip, did A3 for A1 run `applyFocusSnapshot`? Look for `focus-call {site: "a3-dom-authority", cardId: "A1"}` in the trace. If yes but the caret isn't restored, something after A3 is re-blurring the element.
-    - Or does A3 run with `earlyReturn: "gate-refused"` / `"no-bag"` / `"not-destination"`? Each of those points at a distinct production gap.
-  - [ ] Land the production fix in the same commit series. Each production-side commit should be separately reviewable (e.g., `fix(deck-manager): <specific bug>`); the test rewrite commits land after the fix is in.
-  - [ ] Re-run `just test-in-app`. Must exit 0.
-  - [ ] Run `bun test` in `tugdeck/`. Must exit 0 (catches regressions from any production fix in the shared codebase).
-- [ ] Manual spot-check in the running app: reproduce the exact user flow (click into `sm` textarea so caret blinks there, click the OTHER pane's title bar, click the FIRST pane's title bar). Caret must land back in `sm` at the saved offset. This manual check is the Step's real-world acceptance — if the automated test passes but manual fails (or vice versa), there's still a harness-vs-reality gap to close.
-- [ ] Update `roadmap/m-series-reconciliation.md` with any new findings (cite the Step 3b commit hashes).
+- [x] Apply the rewrite to `tests/in-app/m03-pane-activation.test.ts` per Artifacts above.
+- [x] Verify the rewrite is total: `grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts` returns `0`.
+- [x] Run in-app tests; initial rewrite failed with the user-reported real-world symptom (sm caret not restored on return trip).
+- [x] **M03 failed on first run — production fix required:** Trace artifact (`logs/m03-pane-activation-trace.json`) made the bug unambiguous. Diagnosis from the trace:
+  - `save-callback cardId=A1` fired correctly on the p2 click (pane-focus-controller's save path is working).
+  - A3 fired on the return-trip commit with `site: "a3-dom-authority"` → focused sm-A1 (`activeBefore=body, activeAfter=sm-A1`).
+  - 0–1ms later, a `focusout` on sm-A1 with `relatedTarget: null` — focus moved from sm-A1 to body.
+  - Root cause: WebKit's mousedown default behavior, for a trusted click on a non-focusable pane-chrome element, clears focus to body. Because React commits (and our A3 useLayoutEffect) run inline during the mousedown dispatch BEFORE WebKit's default runs, the sequence was: A3 focus → mousedown default blur → caret gone.
+  - This was hidden for the synthesized-click version because `isTrusted: false` mouse events don't trigger WebKit's default focus-clearing — exactly the fidelity gap [D09] documents.
+- [x] Production fix landed: `pane-focus-controller.ts` grew a second document-level capture-phase listener for `mousedown`. When the click is inside `[data-pane-id]` but outside any `[data-card-host]` (i.e., pane chrome — title, frame, resize handles), the listener calls `event.preventDefault()` to suppress WebKit's focus-clearing. Card-content clicks (inside `[data-card-host]`) are untouched, preserving the browser's default "click input → focus input" behavior. The existing pointerdown listener stays as the activation driver; `preventDefault` on pointerdown would cancel the compatibility mouse events entirely (mousedown / mouseup / click), so a separate mousedown listener is the surgical fix.
+- [x] Re-run M03 with fix applied: 1/1 green.
+- [x] `bun test` in `tugdeck/`: 2452/2452 green (fix did not regress tugdeck unit tests).
+- [x] Full in-app sweep: `_smoke` 2/2, `_smoke-native` 5/5, M01 1/1, M03 1/1, M16 1/1 — no regressions.
+- [x] Manual spot-check in the running app passed (2026-04-24): click into `sm` textarea, click the OTHER pane's title bar, click the FIRST pane's title bar — caret lands back in `sm` at the saved offset, matching the automated test outcome. The fidelity envelope closed: the trusted-click test and real-app gesture flow produce the same result.
+- [x] Update `roadmap/m-series-reconciliation.md` with the Step 3b finding.
 
 **Tests:**
 
-- [ ] `just test-in-app` exits 0 with the rewritten M03.
-- [ ] `bun test` in `tugdeck/` exits 0.
-- [ ] Manual interactive repro in real Tug.app (DEBUG build) matches the test outcome.
-- [ ] `grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts` returns 0.
+- [x] In-app sweep exits 0 with the rewritten M03 (all 10 test cases across the 5 sweep files green).
+- [x] `bun test` in `tugdeck/` exits 0 (2452/2452).
+- [x] Manual interactive repro in real Tug.app (DEBUG build) matches the test outcome (2026-04-24).
+- [x] `grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts` returns 0.
 
 **Checkpoint:**
 
-- [ ] M03 uses `nativeClickAtElement` exclusively for user-gesture clicks.
-- [ ] `just test-in-app` green.
-- [ ] Real-app manual repro matches test outcome.
-- [ ] If production fix was required, reconciliation doc updated and the fix has its own commit separate from the test rewrite.
+- [x] M03 uses `nativeClickAtElement` exclusively for user-gesture clicks.
+- [x] In-app sweep green.
+- [x] Real-app manual repro matches test outcome.
+- [x] Production fix landed in `pane-focus-controller.ts`; reconciliation doc updated. Fix lands in its own commit separate from the test rewrite.
 
 **Follow-on (out of scope for Step 3b, noted here so they don't get lost):**
 

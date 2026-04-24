@@ -1,20 +1,21 @@
 # M-Series Reconciliation — Findings & Plan
 
-**Status:** COMPLETE — M01, M03, M16 all green as of 2026-04-24.
+**Status:** COMPLETE — M01, M03, M16 all green as of 2026-04-24. M03 rewritten against trusted `CGEvent`-backed clicks (Phase A, harness-extensions Step 3b) on 2026-04-24; rewrite surfaced a third production bug (pane-chrome mousedown blurred the just-restored focus). Fix landed in `pane-focus-controller.ts`.
 **Last updated:** 2026-04-24
 **Source runs:**
 - Baseline (pre-fix): `/tmp/m-series-0abc.log`, log at commit `bd2e8bd8`.
 - Post-gate-fix: `/tmp/m-series-gate-fix.log`.
 - Post-save-fix (M01, M03 green): `/tmp/m-series-after-gate-save.log`.
 - Final (all green): `/tmp/m-series-final.log`.
+- Post-Phase-A M03 trusted-click rewrite (pane-chrome mousedown fix): see harness-extensions Step 3b commits.
 
-**Prerequisites landed:** harness-extensions Phase 0 steps 0a (source-location capture), 0b (out-of-order annotation), 0c (store-state snapshot), 0f (trace-artifact file for post-mortem).
+**Prerequisites landed:** harness-extensions Phase 0 steps 0a (source-location capture), 0b (out-of-order annotation), 0c (store-state snapshot), 0f (trace-artifact file for post-mortem); Phase A Steps 1–3 (trusted `CGEvent` pipeline + `__tug` surface + `_smoke-native.test.ts`).
 
 ---
 
 ## Outcome
 
-All three tests are green. Two real production bugs were found and fixed; three test expectations were updated to match production reality that the plan had guessed wrong on.
+All three tests are green. Three real production bugs were found and fixed across two reconciliation passes; three test expectations were updated to match production reality that the plan had guessed wrong on. The third production bug was found during the Step 3b trusted-click rewrite of M03 — it was hidden for the synthesized-click version because `isTrusted: false` mouse events skip WebKit's default focus-clearing.
 
 ### Final result matrix
 
@@ -22,13 +23,14 @@ All three tests are green. Two real production bugs were found and fixed; three 
 |---|---|---|---|
 | **_smoke** | ✅ 2/2 | — | — |
 | **M01** | ✅ 1/1 | (a) Focus-theft gate refused card-to-card transfer. (b) Plan's expected trace order was wrong. (c) Plan assumed fr-flip `trigger=activateCard`; production uses `_setActiveCardInPane` intra-pane. | Gate: new branch 6 (`focus-theft-gate.ts`); tests: ordering + trigger + drop fresh-card focus-call assertion. |
-| **M03** | ✅ 1/1 | (a) Same gate bug. (b) Cross-pane activation path did not invoke save-callback for the outgoing card. | Gate: shared with M01. Wiring: `pane-focus-controller.ts` now invokes save before cross-pane activation. Tests: same ordering fix as M01. |
+| **M03** | ✅ 1/1 | (a) Same gate bug. (b) Cross-pane activation path did not invoke save-callback for the outgoing card. (c) [Step 3b] Pane-chrome mousedown default blurred the A3-restored focus. | Gate: shared with M01. Wiring: `pane-focus-controller.ts` now invokes save before cross-pane activation. Mousedown: `pane-focus-controller.ts` now `preventDefault()`s mousedown on pane chrome to stop WebKit from clearing focus to body. Tests: same ordering fix as M01. |
 | **M16** | ✅ 1/1 | Plan expected c3 (next sibling); production's `spliceCardFromStack` picks c1 (previous). Plan also expected "no save for closed card"; production's `flushSaveCallbackBeforeDestruction` DOES save so the M11 reopen path has state. | Test: c3 → c1; drop no-save assertion; drop caret assertion (c1 has no bag). |
 
 ### The decisive fixes
 
 - **Production, gate:** `canProgrammaticallyFocus` got a new branch ("if activeElement is inside a different deck card, permit") — resolved M01's missing `focus-call` and unblocked the A3 path for both M01 and M03.
 - **Production, cross-pane save:** `pane-focus-controller.ts` now calls `store.invokeSaveCallback(outgoingCardId)` before `store.activateCard(...)`, mirroring the intra-pane tab-switch path (`tug-pane.tsx performSelectCard`).
+- **Production, pane-chrome mousedown (Step 3b):** `pane-focus-controller.ts` now installs a second document-level capture-phase listener, `onMouseDown`, that calls `event.preventDefault()` when the mousedown target is inside a pane's chrome (inside `[data-pane-id]` but outside any `[data-card-host]`). WebKit's default mousedown behavior walks up from the click target looking for a focusable element; when the target is a non-focusable pane title / frame / resize handle, WebKit clears focus to body. For the M03 flow — click pane title → pane-focus-controller activates destination card → A3 restores focus to the card's `sm` input — that default-clear ran AFTER A3 (in the same React commit cycle) and nuked the restored focus 1ms after it was set. `preventDefault` on mousedown keeps the focus set by A3 intact. Card-content clicks still get the browser default, so real input-click focus behavior is untouched. The existing pointerdown listener stays as the activation driver; we don't `preventDefault` on pointerdown because that would cancel the compatibility mouse events (mousedown / mouseup / click) entirely.
 - **Tests:** three expected-subset updates to match the causally-correct production emission order (`destination-flip → fr-flip → (optional focus-call)`) and the real trigger values.
 
 ### Default-focus fallback for fresh cards — FIXED
@@ -45,6 +47,25 @@ The A3 activation effect was **bag-driven**: it called `.focus()` via `applyFocu
 The A3 effect calls `traceApplyDefaultFocus("a3-default-focus", …)` when `bag?.focus` is missing or `{kind: "none"}`. A `focus-call` event fires with `site: "a3-default-focus"` so trace readers can distinguish default-driven focus from snapshot-restored focus. Existing focus inside the card root is respected (click-in-progress wins, same contract as `applyFocusSnapshot`).
 
 Result: tab-switch-to-fresh-card now reliably moves the caret into the new card, both intra-pane (M01) and cross-pane (M03). M01, M03, M16 all assert the `focus-call` event on fresh-card activation and pass end-to-end.
+
+### Step 3b: Trusted-click rewrite of M03 found the pane-chrome mousedown bug
+
+With `_smoke-native.test.ts` green, M03 was rewritten to use `app.nativeClickAtElement` instead of `app.focusElement` / `app.click`. Every user-gesture click in the test now posts a trusted `CGEvent`-backed mousedown (`isTrusted: true`) — exactly what a real user's mouse produces.
+
+The rewrite immediately failed with the user-reported real-world symptom: after clicking p1's title (the return trip from p2), A1's caret was NOT restored. The failure dumped via the catch block's `dumpTraceToFile` was unambiguous:
+
+```
+seq 29  focus-call    site=a3-dom-authority  cardId=A1  activeBefore=body  activeAfter=sm-A1   timestamp=894
+seq 30  a3-fire       cardId=A1  focusedEl=sm-A1                                               timestamp=894
+seq 31  a3-fire       cardId=A2  earlyReturn=not-destination                                   timestamp=894
+seq 32  focusout      el=sm-A1   relatedTarget=null                                            timestamp=894
+```
+
+A3 focused sm-A1; 0-1ms later sm-A1 was blurred to body; no subsequent focus restoration. `document.elementFromPoint(titleCenter)` confirmed the click coord hit the title bar div, not sm-A2 — so the classification was correct; the issue was WebKit's handling of mousedown on a non-focusable target AFTER the React commit (including A3) had already run.
+
+Why the synthesized-click version of this test passed: `app.click` dispatches `new MouseEvent("mousedown", ...)` which carries `isTrusted: false`. WebKit's default focus-clearing runs ONLY for trusted mouse events; synthesized mousedown skipped that path entirely and left A3's focus intact. The user's real-app experience (trusted mouse) exposed the gap the test was masking — exactly the fidelity-envelope hole [D09] documents and Step 3b exists to close.
+
+The fix above (pane-chrome mousedown `preventDefault`) restores the user's mental model: a click on pane chrome activates the destination card AND leaves the user's caret where activation/A3 placed it. Previously it was a race the synthesized-click test couldn't catch.
 
 ---
 
