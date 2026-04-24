@@ -22,8 +22,8 @@
 | 0a — source location on every event | LANDED | `3dbb6bb1` |
 | 0b — annotate out-of-order matches | LANDED | `f89ce2b8` |
 | 0c — store-state snapshot on every event | LANDED | `bd2e8bd8` |
-| 0d — log tail up front on failure | LANDED | _pending commit_ |
-| 0e — one-line trace summary above JSON | pending (next) | — |
+| 0d — log tail up front on failure | LANDED | `4e445993` |
+| 0e — one-line trace summary above JSON | LANDED | _pending commit_ |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
 | 1 — CGEventPost variant spike | pending | — |
 | 2 — Swift CGEventPost handler | pending | — |
@@ -31,7 +31,7 @@
 | 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
 | 4–17 | pending | — |
 
-Steps 0d → 0e → 1 → 2 → 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter.
+Steps 1 → 2 → 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 is fully landed.
 
 ---
 
@@ -803,15 +803,15 @@ See [#risks] above.
 
 Twenty-four flat steps across four phases (0: diagnostic observability, A: hardware events including M03 trusted-click rewrite, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17; Step 3b is lettered for the same reason. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
 
-Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Five of its six steps are landed (0a, 0b, 0c, 0d, 0f); 0e remains. 0e is fast polish that makes failure output readable in a single pass. Once it lands, Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
+Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. All six steps are landed (0a, 0b, 0c, 0d, 0e, 0f). The diagnostic floor is now as high as it gets without concrete failure traffic to harden against. Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
 
-**Critical path right now:** 0e → 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
+**Critical path right now:** 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
 
 #### Phase 0: Diagnostic Observability {#phase-0-diagnostic}
 
 Six additive upgrades to the deck-trace recording surface and the harness matcher output. No production behavior changes, no new `__tug` RPC verbs, no new DEBUG guards. Every improvement propagates to every future in-app test — Phase A's CGEventPost scenarios, Phase B's EM-card scenarios, Phase C's ~20-scenario sweep — so diagnostic fidelity lifts compound rather than accumulating tech debt.
 
-**Landed:** 0a (commit `3dbb6bb1`), 0b (commit `f89ce2b8`), 0c (commit `bd2e8bd8`), 0d (2026-04-24), 0f (commit `4a83846f`). **Remaining:** 0e.
+**Landed:** 0a (commit `3dbb6bb1`), 0b (commit `f89ce2b8`), 0c (commit `bd2e8bd8`), 0d (commit `4e445993`), 0e (2026-04-24), 0f (commit `4a83846f`). **Phase 0 complete.**
 
 #### Step 0a: Source location on every deck-trace event {#step-0a}
 
@@ -938,6 +938,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 0e: One-line trace summary before JSON dump {#step-0e}
 
+**Status:** LANDED (2026-04-24). Shipped as `summarizeEvent` + `formatActualSummary` in `tests/in-app/_harness/matchers.ts`, plus the compile-time drift test at `tugdeck/src/__tests__/trace-summarize-drift.test.ts` that pins the harness-side `HarnessKnownTraceKind` mirror against tugdeck's real `DeckTraceEvent["kind"]` union. Internal `never`-branch in `summarizeEvent` catches drift in the reverse direction (branch missing for a mirrored kind).
+
 **Depends on:** #step-0b.
 
 **Commit:** `feat(harness): print one-line trace summary above JSON dump in matcher failures`
@@ -945,21 +947,23 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 **References:** The full JSON is ~400 lines for 8 events. A single line per event makes the sequence scannable in 10 seconds; expected-entry match markers make the failure shape visible at a glance.
 
 **Artifacts:**
-- `tests/in-app/_harness/matchers.ts` — `summarizeEvent(e)` returns a short label per `DeckTraceEvent` variant; `toContainOrderedSubset` failure message prints a numbered summary of `actual` above the JSON dump, with match markers (`← expected #N`, `← matched #M`, `← cursor stopped here`).
+- `tests/in-app/_harness/matchers.ts` — `summarizeEvent(e: DeckTraceEventShape)` returns a short kind-specific label; `formatActualSummary(...)` renders the numbered actual-trace block with match markers (`← matched #N`, `← expected #i (wrong order)`, `← cursor stopped here`); `toContainOrderedSubset` failure message inserts the summary block between the preamble and the full JSON dump.
+- `tugdeck/src/__tests__/trace-summarize-drift.test.ts` — compile-time drift check pinning tugdeck's `DeckTraceEvent["kind"]` against the harness-side mirror (`HarnessKnownTraceKind`). Adding a kind on either side without the matching mirror update fails tsc with an actionable error.
 
 **Tasks:**
-- [ ] Implement `summarizeEvent` branches for every `DeckTraceEvent` kind: `fr-flip A→B`, `destination-flip B:true`, `a3-fire B early=not-dest`, `focus-call B site=…`, `save-callback A1 src=debounced`, `focusin el=input#…`, etc.
-- [ ] In the failure message, print a numbered list of one-line summaries with match markers; the violation-annotation from Step 0b anchors the header.
-- [ ] Retain the full JSON dump below the summary for completeness.
+- [x] Implement `summarizeEvent` branches for every `DeckTraceEvent` kind: `fr-flip A→B`, `destination-flip B:false→true`, `a3-fire B early=not-dest`, `focus-call B site=…`, `save-callback A1 src=debounced`, `focusin el=input#…`, etc. Internal `never` default-branch enforces exhaustiveness.
+- [x] In the failure message, print a numbered list of one-line summaries with match markers; the violation-annotation from Step 0b anchors the header.
+- [x] Retain the full JSON dump below the summary for completeness.
 
 **Tests:**
-- [ ] Unit: `summarizeEvent` returns non-empty string for every kind in the union (exhaustiveness check via `never` type).
-- [ ] Unit: failure message contains summary above JSON dump (order-sensitive substring check).
-- [ ] Manual: m01 failure reads as an indexed summary list with match markers — no need to open the JSON to understand the violation.
+- [x] Unit: `summarizeEvent` returns non-empty string for every kind in the union (exhaustiveness check via `never` type). Covered by `summarizeEvent — exhaustive per-kind coverage` describe block in `_harness/matchers.test.ts`.
+- [x] Unit: failure message contains summary above JSON dump (order-sensitive substring check). Covered by `toContainOrderedSubset — one-line summary above JSON dump` describe block.
+- [x] Unit: compile-time drift check via `trace-summarize-drift.test.ts` (tugdeck side).
+- [ ] Manual: m01 failure reads as an indexed summary list with match markers — no need to open the JSON to understand the violation. *(Gated on Step 3b — requires a real failure to observe.)*
 
 **Checkpoint:**
-- [ ] Summary precedes JSON in every matcher failure.
-- [ ] Exhaustive-check passes (new trace event kinds added by Phase B force a `summarizeEvent` branch update, failing typecheck otherwise).
+- [x] Summary precedes JSON in every matcher failure. Verified by `toContainOrderedSubset` unit test asserting `summaryPos < jsonPos`.
+- [x] Exhaustive-check passes (new trace event kinds added by Phase B force a `summarizeEvent` branch update, failing typecheck otherwise). Confirmed by the drift test compiling only when `Exclude<DeckTraceEvent["kind"], HarnessKnownTraceKind>` is `never`.
 
 ---
 
@@ -1583,9 +1587,9 @@ This step does two things:
 
 - [x] Every `DeckTraceEvent` carries a `loc` (caller file:line) and `store` (`{activePaneId, activeCardId, hasFocus}`) snapshot at record time; matchers ignore both fields in partial matches. (Landed 0a + 0c.)
 - [x] `toContainOrderedSubset` failure messages annotate out-of-order matches explicitly ("Order violation: …"). (Landed 0b.)
-- [x] M-series test failures write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into M16; 0e pending for the one-line-summary portion.)
+- [x] M-series test failures write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into M16.)
 - [x] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error. (Landed 0d, 2026-04-24.)
-- [ ] Matcher failure messages carry a one-line-per-event summary above the full JSON dump. (0e.)
+- [x] Matcher failure messages carry a one-line-per-event summary above the full JSON dump. (Landed 0e, 2026-04-24.)
 - [ ] `tests/in-app/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
 - [ ] `tests/in-app/m03-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click, passes `just test-in-app`, and matches interactive real-app behavior. (3b.)
 - [ ] `tests/in-app/_smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.

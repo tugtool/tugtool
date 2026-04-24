@@ -55,6 +55,130 @@ export interface MatcherResult {
  */
 export type ExpectedEntry = Record<string, unknown>;
 
+// ---------------------------------------------------------------------------
+// DeckTraceEvent shape mirror (Spec [#s01-deck-trace-event])
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal mirror of `tugdeck/src/deck-trace.ts` → `TraceActivationTarget`.
+ * Drives {@link summarizeEvent}'s `a3-fire` branch. Mirror (rather than
+ * `import type`) keeps `tests/in-app/` tsc runs free of tugdeck's
+ * React/DOM graph; drift against the real union is caught at
+ * compile time by `tugdeck/src/__tests__/trace-summarize-drift.test.ts`.
+ */
+export type TraceActivationTargetShape =
+  | { kind: "focus-element"; el: string }
+  | { kind: "dispatch-activated" }
+  | { kind: "none" };
+
+/**
+ * Discriminated-union mirror of `tugdeck/src/deck-trace.ts` →
+ * `DeckTraceEvent`'s kind-specific payload. Fields stamped by the
+ * trace module (`timestamp`, `seq`, `loc`, `store`) are declared
+ * optional so this type matches both wire events (all four stamps
+ * populated) and test fixtures (none populated).
+ *
+ * Keep every variant in sync with `DeckTraceEvent` in
+ * `tugdeck/src/deck-trace.ts`. The drift test pins that coupling at
+ * compile time; any new kind added there forces an update here
+ * *and* a new branch in {@link summarizeEvent}.
+ */
+export type DeckTraceEventShape = {
+  timestamp?: number;
+  seq?: number;
+  loc?: string;
+  store?: unknown;
+} & (
+  | {
+      kind: "fr-flip";
+      from: string | null;
+      to: string | null;
+      trigger: string;
+    }
+  | {
+      kind: "destination-flip";
+      cardId: string;
+      from: boolean;
+      to: boolean;
+    }
+  | {
+      kind: "card-host-mount";
+      cardId: string;
+      hostStackId: string;
+    }
+  | {
+      kind: "card-host-unmount";
+      cardId: string;
+      hostStackId: string;
+    }
+  | {
+      kind: "a3-fire";
+      cardId: string;
+      isFirstRun: boolean;
+      prev: boolean;
+      now: boolean;
+      earlyReturn: string | null;
+      gatePassed: boolean | null;
+      target: TraceActivationTargetShape | null;
+      focusedEl: string | null;
+    }
+  | {
+      kind: "focus-call";
+      site: string;
+      cardId: string;
+      targetSelector: string;
+      activeBefore: string;
+      activeAfter: string;
+      hidden: boolean;
+    }
+  | {
+      kind: "focusin";
+      el: string;
+      relatedTarget: string | null;
+    }
+  | {
+      kind: "focusout";
+      el: string;
+      relatedTarget: string | null;
+    }
+  | {
+      kind: "save-callback";
+      cardId: string;
+      source: string;
+    }
+  | {
+      kind: "selection-restore";
+      cardId: string;
+      via: string;
+    }
+  | {
+      kind: "commit-tick";
+      count: number;
+    }
+);
+
+/**
+ * Set of every `kind` handled by {@link summarizeEvent}. Exported so
+ * `tugdeck/src/__tests__/trace-summarize-drift.test.ts` can pin it
+ * against the real `DeckTraceEvent` union at compile time — a new
+ * kind added to tugdeck without a matching branch here fails that
+ * test's tsc pass with an actionable error.
+ */
+export const HARNESS_KNOWN_TRACE_KINDS = [
+  "fr-flip",
+  "destination-flip",
+  "card-host-mount",
+  "card-host-unmount",
+  "a3-fire",
+  "focus-call",
+  "focusin",
+  "focusout",
+  "save-callback",
+  "selection-restore",
+  "commit-tick",
+] as const;
+export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
+
 /**
  * Strict deep-equal for values. Used for array elements and for
  * nested objects when the expected side's key list spans the entire
@@ -185,17 +309,147 @@ function summarizeValue(v: unknown): string {
 }
 
 /**
- * Render an expected entry or trace event as a terse one-line string:
- * `kind key1=value1 key2=value2`. Used by the order-violation
- * annotation so failure messages read at a glance without opening the
- * JSON dump.
+ * Render the `a3-fire` event's `target` field (a
+ * {@link TraceActivationTargetShape}) as a short label. Only the
+ * `focus-element` variant carries a payload; the others are pure
+ * tags.
+ */
+function summarizeTarget(t: TraceActivationTargetShape): string {
+  if (t.kind === "focus-element") return `focus-element(${t.el})`;
+  return t.kind;
+}
+
+/**
+ * Format a scalar field value for inclusion in a summarizeEvent
+ * label. Maps `undefined` → `?` (partial expected-entry sentinel)
+ * and `null` → `∅` (explicit-null marker, distinct from unset);
+ * everything else stringifies. Lets the same summarizer serve
+ * both real trace events (all fields populated) AND partially-
+ * specified expected entries passed through the ordered-subset
+ * matcher's annotation path — a matcher-level concern surfacing
+ * here because both shapes share the `kind`-keyed union mirror.
+ */
+function fmt(v: unknown): string {
+  if (v === undefined) return "?";
+  if (v === null) return "∅";
+  return String(v);
+}
+
+/**
+ * One-line summary of a fully-typed {@link DeckTraceEventShape}.
+ * Label grammar per Step 0e: kind-specific short forms
+ * (`fr-flip A→B trigger=…`, `destination-flip B:false→true`,
+ * `a3-fire B firstRun=true prev=false→now=true early=not-destination`,
+ * etc.) chosen to make the sequence scannable in 10 seconds without
+ * opening the full JSON dump.
+ *
+ * The `default` branch triggers a compile-time `never` check: every
+ * kind in the mirrored {@link DeckTraceEventShape} union must have a
+ * case here, and adding a new kind to that union fails tsc until a
+ * matching branch lands. The companion drift test in
+ * `tugdeck/src/__tests__/trace-summarize-drift.test.ts` pins the
+ * mirror against tugdeck's real `DeckTraceEvent` union so any drift
+ * between the two is caught at the tugdeck tsc boundary too.
+ *
+ * Missing fields on partial expected entries render via {@link fmt}
+ * as `?` (undefined) or `∅` (explicit null), never as the literal
+ * string "undefined".
+ */
+export function summarizeEvent(e: DeckTraceEventShape): string {
+  switch (e.kind) {
+    case "fr-flip":
+      return `fr-flip ${fmt(e.from)}→${fmt(e.to)} trigger=${fmt(e.trigger)}`;
+    case "destination-flip":
+      return `destination-flip ${fmt(e.cardId)}:${fmt(e.from)}→${fmt(e.to)}`;
+    case "card-host-mount":
+      return `card-host-mount ${fmt(e.cardId)} stack=${fmt(e.hostStackId)}`;
+    case "card-host-unmount":
+      return `card-host-unmount ${fmt(e.cardId)} stack=${fmt(e.hostStackId)}`;
+    case "a3-fire": {
+      const parts = [
+        `a3-fire ${fmt(e.cardId)}`,
+        `firstRun=${fmt(e.isFirstRun)}`,
+        `prev=${fmt(e.prev)}→now=${fmt(e.now)}`,
+      ];
+      if (e.earlyReturn !== null && e.earlyReturn !== undefined) {
+        parts.push(`early=${e.earlyReturn}`);
+      }
+      if (e.gatePassed !== null && e.gatePassed !== undefined) {
+        parts.push(`gate=${e.gatePassed}`);
+      }
+      if (e.target !== null && e.target !== undefined) {
+        parts.push(`target=${summarizeTarget(e.target)}`);
+      }
+      if (e.focusedEl !== null && e.focusedEl !== undefined) {
+        parts.push(`focused=${e.focusedEl}`);
+      }
+      return parts.join(" ");
+    }
+    case "focus-call": {
+      const parts = [
+        `focus-call ${fmt(e.cardId)}`,
+        `site=${fmt(e.site)}`,
+        `target=${fmt(e.targetSelector)}`,
+        `active=${e.activeBefore || "∅"}→${e.activeAfter || "∅"}`,
+      ];
+      if (e.hidden === true) parts.push("hidden=true");
+      return parts.join(" ");
+    }
+    case "focusin":
+      return e.relatedTarget !== null && e.relatedTarget !== undefined
+        ? `focusin el=${fmt(e.el)} from=${e.relatedTarget}`
+        : `focusin el=${fmt(e.el)}`;
+    case "focusout":
+      return e.relatedTarget !== null && e.relatedTarget !== undefined
+        ? `focusout el=${fmt(e.el)} to=${e.relatedTarget}`
+        : `focusout el=${fmt(e.el)}`;
+    case "save-callback":
+      return `save-callback ${fmt(e.cardId)} src=${fmt(e.source)}`;
+    case "selection-restore":
+      return `selection-restore ${fmt(e.cardId)} via=${fmt(e.via)}`;
+    case "commit-tick":
+      return `commit-tick count=${fmt(e.count)}`;
+    default: {
+      // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
+      // the assignment below fails because `e` is no longer `never`.
+      const _exhaustive: never = e;
+      void _exhaustive;
+      return "<unknown>";
+    }
+  }
+}
+
+/**
+ * Type guard for an entry whose `kind` matches one of the variants
+ * {@link summarizeEvent} handles. Lets {@link summarizeEntry} route
+ * known shapes through the typed summarizer without an `as` cast.
+ */
+function isKnownTraceEvent(entry: unknown): entry is DeckTraceEventShape {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return false;
+  }
+  const kind = (entry as Record<string, unknown>).kind;
+  return (
+    typeof kind === "string" &&
+    (HARNESS_KNOWN_TRACE_KINDS as readonly string[]).includes(kind)
+  );
+}
+
+/**
+ * Render an expected entry or trace event as a terse one-line string.
+ * Trace events with a known `kind` are routed through
+ * {@link summarizeEvent} for the kind-specific short form; unknown
+ * shapes (including partially-specified expected entries) fall back
+ * to the generic `kind key1=value1 key2=value2` rendering.
  *
  * Fields stamped by the trace module itself (`timestamp`, `seq`,
- * `loc`, `store`) are omitted — they are context, not signal, for the
- * subset-matcher's diagnosis. Step 0e extends this to drive a full
- * event-summary table above the JSON dump.
+ * `loc`, `store`) are omitted — they are context, not signal, for
+ * the subset-matcher's diagnosis.
  */
 function summarizeEntry(entry: unknown): string {
+  if (isKnownTraceEvent(entry)) {
+    return summarizeEvent(entry);
+  }
   if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
     return String(entry);
   }
@@ -206,6 +460,69 @@ function summarizeEntry(entry: unknown): string {
     .filter((k) => !skip.has(k))
     .map((k) => `${k}=${summarizeValue(obj[k])}`);
   return pairs.length > 0 ? `${kind} ${pairs.join(" ")}` : kind;
+}
+
+/**
+ * Render the numbered one-line summary of the full `actual` trace
+ * that {@link toContainOrderedSubset} prepends above its JSON dump
+ * on failure. Each row carries at most three markers:
+ *   - `← matched #N`        — this actual entry satisfied expected #N.
+ *   - `← expected #i (wrong order)`
+ *                          — would have matched the failing expected
+ *                            but lies BEFORE an earlier match (order
+ *                            violation from Step 0b).
+ *   - `← cursor stopped here`
+ *                          — the matcher's scan cursor for the failing
+ *                            expected sat at this index.
+ *
+ * The footer spells out how many actual rows were scanned without a
+ * match for the failing expected so the reader can tell at a glance
+ * whether the trace is short a needed event or the wrong shape.
+ */
+function formatActualSummary(
+  actual: readonly unknown[],
+  matchedIndices: readonly number[],
+  earlierMatches: readonly number[],
+  cursor: number,
+  missingExpectedIndex: number,
+  want: ExpectedEntry,
+): string {
+  if (actual.length === 0) {
+    return `actual trace summary: trace is empty (0 entries).`;
+  }
+  const indexWidth = String(actual.length - 1).length;
+  const matchedByIndex = new Map<number, number>();
+  matchedIndices.forEach((idx, pos) => matchedByIndex.set(idx, pos));
+  const earlierSet = new Set(earlierMatches);
+  const header =
+    `actual trace summary ` +
+    `(matched ${matchedIndices.length}/${matchedIndices.length + 1} ` +
+    `before failing on expected #${missingExpectedIndex}):`;
+  const lines: string[] = [header];
+  for (let i = 0; i < actual.length; i++) {
+    const idx = String(i).padStart(indexWidth, " ");
+    const label = summarizeEntry(actual[i]);
+    const markers: string[] = [];
+    const matchedPos = matchedByIndex.get(i);
+    if (matchedPos !== undefined) {
+      markers.push(`← matched #${matchedPos}`);
+    }
+    if (earlierSet.has(i)) {
+      markers.push(`← expected #${missingExpectedIndex} (wrong order)`);
+    }
+    if (i === cursor && cursor < actual.length) {
+      markers.push(`← cursor stopped here`);
+    }
+    const suffix = markers.length > 0 ? `   ${markers.join("  ")}` : "";
+    lines.push(`  [${idx}] ${label}${suffix}`);
+  }
+  const gap = actual.length - cursor;
+  const footer =
+    cursor >= actual.length
+      ? `cursor ran past the end of the trace without matching expected #${missingExpectedIndex} (${summarizeEntry(want)}).`
+      : `expected #${missingExpectedIndex} (${summarizeEntry(want)}) not found in actual[${cursor}..${actual.length}); scanned ${gap} entries.`;
+  lines.push(footer);
+  return lines.join("\n");
 }
 
 /**
@@ -268,11 +585,15 @@ export function toContainOrderedSubset(
       const matchedTail = matchedIndices.length
         ? ` (matched indices so far: [${matchedIndices.join(", ")}])`
         : "";
-      const baseMessage =
+      // Split the base message into a preamble and the JSON dump so
+      // the one-line summary (Step 0e) can sit BETWEEN them — the
+      // reader scans the summary first, drops into the JSON only
+      // when a field that summarizeEvent elides is in question.
+      const baseHeader =
         `expected trace to contain entry #${i} as an ordered subset${matchedTail}:\n` +
         `looking for:\n${prettify(want)}\n` +
-        `after actual index ${cursor - 1}; trace length = ${actual.length}.\n` +
-        `full trace:\n${prettify(actual)}`;
+        `after actual index ${cursor - 1}; trace length = ${actual.length}.`;
+      const fullTraceDump = `full trace:\n${prettify(actual)}`;
       let annotation = "";
       if (earlierMatches.length > 0 && matchedIndices.length > 0) {
         const priorIdx = matchedIndices[matchedIndices.length - 1]!;
@@ -286,9 +607,18 @@ export function toContainOrderedSubset(
           `  BEFORE the prior match for expected #${i - 1} ` +
           `(${summarizeEntry(expected[i - 1])}) at actual[${priorIdx}].\n\n`;
       }
+      const summaryBlock = formatActualSummary(
+        actual,
+        matchedIndices,
+        earlierMatches,
+        cursor,
+        i,
+        want,
+      );
       return {
         pass: false,
-        message: () => annotation + baseMessage,
+        message: () =>
+          `${annotation}${baseHeader}\n\n${summaryBlock}\n\n${fullTraceDump}`,
       };
     }
     matchedIndices.push(found);

@@ -10,7 +10,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { toContainOrderedSubset } from "./matchers";
+import {
+  summarizeEvent,
+  toContainOrderedSubset,
+  HARNESS_KNOWN_TRACE_KINDS,
+  type DeckTraceEventShape,
+} from "./matchers";
 
 describe("toContainOrderedSubset — pass cases", () => {
   test("exact-match single-entry trace", () => {
@@ -323,5 +328,305 @@ describe("toContainOrderedSubset — fail cases", () => {
       [{ kind: "fr-flip", from: undefined }],
     );
     expect(result.pass).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 0e: summarizeEvent + summary-table placement
+// ---------------------------------------------------------------------------
+
+/**
+ * Hand-built fixtures covering every branch of
+ * {@link DeckTraceEventShape}. Keeping these inline (rather than
+ * generating them) documents the label grammar by example and makes
+ * the exhaustiveness test read as a checklist: every kind in
+ * {@link HARNESS_KNOWN_TRACE_KINDS} must appear below.
+ */
+const EVENT_FIXTURES: Record<
+  (typeof HARNESS_KNOWN_TRACE_KINDS)[number],
+  DeckTraceEventShape
+> = {
+  "fr-flip": {
+    kind: "fr-flip",
+    from: "c1",
+    to: "c2",
+    trigger: "activateCard",
+  },
+  "destination-flip": {
+    kind: "destination-flip",
+    cardId: "c2",
+    from: false,
+    to: true,
+  },
+  "card-host-mount": {
+    kind: "card-host-mount",
+    cardId: "c2",
+    hostStackId: "s1",
+  },
+  "card-host-unmount": {
+    kind: "card-host-unmount",
+    cardId: "c2",
+    hostStackId: "s1",
+  },
+  "a3-fire": {
+    kind: "a3-fire",
+    cardId: "c2",
+    isFirstRun: false,
+    prev: false,
+    now: true,
+    earlyReturn: null,
+    gatePassed: true,
+    target: { kind: "focus-element", el: "input#c2" },
+    focusedEl: "input#c2",
+  },
+  "focus-call": {
+    kind: "focus-call",
+    site: "a3-default-focus",
+    cardId: "c2",
+    targetSelector: "[data-tug-focus-key=\"primary\"]",
+    activeBefore: "body",
+    activeAfter: "input#c2",
+    hidden: false,
+  },
+  focusin: {
+    kind: "focusin",
+    el: "input#c2",
+    relatedTarget: "input#c1",
+  },
+  focusout: {
+    kind: "focusout",
+    el: "input#c1",
+    relatedTarget: "input#c2",
+  },
+  "save-callback": {
+    kind: "save-callback",
+    cardId: "c1",
+    source: "debounced",
+  },
+  "selection-restore": {
+    kind: "selection-restore",
+    cardId: "c2",
+    via: "applyFocusSnapshot",
+  },
+  "commit-tick": {
+    kind: "commit-tick",
+    count: 3,
+  },
+};
+
+describe("summarizeEvent — exhaustive per-kind coverage", () => {
+  test("every kind in HARNESS_KNOWN_TRACE_KINDS has a fixture", () => {
+    // Defensive: the drift test in tugdeck pins the mirror to the
+    // real DeckTraceEvent union at compile time; this runtime pin
+    // guards against someone shipping a branch in summarizeEvent
+    // without adding a fixture here.
+    for (const kind of HARNESS_KNOWN_TRACE_KINDS) {
+      expect(EVENT_FIXTURES[kind]?.kind).toBe(kind);
+    }
+  });
+
+  test("returns a non-empty string for every kind", () => {
+    for (const kind of HARNESS_KNOWN_TRACE_KINDS) {
+      const label = summarizeEvent(EVENT_FIXTURES[kind]);
+      expect(typeof label).toBe("string");
+      expect(label.length).toBeGreaterThan(0);
+      // The kind itself must appear in the label so scanners can
+      // filter by kind without knowing the per-variant grammar.
+      expect(label).toContain(kind);
+    }
+  });
+});
+
+describe("summarizeEvent — label grammar per kind", () => {
+  test("fr-flip renders arrow + trigger", () => {
+    expect(summarizeEvent(EVENT_FIXTURES["fr-flip"])).toBe(
+      "fr-flip c1→c2 trigger=activateCard",
+    );
+  });
+
+  test("fr-flip null endpoints render as ∅", () => {
+    expect(
+      summarizeEvent({
+        kind: "fr-flip",
+        from: null,
+        to: "c2",
+        trigger: "_removeCard",
+      }),
+    ).toBe("fr-flip ∅→c2 trigger=_removeCard");
+  });
+
+  test("destination-flip compacts cardId and boolean pair", () => {
+    expect(summarizeEvent(EVENT_FIXTURES["destination-flip"])).toBe(
+      "destination-flip c2:false→true",
+    );
+  });
+
+  test("a3-fire omits null early-return and target when absent", () => {
+    expect(
+      summarizeEvent({
+        kind: "a3-fire",
+        cardId: "c2",
+        isFirstRun: true,
+        prev: false,
+        now: false,
+        earlyReturn: "first-run",
+        gatePassed: null,
+        target: null,
+        focusedEl: null,
+      }),
+    ).toBe("a3-fire c2 firstRun=true prev=false→now=false early=first-run");
+  });
+
+  test("focus-call renders cardId, site, selector, and active arrow", () => {
+    expect(summarizeEvent(EVENT_FIXTURES["focus-call"])).toBe(
+      "focus-call c2 site=a3-default-focus target=[data-tug-focus-key=\"primary\"] active=body→input#c2",
+    );
+  });
+
+  test("focus-call marks hidden=true when the target was not visible", () => {
+    expect(
+      summarizeEvent({
+        kind: "focus-call",
+        site: "a3-snapshot",
+        cardId: "c2",
+        targetSelector: "[data-tug-persist-value]",
+        activeBefore: "body",
+        activeAfter: "body",
+        hidden: true,
+      }),
+    ).toContain("hidden=true");
+  });
+
+  test("focusin omits relatedTarget when null", () => {
+    expect(
+      summarizeEvent({
+        kind: "focusin",
+        el: "input#c2",
+        relatedTarget: null,
+      }),
+    ).toBe("focusin el=input#c2");
+  });
+
+  test("save-callback uses src= (not source=) shorthand", () => {
+    expect(summarizeEvent(EVENT_FIXTURES["save-callback"])).toBe(
+      "save-callback c1 src=debounced",
+    );
+  });
+});
+
+describe("toContainOrderedSubset — one-line summary above JSON dump", () => {
+  test("failure message places summary between preamble and full trace JSON", () => {
+    // Sequence: destination-flip → fr-flip, but the matcher looks for
+    // fr-flip → destination-flip → focus-call. That order-violates
+    // at expected #1; we expect the annotation + summary to sit
+    // above the final `full trace:` JSON block.
+    const trace = [
+      { kind: "destination-flip", cardId: "B", from: false, to: true },
+      { kind: "fr-flip", from: "A", to: "B", trigger: "activateCard" },
+      { kind: "focusin", el: "input#B", relatedTarget: null },
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "destination-flip", cardId: "B", to: true },
+      { kind: "focus-call", cardId: "B" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    const summaryPos = msg.indexOf("actual trace summary");
+    const jsonPos = msg.indexOf("full trace:");
+    expect(summaryPos).toBeGreaterThanOrEqual(0);
+    expect(jsonPos).toBeGreaterThanOrEqual(0);
+    expect(summaryPos).toBeLessThan(jsonPos);
+  });
+
+  test("summary lists every actual entry with indexed prefix", () => {
+    const trace = [
+      { kind: "fr-flip", from: "A", to: "B", trigger: "activateCard" },
+      { kind: "destination-flip", cardId: "B", from: false, to: true },
+      // expected #2 below (focus-call) is absent — genuine miss
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "destination-flip", cardId: "B", to: true },
+      { kind: "focus-call", cardId: "B" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    expect(msg).toContain("[0] fr-flip A→B trigger=activateCard");
+    expect(msg).toContain("[1] destination-flip B:false→true");
+    expect(msg).toContain("matched #0");
+    expect(msg).toContain("matched #1");
+    // Summary footer spells out the missing-entry index + summary.
+    expect(msg).toContain("expected #2");
+    expect(msg).toContain("focus-call");
+  });
+
+  test("summary marks the cursor position when it sits inside the trace", () => {
+    // Two matches, then cursor lands at index 2 and scans the
+    // remainder without a match. The cursor marker should appear on
+    // the row at index 2.
+    const trace = [
+      { kind: "fr-flip", from: "A", to: "B", trigger: "activateCard" },
+      { kind: "destination-flip", cardId: "B", from: false, to: true },
+      { kind: "focusin", el: "input#B", relatedTarget: null },
+      { kind: "save-callback", cardId: "A", source: "debounced" },
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "destination-flip", cardId: "B", to: true },
+      { kind: "focus-call", cardId: "B" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    expect(msg).toContain("cursor stopped here");
+    // Cursor is at index 2, so the marker should appear on that row.
+    const focusinLine = msg.split("\n").find((l) => l.includes("[2]"));
+    expect(focusinLine).toBeDefined();
+    expect(focusinLine!).toContain("cursor stopped here");
+  });
+
+  test("summary annotates pre-cursor wrong-order match", () => {
+    // Mirror of the M01-shaped scenario: destination-flip sits at
+    // index 0 but the test wants fr-flip first. After fr-flip at
+    // index 2 matches expected #0, the matcher scans [3..) for
+    // expected #1 and fails. The summary should mark index 0 as a
+    // "wrong order" would-have-matched for expected #1.
+    const trace = [
+      { kind: "destination-flip", cardId: "B", from: false, to: true }, // 0
+      { kind: "card-host-mount", cardId: "B", hostStackId: "s1" },       // 1
+      { kind: "fr-flip", from: "A", to: "B", trigger: "activateCard" },  // 2
+      { kind: "focus-call",
+        site: "a3",
+        cardId: "B",
+        targetSelector: "[x]",
+        activeBefore: "",
+        activeAfter: "",
+        hidden: false },                                                 // 3
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "destination-flip", cardId: "B", to: true },
+      { kind: "focus-call", cardId: "B" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    // Order-violation annotation from Step 0b still anchors the header.
+    expect(msg).toContain("Order violation");
+    // The annotation line ALSO contains "actual[0]", so match the
+    // summary row's distinctive leading `  [0] ` prefix, not just
+    // the bare "[0]" substring.
+    const summaryRowZero = msg
+      .split("\n")
+      .find((l) => /^\s+\[\s*0\s*\]\s/.test(l));
+    expect(summaryRowZero).toBeDefined();
+    expect(summaryRowZero!).toContain("wrong order");
+    expect(summaryRowZero!).toContain("expected #1");
+  });
+
+  test("empty actual trace yields a short summary note (no rows)", () => {
+    const result = toContainOrderedSubset([], [{ kind: "fr-flip" }]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    expect(msg).toContain("trace is empty");
   });
 });
