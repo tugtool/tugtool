@@ -1,7 +1,7 @@
 # Session Memory — in-app-test-harness-701669b-2
 
 ## Project map
-Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test; Step 14 m03 test.
+Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/in-app/` is a separate bun workspace, `bunfig.toml` roots `.` + NO happy-dom. Steps 1-3 deck-trace; Step 4 authored Phase 2 plan; Steps 5-11 built bridge+harness; Step 12 README; Step 13 m01 test; Step 14 m03 test; Step 15 m16 test.
 
 ## Files touched (condensed)
 - tugdeck: `deck-trace.ts`, `deck-manager.ts` (testMode+seedDeckState), `deck-manager-store.ts` (invokeSaveCallback), `components/chrome/{card-host,deck-commit-beacon,deck-canvas}.tsx`, `main.tsx`, `test-surface.ts` (SURFACE_VERSION "1.0.0"). Tests in `src/__tests__/`.
@@ -10,7 +10,7 @@ Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/i
 - tests/in-app scaffold: `tsconfig.json` (@/_harness alias), `bunfig.toml`, `package.json`, `.gitignore`, `bun.lock`, `logs/.gitkeep`, `README.md`, `lint-no-timers.ts`.
 - tests/in-app/_harness: `errors.ts`+test, `types.ts`, `rpc.ts`+test, `index.ts`, `client.ts`, `matchers.ts`+test.
 - tests/in-app harness tests: `_smoke / _wait-for-condition / _version-handshake / _double-connect / _log-capture .test.ts` — all `skipIf(!SHOULD_RUN)`.
-- Scenario tests: `m01-tab-switch-fc.test.ts` (step 13), **`m03-pane-activation.test.ts` (step 14 NEW)**.
+- Scenario tests: `m01-tab-switch-fc.test.ts` (step 13), `m03-pane-activation.test.ts` (step 14), **`m16-tab-close-handoff.test.ts` (step 15 NEW)**.
 
 ## Patterns established
 - `invokeSaveCallback(id, source)` single entry. `_flipFirstResponder` takes `trigger` string.
@@ -33,16 +33,17 @@ Tugdeck: React 19 + Vite + bun. Tugapp Swift `TestHarness/` DEBUG-only. `tests/i
 ## Build / test notes
 - `cd tugdeck && bun x tsc --noEmit` / `bun test` — exit 0.
 - `cd tests/in-app && bun x tsc --noEmit -p tsconfig.json` — exit 0.
-- `cd tests/in-app && bun test` — 29 pass, 10 skip (was 9), 0 fail.
-- `cd tests/in-app && bun run lint:no-timers` — clean (7 files, was 6).
+- `cd tests/in-app && bun test` — 29 pass, 11 skip (was 10), 0 fail.
+- `cd tests/in-app && bun run lint:no-timers` — clean (8 files, was 7).
 - `bun test tests/in-app/m03-pane-activation.test.ts` — exit 0 (1 skipped default).
+- `bun test tests/in-app/m16-tab-close-handoff.test.ts` — exit 0 (1 skipped default).
 - Swift `swiftc -typecheck ...` — exit 0.
 - `tests/in-app/bunfig.toml` MUST keep `[test] root = "."` + NO happy-dom preload.
 
 ## Hints for upcoming steps
-- Step 14 complete. Checkpoint exits 0 (skipped without `TUGAPP_IN_APP_TEST=1`).
-- **Step 15 (M16) copies m01/m03 skeleton:** `registerSubsetMatcher()` module-top, `launchTugApp({ testName })`, `app` outside try, tail-log in catch, `close()` in finally.
-- Step 15 (M16): close-button selector = `[data-testid="tug-tab-close-${cardId}"]` (tug-tab-bar.tsx line 454). Plan requires asserting NO `save-callback` for the closed card between click and fr-flip (card about to be destroyed). Seed three cards [c1, c2, c3] in one pane; activate c2 (via `activeCardId: "c2"` in seed), click c2's close; expect c3 focused. Verify c3's caret lands at declared `bag.focus` target (need `cardStates` arg with c3's bag).
+- Step 15 complete. Checkpoint `bun test tests/in-app/m16-tab-close-handoff.test.ts` exits 0 (skipped without `TUGAPP_IN_APP_TEST=1`).
+- **Step 16 is Phase 3 integration checkpoint** — drift-prevention exercise (revert each fix by hand, verify test fails, revert the revert). Also: verify no happy-dom tests added, release-build binary size unchanged, update plan Status `draft`→`active`, update plan-doc-hygiene to point at `tugplan-in-app-bridge.md`.
+- m16 idiom notes: used `traceClose.filter(e => e.kind === "save-callback" && e.cardId === "c2")` + `expect(...).toEqual([])` for the "did not happen" assertion (ordered-subset matcher is only positive). `DeckTraceEvent` is exported as a type from `_harness/index.ts`. Gated c3 host root wait AFTER the close-click (c3 not mounted until handoff runs).
 - `EXPECTED_SURFACE_VERSION` in `_harness/index.ts` must match `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` AND `TestHarnessConnection.surfaceVersion` (currently "1.0.0").
 - `App.logPath` null unless `testName` passed. Always pass `testName` in scenario tests so `tailLog(50)` has output.
 - Socket path default `/tmp/tugapp-test-${randomUUID()}.sock`. Swift allow-list `/tmp`, `/private/tmp`, `/var/folders`, `$HOME`.
