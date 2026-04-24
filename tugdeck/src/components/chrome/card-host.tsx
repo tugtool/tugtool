@@ -95,6 +95,12 @@ import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
 import { useFocusDestination } from "../../deck-store-hooks";
 import { canProgrammaticallyFocus } from "../../focus-theft-gate";
+import {
+  deckTrace,
+  formatElement,
+  type A3EarlyReturn,
+} from "../../deck-trace";
+import { resolveActivationTarget } from "../../focus-transfer";
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -391,6 +397,82 @@ function isActiveCardOfActivePane(
 }
 
 /**
+ * `true` when the element is visually hidden via `display: none` (either
+ * directly or via an ancestor). Used as the `hidden` payload on
+ * `focus-call` deck-trace events so a trace reader can distinguish a
+ * focus call against a live element from one against a node whose
+ * ancestor's `display: none` silently swallows focus (the WebKit
+ * behavior behind the M-series neighbor-not-focusable symptoms).
+ */
+function isElementHidden(el: HTMLElement | null): boolean {
+  if (el === null) return false;
+  if (el.offsetParent === null) {
+    // offsetParent === null implies some ancestor is display:none OR
+    // the element itself is display:none (excluding position:fixed
+    // which intentionally has no offsetParent but is still visible).
+    const style =
+      typeof window !== "undefined" && typeof window.getComputedStyle === "function"
+        ? window.getComputedStyle(el)
+        : null;
+    if (style !== null && style.position === "fixed") return false;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Run `applyFocusSnapshot` while emitting a `focus-call` deck-trace
+ * event that captures the site tag, the pre/post active-element, the
+ * target selector (computed post-resolve — see
+ * `resolveApplyFocusSnapshotTargetSelector` for why we re-query here),
+ * and the hidden bit.
+ *
+ * The helper is a thin wrapper so the existing `applyFocusSnapshot`
+ * contract and three call sites remain clean.
+ */
+function traceApplyFocusSnapshot(
+  site: string,
+  cardId: string,
+  cardRoot: HTMLElement,
+  snapshot: FocusSnapshot,
+): void {
+  const doc = cardRoot.ownerDocument;
+  const activeBefore = formatElement(doc.activeElement);
+  // Resolve target ONCE here so we can record the selector that
+  // `applyFocusSnapshot` is going to resolve internally. This is an
+  // O(1) additional query; the alternative (adding a ref-out from
+  // applyFocusSnapshot) would change its public contract.
+  let target: HTMLElement | null = null;
+  let targetSelector = "";
+  if (snapshot.kind === "form-control") {
+    targetSelector = `[data-tug-persist-value="${snapshot.persistKey}"]`;
+    target = cardRoot.querySelector<HTMLElement>(
+      `[data-tug-persist-value="${CSS.escape(snapshot.persistKey)}"]`,
+    );
+  } else if (snapshot.kind === "dom") {
+    targetSelector = `[data-tug-focus-key="${snapshot.focusKey}"]`;
+    target = cardRoot.querySelector<HTMLElement>(
+      `[data-tug-focus-key="${CSS.escape(snapshot.focusKey)}"]`,
+    );
+  } else if (snapshot.kind === "component-owned") {
+    targetSelector = "component-owned";
+  }
+
+  applyFocusSnapshot(cardRoot, snapshot);
+
+  const activeAfter = formatElement(doc.activeElement);
+  deckTrace.record({
+    kind: "focus-call",
+    site,
+    cardId,
+    targetSelector,
+    activeBefore,
+    activeAfter,
+    hidden: isElementHidden(target),
+  });
+}
+
+/**
  * Apply a saved `FormControlSnapshot` to an element. Idempotent guard at the
  * call site (via a `WeakSet`) keeps user typing from being overwritten on
  * subsequent mutation-observer fires.
@@ -662,6 +744,11 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       cardRootForDomAxes
     ) {
       selectionGuard.restoreCardDomSelection(cardId, bag.domSelection, cardRootForDomAxes);
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId,
+        via: "restoreCardDomSelection",
+      });
     }
 
     // Focus restore, [D10] Option B gated. Skipped for
@@ -679,7 +766,21 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       cardRootForDomAxes &&
       isActiveCardOfActivePane(store, cardId)
     ) {
-      applyFocusSnapshot(cardRootForDomAxes, bag.focus);
+      traceApplyFocusSnapshot(
+        "cold-boot",
+        cardId,
+        cardRootForDomAxes,
+        bag.focus,
+      );
+      // `applyFocusSnapshot` of a form-control target triggers the
+      // browser's native selection-on-focus behavior; record the
+      // cold-boot entry via the `applyFocusSnapshot` tag per
+      // [#l01-recording-sites].
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId,
+        via: "applyFocusSnapshot",
+      });
     }
 
     const formSnapshots = bag.formControls;
@@ -766,7 +867,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (!isActiveCardOfActivePane(store, cardId)) return;
     const cardRoot = findCardRoot(hostContentEl, cardId);
     if (!cardRoot) return;
-    applyFocusSnapshot(cardRoot, bag.focus);
+    traceApplyFocusSnapshot("cross-pane-move", cardId, cardRoot, bag.focus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostStackId]);
 
@@ -822,17 +923,50 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const prev = prevIsFocusDestinationRef.current;
     prevIsFocusDestinationRef.current = isFocusDestinationNow;
 
+    // Trace helper: emit a single `a3-fire` event tagged with the
+    // exact reason this effect body exited (or `null` when the body
+    // ran to completion). Called on every reachable return path so
+    // the trace never misses a run — `earlyReturn` is the single
+    // most important field for diagnosing M-series regressions.
+    const emitA3 = (
+      earlyReturn: A3EarlyReturn | null,
+      gatePassed: boolean | null,
+      focusedEl: HTMLElement | null,
+    ): void => {
+      const target = resolveActivationTarget(cardId, store);
+      deckTrace.record({
+        kind: "a3-fire",
+        cardId,
+        isFirstRun,
+        prev,
+        now: isFocusDestinationNow,
+        earlyReturn,
+        gatePassed,
+        target,
+        focusedEl: focusedEl !== null ? formatElement(focusedEl) : null,
+      });
+    };
+
     // Mount: the cold-boot restore path owns initial focus + selection
     // for a card that is already the destination. Skip regardless of
     // the bit's value so neighbor cards (not destinations at mount)
     // also start from a clean slate without firing a spurious body.
-    if (isFirstRun) return;
+    if (isFirstRun) {
+      emitA3("first-run", null, null);
+      return;
+    }
 
     // Only react on the false → true transition. `true → false` is a
     // deactivation; no blur is applied here (that's an app-lifecycle
     // concern, not the activation effect's).
-    if (!isFocusDestinationNow) return;
-    if (prev) return;
+    if (!isFocusDestinationNow) {
+      emitA3("not-destination", null, null);
+      return;
+    }
+    if (prev) {
+      emitA3("prev-was-true", null, null);
+      return;
+    }
 
     const hostEl = hostContentElRef.current;
     const cardRoot = hostEl ? findCardRoot(hostEl, cardId) : null;
@@ -842,16 +976,19 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // re-checks `isFocusDestination` (redundant with our trigger but
     // cheap), and refuses if the user's caret is on a real element
     // outside the target card.
-    if (
-      !canProgrammaticallyFocus(cardId, store.getSnapshot(), {
-        targetCardHostEl: cardRoot,
-      })
-    ) {
+    const gatePassed = canProgrammaticallyFocus(cardId, store.getSnapshot(), {
+      targetCardHostEl: cardRoot,
+    });
+    if (!gatePassed) {
+      emitA3("gate-refused", false, null);
       return;
     }
 
     const bag = store.getCardState(cardId);
-    if (!bag) return;
+    if (!bag) {
+      emitA3("no-bag", true, null);
+      return;
+    }
 
     if (bag.content !== undefined) {
       // Content-owning card: delegate to the factory's activation hook.
@@ -859,13 +996,21 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       // EM cards). The wrapper installed by `useCardPersistence` is
       // stable; if the caller didn't opt in it silently returns.
       persistenceCallbacksRef.current?.onCardActivated?.();
+      const focusedAfter =
+        cardRoot && cardRoot.ownerDocument.activeElement instanceof HTMLElement
+          ? cardRoot.ownerDocument.activeElement
+          : null;
+      emitA3(null, true, focusedAfter);
       return;
     }
 
     // DOM-authority card: re-apply focus + DOM selection directly.
-    if (!cardRoot) return;
+    if (!cardRoot) {
+      emitA3("no-host", true, null);
+      return;
+    }
     if (bag.focus && bag.focus.kind !== "none") {
-      applyFocusSnapshot(cardRoot, bag.focus);
+      traceApplyFocusSnapshot("a3-dom-authority", cardId, cardRoot, bag.focus);
     }
     if (bag.domSelection) {
       selectionGuard.restoreCardDomSelection(
@@ -873,7 +1018,17 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         bag.domSelection,
         cardRoot,
       );
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId,
+        via: "restoreCardDomSelection",
+      });
     }
+    const finalFocused =
+      cardRoot.ownerDocument.activeElement instanceof HTMLElement
+        ? cardRoot.ownerDocument.activeElement
+        : null;
+    emitA3(null, true, finalFocused);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store, isFocusDestinationNow]);
 
@@ -1069,10 +1224,20 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   useLayoutEffect(() => {
     if (rootEl === null) return;
     store.registerCardHostRoot(cardId, rootEl);
+    deckTrace.record({
+      kind: "card-host-mount",
+      cardId,
+      hostStackId,
+    });
     return () => {
       store.registerCardHostRoot(cardId, null);
+      deckTrace.record({
+        kind: "card-host-unmount",
+        cardId,
+        hostStackId,
+      });
     };
-  }, [cardId, rootEl, store]);
+  }, [cardId, rootEl, store, hostStackId]);
 
   // ---- Render ----
   if (!registration) {

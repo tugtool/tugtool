@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | active |
 | Target branch | main |
 | Last updated | 2026-04-23 |
 
@@ -386,7 +386,7 @@ One glance: `[A3]`'s mount-guard is refusing to fire on c3 because c3's first-ev
 
 #### In-app test bridge — Phase 2 {#phase-2-bridge}
 
-Touches `tugapp/` (Swift) and `tugdeck/` (TypeScript). Gated by `roadmap/tugplan-in-app-bridge.md` (authored as this plan's Step 4) before any Swift code is committed.
+Touches `tugapp/` (Swift) and `tugdeck/` (TypeScript). Detailed choreography, Swift guard placement, WKUserScript ordering, and RPC wire protocol live in `roadmap/tugplan-in-app-bridge.md` (authored as this plan's Step 4 and now landed). That plan is the canonical Phase 2 spec; this section summarizes and links.
 
 ##### 2.1 Boot choreography {#boot-choreography}
 
@@ -729,7 +729,7 @@ See [#phase-1-deck-trace] for the worked example. Table represents what a trace 
 - [ ] Add `tests/in-app/README.md` explaining how to write an in-app test: launch, reset, seedDeckState, drive gestures, assert, close.
 - [ ] Add memory entry for the happy-dom prohibition (landed at conversation time; recorded here as a checkbox to prevent drift).
 - [ ] Update `CLAUDE.md` at project root with a pointer to this plan and the in-app test harness as the canonical test surface for focus/selection/caret behavior.
-- [ ] `roadmap/tugplan-in-app-bridge.md` (authored in Step 4) is the Phase 2 detailed plan; this plan links to it from `#phase-2-bridge`.
+- [x] `roadmap/tugplan-in-app-bridge.md` is the Phase 2 detailed plan (authored in Step 4, now landed); this plan links to it from `#phase-2-bridge`. It is the canonical source for Swift bridge choreography, WKUserScript ordering, transport decisions, and the typed RPC client.
 
 ---
 
@@ -935,14 +935,12 @@ Sixteen flat steps covering three phases with one integration checkpoint per pha
 - [ ] `focusElement` calls `el.focus()` directly.
 - [ ] `reset` implements axis granularity per [D01]: per-axis effect functions, each idempotent.
 - [ ] Attach surface in `main.tsx` conditional: `if (import.meta.env.DEV && window.__tugTestMode === true) { window.__tug = createTugTestSurface(store); }`.
-- [ ] Manual dev smoke: set `window.__tugTestMode = true` in dev, verify `window.__tug.version === "1.0.0"` and `window.__tug.getActiveCardId()` returns a valid value.
 
 **Tests:**
 - [ ] No new happy-dom UI tests. Surface is exercised end-to-end by Phase 3 in-app tests.
 
 **Checkpoint:**
 - [ ] `bun x tsc --noEmit` exits 0.
-- [ ] Dev-mode manual smoke: `__tug.version === "1.0.0"` verified.
 - [ ] Grep: `window.__tug` only written inside `import.meta.env.DEV` + `__tugTestMode` gate.
 
 ---

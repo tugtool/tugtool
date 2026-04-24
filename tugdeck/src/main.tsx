@@ -27,6 +27,7 @@ import { registerGalleryCards } from "./components/tugways/cards/gallery-registr
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
+import { attachTugTestSurface } from "./test-surface";
 
 /**
  * `window.tugdeck` — the single namespace the native Swift host uses
@@ -42,6 +43,16 @@ declare global {
       saveState(): void;
       reconnect(): void;
     };
+    /**
+     * DEBUG-only harness boot flag. When `true`, tugdeck constructs
+     * `DeckManager` with `testMode: true` — no tugbank reads, no
+     * tugbank writes, state sourced exclusively from `seedDeckState`.
+     * Set by a `WKUserScript` injected at `atDocumentStart` in
+     * DEBUG builds when the Swift host starts with
+     * `TUGAPP_TEST_SOCKET` set ([D08]). Release builds never reach
+     * this path because the WKUserScript is gated by `#if DEBUG`.
+     */
+    __tugTestMode?: boolean;
   }
 }
 
@@ -135,19 +146,41 @@ if (!container) {
     }
   }
 
+  // DEBUG-only test-mode flag ([D02], [D08]). The Swift host injects
+  // `window.__tugTestMode = true` via a `WKUserScript` at
+  // `atDocumentStart` when `TUGAPP_TEST_SOCKET` is set at app launch;
+  // that script runs before this module executes, so the read here is
+  // deterministic. The `import.meta.env.DEV` gate is a belt-and-braces
+  // check — release builds never inject the user script in the first
+  // place ([D03]), but the double-guard keeps the read from doing
+  // anything in production even if the global were set by some other
+  // path.
+  const isTestMode =
+    import.meta.env.DEV && window.__tugTestMode === true;
+
   // Create deck manager with the pre-fetched layout, initial theme, card states,
-  // and focused card ID.
+  // and focused card ID. In test mode, `DeckManager` ignores the
+  // tugbank-sourced arguments and starts empty — the harness drives
+  // state via `seedDeckState`.
   const deck = new DeckManager(
     container,
     connection,
     layout ?? undefined,
     initialTheme,
     cardStates,
-    focusedCardId ?? undefined
+    focusedCardId ?? undefined,
+    { testMode: isTestMode }
   );
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // Install `window.__tug` test-harness surface when BOTH
+  // `import.meta.env.DEV` and `window.__tugTestMode === true` hold.
+  // The attach is a no-op otherwise; release builds tree-shake it.
+  // See `test-surface.ts` for the full surface contract
+  // (Spec [#s03-tug-surface]) and attach-site rationale ([D03]/[D08]).
+  attachTugTestSurface(deck);
 
   // Wire the per-card services store to the deck-manager so it can
   // detect card removals and send `close_session` for any held

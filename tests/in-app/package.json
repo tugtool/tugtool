@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "lint:no-timers": "bun run ./lint-no-timers.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "bun-types": "^1.3.13"
+  }
+}

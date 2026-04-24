@@ -15,6 +15,7 @@ import type { DeckState, CardStateBag } from "./layout-tree";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
 import type { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
 import type { CardAssembler } from "./card-state-orchestrator";
+import type { SaveCallbackSource } from "./deck-trace";
 
 /**
  * Subscribable store interface for DeckManager.
@@ -226,8 +227,14 @@ export interface IDeckManagerStore {
    * callers that need to trigger a specific save synchronously (e.g., save
    * outgoing card's state before switching to a new active card). No-op when
    * no callback is registered.
+   *
+   * The optional `source` parameter tags the triggering path for the
+   * deck-trace; live callers always pass a source, but the parameter
+   * is optional on the interface for backward compatibility with test
+   * mocks that predate the trace. Implementations that see
+   * `source === undefined` default to `"manual"`.
    */
-  invokeSaveCallback: (id: string) => void;
+  invokeSaveCallback: (id: string, source?: SaveCallbackSource) => void;
 
   /**
    * Toggle the collapsed state of a pane. When collapsing, sets

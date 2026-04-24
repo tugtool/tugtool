@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun-types"],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@/_harness": ["./_harness/index.ts"],
+      "@/_harness/*": ["./_harness/*"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["logs/**", "node_modules/**"]
+}

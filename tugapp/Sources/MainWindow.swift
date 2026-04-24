@@ -49,6 +49,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
             config.defaultWebpagePreferences.allowsContentJavaScript = true
         }
 
+        #if DEBUG
+        // Test harness: when TUGAPP_TEST_SOCKET is set, inject
+        // `window.__tugTestMode = true` at atDocumentStart so
+        // tugdeck's main.tsx sees the flag before its first script
+        // tag executes. See Spec [#s05-wkuserscript-injection].
+        if TestHarnessBridge.envSocketPath() != nil {
+            TestHarnessUserScript.install(into: config)
+        }
+        #endif
+
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -133,6 +143,15 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
     }
+
+    #if DEBUG
+    /// Test-harness accessor: hand the live WKWebView to
+    /// `TestHarnessBridge` so it can forward `evalJS` /
+    /// `waitForCondition` RPCs. DEBUG-only.
+    func testHarnessWebView() -> WKWebView {
+        return webView
+    }
+    #endif
 
     /// Open web inspector
     func openWebInspector() {
