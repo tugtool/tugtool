@@ -113,24 +113,34 @@ final class TestHarnessListener {
             throw TestHarnessSecurityError.bindFailed(bindErrno)
         }
 
-        // fchmod(fd, 0600) immediately after bind so the window where
-        // the socket inode is world-reachable is minimized.
-        guard Darwin.fchmod(fd, 0o600) == 0 else {
+        // chmod(path, 0600) immediately after bind so the window where
+        // the socket inode is world-reachable is minimized. Darwin's
+        // fchmod(2) returns EINVAL for AF_UNIX sockets (unlike Linux);
+        // path-based chmod is the standard workaround. The brief
+        // TOCTOU is bounded by the parent-dir-owner check above
+        // (parent is 0700 user-owned), so the socket inode is not
+        // reachable by other users during the window.
+        guard Darwin.chmod(path, 0o600) == 0 else {
             let chmodErrno = errno
             Darwin.close(fd)
             unlink(path)
             throw TestHarnessSecurityError.chmodFailed(chmodErrno)
         }
 
-        // Verify mode via fstat.
-        var st = stat()
-        guard Darwin.fstat(fd, &st) == 0 else {
-            let fstatErrno = errno
+        // Verify mode via FileManager on the pathname. (`fstat` on an
+        // AF_UNIX socket fd returns 0o666 on macOS regardless of the
+        // inode's on-disk mode, so we must read the filesystem entry
+        // directly. Swift's `Darwin.stat` resolves to the struct type,
+        // not the function, so FileManager is the cleanest bridge.)
+        let attrs: [FileAttributeKey: Any]
+        do {
+            attrs = try FileManager.default.attributesOfItem(atPath: path)
+        } catch {
             Darwin.close(fd)
             unlink(path)
-            throw TestHarnessSecurityError.chmodFailed(fstatErrno)
+            throw TestHarnessSecurityError.chmodFailed(errno)
         }
-        let actualMode = UInt16(st.st_mode & 0o777)
+        let actualMode = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
         guard actualMode == 0o600 else {
             Darwin.close(fd)
             unlink(path)

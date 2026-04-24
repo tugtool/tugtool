@@ -7,7 +7,7 @@
  * `App` with gesture / reset / seed wrappers.
  *
  * Boot sequence (see `#boot-choreography` in the Swift-bridge tugplan):
- *   1. Generate `TUGAPP_TEST_SOCKET=/tmp/tugapp-test-<uuid>.sock`.
+ *   1. Generate `TUGAPP_TEST_SOCKET=$TMPDIR/tugapp-test-<uuid>.sock`.
  *   2. Spawn Tug.app via `Bun.spawn` with that env var set.
  *   3. Retry `Bun.connect({ unix: <path> })` on `ECONNREFUSED` until
  *      `connectTimeoutMs` elapses.
@@ -30,6 +30,7 @@ import {
   type WriteStream,
 } from "node:fs";
 import { dirname, resolve as pathResolve } from "node:path";
+import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { AppCrashedError, VersionSkewError } from "./errors";
 import { RpcClient, type RpcTransport } from "./rpc";
@@ -479,6 +480,39 @@ export async function launchTugApp(
     );
   }
 
+  // Version handshake answers from a Swift constant — it passes even
+  // while the WKWebView is still at about:blank. Wait for tugdeck's
+  // main.tsx to execute and attach `window.__tug` before returning,
+  // so the first post-launch RPC doesn't race the page load. Wire
+  // params are flat; no `params` envelope. On failure we kill the
+  // subprocess ourselves — the caller never received an App and
+  // therefore has no `close()` path.
+  try {
+    await rpc.call<boolean>({
+      method: "waitForCondition",
+      script: "typeof window.__tug !== 'undefined'",
+      timeoutMs: resolved.connectTimeoutMs,
+    });
+  } catch (err) {
+    try {
+      subprocess.kill("SIGKILL");
+    } catch {
+      // already dead
+    }
+    detachSignals();
+    try {
+      logStream?.end();
+    } catch {
+      // best-effort
+    }
+    try {
+      onExitUnlink();
+    } catch {
+      // already gone
+    }
+    throw err;
+  }
+
   return new App({
     rpc,
     version: String(serverVersion),
@@ -506,7 +540,11 @@ const setTimeoutNative = (
 ).setTimeout;
 
 function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
-  const socketPath = opts.socketPath ?? `/tmp/tugapp-test-${randomUUID()}.sock`;
+  // macOS `/tmp` is root-owned; the Swift bridge's parent-dir-owner
+  // check ([D06]) rejects sockets there. `os.tmpdir()` returns the
+  // user-owned `$TMPDIR` (`/var/folders/.../T/` on macOS).
+  const socketPath =
+    opts.socketPath ?? `${tmpdir()}/tugapp-test-${randomUUID()}.sock`;
   const appPath = opts.appPath ?? resolveDefaultAppPath();
   const logPath = opts.testName
     ? pathResolve(LOGS_DIR, `${sanitizeTestName(opts.testName)}.log`)

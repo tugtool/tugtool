@@ -244,6 +244,76 @@ zombie-cleanup:
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
 
+# Run the in-app tests (harness smoke + M01/M03/M16) against a fresh
+# DEBUG Tug.app. Boots the app in dev mode via an isolated scratch
+# tugbank so your real ~/.tugbank.db is untouched. Requires tmux and
+# a prior `just build` (for tugbank / tugutil on PATH).
+test-in-app:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    REPO_ROOT="$(pwd)"
+    SCRATCH_DB="$(mktemp -t tugapp-inapp.XXXX).db"
+
+    command -v tmux >/dev/null || { echo "tmux not on PATH — brew install tmux"; exit 1; }
+    command -v tugbank >/dev/null || { echo "tugbank not on PATH — run 'just build' first"; exit 1; }
+
+    echo "==> [1/7] Rust debug binaries"
+    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
+    bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
+
+    echo "==> [2/7] tugdeck deps + prebuilt dist"
+    (cd tugdeck && bun install && bun run build)
+
+    echo "==> [3/7] tests/in-app deps"
+    (cd tests/in-app && bun install)
+
+    echo "==> [4/7] Build Tug.app (Debug)"
+    find tugapp/Sources -name '*.swift' -exec touch {} +
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' build
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
+    APP_BIN="$APP_DIR/Contents/MacOS/Tug"
+    [ -x "$APP_BIN" ] || { echo "Tug.app binary missing: $APP_BIN"; exit 1; }
+    echo "    Tug.app binary: $APP_BIN"
+
+    echo "==> [5/7] Scratch tugbank (dev mode + source tree at $REPO_ROOT)"
+    TUGBANK_PATH="$SCRATCH_DB" tugbank write dev.tugtool.app source-tree-path "$REPO_ROOT"
+    TUGBANK_PATH="$SCRATCH_DB" tugbank write dev.tugtool.app dev-mode-enabled true
+
+    echo "==> [6/7] Kill any stale Tug processes and free vite port 55155"
+    # Leaked Tug instances from a previous run will hold tugbank locks,
+    # mess with the Dock, and race on vite port 55155. Always clean up.
+    pkill -x Tug 2>/dev/null || true
+    sleep 0.3
+    if PID="$(lsof -ti tcp:55155 2>/dev/null)"; then kill "$PID" 2>/dev/null || true; sleep 0.5; fi
+
+    # Ensure we clean up on exit no matter how we got here (Ctrl-C,
+    # test crash, just-recipe error). pkill is idempotent and safe.
+    cleanup() {
+        pkill -x Tug 2>/dev/null || true
+        rm -f "$SCRATCH_DB"
+    }
+    trap cleanup EXIT INT TERM
+
+    echo "==> [7/7] Run in-app tests (sequentially, one Tug.app per file)"
+    export TUGBANK_PATH="$SCRATCH_DB"
+    export TUGAPP_IN_APP_TEST=1
+    export TUGAPP_DEBUG_PATH="$APP_BIN"
+    cd tests/in-app
+    STATUS=0
+    for f in _smoke.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
+        echo "---- $f ----"
+        bun test "$f" || STATUS=$?
+        # Between files, kill any stragglers before the next spawn so
+        # port 55155 is free and we don't accumulate Dock icons.
+        pkill -x Tug 2>/dev/null || true
+        sleep 0.3
+    done
+
+    exit $STATUS
+
 # Clean Rust targets and Mac app build artifacts
 clean:
     cd tugrust && cargo clean

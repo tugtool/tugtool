@@ -118,10 +118,26 @@ final class TestHarnessConnection {
                     return // Timer already fired; drop the belated completion.
                 }
                 if let error = error as NSError? {
+                    // `localizedDescription` is always the generic
+                    // "A JavaScript exception occurred"; the useful
+                    // details live in the WKJavaScriptException* keys.
+                    let jsMessage = error.userInfo["WKJavaScriptExceptionMessage"] as? String
+                    let line = error.userInfo["WKJavaScriptExceptionLineNumber"] as? Int
+                    let column = error.userInfo["WKJavaScriptExceptionColumnNumber"] as? Int
+                    let detailed: String
+                    if let jsMessage = jsMessage {
+                        if let line = line, let column = column {
+                            detailed = "\(jsMessage) (line \(line), col \(column))"
+                        } else {
+                            detailed = jsMessage
+                        }
+                    } else {
+                        detailed = error.localizedDescription
+                    }
                     self.respondError(
                         id: id,
                         name: "EvalError",
-                        message: error.localizedDescription,
+                        message: detailed,
                         stack: error.userInfo["WKJavaScriptExceptionStackTrace"] as? String
                     )
                     return
