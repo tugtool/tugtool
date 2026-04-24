@@ -492,6 +492,105 @@ function traceApplyFocusSnapshot(
 }
 
 /**
+ * Default focus selector fallback chain, tried in priority order. A
+ * card whose saved bag has no `focus` snapshot (fresh card, or a
+ * card that was saved without focus on it) still needs to receive
+ * the caret on activation — otherwise tab-switch-to-fresh-card
+ * leaves focus stranded on the outgoing card's input, which is
+ * broken UX.
+ *
+ * Priority order:
+ *   1. `[data-tug-focus-key="primary"]` — card author's declared
+ *      primary focus target. Highest signal; authors who care
+ *      about default focus opt in by tagging their preferred
+ *      element.
+ *   2. `[data-tug-focus-key]` with any value — any tagged focus
+ *      target. Allows cards to declare a focus target without
+ *      naming it "primary" specifically.
+ *   3. `[data-tug-persist-value]` — first persisted form control.
+ *      Gallery-input-style cards with no explicit focus-key still
+ *      get their first input focused.
+ *   4. Generic focusable — input / textarea / select / button /
+ *      contenteditable / tabindex>=0. Catch-all so cards without
+ *      any tug-specific metadata still receive a sensible default.
+ */
+export const DEFAULT_FOCUS_SELECTORS: readonly string[] = [
+  '[data-tug-focus-key="primary"]',
+  "[data-tug-focus-key]",
+  "[data-tug-persist-value]",
+  'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
+];
+
+/**
+ * Resolve the default focus target inside `cardRoot` using the
+ * priority chain above. Returns the first selector that matches a
+ * live, connected, non-hidden element.
+ */
+export function resolveDefaultFocusTarget(cardRoot: HTMLElement): {
+  el: HTMLElement | null;
+  selector: string;
+} {
+  for (const selector of DEFAULT_FOCUS_SELECTORS) {
+    const el = cardRoot.querySelector<HTMLElement>(selector);
+    if (el !== null && el.isConnected && !isElementHidden(el)) {
+      return { el, selector };
+    }
+  }
+  return { el: null, selector: "" };
+}
+
+/**
+ * Apply the default focus target for a card that has no saved
+ * focus snapshot. Emits a `focus-call` deck-trace event so the
+ * activation is observable on the same channel as snapshot-based
+ * restores.
+ *
+ * Respects existing focus inside the card — if the user's caret
+ * is already somewhere in `cardRoot`, that wins over the default
+ * (same semantics as `applyFocusSnapshot`).
+ */
+export function traceApplyDefaultFocus(
+  site: string,
+  cardId: string,
+  cardRoot: HTMLElement,
+): void {
+  const doc = cardRoot.ownerDocument;
+  const activeBefore = formatElement(doc.activeElement);
+
+  // Respect any focus already inside the card. Matches
+  // `applyFocusSnapshot`'s contract — a click that landed during
+  // the restore window wins over the default.
+  const currentActive = doc.activeElement;
+  if (currentActive instanceof HTMLElement && cardRoot.contains(currentActive)) {
+    deckTrace.record({
+      kind: "focus-call",
+      site,
+      cardId,
+      targetSelector: "already-inside-card",
+      activeBefore,
+      activeAfter: activeBefore,
+      hidden: false,
+    });
+    return;
+  }
+
+  const { el: target, selector: targetSelector } =
+    resolveDefaultFocusTarget(cardRoot);
+  if (target !== null) target.focus();
+
+  const activeAfter = formatElement(doc.activeElement);
+  deckTrace.record({
+    kind: "focus-call",
+    site,
+    cardId,
+    targetSelector: target !== null ? targetSelector : "none",
+    activeBefore,
+    activeAfter,
+    hidden: target !== null ? isElementHidden(target) : false,
+  });
+}
+
+/**
  * Apply a saved `FormControlSnapshot` to an element. Idempotent guard at the
  * call site (via a `WeakSet`) keeps user typing from being overwritten on
  * subsequent mutation-observer fires.
@@ -1004,16 +1103,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     }
 
     const bag = store.getCardState(cardId);
-    if (!bag) {
-      emitA3("no-bag", true, null);
-      return;
-    }
 
-    if (bag.content !== undefined) {
-      // Content-owning card: delegate to the factory's activation hook.
-      // No-op until a factory registers `onCardActivated` (Step 24 for
-      // EM cards). The wrapper installed by `useCardPersistence` is
-      // stable; if the caller didn't opt in it silently returns.
+    // Content-owning card path. Only reachable when bag exists AND
+    // has a content payload. Fresh content-owning cards (no bag)
+    // fall through to the DOM-authority path's default-focus
+    // handler below — an unwanted `.focus()` on a contenteditable
+    // subtree is better than leaving the caret stranded on the
+    // outgoing card. Factories that want custom first-activation
+    // focus register `onCardActivated`.
+    if (bag?.content !== undefined) {
       persistenceCallbacksRef.current?.onCardActivated?.();
       const focusedAfter =
         cardRoot && cardRoot.ownerDocument.activeElement instanceof HTMLElement
@@ -1023,15 +1121,23 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       return;
     }
 
-    // DOM-authority card: re-apply focus + DOM selection directly.
+    // DOM-authority card path.
     if (!cardRoot) {
       emitA3("no-host", true, null);
       return;
     }
-    if (bag.focus && bag.focus.kind !== "none") {
+
+    // Apply the saved focus snapshot when one exists; otherwise
+    // fall back to the default-focus path so tab-switch-to-fresh-card
+    // moves the caret into the new card instead of stranding it.
+    // See `traceApplyDefaultFocus` + `DEFAULT_FOCUS_SELECTORS` above
+    // for the priority chain.
+    if (bag?.focus && bag.focus.kind !== "none") {
       traceApplyFocusSnapshot("a3-dom-authority", cardId, cardRoot, bag.focus);
+    } else {
+      traceApplyDefaultFocus("a3-default-focus", cardId, cardRoot);
     }
-    if (bag.domSelection) {
+    if (bag?.domSelection) {
       selectionGuard.restoreCardDomSelection(
         cardId,
         bag.domSelection,
