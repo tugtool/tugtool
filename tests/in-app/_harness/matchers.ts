@@ -166,6 +166,49 @@ function prettify(v: unknown): string {
 }
 
 /**
+ * Render a single value compactly for the one-line summary used in
+ * order-violation annotations. Primitives become their literal form,
+ * strings stay unquoted, objects/arrays fall back to JSON.
+ */
+function summarizeValue(v: unknown): string {
+  if (v === null) return "null";
+  if (v === undefined) return "undefined";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+
+/**
+ * Render an expected entry or trace event as a terse one-line string:
+ * `kind key1=value1 key2=value2`. Used by the order-violation
+ * annotation so failure messages read at a glance without opening the
+ * JSON dump.
+ *
+ * Fields stamped by the trace module itself (`timestamp`, `seq`,
+ * `loc`, `store`) are omitted — they are context, not signal, for the
+ * subset-matcher's diagnosis. Step 0e extends this to drive a full
+ * event-summary table above the JSON dump.
+ */
+function summarizeEntry(entry: unknown): string {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return String(entry);
+  }
+  const obj = entry as Record<string, unknown>;
+  const kind = typeof obj.kind === "string" ? obj.kind : "?";
+  const skip = new Set(["kind", "timestamp", "seq", "loc", "store"]);
+  const pairs = Object.keys(obj)
+    .filter((k) => !skip.has(k))
+    .map((k) => `${k}=${summarizeValue(obj[k])}`);
+  return pairs.length > 0 ? `${kind} ${pairs.join(" ")}` : kind;
+}
+
+/**
  * Assert that `expected` appears as an ordered subset of `actual`:
  * every `expected[i]` must partial-match some `actual[j]`, with the
  * chosen j values strictly increasing. Extra actual entries between
@@ -210,16 +253,42 @@ export function toContainOrderedSubset(
       }
     }
     if (found === -1) {
+      // Scan the earlier section of `actual` for matches. If the
+      // failed entry exists BEFORE the cursor, the failure is an
+      // order violation, not a genuine absence — emit an
+      // annotation at the top of the message that spells it out so
+      // callers don't have to eyeball the JSON to reach the same
+      // conclusion.
+      const earlierMatches: number[] = [];
+      for (let k = 0; k < cursor; k++) {
+        if (partialMatchEntry(want, actual[k])) {
+          earlierMatches.push(k);
+        }
+      }
       const matchedTail = matchedIndices.length
         ? ` (matched indices so far: [${matchedIndices.join(", ")}])`
         : "";
+      const baseMessage =
+        `expected trace to contain entry #${i} as an ordered subset${matchedTail}:\n` +
+        `looking for:\n${prettify(want)}\n` +
+        `after actual index ${cursor - 1}; trace length = ${actual.length}.\n` +
+        `full trace:\n${prettify(actual)}`;
+      let annotation = "";
+      if (earlierMatches.length > 0 && matchedIndices.length > 0) {
+        const priorIdx = matchedIndices[matchedIndices.length - 1]!;
+        const earliestEarlier = earlierMatches[0]!;
+        const idxList = earlierMatches.length === 1
+          ? `actual[${earliestEarlier}]`
+          : `actual[${earlierMatches.join(", ")}]`;
+        annotation =
+          `Order violation in ordered subset match:\n` +
+          `  Expected #${i} (${summarizeEntry(want)}) matches ${idxList},\n` +
+          `  BEFORE the prior match for expected #${i - 1} ` +
+          `(${summarizeEntry(expected[i - 1])}) at actual[${priorIdx}].\n\n`;
+      }
       return {
         pass: false,
-        message: () =>
-          `expected trace to contain entry #${i} as an ordered subset${matchedTail}:\n` +
-          `looking for:\n${prettify(want)}\n` +
-          `after actual index ${cursor - 1}; trace length = ${actual.length}.\n` +
-          `full trace:\n${prettify(actual)}`,
+        message: () => annotation + baseMessage,
       };
     }
     matchedIndices.push(found);

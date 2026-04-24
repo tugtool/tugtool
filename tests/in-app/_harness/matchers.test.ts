@@ -152,6 +152,76 @@ describe("toContainOrderedSubset — fail cases", () => {
     expect(result.pass).toBe(false);
   });
 
+  test("out-of-order match emits Order violation annotation citing both indices", () => {
+    // M01-shaped scenario: the trace contains destination-flip BEFORE
+    // fr-flip, but the test expects fr-flip → destination-flip. The
+    // annotation should call this out explicitly so the reader
+    // doesn't have to eyeball the JSON to reach the same conclusion.
+    const trace = [
+      { kind: "destination-flip", cardId: "B", from: false, to: true }, // idx 0
+      { kind: "card-host-mount", cardId: "B", hostStackId: "s1" },       // idx 1
+      { kind: "fr-flip", from: "A", to: "B", trigger: "activateCard" },  // idx 2
+      { kind: "focus-call", cardId: "B", site: "a3" },                   // idx 3
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "destination-flip", cardId: "B", to: true },
+      { kind: "focus-call", cardId: "B" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    // Annotation banner present
+    expect(msg).toContain("Order violation");
+    // Cites the earlier-index for the failing expected entry (destination-flip at 0)
+    expect(msg).toContain("actual[0]");
+    // Cites the prior match's index (fr-flip at 2)
+    expect(msg).toContain("actual[2]");
+    // Cites the expected entry labels (terse summary)
+    expect(msg).toContain("destination-flip");
+    expect(msg).toContain("fr-flip");
+    // The annotation appears BEFORE the existing JSON dump
+    expect(msg.indexOf("Order violation")).toBeLessThan(msg.indexOf("full trace:"));
+  });
+
+  test("genuinely-absent entry omits Order violation annotation", () => {
+    // When the failed entry does not exist anywhere in the trace,
+    // the existing diagnostic should be unchanged — no spurious
+    // "Order violation" banner.
+    const trace = [
+      { kind: "fr-flip", to: "B" },
+      { kind: "focus-call", cardId: "B" },
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "save-callback", cardId: "A", source: "manual" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    expect(msg).not.toContain("Order violation");
+    // The existing message format is preserved.
+    expect(msg).toContain("entry #1");
+    expect(msg).toContain("save-callback");
+  });
+
+  test("multiple earlier matches list all indices", () => {
+    // If the failed entry appears multiple times in the earlier
+    // section, the annotation should list all of them so the reader
+    // can see where the duplicate emissions live.
+    const trace = [
+      { kind: "save-callback", cardId: "A", source: "debounced" }, // idx 0
+      { kind: "save-callback", cardId: "A", source: "manual" },    // idx 1
+      { kind: "fr-flip", to: "B" },                                // idx 2
+    ];
+    const result = toContainOrderedSubset(trace, [
+      { kind: "fr-flip", to: "B" },
+      { kind: "save-callback", cardId: "A" },
+    ]);
+    expect(result.pass).toBe(false);
+    const msg = result.message();
+    expect(msg).toContain("Order violation");
+    expect(msg).toContain("actual[0, 1]");
+  });
+
   test("value mismatch returns false", () => {
     const result = toContainOrderedSubset(
       [{ kind: "fr-flip", trigger: "activateCard", to: "c2" }],
