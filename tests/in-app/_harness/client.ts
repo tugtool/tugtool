@@ -147,9 +147,14 @@ function lit(v: unknown): string {
  * depend on Swift's error-translation layer for the "not attached" case.
  */
 function callSurface(script: string): string {
-  // Defensive IIFE — prevents the "return outside function" shape from
-  // becoming an issue under evalJS's try/catch wrapping.
-  return `(function(){\n  if (typeof window.__tug === "undefined") {\n    throw new Error("[tug] window.__tug is not attached (is the page in test mode?)");\n  }\n  return ${script};\n})()`;
+  // Defensive IIFE. Two responsibilities:
+  // 1. Prevent "return outside function" under evalJS try/catch wrapping.
+  // 2. Coerce `undefined` results to `null`. WKWebView's evaluateJavaScript
+  //    rejects `undefined` with "JavaScript execution returned a result of
+  //    an unsupported type" — so void surface methods (enableDeckTrace,
+  //    click, focusElement, reset, seedDeckState, ...) must not leak
+  //    their undefined return through.
+  return `(function(){\n  if (typeof window.__tug === "undefined") {\n    throw new Error("[tug] window.__tug is not attached (is the page in test mode?)");\n  }\n  var __r = ${script};\n  return typeof __r === "undefined" ? null : __r;\n})()`;
 }
 
 // ---------------------------------------------------------------------------

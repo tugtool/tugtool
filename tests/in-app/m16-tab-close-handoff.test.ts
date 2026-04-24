@@ -120,6 +120,10 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
     // the subprocess log before rethrowing.
     const app = await launchTugApp({ testName: "m16-tab-close-handoff" });
     try {
+      // Deck-trace defaults to disabled; flip it on so the "no
+      // save-callback for c2" assertion later can read the trace.
+      await app.enableDeckTrace(true);
+
       // -----------------------------------------------------------------
       // Seed: one pane with three FC cards. `gallery-input` is the
       // gallery componentId that renders persisted TugInputs. `c2` is

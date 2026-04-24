@@ -73,7 +73,18 @@
  * @module deck-trace
  */
 
-import type { ActivationTarget } from "./focus-transfer";
+/**
+ * Serializable mirror of `ActivationTarget` for inclusion in a3-fire
+ * events. `focus-element` carries a stringified element descriptor
+ * (tag + id/class) instead of the live `HTMLElement` — DOM nodes
+ * contain cyclic parent/child links that poison JSON.stringify and
+ * cause the whole `getDeckTrace()` array to be rejected by
+ * WKWebView's evaluateJavaScript serializer as "unsupported type".
+ */
+export type TraceActivationTarget =
+  | { kind: "focus-element"; el: string }
+  | { kind: "dispatch-activated" }
+  | { kind: "none" };
 import { getDeckStore } from "./lib/deck-store-registry";
 import { isFocusDestination } from "./deck-store-selectors";
 
@@ -149,7 +160,7 @@ export type DeckTraceEvent = { timestamp: number; seq: number } & (
       now: boolean;
       earlyReturn: A3EarlyReturn | null;
       gatePassed: boolean | null;
-      target: ActivationTarget | null;
+      target: TraceActivationTarget | null;
       focusedEl: string | null;
     }
   | {

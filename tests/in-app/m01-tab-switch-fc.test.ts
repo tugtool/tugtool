@@ -85,6 +85,11 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
     // the subprocess log before rethrowing.
     const app = await launchTugApp({ testName: "m01-tab-switch-fc" });
     try {
+      // Deck-trace defaults to disabled; recording is a no-op until
+      // we flip the enable flag. All trace assertions below depend on
+      // this being on.
+      await app.enableDeckTrace(true);
+
       // -----------------------------------------------------------------
       // Seed: one pane with two FC cards. `gallery-input` is the
       // developer-gallery componentId that renders persisted TugInputs.

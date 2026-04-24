@@ -100,6 +100,10 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
     // the subprocess log before rethrowing.
     const app = await launchTugApp({ testName: "m03-pane-activation" });
     try {
+      // Deck-trace defaults to disabled; flip it on before any events
+      // we want to assert against can be recorded.
+      await app.enableDeckTrace(true);
+
       // -----------------------------------------------------------------
       // Seed: two panes, one card each. `gallery-input` is the gallery
       // componentId that renders persisted TugInputs; the two panes are

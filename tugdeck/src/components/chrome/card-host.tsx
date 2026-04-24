@@ -99,8 +99,27 @@ import {
   deckTrace,
   formatElement,
   type A3EarlyReturn,
+  type TraceActivationTarget,
 } from "../../deck-trace";
-import { resolveActivationTarget } from "../../focus-transfer";
+import {
+  resolveActivationTarget,
+  type ActivationTarget,
+} from "../../focus-transfer";
+
+/**
+ * Serialize an {@link ActivationTarget} into a JSON-safe shape for
+ * deck-trace. The live `focus-element.el: HTMLElement` carries cyclic
+ * parent/child references that break `JSON.stringify` — which in turn
+ * breaks WKWebView's evalJS result serialization (in-app test harness
+ * calls `window.__tug.getDeckTrace()`, which returns the raw event
+ * array; any cyclic event poisons the whole array).
+ */
+function sanitizeActivationTarget(t: ActivationTarget): TraceActivationTarget {
+  if (t.kind === "focus-element") {
+    return { kind: "focus-element", el: formatElement(t.el) };
+  }
+  return t;
+}
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -942,7 +961,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         now: isFocusDestinationNow,
         earlyReturn,
         gatePassed,
-        target,
+        target: sanitizeActivationTarget(target),
         focusedEl: focusedEl !== null ? formatElement(focusedEl) : null,
       });
     };
