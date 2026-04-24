@@ -1,0 +1,1325 @@
+<!-- tugplan-skeleton v2 -->
+
+## In-App Harness Extensions — Hardware Events, EM-Cards, Full M-Series Coverage {#phase-harness-extensions}
+
+**Purpose:** Extend the in-app test harness beyond the M01/M03/M16 slice by adding two new test-driving primitives — Swift-backed `CGEventPost` hardware-event injection for `isTrusted: true`-gated behaviors, and a tugcode-backed EM-card harness that exercises stream-json IPC end-to-end — then use both primitives to land regression coverage for the full M-series scenario table (M02, M04, M05, M06, M07, M09, M11, M12, M14, M15, M18, M19, M20, M21, M23, M29, M30).
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | main |
+| Last updated | 2026-04-23 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+The in-app test harness landed in `.tugtool/tugplan-in-app-test-harness.md` delivers a real-runtime bridge into Tug.app's WKWebView and three regression tests (M01, M03, M16). That plan deliberately left three capability gaps open, each of which a follow-on plan would need to close:
+
+- **`isTrusted: true`-gated behaviors.** Synthesized PointerEvent/MouseEvent dispatch covers our production handlers because they do not check `event.isTrusted`, but several M-series scenarios (drag-aborted, IME composition, modal-overlay dismiss, cross-card selection painting) touch WebKit code paths that silently no-op against synthesized events. The original plan documented this as a fidelity limit and deferred `CGEventPost` per [Q03] until a test demanded it.
+- **EM-card coverage.** M01/M03/M16 as specified use FC (form-control) cards only — inputs with `data-tug-persist-value` / `data-tug-focus-key`. EM (engine-managed) cards — tide-card, `TugPromptInput`, `GalleryPromptEntry` — are contentEditable-backed and their focus/selection/caret behavior flows through tugcode's stream-json IPC. None of that is exercised by the harness today. M02, M06 (EM-half), M07 (EM-half), and M09 all hinge on EM-card paths.
+- **Breadth.** Three tests prove the harness shape; they do not protect the other ~20 M-series scenarios enumerated in `roadmap/tugplan-selection.md` §Motivations (M01–M31). Coverage rots under natural drift; having the harness without the coverage is shelf-ware.
+
+This plan builds the two missing primitives (hardware events, EM-card lifecycle) and then uses them to land the remaining M-series tests that the harness's fidelity envelope can actually bind.
+
+#### Strategy {#strategy}
+
+- Three phases in dependency order: hardware-event primitive (Phase A), EM-card harness (Phase B), wide M-series coverage (Phase C). Each phase ships standalone value — Phase A alone unlocks M04/M05/M20/M21 coverage; Phase B alone unlocks M02/M06-EM/M07-EM/M09; Phase C is the coverage sweep.
+- Hardware events piggyback on the existing RPC transport. No new socket, no new boot choreography. `CGEventPost` is one more Swift-side handler on the bridge, `__tug.nativeClick` / `nativeKey` / `nativeType` is one more method on the `__tug` surface.
+- EM-card support reuses the harness subprocess-lifecycle contract. Tugcode runs either as a real subprocess (full fidelity) or in a deterministic stub mode (test-stable canned transcripts). Both modes exercise the same stream-json IPC surface end-to-end.
+- M-series expansion is table-driven. A single authoritative scenario table (Spec [#s04-mseries-scenarios]) tracks every scenario, its required infrastructure (synthesized / CGEventPost / EM-card), and its target fix. Steps 10–16 walk the table row by row.
+- Fidelity envelope from the base harness still applies: visual rendering, paint correctness, caret blink, and multi-window stay out of scope. This plan widens the envelope by the width of `CGEventPost` and tugcode IPC, not beyond.
+- DEBUG-only guard policy from [D03] of the base harness is inherited unchanged. Every new bridge surface, including `CGEventPost`, is gated the same way on both halves.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- `__tug.nativeClick(x, y)` dispatches a macOS `CGEventPost` mouse-down / mouse-up that reaches WebKit as `isTrusted: true`; the in-app test that asserts trusted-event arrival passes. (Verified: `tests/in-app/_smoke-native.test.ts` exits 0.)
+- A tugcode subprocess launches under harness control, performs one stream-json turn against a canned request, and the turn is observable via `__tug.getEmCardState(cardId)`. (Verified: `tests/in-app/_smoke-em.test.ts` exits 0.)
+- Every M-series scenario in the table with an infrastructure column of "synthesized", "CGEventPost", or "EM-card" has a green in-app test. (Verified: row-by-row test files exist under `tests/in-app/` and `bun test tests/in-app/` exits 0.)
+- Each new M-series test fails predictably when its target fix is reverted by hand. (Verified: per-test drift-prevention exercise documented in Step 17.)
+- Release-build binary size unchanged vs pre-harness baseline (within noise threshold). (Verified: `wc -c` diff + `nm` symbol check.)
+- No new happy-dom tests added for UI / focus / selection / DOM-timing behavior across the whole plan. (Verified: grep review of commits.)
+- Accessibility permission prompt does not fire during automated runs. (Verified: documented permission-setup step for developer workstation; CI-on-hold until handled per [Q01].)
+
+#### Scope {#scope}
+
+1. Swift-side `CGEventPost` handler (DEBUG-only), coordinate-mapping helper, NSEvent synthesis for app-lifecycle simulation (`NSApp.hide()`, `NSApp.unhide()`, `NSApp.resignFirstResponder()` equivalents).
+2. New `__tug` surface methods: `nativeClick`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`, `simulateAppResign`, `simulateAppBecomeActive`, `simulateAppHide`, `simulateAppUnhide`.
+3. Accessibility-permission setup documentation for developer workstations; guidance on CI sandboxing (deferred to [Q01]).
+4. Tugcode subprocess lifecycle under harness control: `__tug.startTugcode(opts)`, `__tug.stopTugcode()`, `__tug.seedTugcodeTranscript(transcript)` for deterministic stub-mode.
+5. New `__tug` surface methods for EM-card observation: `getEmCardState(cardId)`, `getEngineSelection(cardId)`, `awaitEngineReady(cardId)`.
+6. EM-card harness seeding helpers: `seedEmCard`, `drainTugcodeTurn`, `seedTugcodeError`.
+7. M-series scenario table authored and adopted as the canonical coverage ledger (Spec [#s04-mseries-scenarios]).
+8. In-app tests for M02, M04, M05, M06 (FC + EM halves), M07 (FC + EM halves), M09, M11, M12, M14, M15, M18, M19, M20, M21, M23, M29, M30. Each scenario is one test file; grouping by mechanism is a README-level organization only.
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- CI integration. Same position as the base harness plan — local-dev first; CI follows only once accessibility-permission handling is resolved per [Q01].
+- Multi-window scenarios (no change from base plan).
+- Visual / paint / caret-blink correctness (M22 stays manual-verification-only — outside the fidelity envelope).
+- Refactoring the base harness surface. Extensions go through version bumps of `__tug.version` per [D11] of the base plan.
+- Retrofitting existing Phase 3 tests (M01/M03/M16) to use `CGEventPost`. They already pass via synthesized events; moving them would be churn.
+- Replacing tugcode with a mock for EM-card tests. We run tugcode for real, optionally in stub-transcript mode. A full mock would reintroduce the happy-dom failure class — assertions against a fake that approximates the real thing.
+- Covering M13 (integration-test meta-scenario — about existence of tests, not behavior), M17 (RPC-level audit already closed by Step 18 of the selection plan), M24 (component-protocol meta), M25 / M26 / M27 / M28 / M31 (component-internal state axes covered by component-persistence tests, not activation harness).
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- All 16 execution steps of `.tugtool/tugplan-in-app-test-harness.md` complete: deck-trace instrumentation, `DeckManager.testMode`, `window.__tug` base surface, transport + RPC + error model, version handshake + lifecycle, harness library, M01/M03/M16 tests green.
+- `roadmap/tugplan-in-app-bridge.md` (Phase 2 bridge plan) exists and its DEBUG-guard file-level placement is authoritative — this plan adds new files to the same guarded surface under the same rules.
+- Tug.app running with `TUGAPP_TEST_SOCKET=...` in DEBUG build; harness can launch, handshake, and run arbitrary `evalJS` / `waitForCondition`.
+- Accessibility permission granted to Tug.app (or its DEBUG variant) on the developer workstation, for `CGEventPost` to reach the system event stream.
+- `tugcode` binary exists and accepts stream-json IPC; its subprocess contract is stable enough to embed in harness lifecycle.
+- `tugdeck` EM-card implementations (tide-card, `TugPromptInput`, `GalleryPromptEntry`) are functional in-app — not under active redesign. M02-class tests assume the EM activation path (Step 23E in `tugplan-selection.md`) has landed.
+- macOS-only (no change from base plan).
+
+#### Constraints {#constraints}
+
+- **DEBUG-build-only guard is inherited, not relaxed.** Every new Swift source file and every new TypeScript touchpoint follows [D03] of the base harness: independent Swift `#if DEBUG` guard + TypeScript `import.meta.env.DEV && window.__tugTestMode` gate. A release build contains zero `CGEventPost` bytes and zero tugcode-harness bytes.
+- **Accessibility permission is a developer-workstation prerequisite, not a runtime prompt.** Tests do not request permission mid-run; they fail fast with a descriptive error if the permission is missing. CI workstation setup is documented separately and deferred per [Q01].
+- **Hardware events target the test-harnessed WKWebView only.** Coordinate mapping goes Tug.app window → content-view → WebView document coordinates. Events outside the WebView's bounds are rejected by the Swift handler so test-mouse-movement never escapes into the user's other apps.
+- **No `setTimeout` in test code or harness code** (inherited from base [D12]).
+- **Tugcode subprocess lifecycle is harness-owned under test mode.** Production tugcode launch paths are untouched; the harness spawns its own instance per test file and kills it explicitly on `app.close()`.
+- **Stream-json transcripts are content-hashed** to detect silent drift in the recorded canonical stream (per [D06]).
+- **macOS only.** `CGEventPost`, `NSApp.hide()`, tugcode — all macOS primitives.
+- **Single WebView assumption** (inherited).
+
+#### Assumptions {#assumptions}
+
+- `CGEventPost` delivered to the active-application process reaches WKWebView as `isTrusted: true` events. Confirmed by spike per [Q02] before Step 1.
+- WKWebView's hit-testing honors window/content-view coordinate mapping — posting an event at screen coordinate (x, y) where the WebView is visible lands on the expected DOM element. Verified by a spike in Step 1.
+- Tugcode's stream-json IPC protocol is stable within the scope of this plan; schema changes are out-of-band events that would trigger this plan's replanning.
+- Canned stream-json transcripts are deterministic enough that a test replaying one gets identical downstream effects every run. Tested empirically during Step 5.
+- `NSApp.hide()` / `.unhide()` / `.deactivate()` / `.activate()` actually fire the delegate callbacks (`applicationDidHide:`, `applicationDidUnhide:`, `applicationDidResignActive:`, `applicationDidBecomeActive:`) that Step 23D of the selection plan listens for. Verified by Step 3 smoke test.
+- The M-series scenarios listed in `tugplan-selection.md` §Motivations are the authoritative set; this plan does not invent new scenarios.
+- Test-file runtime does not exceed ~10 seconds per file at the plan's completion, even with tugcode in the loop. If it does, [R02] triggers.
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+#### [Q01] CI accessibility-permission handling (DEFERRED) {#q01-ci-accessibility}
+
+**Question:** `CGEventPost` requires the posting process (or its parent) to have macOS Accessibility permission granted. On a developer workstation this is a one-time `System Settings → Privacy & Security → Accessibility → +` step. On a GitHub Actions macOS runner there is no interactive UI; the permission must be granted programmatically or waived.
+
+**Why it matters:** Without a CI story, Phase A tests stay local-dev-only. That is already the position of the base harness, but the question accumulates pressure as coverage grows.
+
+**Options:**
+- Launch a helper process with `tccutil` or the private `TCC.db` mutation (both are macOS version-fragile and widely warned against).
+- Gate CI on a pre-provisioned runner image that has permission pre-granted.
+- Keep `CGEventPost` tests local-dev-only; CI runs only synthesized-event tests.
+
+**Plan to resolve:** Investigation deferred to `roadmap/tugplan-harness-ci.md` (authored when CI becomes urgent). This plan documents the local-workstation setup in Step 1's docs task.
+
+**Resolution:** DEFERRED. Tracked in the `roadmap/tugplan-harness-ci.md` follow-up.
+
+#### [Q02] `CGEventPost` vs `CGEventPostToPid` — which path reaches WKWebView as `isTrusted: true`? (DEFERRED) {#q02-cgeventpost-variant}
+
+**Question:** `CGEventPost(.cghidEventTap, event)` posts to the system event stream, visible to all apps; `CGEventPostToPid(event, pid)` posts directly to a process. We need the variant that WKWebView accepts as `isTrusted: true` while also not leaking into other windows on the developer's screen.
+
+**Why it matters:** Leaking clicks outside Tug.app during test runs is a UX disaster for the developer. But posting to the wrong PID may land events on a sibling helper process (WebKit's rendering process) rather than the main app process — and delivery semantics may differ.
+
+**Plan to resolve:** First task of Step 1: spike both variants against a minimal Tug.app DEBUG build; measure `event.isTrusted` on the JS side and observe whether events leak outside the app window. Record the result as [D02]'s rationale.
+
+**Resolution:** DEFERRED to [#step-1] spike.
+
+#### [Q03] Tugcode subprocess lifecycle: per-test-file vs per-harness-launch (DEFERRED) {#q03-tugcode-lifecycle}
+
+**Question:** Should the harness spawn one tugcode process per test file (clean-per-file, slower), or one per harness launch (shared across test files if Bun's test runner ever moves that way, faster)?
+
+**Why it matters:** Tugcode startup is not free. Per-file spawns cost measurable wall-clock. Per-launch spawns demand correctness of the per-test tugcode reset (drain pending turns, clear memory, reset transcript).
+
+**Options:**
+- Per-test-file spawn, mirroring Tug.app's one-app-per-file model. Simple, slower.
+- Per-harness-launch spawn with a `resetTugcode()` RPC. Faster, requires tugcode to support clean reset.
+
+**Plan to resolve:** Decide in Step 5 after measuring tugcode startup latency. If < 500ms, per-test-file wins on simplicity. If >= 500ms, add the reset RPC.
+
+**Resolution:** DEFERRED to [#step-5].
+
+#### [Q04] Stream-json transcript format: canonical bytes vs structured records (DEFERRED) {#q04-transcript-format}
+
+**Question:** EM-card tests need deterministic tugcode output. Do we record the on-wire stream-json as raw bytes (fragile to protocol drift but perfectly reproducible), or as a structured JSON record of the logical turn (resilient to cosmetic drift but requires encode-on-replay)?
+
+**Plan to resolve:** Decide in Step 6. Default position: structured records with a content-hash sidecar that trips when tugcode's on-wire format changes. Raw-bytes fallback if the structured format introduces subtle replay skew.
+
+**Resolution:** DEFERRED to [#step-6].
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| `CGEventPost` bypasses DEBUG guard via Objective-C runtime dynamic loading | critical | low | File-level `#if DEBUG` on every CGEventPost-touching Swift file; binary-size + `nm` audit in checkpoint | Any PR touching accessibility-adjacent code |
+| Hardware events leak outside Tug.app window during test runs | high | medium | `CGEventPostToPid` or explicit coordinate check against window bounds; reject events outside bounds server-side | First report of test-driven clicks hitting a sibling app |
+| Tugcode startup latency balloons test runtimes | medium | medium | Measure once in Step 5; if >500ms, switch to per-launch with `resetTugcode()` per [Q03] | Any test file exceeding 10s wall-clock |
+| Stream-json transcript drift silently breaks tests | medium | high | Content-hash transcripts; hash mismatch is a hard failure with guidance | First green-to-red transition with no code change |
+| M-series coverage sprawl (25+ test files, maintenance burden) | medium | high | Table-driven authoring with shared helpers; any helper addition goes into `_harness/` (not per-test) | Helpers start duplicating across tests |
+| Accessibility-permission prompt fires mid-run, hanging test | medium | low | Permission check as first harness-launch RPC; fail fast if missing | Any report of hung test with no output |
+| EM-card test coupling tugcode version to tugdeck version | medium | medium | Tugcode version recorded in test failure report; version-skew error class | Silent bug attributed to version drift |
+
+**Risk R01: `CGEventPost` code leaks to release binary** {#r01-cgeventpost-release-leak}
+
+- **Risk:** Accessibility-tapping code is a security concern in a release build; `CGEventPost` is linked into the app even when unused if a `#if DEBUG` bracket is forgotten. Apple's notarization may also reject binaries that declare unused entitlements.
+- **Mitigation:**
+  - Every Swift source file adding `CGEventPost` lives wholly inside `#if DEBUG ... #endif`.
+  - Binary-size diff and `nm` symbol check are exit criteria for Phase A integration checkpoint.
+  - No accessibility entitlement is declared in the release build's `Info.plist`.
+- **Residual risk:** Build misconfiguration (DEBUG=1 in a release archive) would leak. Accepted; out-of-scope per [D03] of base plan.
+
+**Risk R02: Hardware events leak outside the WKWebView** {#r02-event-escape}
+
+- **Risk:** A coordinate-mapping bug or explicit `CGEventPost(.cghidEventTap, ...)` use sends a mouse click to whatever app happens to be at screen coordinate (x, y). Developer's unrelated window receives the click. Worst case: confidential action triggered in another app.
+- **Mitigation:**
+  - Resolution per [Q02]: prefer `CGEventPostToPid(event, pid)` targeting the Tug.app process (or WebKit WebContent process) if it yields `isTrusted: true`.
+  - Server-side bounds check: reject event-post requests whose coordinate is outside the current WebView frame.
+  - Coordinate mapping is unit-tested against known window geometry.
+- **Residual risk:** A system-level event stream subscription (e.g., a macOS window recorder) may still observe the posted events even if they don't reach another app's event queue. Accepted; dev-tooling trust model.
+
+**Risk R03: Tugcode coupling inflates test flakiness** {#r03-tugcode-flakiness}
+
+- **Risk:** Running real tugcode means real timing — model latency, buffer flushes, process scheduling. Stream-json turns that "usually take 80ms" sometimes take 3000ms and blow `waitForCondition` timeouts.
+- **Mitigation:**
+  - Default to stub-transcript mode for deterministic canned responses (real tugcode only for smoke tests).
+  - `drainTugcodeTurn()` helper waits on tugcode's completion signal specifically, not a wall-clock timer.
+  - Content-hash on transcripts detects silent drift (per [D06]).
+- **Residual risk:** Real-tugcode smoke tests may occasionally fail on loaded dev machines. Accepted; those tests are clearly marked `_smoke-em-live.test.ts` and not part of the default run.
+
+**Risk R04: M-series test maintenance cost** {#r04-mseries-maintenance}
+
+- **Risk:** 20+ in-app test files, each with its own seed / drive / assert idioms, becomes unmaintainable. A single refactor in `focus-transfer.ts` triggers 20 test file updates.
+- **Mitigation:**
+  - Table-driven scenario authoring: shared `_harness/` helpers for seeding, driving, asserting common shapes (pane setup, card activation, trace-subsequence templates).
+  - Per-row test files stay short (< 80 lines typical).
+  - Regression triage uses the scenario table to cluster failures by mechanism.
+- **Residual risk:** Some scenarios will be genuinely unique and will resist helperization. Accepted; triage treats them as the long tail.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [D01] Hardware events land on the existing bridge as new `__tug` methods, not a new transport (DECIDED) {#d01-hardware-events-same-transport}
+
+**Decision:** `CGEventPost` is invoked through new RPC verbs (`nativeClick`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`) added to the same bridge that already serves `evalJS` and `waitForCondition`. `__tug` surface grows new methods that wrap these RPCs.
+
+**Rationale:**
+- Adding a second transport doubles the DEBUG-guard surface area for no gain.
+- The RPC shape is identical — request/response JSON, structured errors, per-call timeout — only the server-side handler is new.
+- Keeps the harness-library shape uniform: every test-driver call is a method on the typed client.
+
+**Implications:**
+- `__tug.version` bumps from `1.0.0` to `1.1.0` (additive change per [D11] of the base plan).
+- New RPC verbs are DEBUG-guarded at the same file-level position as `evalJS`.
+- Harness client gains typed wrappers mirroring [D09] of the base plan.
+
+#### [D02] `CGEventPostToPid` targeting the WebContent helper process is the default variant (DECIDED) {#d02-cgevent-variant}
+
+**Decision:** Post events to the pid of the WKWebView's WebContent helper process using `CGEventPostToPid`. Fall back to `CGEventPost(.cghidEventTap, ...)` only if the spike in Step 1 shows `isTrusted: true` is not preserved under pid-targeted delivery. Document whichever variant wins as the canonical mechanism. The variant confirmation happens in Step 1; this decision is treated as tentative-pending-spike-confirmation at authoring time.
+
+**Rationale:**
+- PID-targeted delivery does not leak events into other apps (closes [R02]).
+- WKWebView's security model expects events on its own pid; whether `isTrusted: true` is preserved is the variable the spike measures.
+- Either way, the decision becomes load-bearing for the rest of Phase A.
+
+**Implications:**
+- Step 1 opens with a two-variant spike and records the result as the source-of-truth for [D02].
+- Documentation (harness README) explains the variant choice and why.
+
+#### [D03] Accessibility-permission check is a first-RPC preflight (DECIDED) {#d03-accessibility-preflight}
+
+**Decision:** The first RPC the harness issues after version handshake is `__tug.checkAccessibilityPermission()`. If denied, harness throws a descriptive `AccessibilityPermissionMissingError` with recovery instructions printed to stderr. Tests do not proceed past launch.
+
+**Rationale:**
+- Fails loud with actionable output (instead of hanging on a silent permission prompt mid-test).
+- Developer sees the error once, grants permission in System Settings, and every subsequent run just works.
+
+**Implications:**
+- New error class in `_harness/errors.ts`.
+- `__tug.checkAccessibilityPermission` is a `__tug` surface method (version bump to 1.1.0 covers it).
+- Documentation / README includes the setup steps.
+
+#### [D04] Tugcode runs under harness control; production launch paths are untouched (DECIDED) {#d04-tugcode-harness-owned}
+
+**Decision:** In test mode, the harness spawns its own tugcode subprocess and terminates it on `app.close()`. Tug.app's production tugcode-launch path is not reached when `TUGAPP_TEST_SOCKET` is set — gated by the same env-var guard that triggers test mode.
+
+**Rationale:**
+- Production tugcode launch pulls real credentials, reads real config — all sources of test flakiness.
+- Harness-owned lifecycle means tests control exactly what tugcode sees and outputs.
+- Parallel to how `DeckManager.testMode` bypasses tugbank: same pattern, same reasoning.
+
+**Implications:**
+- Tug.app bridge plan (`tugplan-in-app-bridge.md`) gains a task to guard the production tugcode-launch code path behind `!testMode`.
+- `__tug.startTugcode(opts)` is the harness entry point; tests call it explicitly after seedDeckState.
+- Test-mode tugcode binary path is configurable so dev workstations can swap in a local build.
+
+#### [D05] Tugcode has two modes: live (real model calls) and stub (canned transcript) (DECIDED) {#d05-tugcode-modes}
+
+**Decision:** Harness launches tugcode in one of two modes:
+- **Live mode:** real tugcode subprocess, real model API calls. Used only for `_smoke-em-live.test.ts` to verify the bridge works end-to-end.
+- **Stub mode (default):** tugcode receives a canned stream-json transcript via `__tug.seedTugcodeTranscript(transcript)` and replays it deterministically on each turn.
+
+**Rationale:**
+- Live mode catches real-world protocol drift but is slow and non-deterministic.
+- Stub mode makes EM-card tests as fast and deterministic as FC-card tests.
+- Two modes is one mode more than ideal, but one fewer than necessary — deleting either leaves a gap.
+
+**Implications:**
+- Tugcode gains a test-mode CLI flag (`--stub-transcript=<path>` or equivalent) to read a transcript from disk.
+- Transcripts live under `tests/in-app/fixtures/tugcode/` as checked-in JSON files.
+- Stub mode is the default for all EM-card tests in this plan; live mode is exercised only by a single smoke test.
+
+#### [D06] Stream-json transcripts are structured records with content-hash sidecars (DECIDED) {#d06-transcript-format}
+
+**Decision:** Transcripts are stored as JSON arrays of logical turn records (not raw on-wire bytes). Each transcript file ships with a content-hash sidecar (`<name>.sha256`). Tests that replay a transcript verify the sidecar matches what the current tugcode produces in stub mode — mismatch is a hard failure with the diff printed.
+
+**Rationale:**
+- Structured records survive cosmetic protocol drift (whitespace, field ordering).
+- Content-hash sidecar catches semantic drift (new fields, renamed tags) that would otherwise silently change test meaning.
+- JSON records are human-readable — a failing test's transcript can be reviewed and re-approved without tooling.
+
+**Implications:**
+- New transcript-authoring helper: `bun run scripts/capture-tugcode-transcript.ts --scenario=m02-return` captures a live tugcode turn and writes the structured record plus sidecar.
+- Checkpoint on transcript-using tests verifies sidecar match.
+
+#### [D07] App-lifecycle simulation uses `NSApp` calls, not synthesized events (DECIDED) {#d07-app-lifecycle-nsapp}
+
+**Decision:** `__tug.simulateAppResign / simulateAppBecomeActive / simulateAppHide / simulateAppUnhide` invoke `NSApp.deactivate()` / `.activate()` / `.hide()` / `.unhide()` directly on the main thread. The app delegate's real `applicationDid...` callbacks fire as a consequence — no shortcut, no synthesized delegate invocation.
+
+**Rationale:**
+- Real delegate callbacks are the production code path. Synthesizing delegate calls would recreate the happy-dom failure class (test passes while real-app lifecycle doesn't).
+- `NSApp.hide()` etc. are well-defined primitives; their observable effect on the app matches production perfectly.
+
+**Implications:**
+- M04 and M05 tests have identical fidelity to manual verification.
+- Swift handler runs these on the main thread; harness RPC returns after the delegate callback chain has drained.
+
+#### [D08] M-series scenario table is the canonical coverage ledger (DECIDED) {#d08-scenario-table-authoritative}
+
+**Decision:** Spec [#s04-mseries-scenarios] enumerates every M-series scenario this plan covers, its required harness infrastructure (synthesized, CGEventPost, EM-card, app-lifecycle), its target fix in `tugplan-selection.md`, and its test file location. Any scenario added to `tugplan-selection.md` after this plan lands must have its row added to this table or explicitly deferred with rationale.
+
+**Rationale:**
+- Without a table, coverage drifts silently — "we tested M02 somewhere, right?"
+- Making the table the PR-review gate for any new M-series scenario closes that gap.
+
+**Implications:**
+- PR-review checklist: "does this PR add an M-series scenario? If so, has the table been updated?"
+- Any scenario marked "DEFERRED" in the table has a one-line rationale (e.g., "M22 is paint-correctness; outside fidelity envelope").
+
+#### [D09] Hardware-event tests are additive; FC/EM synthesized-event tests are not replaced (DECIDED) {#d09-hardware-events-additive}
+
+**Decision:** The hardware-event primitive is a new capability, not a replacement. Existing M01/M03/M16 tests continue to use synthesized events. New tests use `CGEventPost` only when the scenario's target fix is gated on `isTrusted: true`.
+
+**Rationale:**
+- Retrofitting is churn without value — synthesized events already exercise the production code paths for those scenarios.
+- Hardware-event tests are slower (real event-stream delivery, real coordinate mapping); paying that cost without reason is waste.
+
+**Implications:**
+- Scenario table [#s04-mseries-scenarios] marks infrastructure per-row.
+- A scenario's infrastructure is chosen by the narrowest primitive that reaches the target behavior.
+
+#### [D10] EM-card engine selection state is a new caret-state variant, not a flag on existing variant (DECIDED) {#d10-em-caret-variant}
+
+**Decision:** `__tug.getCaretState(cardId)` already returns one of `{ kind: "input" } | { kind: "range" } | null`. For EM cards we add a third variant `{ kind: "engine"; engineSelection: {...}; text: string }` where `engineSelection` is whatever serializable shape the engine exposes. The existing `range` variant continues to cover pure contentEditable without engine ownership (rare or absent in current codebase — present for completeness).
+
+**Rationale:**
+- Different cards have structurally different selection shapes; a flag on a single variant leaks engine semantics into the input/range cases.
+- Discriminated-union variants match how tests branch on cardtype.
+
+**Implications:**
+- `__tug.version` bump to 1.1.0 covers the variant addition.
+- Spec [#s02-em-card-surface] documents the shape.
+- Per-engine serialization is the engine's responsibility; harness does not attempt to normalize across engines.
+
+#### [D11] Coverage proceeds scenario-by-scenario, not primitive-by-primitive (DECIDED) {#d11-coverage-order}
+
+**Decision:** Phase C walks the scenario table row by row in approximate dependency order (synthesized scenarios first, then CGEventPost, then EM-card). Each row is one commit, one test file, one green assertion that its target fix binds.
+
+**Rationale:**
+- Per-row commits keep PR review digestible and regression triage crisp — a bisect hits one scenario at a time.
+- Table ordering matches the complexity gradient — early rows validate the helpers before the harder rows depend on them.
+
+**Implications:**
+- Execution steps 10–16 each land one or two scenarios, not a batch of seven.
+- Any row that uncovers a bug in the primitive (CGEventPost coordinate mapping, tugcode transcript replay) pauses coverage and fixes the primitive before resuming.
+
+#### [D12] Every new M-series test includes a deliberate revert-and-retest cycle before merge (DECIDED) {#d12-drift-prevention}
+
+**Decision:** The Step 17 drift-prevention exercise from the base plan extends to every new M-series test landed in this plan. Before marking a test green, the author reverts the target fix locally, re-runs, verifies red, re-applies, verifies green. The outcome is documented in the PR description ("Revert target-fix X; test fails with Y; re-apply; test passes").
+
+**Rationale:**
+- A test that "passes" but does not actually bind its target fix is the original sin we are fixing.
+- Writing the revert-cycle outcome in the PR description makes it reviewable.
+
+**Implications:**
+- PR-review checklist line: "drift-prevention cycle documented? Y/N".
+- Step 17 formally aggregates this into the Phase C exit criterion.
+
+---
+
+### Deep Dives {#deep-dives}
+
+#### Hardware events — Phase A {#phase-a-hardware}
+
+Phase A adds one Swift-side primitive and five TypeScript surface methods. Zero transport changes.
+
+##### A.1 Coordinate mapping {#coord-mapping}
+
+Tests express coordinates in WebView document space (e.g., "click element at viewport (120, 240)"). Swift handler maps: document → WebView bounds → content-view → window → screen. Mapping is unit-tested against known fixtures. Events whose screen-mapped coordinate falls outside the current WebView bounds are rejected with a `CoordinateOutOfBoundsError`.
+
+Practical API shape:
+
+```ts
+// Test-side (high-level)
+await app.nativeClickAtSelector('[data-testid="close-button"]');
+await app.nativeClick({ x: 120, y: 240 });   // in document coords
+
+// Surface (low-level, wraps RPC)
+window.__tug.nativeClickAtElement(selector): Promise<void>;
+window.__tug.nativeClick(point: { x: number; y: number }): Promise<void>;
+```
+
+`nativeClickAtElement` computes the element's center via `getBoundingClientRect()` inside `evalJS`, then forwards to `nativeClick`.
+
+##### A.2 Key + text input {#native-key-type}
+
+```ts
+window.__tug.nativeKey(key: string, opts?: { modifiers?: ("cmd" | "shift" | "alt" | "ctrl")[] }): Promise<void>;
+window.__tug.nativeType(text: string): Promise<void>;
+```
+
+`nativeKey` posts a `CGKeyCode` down-then-up event. `nativeType` iterates `nativeKey` per character using the US-ASCII keycode table (IME path is out of envelope — see [M12] below).
+
+##### A.3 App-lifecycle simulation {#app-lifecycle-sim}
+
+Per [D07]:
+
+```ts
+window.__tug.simulateAppResign(): Promise<void>;         // NSApp.deactivate()
+window.__tug.simulateAppBecomeActive(): Promise<void>;   // NSApp.activate(ignoringOtherApps: true)
+window.__tug.simulateAppHide(): Promise<void>;           // NSApp.hide(nil)
+window.__tug.simulateAppUnhide(): Promise<void>;         // NSApp.unhide(nil)
+```
+
+Swift handler marshals to the main thread, invokes the NSApp call, waits for the corresponding delegate callback to fire (bounded 1000ms), returns. If the delegate never fires, returns an error.
+
+Unlocks M04, M05, and partially M20 (modal-overlay dismiss scenarios where the overlay is triggered by app-resign).
+
+#### EM-card harness — Phase B {#phase-b-em}
+
+Phase B adds a tugcode subprocess lifecycle and EM-card-specific surface methods.
+
+##### B.1 Tugcode subprocess lifecycle {#tugcode-lifecycle}
+
+Spec [#s03-tugcode-lifecycle] is the contract. Summary:
+
+1. After `launchTugApp` completes and version-handshake passes, tests call `await app.startTugcode({ mode: "stub" | "live" })`.
+2. Harness sends `__tug.startTugcode(opts)` which triggers Tug.app's test-mode tugcode launch path (Swift-side under `#if DEBUG`). Binary path resolution follows a `TUGAPP_TUGCODE_BINARY` env var with a sensible default.
+3. In stub mode, Tug.app launches tugcode with `--stub-transcript=<fd>` where `<fd>` is a pipe the harness populates via `seedTugcodeTranscript`.
+4. Bridge IPC (stream-json) is the same protocol tugcode speaks in production. The harness does not intercept it; tugcode and tugdeck talk directly over their usual channels.
+5. `app.close()` or `app.stopTugcode()` terminates the tugcode process (`SIGTERM`, then `SIGKILL` after 2000ms).
+
+Harness-owned lifecycle means per-test isolation: every test file starts its own tugcode and kills it on completion.
+
+##### B.2 Deterministic stub-transcript mode {#stub-transcripts}
+
+Per [D05] and [D06]:
+
+- Stub transcripts live at `tests/in-app/fixtures/tugcode/<scenario>.transcript.json`.
+- Each transcript is an array of structured turn records:
+
+```json
+[
+  {
+    "turn": 0,
+    "prompt": { "role": "user", "content": "..." },
+    "response": [
+      { "type": "stream-start" },
+      { "type": "text-delta", "text": "Hello" },
+      { "type": "text-delta", "text": " world" },
+      { "type": "stream-end" }
+    ]
+  }
+]
+```
+
+- Content-hash sidecar `<scenario>.transcript.json.sha256` is verified on test load. Mismatch fails with a diff and a `bun run scripts/reapprove-transcript.ts <scenario>` instruction.
+- `seedTugcodeTranscript(transcript)` loads the transcript into tugcode's stub-mode input for the next N turns.
+
+##### B.3 EM-card surface extensions {#em-surface}
+
+New methods on `__tug` (version 1.1.0):
+
+```ts
+interface TugTestSurface {
+  // ... inherited v1.0.0 surface
+
+  // Tugcode lifecycle (Phase B.1).
+  startTugcode(opts: { mode: "stub" | "live"; binaryPath?: string }): void;
+  stopTugcode(): void;
+  seedTugcodeTranscript(transcript: TugcodeTranscript): void;
+  seedTugcodeError(opts: { turn: number; error: { name: string; message: string } }): void;
+
+  // EM-card observation (Phase B.3).
+  getEmCardState(cardId: string): {
+    kind: "em";
+    engine: "tide-card" | "tug-prompt-input" | "gallery-prompt-entry" | string;
+    text: string;
+    engineSelection: unknown;     // engine-specific serializable shape (see [D10])
+    streamState: "idle" | "streaming" | "error";
+    lastTurnSeq: number;
+  } | null;
+
+  getEngineSelection(cardId: string): unknown;   // typed per-engine by caller
+  awaitEngineReady(cardId: string, timeoutMs?: number): void;   // resolves when engine.onContentReady
+  drainTugcodeTurn(cardId: string, timeoutMs?: number): void;   // resolves on stream-end
+}
+
+type TugcodeTranscript = ReadonlyArray<{
+  turn: number;
+  prompt: unknown;
+  response: ReadonlyArray<unknown>;
+}>;
+```
+
+`getCaretState` from v1.0.0 gains the `engine` variant per [D10].
+
+##### B.4 EM-card gesture drivers {#em-gestures}
+
+Tests drive EM-card gestures via the existing `click` / `type` / `focusElement` for DOM-level interactions, and via `drainTugcodeTurn` for "wait until tugcode finishes streaming this turn." `type` into a contentEditable uses the native-setter pattern adapted for `textContent` and dispatches synthetic `beforeinput` / `input` events per the engine's expected shape.
+
+#### M-series coverage — Phase C {#phase-c-coverage}
+
+Spec [#s04-mseries-scenarios] is the authoritative table. Steps 10–16 walk it row by row. Each row becomes one test file with:
+
+- Seed step: `seedDeckState`, `startTugcode` (if EM), `seedTugcodeTranscript` (if EM stub).
+- Drive step: `click` / `type` / `nativeClick` / `simulateAppHide` / etc. per the row's infrastructure column.
+- Assert step: `expectFocusedCard`, `expectCaret`, trace-subsequence via `toContainOrderedSubset`.
+- Drift-prevention: documented in PR per [D12].
+
+Grouping of rows into steps is chosen to land related infrastructure validations together (synthesized-only scenarios first; CGEventPost scenarios batch after Phase A integration; EM-card scenarios batch after Phase B integration).
+
+---
+
+### Specification {#specification}
+
+#### Spec S01: Hardware-event RPC protocol extensions {#s01-hardware-rpc}
+
+Extends Spec S02 of the base harness plan with five new request kinds:
+
+```ts
+type Request =
+  | { id: number; method: "evalJS";           script: string;                     timeoutMs?: number }
+  | { id: number; method: "waitForCondition"; script: string; timeoutMs?: number; pollMs?: number }
+  // New in this plan:
+  | { id: number; method: "nativeClick";        point: { x: number; y: number };              button?: "left" | "right";  timeoutMs?: number }
+  | { id: number; method: "nativeMouseDown";    point: { x: number; y: number };              button?: "left" | "right";  timeoutMs?: number }
+  | { id: number; method: "nativeMouseUp";      point: { x: number; y: number };              button?: "left" | "right";  timeoutMs?: number }
+  | { id: number; method: "nativeKey";          key: string;  modifiers?: string[];           timeoutMs?: number }
+  | { id: number; method: "nativeType";         text: string;                                 timeoutMs?: number }
+  | { id: number; method: "simulateAppResign";                                                timeoutMs?: number }
+  | { id: number; method: "simulateAppBecomeActive";                                          timeoutMs?: number }
+  | { id: number; method: "simulateAppHide";                                                  timeoutMs?: number }
+  | { id: number; method: "simulateAppUnhide";                                                timeoutMs?: number }
+  | { id: number; method: "checkAccessibilityPermission";                                     timeoutMs?: number };
+```
+
+Response shape unchanged (discriminated `{ ok: true, value } | { ok: false, error }`). New error classes:
+
+- `AccessibilityPermissionMissingError` — surfaces from `checkAccessibilityPermission` when permission is not granted.
+- `CoordinateOutOfBoundsError` — surfaces from `nativeClick*` when the event coordinate maps outside the WebView.
+- `AppLifecycleTimeoutError` — surfaces from `simulateApp*` when the expected NSApp delegate callback does not fire within the timeout.
+
+Point coordinates are in WebView document space. Server-side translates via `WebView.bounds` → content-view → window → screen.
+
+#### Spec S02: EM-card surface extensions {#s02-em-card-surface}
+
+Extends Spec S03 of the base harness plan. Full surface in Deep Dive [#em-surface]; summary fields:
+
+- `__tug.version === "1.1.0"` (bumped from `1.0.0`).
+- New methods: `startTugcode`, `stopTugcode`, `seedTugcodeTranscript`, `seedTugcodeError`, `getEmCardState`, `getEngineSelection`, `awaitEngineReady`, `drainTugcodeTurn`.
+- New caret-state variant: `{ kind: "engine"; engineSelection: unknown; text: string }`.
+- `reset` opts gains one axis: `tugcode?: boolean` — drains pending turns and resets stub-transcript cursor.
+
+#### Spec S03: Tugcode subprocess lifecycle contract {#s03-tugcode-lifecycle}
+
+Full write-up in Deep Dive [#tugcode-lifecycle]. Contract points:
+
+1. **Spawn**: Tug.app launches tugcode subprocess when `__tug.startTugcode(opts)` is called; binary path resolved via `TUGAPP_TUGCODE_BINARY` env with default fallback.
+2. **Stub mode**: tugcode started with `--stub-transcript=<fd>`; harness provides the transcript via `seedTugcodeTranscript`.
+3. **Live mode**: tugcode started with normal args (real model, real credentials); reserved for `_smoke-em-live.test.ts`.
+4. **Teardown**: `__tug.stopTugcode()` sends `SIGTERM`; `SIGKILL` follows after 2000ms if process still alive.
+5. **Observability**: tugcode stdout/stderr route to `tests/in-app/logs/<test>-tugcode.log` (companion to Tug.app's log file).
+6. **Version**: tugcode's version string is recorded on successful launch; mismatch against harness-expected version throws `TugcodeVersionSkewError`.
+7. **Isolation**: every test file owns its own tugcode process (see [Q03] — may move to per-launch if startup cost warrants).
+
+#### Spec S04: M-series scenario coverage table {#s04-mseries-scenarios}
+
+Authoritative ledger. Every row is one committed test file. Infrastructure column determines which Phase A / B primitive the test requires.
+
+| Scenario | Test file | Infra | Target fix | Notes |
+|---------|-----------|-------|-----------|------|
+| [M01] FC intra-pane tab switch | `m01-tab-switch-fc.test.ts` | synthesized | selection Step 23B | **Landed in base harness plan.** Listed for completeness. |
+| [M02] EM intra-pane tab switch | `m02-tab-switch-em.test.ts` | EM-card (stub) | selection Step 23E | Seed tide-card with text + selection; switch tabs; switch back; assert engine selection restored. |
+| [M03] FC pane activation | `m03-pane-activation.test.ts` | synthesized | selection Step 23B | **Landed in base harness plan.** |
+| [M04] App resign → become-active | `m04-app-resign-return.test.ts` | app-lifecycle | selection Step 23D | `simulateAppResign` → `simulateAppBecomeActive`; assert refocus. |
+| [M05] App hide → unhide | `m05-app-hide-unhide.test.ts` | app-lifecycle | selection Step 23D | Parallel to M04 via `simulateAppHide` / `simulateAppUnhide`. |
+| [M06-FC] Cross-pane drag — FC half | `m06-cross-pane-fc.test.ts` | CGEventPost | selection Step 23C | Drag start requires `isTrusted: true` for some WebKit drag-data paths; use `nativeMouseDown` → `nativeMouseMove`* → `nativeMouseUp`. |
+| [M06-EM] Cross-pane drag — EM half | `m06-cross-pane-em.test.ts` | CGEventPost + EM-card | selection Step 23E | As M06-FC but EM content; EM selection restored after drop. |
+| [M07-FC] Card detach — FC half | `m07-card-detach-fc.test.ts` | CGEventPost | selection Step 23C | Detach to new standalone pane via trusted drag. |
+| [M07-EM] Card detach — EM half | `m07-card-detach-em.test.ts` | CGEventPost + EM-card | selection Step 23E | Parallel to M07-FC with EM content. |
+| [M09] EM inactive-at-mount | `m09-em-inactive-mount.test.ts` | EM-card (stub) | selection Step 23E | Seed EM card in inactive pane; activate pane; assert engine focus + paint. |
+| [M11] Card close → reopen | `m11-card-close-reopen.test.ts` | synthesized | tracked separately | Reopen-path test is scaffolded so the test fails until the closure is implemented; marked `skip` until then. |
+| [M12] IME composition | `m12-ime-composition.test.ts` | CGEventPost | tracked separately | Uses `nativeKey` for IME dead-key sequences. Fidelity-limited: Kotoeri/US keyboard only. |
+| [M14] Scroll persistence | `m14-scroll-persistence.test.ts` | synthesized | component-persistence | Uses `element.scrollTop` writes + `scroll` event dispatch; assert scroll survives transition. |
+| [M15] Legacy `SavedSelection` API removal | `m15-legacy-api-removal.test.ts` | synthesized | component-persistence refactor | Grep-based test under `tests/in-app/` — no legacy API symbols remain after the rewrite; semantic parity test verifies new API covers prior call sites. |
+| [M18] Async content-load race | `m18-async-content-ready-race.test.ts` | EM-card (stub) | selection Step 23E | Transcript replays a slow turn; `onContentReady` fires after save; assert post-ready refocus. |
+| [M19] Pane close / deck teardown | `m19-pane-close-teardown.test.ts` | synthesized | tracked separately | Close pane with multiple cards; trace `save-callback` fires once per card. |
+| [M20] Modal overlay dismiss → focus return | `m20-overlay-focus-return.test.ts` | CGEventPost | tracked separately | Open context menu via `nativeClick` right-click; dismiss via Escape; assert focus return to the originating input. |
+| [M21] Drag aborted | `m21-drag-aborted.test.ts` | CGEventPost | selection Step 23C | Start drag via `nativeMouseDown`; press Escape via `nativeKey`; assert original focus restored. |
+| [M23] Cross-card selection | `m23-cross-card-selection.test.ts` | CGEventPost | tracked separately | Selection spanning two cards requires trusted mousedown for WebKit to extend the selection; assert spanning selection persists or resolves per spec. |
+| [M29] Scroll-key audit | `m29-scroll-key-audit.test.ts` | synthesized | component-persistence | Per-component scroll persistence across all scroll-key-having components. |
+| [M30] Virtual-focus composite | `m30-virtual-focus.test.ts` | synthesized | component-persistence | Focus-within for composite components; assert inner focus survives outer-component transitions. |
+| [M08] No `onCardActivated` hook | — | — | DEFERRED | Meta-scenario about infra shape; validated by the fact that M02/M06-EM/M07-EM/M09 all land. |
+| [M10] Markdown-view copy selection | `m10-markdown-selection.test.ts` | CGEventPost | component-persistence | Text selection in markdown view via trusted mousedown+drag; copy event; persist across transition. |
+| [M13] Integration test coverage | — | — | DEFERRED | Meta-scenario; this plan's own existence closes it. |
+| [M17] `saveState` RPC captures focus | — | — | CLOSED | Closed by Step 18 of selection plan; no test needed here. |
+| [M22] Caret visibility paint | — | — | DEFERRED | Outside fidelity envelope; manual verification only. |
+| [M24] Component-persistence protocol | — | — | CLOSED | Closed by [D13]+[A9] of selection plan. |
+| [M25] Intrinsic internal state | — | — | CLOSED | Covered by component-persistence gallery tests. |
+| [M26] Open-overlay persistence policy | — | — | DEFERRED | Policy-undecided; test follows policy decision. |
+| [M27] Layout state | — | — | DEFERRED | Broader layout-persistence effort; separate plan. |
+| [M28] Banner dismiss persistence | — | — | DEFERRED | Component-persistence scope; separate plan. |
+| [M31] `tug-prompt-entry` UI state | — | — | DEFERRED | Component-persistence scope; separate plan. |
+
+Rows marked DEFERRED are intentional non-goals; each has a one-line rationale per [D08].
+
+(* `nativeMouseMove` is added opportunistically in Step 1 if the Step 1 spike reveals it is needed for WebKit drag initiation; otherwise drag tests use `nativeMouseDown` immediately followed by `nativeMouseUp` at the destination.)
+
+#### Spec S05: Documentation additions to harness README {#s05-readme-additions}
+
+`tests/in-app/README.md` (authored in the base plan) gains three sections:
+
+- **Accessibility permission setup** — step-by-step instructions for granting permission to the DEBUG build of Tug.app on the developer workstation.
+- **Tugcode test-mode** — how to author a stub transcript, how to use the `capture-tugcode-transcript.ts` script, what the content-hash sidecar is for.
+- **Scenario table cross-reference** — pointer to Spec [#s04-mseries-scenarios] and the PR-review checklist line.
+
+#### Spec S06: New error classes {#s06-error-classes}
+
+Added to `tests/in-app/_harness/errors.ts`:
+
+- `AccessibilityPermissionMissingError` — thrown by `launchTugApp` if first-RPC preflight fails.
+- `CoordinateOutOfBoundsError` — thrown by `nativeClick` / `nativeMouseDown` / `nativeMouseUp` when coordinate falls outside the WebView.
+- `AppLifecycleTimeoutError` — thrown by `simulateApp*` when NSApp delegate callback times out.
+- `TugcodeLaunchError` — thrown by `startTugcode` if tugcode fails to launch.
+- `TugcodeVersionSkewError` — thrown on version mismatch against expected tugcode version.
+- `TugcodeTranscriptMismatchError` — thrown on content-hash sidecar mismatch.
+
+---
+
+### List L01: New recording-site kinds (deck-trace extensions) {#l01-em-recording-sites}
+
+EM-card coverage requires two new recording sites in `tugdeck/src/deck-trace.ts`:
+
+- `engine-ready` — fires from each EM-card's `onContentReady` callback. Fields: `cardId`, `engine: "tide-card" | "tug-prompt-input" | ...`.
+- `engine-activation-dispatched` — fires when `onCardActivated` (Step 23E hook) runs. Fields: `cardId`, `engine`, `dispatchedFrom: "row-1" | "row-2" | ... | "row-5"`.
+
+Extends the `DeckTraceEvent` union from Spec S01 of the base plan. Version bump to `1.1.0` of the surface covers the addition (see [D11] of base plan).
+
+### List L02: Transcript fixture files {#l02-transcript-fixtures}
+
+Checked-in transcripts under `tests/in-app/fixtures/tugcode/`:
+
+- `m02-return.transcript.json` — two-turn: initial content, edited content after tab-return.
+- `m06-em-cross-pane.transcript.json` — single turn capturing a short tide completion.
+- `m07-em-detach.transcript.json` — mirrors m06 fixture with different target pane.
+- `m09-em-inactive-mount.transcript.json` — turn that produces enough text to exceed one viewport, exercising scroll + selection.
+- `m18-async-slow-stream.transcript.json` — multi-chunk stream with a deliberate inter-chunk delay marker.
+
+Each fixture has a `.sha256` sidecar. `bun run scripts/reapprove-transcript.ts <scenario>` is the tooling to update both when tugcode changes legitimately.
+
+### List L03: New files per phase {#l03-new-files}
+
+Phase A:
+- `tugapp/<phase-a-files>` — Swift `CGEventPost` + NSApp handlers (gated `#if DEBUG`; exact file list in `tugplan-in-app-bridge.md`).
+- `tugdeck/src/test-surface.ts` — gains `nativeClick`, `nativeKey`, etc. methods.
+- `tests/in-app/_smoke-native.test.ts` — verifies `isTrusted: true` delivery.
+- `tests/in-app/_harness/errors.ts` — gains new error classes.
+
+Phase B:
+- `tugapp/<phase-b-files>` — tugcode subprocess spawn + teardown (gated `#if DEBUG`).
+- `tugdeck/src/test-surface.ts` — gains EM-card methods.
+- `tests/in-app/_smoke-em.test.ts` — stub-mode round-trip smoke.
+- `tests/in-app/_smoke-em-live.test.ts` — live-mode smoke.
+- `tests/in-app/fixtures/tugcode/*.transcript.json` — stub transcripts per [L02].
+- `scripts/capture-tugcode-transcript.ts` — authoring helper.
+- `scripts/reapprove-transcript.ts` — sidecar updater.
+
+Phase C:
+- One test file per non-deferred scenario per [L02] row.
+- `tests/in-app/_harness/scenarios.ts` — shared seeding helpers for common pane/card shapes.
+
+---
+
+### Risks and Mitigations {#risks-dup}
+
+See [#risks] above.
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New files {#new-files}
+
+| File | Purpose |
+|------|---------|
+| `tugapp/<phase-a-bridge>` | Swift CGEventPost handlers, app-lifecycle NSApp handlers, accessibility-permission check (all `#if DEBUG`) |
+| `tugapp/<phase-b-bridge>` | Swift tugcode subprocess spawn/teardown handlers (all `#if DEBUG`) |
+| `tests/in-app/_smoke-native.test.ts` | `isTrusted: true` delivery smoke test |
+| `tests/in-app/_smoke-em.test.ts` | EM-card stub-mode round-trip smoke |
+| `tests/in-app/_smoke-em-live.test.ts` | EM-card live tugcode smoke (non-default) |
+| `tests/in-app/fixtures/tugcode/` | Canned transcript fixtures + sidecars per [L02] |
+| `tests/in-app/_harness/scenarios.ts` | Shared pane/card seeding helpers for M-series tests |
+| `scripts/capture-tugcode-transcript.ts` | Authoring helper for stub transcripts |
+| `scripts/reapprove-transcript.ts` | Sidecar updater when tugcode output legitimately changes |
+| `tests/in-app/m02-tab-switch-em.test.ts` | M02 test |
+| `tests/in-app/m04-app-resign-return.test.ts` | M04 test |
+| `tests/in-app/m05-app-hide-unhide.test.ts` | M05 test |
+| `tests/in-app/m06-cross-pane-fc.test.ts` | M06 FC-half |
+| `tests/in-app/m06-cross-pane-em.test.ts` | M06 EM-half |
+| `tests/in-app/m07-card-detach-fc.test.ts` | M07 FC-half |
+| `tests/in-app/m07-card-detach-em.test.ts` | M07 EM-half |
+| `tests/in-app/m09-em-inactive-mount.test.ts` | M09 test |
+| `tests/in-app/m10-markdown-selection.test.ts` | M10 test |
+| `tests/in-app/m11-card-close-reopen.test.ts` | M11 test (skip until reopen lands) |
+| `tests/in-app/m12-ime-composition.test.ts` | M12 test |
+| `tests/in-app/m14-scroll-persistence.test.ts` | M14 test |
+| `tests/in-app/m15-legacy-api-removal.test.ts` | M15 test |
+| `tests/in-app/m18-async-content-ready-race.test.ts` | M18 test |
+| `tests/in-app/m19-pane-close-teardown.test.ts` | M19 test |
+| `tests/in-app/m20-overlay-focus-return.test.ts` | M20 test |
+| `tests/in-app/m21-drag-aborted.test.ts` | M21 test |
+| `tests/in-app/m23-cross-card-selection.test.ts` | M23 test |
+| `tests/in-app/m29-scroll-key-audit.test.ts` | M29 test |
+| `tests/in-app/m30-virtual-focus.test.ts` | M30 test |
+
+#### Modified files {#modified-files}
+
+| File | Change |
+|------|--------|
+| `tugdeck/src/test-surface.ts` | Add native-event methods, app-lifecycle methods, tugcode lifecycle methods, EM-card observation methods; bump `__tug.version` from `1.0.0` to `1.1.0` |
+| `tugdeck/src/deck-trace.ts` | Add `engine-ready` and `engine-activation-dispatched` event kinds to `DeckTraceEvent` union per [L01] |
+| `tugdeck/src/main.tsx` | No changes expected (boot unchanged) |
+| `tests/in-app/_harness/index.ts` | Add typed wrappers for new RPC verbs; add `startTugcode` / `seedTugcodeTranscript` / `drainTugcodeTurn` helpers |
+| `tests/in-app/_harness/errors.ts` | Add error classes per Spec [#s06-error-classes] |
+| `tests/in-app/README.md` | Add sections per Spec [#s05-readme-additions] |
+| `roadmap/tugplan-in-app-bridge.md` | Amend with Phase A and Phase B file-level DEBUG-guard placement for `CGEventPost` and tugcode spawn code |
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `nativeClick` / `nativeClickAtElement` | method | `tugdeck/src/test-surface.ts` | Wraps Phase A RPC verb |
+| `nativeMouseDown` / `nativeMouseUp` / `nativeMouseMove` | method | `tugdeck/src/test-surface.ts` | Phase A primitives |
+| `nativeKey` / `nativeType` | method | `tugdeck/src/test-surface.ts` | Phase A keyboard primitives |
+| `simulateAppResign` / `simulateAppBecomeActive` / `simulateAppHide` / `simulateAppUnhide` | method | `tugdeck/src/test-surface.ts` | Phase A app-lifecycle |
+| `checkAccessibilityPermission` | method | `tugdeck/src/test-surface.ts` | First-RPC preflight |
+| `startTugcode` / `stopTugcode` | method | `tugdeck/src/test-surface.ts` | Phase B lifecycle |
+| `seedTugcodeTranscript` / `seedTugcodeError` | method | `tugdeck/src/test-surface.ts` | Phase B determinism |
+| `getEmCardState` / `getEngineSelection` / `awaitEngineReady` / `drainTugcodeTurn` | method | `tugdeck/src/test-surface.ts` | Phase B observation |
+| `AccessibilityPermissionMissingError` | class | `tests/in-app/_harness/errors.ts` | Spec [#s06-error-classes] |
+| `CoordinateOutOfBoundsError` | class | `tests/in-app/_harness/errors.ts` | Spec [#s06-error-classes] |
+| `AppLifecycleTimeoutError` | class | `tests/in-app/_harness/errors.ts` | Spec [#s06-error-classes] |
+| `TugcodeLaunchError` / `TugcodeVersionSkewError` / `TugcodeTranscriptMismatchError` | class | `tests/in-app/_harness/errors.ts` | Spec [#s06-error-classes] |
+| `TugcodeTranscript` | type | `tugdeck/src/test-surface.ts` | Phase B transcript shape |
+| `DeckTraceEvent` | type | `tugdeck/src/deck-trace.ts` | Gains `engine-ready` and `engine-activation-dispatched` variants per [L01] |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] Update `tests/in-app/README.md` per Spec [#s05-readme-additions] — accessibility setup, tugcode test mode, scenario table cross-reference.
+- [ ] Extend `tugapp/` README with `CGEventPost`-variant explainer (local-dev only, permission requirement, DEBUG-only).
+- [ ] Author `scripts/capture-tugcode-transcript.ts` + `scripts/reapprove-transcript.ts` with inline `--help` documentation.
+- [ ] Add a scenario-table PR-review checklist line to the repo's PR template (or equivalent docs location).
+- [ ] Cross-link this plan from `.tugtool/tugplan-in-app-test-harness.md` §Roadmap (mark the roadmap rows closed by this plan's completion).
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| **Unit (happy-dom allowed)** | Pure-logic tests on data structures, matchers, transcript shape | Per base plan policy; ring buffer, matchers, transcript-hash logic |
+| **In-app integration (real WKWebView, synthesized events)** | Inherited from base plan | M01/M03/M16 baseline, plus scenarios marked "synthesized" in [#s04-mseries-scenarios] |
+| **In-app integration (real WKWebView, CGEventPost)** | Trusted-event-gated scenarios | Scenarios marked "CGEventPost" in the table |
+| **In-app integration (real WKWebView, EM-card stub transcripts)** | EM-card scenarios with deterministic tugcode | Scenarios marked "EM-card (stub)" in the table |
+| **In-app smoke (real tugcode, live)** | One-off round-trip sanity | `_smoke-em-live.test.ts` — non-default, run on demand |
+| **App-lifecycle integration** | Macros over NSApp delegate callbacks | M04/M05 |
+| **Drift prevention** | Per-test revert-and-retest cycle | Every new M-series test — per [D12] |
+
+**What we do not use:**
+- happy-dom for UI/focus/selection/DOM-timing behavior (inherited prohibition from base plan).
+- Tugcode mocks. Real tugcode, live or stub.
+- Synthesized events for trusted-event-gated scenarios — if the scenario needs `isTrusted: true`, it uses CGEventPost.
+
+---
+
+### Execution Steps {#execution-steps}
+
+Nineteen flat steps across three phases (A: hardware events, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
+
+#### Step 1: Spike CGEventPost variants; record [D02] result {#step-1}
+
+**Commit:** `spike(harness-native): select CGEventPost variant for trusted-event delivery`
+
+**References:** [D02] cgevent variant, [Q02] variant question, [R02] event escape, (#phase-a-hardware, #coord-mapping)
+
+**Artifacts:**
+- `tugapp/<spike-file>` — throwaway DEBUG-only spike invoking both `CGEventPost(.cghidEventTap, ...)` and `CGEventPostToPid(event, pid)` against a minimal click; code deleted after the decision is recorded.
+- Notes captured in this plan as [D02]'s rationale (updated in place).
+
+**Tasks:**
+- [ ] Build a minimal spike in `tugapp/` that posts a mouse-down at a fixed coordinate using both CGEventPost variants.
+- [ ] Measure `event.isTrusted` on the JS side via a one-shot listener.
+- [ ] Verify event delivery stays inside Tug.app window (no leak to sibling apps).
+- [ ] Record the winning variant in [D02]'s "Decision" line of this plan (update document in place).
+- [ ] Delete the spike code.
+
+**Tests:**
+- [ ] Spike smoke: both variants run without crashing, `isTrusted` outcome is observed.
+
+**Checkpoint:**
+- [ ] [D02] updated with concrete variant choice.
+- [ ] Spike code removed from `tugapp/`.
+- [ ] `xcodebuild archive` of release config still clean (no symbols from spike remain).
+
+---
+
+#### Step 2: Swift `CGEventPost` handler + coordinate mapping {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tugapp-bridge): add CGEventPost hardware-event handler (DEBUG-only)`
+
+**References:** [D01] same transport, [D02] variant choice, [R02] event escape, Spec [#s01-hardware-rpc], (#coord-mapping)
+
+**Artifacts:**
+- `tugapp/<phase-a-bridge>` — Swift source file(s) per `tugplan-in-app-bridge.md` placement, adding `nativeClick` / `nativeMouseDown` / `nativeMouseUp` / `nativeKey` / `nativeType` handlers. All wrapped in `#if DEBUG ... #endif`.
+- Coordinate-mapping helper: document-space → screen-space via WebView bounds + window frame.
+- Bounds check: reject events with mapped coordinates outside the current WebView frame; throw `CoordinateOutOfBoundsError`.
+
+**Tasks:**
+- [ ] Implement `nativeClick(point, button?)`: mouse-down + mouse-up at mapped screen coordinate; wait for event-stream drain before responding.
+- [ ] Implement `nativeMouseDown` / `nativeMouseUp` as separate primitives (for drag scenarios).
+- [ ] Implement `nativeKey(key, modifiers?)` via CGKeyCode mapping; `nativeType(text)` iterates per character.
+- [ ] Implement coordinate-mapping helper; unit-test against a known fixture (hard-coded window+webview geometry).
+- [ ] Implement bounds-check; return `CoordinateOutOfBoundsError` via the RPC shape (`{ ok: false, error: { name: "CoordinateOutOfBoundsError", ... } }`).
+- [ ] Bump `__tug.version` to `1.1.0` in preparation (version advances are additive; no breaking changes).
+- [ ] Ensure every new Swift file is inside `#if DEBUG ... #endif`.
+
+**Tests:**
+- [ ] Swift-side unit test on coordinate-mapping helper (known fixture → known output).
+- [ ] `tests/in-app/_smoke-native.test.ts` — scaffold lands here (empty body); filled in Step 3.
+
+**Checkpoint:**
+- [ ] `bun x tsc --noEmit` exits 0.
+- [ ] `xcodebuild` DEBUG build succeeds; release build binary size unchanged within noise (binary-size diff recorded).
+- [ ] `grep -rn "CGEventPost" tugapp/` shows only DEBUG-guarded references.
+
+---
+
+#### Step 3: `__tug` surface methods for native events + preflight {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(test-surface): add native-event methods and accessibility-permission preflight`
+
+**References:** [D01] same transport, [D03] accessibility preflight, Spec [#s01-hardware-rpc], Spec [#s06-error-classes], (#phase-a-hardware)
+
+**Artifacts:**
+- `tugdeck/src/test-surface.ts` gains `nativeClick`, `nativeClickAtElement`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`, `checkAccessibilityPermission`. All wrapped in the v1.0.0 gating (`import.meta.env.DEV && window.__tugTestMode`).
+- `tests/in-app/_harness/errors.ts` — new error classes: `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`.
+- `tests/in-app/_harness/client.ts` — typed client wrappers; `launchTugApp` calls `checkAccessibilityPermission` as first RPC after version handshake; throws if denied.
+- `tests/in-app/_smoke-native.test.ts` — fills in the smoke test body: `nativeClick` on a button with a trusted-event listener that writes to `window.__nativeClickTrusted`; assert `__nativeClickTrusted === true`.
+
+**Tasks:**
+- [ ] Implement typed RPC wrappers for every new verb.
+- [ ] Implement `nativeClickAtElement(selector)` as `evalJS("selector bounding rect center")` + `nativeClick`.
+- [ ] Implement `launchTugApp` preflight: call `checkAccessibilityPermission`; throw `AccessibilityPermissionMissingError` with stderr instructions on denial.
+- [ ] Bump `__tug.version` surface assertion from `1.0.0` to `1.1.0`; update harness expected-version constant.
+- [ ] Author `_smoke-native.test.ts`: trusted-click listener pattern, assertion.
+
+**Tests:**
+- [ ] `tests/in-app/_smoke-native.test.ts` exits 0 with accessibility permission granted.
+- [ ] Manual test: revoke permission, run smoke; harness exits 1 with a readable error citing the System Settings path.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0.
+- [ ] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
+- [ ] `grep 'window.__tug.nativeClick' tugdeck/src/` shows only DEV-gated uses.
+
+---
+
+#### Step 4: Swift handlers for app-lifecycle simulation {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `feat(tugapp-bridge): add NSApp lifecycle simulation handlers (DEBUG-only)`
+
+**References:** [D07] NSApp lifecycle, Spec [#s01-hardware-rpc], (#app-lifecycle-sim)
+
+**Artifacts:**
+- Swift handlers for `simulateAppResign`, `simulateAppBecomeActive`, `simulateAppHide`, `simulateAppUnhide` — each invokes the NSApp primitive on the main thread and waits for the corresponding delegate callback to fire (bounded 1000ms); `AppLifecycleTimeoutError` on timeout.
+- `tugdeck/src/test-surface.ts` — typed methods on `__tug`.
+- `tests/in-app/_harness/errors.ts` — adds `AppLifecycleTimeoutError`.
+
+**Tasks:**
+- [ ] Swift: implement `simulateAppResign` via `NSApp.deactivate()`; wait for `applicationDidResignActive:` to fire.
+- [ ] Swift: mirror for `BecomeActive` (`NSApp.activate(ignoringOtherApps: true)` + `applicationDidBecomeActive:`).
+- [ ] Swift: mirror for `Hide` (`NSApp.hide(nil)` + `applicationDidHide:`).
+- [ ] Swift: mirror for `Unhide` (`NSApp.unhide(nil)` + `applicationDidUnhide:`).
+- [ ] Timeout handling: if the expected delegate callback does not fire within 1000ms, return `AppLifecycleTimeoutError`.
+- [ ] TS surface: wrap as typed methods with 2000ms default RPC timeout (enough margin over the server-side wait).
+
+**Tests:**
+- [ ] `tests/in-app/_smoke-app-lifecycle.test.ts` (scratch; deleted after Step 6) — verifies each of the four handlers returns successfully when called in isolation; deliberate timeout by passing a 1ms override to verify error path.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/_smoke-app-lifecycle.test.ts` exits 0.
+- [ ] Binary-size diff still within noise.
+
+---
+
+#### Step 5: Tugcode subprocess lifecycle — Swift side {#step-5}
+
+**Depends on:** #step-4
+
+**Commit:** `feat(tugapp-bridge): add tugcode subprocess lifecycle handlers (DEBUG-only)`
+
+**References:** [D04] harness-owned tugcode, [D05] two modes, [Q03] lifecycle granularity, Spec [#s03-tugcode-lifecycle], (#tugcode-lifecycle)
+
+**Artifacts:**
+- Swift code in `tugapp/` adding `startTugcode(opts)`, `stopTugcode()` handlers. `#if DEBUG` gated.
+- Subprocess spawn path: reads `TUGAPP_TUGCODE_BINARY` env var; exec with stub-mode flag when `opts.mode === "stub"`.
+- Teardown path: `SIGTERM` then `SIGKILL` after 2000ms.
+- Tugcode stdout/stderr routed to `tests/in-app/logs/<test>-tugcode.log`.
+- Production tugcode-launch path gated behind `!testMode` (ensures test mode does not also trigger the production launch).
+
+**Tasks:**
+- [ ] Implement `startTugcode` handler: subprocess spawn, pipe fd setup for stub transcript.
+- [ ] Implement `stopTugcode` handler: teardown per [D04].
+- [ ] Measure tugcode startup latency across 10 runs; record result to decide [Q03].
+- [ ] If startup <500ms per [Q03] resolution: keep per-test-file lifecycle. If >=500ms: add `resetTugcode()` RPC, decide in this step.
+- [ ] Guard production tugcode-launch path behind `!testMode`.
+- [ ] Route stdout/stderr to log file.
+
+**Tests:**
+- [ ] `tests/in-app/_smoke-tugcode-lifecycle.test.ts` (scratch; folded into Step 7): launch tugcode, verify process running, stop, verify process gone.
+
+**Checkpoint:**
+- [ ] Swift DEBUG build succeeds.
+- [ ] `_smoke-tugcode-lifecycle.test.ts` passes.
+- [ ] Tugcode startup latency measurement recorded in plan ([Q03] resolution updated in place).
+
+---
+
+#### Step 6: Stub-transcript replay mode in tugcode + transcript tooling {#step-6}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(tugcode): add stub-transcript mode for deterministic test replay`
+
+**References:** [D05] two modes, [D06] transcript format, [Q04] format decision, Spec [#s03-tugcode-lifecycle], (#stub-transcripts)
+
+**Artifacts:**
+- `tugcode` binary gains `--stub-transcript=<fd>` flag; in stub mode it reads structured-record transcripts from the fd and replays them on stream-json turns.
+- `scripts/capture-tugcode-transcript.ts` — spawns live tugcode, runs a scenario, captures the structured transcript to disk, writes the `.sha256` sidecar.
+- `scripts/reapprove-transcript.ts` — recomputes sidecar when a transcript is re-captured legitimately.
+- `tests/in-app/_harness/client.ts` — `seedTugcodeTranscript(transcript)`, `seedTugcodeError(opts)` wrappers.
+- `tests/in-app/_harness/errors.ts` — `TugcodeLaunchError`, `TugcodeVersionSkewError`, `TugcodeTranscriptMismatchError`.
+
+**Tasks:**
+- [ ] Add `--stub-transcript=<fd>` CLI flag to tugcode; parse structured records; replay deterministically per turn.
+- [ ] Record tugcode version in startup handshake; harness reads it and throws `TugcodeVersionSkewError` on mismatch.
+- [ ] Author `capture-tugcode-transcript.ts` with `--scenario=<name>` flag; writes `.transcript.json` + `.sha256`.
+- [ ] Author `reapprove-transcript.ts` for legitimate re-capture workflow.
+- [ ] `seedTugcodeTranscript(transcript)` writes to the pipe; content-hash verification happens on load.
+
+**Tests:**
+- [ ] Unit test in `scripts/` tests: transcript round-trip (capture → hash → verify → mismatch detection).
+- [ ] `tests/in-app/_smoke-em.test.ts` body scaffolded here, filled in Step 7.
+
+**Checkpoint:**
+- [ ] Tugcode binary accepts `--stub-transcript` and replays deterministically across 10 runs.
+- [ ] Capture + reapprove scripts produce matching sidecars.
+- [ ] [Q04] resolved — structured-record format is in place; note any observed brittleness in the plan's [Q04] section.
+
+---
+
+#### Step 7: EM-card surface + first EM smoke test {#step-7}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(test-surface): add EM-card observation surface and stub-mode smoke test`
+
+**References:** [D10] engine caret variant, [L01] new trace events, Spec [#s02-em-card-surface], (#em-surface, #stub-transcripts)
+
+**Artifacts:**
+- `tugdeck/src/test-surface.ts` — `getEmCardState`, `getEngineSelection`, `awaitEngineReady`, `drainTugcodeTurn`, `startTugcode`, `stopTugcode`, `seedTugcodeTranscript`, `seedTugcodeError`.
+- `tugdeck/src/deck-trace.ts` — add `engine-ready` and `engine-activation-dispatched` event kinds per [L01].
+- `tugdeck/src/components/chrome/card-host.tsx` and each EM-engine content factory (`tide-card`, `tug-prompt-input`, `gallery-prompt-entry`) emit the two new trace events.
+- `tests/in-app/fixtures/tugcode/em-smoke.transcript.json` — minimal "hello world" transcript + sidecar.
+- `tests/in-app/_smoke-em.test.ts` — stub-mode end-to-end smoke: launch, `startTugcode({ mode: "stub" })`, `seedTugcodeTranscript`, activate EM card, drive one turn, assert `getEmCardState(cardId).streamState === "idle"` and text content.
+
+**Tasks:**
+- [ ] Extend `DeckTraceEvent` union with `engine-ready` and `engine-activation-dispatched`.
+- [ ] Wire the two new trace events at each EM-engine factory.
+- [ ] Implement `getEmCardState` (reads from engine adapter); `engine` field tags the factory.
+- [ ] Implement `awaitEngineReady` via `waitForCondition` on `getEmCardState(cardId) !== null && streamState !== "error"`.
+- [ ] Implement `drainTugcodeTurn` via `waitForCondition` on `getEmCardState(cardId).streamState === "idle"` after last turn.
+- [ ] Author the `em-smoke` transcript + sidecar via `capture-tugcode-transcript.ts`.
+- [ ] Author `_smoke-em.test.ts`: the canonical EM smoke.
+
+**Tests:**
+- [ ] `tests/in-app/_smoke-em.test.ts` exits 0.
+- [ ] Scratch `_smoke-tugcode-lifecycle.test.ts` deleted (its coverage is subsumed by `_smoke-em.test.ts`).
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/_smoke-em.test.ts` exits 0.
+- [ ] `bun test tests/in-app/` still green (M01/M03/M16 + `_smoke` + `_smoke-native` + `_smoke-em`).
+
+---
+
+#### Step 8: Live-mode smoke test; version handshake {#step-8}
+
+**Depends on:** #step-7
+
+**Commit:** `test(in-app): add em-card live-tugcode smoke (non-default)`
+
+**References:** [D05] two modes, [R03] tugcode flakiness, Spec [#s03-tugcode-lifecycle]
+
+**Artifacts:**
+- `tests/in-app/_smoke-em-live.test.ts` — live-mode round-trip against real tugcode (real model, real credentials). Marked with a `describe.skipIf(process.env.TUGCODE_LIVE !== "1")` guard so it runs only when explicitly requested.
+- `tests/in-app/README.md` — gains "Running live-mode smoke" subsection.
+
+**Tasks:**
+- [ ] Implement live-mode smoke: launch, `startTugcode({ mode: "live" })`, send a minimal prompt, observe stream-end, assert output shape.
+- [ ] Gate test with `TUGCODE_LIVE=1` env var to skip by default.
+- [ ] Document the setup and opt-in flag in README.
+
+**Tests:**
+- [ ] `TUGCODE_LIVE=1 bun test tests/in-app/_smoke-em-live.test.ts` exits 0 in local dev.
+- [ ] Default `bun test tests/in-app/` skips the live test.
+
+**Checkpoint:**
+- [ ] Live-mode smoke passes on developer workstation.
+- [ ] Default test run time unchanged.
+
+---
+
+#### Step 9: Phase A + B integration checkpoint {#step-9}
+
+**Depends on:** #step-3, #step-4, #step-7, #step-8
+
+**Commit:** `N/A (verification only)`
+
+**References:** Success criteria [#success-criteria], [R01] release leak, [R03] tugcode flakiness, (#phase-a-hardware, #phase-b-em)
+
+**Tasks:**
+- [ ] Run full `bun test tests/in-app/` — all scenarios green (M01/M03/M16, `_smoke`, `_smoke-native`, `_smoke-em`).
+- [ ] Release-build binary-size diff vs pre-harness baseline — within noise.
+- [ ] Manual Xcode archive inspection: `nm` shows no CGEventPost symbols, no tugcode-lifecycle symbols.
+- [ ] Verify `TUGAPP_TEST_SOCKET` unset → tugdeck boots normally, tugcode follows its production launch path.
+- [ ] Verify accessibility-permission preflight: denied → clear error; granted → clean launch.
+- [ ] Bump `__tug.version` constant assertion harness-side to `1.1.0` throughout.
+
+**Tests:**
+- [ ] `bun test tests/in-app/` exits 0.
+- [ ] `bun test` in tugdeck still exits 0 (no regression).
+
+**Checkpoint:**
+- [ ] All green.
+- [ ] Binary-size audit recorded.
+- [ ] Version bump in place and asserted.
+
+---
+
+#### Step 10: M-series scenario-table authored; shared seeding helpers {#step-10}
+
+**Depends on:** #step-9
+
+**Commit:** `docs(harness): author m-series scenario table and shared scenario helpers`
+
+**References:** [D08] scenario table authoritative, [D11] per-row coverage, Spec [#s04-mseries-scenarios], (#phase-c-coverage)
+
+**Artifacts:**
+- Spec [#s04-mseries-scenarios] is the table in this plan — this step adopts it as the canonical coverage ledger and cross-links it from relevant docs.
+- `tests/in-app/_harness/scenarios.ts` — shared helpers: `seedTwoPanesWithOneFcEach`, `seedOnePaneWithThreeCards`, `seedPaneWithEmCardReady`, `seedStandardMSeriesBaseline`. Kept small and composable.
+- PR-review checklist line (in repo's docs or PR template) citing the scenario table.
+
+**Tasks:**
+- [ ] Publish Spec [#s04-mseries-scenarios] as the canonical table; link from base plan's §Roadmap.
+- [ ] Implement shared `scenarios.ts` helpers per the seeding patterns observed across M-series rows.
+- [ ] Add a PR-review checklist line: "if this PR adds an M-series scenario, is the table updated?"
+- [ ] Update `tests/in-app/README.md` with the cross-reference.
+
+**Tests:**
+- [ ] Helpers are unit-tested lightly via pure-logic assertions on their return shapes; real exercise happens in Steps 11–16.
+
+**Checkpoint:**
+- [ ] Table published.
+- [ ] Helpers lint and typecheck clean.
+- [ ] README cross-reference present.
+
+---
+
+#### Step 11: Synthesized-event M-series batch — M11, M14, M15, M19, M29, M30 {#step-11}
+
+**Depends on:** #step-10
+
+**Commit:** `test(in-app): add synthesized-event m-series coverage (m11, m14, m15, m19, m29, m30)`
+
+**References:** [D11] per-row coverage, [D12] drift-prevention, Spec [#s04-mseries-scenarios], (#phase-c-coverage)
+
+**Artifacts:**
+- `tests/in-app/m11-card-close-reopen.test.ts` (with `skip` guard until reopen lands)
+- `tests/in-app/m14-scroll-persistence.test.ts`
+- `tests/in-app/m15-legacy-api-removal.test.ts`
+- `tests/in-app/m19-pane-close-teardown.test.ts`
+- `tests/in-app/m29-scroll-key-audit.test.ts`
+- `tests/in-app/m30-virtual-focus.test.ts`
+
+**Tasks:**
+- [ ] One per test, per the scenario table rows: seed, drive via synthesized events, assert, document drift-prevention cycle in commit message.
+- [ ] Each test uses `scenarios.ts` helpers where applicable.
+
+**Tests:**
+- [ ] Each test exits 0 in `bun test tests/in-app/`.
+- [ ] Each test's drift-prevention exercise documented in PR description per [D12].
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/m1[149].test.ts tests/in-app/m29.test.ts tests/in-app/m30.test.ts` exits 0.
+- [ ] `bun test tests/in-app/` aggregate exits 0.
+
+---
+
+#### Step 12: App-lifecycle M-series — M04, M05 {#step-12}
+
+**Depends on:** #step-11
+
+**Commit:** `test(in-app): add app-lifecycle m-series coverage (m04, m05)`
+
+**References:** [D07] NSApp lifecycle, [D12] drift-prevention, Spec [#s04-mseries-scenarios], (#app-lifecycle-sim)
+
+**Artifacts:**
+- `tests/in-app/m04-app-resign-return.test.ts`
+- `tests/in-app/m05-app-hide-unhide.test.ts`
+
+**Tasks:**
+- [ ] M04: seed pane with focused FC card; `simulateAppResign`; assert save fires; `simulateAppBecomeActive`; assert refocus.
+- [ ] M05: parallel to M04 via `simulateAppHide` / `simulateAppUnhide`.
+- [ ] Document drift-prevention cycles in PRs.
+
+**Tests:**
+- [ ] Both tests exit 0.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/m0[45]*.test.ts` exits 0.
+
+---
+
+#### Step 13: EM-card M-series — M02, M09, M18 {#step-13}
+
+**Depends on:** #step-12
+
+**Commit:** `test(in-app): add em-card m-series coverage (m02, m09, m18)`
+
+**References:** [D05] two modes, [D10] engine caret variant, [D11] per-row coverage, Spec [#s04-mseries-scenarios], (#phase-b-em)
+
+**Artifacts:**
+- `tests/in-app/m02-tab-switch-em.test.ts`
+- `tests/in-app/m09-em-inactive-mount.test.ts`
+- `tests/in-app/m18-async-content-ready-race.test.ts`
+- `tests/in-app/fixtures/tugcode/m02-return.transcript.json` (+ sidecar)
+- `tests/in-app/fixtures/tugcode/m09-em-inactive-mount.transcript.json` (+ sidecar)
+- `tests/in-app/fixtures/tugcode/m18-async-slow-stream.transcript.json` (+ sidecar)
+
+**Tasks:**
+- [ ] M02: seed EM card with text + selection; tab-switch twice; assert `getEmCardState(cardId).engineSelection` restored.
+- [ ] M09: seed EM card in inactive pane; activate pane; assert `engine-activation-dispatched` trace event; assert engine focused and paint visible via DOM proxies.
+- [ ] M18: slow-stream transcript; assert `save-callback` fires BEFORE `engine-ready`; assert post-ready refocus does not clobber.
+- [ ] Author transcripts via `capture-tugcode-transcript.ts`.
+
+**Tests:**
+- [ ] Each test exits 0.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/m0[29]*.test.ts tests/in-app/m18*.test.ts` exits 0.
+- [ ] Content-hash sidecars verified on each transcript.
+
+---
+
+#### Step 14: CGEventPost M-series — M10, M12, M20, M23 {#step-14}
+
+**Depends on:** #step-13
+
+**Commit:** `test(in-app): add cgeventpost m-series coverage (m10, m12, m20, m23)`
+
+**References:** [D01] same transport, [D09] hardware-events additive, [D12] drift-prevention, Spec [#s04-mseries-scenarios], (#phase-a-hardware)
+
+**Artifacts:**
+- `tests/in-app/m10-markdown-selection.test.ts`
+- `tests/in-app/m12-ime-composition.test.ts`
+- `tests/in-app/m20-overlay-focus-return.test.ts`
+- `tests/in-app/m23-cross-card-selection.test.ts`
+
+**Tasks:**
+- [ ] M10: markdown card text selection via `nativeMouseDown` + `nativeMouseUp` spanning; copy via `nativeKey("c", { modifiers: ["cmd"] })`; assert selection persists.
+- [ ] M12: IME dead-key via `nativeKey` in Kotoeri/US layout; assert composition lifecycle; fidelity-limited per table note.
+- [ ] M20: open context menu via `nativeClick` right-click; press Escape via `nativeKey`; assert originating input refocused.
+- [ ] M23: selection spanning two cards via trusted mousedown+drag; assert per documented spec (span persists, OR resolves to nearest card — whichever the spec says).
+
+**Tests:**
+- [ ] Each test exits 0.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/m1[02]*.test.ts tests/in-app/m2[03]*.test.ts` exits 0.
+
+---
+
+#### Step 15: CGEventPost drag-related M-series — M06 (FC+EM), M07 (FC+EM), M21 {#step-15}
+
+**Depends on:** #step-14
+
+**Commit:** `test(in-app): add drag-related m-series coverage (m06 fc+em, m07 fc+em, m21)`
+
+**References:** [D01] same transport, [D05] tugcode modes, [D09] hardware-events additive, Spec [#s04-mseries-scenarios]
+
+**Artifacts:**
+- `tests/in-app/m06-cross-pane-fc.test.ts`
+- `tests/in-app/m06-cross-pane-em.test.ts`
+- `tests/in-app/m07-card-detach-fc.test.ts`
+- `tests/in-app/m07-card-detach-em.test.ts`
+- `tests/in-app/m21-drag-aborted.test.ts`
+- Transcripts for EM rows: `m06-em-cross-pane.transcript.json`, `m07-em-detach.transcript.json`.
+
+**Tasks:**
+- [ ] M06-FC: drag FC card across panes via `nativeMouseDown` / (optional `nativeMouseMove` if Step 1 spike revealed it needed) / `nativeMouseUp`; assert focus + selection restored at destination.
+- [ ] M06-EM: parallel to M06-FC with tide-card content; assert engine selection restored.
+- [ ] M07-FC: detach card to new standalone pane.
+- [ ] M07-EM: detach tide-card to new standalone pane.
+- [ ] M21: start drag, press Escape mid-drag, assert original focus restored without mutation.
+- [ ] Each test exercises the full `scenarios.ts` pane-seed helpers.
+
+**Tests:**
+- [ ] Each test exits 0.
+
+**Checkpoint:**
+- [ ] `bun test tests/in-app/m06*.test.ts tests/in-app/m07*.test.ts tests/in-app/m21*.test.ts` exits 0.
+- [ ] Transcripts for M06-EM and M07-EM pass sidecar verification.
+
+---
+
+#### Step 16: Phase C Integration Checkpoint — full M-series sweep + drift-prevention {#step-16}
+
+**Depends on:** #step-11, #step-12, #step-13, #step-14, #step-15
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D12] drift-prevention, Success criteria [#success-criteria], Spec [#s04-mseries-scenarios], (#phase-c-coverage)
+
+**Tasks:**
+- [ ] Run `bun test tests/in-app/` — all non-deferred M-series scenarios green.
+- [ ] Drift-prevention sweep: for each new M-series test, revert its target fix locally, re-run, verify red, revert the revert, verify green. Document per-row outcome.
+- [ ] Verify every row in [#s04-mseries-scenarios] marked "Infra: synthesized / CGEventPost / EM-card / app-lifecycle" has a corresponding green test file.
+- [ ] Aggregate test runtime: measure wall-clock of `bun test tests/in-app/`; if > 2 minutes on a representative dev machine, note in [R02]'s revisit column.
+
+**Tests:**
+- [ ] `bun test tests/in-app/` exits 0.
+- [ ] `bun test` in tugdeck still exits 0.
+
+**Checkpoint:**
+- [ ] Full sweep green.
+- [ ] Drift-prevention documented per row.
+- [ ] Runtime measured.
+
+---
+
+#### Step 17: Update base-harness plan roadmap; close extension rows {#step-17}
+
+**Depends on:** #step-16
+
+**Commit:** `docs(harness): mark base-plan extension roadmap rows closed by harness-extensions`
+
+**References:** (#phase-a-hardware, #phase-b-em, #phase-c-coverage), [D08] scenario table authoritative
+
+**Artifacts:**
+- `.tugtool/tugplan-in-app-test-harness.md` — §Roadmap rows "Widen Phase 3 coverage", "CGEventPost hardware-event fallback", "EM-card harness support" marked closed with pointer to this plan.
+- This plan's `Status` field flipped from `draft` to `active`.
+
+**Tasks:**
+- [ ] Edit base plan roadmap entries.
+- [ ] Update this plan's status.
+- [ ] Final grep for unresolved `[Q0N]` entries in this plan — confirm all deferred items are tracked.
+
+**Tests:**
+- [ ] `tugutil validate roadmap/tugplan-harness-extensions.md` exits 0.
+
+**Checkpoint:**
+- [ ] Both plan docs updated.
+- [ ] `tugutil validate` clean.
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** Two new harness primitives (Swift-backed `CGEventPost` + NSApp lifecycle, tugcode-backed EM-card harness with stub + live modes) and a full M-series regression suite covering every scenario the fidelity envelope supports. Release builds untouched; local-dev `bun test tests/in-app/` is the canonical proof of deck focus/selection/caret/activation behavior.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] `tests/in-app/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
+- [ ] `tests/in-app/_smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.
+- [ ] `tests/in-app/_smoke-em-live.test.ts` passes on opt-in (`TUGCODE_LIVE=1`).
+- [ ] `__tug.version === "1.1.0"`; harness handshake asserts.
+- [ ] Every row in [#s04-mseries-scenarios] marked with a test-file location has a green test.
+- [ ] Per-test drift-prevention documented for every new M-series test landed by this plan.
+- [ ] Release-build binary size unchanged vs pre-harness baseline (within noise); `nm` shows no `CGEventPost` / tugcode-lifecycle symbols.
+- [ ] Accessibility-permission setup documented in README; preflight behavior verified on both permission granted and permission denied workstations.
+- [ ] Stub-transcript content-hash sidecars verified on every EM-card test's transcript.
+- [ ] Zero new happy-dom tests added for UI / focus / selection / DOM-timing behavior.
+- [ ] Base-plan roadmap rows for extensions marked closed with pointer to this plan.
+
+**Acceptance tests:**
+- [ ] `bun test tests/in-app/` exits 0.
+- [ ] `bun test` in tugdeck exits 0.
+- [ ] `bun x tsc --noEmit` exits 0 in tugdeck/ and tests/in-app/.
+- [ ] `tugutil validate roadmap/tugplan-harness-extensions.md` exits 0.
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] CI integration (tracked in `roadmap/tugplan-harness-ci.md`, authored when CI becomes urgent per [Q01]).
+- [ ] Multi-window test support (if Tug.app gains multi-window).
+- [ ] `__tug.version` bump to `2.0.0` when a breaking change lands; this plan's `1.1.0` bump is additive only.
+- [ ] Paint-correctness / caret-blink test approach (currently fidelity-limited out-of-envelope per M22; a separate visual-diff harness would be the vehicle).
+- [ ] Coverage for the DEFERRED rows in [#s04-mseries-scenarios] as their target fixes land in their respective plans.
+- [ ] `scenarios.ts` helpers extracted to a shared test-fixture package if other repos start needing them.
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Native-event smoke | `bun test tests/in-app/_smoke-native.test.ts` exits 0 |
+| EM-card smoke | `bun test tests/in-app/_smoke-em.test.ts` exits 0 |
+| Live EM-card smoke | `TUGCODE_LIVE=1 bun test tests/in-app/_smoke-em-live.test.ts` exits 0 |
+| M-series sweep | `bun test tests/in-app/m*.test.ts` exits 0, all rows in [#s04-mseries-scenarios] marked present have files |
+| Drift prevention | Per-test revert-cycle documented in PR descriptions |
+| Release binary unchanged | `wc -c` diff within noise; `nm` inspection shows no extension symbols |
+
+---
