@@ -13,7 +13,7 @@
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-04-23 |
+| Last updated | 2026-04-24 |
 
 ---
 
@@ -31,7 +31,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 #### Strategy {#strategy}
 
-- Three phases in dependency order: hardware-event primitive (Phase A), EM-card harness (Phase B), wide M-series coverage (Phase C). Each phase ships standalone value — Phase A alone unlocks M04/M05/M20/M21 coverage; Phase B alone unlocks M02/M06-EM/M07-EM/M09; Phase C is the coverage sweep.
+- Four phases in dependency order: diagnostic observability (Phase 0) lifts every downstream test's diagnostic fidelity; hardware-event primitive (Phase A); EM-card harness (Phase B); wide M-series coverage (Phase C). Phase 0 comes first: M01/M03/M16 currently fail with ~400-line JSON trace dumps that cite no production file:line, carry no store state, and offer no annotation when an expected subset entry is present but out of order. Until those diagnostic gaps close, broader M-series coverage multiplies the cost of every reconciliation rather than amortizing it. Phase A alone unlocks M04/M05/M20/M21 coverage; Phase B alone unlocks M02/M06-EM/M07-EM/M09; Phase C is the coverage sweep.
 - Hardware events piggyback on the existing RPC transport. No new socket, no new boot choreography. `CGEventPost` is one more Swift-side handler on the bridge, `__tug.nativeClick` / `nativeKey` / `nativeType` is one more method on the `__tug` surface.
 - EM-card support reuses the harness subprocess-lifecycle contract. Tugcode runs either as a real subprocess (full fidelity) or in a deterministic stub mode (test-stable canned transcripts). Both modes exercise the same stream-json IPC surface end-to-end.
 - M-series expansion is table-driven. A single authoritative scenario table (Spec [#s04-mseries-scenarios]) tracks every scenario, its required infrastructure (synthesized / CGEventPost / EM-card), and its target fix. Steps 10–16 walk the table row by row.
@@ -40,6 +40,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 #### Success Criteria (Measurable) {#success-criteria}
 
+- Every in-app test failure emits a diagnostic block that (a) names the production `file.tsx:line:col` of each trace event, (b) shows `{active, fr, focused}` store state at the moment each event was recorded, and (c) annotates any subset-match violation with a one-line explanation (e.g., "Order violation: entry #1 appears at trace[1], BEFORE entry #0 match at trace[4]"). (Verified: M01/M03/M16 reconciliation PRs cite production line numbers quoted directly from the test output.)
 - `__tug.nativeClick(x, y)` dispatches a macOS `CGEventPost` mouse-down / mouse-up that reaches WebKit as `isTrusted: true`; the in-app test that asserts trusted-event arrival passes. (Verified: `tests/in-app/_smoke-native.test.ts` exits 0.)
 - A tugcode subprocess launches under harness control, performs one stream-json turn against a canned request, and the turn is observable via `__tug.getEmCardState(cardId)`. (Verified: `tests/in-app/_smoke-em.test.ts` exits 0.)
 - Every M-series scenario in the table with an infrastructure column of "synthesized", "CGEventPost", or "EM-card" has a green in-app test. (Verified: row-by-row test files exist under `tests/in-app/` and `bun test tests/in-app/` exits 0.)
@@ -50,6 +51,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 #### Scope {#scope}
 
+0. Diagnostic observability upgrades to the deck-trace recording surface and harness matcher output: per-event caller file:line capture, store-state snapshot inlined at record time, out-of-order-match annotation in `toContainOrderedSubset`, one-line-per-event summary above the JSON dump, Tug.app log tail surfaced *before* the assertion failure output (200-line window), per-test trace-artifact file for offline analysis. Additive, no production behavior change, no new RPC verbs.
 1. Swift-side `CGEventPost` handler (DEBUG-only), coordinate-mapping helper, NSEvent synthesis for app-lifecycle simulation (`NSApp.hide()`, `NSApp.unhide()`, `NSApp.resignFirstResponder()` equivalents).
 2. New `__tug` surface methods: `nativeClick`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`, `simulateAppResign`, `simulateAppBecomeActive`, `simulateAppHide`, `simulateAppUnhide`.
 3. Accessibility-permission setup documentation for developer workstations; guidance on CI sandboxing (deferred to [Q01]).
@@ -714,7 +716,10 @@ See [#risks] above.
 | File | Change |
 |------|--------|
 | `tugdeck/src/test-surface.ts` | Add native-event methods, app-lifecycle methods, tugcode lifecycle methods, EM-card observation methods; bump `__tug.version` from `1.0.0` to `1.1.0` |
-| `tugdeck/src/deck-trace.ts` | Add `engine-ready` and `engine-activation-dispatched` event kinds to `DeckTraceEvent` union per [L01] |
+| `tugdeck/src/deck-trace.ts` | (Phase 0) Stamp caller `loc` and `store` snapshot on every recorded event per Steps 0a + 0c. (Phase B) Add `engine-ready` and `engine-activation-dispatched` event kinds to `DeckTraceEvent` union per [L01] |
+| `tests/in-app/_harness/matchers.ts` | (Phase 0) Annotate out-of-order matches; emit one-line event summary above JSON dump per Steps 0b + 0e; ignore `loc` / `store` fields in partial match |
+| `tests/in-app/_harness/client.ts` | (Phase 0) Add `dumpTraceToFile(path)` helper per Step 0f |
+| `tests/in-app/m01-tab-switch-fc.test.ts`, `m03-pane-activation.test.ts`, `m16-tab-close-handoff.test.ts` | (Phase 0) Catch blocks print Tug.app log tail (200 lines) *before* rethrowing; write per-test trace artifact to `tests/in-app/logs/<test>-trace.json` per Steps 0d + 0f |
 | `tugdeck/src/main.tsx` | No changes expected (boot unchanged) |
 | `tests/in-app/_harness/index.ts` | Add typed wrappers for new RPC verbs; add `startTugcode` / `seedTugcodeTranscript` / `drainTugcodeTurn` helpers |
 | `tests/in-app/_harness/errors.ts` | Add error classes per Spec [#s06-error-classes] |
@@ -775,7 +780,186 @@ See [#risks] above.
 
 ### Execution Steps {#execution-steps}
 
-Nineteen flat steps across three phases (A: hardware events, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
+Twenty-three flat steps across four phases (0: diagnostic observability, A: hardware events, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
+
+Phase 0 is a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Each of those three tests fails today with an actionable signal about *what* went wrong (trace-ordering mismatch in m01/m03; wrong focus-handoff sibling in m16), but not enough context to answer *why* without reading production source. Steps 0a/0b/0c close that gap; 0d/0e/0f are polish that makes the failure output readable in a single pass. After Phase 0, the reconciliation work becomes: run `just test-in-app`, read the failure output, open the named production file, make a decision.
+
+#### Phase 0: Diagnostic Observability {#phase-0-diagnostic}
+
+Six additive upgrades to the deck-trace recording surface and the harness matcher output. No production behavior changes, no new `__tug` RPC verbs, no new DEBUG guards. Every improvement propagates to every future in-app test — Phase A's CGEventPost scenarios, Phase B's EM-card scenarios, Phase C's ~20-scenario sweep — so diagnostic fidelity lifts compound rather than accumulating tech debt.
+
+#### Step 0a: Source location on every deck-trace event {#step-0a}
+
+**Commit:** `feat(deck-trace): stamp caller file:line on every recorded event`
+
+**References:** Direct enabler for m01/m03/m16 trace-emitter reconciliation; [#s01-deck-trace-event] from base plan.
+
+**Artifacts:**
+- `tugdeck/src/deck-trace.ts` — `record()` captures the caller stack frame at record time; `DeckTraceEvent` union gains optional `loc?: string` (shape: `"file.tsx:line:col"`).
+- `tests/in-app/_harness/matchers.ts` — `partialMatchEntry` ignores `loc` in subset matching unless the expected entry explicitly asserts it. This surfaces `loc` in diagnostic dumps without tightening the assertion contract.
+- `tests/in-app/_harness/matchers.test.ts` — unit tests that `loc`-bearing events satisfy `loc`-less expectations.
+
+**Tasks:**
+- [ ] Capture `new Error().stack?.split("\n")` in `record()`; extract the first frame that is not inside `deck-trace.ts` itself.
+- [ ] Regex-extract `file.tsx?:line:col` from the frame; tolerate unexpected formats with an empty-string fallback.
+- [ ] Add `loc?: string` to the `DeckTraceEvent` union; stamp on every recorded event.
+- [ ] Empirically verify the stack-frame format under WKWebView's JSC (it may differ from V8 — spike during this step if needed; document the result in a comment at the capture site).
+- [ ] Update `partialMatchEntry` to ignore `loc` unless asserted; add unit tests.
+
+**Tests:**
+- [ ] `bun test tests/in-app/_harness/matchers.test.ts` — new unit tests pass; existing tests unaffected.
+- [ ] `bun test tests/in-app/_smoke.test.ts` still green.
+- [ ] Manual: re-run `just test-in-app` against M01; confirm failure dump carries `@ deck-manager.ts:NNN:NN` or similar on each event.
+
+**Checkpoint:**
+- [ ] `loc` field present on >95% of events in a fresh trace (engine quirks on early-boot frames may occasionally blank it — tolerated).
+- [ ] No behavior change in release builds (deck-trace is test-mode-only already).
+- [ ] Trace record overhead stays sub-millisecond per event (measured via `performance.now()` brackets around 100 records).
+
+---
+
+#### Step 0b: Smarter matcher failure output — annotate out-of-order matches {#step-0b}
+
+**Depends on:** #step-0a (strongly recommended — annotations read much better alongside `loc`).
+
+**Commit:** `feat(harness): annotate out-of-order matches in toContainOrderedSubset`
+
+**References:** Tier-1 m01/m03 diagnosis. Today's matcher says *"entry #1 not found after index 4"* when the entry actually exists at index 1 — the "out of order" diagnosis is forced on the reader, not stated by the matcher.
+
+**Artifacts:**
+- `tests/in-app/_harness/matchers.ts` — on cursor-search miss, scan `actual[0..cursor]` for `partialMatchEntry` hits; if any exist, emit an "Order violation" line that cites both the actual index where the match exists and the cursor position that was expected.
+- Same file: failure messages carry a compact prelude block *before* the full JSON dump so the violation jumps out.
+
+**Tasks:**
+- [ ] Extend `toContainOrderedSubset` failure path: scan `actual[0..cursor]` for matches; record their indices.
+- [ ] Emit a top-of-message "Order violation" annotation that quotes the expected pattern, the actual index where it appears, and the cursor position.
+- [ ] Retain the full JSON dump below the annotation.
+- [ ] Unit tests: out-of-order failure → message contains "Order violation"; genuinely-absent-entry failure → message unchanged.
+
+**Tests:**
+- [ ] Unit test in `matchers.test.ts`: `[event1, event2]` with expected `[event2, event1]` → out-of-order annotation cites indices 1 and 0.
+- [ ] Unit test: `[event1]` with expected `[event2]` → existing "not found" message, no "Order violation" line.
+- [ ] Manual: re-run M01; confirm failure prints `Order violation: destination-flip{B,true} appears at trace[1], BEFORE fr-flip{to:B} at trace[4]`.
+
+**Checkpoint:**
+- [ ] Out-of-order failures emit the new annotation.
+- [ ] Plain absent-entry failures retain existing diagnostic text.
+- [ ] `bun test tests/in-app/_harness/matchers.test.ts` exits 0.
+
+---
+
+#### Step 0c: Store-state snapshot inlined on every event {#step-0c}
+
+**Depends on:** #step-0a (both add optional fields via the same matcher-ignore pattern).
+
+**Commit:** `feat(deck-trace): snapshot store state on every recorded event`
+
+**References:** Disambiguates "event fires as reaction vs prediction" for m01/m03/m16. Also: when `destination-flip` fires before `fr-flip`, the store snapshot tells you which one *caused* the other — the bit that flipped first was the cause.
+
+**Artifacts:**
+- `tugdeck/src/deck-trace.ts` — `record()` reads `getDeckStore()?.getState()` and stamps `store?: { active: string|null; fr: string|null; focused: string|null }` on every event.
+- `tests/in-app/_harness/matchers.ts` — `partialMatchEntry` ignores `store` unless asserted.
+
+**Tasks:**
+- [ ] Read store state synchronously in `record()` (store registry is already imported at `deck-trace.ts` line 88).
+- [ ] Populate `{ active, fr, focused }` from the relevant selectors; tolerate null store (early boot, pre-registration).
+- [ ] Add `store?: {...}` to `DeckTraceEvent`.
+- [ ] Update matcher ignore list; add unit test that `store`-less expectations still match `store`-bearing actuals.
+
+**Tests:**
+- [ ] Unit: `store` field present for every event when store is registered.
+- [ ] Unit: `store: null` tolerated for pre-registration events.
+- [ ] Manual: m01 failure shows `store={active:A, fr:A}` on early events and `store={active:B, fr:A}` on the flip event — making the transition moment visible in the diagnostic.
+
+**Checkpoint:**
+- [ ] `store` populated on every post-boot event.
+- [ ] Overhead still sub-millisecond per event.
+- [ ] No production behavior change.
+
+---
+
+#### Step 0d: Tug.app log tail up front on failure; 200-line window {#step-0d}
+
+**Commit:** `feat(harness): surface Tug.app log tail before assertion failure output`
+
+**References:** The app's runtime log carries first-party diagnostic prints (pane-focus-controller, close-tab logic, `[A3]` effect decisions) that often hold the answer for M-series failures. Today those lines sit below ~400 lines of JSON trace dump.
+
+**Artifacts:**
+- Each of `tests/in-app/m01-tab-switch-fc.test.ts`, `m03-pane-activation.test.ts`, `m16-tab-close-handoff.test.ts` — `catch` block writes `app.tailLog(200)` to stderr with a clear banner *before* rethrowing; tail length moves 50 → 200.
+- Optional shared helper `dumpLogTail(app, testName)` in `_harness/index.ts` if the pattern repeats (extract only when the duplication actually bites — three sites is not yet enough).
+
+**Tasks:**
+- [ ] Update the three M-series test catch blocks to call `app.tailLog(200)` and print with a banner: `[<testName>] Tug.app log tail (last 200 lines):`.
+- [ ] Ensure the log tail appears *before* the bun assertion error message in terminal output order.
+- [ ] Consider extracting a shared helper (deferred decision — evaluate after 0d ships).
+
+**Tests:**
+- [ ] Manual: trigger a known M01 failure; confirm layout is `[m01] log tail → assertion failure → JSON trace dump`.
+- [ ] `bun test tests/in-app/` still exits 0 for passing tests (catch blocks are the only changed path).
+
+**Checkpoint:**
+- [ ] Failure output ordered correctly in terminal.
+- [ ] Passing tests emit nothing new.
+
+---
+
+#### Step 0e: One-line trace summary before JSON dump {#step-0e}
+
+**Depends on:** #step-0b.
+
+**Commit:** `feat(harness): print one-line trace summary above JSON dump in matcher failures`
+
+**References:** The full JSON is ~400 lines for 8 events. A single line per event makes the sequence scannable in 10 seconds; expected-entry match markers make the failure shape visible at a glance.
+
+**Artifacts:**
+- `tests/in-app/_harness/matchers.ts` — `summarizeEvent(e)` returns a short label per `DeckTraceEvent` variant; `toContainOrderedSubset` failure message prints a numbered summary of `actual` above the JSON dump, with match markers (`← expected #N`, `← matched #M`, `← cursor stopped here`).
+
+**Tasks:**
+- [ ] Implement `summarizeEvent` branches for every `DeckTraceEvent` kind: `fr-flip A→B`, `destination-flip B:true`, `a3-fire B early=not-dest`, `focus-call B site=…`, `save-callback A1 src=debounced`, `focusin el=input#…`, etc.
+- [ ] In the failure message, print a numbered list of one-line summaries with match markers; the violation-annotation from Step 0b anchors the header.
+- [ ] Retain the full JSON dump below the summary for completeness.
+
+**Tests:**
+- [ ] Unit: `summarizeEvent` returns non-empty string for every kind in the union (exhaustiveness check via `never` type).
+- [ ] Unit: failure message contains summary above JSON dump (order-sensitive substring check).
+- [ ] Manual: m01 failure reads as an indexed summary list with match markers — no need to open the JSON to understand the violation.
+
+**Checkpoint:**
+- [ ] Summary precedes JSON in every matcher failure.
+- [ ] Exhaustive-check passes (new trace event kinds added by Phase B force a `summarizeEvent` branch update, failing typecheck otherwise).
+
+---
+
+#### Step 0f: Per-test trace artifact file on failure {#step-0f}
+
+**Depends on:** #step-0a, #step-0c (trace file is most useful when `loc` and `store` are present).
+
+**Commit:** `feat(harness): write full trace to tests/in-app/logs/<test>-trace.json on failure`
+
+**References:** Archival + offline analysis. A saved trace file enables `jq` queries over a known-good trace without re-running the test — essential for deeper m01/m03/m16 forensics once the diagnostic fidelity improvements land.
+
+**Artifacts:**
+- `tests/in-app/_harness/client.ts` — `dumpTraceToFile(path: string): Promise<void>` method on the harness client; writes `getDeckTrace()` output as formatted JSON.
+- M01/M03/M16 `catch` blocks — call `dumpTraceToFile(\`tests/in-app/logs/${testName}-trace.json\`)` and print the path in the failure banner.
+- `.gitignore` — add `tests/in-app/logs/*-trace.json` if not already covered by the existing logs pattern.
+- `tests/in-app/README.md` — one-paragraph note on analyzing trace files with `jq` (e.g., `jq '.[] | select(.kind == "fr-flip")' trace.json`).
+
+**Tasks:**
+- [ ] Add `dumpTraceToFile(path)` on the harness client; writes `formatJSON(await this.getDeckTrace())` to disk.
+- [ ] Update M01/M03/M16 catch blocks to dump traces alongside the log tail banner (Step 0d's output).
+- [ ] `.gitignore` update if needed (existing `logs/` rule likely covers it — verify).
+- [ ] README subsection on `jq` analysis patterns.
+
+**Tests:**
+- [ ] Manual: trigger M01 failure; confirm `tests/in-app/logs/m01-tab-switch-fc-trace.json` is written and is valid JSON (`jq '.' <file>` succeeds).
+- [ ] Passing tests do not write the file.
+
+**Checkpoint:**
+- [ ] Trace file appears on failure only.
+- [ ] File parses as JSON with `jq`.
+- [ ] Path referenced in the failure banner.
+
+---
 
 #### Step 1: Spike CGEventPost variants; record [D02] result {#step-1}
 
@@ -1286,6 +1470,9 @@ Nineteen flat steps across three phases (A: hardware events, B: EM-cards, C: M-s
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
+- [ ] Every `DeckTraceEvent` carries a `loc` (caller file:line) and `store` (`{active, fr, focused}`) snapshot at record time; matchers ignore both fields in partial matches.
+- [ ] `toContainOrderedSubset` failure messages annotate out-of-order matches explicitly ("Order violation: …") and print a one-line-per-event summary above the full JSON dump.
+- [ ] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error, and write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis.
 - [ ] `tests/in-app/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
 - [ ] `tests/in-app/_smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.
 - [ ] `tests/in-app/_smoke-em-live.test.ts` passes on opt-in (`TUGCODE_LIVE=1`).
@@ -1315,6 +1502,10 @@ Nineteen flat steps across three phases (A: hardware events, B: EM-cards, C: M-s
 
 | Checkpoint | Verification |
 |------------|--------------|
+| Trace `loc` / `store` fields | Grep a fresh trace dump for `@ .*\.tsx?:` and `store: {` — both present on every event |
+| Matcher annotations | Force an M01 out-of-order failure; terminal output contains "Order violation" and a numbered one-line summary |
+| Log-tail-first on failure | Force an M01 failure; Tug.app log tail banner appears before the bun assertion error |
+| Trace artifact | Force an M01 failure; `tests/in-app/logs/m01-tab-switch-fc-trace.json` exists and `jq '.' <file>` succeeds |
 | Native-event smoke | `bun test tests/in-app/_smoke-native.test.ts` exits 0 |
 | EM-card smoke | `bun test tests/in-app/_smoke-em.test.ts` exits 0 |
 | Live EM-card smoke | `TUGCODE_LIVE=1 bun test tests/in-app/_smoke-em-live.test.ts` exits 0 |
