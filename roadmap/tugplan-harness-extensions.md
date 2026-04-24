@@ -174,24 +174,51 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 **Resolution:** DEFERRED to [#step-6].
 
-#### [Q05] CGEvent modifier-key accelerators (Cmd+A etc.) don't fire WebKit's select-all path (DEFERRED — Step 1 surfaced) {#q05-cgevent-modifiers}
+#### [Q05] CGEvent modifier-key accelerators (Cmd+A etc.) — resolved by reading Apple's docs (DECIDED — 2026-04-24, same-day as Step 1 close) {#q05-cgevent-modifiers}
 
-**Question:** Plain letter keystrokes via `CGEvent.post(tap: .cgSessionEventTap)` successfully insert into focused `<input>` elements (Step 1 spike confirmed: 'x' keycode → input value appended). But Cmd+A — posted either as `keyDown.flags = .maskCommand` alone OR with `flagsChanged` press/release bracketing the keyDown/keyUp — does NOT trigger WebKit's select-all accelerator. The events arrive at WebKit (the input's focus state shows movement) but the select-all handler doesn't fire; caret ends up at the click-landing position instead.
+**Original question (from Step 1 spike):** Plain letter keystrokes via `CGEvent.post(tap: .cgSessionEventTap)` insert into focused inputs (`'x'` → input value appended). But Cmd+A with `keyDown.flags = .maskCommand` (with or without `flagsChanged` bracketing) didn't trigger WebKit's select-all; caret ended up at the click point instead of full-range selection.
 
-**Known observations:**
-- Event source tried: `.hidSystemState`. `.combinedSessionState` and nil source not yet tried.
-- Flag handling tried: bare `.flags = .maskCommand` on the keyDown/keyUp; flagsChanged press/release bracket for the Cmd key. Neither fires select-all.
-- Affects `cghidEventTap` and `cgSessionEventTap` equally. `postToPid` is a non-starter for self-delivery anyway ([D02]).
+**Root cause (from Apple docs, `CGEventSource` + `CGEventCreateKeyboardEvent`):**
 
-**Plan to resolve:** Investigate in Step 2 before shipping `nativeKey` with modifiers / `holdModifier` to the TS surface. Candidate leads:
-- Try `.combinedSessionState` or nil event-source — may change how modifier state is applied on post.
-- Inspect the actual CGEvent that hits the window (via `NSEvent.addGlobalMonitorForEvents`) to see whether `.modifierFlags` arrives as expected.
-- Investigate whether WKWebView's Cocoa accelerator path requires a `performKeyEquivalent:` dispatch that CGEvent.post doesn't reach — fallback: raise a Cocoa `NSEvent` directly via `NSApp.sendEvent`.
-- Fallback if nothing works: use AppleScript/`osascript` to dispatch keyboard shortcuts, or expose `nativeKey` for non-modifier keys only and provide separate RPC verbs for specific shortcuts (`selectAll`, `copy`, `paste`, etc.) that call into WKWebView's `[webView selectAll:]` native action directly.
+Two mistakes compounded:
 
-**Resolution:** DEFERRED to [#step-2]. Step 2's keyboard sub-task tracks this.
+1. **Wrong `CGEventSourceStateID`.** Step 1's spike used `.hidSystemState`. The docs for that state explicitly say: "If your program is a daemon or a user space device driver interpreting hardware state and generating events, you should use this source state." For login-session apps posting synthetic events, the correct state is `.combinedSessionState`: "If your program is posting events from within a login session, you should use this source state when you create an event source." `.hidSystemState` tracks only hardware state; our synthetic Cmd-down event didn't register in the session-level modifier table that WebKit reads.
 
-**Impact on Step 3b gating:** None — M03 is click-driven, no keyboard modifiers. Phase A's click pipeline is unblocked.
+2. **Manual `.flags` assignment + `type = .flagsChanged` override is wrong.** `CGEventCreateKeyboardEvent` docs explicitly prescribe the pattern (example: capital 'Z'): "(1) SHIFT down (vk 56), (2) 'z' down (vk 6), (3) 'z' up, (4) SHIFT up. This requires four separate keyboard events in sequence." All four are plain `keyDown`/`keyUp` events of their respective virtual keycodes — no `.flags` setter, no `type` override. The `CGEventSource` tracks modifier state across the sequence and automatically stamps the correct flags on events posted through it.
+
+**Correct Cmd+A pattern (pinned for Step 2):**
+
+```swift
+let source = CGEventSource(stateID: .combinedSessionState)  // NOT .hidSystemState
+
+// All four events created from the SAME source — that's how the source's
+// state table registers "Cmd held" across aDown/aUp.
+let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true)
+cmdDown?.post(tap: .cgSessionEventTap)
+
+let aDown = CGEvent(keyboardEventSource: source, virtualKey: 0x00, keyDown: true)
+aDown?.post(tap: .cgSessionEventTap)
+
+let aUp = CGEvent(keyboardEventSource: source, virtualKey: 0x00, keyDown: false)
+aUp?.post(tap: .cgSessionEventTap)
+
+let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false)
+cmdUp?.post(tap: .cgSessionEventTap)
+```
+
+No `.flags` setters. No `type = .flagsChanged` override. Tap stays `.cgSessionEventTap` (per [D02]).
+
+**Implications for Step 2's `NativeEventHandlers.swift`:**
+
+- Hold a single `CGEventSource(stateID: .combinedSessionState)` at handler-class scope (sources are cheap; reusing one across events within a gesture means the source's state table is coherent).
+- `holdModifier(mods, inner)`: post `keyDown` for each modifier's virtual keycode (`kVK_Command=0x37`, `kVK_Shift=0x38`, `kVK_Option=0x3A`, `kVK_Control=0x3B`) through the source, in a stable order; run inner verbs using the SAME source; post `keyUp` for modifiers in reverse order. `defer` block ensures the reverse-order release runs even if inner verbs throw.
+- `nativeKey(key, mods)`: sugar over `holdModifier` for single-keystroke combos.
+
+**Out of scope for this plan:** The `hidSystemState` vs. `combinedSessionState` distinction also likely affects the keyboard-letter test's observed `selectionEnd=11` result (plain letter insertion worked but the caret ended up at end of text, not where we clicked). That behavior is a separate subtlety — worth noting but not blocking Step 2.
+
+**Resolution:** RESOLVED. No Step 2 investigation required — just implementation of the pattern above. The keyboard pipeline is unblocked.
+
+**Impact on Step 3b gating:** None — M03 is click-driven, no keyboard modifiers. Phase A's click pipeline is unblocked regardless.
 
 ---
 
@@ -1216,8 +1243,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 **Scope note:** Step 2 grew (2026-04-24 re-scope) beyond the original click+key primitives to cover every gesture the Phase C M-series sweep will need — double-click, right-click, endpoint-only drag, and a `holdModifier` scope verb. ASCII-only typing is sufficient per user call (non-ASCII / IME is out of scope for Phase C). Drag interpolation is NOT provided; tests express multi-step interactions as sequences of endpoint clicks. A `nativeDelay` surface primitive is deliberately NOT exposed — test authors use `waitForCondition` instead; inter-event spacing inside gesture builders is internal.
 
 **Carry-overs from Step 1:**
-- **[Q05] — modifier-key accelerator investigation.** Step 1's spike proved plain letter keystrokes arrive at focused inputs via `CGEvent.post(tap: .cgSessionEventTap)`, but Cmd+A (modifier + key) didn't trigger WebKit's select-all path with the naive `.flags = .maskCommand` approach or with a `flagsChanged` press/release bracket. Step 2 MUST resolve this before shipping `nativeKey(mods:)` / `holdModifier` to the TS surface; candidate leads documented in [Q05]. Until resolved, `nativeKey(key, [])` (no-mods form) works and can ship; `holdModifier` + modifier-form `nativeKey` block behind [Q05].
-- Does NOT block Step 3b (M03 rewrite is click-driven). Unblocks it via the click/drag half of Step 2's handler set.
+- **[Q05] resolved before Step 2 starts** — the modifier-key failure from the Step 1 spike was caused by using `CGEventSource(stateID: .hidSystemState)` (daemon/driver scope) instead of `.combinedSessionState` (login-session scope), plus manual `.flags` + `type = .flagsChanged` overrides that fought the source's automatic modifier tracking. Step 2 implements the docs-prescribed pattern directly: one `CGEventSource(stateID: .combinedSessionState)` per gesture scope, plain `keyDown`/`keyUp` events for the modifier key (virtual keycodes 0x37/0x38/0x3A/0x3B for cmd/shift/alt/ctrl), no `.flags` setter, no `type` override. See [Q05]'s resolution block for the exact code shape.
+- Does NOT block Step 3b (M03 rewrite is click-driven). Unblocked via Step 2's click/drag handlers regardless of the keyboard path.
 
 **Artifacts:**
 
