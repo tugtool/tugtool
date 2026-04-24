@@ -376,6 +376,84 @@ test-in-app:
 
     exit $STATUS
 
+# Fast iteration variant of `test-in-app`. Skips the full rebuild
+# (cargo, tugdeck, scratch-bank setup, tmux) and runs the in-app test
+# sweep directly against the already-built, stable-signed Tug.app.
+# Useful when iterating on a single test file or on tugdeck source
+# (vite HMR picks up tugdeck changes live). Swift changes still
+# require a rebuild — use `just test-in-app` for those.
+#
+# Prerequisites (same as test-in-app, run once per machine):
+#   just setup-dev-signing                 # creates 'Tug Dev' identity
+#   just test-in-app                       # builds Tug.app + signs it
+#
+# Usage:
+#   just test-in-app-fast                  # runs default sweep
+#   just test-in-app-fast m03-pane-activation.test.ts
+#                                          # runs only the named file
+#   just test-in-app-fast _smoke-native.test.ts m03-pane-activation.test.ts
+#                                          # runs specific files in order
+#
+# Re-signs with 'Tug Dev' on every invocation so a bare xcodebuild in
+# between runs cannot invalidate the Accessibility grant. Re-signing
+# is idempotent and fast (~100ms).
+test-in-app-fast *FILES:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Locate the already-built Tug.app via xcodebuild's settings
+    # query (instant — no compilation).
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
+    APP_BIN="$APP_DIR/Contents/MacOS/Tug"
+    if [ ! -x "$APP_BIN" ]; then
+        echo "error: Tug.app binary missing at $APP_BIN" >&2
+        echo "       Run 'just test-in-app' first for a full build + sign." >&2
+        exit 1
+    fi
+
+    # Re-sign with the stable identity so the AX grant persists across
+    # iterations. No-op fast path when the identity isn't present
+    # (lets the recipe work on a machine without dev-signing set up,
+    # though tests requiring AX will fail).
+    if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
+        codesign --sign "Tug Dev" --force --deep \
+            --preserve-metadata=entitlements,requirements \
+            "$APP_DIR" >/dev/null 2>&1 || true
+    fi
+
+    # Clean slate: kill stale Tug processes before the first spawn.
+    pkill -x Tug 2>/dev/null || true
+    sleep 0.3
+
+    # Clean up on exit so a Ctrl-C or test crash leaves no orphans.
+    cleanup() { pkill -x Tug 2>/dev/null || true; }
+    trap cleanup EXIT INT TERM
+
+    export TUGAPP_IN_APP_TEST=1
+    export TUGAPP_DEBUG_PATH="$APP_BIN"
+    cd tests/in-app
+
+    # Default sweep mirrors `test-in-app`'s loop.
+    FILES_INPUT="{{FILES}}"
+    if [ -z "$FILES_INPUT" ]; then
+        FILES=(_smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts)
+    else
+        read -r -a FILES <<< "$FILES_INPUT"
+    fi
+
+    STATUS=0
+    for f in "${FILES[@]}"; do
+        echo "---- $f ----"
+        bun test "$f" || STATUS=$?
+        # Between files, kill stragglers so port 55155 is free and
+        # Dock icons don't accumulate.
+        pkill -x Tug 2>/dev/null || true
+        sleep 0.3
+    done
+    exit $STATUS
+
 # Clean Rust targets and Mac app build artifacts
 clean:
     cd tugrust && cargo clean
