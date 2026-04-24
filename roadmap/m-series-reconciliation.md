@@ -31,11 +31,20 @@ All three tests are green. Two real production bugs were found and fixed; three 
 - **Production, cross-pane save:** `pane-focus-controller.ts` now calls `store.invokeSaveCallback(outgoingCardId)` before `store.activateCard(...)`, mirroring the intra-pane tab-switch path (`tug-pane.tsx performSelectCard`).
 - **Tests:** three expected-subset updates to match the causally-correct production emission order (`destination-flip → fr-flip → (optional focus-call)`) and the real trigger values.
 
-### Latent design gap, out of scope for this reconciliation
+### Default-focus fallback for fresh cards — FIXED
 
-The A3 activation effect is **bag-driven**: it calls `.focus()` via `applyFocusSnapshot` only when a card has a saved `bag.focus`. Fresh cards (never-saved) have no bag, so no `focus-call` event fires on their first activation. This means tab-switch-to-fresh-card does NOT auto-focus the new card's primary input — the caret stays where it was in the outgoing card.
+The A3 activation effect was **bag-driven**: it called `.focus()` via `applyFocusSnapshot` only when a card had a saved `bag.focus`. Fresh cards had no bag, so no `focus-call` event fired on their first activation, and the caret stayed stranded on the outgoing card. Tab-switching into a fresh card did not move the caret. That was a bug — users expect the caret to follow the tab they just clicked, every time.
 
-Whether that is the right UX is a product decision. If we want tab switching to always move the caret into the new card (as the plan's original test expectations assumed), we'd need to add a default-focus path in the A3 effect — something like "focus the first `[data-tug-focus-key="primary"]` or first focusable element in the card root when `bag` is missing or empty." That's a separate plan; the updated tests now correctly reflect current production behavior and will fail loudly if this design gap is later closed differently from what they encode.
+**Fix:** `card-host.tsx` now has a `resolveDefaultFocusTarget` / `traceApplyDefaultFocus` pair that drives a priority chain when the A3 effect finds no saved focus snapshot:
+
+1. `[data-tug-focus-key="primary"]` — card author's declared primary focus target.
+2. `[data-tug-focus-key]` with any value — any tagged focus target.
+3. `[data-tug-persist-value]` — first persisted form control.
+4. Generic focusable — input / textarea / select / button / contenteditable / tabindex≥0.
+
+The A3 effect calls `traceApplyDefaultFocus("a3-default-focus", …)` when `bag?.focus` is missing or `{kind: "none"}`. A `focus-call` event fires with `site: "a3-default-focus"` so trace readers can distinguish default-driven focus from snapshot-restored focus. Existing focus inside the card root is respected (click-in-progress wins, same contract as `applyFocusSnapshot`).
+
+Result: tab-switch-to-fresh-card now reliably moves the caret into the new card, both intra-pane (M01) and cross-pane (M03). M01, M03, M16 all assert the `focus-call` event on fresh-card activation and pass end-to-end.
 
 ---
 
