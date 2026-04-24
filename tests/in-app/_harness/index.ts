@@ -72,9 +72,18 @@ export type {
 
 /**
  * The harness's compile-time expected surface version. Must match the
- * major of `SURFACE_VERSION` in `tugdeck/src/test-surface.ts`.
+ * `surfaceVersion` constant in `tugapp/Sources/TestHarness/TestHarnessConnection.swift`
+ * exactly (some harness tests assert exact equality, not major-only).
+ *
+ * `1.1.0` (Step 2, 2026-04-24): adds the Phase A native-gesture
+ * and keyboard verb family (`nativeClick`, `nativeDoubleClick`,
+ * `nativeRightClick`, `nativeDrag`, `nativeMouseDown`, `nativeMouseUp`,
+ * `nativeKey`, `nativeType`, `holdModifier`). Additive change; major
+ * stays `1`. Tugdeck-side `SURFACE_VERSION` (in
+ * `tugdeck/src/test-surface.ts`) is bumped in Step 3 when the TS-side
+ * `__tug.*` surface methods land.
  */
-export const EXPECTED_SURFACE_VERSION = "1.0.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.1.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs

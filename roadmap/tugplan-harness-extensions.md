@@ -25,13 +25,13 @@
 | 0d — log tail up front on failure | LANDED | `4e445993` |
 | 0e — one-line trace summary above JSON | LANDED | _pending commit_ |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
-| 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | _pending commit_ |
-| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | pending (next) | — |
-| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | pending | — |
+| 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | `667ca3d1` |
+| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | LANDED | _pending commit_ |
+| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | pending (next) | — |
 | 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
 | 4–17 | pending | — |
 
-Steps 1 → 2 → 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 is fully landed.
+Steps 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter. Phase 0 + Phase A Swift handlers are fully landed; only the TS surface + smoke + M03 rewrite remain on the critical path.
 
 ---
 
@@ -977,9 +977,9 @@ See [#risks] above.
 
 Twenty-four flat steps across four phases (0: diagnostic observability, A: hardware events including M03 trusted-click rewrite, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17; Step 3b is lettered for the same reason. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
 
-Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. All six steps are landed (0a, 0b, 0c, 0d, 0e, 0f). The diagnostic floor is now as high as it gets without concrete failure traffic to harden against. Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
+Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. All six steps are landed (0a, 0b, 0c, 0d, 0e, 0f). Phase A Swift handlers landed as well (Steps 1 and 2): `CoordMapping.swift` + `NativeEventHandlers.swift` + `VirtualKeyMap.swift` deliver the full click/drag/key gesture set via trusted `CGEvent.post` through a login-session event source. Step 3 wraps those handlers in the TS `__tug.*` surface + adds introspection primitives; Step 3b rewrites M03 as the acceptance test for the trusted-event pipeline.
 
-**Critical path right now:** 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
+**Critical path right now:** 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
 
 #### Phase 0: Diagnostic Observability {#phase-0-diagnostic}
 
@@ -1234,6 +1234,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 2: Swift `CGEventPost` handlers — full gesture + keyboard surface {#step-2}
 
+**Status:** LANDED (2026-04-24). Shipped `NativeEventHandlers.swift` (click, double-click with 80ms pinned interval, right-click, endpoint-only drag, mouse-down/up primitives, `nativeKey`, `nativeType`, `holdModifier` with `defer`-based modifier release) and `VirtualKeyMap.swift` (US-English ASCII + named-key table, ~120 entries, hand-rolled self-tests in `runUnitTests()`). Dispatch table extended in `TestHarnessConnection.swift` with 9 new verbs. Swift + TS `SURFACE_VERSION` bumped to `1.1.0`. Typed error classes added to `tests/in-app/_harness/errors.ts` + wired into `translateError`. `_smoke-native.test.ts` scaffold landed (skipped; Step 3 fills bodies). No regressions: 2 smoke + M01 + M03 + M16 all green.
+
 **Depends on:** #step-1 (reuses `CoordMapping.swift` from Step 1; variant choice from [D02]).
 
 **Commit:** `feat(tugapp-bridge): add CGEventPost gesture and keyboard handlers (DEBUG-only)`
@@ -1267,33 +1269,35 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 **Tasks:**
 
-- [ ] Land `VirtualKeyMap.swift` with the ASCII-name → `CGKeyCode` mapping for letters, digits, common punctuation (shifted + unshifted), and special keys (`Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, arrows, `Home`/`End`, `PageUp`/`PageDown`).
-- [ ] Land `NativeEventHandlers.swift`:
-  - [ ] `nativeClick(point:button:clickCount:)` — one event pair. Uses [D02]'s chosen CGEventPost variant. Respects bounds check from `CoordMapping.swift` — out-of-bounds returns `CoordinateOutOfBoundsError`.
-  - [ ] `nativeDoubleClick(point:button:)` — two pairs, `mouseEventClickState` 1 then 2, separated by `NATIVE_DOUBLE_CLICK_INTERVAL_MS`.
-  - [ ] `nativeRightClick(point:)` — right-button click.
-  - [ ] `nativeDrag(from:to:opts:)` — endpoint-only; `mouseDown` → one `mouseDragged` → `mouseUp`. Default inter-event delay 20ms each side.
-  - [ ] `nativeMouseDown(point:button:)` / `nativeMouseUp(point:button:)` — primitives for niche paths.
-  - [ ] `nativeKey(key:modifiers:)` — flagsChanged press, keyDown, keyUp, flagsChanged release. Uses `VirtualKeyMap`.
-  - [ ] `nativeType(text:)` — ASCII loop over `nativeKey`. Non-ASCII returns `NativeTypeAsciiOnlyError` before any events post.
-  - [ ] `holdModifier(mods:innerVerbs:)` — presses flags, runs inner verbs (dispatch-table recursion through the same connection), releases flags. Inner-verb failures release flags deterministically in a `defer` block so a test error doesn't leave modifiers stuck.
-- [ ] Wire every verb into the `TestHarnessConnection.swift` dispatch table. Each verb JSON-decodes its args, runs the handler, JSON-encodes the result (typically `{ ok: true }` or an error object).
-- [ ] Swift-side unit tests for `VirtualKeyMap` (every declared entry round-trips through a known-expected keycode).
-- [ ] Bump `__tug.version` to `1.1.0` in this step's Swift handshake source; TS handshake assertion updated in Step 3.
-- [ ] Ensure every new Swift file + every new dispatch-table case is gated on `#if DEBUG ... #endif`.
+- [x] Land `VirtualKeyMap.swift` with the ASCII-name → `CGKeyCode` mapping for letters, digits, common punctuation (shifted + unshifted), and special keys (`Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, arrows, `Home`/`End`, `PageUp`/`PageDown`).
+- [x] Land `NativeEventHandlers.swift`:
+  - [x] `nativeClick(point:button:clickCount:)` — one event pair. Uses [D02]'s `.cgSessionEventTap`. Respects bounds check from `CoordMapping.swift` — out-of-bounds returns `CoordinateOutOfBoundsError`.
+  - [x] `nativeDoubleClick(point:button:)` — two pairs, `mouseEventClickState` 1 then 2, separated by `NATIVE_DOUBLE_CLICK_INTERVAL_MS` (80ms).
+  - [x] `nativeRightClick(point:)` — right-button click.
+  - [x] `nativeDrag(from:to:opts:)` — endpoint-only; `mouseDown` → one `mouseDragged` → `mouseUp`. Default inter-event delay 20ms each side.
+  - [x] `nativeMouseDown(point:button:)` / `nativeMouseUp(point:button:)` — primitives for niche paths.
+  - [x] `nativeKey(key:modifiers:)` — per [Q05]'s resolution: plain `keyDown`/`keyUp` events on modifier keys via shared `CGEventSource(stateID: .combinedSessionState)`. Auto-presses Shift when the mapped key needs it (e.g. `"A"`, `"!"`). Uses `VirtualKeyMap`.
+  - [x] `nativeType(text:)` — ASCII loop with per-char Shift bracketing. Non-ASCII pre-check: throws `NativeTypeAsciiOnlyError` before any events post.
+  - [x] `holdModifier(mods:innerVerbs:)` — presses modifier-key `keyDown` events, runs inner verbs via recursive `executeNativeVerb`, releases modifiers in reverse order via `defer`. Inner-verb failures release modifiers cleanly — no stuck-modifier bleed.
+- [x] Wire every verb into the `TestHarnessConnection.swift` dispatch table via `dispatchNativeVerb` → `executeNativeVerb` (shared by top-level dispatch and `holdModifier` recursion). Each verb JSON-decodes args via `parsePoint` / `parseButton` / `parseModifiers` helpers; native errors translate to typed wire errors via `NativeEventError.wireName`.
+- [x] Swift-side unit tests for `VirtualKeyMap` (runtime `runUnitTests()` fixtures; XCTest target deferred until one exists).
+- [x] Bump `__tug.version` to `1.1.0` in Swift (`TestHarnessConnection.surfaceVersion`). **TS `EXPECTED_SURFACE_VERSION` bumped in Step 2 too** (not Step 3 as originally planned) because `_smoke.test.ts` asserts exact-match equality — the staggered-bump plan would have left the smoke test red. Tugdeck-side `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` still awaits Step 3.
+- [x] Every new Swift file + every new dispatch-table case inside `#if DEBUG ... #endif`.
 
 **Tests:**
 
-- [ ] `VirtualKeyMap` Swift unit test (all declared entries covered).
-- [ ] `CoordMapping` Swift unit test (from Step 1) still passes unmodified.
-- [ ] `tests/in-app/_smoke-native.test.ts` — scaffold lands here (empty body + skip); filled in Step 3 so Step 2 can commit independently.
+- [x] `VirtualKeyMap` Swift unit cases (a/A, z/Z, 0/), 1/!, space, , / <, / / ?, ` / ~, Enter/Return/Tab/Escape/Backspace/Delete, all arrows) wired via `runUnitTests()`.
+- [x] `CoordMapping` Swift unit cases (from Step 1) still pass unmodified.
+- [x] `tests/in-app/_smoke-native.test.ts` — scaffold landed with 5 `describe.skip`'d tests, Step 3 fills bodies.
+- [x] `bun test ./_harness/rpc.test.ts ./_harness/matchers.test.ts` — 46 pass / 0 fail.
+- [x] `just test-in-app` — 2 smoke + M01 + M03 + M16 all green; no regressions.
 
 **Checkpoint:**
 
-- [ ] `xcodebuild` DEBUG build succeeds; release build binary size unchanged within noise (binary-size diff recorded).
-- [ ] `grep -rn "CGEventPost\|CGEventPostToPid\|NativeEventHandlers\|VirtualKeyMap\|holdModifier" tugapp/` — every hit is inside a `#if DEBUG` guarded file or block.
-- [ ] Dispatch table handles every new verb (grep through `TestHarnessConnection.swift` for each verb name).
-- [ ] No production codepath references the new handlers or the `NATIVE_DOUBLE_CLICK_INTERVAL_MS` constant.
+- [x] `xcodebuild` DEBUG build succeeds with zero warnings; build completes in the same step without the spike's `try holdModifier` warning (inner closure is non-throwing → no `try`).
+- [x] `grep -rnE "CGEventPost|CGEvent\.post|NativeEventHandlers|VirtualKeyMap" tugapp/` — every hit is inside `#if DEBUG`-guarded file (CoordMapping.swift, CGEventSpike deleted, NativeEventHandlers.swift, VirtualKeyMap.swift, TestHarnessConnection.swift) or pbxproj metadata.
+- [x] Dispatch table handles `nativeClick`, `nativeDoubleClick`, `nativeRightClick`, `nativeDrag`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`, `holdModifier`.
+- [x] No production codepath references `NativeEventHandlers`, `VirtualKeyMap`, or `NATIVE_DOUBLE_CLICK_INTERVAL_MS`.
 
 ---
 

@@ -24,7 +24,16 @@ import WebKit
 final class TestHarnessConnection {
     /// Surface version reported by the `version` RPC. Must match
     /// `SURFACE_VERSION` in `tugdeck/src/test-surface.ts`.
-    static let surfaceVersion = "1.0.0"
+    ///
+    /// `1.1.0` (Step 2, 2026-04-24): adds native-gesture and
+    /// keyboard verbs to the dispatch table (`nativeClick`,
+    /// `nativeDoubleClick`, `nativeRightClick`, `nativeDrag`,
+    /// `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`,
+    /// `holdModifier`). Existing `version` / `evalJS` /
+    /// `waitForCondition` verbs unchanged. Major version still `1`,
+    /// so harnesses built against `1.0.0` continue to handshake
+    /// cleanly against `1.1.0` (minor version is additive).
+    static let surfaceVersion = "1.1.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -98,8 +107,229 @@ final class TestHarnessConnection {
             let timeoutMs = (obj["timeoutMs"] as? Int) ?? 2000
             let pollMs = (obj["pollMs"] as? Int) ?? 16
             dispatchWaitForCondition(id: id, script: script, timeoutMs: timeoutMs, pollMs: pollMs)
+        case "nativeClick",
+             "nativeDoubleClick",
+             "nativeRightClick",
+             "nativeDrag",
+             "nativeMouseDown",
+             "nativeMouseUp",
+             "nativeKey",
+             "nativeType",
+             "holdModifier":
+            dispatchNativeVerb(id: id, verbObj: obj)
         default:
             respondError(id: id, name: "NotImplemented", message: "Unknown method: \(method)")
+        }
+    }
+
+    // MARK: - Native verbs (Spec [#s01-hardware-rpc], Step 2)
+
+    /// Top-level dispatch for the native-event verb family. Builds a
+    /// `NativeEventHandlers` instance, runs the verb on the main
+    /// thread, and writes a single response based on the outcome.
+    ///
+    /// Every native verb bounces through `DispatchQueue.main.async`
+    /// — the verbs touch `NSApp.activate`, `CGEvent.post`, and the
+    /// shared `webView` reference, all of which require the main
+    /// thread (Cocoa contract). The Bun-side `waitForCondition`
+    /// that follows most verb calls also runs against the same
+    /// main-thread `evaluateJavaScript` path, so queuing in order
+    /// keeps event delivery and JS polling naturally sequenced.
+    private func dispatchNativeVerb(id: Int, verbObj: [String: Any]) {
+        guard let webView = webView else {
+            respondError(id: id, name: "AppCrashedError", message: "WKWebView unavailable")
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let handlers = NativeEventHandlers(webView: webView)
+            do {
+                try self.executeNativeVerb(verbObj, handlers: handlers)
+                self.respond(id: id, ok: true, payload: ["value": NSNull()])
+            } catch let error as NativeEventError {
+                self.respondError(id: id, name: error.wireName, message: error.description)
+            } catch {
+                self.respondError(
+                    id: id,
+                    name: "NativeEventError",
+                    message: "\(error)",
+                )
+            }
+        }
+    }
+
+    /// Execute a single native verb given its wire-form JSON and a
+    /// pre-built `NativeEventHandlers`. Throws `NativeEventError`
+    /// for typed failures; callers (top-level dispatch OR
+    /// `holdModifier`'s inner-verb loop) translate to RPC responses.
+    ///
+    /// Two callers:
+    ///   1. `dispatchNativeVerb` — top-level; writes a response.
+    ///   2. `executeHoldModifier` — inner; re-throws so the parent's
+    ///      response reflects any inner failure, with the modifier-
+    ///      release `defer` still running to avoid stuck modifiers.
+    fileprivate func executeNativeVerb(
+        _ verbObj: [String: Any],
+        handlers: NativeEventHandlers,
+    ) throws {
+        guard let method = verbObj["method"] as? String else {
+            throw NativeEventError.protocolError("missing 'method' in inner verb")
+        }
+
+        switch method {
+        case "nativeClick":
+            let vp = try Self.parsePoint(verbObj["viewportPoint"], field: "viewportPoint")
+            let button = try Self.parseButton(verbObj["button"])
+            let clickCount = (verbObj["clickCount"] as? Int) ?? 1
+            let downDelay = (verbObj["mouseDownDelayMs"] as? Int) ?? 20
+            let upDelay = (verbObj["mouseUpDelayMs"] as? Int) ?? 20
+            try handlers.nativeClick(
+                viewportPoint: vp,
+                button: button,
+                clickCount: clickCount,
+                mouseDownDelayMs: downDelay,
+                mouseUpDelayMs: upDelay,
+            )
+
+        case "nativeDoubleClick":
+            let vp = try Self.parsePoint(verbObj["viewportPoint"], field: "viewportPoint")
+            let button = try Self.parseButton(verbObj["button"])
+            try handlers.nativeDoubleClick(viewportPoint: vp, button: button)
+
+        case "nativeRightClick":
+            let vp = try Self.parsePoint(verbObj["viewportPoint"], field: "viewportPoint")
+            try handlers.nativeRightClick(viewportPoint: vp)
+
+        case "nativeDrag":
+            let from = try Self.parsePoint(verbObj["from"], field: "from")
+            let to = try Self.parsePoint(verbObj["to"], field: "to")
+            let button = try Self.parseButton(verbObj["button"])
+            let downDelay = (verbObj["mouseDownDelayMs"] as? Int) ?? 20
+            let upDelay = (verbObj["mouseUpDelayMs"] as? Int) ?? 20
+            try handlers.nativeDrag(
+                from: from,
+                to: to,
+                button: button,
+                mouseDownDelayMs: downDelay,
+                mouseUpDelayMs: upDelay,
+            )
+
+        case "nativeMouseDown":
+            let vp = try Self.parsePoint(verbObj["viewportPoint"], field: "viewportPoint")
+            let button = try Self.parseButton(verbObj["button"])
+            try handlers.nativeMouseDown(viewportPoint: vp, button: button)
+
+        case "nativeMouseUp":
+            let vp = try Self.parsePoint(verbObj["viewportPoint"], field: "viewportPoint")
+            let button = try Self.parseButton(verbObj["button"])
+            try handlers.nativeMouseUp(viewportPoint: vp, button: button)
+
+        case "nativeKey":
+            guard let key = verbObj["key"] as? String else {
+                throw NativeEventError.protocolError("nativeKey: missing 'key'")
+            }
+            let modifiers = try Self.parseModifiers(verbObj["modifiers"])
+            try handlers.nativeKey(key: key, modifiers: modifiers)
+
+        case "nativeType":
+            guard let text = verbObj["text"] as? String else {
+                throw NativeEventError.protocolError("nativeType: missing 'text'")
+            }
+            try handlers.nativeType(text: text)
+
+        case "holdModifier":
+            try executeHoldModifier(verbObj: verbObj, handlers: handlers)
+
+        default:
+            throw NativeEventError.protocolError(
+                "unsupported inner verb method: \"\(method)\"",
+            )
+        }
+    }
+
+    /// Press the requested modifiers, dispatch each inner verb in
+    /// order via `executeNativeVerb` (recursive), release modifiers
+    /// in reverse order. Inner-verb failures propagate up; the
+    /// modifier release still runs via `defer` inside
+    /// `handlers.holdModifier`, so a failed inner leaves no modifier
+    /// held.
+    ///
+    /// Recursion depth is bounded in practice (inner `holdModifier`
+    /// scopes are unusual for test harnesses), but we don't enforce
+    /// a depth limit — a test that hits infinite recursion crashes
+    /// with a stack overflow and the test author notices.
+    private func executeHoldModifier(
+        verbObj: [String: Any],
+        handlers: NativeEventHandlers,
+    ) throws {
+        let modifiers = try Self.parseModifiers(verbObj["modifiers"])
+        guard let innerVerbs = verbObj["innerVerbs"] as? [[String: Any]] else {
+            throw NativeEventError.protocolError(
+                "holdModifier: missing 'innerVerbs' (expected array of verb objects)",
+            )
+        }
+        try handlers.holdModifier(modifiers: modifiers) { [self] in
+            for inner in innerVerbs {
+                try self.executeNativeVerb(inner, handlers: handlers)
+            }
+        }
+    }
+
+    // MARK: - Native verb arg parsers
+
+    /// Parse a `{ x, y }` point from a wire dict. Accepts both
+    /// `NSNumber`-backed JSON numbers and Swift `Double`s — both
+    /// shapes survive `JSONSerialization` depending on magnitude
+    /// and fractional part.
+    private static func parsePoint(_ raw: Any?, field: String) throws -> CGPoint {
+        guard let dict = raw as? [String: Any] else {
+            throw NativeEventError.protocolError(
+                "missing or malformed '\(field)' (expected {x, y} object)",
+            )
+        }
+        let xNum = (dict["x"] as? NSNumber)?.doubleValue ?? (dict["x"] as? Double)
+        let yNum = (dict["y"] as? NSNumber)?.doubleValue ?? (dict["y"] as? Double)
+        guard let x = xNum, let y = yNum else {
+            throw NativeEventError.protocolError(
+                "'\(field)' missing x/y numeric fields",
+            )
+        }
+        return CGPoint(x: x, y: y)
+    }
+
+    /// Parse a `"left"` / `"right"` button string. Missing field
+    /// defaults to `.left` so bare click/drag calls don't need to
+    /// specify it.
+    private static func parseButton(_ raw: Any?) throws -> MouseButton {
+        guard let str = raw as? String else {
+            return .left
+        }
+        guard let button = MouseButton(rawValue: str) else {
+            throw NativeEventError.protocolError(
+                "invalid button \"\(str)\" (expected \"left\" or \"right\")",
+            )
+        }
+        return button
+    }
+
+    /// Parse an array of modifier names into `[ModifierKey]`. Missing
+    /// field defaults to an empty array.
+    private static func parseModifiers(_ raw: Any?) throws -> [ModifierKey] {
+        guard let arr = raw as? [String] else {
+            if raw == nil {
+                return []
+            }
+            throw NativeEventError.protocolError(
+                "'modifiers' must be an array of strings (cmd/shift/alt/ctrl)",
+            )
+        }
+        return try arr.map { name in
+            guard let mod = ModifierKey(rawValue: name) else {
+                throw NativeEventError.protocolError(
+                    "invalid modifier \"\(name)\" (expected one of: cmd, shift, alt, ctrl)",
+                )
+            }
+            return mod
         }
     }
 

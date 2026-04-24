@@ -22,8 +22,12 @@
  */
 
 import {
+  AccessibilityPermissionMissingError,
   AppCrashedError,
+  CoordinateOutOfBoundsError,
+  NativeTypeAsciiOnlyError,
   TimeoutError,
+  UnknownKeyError,
   VersionSkewError,
 } from "./errors";
 import type { Request, Response } from "./types";
@@ -211,6 +215,11 @@ export class RpcClient {
  * - `name === "AppCrashedError"` → `AppCrashedError`
  * - `name === "VersionSkewError"` → `VersionSkewError`
  *   (expected / actual are best-effort, pulled from message if absent)
+ * - `name === "CoordinateOutOfBoundsError"` → `CoordinateOutOfBoundsError` (Phase A)
+ * - `name === "NativeTypeAsciiOnlyError"` → `NativeTypeAsciiOnlyError` (Phase A)
+ * - `name === "AccessibilityPermissionMissingError"` →
+ *   `AccessibilityPermissionMissingError` (Phase A preflight)
+ * - `name === "UnknownKeyError"` → `UnknownKeyError` (Phase A)
  * - any other `name` → plain `Error` with `.name` copied from wire
  */
 export function translateError(
@@ -231,6 +240,14 @@ export function translateError(
       const actual = m?.[2] ?? "";
       return new VersionSkewError(wire.message, expected, actual);
     }
+    case "CoordinateOutOfBoundsError":
+      return new CoordinateOutOfBoundsError(wire.message);
+    case "NativeTypeAsciiOnlyError":
+      return new NativeTypeAsciiOnlyError(wire.message);
+    case "AccessibilityPermissionMissingError":
+      return new AccessibilityPermissionMissingError(wire.message);
+    case "UnknownKeyError":
+      return new UnknownKeyError(wire.message);
     default: {
       const err = new Error(wire.message);
       // Preserve the server-side name for `.name`-based switches.

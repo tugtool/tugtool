@@ -75,3 +75,78 @@ export class VersionSkewError extends Error {
     Object.setPrototypeOf(this, VersionSkewError.prototype);
   }
 }
+
+/**
+ * Thrown when a native gesture verb (nativeClick, nativeDrag, etc.)
+ * resolves a viewport point that falls outside the WKWebView's
+ * visible frame. Per Spec [#s01-hardware-rpc], the Swift side
+ * reports this as `CoordinateOutOfBoundsError` and the harness
+ * translates to this class.
+ *
+ * The `viewportPoint` field preserves the out-of-bounds input for
+ * actionable test failures: "you asked for (1000, 50) but the
+ * WKWebView is only 800px wide."
+ */
+export class CoordinateOutOfBoundsError extends Error {
+  readonly name = "CoordinateOutOfBoundsError" as const;
+
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, CoordinateOutOfBoundsError.prototype);
+  }
+}
+
+/**
+ * Thrown when `nativeType(text)` receives non-ASCII input. Phase C
+ * scope per the 2026-04-24 user call is US-English ASCII only; IME
+ * / non-ASCII text is out of envelope. Tests that want to exercise
+ * Unicode paths use the dispatch-over-DOM mechanism instead.
+ */
+export class NativeTypeAsciiOnlyError extends Error {
+  readonly name = "NativeTypeAsciiOnlyError" as const;
+
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, NativeTypeAsciiOnlyError.prototype);
+  }
+}
+
+/**
+ * Thrown when `launchTugApp`'s accessibility-permission preflight
+ * (Step 3) finds that the Tug.app binary does not have macOS
+ * Accessibility permission granted. Without the grant, every
+ * `CGEvent.post` silently no-ops — so tests that depend on native
+ * gestures would timeout mysteriously. Surfacing this as a typed
+ * error up-front gives the user actionable guidance: which binary
+ * path to add in System Settings → Privacy & Security → Accessibility.
+ *
+ * See [D14]: the stable-signing workflow (`just setup-dev-signing`)
+ * ensures that ONE grant persists across rebuilds, so this error
+ * only fires on the very first run per machine (or after a
+ * `tccutil reset`).
+ */
+export class AccessibilityPermissionMissingError extends Error {
+  readonly name = "AccessibilityPermissionMissingError" as const;
+
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, AccessibilityPermissionMissingError.prototype);
+  }
+}
+
+/**
+ * Thrown when a key-name passed to `nativeKey(key, ...)` or
+ * `nativeType(text)` doesn't appear in the Swift-side
+ * `VirtualKeyMap` (US-English table). The error message includes
+ * the offending name so test authors can pick an alternative or
+ * spell it correctly (e.g. `"Enter"` not `"Return"` — though
+ * "Return" is aliased in the table, plenty of DOM names are not).
+ */
+export class UnknownKeyError extends Error {
+  readonly name = "UnknownKeyError" as const;
+
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, UnknownKeyError.prototype);
+  }
+}
