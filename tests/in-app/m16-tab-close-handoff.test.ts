@@ -214,12 +214,16 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
         { kind: "focus-call", cardId: "c1" },
       ]);
     } catch (err) {
-      // On failure, dump the last 50 lines of the subprocess log to
-      // stderr so CI output captures the same diagnostic tail that
-      // List [#l03-lifecycle-behaviors] documents.
-      const tail = app.tailLog(50);
+      // On failure, dump the last 200 lines of the subprocess log to
+      // stderr *before* rethrowing so Bun's assertion error prints
+      // after the diagnostic tail — production diagnostic prints
+      // (pane-focus-controller, [A3] effect, close-tab) land together
+      // with the assertion, not 400 lines below a JSON trace dump.
+      const tail = app.tailLog(200);
       if (tail !== "") {
-        process.stderr.write(`\n[m16-tab-close-handoff] tail of ${app.logPath}:\n${tail}\n`);
+        process.stderr.write(
+          `\n[m16-tab-close-handoff] Tug.app log tail (last 200 lines):\n${tail}\n`,
+        );
       }
       // M16 fails via `TimeoutError` from `waitForCondition` before
       // any in-test `getDeckTrace` runs, so the caller's catch has

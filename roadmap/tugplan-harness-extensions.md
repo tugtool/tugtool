@@ -22,8 +22,8 @@
 | 0a — source location on every event | LANDED | `3dbb6bb1` |
 | 0b — annotate out-of-order matches | LANDED | `f89ce2b8` |
 | 0c — store-state snapshot on every event | LANDED | `bd2e8bd8` |
-| 0d — log tail up front on failure | pending (next) | — |
-| 0e — one-line trace summary above JSON | pending | — |
+| 0d — log tail up front on failure | LANDED | _pending commit_ |
+| 0e — one-line trace summary above JSON | pending (next) | — |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
 | 1 — CGEventPost variant spike | pending | — |
 | 2 — Swift CGEventPost handler | pending | — |
@@ -803,15 +803,15 @@ See [#risks] above.
 
 Twenty-four flat steps across four phases (0: diagnostic observability, A: hardware events including M03 trusted-click rewrite, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17; Step 3b is lettered for the same reason. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
 
-Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Four of its six steps are landed (0a, 0b, 0c, 0f); two remain (0d, 0e). 0d and 0e are fast polish that makes failure output readable in a single pass. Once those land, Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
+Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Five of its six steps are landed (0a, 0b, 0c, 0d, 0f); 0e remains. 0e is fast polish that makes failure output readable in a single pass. Once it lands, Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
 
-**Critical path right now:** 0d → 0e → 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
+**Critical path right now:** 0e → 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
 
 #### Phase 0: Diagnostic Observability {#phase-0-diagnostic}
 
 Six additive upgrades to the deck-trace recording surface and the harness matcher output. No production behavior changes, no new `__tug` RPC verbs, no new DEBUG guards. Every improvement propagates to every future in-app test — Phase A's CGEventPost scenarios, Phase B's EM-card scenarios, Phase C's ~20-scenario sweep — so diagnostic fidelity lifts compound rather than accumulating tech debt.
 
-**Landed:** 0a (commit `3dbb6bb1`), 0b (commit `f89ce2b8`), 0c (commit `bd2e8bd8`), 0f (commit `4a83846f`). **Remaining:** 0d, 0e.
+**Landed:** 0a (commit `3dbb6bb1`), 0b (commit `f89ce2b8`), 0c (commit `bd2e8bd8`), 0d (2026-04-24), 0f (commit `4a83846f`). **Remaining:** 0e.
 
 #### Step 0a: Source location on every deck-trace event {#step-0a}
 
@@ -911,6 +911,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 0d: Tug.app log tail up front on failure; 200-line window {#step-0d}
 
+**Status:** LANDED (2026-04-24). Shipped as 200-line `app.tailLog(200)` calls and banner `[<testName>] Tug.app log tail (last 200 lines):` in the three M-series catch blocks. Shared helper deferred — three sites does not yet bite.
+
 **Commit:** `feat(harness): surface Tug.app log tail before assertion failure output`
 
 **References:** The app's runtime log carries first-party diagnostic prints (pane-focus-controller, close-tab logic, `[A3]` effect decisions) that often hold the answer for M-series failures. Today those lines sit below ~400 lines of JSON trace dump.
@@ -920,17 +922,17 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 - Optional shared helper `dumpLogTail(app, testName)` in `_harness/index.ts` if the pattern repeats (extract only when the duplication actually bites — three sites is not yet enough).
 
 **Tasks:**
-- [ ] Update the three M-series test catch blocks to call `app.tailLog(200)` and print with a banner: `[<testName>] Tug.app log tail (last 200 lines):`.
-- [ ] Ensure the log tail appears *before* the bun assertion error message in terminal output order.
-- [ ] Consider extracting a shared helper (deferred decision — evaluate after 0d ships).
+- [x] Update the three M-series test catch blocks to call `app.tailLog(200)` and print with a banner: `[<testName>] Tug.app log tail (last 200 lines):`.
+- [x] Ensure the log tail appears *before* the bun assertion error message in terminal output order.
+- [x] Consider extracting a shared helper (deferred decision — evaluate after 0d ships). **Resolution:** deferred. Three call sites with a 4-line body each is below the extraction threshold; revisit when M11–M16 coverage lands (Step 11+).
 
 **Tests:**
-- [ ] Manual: trigger a known M01 failure; confirm layout is `[m01] log tail → assertion failure → JSON trace dump`.
-- [ ] `bun test tests/in-app/` still exits 0 for passing tests (catch blocks are the only changed path).
+- [ ] Manual: trigger a known M01 failure; confirm layout is `[m01] log tail → assertion failure → JSON trace dump`. *(Gated on Step 3b — requires a real failure to observe.)*
+- [x] `bun test tests/in-app/` still exits 0 for passing tests (catch blocks are the only changed path). Verified with `TUGAPP_IN_APP_TEST` unset: 3 skip / 0 fail.
 
 **Checkpoint:**
-- [ ] Failure output ordered correctly in terminal.
-- [ ] Passing tests emit nothing new.
+- [x] Failure output ordered correctly in terminal. *(Synchronous `process.stderr.write` before `throw err` guarantees tail lands before Bun's assertion error.)*
+- [x] Passing tests emit nothing new.
 
 ---
 
@@ -1581,8 +1583,8 @@ This step does two things:
 
 - [x] Every `DeckTraceEvent` carries a `loc` (caller file:line) and `store` (`{activePaneId, activeCardId, hasFocus}`) snapshot at record time; matchers ignore both fields in partial matches. (Landed 0a + 0c.)
 - [x] `toContainOrderedSubset` failure messages annotate out-of-order matches explicitly ("Order violation: …"). (Landed 0b.)
-- [x] M-series test failures write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into M16; 0d/0e pending for the log-tail-up-front and one-line-summary portions.)
-- [ ] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error. (0d.)
+- [x] M-series test failures write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into M16; 0e pending for the one-line-summary portion.)
+- [x] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error. (Landed 0d, 2026-04-24.)
 - [ ] Matcher failure messages carry a one-line-per-event summary above the full JSON dump. (0e.)
 - [ ] `tests/in-app/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
 - [ ] `tests/in-app/m03-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click, passes `just test-in-app`, and matches interactive real-app behavior. (3b.)
