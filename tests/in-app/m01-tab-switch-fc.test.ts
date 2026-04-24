@@ -186,19 +186,17 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
       //   3. _flipFirstResponder records fr-flip with
       //      trigger="_setActiveCardInPane" (not "activateCard" —
       //      intra-pane switches go through the internal helper).
-      //
-      // No `focus-call` event fires for B on first activation: B
-      // has never been saved, so its card-state bag is empty; the
-      // A3 effect's bag-driven focus-restore logic has nothing to
-      // apply and exits with `earlyReturn: "no-bag"`. See
-      // roadmap/m-series-reconciliation.md §"Bag-driven focus"
-      // for the design-gap note. The return trip below DOES
-      // assert focus-call on A because A's bag was populated by
-      // the typing gesture.
+      //   4. A3 activation effect for B runs; with no saved bag,
+      //      the default-focus fallback fires focus-call with
+      //      site="a3-default-focus" targeting the first focusable
+      //      element in B's card root (see
+      //      tugdeck/src/components/chrome/card-host.tsx
+      //      DEFAULT_FOCUS_SELECTORS).
       const traceSwitchToB = await app.getDeckTrace({ since: markSwitchToB });
       expect(traceSwitchToB).toContainOrderedSubset([
         { kind: "destination-flip", cardId: "B", to: true },
         { kind: "fr-flip", to: "B", trigger: "_setActiveCardInPane" },
+        { kind: "focus-call", cardId: "B" },
       ]);
 
       // -----------------------------------------------------------------

@@ -199,12 +199,11 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
       //      — deck-manager preserves the closed card's bag so the
       //      M11 reopen path has state to restore).
       //   4. card-host-unmount c2.
-      //
-      // No focus-call assertion: c1 was never saved (the test only
-      // seeds c2 as active, never types into c1), so its bag is
-      // empty and the A3 effect exits with `earlyReturn: "no-bag"`.
-      // Same bag-driven-focus gap as M01/M03. See
-      // roadmap/m-series-reconciliation.md §"Bag-driven focus".
+      //   5. A3 activation effect for c1 runs; c1 was never saved,
+      //      so the default-focus fallback fires focus-call with
+      //      site="a3-default-focus" (see
+      //      tugdeck/src/components/chrome/card-host.tsx
+      //      DEFAULT_FOCUS_SELECTORS).
       // -----------------------------------------------------------------
       const traceClose = await app.getDeckTrace({ since: markClose });
       expect(traceClose).toContainOrderedSubset([
@@ -212,6 +211,7 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
         { kind: "fr-flip", to: "c1", trigger: "_removeCard" },
         { kind: "save-callback", cardId: "c2" },
         { kind: "card-host-unmount", cardId: "c2" },
+        { kind: "focus-call", cardId: "c1" },
       ]);
     } catch (err) {
       // On failure, dump the last 50 lines of the subprocess log to

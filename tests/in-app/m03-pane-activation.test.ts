@@ -200,19 +200,17 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       //   3. fr-flip on A2 with trigger="activateCard" (cross-pane
       //      goes through `store.activateCard`, unlike intra-pane
       //      which uses `_setActiveCardInPane`).
-      //
-      // No `focus-call` event fires for A2 on first activation: A2
-      // has never been saved, so its card-state bag is empty and
-      // the A3 effect exits with `earlyReturn: "no-bag"`. See
-      // roadmap/m-series-reconciliation.md §"Bag-driven focus"
-      // for the design-gap note. The return trip below DOES
-      // assert focus-call on A1 because A1's bag was populated by
-      // the typing gesture.
+      //   4. A3 activation effect for A2 runs; with no saved bag,
+      //      the default-focus fallback fires focus-call with
+      //      site="a3-default-focus" (see
+      //      tugdeck/src/components/chrome/card-host.tsx
+      //      DEFAULT_FOCUS_SELECTORS).
       const traceSwitchToP2 = await app.getDeckTrace({ since: markSwitchToP2 });
       expect(traceSwitchToP2).toContainOrderedSubset([
         { kind: "save-callback", cardId: "A1" },
         { kind: "destination-flip", cardId: "A2", to: true },
         { kind: "fr-flip", to: "A2", trigger: "activateCard" },
+        { kind: "focus-call", cardId: "A2" },
       ]);
 
       // -----------------------------------------------------------------
