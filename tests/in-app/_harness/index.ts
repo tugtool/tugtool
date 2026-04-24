@@ -27,6 +27,7 @@ import {
   mkdirSync,
   readFileSync,
   unlinkSync,
+  writeFileSync,
   type WriteStream,
 } from "node:fs";
 import { dirname, resolve as pathResolve } from "node:path";
@@ -330,6 +331,34 @@ export class App {
         : all;
     const tail = withoutTrailingEmpty.slice(-lines);
     return tail.join("\n");
+  }
+
+  /**
+   * Dump the full deck trace to `path` as pretty-printed JSON. For
+   * use in `catch` blocks that need the trace as a post-mortem
+   * artifact — most useful when a test fails before its main
+   * assertion can read and pretty-print the trace inline (e.g.
+   * `TimeoutError` from `waitForCondition` has nothing to print).
+   *
+   *     try { ... } catch (e) {
+   *       await app.dumpTraceToFile(`tests/in-app/logs/${testName}-trace.json`);
+   *       throw e;
+   *     }
+   *
+   * Swallows I/O and RPC errors — this is a failure path, and a
+   * secondary error from the dump must not mask the primary
+   * assertion failure. Returns the path on success, null on
+   * failure. Parent directories are created as needed.
+   */
+  async dumpTraceToFile(path: string): Promise<string | null> {
+    try {
+      const trace = await client.getDeckTrace(this as HarnessCaller, {});
+      mkdirSync(dirname(pathResolve(path)), { recursive: true });
+      writeFileSync(pathResolve(path), JSON.stringify(trace, null, 2));
+      return path;
+    } catch {
+      return null;
+    }
   }
 
   /**
