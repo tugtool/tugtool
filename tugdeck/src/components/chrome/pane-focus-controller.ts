@@ -200,6 +200,22 @@ export function usePaneFocusController(
       const pane = store.getSnapshot().panes.find((p) => p.id === paneId);
       if (!pane) return;
 
+      // Save the outgoing card before activation flips the composite
+      // first-responder bit. Mirrors the intra-pane tab-switch path
+      // (tug-pane.tsx performSelectCard, which calls
+      // `store.invokeSaveCallback(outgoingCardId)` before
+      // `setActiveCardInPane`). Without this, cross-pane clicks
+      // would skip the outgoing-card save and M03-shaped tests
+      // would miss the save-callback event.
+      //
+      // Skip when the first responder is already the pane's active
+      // card — that path is a same-bit click and the save would be
+      // noise.
+      const outgoingCardId = store.getFirstResponderCardId();
+      if (outgoingCardId !== null && outgoingCardId !== pane.activeCardId) {
+        store.invokeSaveCallback(outgoingCardId);
+      }
+
       // `activateCard` is safe on the already-active card id:
       // `_flipFirstResponder`'s same-bit branch short-circuits
       // will/didActivate events (deck-manager.ts:262–266). Our
