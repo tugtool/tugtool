@@ -165,7 +165,54 @@ describe("canProgrammaticallyFocus — decision branches", () => {
     expect(canProgrammaticallyFocus("card-target", state)).toBe(true);
   });
 
-  test("branch 6: real input outside the target card → false", () => {
+  test("branch 6: focus is inside a different deck card → true", () => {
+    // M01/M03 scenario: the user has focus in card A's input, then
+    // clicks tab B (or pane 2's title) to navigate. The gate must
+    // permit moving focus to B even though activeElement is a "real"
+    // element — card-to-card navigation is a deliberate user gesture,
+    // not focus theft.
+    const state = makeDestinationState();
+    const targetHost = makeHostEl(); // data-card-id="card-target"
+    // Build a second card host whose descendant input is focused.
+    const otherHost = document.createElement("div");
+    otherHost.setAttribute("data-card-host", "");
+    otherHost.setAttribute("data-card-id", "card-other");
+    const otherInput = document.createElement("input");
+    otherInput.type = "text";
+    otherHost.appendChild(otherInput);
+    document.body.appendChild(otherHost);
+    otherInput.focus();
+    expect(document.activeElement).toBe(otherInput);
+
+    expect(
+      canProgrammaticallyFocus("card-target", state, {
+        targetCardHostEl: targetHost,
+      }),
+    ).toBe(true);
+  });
+
+  test("branch 6: focus inside a [data-card-id] whose id is NOT in the deck → false", () => {
+    // Defensive: if some rogue DOM has a data-card-id attribute that
+    // doesn't correspond to a real card in state, do NOT treat it as
+    // "another card." Fall through to branch 7 and refuse.
+    const state = makeDestinationState();
+    const targetHost = makeHostEl();
+    const strayHost = document.createElement("div");
+    strayHost.setAttribute("data-card-id", "some-id-not-in-deck");
+    const strayInput = document.createElement("input");
+    strayInput.type = "text";
+    strayHost.appendChild(strayInput);
+    document.body.appendChild(strayHost);
+    strayInput.focus();
+
+    expect(
+      canProgrammaticallyFocus("card-target", state, {
+        targetCardHostEl: targetHost,
+      }),
+    ).toBe(false);
+  });
+
+  test("branch 7: real input outside any deck card → false", () => {
     const state = makeDestinationState();
     const hostEl = makeHostEl();
     const outside = makeInputOutside();

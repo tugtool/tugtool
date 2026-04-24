@@ -34,7 +34,12 @@
  *      {@link isNonFocusCapturingChrome}) → **true** (transient
  *      focus on drag handles, tab buttons between clicks, etc. —
  *      the user hasn't actually moved focus to a new control).
- *   6. Otherwise → **false** (the user has focus somewhere real;
+ *   6. Focus is inside a different deck card's host element (walks
+ *      up from `activeElement` to find a `[data-card-id]` ancestor,
+ *      matches against `state.cards`) → **true** (card-to-card
+ *      navigation via tab switch or pane activation is a deliberate
+ *      user gesture, not focus theft — M01/M03 scenarios).
+ *   7. Otherwise → **false** (the user has focus somewhere real;
  *      don't steal).
  *
  * ## Opting chrome elements in
@@ -143,6 +148,32 @@ export function canProgrammaticallyFocus(
   // Branch 5: focus is on non-focus-capturing chrome.
   if (isNonFocusCapturingChrome(active)) return true;
 
-  // Branch 6: user has focus somewhere real. Don't steal.
+  // Branch 6: focus is inside a different deck card. Card-to-card
+  // focus transfer on activation (e.g., intra-pane tab switch or
+  // cross-pane title click) is a deliberate user navigation, not
+  // focus theft — we permit the refocus even though `activeElement`
+  // is a "real" element, because that real element lives in a
+  // card that the user has just navigated away from.
+  //
+  // Walk up from `active` looking for a `[data-card-id]` ancestor;
+  // if the card id is in the deck AND is different from the target,
+  // permit. This is a conservative check: a `data-card-id` value
+  // that doesn't match any deck card is treated as "unknown chrome"
+  // rather than "another card," so we fall through to branch 7.
+  const cardHost =
+    active instanceof Element ? active.closest("[data-card-id]") : null;
+  if (cardHost !== null) {
+    const hostCardId = cardHost.getAttribute("data-card-id");
+    if (
+      hostCardId !== null &&
+      hostCardId !== targetCardId &&
+      state.cards.some((c) => c.id === hostCardId)
+    ) {
+      return true;
+    }
+  }
+
+  // Branch 7: user has focus somewhere real outside any deck card.
+  // Don't steal.
   return false;
 }
