@@ -225,9 +225,60 @@ export function usePaneFocusController(
       store.activateCard(pane.activeCardId);
     }
 
+    // Mousedown capture listener: suppress the browser's default focus-
+    // clearing when the click lands on pane chrome (not card content).
+    //
+    // WebKit's mousedown default behavior walks up from the click
+    // target looking for a focusable element; if none is found, it
+    // clears the current focus to body. For a trusted click on a
+    // non-focusable pane chrome element (title bar span, frame divs,
+    // etc.) this blurs whatever the user had focused before — which,
+    // for M03's cross-pane activation flow, is the very element our
+    // A3 activation effect has just restored focus to. The result is
+    // a race: A3 focuses the destination card's input; mousedown
+    // default blurs it 1ms later; the user's caret vanishes.
+    //
+    // The fix is to preventDefault on mousedown when we know the click
+    // is a pane activation gesture (the same classification the
+    // pointerdown handler above uses). Card-content clicks still get
+    // the browser's default — an input click should still focus the
+    // input normally; we only suppress the clearing path.
+    //
+    // Why a separate listener instead of preventDefault on pointerdown:
+    // preventDefault on pointerdown cancels ALL compatibility mouse
+    // events (mousedown, mouseup, click), which breaks every downstream
+    // click handler. mousedown preventDefault surgically suppresses
+    // only the focus-clearing default.
+    function onMouseDown(event: MouseEvent): void {
+      const root = deckRootRef.current;
+      if (!root) return;
+      const target = event.target;
+      const startEl =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      if (!startEl) return;
+      if (!root.contains(startEl)) return;
+      const paneEl = startEl.closest("[data-pane-id]");
+      if (paneEl === null) return;
+      if (event.metaKey) return;
+      if (startEl.closest("[data-no-activate]")) return;
+      // Card-content click: the browser's default focus behavior is
+      // the correct outcome (input → focus input, etc.). Only pane-
+      // chrome clicks need the focus-clearing suppression.
+      if (startEl.closest("[data-card-host]") !== null) return;
+      event.preventDefault();
+    }
+
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
+    document.addEventListener("mousedown", onMouseDown, { capture: true });
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, {
+        capture: true,
+      });
+      document.removeEventListener("mousedown", onMouseDown, {
         capture: true,
       });
     };
