@@ -11,9 +11,27 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | draft (Phase 0 mostly landed; Phase A is the active front) |
 | Target branch | main |
 | Last updated | 2026-04-24 |
+
+**Phase progress snapshot (as of 2026-04-24):**
+
+| Step | Status | Commit |
+|------|--------|--------|
+| 0a — source location on every event | LANDED | `3dbb6bb1` |
+| 0b — annotate out-of-order matches | LANDED | `f89ce2b8` |
+| 0c — store-state snapshot on every event | LANDED | `bd2e8bd8` |
+| 0d — log tail up front on failure | pending (next) | — |
+| 0e — one-line trace summary above JSON | pending | — |
+| 0f — per-test trace artifact file | LANDED | `4a83846f` |
+| 1 — CGEventPost variant spike | pending | — |
+| 2 — Swift CGEventPost handler | pending | — |
+| 3 — `__tug` native-event surface + preflight + smoke | pending | — |
+| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
+| 4–17 | pending | — |
+
+Steps 0d → 0e → 1 → 2 → 3 → 3b is the active critical path. All subsequent M-series coverage (Steps 11–16) follows once 3b confirms the trusted-event pipeline is faithful enough to replace synthesized clicks wherever mousedown-default focus semantics matter.
 
 ---
 
@@ -31,7 +49,9 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 #### Strategy {#strategy}
 
-- Four phases in dependency order: diagnostic observability (Phase 0) lifts every downstream test's diagnostic fidelity; hardware-event primitive (Phase A); EM-card harness (Phase B); wide M-series coverage (Phase C). Phase 0 comes first: M01/M03/M16 currently fail with ~400-line JSON trace dumps that cite no production file:line, carry no store state, and offer no annotation when an expected subset entry is present but out of order. Until those diagnostic gaps close, broader M-series coverage multiplies the cost of every reconciliation rather than amortizing it. Phase A alone unlocks M04/M05/M20/M21 coverage; Phase B alone unlocks M02/M06-EM/M07-EM/M09; Phase C is the coverage sweep.
+- Four phases in dependency order: diagnostic observability (Phase 0) lifts every downstream test's diagnostic fidelity; hardware-event primitive (Phase A); EM-card harness (Phase B); wide M-series coverage (Phase C). Phase 0 came first: M01/M03/M16 used to fail with ~400-line JSON trace dumps that cited no production file:line, carried no store state, and offered no annotation when an expected subset entry was present but out of order. With 0a/0b/0c/0f landed, the diagnostic floor is raised for every downstream test.
+- **Phase A is now the critical path.** The M03 real-world scenario (click into a TugTextarea's `sm` input to focus it, click TugInput's title bar, click TugTextarea's title bar, expect caret back in `sm` at saved offset) fails in the running app but the synthesized-event M03 test passes — a classic fidelity-gap false green. Synthesized PointerEvent/MouseEvent dispatch (isTrusted=false) does not trigger WebKit's hardware-event default focus-change on `mousedown`, and `app.focusElement(selector)` uses `.focus()` directly, which is not a path real users exercise. Until we can post trusted events from the harness, tests of user-gesture-to-focus behavior give false greens and must not be trusted.
+- Phase A alone unlocks M04/M05/M20/M21 coverage; Phase B alone unlocks M02/M06-EM/M07-EM/M09; Phase C is the coverage sweep. But the *first* deliverable of Phase A is rewriting M03 with trusted clicks (new Step 3b) — that's the acceptance test that validates the pipeline before we build more tests on top of it.
 - Hardware events piggyback on the existing RPC transport. No new socket, no new boot choreography. `CGEventPost` is one more Swift-side handler on the bridge, `__tug.nativeClick` / `nativeKey` / `nativeType` is one more method on the `__tug` surface.
 - EM-card support reuses the harness subprocess-lifecycle contract. Tugcode runs either as a real subprocess (full fidelity) or in a deterministic stub mode (test-stable canned transcripts). Both modes exercise the same stream-json IPC surface end-to-end.
 - M-series expansion is table-driven. A single authoritative scenario table (Spec [#s04-mseries-scenarios]) tracks every scenario, its required infrastructure (synthesized / CGEventPost / EM-card), and its target fix. Steps 10–16 walk the table row by row.
@@ -42,6 +62,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 - Every in-app test failure emits a diagnostic block that (a) names the production `file.tsx:line:col` of each trace event, (b) shows `{active, fr, focused}` store state at the moment each event was recorded, and (c) annotates any subset-match violation with a one-line explanation (e.g., "Order violation: entry #1 appears at trace[1], BEFORE entry #0 match at trace[4]"). (Verified: M01/M03/M16 reconciliation PRs cite production line numbers quoted directly from the test output.)
 - `__tug.nativeClick(x, y)` dispatches a macOS `CGEventPost` mouse-down / mouse-up that reaches WebKit as `isTrusted: true`; the in-app test that asserts trusted-event arrival passes. (Verified: `tests/in-app/_smoke-native.test.ts` exits 0.)
+- `tests/in-app/m03-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click (no `focusElement`, no `app.click`); the rewritten test passes end-to-end against a real DEBUG Tug.app. Manual reproduction of the same gesture flow in the running app matches the test's outcome. (Verified: `grep -c 'focusElement\|app\.click(' tests/in-app/m03-pane-activation.test.ts` returns 0; `just test-in-app` exits 0; manual repro matches.)
 - A tugcode subprocess launches under harness control, performs one stream-json turn against a canned request, and the turn is observable via `__tug.getEmCardState(cardId)`. (Verified: `tests/in-app/_smoke-em.test.ts` exits 0.)
 - Every M-series scenario in the table with an infrastructure column of "synthesized", "CGEventPost", or "EM-card" has a green in-app test. (Verified: row-by-row test files exist under `tests/in-app/` and `bun test tests/in-app/` exits 0.)
 - Each new M-series test fails predictably when its target fix is reverted by hand. (Verified: per-test drift-prevention exercise documented in Step 17.)
@@ -780,15 +801,21 @@ See [#risks] above.
 
 ### Execution Steps {#execution-steps}
 
-Twenty-three flat steps across four phases (0: diagnostic observability, A: hardware events, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
+Twenty-four flat steps across four phases (0: diagnostic observability, A: hardware events including M03 trusted-click rewrite, B: EM-cards, C: M-series coverage) with one integration checkpoint per phase. Phase 0 steps are lettered (0a–0f) to preserve anchor stability of existing Steps 1–17; Step 3b is lettered for the same reason. Every step has explicit commit boundary and checkpoint. **Commit after all checkpoints pass.**
 
-Phase 0 is a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Each of those three tests fails today with an actionable signal about *what* went wrong (trace-ordering mismatch in m01/m03; wrong focus-handoff sibling in m16), but not enough context to answer *why* without reading production source. Steps 0a/0b/0c close that gap; 0d/0e/0f are polish that makes the failure output readable in a single pass. After Phase 0, the reconciliation work becomes: run `just test-in-app`, read the failure output, open the named production file, make a decision.
+Phase 0 was a prerequisite for reconciling the M01/M03/M16 failures that the base-plan harness surfaced. Four of its six steps are landed (0a, 0b, 0c, 0f); two remain (0d, 0e). 0d and 0e are fast polish that makes failure output readable in a single pass. Once those land, Phase A is the critical path: the synthesized-click fidelity gap ([D09]) means M03-class tests currently give false greens against real-world behavior. Step 1→2→3 builds the CGEventPost-backed trusted-click primitive; Step 3b rewrites M03 with it as the acceptance test.
+
+**Critical path right now:** 0d → 0e → 1 → 2 → 3 → 3b. After 3b, we have a faithful M03 regression test we can run automatically end-to-end; before 3b, the test harness's verdict on user-gesture-to-focus scenarios cannot be trusted.
 
 #### Phase 0: Diagnostic Observability {#phase-0-diagnostic}
 
 Six additive upgrades to the deck-trace recording surface and the harness matcher output. No production behavior changes, no new `__tug` RPC verbs, no new DEBUG guards. Every improvement propagates to every future in-app test — Phase A's CGEventPost scenarios, Phase B's EM-card scenarios, Phase C's ~20-scenario sweep — so diagnostic fidelity lifts compound rather than accumulating tech debt.
 
+**Landed:** 0a (commit `3dbb6bb1`), 0b (commit `f89ce2b8`), 0c (commit `bd2e8bd8`), 0f (commit `4a83846f`). **Remaining:** 0d, 0e.
+
 #### Step 0a: Source location on every deck-trace event {#step-0a}
+
+**Status:** LANDED (commit `3dbb6bb1`, 2026-04-24).
 
 **Commit:** `feat(deck-trace): stamp caller file:line on every recorded event`
 
@@ -820,6 +847,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 0b: Smarter matcher failure output — annotate out-of-order matches {#step-0b}
 
+**Status:** LANDED (commit `f89ce2b8`, 2026-04-24).
+
 **Depends on:** #step-0a (strongly recommended — annotations read much better alongside `loc`).
 
 **Commit:** `feat(harness): annotate out-of-order matches in toContainOrderedSubset`
@@ -849,6 +878,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 ---
 
 #### Step 0c: Store-state snapshot inlined on every event {#step-0c}
+
+**Status:** LANDED (commit `bd2e8bd8`, 2026-04-24). Shipped shape is `DeckTraceStoreSnapshot { activePaneId, activeCardId, hasFocus }` — the plan's original `{active, fr, focused}` was a pre-inspection guess; actual tugdeck state has no separate "first responder" or "focusedCardId" bit in live state. `isFocusDestination(cardId)` can be reconstructed from the shipped snapshot (true iff `hasFocus && activeCardId === cardId`).
 
 **Depends on:** #step-0a (both add optional fields via the same matcher-ignore pattern).
 
@@ -931,6 +962,8 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 ---
 
 #### Step 0f: Per-test trace artifact file on failure {#step-0f}
+
+**Status:** LANDED (commit `4a83846f`, 2026-04-24). Shipped as `App.dumpTraceToFile(path)` in `tests/in-app/_harness/index.ts`. Wired into M16's catch block (`tests/in-app/m16-tab-close-handoff.test.ts`). Path resolves relative to the test cwd (`tests/in-app/`), so callers pass `logs/<test>-trace.json`. The existing `tests/in-app/.gitignore` covers the `logs/` directory, so trace files don't leak into commits.
 
 **Depends on:** #step-0a, #step-0c (trace file is most useful when `loc` and `store` are present).
 
@@ -1050,6 +1083,82 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 - [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0.
 - [ ] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
 - [ ] `grep 'window.__tug.nativeClick' tugdeck/src/` shows only DEV-gated uses.
+
+---
+
+#### Step 3b: Rewrite M03 with trusted click events (Phase A acceptance test) {#step-3b}
+
+**Depends on:** #step-3 (requires the `nativeClickAtElement` TS surface, accessibility preflight, and a green `_smoke-native.test.ts`).
+
+**Commit:** `test(in-app): rewrite M03 with trusted click events`
+
+**References:** [D09] (fidelity limits); user-reported real-world discrepancy (2026-04-24) where the current M03 test passes but the user's real-app gesture flow fails — "click into TugTextarea's `sm` input, click TugInput title, click TugTextarea title → caret not restored in `sm`."
+
+**Why this step exists:**
+
+The existing `tests/in-app/m03-pane-activation.test.ts` passes but does NOT reproduce real-user behavior. It uses `app.focusElement(inputSelectorFor("A1"))` to set initial focus via a direct `.focus()` call, and `app.click(paneTitleSelectorFor(…))` which dispatches synthesized PointerEvent/MouseEvent (isTrusted=false). Neither path triggers the browser's hardware-event default focus-change on `mousedown`. Real users never call `.focus()` programmatically; they click. Synthesized clicks skip the browser's default focus handling. This fidelity gap is documented in the base plan as [D09].
+
+A human has demonstrated that M03's real-app scenario fails despite the test passing. That makes every downstream synthesized-click test suspect: any green could be a false green. Until M03 is rewritten with trusted clicks and passes against the real-app behavior, Phase C's broader M-series coverage cannot be trusted either.
+
+This step does two things:
+
+1. **Rewrite M03** to use `nativeClickAtElement` for every user-gesture click, matching what a real user does.
+2. **If the rewritten test fails, it has surfaced the real production bug the synthesized test was masking.** Iterate on a production fix, re-run, re-regress-check. The step doesn't close until the rewritten test is green AND the same gesture flow works interactively in the real app.
+
+**Artifacts:**
+
+- `tests/in-app/m03-pane-activation.test.ts` — rewritten:
+  - `app.focusElement(inputSelectorFor("A1"))` → `await app.nativeClickAtElement(inputSelectorFor("A1"))`. Real click on the input; the browser's mousedown default focuses it.
+  - `app.click(paneTitleSelectorFor("p2"))` → `await app.nativeClickAtElement(paneTitleSelectorFor("p2"))`. Real click on non-focusable chrome; mousedown default fires (since title-bar div has no `data-tug-focus="refuse"`) but browsers don't focus non-focusable divs, so `document.activeElement` blurs to `body`.
+  - `app.click(paneTitleSelectorFor("p1"))` → `await app.nativeClickAtElement(paneTitleSelectorFor("p1"))`. Same pattern for the return trip.
+  - Keep `app.type(inputSelectorFor("A1"), "hello")` — synthesized input events are faithful for typing (the browser's default keystroke handling just fires `input`/`change` events, which `type`'s synthesis already does; typing into an already-focused element does not depend on isTrusted).
+  - Keep `expectFocusedCard`, `expectCaret`, `getDeckTrace`, and all trace assertions — these all read real DOM and store state.
+  - Keep the trace-assertion shapes landed in the Phase 0 reconciliation (destination-flip before fr-flip, save-callback on A1, focus-call via `a3-default-focus` on A2).
+
+- (Possibly) production files in `tugdeck/src/` — IF the rewritten test fails, the production fix lands in this same step. Likely suspects named in Tasks below.
+
+- `roadmap/m-series-reconciliation.md` — update with any production fix rationale discovered during this step.
+
+**Tasks:**
+
+- [ ] Apply the rewrite to `tests/in-app/m03-pane-activation.test.ts` per Artifacts above.
+- [ ] Verify the rewrite is total:
+  ```
+  grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts
+  ```
+  Must return `0`. (Note the `\(` — we want to catch `app.click(` call sites, not `nativeClickAtElement` or comments.)
+- [ ] Run `just test-in-app` and capture the log to `/tmp/m03-trusted.log`.
+- [ ] **If M03 passes:** Phase A pipeline confirmed faithful for this scenario. Add a one-line comment at the top of `m03-pane-activation.test.ts` citing Step 3b's commit and the Phase A dependency. Proceed to checkpoint.
+- [ ] **If M03 fails:**
+  - [ ] Read the failure's trace artifact (`tests/in-app/logs/m03-pane-activation-trace.json` — the test's catch block should dump it, same pattern as M16 did in Step 0f; if it doesn't yet, add a `dumpTraceToFile` call in the catch block as part of this rewrite).
+  - [ ] Diagnose via the trace. Likely questions (each answerable from the trace's `loc`, `store`, ordering, and event shapes):
+    - Did `save-callback cardId=A1` fire on the first click? If no, `pane-focus-controller`'s capture-phase pointerdown didn't reach `invokeSaveCallback` — check whether the capture-phase listener actually ran (look at event ordering vs. mousedown default) and whether `getFirstResponderCardId()` returned A1 at capture time.
+    - If save fired, did the captured bag actually contain `focus: { kind: "form-control", persistKey: … }` for the `sm` input? `captureFocus(cardRoot)` reads `document.activeElement` — was it still inside A1 at pointerdown-capture time? Real mousedown default fires AFTER pointerdown, so this should be yes, but a real hardware event may order differently from our expectation on WebKit. Dump the bag contents if needed (add a temporary `console.log(store.getCardState("A1"))` after the first click; remove before commit).
+    - On the return trip, did A3 for A1 run `applyFocusSnapshot`? Look for `focus-call {site: "a3-dom-authority", cardId: "A1"}` in the trace. If yes but the caret isn't restored, something after A3 is re-blurring the element.
+    - Or does A3 run with `earlyReturn: "gate-refused"` / `"no-bag"` / `"not-destination"`? Each of those points at a distinct production gap.
+  - [ ] Land the production fix in the same commit series. Each production-side commit should be separately reviewable (e.g., `fix(deck-manager): <specific bug>`); the test rewrite commits land after the fix is in.
+  - [ ] Re-run `just test-in-app`. Must exit 0.
+  - [ ] Run `bun test` in `tugdeck/`. Must exit 0 (catches regressions from any production fix in the shared codebase).
+- [ ] Manual spot-check in the running app: reproduce the exact user flow (click into `sm` textarea so caret blinks there, click the OTHER pane's title bar, click the FIRST pane's title bar). Caret must land back in `sm` at the saved offset. This manual check is the Step's real-world acceptance — if the automated test passes but manual fails (or vice versa), there's still a harness-vs-reality gap to close.
+- [ ] Update `roadmap/m-series-reconciliation.md` with any new findings (cite the Step 3b commit hashes).
+
+**Tests:**
+
+- [ ] `just test-in-app` exits 0 with the rewritten M03.
+- [ ] `bun test` in `tugdeck/` exits 0.
+- [ ] Manual interactive repro in real Tug.app (DEBUG build) matches the test outcome.
+- [ ] `grep -cE "focusElement|app\.click\(" tests/in-app/m03-pane-activation.test.ts` returns 0.
+
+**Checkpoint:**
+
+- [ ] M03 uses `nativeClickAtElement` exclusively for user-gesture clicks.
+- [ ] `just test-in-app` green.
+- [ ] Real-app manual repro matches test outcome.
+- [ ] If production fix was required, reconciliation doc updated and the fix has its own commit separate from the test rewrite.
+
+**Follow-on (out of scope for Step 3b, noted here so they don't get lost):**
+
+- M01 and M16 currently also use `focusElement` and `app.click` for user-gesture clicks. They report green in the real app today, but they have the same fidelity gap. After 3b validates the pattern, plan a follow-on to rewrite M01 and M16 similarly. Tracked in Roadmap / Follow-ons below.
 
 ---
 
@@ -1470,10 +1579,13 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Every `DeckTraceEvent` carries a `loc` (caller file:line) and `store` (`{active, fr, focused}`) snapshot at record time; matchers ignore both fields in partial matches.
-- [ ] `toContainOrderedSubset` failure messages annotate out-of-order matches explicitly ("Order violation: …") and print a one-line-per-event summary above the full JSON dump.
-- [ ] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error, and write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis.
+- [x] Every `DeckTraceEvent` carries a `loc` (caller file:line) and `store` (`{activePaneId, activeCardId, hasFocus}`) snapshot at record time; matchers ignore both fields in partial matches. (Landed 0a + 0c.)
+- [x] `toContainOrderedSubset` failure messages annotate out-of-order matches explicitly ("Order violation: …"). (Landed 0b.)
+- [x] M-series test failures write a full `tests/in-app/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into M16; 0d/0e pending for the log-tail-up-front and one-line-summary portions.)
+- [ ] M-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error. (0d.)
+- [ ] Matcher failure messages carry a one-line-per-event summary above the full JSON dump. (0e.)
 - [ ] `tests/in-app/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
+- [ ] `tests/in-app/m03-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click, passes `just test-in-app`, and matches interactive real-app behavior. (3b.)
 - [ ] `tests/in-app/_smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.
 - [ ] `tests/in-app/_smoke-em-live.test.ts` passes on opt-in (`TUGCODE_LIVE=1`).
 - [ ] `__tug.version === "1.1.0"`; harness handshake asserts.
@@ -1493,6 +1605,7 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] Rewrite M01 and M16 with trusted clicks, following the same pattern as Step 3b's M03 rewrite. Both tests pass today in both harness and real app, but they carry the same `focusElement` + synthesized-click fidelity gap as M03 did. Without the rewrite, their greens are not as strong as they appear. Schedule after Step 3b lands and confirms the trusted-click pattern works.
 - [ ] CI integration (tracked in `roadmap/tugplan-harness-ci.md`, authored when CI becomes urgent per [Q01]).
 - [ ] Multi-window test support (if Tug.app gains multi-window).
 - [ ] `__tug.version` bump to `2.0.0` when a breaking change lands; this plan's `1.1.0` bump is additive only.
@@ -1507,6 +1620,7 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 | Log-tail-first on failure | Force an M01 failure; Tug.app log tail banner appears before the bun assertion error |
 | Trace artifact | Force an M01 failure; `tests/in-app/logs/m01-tab-switch-fc-trace.json` exists and `jq '.' <file>` succeeds |
 | Native-event smoke | `bun test tests/in-app/_smoke-native.test.ts` exits 0 |
+| M03 trusted-click rewrite | `grep -cE "focusElement\|app\.click\(" tests/in-app/m03-pane-activation.test.ts` = 0; `just test-in-app` exits 0; manual real-app repro matches |
 | EM-card smoke | `bun test tests/in-app/_smoke-em.test.ts` exits 0 |
 | Live EM-card smoke | `TUGCODE_LIVE=1 bun test tests/in-app/_smoke-em-live.test.ts` exits 0 |
 | M-series sweep | `bun test tests/in-app/m*.test.ts` exits 0, all rows in [#s04-mseries-scenarios] marked present have files |
