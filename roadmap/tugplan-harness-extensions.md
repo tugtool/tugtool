@@ -25,9 +25,9 @@
 | 0d — log tail up front on failure | LANDED | `4e445993` |
 | 0e — one-line trace summary above JSON | LANDED | _pending commit_ |
 | 0f — per-test trace artifact file | LANDED | `4a83846f` |
-| 1 — CGEventPost variant spike | pending | — |
-| 2 — Swift CGEventPost handler | pending | — |
-| 3 — `__tug` native-event surface + preflight + smoke | pending | — |
+| 1 — CGEventPost spike (variant + escape + coord math + keyboard) | pending (next) | — |
+| 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | pending | — |
+| 3 — `__tug` surface: native gestures + introspection + preflight + smoke | pending | — |
 | 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | pending | — |
 | 4–17 | pending | — |
 
@@ -242,17 +242,17 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 - New RPC verbs are DEBUG-guarded at the same file-level position as `evalJS`.
 - Harness client gains typed wrappers mirroring [D09] of the base plan.
 
-#### [D02] `CGEventPostToPid` targeting the WebContent helper process is the default variant (DECIDED) {#d02-cgevent-variant}
+#### [D02] `CGEventPostToPid` targeting the WebContent helper process is the default variant (TENTATIVE — confirmed by Step 1) {#d02-cgevent-variant}
 
-**Decision:** Post events to the pid of the WKWebView's WebContent helper process using `CGEventPostToPid`. Fall back to `CGEventPost(.cghidEventTap, ...)` only if the spike in Step 1 shows `isTrusted: true` is not preserved under pid-targeted delivery. Document whichever variant wins as the canonical mechanism. The variant confirmation happens in Step 1; this decision is treated as tentative-pending-spike-confirmation at authoring time.
+**Decision:** Post events to the pid of the WKWebView's WebContent helper process using `CGEventPostToPid`. Fall back to `CGEventPost(.cghidEventTap, ...)` only if the spike in Step 1 shows `isTrusted: true` is not preserved under pid-targeted delivery. Document whichever variant wins as the canonical mechanism. The variant confirmation happens in Step 1 (experiment 1 of four); this decision is treated as tentative-pending-spike-confirmation at authoring time.
 
 **Rationale:**
-- PID-targeted delivery does not leak events into other apps (closes [R02]).
-- WKWebView's security model expects events on its own pid; whether `isTrusted: true` is preserved is the variable the spike measures.
+- PID-targeted delivery does not leak events into other apps (closes [R02], verified by Step 1 experiment 2).
+- WKWebView's security model expects events on its own pid; whether `isTrusted: true` is preserved is the variable experiment 1 measures.
 - Either way, the decision becomes load-bearing for the rest of Phase A.
 
 **Implications:**
-- Step 1 opens with a two-variant spike and records the result as the source-of-truth for [D02].
+- Step 1 runs four spike experiments: variant pick (fills this decision), event-escape check, DOMRect→screen-coord math, and Cmd+A keyboard accelerator sanity. The widened scope is a 2026-04-24 call: Step 2's Swift handler set hinges on all four unknowns being de-risked up front.
 - Documentation (harness README) explains the variant choice and why.
 
 #### [D03] Accessibility-permission check is a first-RPC preflight (DECIDED) {#d03-accessibility-preflight}
@@ -394,30 +394,99 @@ Phase A adds one Swift-side primitive and five TypeScript surface methods. Zero 
 
 ##### A.1 Coordinate mapping {#coord-mapping}
 
-Tests express coordinates in WebView document space (e.g., "click element at viewport (120, 240)"). Swift handler maps: document → WebView bounds → content-view → window → screen. Mapping is unit-tested against known fixtures. Events whose screen-mapped coordinate falls outside the current WebView bounds are rejected with a `CoordinateOutOfBoundsError`.
+Tests express coordinates in WebView document space (e.g., "click element at viewport (120, 240)"). Swift handler converts document-space → WebKit viewport → WKWebView view-local → window-local (AppKit) → screen-global (CG). Mapping is unit-tested against known fixtures in `CoordMapping.swift`. Events whose screen-mapped coordinate falls outside the current WKWebView bounds are rejected with a `CoordinateOutOfBoundsError`.
+
+**Y-axis flip (critical):** AppKit uses a Y-up coordinate system with origin at the window's bottom-left; CGEvent uses Y-down with origin at the main display's top-left. The final step of the mapping is:
+
+```
+let screenHeight = NSScreen.main?.frame.height ?? 0
+let cgPoint = CGPoint(x: appKitPoint.x, y: screenHeight - appKitPoint.y)
+```
+
+Multi-display note: `NSScreen.main` is the screen containing the key window, not the topmost by position. In a multi-display setup where Tug.app's window is on a non-primary display, the conversion still uses `NSScreen.main` (the window's owning screen) — verified by the Step 1 spike when the test machine has any secondary display.
+
+Full mapping in one function (signature established by Step 1, imported unchanged by Step 2):
+
+```swift
+// CoordMapping.swift (lands in Step 1, stays in tree for Step 2 and beyond)
+func viewportToScreen(_ viewportPoint: CGPoint, in webView: WKWebView) -> CGPoint?
+```
+
+Returns `nil` when the viewport point is outside the WKWebView's visible frame; callers convert `nil` into `CoordinateOutOfBoundsError` at the RPC boundary.
 
 Practical API shape:
 
 ```ts
 // Test-side (high-level)
-await app.nativeClickAtSelector('[data-testid="close-button"]');
-await app.nativeClick({ x: 120, y: 240 });   // in document coords
+await app.nativeClickAtElement('[data-testid="close-button"]');
+await app.nativeClick({ x: 120, y: 240 });   // document coords; harness resolves to screen
 
 // Surface (low-level, wraps RPC)
-window.__tug.nativeClickAtElement(selector): Promise<void>;
-window.__tug.nativeClick(point: { x: number; y: number }): Promise<void>;
+window.__tug.nativeClickAtElement(selector, opts?): Promise<void>;
+window.__tug.nativeClick(point, opts?): Promise<void>;
 ```
 
-`nativeClickAtElement` computes the element's center via `getBoundingClientRect()` inside `evalJS`, then forwards to `nativeClick`.
+`nativeClickAtElement` computes the element's center via `getBoundingClientRect()` inside `evalJS`, then forwards the viewport point to the Swift bridge, which applies `viewportToScreen` before posting the CGEvent.
 
 ##### A.2 Key + text input {#native-key-type}
 
 ```ts
-window.__tug.nativeKey(key: string, opts?: { modifiers?: ("cmd" | "shift" | "alt" | "ctrl")[] }): Promise<void>;
+window.__tug.nativeKey(key: string, mods?: Array<"cmd" | "shift" | "alt" | "ctrl">): Promise<void>;
 window.__tug.nativeType(text: string): Promise<void>;
+window.__tug.holdModifier(mods: Array<"cmd" | "shift" | "alt" | "ctrl">, thunk: () => Promise<void>): Promise<void>;
 ```
 
-`nativeKey` posts a `CGKeyCode` down-then-up event. `nativeType` iterates `nativeKey` per character using the US-ASCII keycode table (IME path is out of envelope — see [M12] below).
+`nativeKey` posts a `CGKeyCode` down-then-up event with the full modifier flag bitmap so WebKit's real accelerator-key path fires (vs. the JS `select()` API, which selection introspection cannot distinguish from a real Cmd+A — this is why Step 1 experiment 4 exists).
+
+`nativeType` iterates `nativeKey` per character using the US-ASCII keycode table (non-ASCII input is rejected with `NativeTypeAsciiOnlyError`; IME / unicode text is out of envelope — see [M12] below).
+
+`holdModifier` presses the modifier flags, runs the inner thunk, and releases the flags in reverse order. Inner gestures see the flags on every event they post. Flag release uses a `defer` block Swift-side so inner failures don't leave modifiers stuck between tests.
+
+##### A.3 Pointer-gesture verbs — full set {#native-pointer-verbs}
+
+Step 2 ships the following Swift verbs; Step 3 ships the matching `__tug` TS surface methods. All verbs accept screen-coord points or selectors (selector variants resolve via `getElementBounds` + `CoordMapping.viewportToScreen`).
+
+```ts
+// Single click — primary or named button
+nativeClick(point, {button?: "left" | "right"; clickCount?: number}): Promise<void>;
+nativeClickAtElement(selector, {button?, clickCount?, dx?, dy?}): Promise<void>;
+
+// Double click — pinned interval (see NATIVE_DOUBLE_CLICK_INTERVAL_MS in Step 2)
+nativeDoubleClick(point): Promise<void>;
+nativeDoubleClickAtElement(selector): Promise<void>;
+
+// Right click — context-menu path coverage
+nativeRightClick(point): Promise<void>;
+nativeRightClickAtElement(selector): Promise<void>;
+
+// Drag — endpoint-only (no interpolation)
+nativeDrag(from, to, {mouseDownDelayMs?, mouseUpDelayMs?}): Promise<void>;
+nativeDragElement(fromSelector, to, opts?): Promise<void>;  // `to` is `{x,y}` or `{selector}`
+
+// Primitives — for niche scenarios only; tests should prefer click/drag convenience verbs
+nativeMouseDown(point, {button?}): Promise<void>;
+nativeMouseUp(point, {button?}): Promise<void>;
+```
+
+Double-click interval is pinned at `NATIVE_DOUBLE_CLICK_INTERVAL_MS = 80` (deliberately shorter than macOS default so tests don't risk being read as slow single-clicks by WebKit). Drag is endpoint-only because the Phase C M-series scenarios only need start→end semantics; tests that need a painted trail can decompose the motion into endpoint-by-endpoint sub-drags.
+
+##### A.4 Introspection primitives {#native-introspection}
+
+JS-side reads (no new Swift required beyond `getElementScreenBounds`). All selector-keyed.
+
+```ts
+getElementText(selector): Promise<string>;                   // textContent for non-inputs, value for inputs
+getElementValue(selector): Promise<string>;                  // explicit .value
+getElementAttribute(selector, name): Promise<string | null>;
+getElementBounds(selector): Promise<{x, y, width, height}>;  // viewport-relative
+getElementScreenBounds(selector): Promise<{x, y, width, height}>; // screen-global CG coords (uses CoordMapping)
+getElementState(selector): Promise<{disabled, readOnly, checked, visible, tagName, isFocused}>;
+getActiveElement(): Promise<{tagName, id, cardId, persistKey, selector} | null>;
+getSelection(cardId?): Promise<CaretState | null>;           // superset of getCaretState; covers contentEditable ranges
+getComputedStyle(selector, property): Promise<string>;
+```
+
+`getCaretState(cardId)` is kept as a narrow alias that throws when the active element inside the card is not a form control — tests that want the stricter contract can still assert on it.
 
 ##### A.3 App-lifecycle simulation {#app-lifecycle-sim}
 
@@ -670,10 +739,15 @@ Each fixture has a `.sha256` sidecar. `bun run scripts/reapprove-transcript.ts <
 ### List L03: New files per phase {#l03-new-files}
 
 Phase A:
-- `tugapp/<phase-a-files>` — Swift `CGEventPost` + NSApp handlers (gated `#if DEBUG`; exact file list in `tugplan-in-app-bridge.md`).
-- `tugdeck/src/test-surface.ts` — gains `nativeClick`, `nativeKey`, etc. methods.
-- `tests/in-app/_smoke-native.test.ts` — verifies `isTrusted: true` delivery.
-- `tests/in-app/_harness/errors.ts` — gains new error classes.
+- `tugapp/Sources/TestHarness/CoordMapping.swift` — document→screen coord-mapping helper with Y-flip; lands in Step 1, reused by every native-gesture handler.
+- `tugapp/Sources/TestHarness/CGEventSpike.swift` — THROWAWAY spike file lands in Step 1, deleted at step close.
+- `tugapp/Sources/TestHarness/NativeEventHandlers.swift` — Swift gesture + keyboard handlers (`nativeClick`/`nativeDoubleClick`/`nativeRightClick`/`nativeDrag`/`nativeMouseDown`/`nativeMouseUp`/`nativeKey`/`nativeType`/`holdModifier`). Gated `#if DEBUG`.
+- `tugapp/Sources/TestHarness/VirtualKeyMap.swift` — ASCII-name → `CGKeyCode` mapping for US-English keyboards.
+- `tugapp/Sources/TestHarness/TestHarnessConnection.swift` — dispatch table grows with every new native verb.
+- `tugdeck/src/test-surface.ts` — gains native gestures (`nativeClick[AtElement]`, `nativeDoubleClick[AtElement]`, `nativeRightClick[AtElement]`, `nativeDrag[Element]`, `nativeMouseDown/Up`), keyboard (`nativeKey`, `nativeType`, `holdModifier`), and introspection (`getElementText`, `getElementValue`, `getElementAttribute`, `getElementBounds`, `getElementScreenBounds`, `getElementState`, `getActiveElement`, `getSelection`, `getComputedStyle`).
+- `tests/in-app/_spike-cgevent.test.ts` — THROWAWAY spike test lands in Step 1, deleted at step close.
+- `tests/in-app/_smoke-native.test.ts` — scaffolded empty in Step 2, filled in Step 3 with five tests (single-click trust, type, Cmd+A, drag-endpoint selection, double-click word-select).
+- `tests/in-app/_harness/errors.ts` — gains `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`, `NativeTypeAsciiOnlyError`.
 
 Phase B:
 - `tugapp/<phase-b-files>` — tugcode subprocess spawn + teardown (gated `#if DEBUG`).
@@ -1000,95 +1074,192 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 ---
 
-#### Step 1: Spike CGEventPost variants; record [D02] result {#step-1}
+#### Step 1: Spike CGEventPost — variant, escape, coord math, keyboard {#step-1}
 
-**Commit:** `spike(harness-native): select CGEventPost variant for trusted-event delivery`
+**Commit:** `spike(harness-native): validate CGEventPost variant, coord mapping, and keyboard pipeline`
 
 **References:** [D02] cgevent variant, [Q02] variant question, [R02] event escape, (#phase-a-hardware, #coord-mapping)
 
+**Why this step widened:** The original Step 1 was "pick a variant and write the decision line." Before Step 2 lands Swift verbs for the full native surface (click, double-click, right-click, drag, type, key, holdModifier), the spike needs to de-risk every hard unknown that Step 2's design hinges on — otherwise Step 2 becomes its own spike and we pay for the reshaping in re-writes. Four experiments below. Each has a one-paragraph writeup in the plan when Step 1 closes.
+
+**Experiments (the real deliverable):**
+
+1. **Variant selection — `CGEventPost(.cghidEventTap, ...)` vs `CGEventPostToPid(event, pid)`.** Post a single primary-click event at a known screen coordinate inside the WKWebView. A one-shot JS `mousedown` listener records `event.isTrusted` into `window.__spike_isTrusted`. Run both variants. Outcomes to record: does each variant deliver `isTrusted: true` to content-world JS? Latency? Ordering vs. a simultaneously-synthesized JS mousemove? Answers pin [D02].
+2. **Event escape ([R02]).** For the winning variant, verify events stay inside Tug.app's process. Test: click at a screen coordinate that sits over a visible sibling app window (e.g., Finder). The sibling must NOT receive the click. `CGEventPostToPid` should close this by construction; `CGEventPost(.cghidEventTap, ...)` almost certainly leaks. If the winning variant leaks, Step 1 does NOT close — we fall back to the other and re-measure `isTrusted`.
+3. **DOMRect → screen-coord round-trip.** Resolve `[data-card-id="c1"]` via `evalJS` → `getBoundingClientRect()` → WKWebView view-local → window-local (AppKit Y-up, origin bottom-left) → screen-local CG coords (Y-down, origin top-left of main display). The Y-axis flip is the load-bearing bit. Post a click at the computed screen coord and verify (a) the element receives the event, (b) `clientX`/`clientY` on the received event matches the DOMRect center (within 1px rounding). This produces the coord-mapping helper Step 2 needs as a ready-to-commit unit — spike artifact that survives.
+4. **Keyboard-accelerator sanity (Cmd+A).** Focus an `<input>` with seeded text; post a Cmd+A keydown+keyup via CGEvent with `.maskCommand` flag. Read the input's `selectionStart`/`selectionEnd` afterwards — they must span the full value (start=0, end=value.length). This proves the keyboard path reaches WebKit's real accelerator-key handler (vs. the `select()` JS API, which selection-state introspection cannot distinguish from a real Cmd+A). If it fails, we learn *before* Step 2 that the keyboard pipeline needs a different shape — e.g., `keyboardSetUnicodeString` for key names that don't have a stable virtual-keycode mapping.
+
 **Artifacts:**
-- `tugapp/<spike-file>` — throwaway DEBUG-only spike invoking both `CGEventPost(.cghidEventTap, ...)` and `CGEventPostToPid(event, pid)` against a minimal click; code deleted after the decision is recorded.
-- Notes captured in this plan as [D02]'s rationale (updated in place).
+
+- `tugapp/Sources/TestHarness/CGEventSpike.swift` — `#if DEBUG` spike file with one public entry point per experiment (`runVariantSpike()`, `runEscapeSpike()`, `runCoordSpike()`, `runKeyboardSpike()`), invoked from a temporary bridge verb `spikeCGEvent(experiment: String)`. Spike file *and* bridge verb deleted in the same commit that closes Step 1; nothing ships to production.
+- `tugapp/Sources/TestHarness/CoordMapping.swift` — the coord-mapping helper proved out by experiment 3, PRESERVED in tree (Step 2 uses it). Pure-function API: `fn viewportToScreen(_: CGPoint, in: WKWebView) -> CGPoint?` with bounds-check; `nil` when out of bounds. Unit-tested against a fixed-geometry fixture.
+- `tests/in-app/_spike-cgevent.test.ts` — throwaway TS test driving all four experiments via `__tug.spikeCGEvent(...)`; asserts observable outcomes (`isTrusted === true`, selection span, etc.). Also deleted in the closing commit.
+- Plan updates in place: [D02]'s Decision line fills in (variant name + rationale); [R02] gets a note if event escape surfaced; `#coord-mapping` subsection gets the Y-flip math written down for future reference.
 
 **Tasks:**
-- [ ] Build a minimal spike in `tugapp/` that posts a mouse-down at a fixed coordinate using both CGEventPost variants.
-- [ ] Measure `event.isTrusted` on the JS side via a one-shot listener.
-- [ ] Verify event delivery stays inside Tug.app window (no leak to sibling apps).
-- [ ] Record the winning variant in [D02]'s "Decision" line of this plan (update document in place).
-- [ ] Delete the spike code.
+
+- [ ] Land `CGEventSpike.swift` with four experiment functions, gated by `#if DEBUG`. Each logs structured NSLog output (`tughost.spike.<experiment>.result: …`) that the TS test reads via `tailLog`.
+- [ ] Land `CoordMapping.swift` with the screen-coord conversion. Swift unit test (XCTestCase — or hand-rolled if the target has no XCTest yet; note here when deciding) against a known fixture: window frame + WKWebView frame + a DOM point → expected screen point. At minimum: one inside-bounds case, one out-of-bounds case.
+- [ ] Add temporary bridge verb `spikeCGEvent(experiment: String)` that dispatches to the matching spike function. Include in the existing dispatch table (`TestHarnessConnection.swift`); same DEBUG guard.
+- [ ] Write `tests/in-app/_spike-cgevent.test.ts` running all four experiments; each experiment has its own `test()` block so partial failures are actionable.
+- [ ] Run the spike. Capture outputs:
+  - Variant result: `isTrusted` outcome for both variants + any latency/ordering oddities.
+  - Escape result: sibling-app observation for the winning variant.
+  - Coord math: delta between DOMRect center and received `clientX/Y`.
+  - Keyboard: `selectionStart/End` after Cmd+A.
+- [ ] Write up each result in the plan. Fill in [D02]'s Decision line with the winning variant + one-sentence rationale; add the coord-math recipe to `#coord-mapping`; add a note to [R02] if escape showed anything unexpected.
+- [ ] Delete `CGEventSpike.swift`, the `spikeCGEvent` dispatch case, and `_spike-cgevent.test.ts` in the step's closing commit. `CoordMapping.swift` stays.
 
 **Tests:**
-- [ ] Spike smoke: both variants run without crashing, `isTrusted` outcome is observed.
+
+- [ ] All four experiments exit cleanly (no Swift crash, no TS timeout) before deletion.
+- [ ] `isTrusted === true` for the chosen variant.
+- [ ] Sibling-app escape test observes no leak for the chosen variant.
+- [ ] Coord-mapping delta within ±1px of DOMRect center for a fixed-geometry reference case.
+- [ ] Cmd+A produces a full-range selection on the focused input.
+- [ ] `xcodebuild` DEBUG build passes with the spike code present AND with the spike code removed (i.e., the final closing commit builds).
+- [ ] `grep -rn "CGEventSpike\|spikeCGEvent" tugapp/` after the closing commit returns zero hits (spike fully removed).
+- [ ] `CoordMapping.swift` Swift unit test passes.
 
 **Checkpoint:**
-- [ ] [D02] updated with concrete variant choice.
-- [ ] Spike code removed from `tugapp/`.
-- [ ] `xcodebuild archive` of release config still clean (no symbols from spike remain).
+
+- [ ] [D02] Decision line filled with the concrete variant choice and rationale sourced from experiment 1.
+- [ ] [R02] annotated if event escape surfaced a non-obvious finding.
+- [ ] `#coord-mapping` subsection contains the Y-flip math with a worked numeric example.
+- [ ] `CoordMapping.swift` committed with Swift unit test; Step 2 can import it directly.
+- [ ] Spike code removed; `xcodebuild archive` of release config clean (no spike symbols).
 
 ---
 
-#### Step 2: Swift `CGEventPost` handler + coordinate mapping {#step-2}
+#### Step 2: Swift `CGEventPost` handlers — full gesture + keyboard surface {#step-2}
 
-**Depends on:** #step-1
+**Depends on:** #step-1 (reuses `CoordMapping.swift` from Step 1; variant choice from [D02]).
 
-**Commit:** `feat(tugapp-bridge): add CGEventPost hardware-event handler (DEBUG-only)`
+**Commit:** `feat(tugapp-bridge): add CGEventPost gesture and keyboard handlers (DEBUG-only)`
 
-**References:** [D01] same transport, [D02] variant choice, [R02] event escape, Spec [#s01-hardware-rpc], (#coord-mapping)
+**References:** [D01] same transport, [D02] variant choice, [R02] event escape, [D03] accessibility preflight, Spec [#s01-hardware-rpc], (#coord-mapping)
+
+**Scope note:** Step 2 grew (2026-04-24 re-scope) beyond the original click+key primitives to cover every gesture the Phase C M-series sweep will need — double-click, right-click, endpoint-only drag, and a `holdModifier` scope verb. ASCII-only typing is sufficient per user call (non-ASCII / IME is out of scope for Phase C). Drag interpolation is NOT provided; tests express multi-step interactions as sequences of endpoint clicks. A `nativeDelay` surface primitive is deliberately NOT exposed — test authors use `waitForCondition` instead; inter-event spacing inside gesture builders is internal.
 
 **Artifacts:**
-- `tugapp/<phase-a-bridge>` — Swift source file(s) per `tugplan-in-app-bridge.md` placement, adding `nativeClick` / `nativeMouseDown` / `nativeMouseUp` / `nativeKey` / `nativeType` handlers. All wrapped in `#if DEBUG ... #endif`.
-- Coordinate-mapping helper: document-space → screen-space via WebView bounds + window frame.
-- Bounds check: reject events with mapped coordinates outside the current WebView frame; throw `CoordinateOutOfBoundsError`.
+
+- `tugapp/Sources/TestHarness/NativeEventHandlers.swift` — Swift source file adding the full gesture + keyboard handler set. All code `#if DEBUG ... #endif`. Every handler uses `CoordMapping.swift` (landed in Step 1) for selector-to-screen coord conversion; caller provides screen coords directly for coord-based variants.
+  - **Pointer:**
+    - `nativeClick(point, button?, clickCount?)` — single primary (default) or right click at a screen coordinate. `clickCount` arg lets callers post a fast second click directly instead of `nativeDoubleClick`, if they want to pin the timing.
+    - `nativeDoubleClick(point, button?)` — convenience. Posts two click pairs with `CGEventSetIntegerValueField(event, .mouseEventClickState, ...)` set to 1 then 2, separated by the pinned interval (see below).
+    - `nativeRightClick(point)` — convenience for `button: .right`; `.rightMouseDown` + `.rightMouseUp`. Context-menu path coverage.
+    - `nativeDrag(from, to, {mouseDownDelayMs?, mouseUpDelayMs?})` — endpoint-only drag. Posts `.leftMouseDown` at `from`, waits `mouseDownDelayMs` (default 20ms), `.leftMouseDragged` at `to` (single event, no interpolation), waits `mouseUpDelayMs` (default 20ms), `.leftMouseUp` at `to`.
+    - `nativeMouseDown(point, button?)` / `nativeMouseUp(point, button?)` — individual halves, for niche scenarios (hover-while-modifier-held, modal dismiss patterns) where `holdModifier` + click is not enough.
+  - **Keyboard:**
+    - `nativeKey(key, modifiers?)` — single named-key press. `key` is a harness-stable name (`"a"`, `"Enter"`, `"ArrowLeft"`, `"Tab"`, `"Escape"`, `"Backspace"`, `"Delete"`, `"Home"`, `"End"`, `"PageUp"`, `"PageDown"`, digits, letters, shifted punctuation via `"!"`/`"@"`/etc.) mapped to a virtual keycode table. `modifiers` is a set of `"cmd"`, `"shift"`, `"alt"`, `"ctrl"`. Handler posts the correct flagsChanged events so the key event carries the full modifier bitmap — real accelerator paths fire.
+    - `nativeType(text)` — iterates the ASCII string, posts each character as a `nativeKey` with any shift modifier the character requires (e.g., capital letters, `!`, `@`, etc.). Non-ASCII input returns a `NativeTypeAsciiOnlyError` so callers notice early if a test author hands in unicode.
+    - `holdModifier(mods, innerVerbs[])` — scope verb. Presses the requested modifier flags (one `flagsChanged` event per press), executes the inner RPC verbs in order with the modifier bitmask included on every mouse/key event, releases the flags in reverse order. Inner verbs are a JSON array of `{verb: "nativeClick" | "nativeKey" | "nativeDrag" | ...; args: {...}}`. This is the mechanism for "click with Cmd held," "drag with Shift held," "Cmd+click then Shift+click" — scenarios that `nativeKey` + modifier-as-argument can't express cleanly.
+  - **Constants:**
+    - `NATIVE_DOUBLE_CLICK_INTERVAL_MS: Int = 80` — the pinned interval between first and second click pair, per the 2026-04-24 user call ("pin an explicit interval in the spike"). Documented inline as "deterministic test-side constant, deliberately shorter than macOS default to avoid double-clicks misreading as slow single-clicks."
+- `tugapp/Sources/TestHarness/VirtualKeyMap.swift` — ASCII-name → `CGKeyCode` + shift-required boolean table. Closed set (no dynamic layout detection); hand-maintained to cover US-English keyboards as the only supported input layout for tests. Non-`US` layouts are out of scope per the same user call.
+- `tugapp/Sources/TestHarness/TestHarnessConnection.swift` — dispatch table grows with the new verbs. All verbs gated on the version handshake (Step 3 bumps the version).
+- `tests/in-app/_harness/errors.ts` — adds `CoordinateOutOfBoundsError`, `NativeTypeAsciiOnlyError`, `AccessibilityPermissionMissingError` (landed but uncited here until Step 3).
 
 **Tasks:**
-- [ ] Implement `nativeClick(point, button?)`: mouse-down + mouse-up at mapped screen coordinate; wait for event-stream drain before responding.
-- [ ] Implement `nativeMouseDown` / `nativeMouseUp` as separate primitives (for drag scenarios).
-- [ ] Implement `nativeKey(key, modifiers?)` via CGKeyCode mapping; `nativeType(text)` iterates per character.
-- [ ] Implement coordinate-mapping helper; unit-test against a known fixture (hard-coded window+webview geometry).
-- [ ] Implement bounds-check; return `CoordinateOutOfBoundsError` via the RPC shape (`{ ok: false, error: { name: "CoordinateOutOfBoundsError", ... } }`).
-- [ ] Bump `__tug.version` to `1.1.0` in preparation (version advances are additive; no breaking changes).
-- [ ] Ensure every new Swift file is inside `#if DEBUG ... #endif`.
+
+- [ ] Land `VirtualKeyMap.swift` with the ASCII-name → `CGKeyCode` mapping for letters, digits, common punctuation (shifted + unshifted), and special keys (`Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, arrows, `Home`/`End`, `PageUp`/`PageDown`).
+- [ ] Land `NativeEventHandlers.swift`:
+  - [ ] `nativeClick(point:button:clickCount:)` — one event pair. Uses [D02]'s chosen CGEventPost variant. Respects bounds check from `CoordMapping.swift` — out-of-bounds returns `CoordinateOutOfBoundsError`.
+  - [ ] `nativeDoubleClick(point:button:)` — two pairs, `mouseEventClickState` 1 then 2, separated by `NATIVE_DOUBLE_CLICK_INTERVAL_MS`.
+  - [ ] `nativeRightClick(point:)` — right-button click.
+  - [ ] `nativeDrag(from:to:opts:)` — endpoint-only; `mouseDown` → one `mouseDragged` → `mouseUp`. Default inter-event delay 20ms each side.
+  - [ ] `nativeMouseDown(point:button:)` / `nativeMouseUp(point:button:)` — primitives for niche paths.
+  - [ ] `nativeKey(key:modifiers:)` — flagsChanged press, keyDown, keyUp, flagsChanged release. Uses `VirtualKeyMap`.
+  - [ ] `nativeType(text:)` — ASCII loop over `nativeKey`. Non-ASCII returns `NativeTypeAsciiOnlyError` before any events post.
+  - [ ] `holdModifier(mods:innerVerbs:)` — presses flags, runs inner verbs (dispatch-table recursion through the same connection), releases flags. Inner-verb failures release flags deterministically in a `defer` block so a test error doesn't leave modifiers stuck.
+- [ ] Wire every verb into the `TestHarnessConnection.swift` dispatch table. Each verb JSON-decodes its args, runs the handler, JSON-encodes the result (typically `{ ok: true }` or an error object).
+- [ ] Swift-side unit tests for `VirtualKeyMap` (every declared entry round-trips through a known-expected keycode).
+- [ ] Bump `__tug.version` to `1.1.0` in this step's Swift handshake source; TS handshake assertion updated in Step 3.
+- [ ] Ensure every new Swift file + every new dispatch-table case is gated on `#if DEBUG ... #endif`.
 
 **Tests:**
-- [ ] Swift-side unit test on coordinate-mapping helper (known fixture → known output).
-- [ ] `tests/in-app/_smoke-native.test.ts` — scaffold lands here (empty body); filled in Step 3.
+
+- [ ] `VirtualKeyMap` Swift unit test (all declared entries covered).
+- [ ] `CoordMapping` Swift unit test (from Step 1) still passes unmodified.
+- [ ] `tests/in-app/_smoke-native.test.ts` — scaffold lands here (empty body + skip); filled in Step 3 so Step 2 can commit independently.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` exits 0.
+
 - [ ] `xcodebuild` DEBUG build succeeds; release build binary size unchanged within noise (binary-size diff recorded).
-- [ ] `grep -rn "CGEventPost" tugapp/` shows only DEBUG-guarded references.
+- [ ] `grep -rn "CGEventPost\|CGEventPostToPid\|NativeEventHandlers\|VirtualKeyMap\|holdModifier" tugapp/` — every hit is inside a `#if DEBUG` guarded file or block.
+- [ ] Dispatch table handles every new verb (grep through `TestHarnessConnection.swift` for each verb name).
+- [ ] No production codepath references the new handlers or the `NATIVE_DOUBLE_CLICK_INTERVAL_MS` constant.
 
 ---
 
-#### Step 3: `__tug` surface methods for native events + preflight {#step-3}
+#### Step 3: `__tug` surface — native gestures, keyboard, introspection, preflight {#step-3}
 
 **Depends on:** #step-2
 
-**Commit:** `feat(test-surface): add native-event methods and accessibility-permission preflight`
+**Commit:** `feat(test-surface): add native-event + introspection methods and accessibility preflight`
 
 **References:** [D01] same transport, [D03] accessibility preflight, Spec [#s01-hardware-rpc], Spec [#s06-error-classes], (#phase-a-hardware)
 
+**Scope note:** Step 3 grew (2026-04-24 re-scope) beyond the native-gesture mirror to include the introspection primitives the Phase C sweep needs to assert on contents/state/caret/selection/computed-style. Authoring the mirror and introspection together keeps `__tug.version = 1.1.0` a single bump and avoids a mid-phase second handshake change.
+
 **Artifacts:**
-- `tugdeck/src/test-surface.ts` gains `nativeClick`, `nativeClickAtElement`, `nativeMouseDown`, `nativeMouseUp`, `nativeKey`, `nativeType`, `checkAccessibilityPermission`. All wrapped in the v1.0.0 gating (`import.meta.env.DEV && window.__tugTestMode`).
-- `tests/in-app/_harness/errors.ts` — new error classes: `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`.
-- `tests/in-app/_harness/client.ts` — typed client wrappers; `launchTugApp` calls `checkAccessibilityPermission` as first RPC after version handshake; throws if denied.
-- `tests/in-app/_smoke-native.test.ts` — fills in the smoke test body: `nativeClick` on a button with a trusted-event listener that writes to `window.__nativeClickTrusted`; assert `__nativeClickTrusted === true`.
+
+- `tugdeck/src/test-surface.ts` — grows three concern groups. All methods remain inside the v1.1.0 DEV gating (`import.meta.env.DEV && window.__tugTestMode`).
+  - **Native gestures (TS wrappers over Step 2's Swift verbs):**
+    - `nativeClick(point, opts?)`, `nativeClickAtElement(selector, opts?)`
+    - `nativeDoubleClick(point, opts?)`, `nativeDoubleClickAtElement(selector, opts?)`
+    - `nativeRightClick(point)`, `nativeRightClickAtElement(selector)`
+    - `nativeDrag(from, to, opts?)`, `nativeDragElement(fromSelector, to, opts?)` where `to` is `{x, y}` or `{selector}`.
+    - `nativeMouseDown(point, opts?)` / `nativeMouseUp(point, opts?)` — primitives for niche cases.
+  - **Native keyboard:**
+    - `nativeKey(key, mods?)` — named-key + modifier set.
+    - `nativeType(text)` — ASCII-only string. Non-ASCII rejected with `NativeTypeAsciiOnlyError` (Swift-side check, TS surfaces the typed rejection).
+    - `holdModifier(mods, async thunk)` — pressed before the inner callback runs, released after. TS-side shape is `async (mods, async () => { ... })` so tests write it as `await app.holdModifier(["cmd"], async () => { await app.nativeKey("a"); })`. Under the hood the TS facade collects inner RPC calls into a queue (see `Tasks`) and sends them as one `holdModifier` RPC so the Swift side controls the flag lifecycle atomically.
+  - **Introspection (selector-based, JS-surface — no new Swift):**
+    - `getElementText(selector)` — `.textContent` for non-inputs, `.value` for `<input>`/`<textarea>`.
+    - `getElementValue(selector)` — explicit `.value` for form controls.
+    - `getElementAttribute(selector, name)` — any attribute; returns `null` if unset.
+    - `getElementBounds(selector)` — viewport-relative `DOMRect`-like `{x, y, width, height}`.
+    - `getElementScreenBounds(selector)` — Swift-computed screen coords; reuses `CoordMapping.swift`. Returns the same rect in global screen CG coords. Load-bearing for the `nativeClickAtElement` path and for tests that want to name an exact screen point.
+    - `getElementState(selector)` — bundle: `{disabled, readOnly, checked, visible, tagName, isFocused}`. `visible` uses `getBoundingClientRect()` + `offsetParent` test; `isFocused` is `document.activeElement === el`.
+    - `getActiveElement()` — `{tagName, id, cardId, persistKey, selector} | null`. `cardId` walks up to the nearest `[data-card-id]`; `persistKey` reads `data-tug-persist-value` if present.
+    - `getSelection(cardId?)` — superset of existing `getCaretState(cardId)`: covers form-control inputs *and* contentEditable ranges (for EM-card scenarios that become relevant in Phase B). Keep `getCaretState` as a narrow alias that throws if the active element isn't a form control, for tests that want that stricter contract.
+    - `getComputedStyle(selector, property)` — `window.getComputedStyle(el).getPropertyValue(property)`. Thin wrapper; enables CSS-driven behavior assertions (e.g., "after this gesture, the `card-host--active` class's `background-color` is the token X").
+  - **Accessibility preflight ([D03]):**
+    - `checkAccessibilityPermission()` — Swift-side AXIsProcessTrusted probe returned over the RPC; TS wrapper throws `AccessibilityPermissionMissingError` on denial.
+- `tests/in-app/_harness/errors.ts` — adds `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`, `NativeTypeAsciiOnlyError`.
+- `tests/in-app/_harness/client.ts` — typed client wrappers for every new verb; `launchTugApp` calls `checkAccessibilityPermission` as first RPC after version handshake; throws if denied.
+- `tests/in-app/_harness/index.ts` — `App` class exposes the same methods with the harness's usual shape (promise-returning, matchers-aware).
+- `tests/in-app/_smoke-native.test.ts` — fills in the scaffold from Step 2. Five tests, one per critical path:
+  1. **Trusted single-click** — `nativeClickAtElement("button#…")`; a one-shot listener records `isTrusted`; assert `true`.
+  2. **Trusted type** — `nativeClickAtElement("input#…")` then `nativeType("hello")`; assert `input.value === "hello"`.
+  3. **Cmd+A selects all** — `nativeClickAtElement("input#…")`, pre-fill, `nativeKey("a", ["cmd"])`; assert `{selectionStart: 0, selectionEnd: value.length}`.
+  4. **Endpoint drag paints selection** — seed a contentEditable with text, `nativeDrag` from char-0 bounding rect to char-5 bounding rect; assert `window.getSelection().toString().length === 5`. (If endpoint-only drag does NOT paint selection on WebKit — a risk — this test fails, and we have unambiguous early signal to course-correct.)
+  5. **Double-click selects word** — seed an input with `"hello world"`, `nativeDoubleClickAtElement` on the input; assert the browser's double-click-word-select behavior produced `"hello"` as the selection.
 
 **Tasks:**
-- [ ] Implement typed RPC wrappers for every new verb.
-- [ ] Implement `nativeClickAtElement(selector)` as `evalJS("selector bounding rect center")` + `nativeClick`.
+
+- [ ] Implement every TS surface method in `test-surface.ts` — thin wrappers for the Swift verbs, direct implementations for the introspection group.
+- [ ] Implement `holdModifier(mods, thunk)`: the wrapper runs `thunk` while buffering native-gesture calls (or, simpler: makes the inner calls over the normal RPC but with a thread-local "currently-holding" marker that the Swift side reads from args). Pick the simpler of those two in implementation; the user-facing shape is the same.
+- [ ] Implement the typed client wrappers in `_harness/client.ts` for every new verb (selector resolution, error-class narrowing, caller-arg validation).
 - [ ] Implement `launchTugApp` preflight: call `checkAccessibilityPermission`; throw `AccessibilityPermissionMissingError` with stderr instructions on denial.
 - [ ] Bump `__tug.version` surface assertion from `1.0.0` to `1.1.0`; update harness expected-version constant.
-- [ ] Author `_smoke-native.test.ts`: trusted-click listener pattern, assertion.
+- [ ] Author `_smoke-native.test.ts` per the five tests above.
+- [ ] Extend `tests/in-app/README.md` with a section documenting the new surface (native gestures, introspection primitives, `holdModifier` usage pattern).
 
 **Tests:**
-- [ ] `tests/in-app/_smoke-native.test.ts` exits 0 with accessibility permission granted.
+
+- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0 with accessibility permission granted.
 - [ ] Manual test: revoke permission, run smoke; harness exits 1 with a readable error citing the System Settings path.
+- [ ] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
 
 **Checkpoint:**
-- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0.
-- [ ] `bun test tests/in-app/` does not regress any prior test (M01/M03/M16 still green).
-- [ ] `grep 'window.__tug.nativeClick' tugdeck/src/` shows only DEV-gated uses.
+
+- [ ] `bun x tsc --noEmit` exits 0 in `tests/in-app/` and `tugdeck/`.
+- [ ] `bun test tests/in-app/_smoke-native.test.ts` exits 0 (all five tests green).
+- [ ] `bun test tests/in-app/` full sweep green.
+- [ ] `grep -nE "window\.__tug\.(native|holdModifier)" tugdeck/src/` shows only DEV-gated uses.
+- [ ] `__tug.version` is `1.1.0`; TS handshake constant matches.
 
 ---
 
