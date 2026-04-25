@@ -2033,6 +2033,209 @@ When Steps 23A–23E were authored, these two pieces split along their natural f
 
 ---
 
+#### Step 25: M-phase 4–10 execution strategy {#step-25}
+
+**Status:** Authored 2026-04-25. Sub-steps 25A–25L close the remaining M-tags.
+
+**Why this step exists.** Steps 23A–23G closed M-phase 2 + M-phase 3 — every runtime activation trigger (intra-pane, pane-chrome, tab-close, cross-pane drag, app resign / focus, EM activations, cold-boot, cmd-tab) routes through the synchronous `focus-transfer.ts` module, EM cards register `onCardActivated`, and selection round-trips deterministically through cold-boot, cross-pane move, and cmd-tab away/back. The M-tags closed are: [M01], [M02], [M03], [M04], [M05], [M06], [M07], [M09], [M16], [M21] (full); [M24] (foundation, [A9] shipped; per-component opt-ins remaining); [M11] (not-a-feature, closed informationally).
+
+What's left maps to seven distinct architectural concerns, each scoped tight enough to land in 1–2 commits with the harness as the regression gate. The harness now has tide-card support (`bindTideSession`, test-mode `feedsReady` bypass) plus app-lifecycle simulation, native-event gestures, EM-card observation, and tugcode subprocess lifecycle — every remaining M-tag has an automation surface.
+
+**Remaining M-tags by bucket.**
+
+| Sub-step | Closes | Dependency | Architecture piece |
+|---|---|---|---|
+| [25A](#step-25a) | [M14], [M17], [M18], [M19], [M20], [M22], [M23] | none | (audit + verify) |
+| [25B](#step-25b) | [M10] | [A9] (done) | [A5] markdown-view publish |
+| [25C](#step-25c) | [M19] (audit half) | [25A](#step-25a) finding | [A7] unified flush gate |
+| [25D](#step-25d) | [M27] subset (layout state), [M30] subset (virtual focus on tab-bar / option-group) | [A9] (done) | [A9d] component opt-in batch 1 |
+| [25E](#step-25e) | [M30] (remainder), [M27] subset | [A9] (done) | [A9d] component opt-in batch 2 |
+| [25F](#step-25f) | [M26] (overlay policy + opt-in) | [A9] (done), [25E](#step-25e) | [A9d] component opt-in batch 3 |
+| [25G](#step-25g) | [M31] (`tug-prompt-entry` route + toolsOpen), [M25] (closure) | [A9] (done), [25F](#step-25f) | [A9d] component opt-in batch 4 |
+| [25H](#step-25h) | [M29] (scroll-key audit) | parallel-safe with 25D–G | (audit) |
+| [25I](#step-25i) | [M28] (banner / bulletin dismiss) | independent | user-prefs store |
+| [25J](#step-25j) | [M12] (IME) | platform research first | [A6] `bag.markedText` |
+| [25K](#step-25k) | Pass 10 cleanup deferred from [Step 23E](#step-23e) | [Step 23G](#step-23g) (done) | grep-audit + `_flipFirstResponder` dev assertion |
+| [25L](#step-25l) | [M13] (integration test fill-in), [M15] (legacy API delete), Step NN doc pass | all preceding sub-steps | final cleanup |
+
+**Sequencing.** 25A first — its audits surface the actual scope of 25C and confirm what's already passing. After 25A: 25B and 25C can run in parallel with 25H and 25I (they touch disjoint files). 25D → 25E → 25F → 25G is a strict series because each batch's drift-prevention test needs the prior batch's components to behave normally. 25J last among the implementation steps because its platform research may surface a residual that defers the closure of [M12] beyond this plan. 25K and 25L are cleanup; 25K can land any time; 25L closes the plan.
+
+**Why the harness changes the cadence.** Pre-Step-23 work, every M-tag closure required manual browser verification: open Tug.app, click here, check this. The harness now drives every gesture (`nativeClickAtElement`, `nativeDragWithoutRelease`, `nativeKey`, `simulateAppResign` + `simulateAppBecomeActive` with JS-side event-drain wait, `bindTideSession`, EM-card observation), and the in-app sweep gates regression at every commit. M-phase 4–10 is consequently scoped tight — each sub-step ships with one or more new test files in the default sweep, and the manual-verification checkboxes that dominated Steps 1–14 are gone.
+
+##### Step 25A: Audit + verification sweep {#step-25a}
+
+**Closes:** [M14], [M17] (verification half — RPC parity), [M18] (gating), [M19] (audit half), [M20], [M22], [M23].
+
+**Why now.** Several M-tags (M14, M17, M18, M19, M20, M22, M23) are flagged ❓ untested or ⚠️ partial — they need verification before any fix is authored. Some are likely already fixed by prior work (e.g. [M19] teardown coverage may already be complete from Step 14's work, just unverified). Cluster the audits in one sub-step so the implementer's plan for 25C onwards is informed by what's actually broken vs already passing.
+
+**Deliverables:**
+- New harness tests covering each ❓ tag, added to default sweep:
+  - `m14-scroll-persistence.test.ts` — outer + region scroll round-trips through tab switch, pane activation, app resign/return.
+  - `m17-savestate-rpc-parity.test.ts` — `window.tugdeck.saveState()` (the same path AppDelegate's `applicationShouldTerminate` invokes) writes a bag identical to what `beforeunload` would write.
+  - `m18-async-content-race.test.ts` — `restorePendingRef` properly gates `onSave` during the restore window; save-during-pending preserves the last-good bag.
+  - `m19-pane-teardown-flush.test.ts` — `_closePane` iterates every card through `flushSaveCallbackBeforeDestruction`; deck-reset paths likewise.
+  - `m20-overlay-focus-return.test.ts` — open command palette / context menu; dismiss; focus returns to the previously-focused card.
+  - `m22-caret-visibility.test.ts` — after every refocus path, assert `document.activeElement === engineRoot && document.hasFocus() === true`.
+  - `m23-cross-card-selection.test.ts` — drag-select across two MV cards; verify range publishes correctly (or document the expected single-card scoping).
+- Audit notes in plan: for any tag already passing, flip its status block from ❓/⚠️ to ✅ with the new gating test as the verification reference.
+
+**Out of scope at 25A:** the [A7] flush-gate invariant guard that [M19] requires for full closure — that lands in 25C if the audit shows the gap.
+
+**Estimated commits:** one (audit + tests). Drift-prevention via the new test files themselves.
+
+##### Step 25B: Markdown-view selection publish {#step-25b}
+
+**Closes:** [M10] per [L23] (user-visible state must round-trip). Implements [A5].
+
+**Deliverables:**
+- `tug-markdown-view` gains `persistKey` prop and `useCardPersistence({ onSave, onRestore })`.
+- A `useLayoutEffect` subscribes to `document.selectionchange`; filter ranges whose `commonAncestorContainer` is within `rootEl`; call `selectionGuard.updateCardDomSelection(cardId, range)` on match.
+- `onSave` writes `bag.domSelection` from `selectionGuard.cardRanges.get(cardId)`.
+- `onRestore` is a no-op (the existing CardHost mount-restore path replays the range via `restoreCardDomSelection`).
+- New harness test `m10-markdown-selection.test.ts`: select text in a markdown-view card; tab-switch + cmd-tab; assert range round-trips and the `::highlight(inactive-selection)` paint is correct.
+
+**Estimated commits:** one. Drift-prevention via the new test.
+
+##### Step 25C: Unified flush-on-teardown gate {#step-25c}
+
+**Closes:** [M19] (closure). Implements [A7].
+
+**Conditional on 25A's audit.** If `m19-pane-teardown-flush.test.ts` (added in 25A) passes without changes, this sub-step reduces to the dev-only invariant guard. If the audit surfaces a gap (a path that removes cards without flushing), the fix lands here.
+
+**Deliverables:**
+- Either: invariant guard at the bottom of `_removeCard` / `_closePane` that dev-errors if `flushSaveCallbackBeforeDestruction` was not called for a card being removed; OR a single chokepoint `destroyCard(cardId)` that bundles flush + lifecycle + delete.
+- (If audit found a gap) the actual fix that closes the gap.
+- The 25A test extended to gate the new invariant.
+
+**Estimated commits:** one (likely small).
+
+##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
+
+**Closes:** [M27] subset (layout state); first installments of [M30] (virtual focus).
+
+**Components:** `tug-accordion`, `tug-split-pane` (or pane-scope; finalize the [M27] open subquestion during this sub-step).
+
+**Pattern:** each component adds `persistKey` prop + `useComponentPersistence({ persistKey, captureState, restoreState })` per [A9a]. captureState returns the component's user-visible interactive state ({ openSections } for accordion, { dividerPosition } for split-pane). restoreState applies it.
+
+**Deliverables:**
+- Component refactors above.
+- New harness test `m27-layout-state-persistence.test.ts` covering accordion expansion + split-pane divider drag → reload (or simulateAppResign for in-session) → state restored.
+- One test per component opted in; each parameterized over the persisted-state shapes that matter.
+
+**Estimated commits:** one (both components in one batch since they're shape-similar).
+
+##### Step 25E: Component opt-in batch 2 — selection + numeric + toggles {#step-25e}
+
+**Closes:** [M30] (remainder), [M27] (composite components), incremental progress on [A9d] roster.
+
+**Components:** `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-popup-button`, `tug-tab-bar`, `tug-slider`, `tug-value-input`, `tug-switch`. Some may already be partially opted-in via Step 19's `tug-checkbox` proof-of-concept — verify and extend.
+
+**Note on virtual focus.** For radio/choice/option/tab-bar, [M30]'s "virtual focus index" is captured here as part of `captureState`; `restoreState` reapplies the focus ring. The wrapper element's `bag.focus` continues to be CardHost's responsibility; this sub-step adds the inner-ring state.
+
+**Deliverables:**
+- Component refactors.
+- New harness test `m30-virtual-focus.test.ts` covering each opt-in component's user-visible interactive state survival.
+
+**Estimated commits:** one (batch).
+
+##### Step 25F: Component opt-in batch 3 — overlays {#step-25f}
+
+**Closes:** [M26] (overlay-by-overlay policy + opt-in for the persistent set).
+
+**Per-overlay policy decisions land in this sub-step** (per [M26] resolution): `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover` are PERSISTENT (re-open with state intact on re-mount); `tug-tooltip`, `tug-context-menu`, simple-popover are EPHEMERAL (no opt-in).
+
+**Deliverables:**
+- Persistent overlays gain `useComponentPersistence`.
+- Ephemeral overlays' status is documented inline + in [M26]'s entry.
+- New harness test `m26-overlay-persistence.test.ts` covering each PERSISTENT overlay surviving tab-switch / cmd-tab / reload.
+
+**Estimated commits:** one.
+
+##### Step 25G: Component opt-in batch 4 — `tug-prompt-entry` chrome state {#step-25g}
+
+**Closes:** [M31], [M25] (closure — the systemic encapsulation gap is now addressed for every component on the priority roster).
+
+**Deliverables:**
+- `tug-prompt-entry` opts into [A9] with `persistKey` + `captureState` returning `{ route, toolsOpen }`. Engine content continues to live in `bag.content` (unchanged).
+- New harness test `m31-prompt-entry-chrome.test.ts` covering route navigation + tools panel toggle survival across cmd-tab / reload.
+- Plan-doc audit: walk the [A9d] roster; flip every component's [M25] / [M27] / [M30] / [M31] status from ❌ to ✅ as appropriate.
+
+**Estimated commits:** one.
+
+##### Step 25H: Scroll-key audit {#step-25h}
+
+**Closes:** [M29].
+
+**Deliverables:**
+- Walk every stateful component for scrollable sub-regions: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-context-menu` / `tug-completion-menu` scroll, etc.
+- For each user-visible scroll, add `data-tug-scroll-key="<unique>"` to the scrolling element. The IS-axis machinery from [Step 9](#step-9) handles capture/restore automatically.
+- New harness test `m29-region-scroll-coverage.test.ts` parameterized over each component's scroll sub-region.
+
+**Estimated commits:** one (parallel-safe with 25D–G; can land any order).
+
+##### Step 25I: Banner / bulletin dismiss persistence {#step-25i}
+
+**Closes:** [M28].
+
+**Architecture.** Distinct from card-scoped [A9] — this is a USER-WIDE preference. New `dev.tugtool.user.dismissals/{bannerId}` tugbank domain.
+
+**Deliverables:**
+- New `useDismissalState(bannerId): { dismissed, dismiss, undismiss }` hook reading/writing the tugbank user-prefs domain.
+- `tug-banner`, `tug-pane-banner`, `tug-bulletin` consume the hook.
+- New harness test `m28-banner-dismiss.test.ts`: dismiss a banner, simulate reload (re-construct DeckManager via test-mode equivalent), banner stays dismissed.
+
+**Estimated commits:** one. Independent of all other sub-steps.
+
+##### Step 25J: IME composition persistence {#step-25j}
+
+**Closes:** [M12] to the platform-permissible extent. Implements [A6].
+
+**Two-phase sub-step.**
+
+**Phase 1 (research):** WebKit / WKWebView platform research. Determine whether:
+1. Browser API path: `Selection.setBaseAndExtent` + synthetic `compositionstart`/`update` events can re-enter native IME composition.
+2. Native IPC path: tugapp can drive `NSTextInputContext` to re-enter composition with saved marked text.
+3. Text-only fallback: insert marked-text string as plain text + cursor at end (loses "draft" property).
+
+**Phase 2 (implementation):** based on the path that works, implement `bag.markedText` axis end-to-end (engine save + restore for EM, deferred-save during composition for FC). Document residuals if any path proves infeasible.
+
+**Deliverables:**
+- Phase 1 outcome: research notes folded into [A6]'s description block; if (1) doesn't work and (2) requires Swift-side work that's out of scope, this sub-step's deliverable shrinks to the (3) text-only fallback for both EM and FC.
+- Phase 2 outcome: `bag.markedText` schema in `layout-tree.ts`; EM-engine API surfacing composition state; `m12-ime-composition.test.ts` (gated behind a CJK / IME availability check on the test runner; may end up TUGAPP_IME_AVAILABLE=1 environment-gated).
+
+**Estimated commits:** two (Phase 1 research note as a separate small commit, Phase 2 the implementation). Phase 1 can land in any order; Phase 2 depends on Phase 1's path decision.
+
+##### Step 25K: Pass 10 cleanup deferred from Step 23E {#step-25k}
+
+**Closes:** the Pass 10 cleanup items deferred at [Step 23E](#step-23e)'s checkpoint.
+
+**Deliverables:**
+- Grep audit for ad-hoc `engine.root.focus()` paths now redundant with the `engine.setSelectedRange`-based delegate `focus()` (post-[Step 23G](#step-23g)). Retire any direct `.focus()` calls superseded by the engine API.
+- Install the `_flipFirstResponder` dev-only assertion: a runtime check that fires in DEV when a `.focus()` call lands on a contenteditable that already holds a programmatic selection, AS A WARNING about the WebKit selectionchange-on-focus quirk. Caller-aware so the engine's own `setSelectedRange` is exempt.
+
+**Estimated commits:** one. Independent; can land any time after Step 23G.
+
+##### Step 25L: Final cleanup ([M13], [M15], Step NN doc pass) {#step-25l}
+
+**Closes:** [M13] (integration test gap fill-in for any scenarios still uncovered by 25A–25K's harness tests), [M15] (legacy `saveSelection` / `restoreSelection` / `SavedSelection` deletion), and folds in [Step NN](#step-nn) (documentation pass + final cleanup).
+
+**Deliverables:**
+- Walk the [M13] integration test inventory; fill any remaining gaps not closed by the M-tag-specific tests.
+- Delete `selectionGuard.saveSelection` / `restoreSelection` / `SavedSelection` — the surface is now unused; the grep test landed in `selection-persistence-greps.test.ts` flips from "expected references" to "expected zero references".
+- `selection-model.md` rewrite to reflect the post-23A–23G architecture (synchronous `focus-transfer.ts`, [A9] component protocol, taxonomy table updated). Module docstrings in `selection-guard.ts`, `tug-text-engine.ts`, `card-host.tsx`, `focus-transfer.ts` updated.
+- Cross-reference update in `tugplan-tide-card-polish.md`.
+- M-series end-of-plan audit: every M-tag flipped to ✅ in the inventory; [Step NN](#step-nn) checkboxes flipped.
+
+**Estimated commits:** one or two (split if [M13] adds many tests; otherwise bundled with the doc pass).
+
+**Dependencies:** all preceding sub-steps in Step 25.
+
+##### End of M-series.
+
+After Step 25L lands, the missing-cases inventory ([M01]–[M31]) is fully closed. The plan doc transitions to a maintenance shape: any new M-tag surfaces from a real-app gap, gets authored as a new entry, gated by a new harness test, and closed in a focused sub-step.
+
+---
+
 #### Step NN: Documentation & final cleanup {#step-nn}
 
 **Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the M-series steps are authored.
