@@ -547,6 +547,39 @@ export class App {
     );
   }
 
+  /**
+   * Trail-only drag — same trail as {@link nativeDrag}, no terminal
+   * `mouseUp`. Pair with {@link nativeMouseUp} to release. See
+   * `client.nativeDragWithoutRelease` for the canonical
+   * mid-drag-Escape compose pattern.
+   */
+  nativeDragWithoutRelease(
+    from: ViewportPoint,
+    to: ViewportPoint,
+    opts?: NativeDragOptions,
+  ): Promise<void> {
+    return client.nativeDragWithoutRelease(
+      this as HarnessCaller,
+      from,
+      to,
+      opts,
+    );
+  }
+
+  /** Element-anchored variant of {@link nativeDragWithoutRelease}. */
+  nativeDragElementWithoutRelease(
+    fromSelector: string,
+    to: ViewportPoint | { selector: string },
+    opts?: NativeDragOptions,
+  ): Promise<void> {
+    return client.nativeDragElementWithoutRelease(
+      this as HarnessCaller,
+      fromSelector,
+      to,
+      opts,
+    );
+  }
+
   /** Bare mouseDown primitive — for unusual sequences. Prefer `nativeClick`. */
   nativeMouseDown(
     viewportPoint: ViewportPoint,

@@ -328,6 +328,73 @@ final class NativeEventHandlers {
         mouseUpDelayMs: Int = 20,
         interpolationSteps: Int = 8,
     ) throws {
+        try dispatchDragGesture(
+            from: from,
+            to: to,
+            button: button,
+            mouseDownDelayMs: mouseDownDelayMs,
+            mouseUpDelayMs: mouseUpDelayMs,
+            interpolationSteps: interpolationSteps,
+            releaseAtEnd: true,
+        )
+    }
+
+    /// Trail-only drag — same `mouseDown` + interpolated `mouseDragged`
+    /// sequence as `nativeDrag`, but does NOT post a final `mouseUp`.
+    /// The pointer remains "pressed" from WebKit / WindowServer's
+    /// perspective until a subsequent `nativeMouseUp` fires.
+    ///
+    /// Pairs with `nativeMouseUp` to compose gestures that need to
+    /// hold the drag open for an interleaved verb — the canonical
+    /// case being mid-drag Escape:
+    ///
+    ///     nativeDragWithoutRelease(tab, somewhereFar)
+    ///     nativeKey("Escape")
+    ///     nativeMouseUp(somewhereFar)
+    ///
+    /// The drag coordinator's document-level keydown listener
+    /// (selection plan #step-23c) installs at `startDrag` (which
+    /// fires once the trail crosses the 5px threshold) and is
+    /// removed at `cleanup` (which the Escape branch invokes).
+    /// Without this primitive the atomic `nativeDrag` always
+    /// commits a drop via `mouseUp` before any subsequent
+    /// `nativeKey("Escape")` arrives.
+    ///
+    /// `mouseUpDelayMs` is accepted for shape symmetry with
+    /// `nativeDrag` but is unused (no `mouseUp` is posted).
+    func nativeDragWithoutRelease(
+        from: CGPoint,
+        to: CGPoint,
+        button: MouseButton = .left,
+        mouseDownDelayMs: Int = 20,
+        mouseUpDelayMs: Int = 20,
+        interpolationSteps: Int = 8,
+    ) throws {
+        try dispatchDragGesture(
+            from: from,
+            to: to,
+            button: button,
+            mouseDownDelayMs: mouseDownDelayMs,
+            mouseUpDelayMs: mouseUpDelayMs,
+            interpolationSteps: interpolationSteps,
+            releaseAtEnd: false,
+        )
+    }
+
+    /// Shared trail dispatch for `nativeDrag` and
+    /// `nativeDragWithoutRelease`. Posts `mouseDown` at `from`, the
+    /// interpolated `mouseDragged` trail along `from → to`, and
+    /// optionally `mouseUp` at `to`. See `nativeDrag` for the
+    /// rationale on interpolation step count and inter-step delay.
+    private func dispatchDragGesture(
+        from: CGPoint,
+        to: CGPoint,
+        button: MouseButton,
+        mouseDownDelayMs: Int,
+        mouseUpDelayMs: Int,
+        interpolationSteps: Int,
+        releaseAtEnd: Bool,
+    ) throws {
         activateSelf()
         let fromScreen = try resolveScreenPoint(from)
         let toScreen = try resolveScreenPoint(to)
@@ -339,14 +406,6 @@ final class NativeEventHandlers {
             mouseButton: button.cgButton,
         ) else {
             throw NativeEventError.eventCreationFailed("drag mouseDown")
-        }
-        guard let up = CGEvent(
-            mouseEventSource: source,
-            mouseType: button.upType,
-            mouseCursorPosition: toScreen,
-            mouseButton: button.cgButton,
-        ) else {
-            throw NativeEventError.eventCreationFailed("drag mouseUp")
         }
 
         down.post(tap: .cgSessionEventTap)
@@ -380,11 +439,28 @@ final class NativeEventHandlers {
             // endpoint-only behavior that fails to paint selection.
             sleepMs(20)
         }
-        // Final settle before mouseUp: give the last mouseDragged
-        // time to be processed so the selection commits correctly.
+
+        // Final settle: give the last mouseDragged time to be
+        // processed so any pre-mouseUp work (selection extension,
+        // drag-coordinator threshold detection / startDrag) commits
+        // before we release. For `releaseAtEnd: false` callers the
+        // settle is what guarantees the drag is "in flight" at the
+        // RPC return point — without it, the next verb might race
+        // ahead of WebKit's event queue draining the trail.
         sleepMs(mouseDownDelayMs)
-        up.post(tap: .cgSessionEventTap)
-        sleepMs(mouseUpDelayMs)
+
+        if releaseAtEnd {
+            guard let up = CGEvent(
+                mouseEventSource: source,
+                mouseType: button.upType,
+                mouseCursorPosition: toScreen,
+                mouseButton: button.cgButton,
+            ) else {
+                throw NativeEventError.eventCreationFailed("drag mouseUp")
+            }
+            up.post(tap: .cgSessionEventTap)
+            sleepMs(mouseUpDelayMs)
+        }
     }
 
     // MARK: - Mouse primitives

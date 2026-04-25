@@ -782,6 +782,58 @@ export async function nativeDragElement(
   await nativeDrag(caller, fromPoint, toPoint, opts);
 }
 
+/**
+ * Trail-only drag — `mouseDown` at `from`, the same 8-step
+ * interpolated `mouseDragged` trail along `from → to`, but NO
+ * terminal `mouseUp`. The pointer remains "pressed" from WebKit's
+ * perspective until a subsequent `nativeMouseUp` fires.
+ *
+ * Pairs with `nativeMouseUp` to compose gestures that need an
+ * interleaved verb between the trail and the release. Canonical
+ * use case is mid-drag Escape:
+ *
+ *     await app.nativeDragElementWithoutRelease(tab, somewhereFar);
+ *     await app.nativeKey("Escape");
+ *     await app.nativeMouseUp(somewhereFar);
+ *
+ * The cardDragCoordinator's document-level keydown listener
+ * (selection plan #step-23c) installs at `startDrag` (which fires
+ * once the trail crosses the 5px threshold) and is removed at
+ * `cleanup` (which the Escape branch invokes), so the Escape
+ * keystroke must arrive AFTER the trail begins and BEFORE the
+ * mouseUp commits a drop.
+ *
+ * `opts.mouseUpDelayMs` is accepted for shape symmetry with
+ * `nativeDrag` but is unused (no mouseUp is posted).
+ */
+export function nativeDragWithoutRelease(
+  caller: HarnessCaller,
+  from: ViewportPoint,
+  to: ViewportPoint,
+  opts?: NativeDragOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = { from, to };
+  if (opts?.button !== undefined) params.button = opts.button;
+  if (opts?.mouseDownDelayMs !== undefined)
+    params.mouseDownDelayMs = opts.mouseDownDelayMs;
+  if (opts?.mouseUpDelayMs !== undefined)
+    params.mouseUpDelayMs = opts.mouseUpDelayMs;
+  return caller.rpcCall<void>("nativeDragWithoutRelease", params);
+}
+
+/** Element-anchored variant of {@link nativeDragWithoutRelease}. */
+export async function nativeDragElementWithoutRelease(
+  caller: HarnessCaller,
+  fromSelector: string,
+  to: ViewportPoint | { selector: string },
+  opts?: NativeDragOptions,
+): Promise<void> {
+  const fromPoint = await centerOfElement(caller, fromSelector);
+  const toPoint =
+    "selector" in to ? await centerOfElement(caller, to.selector) : to;
+  await nativeDragWithoutRelease(caller, fromPoint, toPoint, opts);
+}
+
 export function nativeMouseDown(
   caller: HarnessCaller,
   viewportPoint: ViewportPoint,

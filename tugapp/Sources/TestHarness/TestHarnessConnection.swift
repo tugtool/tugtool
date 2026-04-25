@@ -118,6 +118,7 @@ final class TestHarnessConnection {
              "nativeDoubleClick",
              "nativeRightClick",
              "nativeDrag",
+             "nativeDragWithoutRelease",
              "nativeMouseDown",
              "nativeMouseUp",
              "nativeKey",
@@ -398,6 +399,22 @@ final class TestHarnessConnection {
             let downDelay = (verbObj["mouseDownDelayMs"] as? Int) ?? 20
             let upDelay = (verbObj["mouseUpDelayMs"] as? Int) ?? 20
             try handlers.nativeDrag(
+                from: from,
+                to: to,
+                button: button,
+                mouseDownDelayMs: downDelay,
+                mouseUpDelayMs: upDelay,
+            )
+
+        case "nativeDragWithoutRelease":
+            // Same wire shape as nativeDrag — `mouseUpDelayMs` is
+            // accepted for symmetry but unused (no mouseUp posted).
+            let from = try Self.parsePoint(verbObj["from"], field: "from")
+            let to = try Self.parsePoint(verbObj["to"], field: "to")
+            let button = try Self.parseButton(verbObj["button"])
+            let downDelay = (verbObj["mouseDownDelayMs"] as? Int) ?? 20
+            let upDelay = (verbObj["mouseUpDelayMs"] as? Int) ?? 20
+            try handlers.nativeDragWithoutRelease(
                 from: from,
                 to: to,
                 button: button,
