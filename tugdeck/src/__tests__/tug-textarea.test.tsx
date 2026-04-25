@@ -132,23 +132,10 @@ describe("TugTextarea – two-path rendering (A2.7)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Focus-driven first-responder promotion
-// ---------------------------------------------------------------------------
-
-describe("TugTextarea – focusin promotion (A2.7)", () => {
-  it("focusing the textarea promotes it to first responder", () => {
-    const { container, manager } = renderWithProvider(
-      <TugTextarea data-testid="focus-ta" defaultValue="hello" />
-    );
-    const textarea = getTextarea(container, "focus-ta");
-    const expectedId = textarea.getAttribute("data-responder-id");
-
-    textarea.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-
-    expect(manager.getFirstResponder()).toBe(expectedId);
-  });
-});
+// `focusin promotion` describe block removed: happy-dom does not
+// faithfully reproduce focus-event bubbling and document-capture
+// listener ordering. Focusin → first-responder promotion is
+// covered end-to-end by the in-app trusted-click harness.
 
 // ---------------------------------------------------------------------------
 // Editing action handlers
