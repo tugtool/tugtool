@@ -29,9 +29,13 @@ import WebKit
 //   `CoordMapping.viewportToScreen`: callers never pass screen coords
 //   directly. Out-of-bounds → `NativeEventError.coordinateOutOfBounds`
 //   → `CoordinateOutOfBoundsError` at the RPC boundary.
-// - Endpoint-only drag per the 2026-04-24 user call ("endpoints
-//   should be enough; carefully written plans can get us what we
-//   need"). No interpolated move trail.
+// - Interpolated drag (8-step default, configurable via
+//   `interpolationSteps`; 0 falls back to endpoint-only). The
+//   2026-04-24 plan authoring assumed endpoint-only would suffice;
+//   the Phase A smoke proved otherwise — a single `mouseDragged`
+//   on a WebKit `contenteditable` anchors but never extends the
+//   selection. See `nativeDrag(...)`'s docstring for the full
+//   rationale.
 
 // MARK: - Constants
 

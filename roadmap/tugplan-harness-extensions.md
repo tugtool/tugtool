@@ -28,7 +28,9 @@
 | 1 — CGEventPost spike (variant + escape + coord math + keyboard) | LANDED | `667ca3d1` |
 | 2 — Swift handlers: click, dbl-click, right-click, drag, type, key, holdModifier | LANDED | `c4feeba1` |
 | 3 — `__tug` surface: native gestures + introspection + preflight + smoke | LANDED | `b087ec60` |
-| 3b — M03 rewrite with trusted clicks (Phase A acceptance test) | LANDED | _pending commits_ |
+| 3b — M03 rewrite with trusted clicks + production fix (`pane-focus-controller` mousedown suppression) | LANDED | `eb74b191`, `97a8acad` |
+| 3b follow-on — M01 + M16 trusted-click rewrites | LANDED | `789cea02` |
+| 3b ergonomics — `just test-in-app-fast` recipe | LANDED | `2fead382` |
 | 4–17 | pending | — |
 
 Phase A critical path is complete. The trusted-event pipeline is confirmed faithful: M03's rewrite against `nativeClickAtElement` surfaced a third real production bug (pane-chrome mousedown blurred the A3-restored focus) that the synthesized-click version had masked. Fix landed in `pane-focus-controller.ts`; M03 now green against real user mouse semantics. M01 and M16 have also been rewritten with trusted clicks (2026-04-24 follow-on); both pass without additional production changes — Step 3b's fix was comprehensive enough to cover tab clicks and close-button clicks in the same cross-cutting way. Subsequent M-series rewrites (M04/M05/M20/M21) can now proceed with confidence that synthesized-click false greens are behind us.

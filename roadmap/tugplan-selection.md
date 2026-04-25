@@ -1461,11 +1461,11 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 **Checkpoint:**
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green.
-- [ ] Manual verification:
+- [x] Manual verification (closed by Phase A trusted-click in-app sweep — `_smoke` 2/2, `_smoke-native` 5/5, M01 1/1, M03 1/1, M16 1/1 against real DEBUG Tug.app, 2026-04-24):
   - Two FC cards in a pane, one focused with a selection. Switch tabs and return — focus and selection paint restored. [M01] ✓
   - Two panes with FC cards focused in each. Click pane chrome to switch active pane; return — selection restored. [M03] ✓
   - Close the active FC tab in a multi-tab pane — focus lands on the new active tab. [M16] ✓
-  - EM cards (tide-card, gallery-prompt-input) may still lose focus across these transitions — closes in Step 24. Not a regression; pre-existing behavior.
+  - EM cards (tide-card, gallery-prompt-input) may still lose focus across these transitions — closes in Step 23E. Not a regression; pre-existing behavior.
 
 ---
 
@@ -1560,7 +1560,7 @@ Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E. 23C and 23D touch disjo
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green.
 - [x] Grep: `registerActivationCallback` and `registerCardHostRoot` have exactly one implementation each in `deck-manager.ts` and one mock-stub pattern in test files.
-- [ ] No user-visible behavior change. Manually verify [M01], [M03], [M16] still pass at slow cadence (same state as end-of-Step-23).
+- [x] No user-visible behavior change. [M01], [M03], [M16] pass at slow cadence via the in-app trusted-click sweep (2026-04-24, same state as end-of-Step-23).
 
 ---
 

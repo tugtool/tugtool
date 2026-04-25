@@ -732,12 +732,24 @@ export async function nativeRightClickAtElement(
 }
 
 /**
- * Endpoint-only drag: mouseDown at `from`, one mouseDragged event at
- * `to`, mouseUp at `to`. No intermediate interpolation (plan Step 1
- * decision [Q03]). For WebKit paths where the drag semantics need
- * intermediate frames to paint, bump `mouseDownDelayMs` — it's the
- * gap between mouseDown and mouseDragged where WebKit gets to process
- * the initial-selection anchor.
+ * Interpolated drag: `mouseDown` at `from`, a trail of `mouseDragged`
+ * events along `from → to`, `mouseUp` at `to`. The Swift handler
+ * fixes the trail at 8 interpolation steps with a 20ms inter-step
+ * gap (empirically enough for a 40–100px drag in a `contenteditable`
+ * on Apple Silicon macOS 13–15, and slow enough that windowserver
+ * does not coalesce the events). The trail-step count is currently
+ * not exposed through the TS surface — callers always get the
+ * 8-step path.
+ *
+ * Why interpolation, not endpoint-only: a single `mouseDragged` on
+ * a WebKit `contenteditable` anchors the selection at `from` but
+ * never extends it — WebKit dispatches `selectstart`, then sees
+ * `mouseUp` and commits a zero-length selection. A trail along the
+ * path lets WebKit's drag-selection extend as the pointer moves.
+ *
+ * For WebKit paths that still need extra time at the anchor, bump
+ * `mouseDownDelayMs` — that is the gap between `mouseDown` and the
+ * first `mouseDragged` where WebKit processes the initial anchor.
  */
 export function nativeDrag(
   caller: HarnessCaller,
