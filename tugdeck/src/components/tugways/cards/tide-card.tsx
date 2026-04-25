@@ -1014,7 +1014,17 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
   const cardLifecycle = useCardLifecycle();
   useCardDelegate(cardId, {
     cardDidActivate: () => entryDelegateRef.current?.focus(),
-    cardWillDeactivate: () => entryDelegateRef.current?.blur(),
+    // `cardWillDeactivate` deliberately does NOT call
+    // `entryDelegateRef.current?.blur()`. Calling .blur() on the
+    // contenteditable here clears any non-collapsed selection the
+    // user has placed (Selection plan Step 23G): when the cascade
+    // fires from `applicationWillResignActive` (cmd-tab away), the
+    // OS already removes focus from the WKWebView; an additional
+    // explicit blur destroys the selection BEFORE the
+    // window-blur save flushes the bag, so on cmd-tab back the
+    // engine's `getSelectedRange()` returns null and the
+    // refocus-on-activation places a caret at end-of-content
+    // instead of restoring the user's selected span.
     cardDidMove: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
       entryDelegateRef.current?.focus();

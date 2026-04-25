@@ -1041,7 +1041,19 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
   const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
   const feedData = useCardFeedStore(hostStackId, feedIds);
-  const feedsReady = feedIds.length === 0 || feedData.size > 0;
+  // Test-mode override: bypass the feed-data gate so cards whose
+  // `defaultFeedIds` would otherwise wait on a live tugcast/tugcode
+  // backend (notably tide-card, which gates on `[CODE_INPUT,
+  // CODE_OUTPUT, SESSION_METADATA, FILETREE]`) can mount in the
+  // in-app harness. Tests don't drive the AI side of those cards;
+  // they exercise focus, selection, persistence, and other
+  // framework concerns that don't depend on real feed data. The
+  // production path is unchanged: `__tugTestMode` is set only when
+  // launched via `TUGAPP_TEST_SOCKET`, in DEV builds.
+  const isTestMode =
+    typeof window !== "undefined" && window.__tugTestMode === true;
+  const feedsReady =
+    isTestMode || feedIds.length === 0 || feedData.size > 0;
 
   // Stable context value carrying both the cardId and the register
   // callback. A memoized object is cheaper to stabilize than threading

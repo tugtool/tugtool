@@ -508,6 +508,27 @@ export class App {
     return client.awaitEngineReady(this as HarnessCaller, cardId, opts);
   }
 
+  /**
+   * Bind a fake session for a tide-card so its content factory
+   * renders TideCardBody (the editor) instead of the project-picker.
+   * Production binds via `spawn_session_ok` from a live
+   * tugcast/tugcode/Claude pipeline; the harness writes synthetic
+   * values directly into the binding store. Use whenever a test
+   * needs to interact with a tide-card's editor (focus, selection,
+   * typing) — the AI-facing stores stay empty, but the editor
+   * mounts and accepts user-shaped gestures.
+   */
+  bindTideSession(
+    cardId: string,
+    options?: {
+      tugSessionId?: string;
+      workspaceKey?: string;
+      projectDir?: string;
+    },
+  ): Promise<void> {
+    return client.bindTideSession(this as HarnessCaller, cardId, options);
+  }
+
   // -------------------------------------------------------------------
   // Accessibility preflight ([D03])
   // -------------------------------------------------------------------

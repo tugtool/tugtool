@@ -49,6 +49,7 @@ import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
+import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 
 // ---------------------------------------------------------------------------
 // Public types (Spec [#s03-tug-surface])
@@ -403,6 +404,53 @@ export interface TugTestSurface {
    * for any realistic test setup window.
    */
   isEngineReady(cardId: string): boolean;
+
+  /**
+   * Bind a fake session for a tide card so it skips past the
+   * project-picker UI and renders TideCardBody directly. Without a
+   * binding, `useTideCardServices` returns `null` and tide-card
+   * shows the picker; production sets the binding from a
+   * `spawn_session_ok` CONTROL ack that requires a live tugcast +
+   * tugcode + Claude pipeline. Tests that exercise tide-specific
+   * behavior — focus, selection, persistence, app-lifecycle
+   * round-trips — don't need real session frames; they need the
+   * editor to mount. This helper writes synthetic values directly
+   * into `cardSessionBindingStore` so the existing services
+   * reconciler constructs the real-shape services bag against the
+   * harness's WebSocket connection. The stores stay empty (no
+   * frames flow), but the editor renders and accepts focus.
+   *
+   * `tugSessionId` and `workspaceKey` default to deterministic
+   * test-only sentinels so the same call shape works across every
+   * tide test. Pass overrides only when a test specifically needs
+   * a non-default value (e.g. testing workspace-key isolation
+   * across sibling cards).
+   *
+   * Test-mode-only. Available when `window.__tugTestMode === true`.
+   */
+  bindTideSession(
+    cardId: string,
+    options?: {
+      tugSessionId?: string;
+      workspaceKey?: string;
+      projectDir?: string;
+    },
+  ): void;
+
+  /**
+   * Read the deck's current `hasFocus` state. The deck's
+   * `installDeckStoreFocusListeners` flips this to `true` on
+   * `window.focus` and `false` on `window.blur`; reading it from
+   * the harness gives a synchronous probe for "has the JS-side
+   * focus event fired and drained?" — useful after
+   * `simulateAppResign` / `simulateAppBecomeActive` to confirm
+   * WKWebView actually dispatched the blur/focus event (not just
+   * AppKit's `did...Active` notification, which the Swift
+   * primitive already waits for). Under rapid back-to-back
+   * lifecycle simulations WebKit's window event dispatch can
+   * lag the AppKit notification by several milliseconds.
+   */
+  getHasFocus(): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1072,6 +1120,26 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         if (e.kind === "engine-ready" && e.cardId === cardId) return true;
       }
       return false;
+    },
+
+    bindTideSession(
+      cardId: string,
+      options?: {
+        tugSessionId?: string;
+        workspaceKey?: string;
+        projectDir?: string;
+      },
+    ): void {
+      cardSessionBindingStore.setBinding(cardId, {
+        tugSessionId: options?.tugSessionId ?? `test-session-${cardId}`,
+        workspaceKey: options?.workspaceKey ?? `test-workspace-${cardId}`,
+        projectDir: options?.projectDir ?? "/tmp/test-project",
+        sessionMode: "new",
+      });
+    },
+
+    getHasFocus(): boolean {
+      return deck.getSnapshot().hasFocus;
     },
   };
 }

@@ -1487,7 +1487,7 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 | 2 | Pane-chrome activation click ([M03](#m03-pane-activation)) | sync, before-mutation | different cards | `pane-focus-controller.ts` |
 | 3 | Tab-close handoff ([M16](#m16-tab-close-handoff)) | sync, before-mutation | outgoing destroyed | `deck-manager.ts#_removeCard` / `_closePane` |
 | 4 | Cross-pane drag / detach ([M06](#m06-cross-pane-em) FC-half, [M07](#m07-card-detach) FC-half, [M21](#m21-drag-aborted)) | multi-phase | same card, DOM re-parents | save at drag-start (pane chrome `pointerdown`); refocus at drop (`_moveCardToPane` / `_detachCard`) or cancel (Escape / `pointercancel`; drop-into-void is not a cancel, it detaches) |
-| 5 | App resign → resume / window focus ([M04](#m04-app-resign-return), [M05](#m05-app-hide-unhide), [A4](#a4-app-lifecycle-activation)) | external event | current first-responder → itself | window `blur` save + window `focus` reactivate ([Step 20](#step-20) listener extended in [Step 23D](#step-23d)) |
+| 5 | App resign → resume / window focus ([M04](#m04-app-resign-return), [M05](#m05-app-hide-unhide), [A4](#a4-app-lifecycle-activation)) | external event | current first-responder → itself | window `blur` save + window `focus` reactivate ([Step 20](#step-20) listener extended in [Step 23D](#step-23d)); EM-card delegate `focus()` routes through `engine.setSelectedRange` for WebKit-safe focus-then-select ordering ([Step 23G](#step-23g)) |
 | 6 | EM card activations ([M02](#m02-tab-switch-em), [M06](#m06-cross-pane-em) EM-half, [M07](#m07-card-detach) EM-half, [M09](#m09-inactive-mount)) | sync or external | engine owns focus | registered `onCardActivated` callback (dispatched from row 1 / 2 / 3 / 4 / 5 paths by card-flavor) |
 | 7 | Cold-boot mount | structural | — | `CardHost`'s post-attach `useLayoutEffect` keyed on `[cardId, hostContentEl, store]` calls `onRestore(bag.content)` AFTER CardPortal's slot.appendChild has connected the engine root to the document. Closed by [Step 23F](#step-23f) gap-1 (the previous synchronous-from-child-effect call landed selection on a detached portal slot). |
 
@@ -1499,8 +1499,9 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 - **[Step 23D](#step-23d)** — Wires row 5 ([A4] app-lifecycle) through the helper. The `window.focus` listener installed in [Step 20](#step-20) routes through a new `reactivateCurrentFocusDestination(store)` entry. Closes [M04] and [M05]. **Absorbs what was previously labeled M-phase 3.**
 - **[Step 23E](#step-23e)** — EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated` (row 6). Closes the EM halves of [M02], [M06], [M07], and [M09]. Retires any ad-hoc engine-internal refocus code superseded by the helper.
 - **[Step 23F](#step-23f)** — Cold-boot EM-card selection paint. Surfaced as a real-app gap during manual verification after 23E. Closes row 7 for EM cards specifically (FC cold-boot was already working).
+- **[Step 23G](#step-23g)** — EM-card selection survives the app-resign / app-become-active round-trip (cmd-tab away+back). Real-app gap surfaced post-23F: tide-card's redundant `cardDidActivate`+`onCardActivated` focus path triggered WebKit's selectionchange-on-focus quirk intermittently. Fix routes the delegate's `focus()` through `engine.setSelectedRange` for WebKit-safe focus-then-select.
 
-Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E → 23F. 23C and 23D touch disjoint files (drag path vs. window-focus listener) and can land in either order once 23B is in. 23F is a row-7 closer surfaced by post-23E manual verification.
+Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E → 23F → 23G. 23C and 23D touch disjoint files (drag path vs. window-focus listener) and can land in either order once 23B is in. 23F closes the row-7 gap; 23G refines row 5's EM behavior.
 
 ##### Execution strategy: ping-pong with harness extensions {#step-23-execution-strategy}
 
@@ -1951,6 +1952,68 @@ The implementer's call: try (5) first (clean architectural fix; fixes fresh-card
 - Row 7 of the activation trigger taxonomy table updated to point at Step 23F.
 - The Step breakdown subsection adds a Step 23F bullet.
 - The "End of M-phase 2" summary in Step 23E's checkpoint references 23F as the row-7 closer (was previously "row 7 unchanged").
+
+---
+
+#### Step 23G: EM-card selection survives app-switch cycle {#step-23g}
+
+**Depends on:** #step-23f
+
+**Commit:** `Preserve EM-card selection across app-switch via setSelectedRange`
+
+**References:** [A4](#a4-app-lifecycle-activation); row 5 of the [activation trigger taxonomy](#activation-trigger-taxonomy); `tug-prompt-input.tsx` (delegate `focus()` + `TugPromptInputPersistence.onCardActivated`); WebKit selectionchange-on-focus quirk (already documented in `tug-text-engine.ts:setSelectedRange`).
+
+**Why this step exists.** User-reported real-app gap on a tide card: type "hello", select the last 3 chars ("llo"), cmd-tab away, cmd-tab back — text always restores, **selection is intermittently lost** with the caret left blinking at the end of "hello". The gallery-prompt-entry path doesn't reproduce, only tide does.
+
+**Root cause (the actual one).** Tide-card's `useCardDelegate({ cardWillDeactivate: () => entryDelegateRef.current?.blur() })` calls `.blur()` on the contenteditable when the lifecycle cascade fires from `applicationWillResignActive` (cmd-tab away). The `.blur()` removes the document's selection — Selection state is bound to the focused element on contenteditable, so blurring clears it. Then on cmd-tab back, `cardDidActivate` fires and the refocus-on-activation chain finds `engine.getSelectedRange() === null`; the focus path falls into the "no prior selection: place caret at end" branch and the user sees the caret blinking at the end of "hello".
+
+The OS already removes focus from the WKWebView when the app resigns active — tide's explicit `.blur()` is redundant for the focus-release purpose AND destructive for the selection. Gallery-prompt-entry has no `cardWillDeactivate` handler, so the OS-level blur runs alone and the contenteditable's selection survives the resign/reactivate cycle as it would in any browser.
+
+**Secondary (defense-in-depth).** Tide-card has TWO focus paths firing on activation: `cardDidActivate` (legacy CardLifecycle) and `onCardActivated` (framework, Step 23E). Both call `entryDelegate.focus()` back-to-back. Even after the primary fix, that double-call would expose WebKit's selectionchange-on-focus quirk if anything else placed a programmatic selection just before the activation. The delegate's `focus()` and `TugPromptInputPersistence.onCardActivated` are also rerouted through `engine.setSelectedRange` for focus-then-select ordering — making both paths idempotent.
+
+**Fix.**
+1. **Primary**: remove the `entryDelegateRef.current?.blur()` body from tide-card's `cardWillDeactivate` handler. The OS-level blur on app-resign is sufficient and non-destructive to the selection. Keep the `cardWillDeactivate` slot wired (commented to explain why no-op) so future regressions don't re-introduce the .blur() naively.
+2. **Secondary**: route the delegate's `focus()` and `TugPromptInputPersistence.onCardActivated` through `engine.setSelectedRange` for WebKit-safe focus-then-select ordering.
+
+**Artifacts:**
+- `tests/in-app/m35-em-app-switch-selection.test.ts` — selection survives `simulateAppResign` + `simulateAppBecomeActive` for both `gallery-prompt-input` and `gallery-prompt-entry`. Forward regression gate. Added to default sweep.
+- `tests/in-app/m35-tide-app-switch-selection.test.ts` — tide-card-specific stress test (10 iterations × 2-second blur dwell per iteration). Reproduced the bug pre-fix; deterministic green post-fix. Added to default sweep.
+
+**Harness extensions required to test tide-card.**
+1. **Test-mode `feedsReady` bypass** in `CardHost`. Tide's content factory would otherwise wait on a live tugcast/tugcode/Claude pipeline before rendering. When `window.__tugTestMode === true`, the gate is bypassed and the contentFactory mounts immediately. Production behavior is unchanged.
+2. **`bindTideSession(cardId, options?)` test-surface helper.** Tide's content factory branches on `useTideCardServices` — null services → project-picker, non-null → editor. Production binds via `spawn_session_ok` from a live AI session. The harness writes synthetic values directly into `cardSessionBindingStore` so the existing `cardServicesStore` reconciler constructs the real-shape services bag against the harness's WebSocket connection. Stores stay empty (no frames flow); the editor renders and accepts focus.
+3. **`simulateAppResign` / `simulateAppBecomeActive` wait for JS-side `hasFocus` flip.** Pre-extension, the helpers waited only for AppKit's `did...Active` notification. Under back-to-back stress cycling, WKWebView's `window.blur` / `window.focus` dispatch lags AppKit by several ms and CAN BE DROPPED entirely — a test that proceeded immediately after the helper returned could find `hasFocus` still in its previous state. The harness now waits via a new `__tug.getHasFocus()` getter for the JS-side flip before returning.
+
+**Why a 2-second blur dwell.** The user-reported repro: type, select, cmd-tab to another app, **stay there a few seconds**, cmd-tab back — selection lost. Sub-frame transient blurs (tens of ms) didn't expose the bug; a 2-second dwell does. The realistic dwell is what allowed AppKit to deliver `applicationWillResignActive` cleanly with full delegate-cascade processing, including tide-card's `cardWillDeactivate → .blur()` on the contenteditable.
+
+**Tasks:**
+- [x] Remove `entryDelegateRef.current?.blur()` from tide-card's `cardWillDeactivate` handler. Annotate the slot to explain why no-op.
+- [x] Refactor `tug-prompt-input.tsx`'s delegate `focus()` to route through `engine.setSelectedRange` (defense-in-depth WebKit-quirk closure).
+- [x] Refactor `TugPromptInputPersistence.onCardActivated` similarly.
+- [x] Add `__tug.getHasFocus()` test-surface getter and use it in `simulateAppResign` / `simulateAppBecomeActive` to wait for JS-side blur/focus events.
+- [x] Add `__tug.bindTideSession(cardId, options?)` test-surface helper to skip past tide's project-picker.
+- [x] Bypass `feedsReady` gate in `CardHost` when `window.__tugTestMode === true`.
+- [x] Author `m35-em-app-switch-selection.test.ts` and `m35-tide-app-switch-selection.test.ts`. Stress-loop confirmed deterministic green (3 × 10-iteration runs each).
+- [x] Add both tests to the default sweep.
+- [x] Drift-prevention verified: revert .blur() removal → m35-tide fails within 2 iterations; restore → green.
+- [ ] User-side manual verification: tide-card cmd-tab cycle no longer intermittently collapses the selection.
+
+**Upholds:**
+- **L23** — preserve user-visible state (the selection range) across an internal lifecycle event (cardWillDeactivate). The OS already removes focus on app-resign; an additional explicit `.blur()` is destructive to user state without contributing anything.
+- **L10** — focus-and-selection authority remains the engine's; the delegate forwards rather than duplicating focus logic.
+
+**Tests:**
+- [x] `tests/in-app/m35-em-app-switch-selection.test.ts` exits 0 in default sweep (gallery-prompt-input + gallery-prompt-entry).
+- [x] `tests/in-app/m35-tide-app-switch-selection.test.ts` exits 0 in default sweep (tide stress-loop with 2s blur dwell).
+- [x] `bun test` (tugdeck): 2414/2414 green.
+- [x] `bun x tsc --noEmit` exits 0 (tugdeck + tests/in-app).
+
+**Checkpoint:**
+- [x] In-app smoke green: 23/23 default sweep files.
+- [x] No regression at any existing M-series scenario.
+- [ ] Manual verification (user-side, see Tasks above).
+
+**Why this isn't 23F.** Step 23F closes cold-boot and cross-pane move (rows 6/7); both involve fresh or freshly-re-mounted contenteditables where the slot was detached. Step 23G is row 5 (app-lifecycle reactivation) where the slot stays attached and the engine state is intact — only the focus call's interaction with the pre-existing selection is the failure mode. Different gesture, different code path, different fix shape; bundling would hide the regression-bisect signal.
 
 ---
 

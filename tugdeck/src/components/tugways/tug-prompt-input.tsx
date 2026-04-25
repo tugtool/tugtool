@@ -353,28 +353,21 @@ function TugPromptInputPersistence({
   const [, setRestoreCount] = useState(0);
   useCardPersistence<TugTextEditingState>({
     onCardActivated: () => {
-      // Row 6 — activation gesture lands on this EM card. Mirror
-      // the delegate's `focus()` pattern: a contenteditable whose
-      // browser Selection has no range inside it shows no caret
-      // even when activeElement === root, so place a collapsed
-      // caret at end-of-content first.
+      // Row 6 — activation gesture lands on this EM card. Route
+      // through the engine's `setSelectedRange` to preserve any
+      // existing programmatic selection across the focus call. See
+      // the delegate's `focus()` for the WebKit selectionchange-on-
+      // focus quirk this avoids; same pattern, same rationale.
+      // Selection plan Step 23G.
       const engine = engineRef.current;
       if (!engine) return;
-      const root = engine.root;
-      const sel = window.getSelection();
-      if (sel !== null) {
-        const inside = sel.rangeCount > 0 && root.contains(sel.anchorNode);
-        if (!inside) {
-          try {
-            sel.collapse(root, root.childNodes.length);
-          } catch {
-            // Some browsers throw if the anchor/offset is invalid
-            // (e.g., root temporarily detached). Fall through to
-            // focus() and let the browser do what it can.
-          }
-        }
+      const saved = engine.getSelectedRange();
+      if (saved !== null) {
+        engine.setSelectedRange(saved.start, saved.end);
+        return;
       }
-      root.focus({ preventScroll: true });
+      const text = engine.getText();
+      engine.setSelectedRange(text.length, text.length);
     },
     onSave: () => {
       const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
@@ -485,36 +478,48 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       focus() {
         // Post-condition: after this returns, the user can type —
         // activeElement is the contenteditable AND a visible caret is
-        // placed inside it.
+        // placed inside it. If a programmatic selection was already
+        // inside the engine root, it MUST survive this call.
         //
-        // Native `.focus()` alone is not sufficient: a contenteditable
-        // whose browser Selection has no range inside it shows no
-        // caret even when activeElement === root. That's the state
-        // left by the card lifecycle's selection guard, which calls
-        // `removeAllRanges()` on every cross-card activation. Place a
-        // collapsed caret at the end of the content before calling
-        // focus() so the browser has a valid Selection anchor when
-        // focus applies. If a selection is already inside root
-        // (e.g., a restored range from selectionGuard, or a user-
-        // placed caret), leave it alone.
+        // ## WebKit's selectionchange-on-focus quirk
+        //
+        // Calling `.focus()` on a contentEditable element AFTER a
+        // programmatic selection has been set inside it fires an
+        // asynchronous `selectionchange` event that sometimes
+        // collapses the caret to position 0. The race surfaces when
+        // multiple focus calls land in quick succession (e.g. tide-
+        // card has both a `cardDidActivate` lifecycle hook AND
+        // TugPromptEntry's `onCardActivated` calling this focus()
+        // back-to-back) — the second focus runs before the first's
+        // async event has settled, and the user's selection is
+        // collapsed intermittently.
+        //
+        // The deterministic fix is to route through the engine's
+        // `setSelectedRange`, which enforces the WebKit-safe
+        // focus-then-select ordering: focus the root FIRST when
+        // it isn't already focused, THEN call `removeAllRanges` +
+        // `addRange`. The async event fires against an empty
+        // selection (no-op) and our subsequent `addRange` sticks.
+        //
+        // Selection plan Step 23G.
         const engine = engineRef.current;
         if (!engine) return;
         const root = engine.root;
-        const sel = window.getSelection();
-        if (sel) {
-          const inside =
-            sel.rangeCount > 0 && root.contains(sel.anchorNode);
-          if (!inside) {
-            try {
-              sel.collapse(root, root.childNodes.length);
-            } catch {
-              // Some browsers throw if the anchor/offset is invalid
-              // (e.g., root temporarily detached). Fall through to
-              // focus() and let the browser do what it can.
-            }
-          }
+
+        const saved = engine.getSelectedRange();
+        if (saved !== null) {
+          // Re-apply the existing selection through the engine's
+          // WebKit-safe ordering. Idempotent if focus is already on
+          // the root (`willFocus` is false in that branch).
+          engine.setSelectedRange(saved.start, saved.end);
+          return;
         }
-        root.focus();
+
+        // No prior selection inside root — place a collapsed caret
+        // at end-of-content via the engine, which routes through
+        // the same focus-then-select path.
+        const text = engine.getText();
+        engine.setSelectedRange(text.length, text.length);
       },
       blur() {
         const engine = engineRef.current;

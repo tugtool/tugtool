@@ -691,6 +691,46 @@ export async function awaitEngineReady(
   await caller.waitForCondition<boolean>(script, opts);
 }
 
+/**
+ * Bind a fake session for a tide-card so its content factory skips
+ * past the project-picker UI and renders TideCardBody directly.
+ *
+ * Production binds via a `spawn_session_ok` CONTROL ack from a live
+ * tugcast/tugcode/Claude pipeline. In the in-app harness, that
+ * pipeline isn't running for most tests — we just need the editor
+ * to mount so we can exercise focus, selection, and persistence
+ * behavior. This helper writes synthetic values directly into the
+ * `cardSessionBindingStore`, which the existing
+ * `cardServicesStore` reconciler picks up and uses to construct the
+ * real-shape services bag against the harness's WebSocket
+ * connection. The stores stay empty (no frames flow in stub mode);
+ * the editor renders and accepts focus.
+ *
+ * Sentinels (test-deterministic by default):
+ *   - `tugSessionId` defaults to `test-session-${cardId}`
+ *   - `workspaceKey` defaults to `test-workspace-${cardId}`
+ *   - `projectDir`   defaults to `/tmp/test-project`
+ */
+export function bindTideSession(
+  caller: HarnessCaller,
+  cardId: string,
+  options?: {
+    tugSessionId?: string;
+    workspaceKey?: string;
+    projectDir?: string;
+  },
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const optsLit =
+    options !== undefined && options !== null
+      ? JSON.stringify(options)
+      : "undefined";
+  const script = callSurface(
+    `(window.__tug.bindTideSession(${lit(cardId)}, ${optsLit}), null)`,
+  );
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)
@@ -988,22 +1028,40 @@ export interface AppLifecycleOptions {
   timeoutMs?: number;
 }
 
-export function simulateAppResign(
+export async function simulateAppResign(
   caller: HarnessCaller,
   opts?: AppLifecycleOptions,
 ): Promise<void> {
   const params: Record<string, unknown> = {};
   if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
-  return caller.rpcCall<void>("simulateAppResign", params);
+  await caller.rpcCall<void>("simulateAppResign", params);
+  // Two-stage wait: the Swift primitive returned only when AppKit's
+  // `didResignActive` notification fired, but WKWebView's
+  // `window.blur` dispatch lags the notification by several
+  // milliseconds and CAN BE DROPPED entirely under rapid back-to-back
+  // cycling (WebKit's run loop coalesces the focus/blur pair). Wait
+  // here until the JS-side `hasFocus` axis flips false — that's the
+  // contract the deck-store listener uses to gate save flush + state
+  // change, so any test that proceeds past `simulateAppResign`
+  // expects this state already settled.
+  await caller.waitForCondition<boolean>(
+    `(typeof window.__tug !== "undefined") && (window.__tug.getHasFocus() === false)`,
+    { timeoutMs: 2000 },
+  );
 }
 
-export function simulateAppBecomeActive(
+export async function simulateAppBecomeActive(
   caller: HarnessCaller,
   opts?: AppLifecycleOptions,
 ): Promise<void> {
   const params: Record<string, unknown> = {};
   if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
-  return caller.rpcCall<void>("simulateAppBecomeActive", params);
+  await caller.rpcCall<void>("simulateAppBecomeActive", params);
+  // Symmetric wait — see `simulateAppResign` for rationale.
+  await caller.waitForCondition<boolean>(
+    `(typeof window.__tug !== "undefined") && (window.__tug.getHasFocus() === true)`,
+    { timeoutMs: 2000 },
+  );
 }
 
 export function simulateAppHide(
