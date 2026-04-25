@@ -1,15 +1,15 @@
 /**
  * `resolveDefaultFocusTarget` + `traceApplyDefaultFocus` tests —
- * pin the bag-less activation fallback path added to `card-host.tsx`
- * so tab-switch-to-fresh-card reliably moves the caret into the new
- * card.
+ * pin the bag-less activation fallback path so a card without a
+ * saved focus snapshot still receives the caret on activation
+ * (otherwise tab-switch-to-fresh-card or close-handoff to a never-
+ * activated neighbor would strand focus on the outgoing card).
  *
- * The A3 activation effect used to early-return on `!bag` and emit
- * no focus-call; fresh cards therefore received no focus on
- * activation and the caret remained stranded on the outgoing card.
  * These tests pin the priority chain (focus-key="primary" →
  * any focus-key → persist-value → generic focusable) and the
- * respect-existing-focus contract.
+ * respect-existing-focus contract. After selection plan #step-23b
+ * Pass 3 split (c), the production caller is `focus-transfer.ts`'s
+ * "default-focus" target branch (site `"focus-transfer-default"`).
  */
 
 import "./setup-rtl";
@@ -20,7 +20,7 @@ import {
   resolveDefaultFocusTarget,
   traceApplyDefaultFocus,
   DEFAULT_FOCUS_SELECTORS,
-} from "@/components/chrome/card-host";
+} from "@/default-focus";
 import { deckTrace, type DeckTraceEvent } from "@/deck-trace";
 
 // ---------------------------------------------------------------------------
@@ -169,15 +169,15 @@ describe("traceApplyDefaultFocus — focuses target and records focus-call", () 
     expect(document.activeElement).toBe(input);
 
     const events = deckTrace.dump() as DeckTraceEvent[];
-    const focusCall = events.find((e) => e.kind === "focus-call");
-    expect(focusCall).toBeDefined();
-    expect(focusCall!.kind === "focus-call" && focusCall.cardId).toBe("card-A");
-    expect(focusCall!.kind === "focus-call" && focusCall.site).toBe(
-      "a3-default-focus",
+    const focusCall = events.find(
+      (e): e is Extract<DeckTraceEvent, { kind: "focus-call" }> =>
+        e.kind === "focus-call",
     );
-    expect(
-      focusCall!.kind === "focus-call" && focusCall.targetSelector,
-    ).toBe("[data-tug-persist-value]");
+    expect(focusCall).toBeDefined();
+    if (focusCall === undefined) return;
+    expect(focusCall.cardId).toBe("card-A");
+    expect(focusCall.site).toBe("a3-default-focus");
+    expect(focusCall.targetSelector).toBe("[data-tug-persist-value]");
   });
 
   it("respects focus already inside the card root (click-in-progress wins)", () => {
@@ -200,11 +200,13 @@ describe("traceApplyDefaultFocus — focuses target and records focus-call", () 
 
     const focusCall = deckTrace
       .dump()
-      .find((e) => e.kind === "focus-call");
+      .find(
+        (e): e is Extract<DeckTraceEvent, { kind: "focus-call" }> =>
+          e.kind === "focus-call",
+      );
     expect(focusCall).toBeDefined();
-    expect(
-      focusCall!.kind === "focus-call" && focusCall.targetSelector,
-    ).toBe("already-inside-card");
+    if (focusCall === undefined) return;
+    expect(focusCall.targetSelector).toBe("already-inside-card");
   });
 
   it("records focus-call with targetSelector='none' when no focusable descendant exists", () => {
@@ -218,10 +220,12 @@ describe("traceApplyDefaultFocus — focuses target and records focus-call", () 
 
     const focusCall = deckTrace
       .dump()
-      .find((e) => e.kind === "focus-call");
+      .find(
+        (e): e is Extract<DeckTraceEvent, { kind: "focus-call" }> =>
+          e.kind === "focus-call",
+      );
     expect(focusCall).toBeDefined();
-    expect(
-      focusCall!.kind === "focus-call" && focusCall.targetSelector,
-    ).toBe("none");
+    if (focusCall === undefined) return;
+    expect(focusCall.targetSelector).toBe("none");
   });
 });

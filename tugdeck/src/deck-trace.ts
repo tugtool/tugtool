@@ -73,36 +73,12 @@
  * @module deck-trace
  */
 
-/**
- * Serializable mirror of `ActivationTarget` for inclusion in a3-fire
- * events. `focus-element` carries a stringified element descriptor
- * (tag + id/class) instead of the live `HTMLElement` — DOM nodes
- * contain cyclic parent/child links that poison JSON.stringify and
- * cause the whole `getDeckTrace()` array to be rejected by
- * WKWebView's evaluateJavaScript serializer as "unsupported type".
- */
-export type TraceActivationTarget =
-  | { kind: "focus-element"; el: string }
-  | { kind: "dispatch-activated" }
-  | { kind: "none" };
 import { getDeckStore } from "./lib/deck-store-registry";
 import { isFocusDestination } from "./deck-store-selectors";
 
 // ---------------------------------------------------------------------------
 // Event shape (Spec [#s01-deck-trace-event])
 // ---------------------------------------------------------------------------
-
-/**
- * The reason an `[A3]` effect body exited before calling `.focus()`.
- * `null` (in the event payload) means the body ran to completion.
- */
-export type A3EarlyReturn =
-  | "first-run"
-  | "not-destination"
-  | "prev-was-true"
-  | "no-host"
-  | "no-bag"
-  | "gate-refused";
 
 /** Source tag on `save-callback` events — matches the plan's wiring list. */
 export type SaveCallbackSource =
@@ -190,17 +166,6 @@ export type DeckTraceEvent = {
       hostStackId: string;
     }
   | {
-      kind: "a3-fire";
-      cardId: string;
-      isFirstRun: boolean;
-      prev: boolean;
-      now: boolean;
-      earlyReturn: A3EarlyReturn | null;
-      gatePassed: boolean | null;
-      target: TraceActivationTarget | null;
-      focusedEl: string | null;
-    }
-  | {
       kind: "focus-call";
       site: string;
       cardId: string;
@@ -246,7 +211,6 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "destination-flip" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "card-host-mount" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "card-host-unmount" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "a3-fire" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "focus-call" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "focusin" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, StampedFields>

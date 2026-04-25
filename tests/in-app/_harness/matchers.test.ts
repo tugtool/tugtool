@@ -155,15 +155,19 @@ describe("toContainOrderedSubset — pass cases", () => {
   });
 
   test("nested object partial-match recurses", () => {
+    // Synthetic event with a nested object — exercises the matcher's
+    // recursive partial-match on object-typed fields. The kind is
+    // arbitrary; matchers accept Record<string, unknown> so any
+    // shape works for testing structural recursion.
     const result = toContainOrderedSubset(
       [
         {
-          kind: "a3-fire",
+          kind: "synthetic-nested",
           cardId: "c1",
-          target: { kind: "selector", selector: "[data-x=y]", cardId: "c1" },
+          payload: { kind: "selector", selector: "[data-x=y]", cardId: "c1" },
         },
       ],
-      [{ kind: "a3-fire", target: { kind: "selector" } }],
+      [{ kind: "synthetic-nested", payload: { kind: "selector" } }],
     );
     expect(result.pass).toBe(true);
   });
@@ -283,9 +287,12 @@ describe("toContainOrderedSubset — fail cases", () => {
   });
 
   test("nested object key mismatch returns false", () => {
+    // Synthetic event — exercises the matcher's nested-object
+    // mismatch path. See "nested object partial-match recurses" for
+    // the kind-agnostic pattern.
     const result = toContainOrderedSubset(
-      [{ kind: "a3-fire", target: { kind: "selector", selector: "x" } }],
-      [{ kind: "a3-fire", target: { kind: "focus-key" } }],
+      [{ kind: "synthetic-nested", payload: { kind: "selector", selector: "x" } }],
+      [{ kind: "synthetic-nested", payload: { kind: "focus-key" } }],
     );
     expect(result.pass).toBe(false);
   });
@@ -368,20 +375,9 @@ const EVENT_FIXTURES: Record<
     cardId: "c2",
     hostStackId: "s1",
   },
-  "a3-fire": {
-    kind: "a3-fire",
-    cardId: "c2",
-    isFirstRun: false,
-    prev: false,
-    now: true,
-    earlyReturn: null,
-    gatePassed: true,
-    target: { kind: "focus-element", el: "input#c2" },
-    focusedEl: "input#c2",
-  },
   "focus-call": {
     kind: "focus-call",
-    site: "a3-default-focus",
+    site: "focus-transfer",
     cardId: "c2",
     targetSelector: "[data-tug-focus-key=\"primary\"]",
     activeBefore: "body",
@@ -461,25 +457,9 @@ describe("summarizeEvent — label grammar per kind", () => {
     );
   });
 
-  test("a3-fire omits null early-return and target when absent", () => {
-    expect(
-      summarizeEvent({
-        kind: "a3-fire",
-        cardId: "c2",
-        isFirstRun: true,
-        prev: false,
-        now: false,
-        earlyReturn: "first-run",
-        gatePassed: null,
-        target: null,
-        focusedEl: null,
-      }),
-    ).toBe("a3-fire c2 firstRun=true prev=false→now=false early=first-run");
-  });
-
   test("focus-call renders cardId, site, selector, and active arrow", () => {
     expect(summarizeEvent(EVENT_FIXTURES["focus-call"])).toBe(
-      "focus-call c2 site=a3-default-focus target=[data-tug-focus-key=\"primary\"] active=body→input#c2",
+      "focus-call c2 site=focus-transfer target=[data-tug-focus-key=\"primary\"] active=body→input#c2",
     );
   });
 

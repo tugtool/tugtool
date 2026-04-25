@@ -47,12 +47,16 @@
  *   `resolveActivationTarget` resolver. The three side-effecting
  *   entries were stubs that threw with step pointers.
  *
- * - **Step 23B Pass 3 split (a)** — `transferFocusForActivation`'s
- *   five-step body lands here, plus its first caller wiring inside
- *   `pane-focus-controller.ts` (Branch A activation). Splits (b) and
- *   (c) wire the remaining gesture sources (`tug-pane.tsx`,
- *   `deck-manager.ts#_removeCard` / `_closePane`) and retire the
- *   legacy `[A3]` `useLayoutEffect` in `CardHost`.
+ * - **Step 23B** — `transferFocusForActivation`'s five-step body
+ *   lands here, wired into all three row-1/2/3 gesture sources:
+ *   `pane-focus-controller.ts` (split (a)),
+ *   `tug-pane.tsx#performSelectCard` and
+ *   `deck-manager.ts#_removeCard` / `_closePane` (split (b)). The
+ *   legacy `[A3]` `useLayoutEffect` in `CardHost` retires in split
+ *   (c); `resolveActivationTarget` grows a `default-focus` variant
+ *   so cards with no usable bag.focus (m16's c1, fresh DOM-authority
+ *   cards) still receive the caret via the
+ *   {@link DEFAULT_FOCUS_SELECTORS} chain.
  *
  * - **Steps 23C / 23D** — `captureFocusForDragStart`,
  *   `transferFocusAfterMove`, and `reactivateCurrentFocusDestination`
@@ -78,10 +82,18 @@
  *     in the right place" logic in a way the framework cannot
  *     generalize (e.g. an editor with multiple nested focusables).
  *
- *   - `{ kind: "none" }` — nothing to focus. Returned when the card
- *     is unknown, when no bag exists, when the bag declares
- *     `focus.kind === "none"`, when no host root is registered for
- *     the card, or when the targeted element is not in the DOM.
+ *   - `{ kind: "default-focus", cardRoot }` — the card is DOM-
+ *     authority but has no usable focus snapshot (no bag, or
+ *     `bag.focus` is `null` / `kind: "none"`, or the snapshot
+ *     pointed at a stale element). The caller passes `cardRoot` to
+ *     `traceApplyDefaultFocus` from `default-focus.ts`, which
+ *     walks the {@link DEFAULT_FOCUS_SELECTORS} priority chain.
+ *
+ *   - `{ kind: "none" }` — nothing to focus. Returned when no host
+ *     root is registered for the card. Without a host root, the
+ *     resolver cannot scope a default-focus walk, so even fresh
+ *     cards return `none` until their `CardHost` registration
+ *     completes.
  *
  * The union carries the resolved element directly so downstream
  * gating and transfer code never re-queries. Re-querying would invite
@@ -145,6 +157,7 @@ import { flushSync } from "react-dom";
 
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deckTrace, formatElement } from "./deck-trace";
+import { traceApplyDefaultFocus } from "./default-focus";
 import { canProgrammaticallyFocus } from "./focus-theft-gate";
 
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -206,9 +219,27 @@ export type ActivationTarget =
     }
   | {
       /**
-       * Nothing to focus. The card is unknown, has no bag, has
-       * `focus.kind === "none"`, or the target element could not
-       * be located in the DOM. The caller is expected to do
+       * The card is DOM-authority but has no usable focus snapshot
+       * (no bag yet, or `bag.focus` is `null` / `kind: "none"`). The
+       * caller passes `cardRoot` to {@link traceApplyDefaultFocus}
+       * which walks the {@link DEFAULT_FOCUS_SELECTORS} priority
+       * chain to land the caret on a sensible default.
+       *
+       * This case covers two production scenarios: a fresh DOM-
+       * authority card whose first activation has no prior save
+       * (creation paths route through this when their host root is
+       * registered before the activation fires), and a neighbor
+       * card promoted to active by a tab-close handoff (the m16
+       * scenario, where `c1` has never been saved).
+       */
+      kind: "default-focus";
+      cardRoot: HTMLElement;
+    }
+  | {
+      /**
+       * Nothing to focus. The card is unknown, no host root is
+       * registered, or the target element resolved by the saved
+       * snapshot is not in the DOM. The caller is expected to do
        * nothing.
        */
       kind: "none";
@@ -243,45 +274,66 @@ export function resolveActivationTarget(
   store: FocusTransferStore,
 ): ActivationTarget {
   const bag = store.getCardState(cardId);
-  if (bag === undefined) return { kind: "none" };
 
   // Content-owning cards dispatch through the factory's registered
   // callback. We don't try to resolve a DOM element for them — the
   // factory knows where focus should land in its own subtree.
-  if (bag.content !== undefined) return { kind: "dispatch-activated" };
-
-  const focus = bag.focus;
-  if (!focus || focus.kind === "none") return { kind: "none" };
+  if (bag !== undefined && bag.content !== undefined) {
+    return { kind: "dispatch-activated" };
+  }
 
   const hostRoot = store.peekCardHostRoot(cardId);
   if (hostRoot === null) return { kind: "none" };
 
-  let el: HTMLElement | null = null;
-  if (focus.kind === "form-control") {
-    el = hostRoot.querySelector<HTMLElement>(
-      `[data-tug-persist-value="${CSS.escape(focus.persistKey)}"]`,
-    );
-  } else if (focus.kind === "dom") {
-    el = hostRoot.querySelector<HTMLElement>(
-      `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`,
-    );
-  } else if (focus.kind === "component-owned") {
-    el = hostRoot.querySelector<HTMLElement>(
-      "[data-tug-prompt-input-root] [contenteditable]",
-    );
+  // Defensive: a stale `registerCardHostRoot` entry may point at a
+  // detached subtree (e.g. mid-cross-pane move where the cleanup
+  // ordering left the registry pointing at the previous DOM node).
+  // `querySelector` on a detached root still returns its descendants
+  // — without this guard the resolver would hand back a default-
+  // focus target whose `traceApplyDefaultFocus` walk targets a node
+  // outside the document. Mirror the same `isConnected` check the
+  // focus-element path uses on the resolved target.
+  if (!hostRoot.isConnected) return { kind: "none" };
+
+  // DOM-authority card with a usable saved focus snapshot: resolve
+  // the element via the snapshot's selector and return it for an
+  // exact restore.
+  const focus = bag?.focus;
+  if (focus !== undefined && focus !== null && focus.kind !== "none") {
+    let el: HTMLElement | null = null;
+    if (focus.kind === "form-control") {
+      el = hostRoot.querySelector<HTMLElement>(
+        `[data-tug-persist-value="${CSS.escape(focus.persistKey)}"]`,
+      );
+    } else if (focus.kind === "dom") {
+      el = hostRoot.querySelector<HTMLElement>(
+        `[data-tug-focus-key="${CSS.escape(focus.focusKey)}"]`,
+      );
+    } else if (focus.kind === "component-owned") {
+      el = hostRoot.querySelector<HTMLElement>(
+        "[data-tug-prompt-input-root] [contenteditable]",
+      );
+    }
+
+    // Defensive check. The registered host root may have been
+    // detached since registration without a matching unregister
+    // (the callback-ref cleanup in `CardHost` handles the common
+    // case, but nothing forbids a stray). A detached element's
+    // `querySelector` still returns its descendants; we want to
+    // refuse focus on anything that isn't live in the document.
+    if (el !== null && el.isConnected) {
+      return { kind: "focus-element", el };
+    }
+    // The snapshot pointed at an element that no longer exists.
+    // Fall through to the default-focus path so the activated card
+    // still receives the caret rather than silently no-op'ing.
   }
 
-  if (el === null) return { kind: "none" };
-
-  // Defensive check. The registered host root may have been detached
-  // since registration without a matching unregister (the callback-
-  // ref cleanup in `CardHost` handles the common case, but nothing
-  // forbids a stray). A detached element's `querySelector` still
-  // returns its descendants; we want to refuse focus on anything
-  // that isn't live in the document.
-  if (!el.isConnected) return { kind: "none" };
-
-  return { kind: "focus-element", el };
+  // DOM-authority card with no usable snapshot: hand the host root
+  // back so the caller can run the default-focus chain. Covers
+  // never-saved cards (m16's c1) and cards whose snapshot resolved
+  // a stale element.
+  return { kind: "default-focus", cardRoot: hostRoot };
 }
 
 /**
@@ -330,19 +382,14 @@ export interface TransferFocusForActivationOptions {
  * resolve the incoming card's target, gate through the focus-theft
  * rules, and transfer focus / DOM selection.
  *
- * Implemented in Step 23B (Pass 3 split (a) of the
- * `#step-23-execution-strategy`). The five-step body below mirrors
- * the plan's spec verbatim.
- *
- * **Interim status (Pass 3 splits (a) + (b)):** the legacy `[A3]`
- * `useLayoutEffect` in `CardHost` remains live until split (c)
- * retires it. That means each activation transition emits both
- * the helper's `focus-call` (site `"focus-transfer"`) and the
- * legacy effect's `focus-call` (site `"a3-…"`). Both target the
- * same element; `el.focus()` is idempotent on an already-focused
- * element, so the duplication is observable in the deck-trace ring
- * but not in user-visible focus / caret behavior. The existing
- * `toContainOrderedSubset` matchers accept either occurrence.
+ * Implemented across Pass 3 of the
+ * `#step-23-execution-strategy`: split (a) shipped the body and the
+ * `pane-focus-controller` wiring; split (b) wired
+ * `tug-pane#performSelectCard` and `deck-manager#_removeCard` /
+ * `_closePane`; split (c) retired the `[A3]` `useLayoutEffect` in
+ * `CardHost` and grew the resolver's `default-focus` variant. The
+ * helper is now the single emitter of `focus-call` events for
+ * row-1/2/3 activations.
  */
 export function transferFocusForActivation(
   options: TransferFocusForActivationOptions,
@@ -437,6 +484,38 @@ export function transferFocusForActivation(
           via: "restoreCardDomSelection",
         });
       }
+    }
+    return;
+  }
+
+  if (target.kind === "default-focus") {
+    // Walk the DEFAULT_FOCUS_SELECTORS chain inside the activated
+    // card's root. The helper records its own `focus-call` event
+    // (site `"focus-transfer-default"`) so traces can distinguish a
+    // snapshot-driven restore from a default-fallback restore.
+    traceApplyDefaultFocus(
+      "focus-transfer-default",
+      incomingCardId,
+      target.cardRoot,
+    );
+
+    // A card may have a saved domSelection even when its focus
+    // snapshot is missing (e.g., a content factory that publishes a
+    // selection without a focus key). Preserve [A3]'s exact
+    // semantics: restore selection regardless of which focus path
+    // we took.
+    const bag = store.getCardState(incomingCardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      selectionGuard.restoreCardDomSelection(
+        incomingCardId,
+        bag.domSelection,
+        target.cardRoot,
+      );
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId: incomingCardId,
+        via: "restoreCardDomSelection",
+      });
     }
     return;
   }

@@ -60,18 +60,6 @@ export type ExpectedEntry = Record<string, unknown>;
 // ---------------------------------------------------------------------------
 
 /**
- * Minimal mirror of `tugdeck/src/deck-trace.ts` → `TraceActivationTarget`.
- * Drives {@link summarizeEvent}'s `a3-fire` branch. Mirror (rather than
- * `import type`) keeps `tests/in-app/` tsc runs free of tugdeck's
- * React/DOM graph; drift against the real union is caught at
- * compile time by `tugdeck/src/__tests__/trace-summarize-drift.test.ts`.
- */
-export type TraceActivationTargetShape =
-  | { kind: "focus-element"; el: string }
-  | { kind: "dispatch-activated" }
-  | { kind: "none" };
-
-/**
  * Discriminated-union mirror of `tugdeck/src/deck-trace.ts` →
  * `DeckTraceEvent`'s kind-specific payload. Fields stamped by the
  * trace module (`timestamp`, `seq`, `loc`, `store`) are declared
@@ -110,17 +98,6 @@ export type DeckTraceEventShape = {
       kind: "card-host-unmount";
       cardId: string;
       hostStackId: string;
-    }
-  | {
-      kind: "a3-fire";
-      cardId: string;
-      isFirstRun: boolean;
-      prev: boolean;
-      now: boolean;
-      earlyReturn: string | null;
-      gatePassed: boolean | null;
-      target: TraceActivationTargetShape | null;
-      focusedEl: string | null;
     }
   | {
       kind: "focus-call";
@@ -169,7 +146,6 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "destination-flip",
   "card-host-mount",
   "card-host-unmount",
-  "a3-fire",
   "focus-call",
   "focusin",
   "focusout",
@@ -309,17 +285,6 @@ function summarizeValue(v: unknown): string {
 }
 
 /**
- * Render the `a3-fire` event's `target` field (a
- * {@link TraceActivationTargetShape}) as a short label. Only the
- * `focus-element` variant carries a payload; the others are pure
- * tags.
- */
-function summarizeTarget(t: TraceActivationTargetShape): string {
-  if (t.kind === "focus-element") return `focus-element(${t.el})`;
-  return t.kind;
-}
-
-/**
  * Format a scalar field value for inclusion in a summarizeEvent
  * label. Maps `undefined` → `?` (partial expected-entry sentinel)
  * and `null` → `∅` (explicit-null marker, distinct from unset);
@@ -339,9 +304,9 @@ function fmt(v: unknown): string {
  * One-line summary of a fully-typed {@link DeckTraceEventShape}.
  * Label grammar per Step 0e: kind-specific short forms
  * (`fr-flip A→B trigger=…`, `destination-flip B:false→true`,
- * `a3-fire B firstRun=true prev=false→now=true early=not-destination`,
- * etc.) chosen to make the sequence scannable in 10 seconds without
- * opening the full JSON dump.
+ * `focus-call C site=… target=… active=…→…`, etc.) chosen to make
+ * the sequence scannable in 10 seconds without opening the full
+ * JSON dump.
  *
  * The `default` branch triggers a compile-time `never` check: every
  * kind in the mirrored {@link DeckTraceEventShape} union must have a
@@ -365,26 +330,6 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `card-host-mount ${fmt(e.cardId)} stack=${fmt(e.hostStackId)}`;
     case "card-host-unmount":
       return `card-host-unmount ${fmt(e.cardId)} stack=${fmt(e.hostStackId)}`;
-    case "a3-fire": {
-      const parts = [
-        `a3-fire ${fmt(e.cardId)}`,
-        `firstRun=${fmt(e.isFirstRun)}`,
-        `prev=${fmt(e.prev)}→now=${fmt(e.now)}`,
-      ];
-      if (e.earlyReturn !== null && e.earlyReturn !== undefined) {
-        parts.push(`early=${e.earlyReturn}`);
-      }
-      if (e.gatePassed !== null && e.gatePassed !== undefined) {
-        parts.push(`gate=${e.gatePassed}`);
-      }
-      if (e.target !== null && e.target !== undefined) {
-        parts.push(`target=${summarizeTarget(e.target)}`);
-      }
-      if (e.focusedEl !== null && e.focusedEl !== undefined) {
-        parts.push(`focused=${e.focusedEl}`);
-      }
-      return parts.join(" ");
-    }
     case "focus-call": {
       const parts = [
         `focus-call ${fmt(e.cardId)}`,

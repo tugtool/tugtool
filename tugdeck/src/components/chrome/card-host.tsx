@@ -93,33 +93,10 @@ import type {
 import * as paneContentRegistry from "./pane-content-registry";
 import * as paneRootRegistry from "./pane-root-registry";
 import { CardPortal } from "./card-portal";
-import { useFocusDestination } from "../../deck-store-hooks";
-import { canProgrammaticallyFocus } from "../../focus-theft-gate";
 import {
   deckTrace,
   formatElement,
-  type A3EarlyReturn,
-  type TraceActivationTarget,
 } from "../../deck-trace";
-import {
-  resolveActivationTarget,
-  type ActivationTarget,
-} from "../../focus-transfer";
-
-/**
- * Serialize an {@link ActivationTarget} into a JSON-safe shape for
- * deck-trace. The live `focus-element.el: HTMLElement` carries cyclic
- * parent/child references that break `JSON.stringify` — which in turn
- * breaks WKWebView's evalJS result serialization (in-app test harness
- * calls `window.__tug.getDeckTrace()`, which returns the raw event
- * array; any cyclic event poisons the whole array).
- */
-function sanitizeActivationTarget(t: ActivationTarget): TraceActivationTarget {
-  if (t.kind === "focus-element") {
-    return { kind: "focus-element", el: formatElement(t.el) };
-  }
-  return t;
-}
 
 export interface CardHostProps {
   /** Stable identity of this card — survives cross-pane moves. */
@@ -488,105 +465,6 @@ function traceApplyFocusSnapshot(
     activeBefore,
     activeAfter,
     hidden: isElementHidden(target),
-  });
-}
-
-/**
- * Default focus selector fallback chain, tried in priority order. A
- * card whose saved bag has no `focus` snapshot (fresh card, or a
- * card that was saved without focus on it) still needs to receive
- * the caret on activation — otherwise tab-switch-to-fresh-card
- * leaves focus stranded on the outgoing card's input, which is
- * broken UX.
- *
- * Priority order:
- *   1. `[data-tug-focus-key="primary"]` — card author's declared
- *      primary focus target. Highest signal; authors who care
- *      about default focus opt in by tagging their preferred
- *      element.
- *   2. `[data-tug-focus-key]` with any value — any tagged focus
- *      target. Allows cards to declare a focus target without
- *      naming it "primary" specifically.
- *   3. `[data-tug-persist-value]` — first persisted form control.
- *      Gallery-input-style cards with no explicit focus-key still
- *      get their first input focused.
- *   4. Generic focusable — input / textarea / select / button /
- *      contenteditable / tabindex>=0. Catch-all so cards without
- *      any tug-specific metadata still receive a sensible default.
- */
-export const DEFAULT_FOCUS_SELECTORS: readonly string[] = [
-  '[data-tug-focus-key="primary"]',
-  "[data-tug-focus-key]",
-  "[data-tug-persist-value]",
-  'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
-];
-
-/**
- * Resolve the default focus target inside `cardRoot` using the
- * priority chain above. Returns the first selector that matches a
- * live, connected, non-hidden element.
- */
-export function resolveDefaultFocusTarget(cardRoot: HTMLElement): {
-  el: HTMLElement | null;
-  selector: string;
-} {
-  for (const selector of DEFAULT_FOCUS_SELECTORS) {
-    const el = cardRoot.querySelector<HTMLElement>(selector);
-    if (el !== null && el.isConnected && !isElementHidden(el)) {
-      return { el, selector };
-    }
-  }
-  return { el: null, selector: "" };
-}
-
-/**
- * Apply the default focus target for a card that has no saved
- * focus snapshot. Emits a `focus-call` deck-trace event so the
- * activation is observable on the same channel as snapshot-based
- * restores.
- *
- * Respects existing focus inside the card — if the user's caret
- * is already somewhere in `cardRoot`, that wins over the default
- * (same semantics as `applyFocusSnapshot`).
- */
-export function traceApplyDefaultFocus(
-  site: string,
-  cardId: string,
-  cardRoot: HTMLElement,
-): void {
-  const doc = cardRoot.ownerDocument;
-  const activeBefore = formatElement(doc.activeElement);
-
-  // Respect any focus already inside the card. Matches
-  // `applyFocusSnapshot`'s contract — a click that landed during
-  // the restore window wins over the default.
-  const currentActive = doc.activeElement;
-  if (currentActive instanceof HTMLElement && cardRoot.contains(currentActive)) {
-    deckTrace.record({
-      kind: "focus-call",
-      site,
-      cardId,
-      targetSelector: "already-inside-card",
-      activeBefore,
-      activeAfter: activeBefore,
-      hidden: false,
-    });
-    return;
-  }
-
-  const { el: target, selector: targetSelector } =
-    resolveDefaultFocusTarget(cardRoot);
-  if (target !== null) target.focus();
-
-  const activeAfter = formatElement(doc.activeElement);
-  deckTrace.record({
-    kind: "focus-call",
-    site,
-    cardId,
-    targetSelector: target !== null ? targetSelector : "none",
-    activeBefore,
-    activeAfter,
-    hidden: target !== null ? isElementHidden(target) : false,
   });
 }
 
@@ -989,173 +867,22 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostStackId]);
 
-  // --- [A3] Shared activation effect ----------------------------------------
+  // Activation-driven focus + selection transfer is owned by
+  // `transferFocusForActivation` in `focus-transfer.ts`, called
+  // synchronously from each gesture source (pane-focus-controller,
+  // `tug-pane#performSelectCard`, `deck-manager#_removeCard` /
+  // `_closePane`). The legacy `[A3]` `useLayoutEffect` that lived
+  // here — subscribing to `useFocusDestination` and re-applying
+  // focus/selection/default-focus on every reactivation — was
+  // retired in selection plan #step-23b Pass 3 split (c). CardHost
+  // is now a registrar (it registers its root via
+  // `store.registerCardHostRoot`) and a cold-boot/cross-pane
+  // restorer; runtime activation transitions flow through the
+  // helper, not through this component.
   //
-  // Subscribes to `isFocusDestination(cardId)` via `useFocusDestination` so
-  // every transition of "is this card the focus destination right now?" is
-  // observed by React. The effect body runs only on `false → true`
-  // transitions; `true → false` is a deactivation (an app-lifecycle concern,
-  // not ours). Each reactivation — intra-pane tab switch ([M01]), pane
-  // activation ([M03]), tab close handoff ([M16]) — is handled here.
-  //
-  // Mount guard: the cold-boot restore path (above) already applied focus,
-  // selection, scroll, etc. during the initial mount for the active card.
-  // To avoid double-applying on a reload where this card is the destination
-  // at render 0, skip the first effect run entirely. A card that mounts
-  // *not* as the destination (e.g. a neighbor in a multi-card pane) still
-  // gets its body fired when it later becomes the destination — the skip
-  // is keyed on "first render of this CardHost," not "first true reading."
-  // This distinction is what closes [M16]: the neighbor was mounted all
-  // along but never fired an activation body before; `[A3]` fires it once
-  // the close-handoff flips `isFocusDestination` on.
-  //
-  // Dispatch by card flavor:
-  //   - **Content-owning** (`bag.content !== undefined`): delegate to the
-  //     factory's `onCardActivated` callback. Registration lands when EM
-  //     card factories opt in (Step 24). Until then the branch no-ops.
-  //   - **DOM-authority** (`bag.content === undefined`): re-apply
-  //     `bag.focus` via `applyFocusSnapshot` and republish
-  //     `bag.domSelection` to `selectionGuard` so `::selection` / the
-  //     inactive-selection highlight repaint.
-  //
-  // Both branches gate on {@link canProgrammaticallyFocus} ([A8]) so focus
-  // is never stolen from a user whose caret is elsewhere — the single
-  // source of truth for [R07] avoidance.
-  //
-  // Redundancy note: the Step 11 cross-pane effect above still fires on
-  // `hostStackId` transitions for FC cards. That overlap is intentional
-  // for one step; Step 24 reconciles (retires the cross-pane effect once
-  // [A3] covers the same transitions).
-  //
-  // Uses `useLayoutEffect` (not `useEffect`) so activation applies in the
-  // same paint as the store-driven re-render that produced the transition,
-  // matching the timing expected by `selectionGuard` paint consumers.
-  // L02 (external state via `useSyncExternalStore` inside
-  // `useFocusDestination`), L03 (layout phase), R07 ([A8] gate).
-  const isFocusDestinationNow = useFocusDestination(cardId);
-  const hasRunActivationEffectRef = useRef(false);
-  const prevIsFocusDestinationRef = useRef(false);
-  useLayoutEffect(() => {
-    const isFirstRun = !hasRunActivationEffectRef.current;
-    hasRunActivationEffectRef.current = true;
-    const prev = prevIsFocusDestinationRef.current;
-    prevIsFocusDestinationRef.current = isFocusDestinationNow;
-
-    // Trace helper: emit a single `a3-fire` event tagged with the
-    // exact reason this effect body exited (or `null` when the body
-    // ran to completion). Called on every reachable return path so
-    // the trace never misses a run — `earlyReturn` is the single
-    // most important field for diagnosing M-series regressions.
-    const emitA3 = (
-      earlyReturn: A3EarlyReturn | null,
-      gatePassed: boolean | null,
-      focusedEl: HTMLElement | null,
-    ): void => {
-      const target = resolveActivationTarget(cardId, store);
-      deckTrace.record({
-        kind: "a3-fire",
-        cardId,
-        isFirstRun,
-        prev,
-        now: isFocusDestinationNow,
-        earlyReturn,
-        gatePassed,
-        target: sanitizeActivationTarget(target),
-        focusedEl: focusedEl !== null ? formatElement(focusedEl) : null,
-      });
-    };
-
-    // Mount: the cold-boot restore path owns initial focus + selection
-    // for a card that is already the destination. Skip regardless of
-    // the bit's value so neighbor cards (not destinations at mount)
-    // also start from a clean slate without firing a spurious body.
-    if (isFirstRun) {
-      emitA3("first-run", null, null);
-      return;
-    }
-
-    // Only react on the false → true transition. `true → false` is a
-    // deactivation; no blur is applied here (that's an app-lifecycle
-    // concern, not the activation effect's).
-    if (!isFocusDestinationNow) {
-      emitA3("not-destination", null, null);
-      return;
-    }
-    if (prev) {
-      emitA3("prev-was-true", null, null);
-      return;
-    }
-
-    const hostEl = hostContentElRef.current;
-    const cardRoot = hostEl ? findCardRoot(hostEl, cardId) : null;
-
-    // [A8] focus-theft gate. Consult once; abort silently when unsafe
-    // regardless of card flavor. The gate checks `state.hasFocus`,
-    // re-checks `isFocusDestination` (redundant with our trigger but
-    // cheap), and refuses if the user's caret is on a real element
-    // outside the target card.
-    const gatePassed = canProgrammaticallyFocus(cardId, store.getSnapshot(), {
-      targetCardHostEl: cardRoot,
-    });
-    if (!gatePassed) {
-      emitA3("gate-refused", false, null);
-      return;
-    }
-
-    const bag = store.getCardState(cardId);
-
-    // Content-owning card path. Only reachable when bag exists AND
-    // has a content payload. Fresh content-owning cards (no bag)
-    // fall through to the DOM-authority path's default-focus
-    // handler below — an unwanted `.focus()` on a contenteditable
-    // subtree is better than leaving the caret stranded on the
-    // outgoing card. Factories that want custom first-activation
-    // focus register `onCardActivated`.
-    if (bag?.content !== undefined) {
-      persistenceCallbacksRef.current?.onCardActivated?.();
-      const focusedAfter =
-        cardRoot && cardRoot.ownerDocument.activeElement instanceof HTMLElement
-          ? cardRoot.ownerDocument.activeElement
-          : null;
-      emitA3(null, true, focusedAfter);
-      return;
-    }
-
-    // DOM-authority card path.
-    if (!cardRoot) {
-      emitA3("no-host", true, null);
-      return;
-    }
-
-    // Apply the saved focus snapshot when one exists; otherwise
-    // fall back to the default-focus path so tab-switch-to-fresh-card
-    // moves the caret into the new card instead of stranding it.
-    // See `traceApplyDefaultFocus` + `DEFAULT_FOCUS_SELECTORS` above
-    // for the priority chain.
-    if (bag?.focus && bag.focus.kind !== "none") {
-      traceApplyFocusSnapshot("a3-dom-authority", cardId, cardRoot, bag.focus);
-    } else {
-      traceApplyDefaultFocus("a3-default-focus", cardId, cardRoot);
-    }
-    if (bag?.domSelection) {
-      selectionGuard.restoreCardDomSelection(
-        cardId,
-        bag.domSelection,
-        cardRoot,
-      );
-      deckTrace.record({
-        kind: "selection-restore",
-        cardId,
-        via: "restoreCardDomSelection",
-      });
-    }
-    const finalFocused =
-      cardRoot.ownerDocument.activeElement instanceof HTMLElement
-        ? cardRoot.ownerDocument.activeElement
-        : null;
-    emitA3(null, true, finalFocused);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, store, isFocusDestinationNow]);
+  // `useFocusDestination` remains exported from `deck-store-hooks`
+  // for any future React consumer that legitimately *renders* on
+  // destination status. CardHost no longer subscribes to it.
 
   // Framework-axes assembler. Rewritten every render so closures read
   // the latest `hostContentEl` / `hostStackId` / `cardId` without stale

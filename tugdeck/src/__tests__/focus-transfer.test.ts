@@ -113,9 +113,23 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("resolveActivationTarget", () => {
-  test("returns { kind: 'none' } when the card has no bag", () => {
+  test("returns { kind: 'none' } when no host root is registered (unknown card)", () => {
+    // Without a registered host root the resolver has nothing to
+    // scope a default-focus walk to, so even bag-less cards return
+    // `none` until their `CardHost` registration completes.
     const result = resolveActivationTarget("unknown-card", fixture.store);
     expect(result).toEqual({ kind: "none" });
+  });
+
+  test("returns { kind: 'default-focus', cardRoot } when the card has no bag but a host is registered", () => {
+    // Covers the m16 close-handoff scenario: a never-saved neighbor
+    // (no bag) becomes the activation destination. The helper should
+    // route through the default-focus path so the caret lands on a
+    // sensible default rather than stranding on the outgoing card.
+    const { host } = makeCardHost("c1");
+    fixture.setHostRoot("c1", host);
+    const result = resolveActivationTarget("c1", fixture.store);
+    expect(result).toEqual({ kind: "default-focus", cardRoot: host });
   });
 
   test("returns { kind: 'dispatch-activated' } when bag.content !== undefined", () => {
@@ -124,13 +138,17 @@ describe("resolveActivationTarget", () => {
     expect(result).toEqual({ kind: "dispatch-activated" });
   });
 
-  test("returns { kind: 'none' } when bag has focus.kind === 'none'", () => {
+  test("returns { kind: 'default-focus', cardRoot } when bag.focus.kind === 'none'", () => {
+    // A card may have a bag (it's been saved at least once) but no
+    // usable focus snapshot. The default-focus path applies.
+    const { host } = makeCardHost("c1");
     fixture.setBag("c1", { focus: { kind: "none" } });
+    fixture.setHostRoot("c1", host);
     const result = resolveActivationTarget("c1", fixture.store);
-    expect(result).toEqual({ kind: "none" });
+    expect(result).toEqual({ kind: "default-focus", cardRoot: host });
   });
 
-  test("returns { kind: 'none' } when no host root is registered", () => {
+  test("returns { kind: 'none' } when no host root is registered (with bag)", () => {
     fixture.setBag("c1", { focus: { kind: "dom", focusKey: "fk-c1" } });
     // No setHostRoot call — registry is empty.
     const result = resolveActivationTarget("c1", fixture.store);
@@ -175,16 +193,20 @@ describe("resolveActivationTarget", () => {
     }
   });
 
-  test("returns { kind: 'none' } when the keyed element is absent", () => {
+  test("falls through to default-focus when the keyed element is absent", () => {
+    // A stale snapshot pointing at a missing element should not
+    // strand the user's caret. The resolver returns the host root
+    // for a default-focus walk (L23: preserve user-visible state by
+    // landing the caret somewhere sensible inside the activated
+    // card).
     const { host } = makeCardHost("c1");
-    // Remove the focus-keyed input so the lookup misses.
     host.querySelector("[data-tug-focus-key]")?.remove();
 
     fixture.setBag("c1", { focus: { kind: "dom", focusKey: "fk-c1" } });
     fixture.setHostRoot("c1", host);
 
     const result = resolveActivationTarget("c1", fixture.store);
-    expect(result).toEqual({ kind: "none" });
+    expect(result).toEqual({ kind: "default-focus", cardRoot: host });
   });
 
   test("returns { kind: 'none' } when the registered host root is detached", () => {
@@ -192,9 +214,10 @@ describe("resolveActivationTarget", () => {
     fixture.setBag("c1", { focus: { kind: "dom", focusKey: "fk-c1" } });
     fixture.setHostRoot("c1", host);
 
-    // Detach the host root from the document. The focus-keyed element
-    // is still inside `host` so `querySelector` still finds it, but
-    // it is no longer `isConnected`.
+    // Detach the host root. The resolver's `isConnected` check on
+    // the host short-circuits before any querySelector walk so a
+    // stale registration cannot produce a default-focus target
+    // outside the document.
     host.remove();
 
     const result = resolveActivationTarget("c1", fixture.store);

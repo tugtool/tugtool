@@ -1098,164 +1098,21 @@ describe("selection-persistence integration — engine-managed card reload", () 
 // + bag.domSelection." The activation effect answers it.
 // ===========================================================================
 
-describe("selection-persistence integration — [A3] FC reactivation", () => {
-  it("[M01] FC intra-pane tab switch restores focus + selection on return", () => {
-    registerFormControlCard();
-    const cardA = makeFormControlCardState("fc-a");
-    const cardB = makeFormControlCardState("fc-b");
-    const store = new Store({
-      cards: [cardA, cardB],
-      panes: [
-        {
-          id: "pane-1",
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["fc-a", "fc-b"],
-          activeCardId: "fc-a",
-          title: "",
-          acceptsFamilies: ["standard"],
-        },
-      ],
-      activePaneId: "pane-1",
-      hasFocus: true,
-    });
-    // Seed bag.focus for card A so the return flip has something to
-    // re-apply. The form-control focus snapshot is keyed by the
-    // TugInput's persistKey.
-    store.setCardState("fc-a", {
-      focus: { kind: "form-control", persistKey: PERSIST_KEY },
-    });
-    renderDeck(store);
-
-    // Switch away — card B becomes active, card A loses destination status.
-    act(() => {
-      store.setActiveCardInPane("pane-1", "fc-b");
-    });
-    // Blur anything that may have been focused, so the return-flip
-    // re-apply is observable on `document.activeElement`.
-    act(() => {
-      (document.activeElement as HTMLElement | null)?.blur?.();
-    });
-    expect(document.activeElement).toBe(document.body);
-
-    // Switch back — `isFocusDestination("fc-a")` flips false → true.
-    act(() => {
-      store.setActiveCardInPane("pane-1", "fc-a");
-    });
-
-    const inputA = document.querySelector<HTMLInputElement>(
-      `[data-card-id="fc-a"] [data-tug-persist-value="${PERSIST_KEY}"]`,
-    );
-    expect(inputA).not.toBeNull();
-    expect(document.activeElement).toBe(inputA);
-  });
-
-  it("[M03] FC pane activation restores focus on the destination card", () => {
-    registerFormControlCard();
-    const cardA = makeFormControlCardState("fc-a");
-    const cardB = makeFormControlCardState("fc-b");
-    const store = new Store({
-      cards: [cardA, cardB],
-      panes: [
-        {
-          id: "pane-A",
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["fc-a"],
-          activeCardId: "fc-a",
-          title: "",
-          acceptsFamilies: ["standard"],
-        },
-        {
-          id: "pane-B",
-          position: { x: 500, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["fc-b"],
-          activeCardId: "fc-b",
-          title: "",
-          acceptsFamilies: ["standard"],
-        },
-      ],
-      activePaneId: "pane-A",
-      hasFocus: true,
-    });
-    store.setCardState("fc-a", {
-      focus: { kind: "form-control", persistKey: PERSIST_KEY },
-    });
-    renderDeck(store);
-
-    // Activate pane B (fc-a is no longer the focus destination).
-    act(() => {
-      store.setState({ ...store.getSnapshot(), activePaneId: "pane-B" });
-    });
-    act(() => {
-      (document.activeElement as HTMLElement | null)?.blur?.();
-    });
-    expect(document.activeElement).toBe(document.body);
-
-    // Reactivate pane A — `isFocusDestination("fc-a")` flips back true.
-    act(() => {
-      store.setState({ ...store.getSnapshot(), activePaneId: "pane-A" });
-    });
-
-    const inputA = document.querySelector<HTMLInputElement>(
-      `[data-card-id="fc-a"] [data-tug-persist-value="${PERSIST_KEY}"]`,
-    );
-    expect(inputA).not.toBeNull();
-    expect(document.activeElement).toBe(inputA);
-  });
-
-  it("[M16] FC tab close handoff: closing the active card refocuses the neighbor", () => {
-    registerFormControlCard();
-    const cardA = makeFormControlCardState("fc-a");
-    const cardB = makeFormControlCardState("fc-b");
-    const store = new Store({
-      cards: [cardA, cardB],
-      panes: [
-        {
-          id: "pane-1",
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["fc-a", "fc-b"],
-          activeCardId: "fc-a",
-          title: "",
-          acceptsFamilies: ["standard"],
-        },
-      ],
-      activePaneId: "pane-1",
-      hasFocus: true,
-    });
-    // Card B was never the active card, so its bag was never saved.
-    // Seed one directly so the activation effect has a focus target
-    // when the close-handoff makes it the destination.
-    store.setCardState("fc-b", {
-      focus: { kind: "form-control", persistKey: PERSIST_KEY },
-    });
-    renderDeck(store);
-
-    // Simulate closing card A: the pane's activeCardId flips to fc-b
-    // and fc-a is removed from the pane. (This mirrors what
-    // DeckManager does inside `_removeCard`.)
-    act(() => {
-      store.setState({
-        ...store.getSnapshot(),
-        cards: store.getSnapshot().cards.filter((c) => c.id !== "fc-a"),
-        panes: store.getSnapshot().panes.map((p) =>
-          p.id === "pane-1"
-            ? { ...p, cardIds: ["fc-b"], activeCardId: "fc-b" }
-            : p,
-        ),
-      });
-    });
-
-    // The activation effect on fc-b's CardHost fires because this is
-    // its first `false → true` transition *post-mount* (the mount
-    // guard skipped the initial non-destination render). Focus lands
-    // on fc-b's input.
-    const inputB = document.querySelector<HTMLInputElement>(
-      `[data-card-id="fc-b"] [data-tug-persist-value="${PERSIST_KEY}"]`,
-    );
-    expect(inputB).not.toBeNull();
-    expect(document.activeElement).toBe(inputB);
-  });
-});
+// `[A3] FC reactivation` integration tests removed in selection plan
+// #step-23b Pass 3 split (c). The three former tests ([M01] intra-pane
+// tab switch, [M03] pane activation, [M16] tab close handoff) drove a
+// fake Store that mutated `activeCardId` directly and asserted
+// `document.activeElement === inputA` under happy-dom. They worked
+// because the retired `[A3]` `useLayoutEffect` reacted to the
+// `useFocusDestination` flip the fake Store published. After [A3]'s
+// retirement (the helper now owns activation transfer and is only
+// invoked from real gesture sources — `tug-pane#performSelectCard`,
+// `pane-focus-controller`, `_removeCard` / `_closePane`), a fake
+// Store cannot exercise the path. Per the project's "no happy-dom
+// tests for focus/selection" rule, the right replacement is the
+// in-app harness rather than restoring the fake-Store coverage:
+// `tests/in-app/m01-tab-switch-fc.test.ts`,
+// `m01-rapid-cadence.test.ts`, `m03-pane-activation.test.ts`,
+// `m03-rapid-cadence.test.ts`, `m16-tab-close-handoff.test.ts`,
+// `m16-rapid-cadence.test.ts` are the trusted-click coverage that
+// drives a real WebKit focus call inside Tug.app.
