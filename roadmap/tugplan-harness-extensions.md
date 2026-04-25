@@ -1460,6 +1460,52 @@ This step does two things:
 
 ---
 
+#### Step 3c: Interruptible drag — `nativeDragWithoutRelease` primitive {#step-3c}
+
+**Depends on:** #step-3 (the existing `nativeDrag`, `nativeMouseDown`, `nativeMouseUp` primitives must be in place; this step decomposes one of them)
+
+**Commit:** `feat(tugapp-bridge): nativeDragWithoutRelease for mid-drag interruption`
+
+**References:** [D02] CGEventPost variant; (#phase-a-hardware); selection plan `m21-drag-aborted`.
+
+**Purpose.** Today's `nativeDrag` is atomic: one Swift-side RPC dispatches `mouseDown` at `from`, an 8-step interpolated trail along `from → to`, and `mouseUp` at `to`. The trail and the release ship together. That makes it impossible to compose gestures that need to *interrupt* a drag mid-flight — the canonical case being a user pressing **Escape** during a tab drag to abort the move. With current verbs, `nativeKey("Escape")` issued before `nativeDrag` fires before the drag begins, and issued after `nativeDrag` fires after the drag has already committed via `mouseUp`. The Escape handler installed by `card-drag-coordinator.ts` (selection plan #step-23c) cannot be exercised end-to-end through trusted CGEvents.
+
+**Concrete failure case.** `tests/in-app/m21-drag-aborted.test.ts` ships as a `describe.skipIf(true)` placeholder at Step 23C close because of this gap; its file header documents two paths to close (this step is path 1).
+
+**Artifacts:**
+
+- **Swift handler `nativeDragWithoutRelease`.** Posts `mouseDown` at `from`, then the same 8-step interpolated trail along `from → to`, but does NOT post `mouseUp`. The pointer remains "pressed" from the WebKit / WindowServer perspective until a subsequent `nativeMouseUp` fires. Mirrors the existing `nativeDrag` Swift handler's button + delay knobs (`button`, `mouseDownDelayMs`, `mouseUpDelayMs` — `mouseUpDelayMs` is unused in this variant but kept on the input shape for symmetry).
+- **TS surface method `nativeDragWithoutRelease(from, to, opts?)`** on `tests/in-app/_harness/index.ts`'s App handle, plus `nativeDragElementWithoutRelease(fromSelector, to, opts?)` for element-anchored variant. Same `NativeDragOptions` shape as `nativeDrag`; the only behavior difference is the missing terminal `mouseUp`.
+- **No new transport surface.** `nativeDragWithoutRelease` is a new RPC verb in the existing native-event channel; the wire format and dispatch path are already in place from Step 2.
+- **Documentation.** The TS surface JSDoc explicitly names the canonical caller pattern: `nativeDragWithoutRelease(...) → nativeKey("Escape") → nativeMouseUp(...)` (or any other sequence that needs a held-pointer state). Without this primitive, the post-mouseUp `pointerup` event commits whatever drop-zone the pointer ended in; Escape arrives too late.
+
+**Tasks:**
+
+- [ ] Swift: factor the existing `nativeDrag` handler into a private helper that takes a `releaseAtEnd: Bool` parameter (or two private helpers — `dispatchDragTrail` + optional `dispatchMouseUp`). The existing `nativeDrag` becomes the `releaseAtEnd: true` caller; the new `nativeDragWithoutRelease` is the `releaseAtEnd: false` caller. Keeps a single source of truth for the trail interpolation.
+- [ ] Swift: register the new RPC verb name in the native-event handler dispatch table.
+- [ ] TS: add `nativeDragWithoutRelease` and `nativeDragElementWithoutRelease` to `tests/in-app/_harness/client.ts`. Mirrors the `nativeDrag` / `nativeDragElement` shape exactly (one fewer mouseUp on the wire).
+- [ ] TS: expose both methods on the App handle in `tests/in-app/_harness/index.ts` with JSDoc that names the canonical compose pattern.
+- [ ] Backfill `tests/in-app/m21-drag-aborted.test.ts`: replace the `skipIf(true)` placeholder with a real test body that issues `nativeDragElementWithoutRelease(tabA, somewhereFar) → nativeKey("Escape") → nativeMouseUp(somewhereFar)`. Assertions: A stays in P1 (no commit ran), A's input value is preserved, focus is inside A's content (via the cancel hook in `card-drag-coordinator#onDocumentKeydown`).
+- [ ] Optional: a smoke fixture that calls `nativeDragWithoutRelease` followed by `nativeMouseUp` and verifies the gesture commits identically to `nativeDrag` — pins that the decomposition is faithful.
+
+**Tests:**
+
+- [ ] `tests/in-app/m21-drag-aborted.test.ts` — backfilled per above. The test must not skip.
+- [ ] Sanity smoke: in `_smoke-native.test.ts` or a new sibling file, verify `nativeDragWithoutRelease + nativeMouseUp` produces the same painted-selection outcome as the existing `nativeDrag` smoke test (pins the decomposition).
+
+**Checkpoint:**
+
+- [ ] `bun test tests/in-app/m21-drag-aborted.test.ts` exits 0 (no skip).
+- [ ] `bun test tests/in-app/_smoke-native.test.ts` still 5/5 green; new decomposition smoke is included or the existing endpoint-drag test passes verbatim.
+- [ ] Full `just test-in-app-fast` sweep stays green.
+- [ ] Manual gesture in the running app: drag a tab >5px, press Escape, observe focus return inside the source card. The trusted-event automated test now covers this; manual check is a one-shot regression sanity.
+
+**Author note (planned 2026-04-24):**
+
+Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a gap when m21 was authored. The production cancel logic in `card-drag-coordinator.ts` is small (~10 lines: document keydown listener install/cleanup, Escape match, `fireDragCancel` that routes through `transferFocusAfterMove`). Manual verification was the regression gate at Step 23C close; this step closes that gap with automated coverage.
+
+---
+
 #### Step 4: Swift handlers for app-lifecycle simulation {#step-4}
 
 **Depends on:** #step-3
