@@ -443,7 +443,7 @@ test-in-app-fast *FILES:
     # Default sweep mirrors `test-in-app`'s loop.
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts)
+        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts m32-em-cold-boot-selection.test.ts m33-em-fresh-card-activation.test.ts m34-em-focus-after-move.test.ts)
     else
         read -r -a FILES <<< "$FILES_INPUT"
     fi

@@ -419,6 +419,19 @@ const EVENT_FIXTURES: Record<
     engine: "tug-prompt-input",
     dispatchedFrom: "row-1",
   },
+  "cold-boot-restore-snapshot": {
+    kind: "cold-boot-restore-snapshot",
+    cardId: "c2",
+    hasContent: true,
+    engineSelection: { start: 3, end: 7 },
+  },
+  "engine-restore-applied": {
+    kind: "engine-restore-applied",
+    cardId: "c2",
+    engine: "gallery-prompt-entry",
+    selectionApplied: { start: 3, end: 7 },
+    domSelectionAfter: { start: 3, end: 7 },
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {

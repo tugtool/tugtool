@@ -65,7 +65,8 @@ import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover"
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useCardPersistence } from "./use-card-persistence";
+import { useCardPersistence, useCardId } from "./use-card-persistence";
+import { deckTrace } from "@/deck-trace";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 
@@ -757,6 +758,14 @@ export const TugPromptEntry = React.forwardRef<
     root.setAttribute("data-empty", String(isEffectivelyEmpty(input)));
   }, []);
 
+  // Card id for diagnostic deck-trace events. Held in a ref so the
+  // onRestore closure (registered through useCardPersistence) reads
+  // the current value at fire time. Selection plan Step 23F gap-1.
+  const cardIdForTrace = useCardId();
+  const cardIdForTraceRef = useRef(cardIdForTrace);
+  cardIdForTraceRef.current = cardIdForTrace;
+
+
   // TugPane persistence [L23]. TugPromptEntry is the sole persister for
   // this compound — the composed `TugPromptInput` is explicitly opted
   // out via `persistState={false}` below so there's no competing
@@ -829,6 +838,20 @@ export const TugPromptEntry = React.forwardRef<
         const saved = perRoute[currentRoute];
         if (saved) {
           input.restoreState(saved);
+          // Diagnostic for the cold-boot selection-paint gap
+          // (selection plan Step 23F gap-1). CardHost defers this
+          // onRestore call until AFTER CardPortal's slot.appendChild
+          // has attached the engine root, so `selectionApplied` and
+          // `domSelectionAfter` should match.
+          if (cardIdForTraceRef.current !== null) {
+            deckTrace.record({
+              kind: "engine-restore-applied",
+              cardId: cardIdForTraceRef.current,
+              engine: "gallery-prompt-entry",
+              selectionApplied: saved.selection ?? null,
+              domSelectionAfter: input.getSelectedRange() ?? null,
+            });
+          }
         } else {
           input.clear();
         }

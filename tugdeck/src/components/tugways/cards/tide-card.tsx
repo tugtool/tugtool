@@ -1258,5 +1258,6 @@ export function registerTideCard(): void {
       min: { width: 320, height: 240 },
       preferred: { width: 720, height: 540 },
     },
+    engineKind: "em",
   });
 }

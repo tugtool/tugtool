@@ -22,15 +22,25 @@
  * per-axis translation is delegated to the axis's owner (see [L10]).
  * Restoration is trigger-driven, not React-dep-gated:
  *
- *   1. **Content restore** fires inside `registerPersistenceCallbacks`,
- *      synchronously when the child content component calls
- *      `register(callbacks)` from its own `useLayoutEffect`. The child's
- *      mount moment *is* the trigger: there is no effect dep array to
- *      re-evaluate, no version counter, no ref gate. For bags that
- *      carry `content`, the harness installs an `onContentReady`
- *      callback (re-applies scroll, DOM-selection, and focus after the
- *      child re-renders with restored state) and calls
- *      `onRestore(bag.content)`.
+ *   1. **Content restore** fires from a CardHost-owned
+ *      `useLayoutEffect` keyed on `[cardId, hostContentEl, store]`,
+ *      after `registerPersistenceCallbacks` has merely stored the
+ *      child's callbacks. CardHost's effects fire AFTER CardPortal's
+ *      own `useLayoutEffect` has appended the portal slot to the
+ *      host pane's content element — so the engine root is
+ *      connected to the document at the moment `onRestore(bag.content)`
+ *      runs and any `engine.setSelectedRange` (`.focus()` + `addRange`)
+ *      inside it lands on a live node. This is the L04 ready-callback
+ *      pattern; doing the restore synchronously inside
+ *      `registerPersistenceCallbacks` (called from a CHILD's effect,
+ *      before the parent CardPortal can attach the slot) was the
+ *      cold-boot selection-paint bug closed by selection plan Step
+ *      23F gap-1. A `hasAppliedContentRestoreRef` guard keeps the
+ *      restore one-shot so cross-pane moves (which re-fire the
+ *      effect via `hostContentEl` change) don't clobber engine
+ *      state the user may have edited since first mount. The
+ *      effect also installs `onContentReady` (scroll restore +
+ *      opacity unmask) before invoking `onRestore`.
  *   2. **Mount restore effect** (a `useLayoutEffect` keyed on
  *      `[cardId, hostStackId, hostContentEl]`) applies `bag.scroll`
  *      to `hostContentEl`, publishes `bag.domSelection` to
@@ -614,72 +624,147 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // owns only the content branch; scroll/selection live in the effect
   // below (keyed on host-element availability) and in the child-driven
   // `onContentReady` for the with-content case. L11, L22, L23.
+  // Pure-storage registration. The actual restore (`callbacks.onRestore`,
+  // `onContentReady` install, opacity mask, cold-boot trace) is driven by
+  // the post-attach effect below — NOT here. registerPersistenceCallbacks
+  // fires from a child's `useLayoutEffect` (deepest first), which runs
+  // BEFORE CardPortal's own layout effect that calls `host.appendChild(slot)`.
+  // Doing the restore here would call `engine.restoreState` (and its
+  // `setSelectedRange`) while the engine root sits in a detached portal
+  // slot — `.focus()` silently no-ops on disconnected nodes and the
+  // subsequent `addRange` doesn't stick, costing the user their selection
+  // paint on cold-boot. Selection plan Step 23F gap-1.
+  //
+  // L04 ready-callback pattern: defer the side-effecting restore to a
+  // hook (CardHost's own layout effect) that fires AFTER all descendants'
+  // effects AND AFTER CardPortal's slot attach. By the time the
+  // `[cardId, hostContentEl, callbacksVersion, store]` effect below runs,
+  // the engine root is connected to the document and
+  // `engine.setSelectedRange` will land.
+  //
+  // `callbacksVersion` is the bridge from a child's late registration
+  // back into the restore-effect's dep set. Cards whose content factory
+  // mounts conditionally (e.g. tide-card gates on `feedsReady` — its
+  // editor doesn't render until `defaultFeedIds` resolve from tugcast)
+  // can have their persistence-callback registration arrive several
+  // commits AFTER hostContentEl is non-null. Without this counter, the
+  // restore effect would have already fired with `callbacks=null` and
+  // returned early, never re-running when callbacks finally appear.
+  const [callbacksVersion, setCallbacksVersion] = useState(0);
   const registerPersistenceCallbacks = useCallback(
     (callbacks: CardPersistenceCallbacks) => {
       persistenceCallbacksRef.current = callbacks;
-
-      const bag = store.getCardState(cardId);
-      if (!bag || bag.content === undefined) return;
-      // `callbacks.restorePendingRef` is absent on the no-op cleanup pair
-      // installed by `useCardPersistence`'s cleanup. Skip that re-entry.
-      if (callbacks.restorePendingRef === undefined) return;
-
-      // Install onContentReady so scroll is applied after the child
-      // commits restored content — at that point the content's
-      // dimensions are valid and scroll clamps correctly. This is
-      // also where the pre-restore opacity mask is lifted.
-      //
-      // DOM-selection and focus restore are NOT called here. This
-      // branch runs only when `bag.content !== undefined` — i.e.
-      // content-owning cards — and per [D07] those cards' content
-      // factory owns selection and focus end-to-end. The engine's
-      // `setSelectedRange` inside its own `restoreState` both
-      // focuses the root and sets the selection; any second
-      // `.focus()` or `setBaseAndExtent` call from CardHost would
-      // race the engine and, under WebKit's focus-with-selection
-      // quirk, collapse the just-restored selection. The save-side
-      // gate also keeps `bag.domSelection` / `bag.focus` absent from
-      // freshly-saved content-owning bags for symmetry.
-      callbacks.onContentReady = () => {
-        const el = hostContentElRef.current;
-        if (el) {
-          if (bag.scroll !== undefined) {
-            el.scrollLeft = bag.scroll.x;
-            el.scrollTop = bag.scroll.y;
-          }
-          // Un-mask the host content now that scroll has been
-          // re-applied. See the pre-mask block below for the
-          // rationale behind `opacity: 0` (vs `visibility: hidden`).
-          if (el.style.opacity === "0") {
-            el.style.opacity = "";
-          }
-        }
-      };
-      // Pre-mask the host to hide the pre-restore scroll position
-      // while the child re-renders with restored content.
-      //
-      // We use `opacity: 0`, NOT `visibility: hidden`, even though
-      // the goal is the same (full transparency while the restore
-      // settles). Elements inside a `visibility: hidden` subtree
-      // are not focusable: `.focus()` silently no-ops. For
-      // engine-managed cards (tide, gallery prompt-input) the
-      // engine's `setSelectedRange` focuses its content-editable
-      // root *before* calling `sel.addRange` so WebKit doesn't
-      // orphan the selection. If the root is unfocusable during
-      // that call, the focus step fails and the selection is set
-      // on an unfocused element — WebKit later discards the caret
-      // when focus finally lands, collapsing the user's selection.
-      // `opacity: 0` keeps the element focusable while still
-      // producing a fully-transparent mask for the flash window.
-      if (hostContentElRef.current && bag.scroll !== undefined) {
-        hostContentElRef.current.style.opacity = "0";
-      }
-
-      callbacks.restorePendingRef.current = true;
-      callbacks.onRestore(bag.content);
+      setCallbacksVersion((v) => v + 1);
     },
-    [cardId, store],
+    [],
   );
+
+  // Apply `bag.content` restore exactly once per CardHost mount, AFTER
+  // CardPortal's slot.appendChild has connected the engine root to the
+  // document. CardPortal is a child of CardHost in the React tree, so its
+  // `useLayoutEffect` fires before this one — `engine.root.isConnected`
+  // is therefore guaranteed true here.
+  //
+  // The guard ref keeps this one-shot. Cross-pane moves swap
+  // `hostStackId` and re-fire CardPortal's effect (re-attaching the slot
+  // to the new host); they do NOT re-fire this restore — the engine has
+  // its state from first mount, and a cross-pane move preserves DOM
+  // identity for the engine root, so re-restoring would clobber any user
+  // edits made between mount and the move.
+  const hasAppliedContentRestoreRef = useRef(false);
+  useLayoutEffect(() => {
+    if (hasAppliedContentRestoreRef.current) return;
+    if (!hostContentEl) return;
+    const callbacks = persistenceCallbacksRef.current;
+    if (!callbacks) return;
+    // Cleanup-pair re-entries (no `restorePendingRef`) skip this branch
+    // for the same reason as the original synchronous registration did.
+    if (callbacks.restorePendingRef === undefined) return;
+    const bag = store.getCardState(cardId);
+    if (!bag || bag.content === undefined) return;
+
+    // Install onContentReady so scroll is applied after the child
+    // commits restored content — at that point the content's
+    // dimensions are valid and scroll clamps correctly. This is
+    // also where the pre-restore opacity mask is lifted.
+    //
+    // DOM-selection and focus restore are NOT called here. This
+    // branch runs only when `bag.content !== undefined` — i.e.
+    // content-owning cards — and per [D07] those cards' content
+    // factory owns selection and focus end-to-end. The engine's
+    // `setSelectedRange` inside its own `restoreState` both
+    // focuses the root and sets the selection; any second
+    // `.focus()` or `setBaseAndExtent` call from CardHost would
+    // race the engine and, under WebKit's focus-with-selection
+    // quirk, collapse the just-restored selection. The save-side
+    // gate also keeps `bag.domSelection` / `bag.focus` absent from
+    // freshly-saved content-owning bags for symmetry.
+    callbacks.onContentReady = () => {
+      const el = hostContentElRef.current;
+      if (el) {
+        if (bag.scroll !== undefined) {
+          el.scrollLeft = bag.scroll.x;
+          el.scrollTop = bag.scroll.y;
+        }
+        // Un-mask the host content now that scroll has been
+        // re-applied.
+        if (el.style.opacity === "0") {
+          el.style.opacity = "";
+        }
+      }
+    };
+    // Pre-mask the host to hide the pre-restore scroll position
+    // while the child re-renders with restored content. `opacity: 0`
+    // (not `visibility: hidden`) keeps the engine root focusable
+    // during the restore window.
+    if (hostContentElRef.current && bag.scroll !== undefined) {
+      hostContentElRef.current.style.opacity = "0";
+    }
+
+    // Diagnostic snapshot for the cold-boot / cross-pane-mount
+    // restore path. Selection plan Step 23F gap-1.
+    let coldBootSelection: { start: number; end: number } | null = null;
+    const content = bag.content as Record<string, unknown> | undefined;
+    if (content !== undefined) {
+      let engineState: Record<string, unknown> | undefined;
+      if (
+        typeof content.currentRoute === "string" &&
+        typeof content.perRoute === "object" &&
+        content.perRoute !== null
+      ) {
+        const perRoute = content.perRoute as Record<string, unknown>;
+        const inner = perRoute[content.currentRoute as string];
+        if (typeof inner === "object" && inner !== null) {
+          engineState = inner as Record<string, unknown>;
+        }
+      } else {
+        engineState = content;
+      }
+      const sel = engineState?.selection;
+      if (
+        typeof sel === "object" &&
+        sel !== null &&
+        typeof (sel as Record<string, unknown>).start === "number" &&
+        typeof (sel as Record<string, unknown>).end === "number"
+      ) {
+        coldBootSelection = {
+          start: (sel as { start: number }).start,
+          end: (sel as { end: number }).end,
+        };
+      }
+    }
+    deckTrace.record({
+      kind: "cold-boot-restore-snapshot",
+      cardId,
+      hasContent: bag.content !== undefined,
+      engineSelection: coldBootSelection,
+    });
+
+    callbacks.restorePendingRef.current = true;
+    callbacks.onRestore(bag.content);
+    hasAppliedContentRestoreRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, hostContentEl, store, callbacksVersion]);
 
   // Scroll / DOM-selection / form-control / region-scroll restore:
   // triggered by `hostContentEl` becoming available. Fires idempotently

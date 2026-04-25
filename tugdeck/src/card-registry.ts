@@ -120,6 +120,25 @@ export interface CardRegistration {
    * hardcodes category IDs.
    */
   category?: { label: string; icon?: string };
+  /**
+   * Engine classification for the activation pipeline.
+   *
+   * When set to `"em"` (engine-managed), the card's content factory
+   * owns its own focus + selection lifecycle through `useCardPersistence`'s
+   * `onCardActivated` callback. `resolveActivationTarget` (in
+   * `focus-transfer.ts`) returns `dispatch-activated` for these cards
+   * regardless of whether `bag.content` is populated yet — fresh
+   * never-saved EM cards still activate via the factory dispatch path
+   * rather than falling through to the generic `default-focus` walk
+   * that would land focus on the first focusable descendant (often a
+   * toolbar button before the contenteditable).
+   *
+   * Omit (or leave undefined) for DOM-authority "FC" cards — generic
+   * forms, gallery components without an embedded engine, etc. Those
+   * route through `bag.focus` snapshots and the
+   * {@link DEFAULT_FOCUS_SELECTORS} fallback chain.
+   */
+  engineKind?: "em";
 }
 
 /** Module-level registry map. Keyed by componentId. */
@@ -170,6 +189,19 @@ export function getAllRegistrations(): Map<string, CardRegistration> {
  */
 export function getSizePolicy(componentId: string): CardSizePolicy {
   return registry.get(componentId)?.sizePolicy ?? DEFAULT_SIZE_POLICY;
+}
+
+/**
+ * True when the card type is registered and declares
+ * `engineKind: "em"` — i.e., its content factory owns its own focus
+ * via `useCardPersistence`'s `onCardActivated` callback. Used by
+ * `resolveActivationTarget` to route fresh (never-saved) EM cards
+ * through the dispatch path instead of the generic default-focus
+ * walk. Returns `false` for unregistered componentIds and for
+ * DOM-authority cards.
+ */
+export function isEngineManagedCard(componentId: string): boolean {
+  return registry.get(componentId)?.engineKind === "em";
 }
 
 /**

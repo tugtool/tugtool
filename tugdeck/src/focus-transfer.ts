@@ -172,6 +172,7 @@
 
 import { flushSync } from "react-dom";
 
+import { isEngineManagedCard } from "./card-registry";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deckTrace, formatElement } from "./deck-trace";
 import { traceApplyDefaultFocus } from "./default-focus";
@@ -271,7 +272,7 @@ export type ActivationTarget =
  */
 export type FocusTransferStore = Pick<
   IDeckManagerStore,
-  "getCardState" | "peekCardHostRoot"
+  "getCardState" | "peekCardHostRoot" | "getSnapshot"
 >;
 
 /**
@@ -291,6 +292,28 @@ export function resolveActivationTarget(
   store: FocusTransferStore,
 ): ActivationTarget {
   const bag = store.getCardState(cardId);
+
+  // Engine-managed cards dispatch through the factory's registered
+  // `onCardActivated` callback regardless of whether `bag.content` is
+  // populated yet. The registry's `engineKind: "em"` tag is the
+  // authoritative discriminator here — a fresh, never-saved EM card
+  // (no bag, no content) still has a content factory that knows where
+  // to put the caret. Falling through to `default-focus` for those
+  // cards would walk DEFAULT_FOCUS_SELECTORS and land focus on the
+  // first focusable descendant, which is typically a toolbar button
+  // sitting above the engine's contenteditable.
+  //
+  // The bag.content fallback below remains for cards whose
+  // registration somehow wasn't tagged but whose persisted bag clearly
+  // identifies them as content-owning — defensive coverage during the
+  // migration window and for any future content-owning factories that
+  // don't use the engine pattern.
+  const card = store
+    .getSnapshot()
+    .cards.find((c) => c.id === cardId);
+  if (card !== undefined && isEngineManagedCard(card.componentId)) {
+    return { kind: "dispatch-activated" };
+  }
 
   // Content-owning cards dispatch through the factory's registered
   // callback. We don't try to resolve a DOM element for them — the

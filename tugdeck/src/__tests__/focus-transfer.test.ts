@@ -22,7 +22,7 @@ import "./setup-rtl";
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 
-import type { CardStateBag } from "../layout-tree";
+import type { CardState, CardStateBag, DeckState } from "../layout-tree";
 import {
   resolveActivationTarget,
   type FocusTransferStore,
@@ -36,14 +36,23 @@ interface Fixture {
   store: FocusTransferStore;
   setBag(cardId: string, bag: CardStateBag): void;
   setHostRoot(cardId: string, el: HTMLElement | null): void;
+  setCardComponentId(cardId: string, componentId: string): void;
 }
 
 function makeFixture(): Fixture {
   const bags = new Map<string, CardStateBag>();
   const roots = new Map<string, HTMLElement>();
+  const componentIds = new Map<string, string>();
   const store: FocusTransferStore = {
     getCardState: (cardId) => bags.get(cardId),
     peekCardHostRoot: (cardId) => roots.get(cardId) ?? null,
+    getSnapshot: (): DeckState => {
+      const cards: CardState[] = [];
+      for (const [id, componentId] of componentIds.entries()) {
+        cards.push({ id, componentId, title: id, closable: true });
+      }
+      return { cards, panes: [], hasFocus: false };
+    },
   };
   return {
     store,
@@ -53,6 +62,9 @@ function makeFixture(): Fixture {
     setHostRoot(cardId, el) {
       if (el === null) roots.delete(cardId);
       else roots.set(cardId, el);
+    },
+    setCardComponentId(cardId, componentId) {
+      componentIds.set(cardId, componentId);
     },
   };
 }
@@ -226,6 +238,48 @@ describe("resolveActivationTarget", () => {
     });
     const result = resolveActivationTarget("c1", fixture.store);
     expect(result).toEqual({ kind: "dispatch-activated" });
+  });
+
+  test("registry-tagged EM card returns dispatch-activated even with no bag", () => {
+    // A fresh, never-saved EM card (no bag, no content) routes
+    // through the dispatch path because its registration declares
+    // `engineKind: "em"`. Without this, the resolver would hit the
+    // default-focus branch and the focus walk would land on the
+    // first focusable descendant — typically a toolbar button
+    // sitting above the engine's contenteditable.
+    const { _resetForTest, registerCard } = require("../card-registry");
+    _resetForTest();
+    registerCard({
+      componentId: "test-em-card",
+      contentFactory: () => null,
+      defaultMeta: { title: "EM", closable: true },
+      engineKind: "em",
+    });
+    const { host } = makeCardHost("c1");
+    fixture.setHostRoot("c1", host);
+    fixture.setCardComponentId("c1", "test-em-card");
+    const result = resolveActivationTarget("c1", fixture.store);
+    expect(result).toEqual({ kind: "dispatch-activated" });
+    _resetForTest();
+  });
+
+  test("non-EM registration does not route through dispatch when bag is empty", () => {
+    // A card whose registration omits `engineKind` (DOM-authority
+    // card) still falls through the bag.content path; an empty bag
+    // routes to default-focus.
+    const { _resetForTest, registerCard } = require("../card-registry");
+    _resetForTest();
+    registerCard({
+      componentId: "test-fc-card",
+      contentFactory: () => null,
+      defaultMeta: { title: "FC", closable: true },
+    });
+    const { host } = makeCardHost("c1");
+    fixture.setHostRoot("c1", host);
+    fixture.setCardComponentId("c1", "test-fc-card");
+    const result = resolveActivationTarget("c1", fixture.store);
+    expect(result).toEqual({ kind: "default-focus", cardRoot: host });
+    _resetForTest();
   });
 });
 

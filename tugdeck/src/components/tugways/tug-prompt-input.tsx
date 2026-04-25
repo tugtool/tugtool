@@ -339,9 +339,11 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
 function TugPromptInputPersistence({
   engineRef,
   pendingRestoreRef,
+  cardIdRef,
 }: {
   engineRef: React.RefObject<TugTextEngine | null>;
   pendingRestoreRef: React.RefObject<TugTextEditingState | null>;
+  cardIdRef: React.RefObject<string | null>;
 }) {
   // The TugPane persistence protocol expects onRestore to trigger a re-render
   // so the no-deps useLayoutEffect in useCardPersistence fires and calls
@@ -381,8 +383,25 @@ function TugPromptInputPersistence({
       return engine.captureState();
     },
     onRestore: (state) => {
-      if (engineRef.current) {
-        engineRef.current.restoreState(state);
+      // CardHost defers this call until AFTER CardPortal's
+      // `useLayoutEffect` has attached the slot to the host
+      // element, so the engine root is connected to the document
+      // when `engine.restoreState` runs and `setSelectedRange` can
+      // land its `.focus()` + `addRange` on a live node. Selection
+      // plan Step 23F gap-1.
+      const engine = engineRef.current;
+      if (engine) {
+        engine.restoreState(state);
+        const id = cardIdRef.current;
+        if (id !== null) {
+          deckTrace.record({
+            kind: "engine-restore-applied",
+            cardId: id,
+            engine: "gallery-prompt-input",
+            selectionApplied: state.selection ?? null,
+            domSelectionAfter: engine.getSelectedRange(),
+          });
+        }
       } else {
         pendingRestoreRef.current = state;
       }
@@ -713,8 +732,19 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
 
       // Apply any state buffered by onRestore that fired before engine creation
       if (pendingRestoreRef.current) {
-        engine.restoreState(pendingRestoreRef.current);
+        const buffered = pendingRestoreRef.current;
+        engine.restoreState(buffered);
         pendingRestoreRef.current = null;
+        const id = cardIdRef.current;
+        if (id !== null) {
+          deckTrace.record({
+            kind: "engine-restore-applied",
+            cardId: id,
+            engine: "gallery-prompt-input",
+            selectionApplied: buffered.selection ?? null,
+            domSelectionAfter: engine.getSelectedRange(),
+          });
+        }
       }
 
       return () => {
@@ -1117,7 +1147,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
           onPointerDown={handlePointerDown}
           {...rest}
         >
-          {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} />}
+          {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} cardIdRef={cardIdRef} />}
           <div
             ref={editorRef}
             className="tug-prompt-input-editor"

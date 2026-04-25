@@ -143,6 +143,19 @@ export type DeckTraceEventShape = {
       engine: string;
       dispatchedFrom: string;
     }
+  | {
+      kind: "cold-boot-restore-snapshot";
+      cardId: string;
+      hasContent: boolean;
+      engineSelection: { start: number; end: number } | null;
+    }
+  | {
+      kind: "engine-restore-applied";
+      cardId: string;
+      engine: string;
+      selectionApplied: { start: number; end: number } | null;
+      domSelectionAfter: { start: number; end: number } | null;
+    }
 );
 
 /**
@@ -165,6 +178,8 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "commit-tick",
   "engine-ready",
   "engine-activation-dispatched",
+  "cold-boot-restore-snapshot",
+  "engine-restore-applied",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -371,6 +386,24 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `engine-ready ${fmt(e.cardId)} engine=${fmt(e.engine)}`;
     case "engine-activation-dispatched":
       return `engine-activation-dispatched ${fmt(e.cardId)} engine=${fmt(e.engine)} from=${fmt(e.dispatchedFrom)}`;
+    case "cold-boot-restore-snapshot": {
+      const sel =
+        e.engineSelection !== null
+          ? `${e.engineSelection.start}..${e.engineSelection.end}`
+          : "null";
+      return `cold-boot-restore-snapshot ${fmt(e.cardId)} hasContent=${fmt(e.hasContent)} sel=${sel}`;
+    }
+    case "engine-restore-applied": {
+      const applied =
+        e.selectionApplied !== null
+          ? `${e.selectionApplied.start}..${e.selectionApplied.end}`
+          : "null";
+      const dom =
+        e.domSelectionAfter !== null
+          ? `${e.domSelectionAfter.start}..${e.domSelectionAfter.end}`
+          : "null";
+      return `engine-restore-applied ${fmt(e.cardId)} engine=${fmt(e.engine)} applied=${applied} dom=${dom}`;
+    }
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.

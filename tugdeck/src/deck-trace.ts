@@ -221,6 +221,37 @@ export type DeckTraceEvent = {
       engine: string;
       dispatchedFrom: string;
     }
+  | {
+      // Fired from `CardHost.registerPersistenceCallbacks` immediately
+      // before the persisted `bag.content` is forwarded to the
+      // factory's `onRestore`. Captures what the framework knows about
+      // the saved state on the cold-boot / cross-pane-mount path:
+      // whether `bag.content` is populated and, for EM cards using the
+      // engine-state shape, whether a non-null selection range is
+      // present in the saved snapshot. Diagnostic for the cold-boot
+      // selection-paint gap (selection plan Step 23F gap-1) — lets a
+      // trace dump show whether the save side captured a selection at
+      // all before any restore work runs.
+      kind: "cold-boot-restore-snapshot";
+      cardId: string;
+      hasContent: boolean;
+      engineSelection: { start: number; end: number } | null;
+    }
+  | {
+      // Fired from each EM factory's onRestore implementation
+      // immediately after the engine's `restoreState` returns, with
+      // `selectionApplied` echoing what was passed in (the saved
+      // selection from the bag) and `domSelectionAfter` reading
+      // `engine.getSelectedRange()` against the live DOM. Side-by-side
+      // these two fields say whether the engine's `setSelectedRange`
+      // actually landed the selection in the document. Diagnostic for
+      // selection plan Step 23F gap-1.
+      kind: "engine-restore-applied";
+      cardId: string;
+      engine: string;
+      selectionApplied: { start: number; end: number } | null;
+      domSelectionAfter: { start: number; end: number } | null;
+    }
 );
 
 /**
@@ -241,7 +272,9 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "engine-ready" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "engine-activation-dispatched" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-activation-dispatched" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "cold-boot-restore-snapshot" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-restore-applied" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities
