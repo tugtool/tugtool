@@ -40,11 +40,12 @@
  *      `bag.formControls` + `bag.regionScroll` via a single
  *      `MutationObserver` scoped to the card root so late-mounting
  *      elements restore when they appear.
- *   3. **Cross-pane-move focus effect** (a secondary `useLayoutEffect`
- *      keyed on `[hostStackId]` with a `hasMountedRef` guard) re-runs
- *      `applyFocusSnapshot` on subsequent `hostStackId` transitions to
- *      close the gap where a drag-drop blurs the card's focused
- *      element before the drop re-parents the DOM into the new pane.
+ * Cross-pane-move focus restore is no longer a CardHost concern —
+ * it lives in `focus-transfer.ts#transferFocusAfterMove`, called
+ * from `deck-manager.ts#_detachCard` / `_moveCardToPane` (selection
+ * plan #step-23c retired the `[hostStackId]`-keyed effect that
+ * previously lived here). CardHost's mount-time restore (the
+ * primary effect above) remains the cold-boot focus authority.
  *
  * Paint of the restored DOM selection is not CardHost's job — that's
  * selection-guard's paint authority, driven by its deck-store
@@ -828,44 +829,17 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     return () => observer.disconnect();
   }, [cardId, hostStackId, hostContentEl, store]);
 
-  // Cross-pane-move focus restore. A drag-drop that moves a card from
-  // pane A to pane B starts with a pointerdown on pane chrome, which
-  // blurs whatever element inside the card had focus. The card's own
-  // persisted state survives the move (form-control selection stays on
-  // the DOM node; contentEditable Range stays in `selectionGuard.cardRanges`),
-  // but native browser focus does not — the user would otherwise have
-  // to click back in for `::selection` to repaint. Re-applying
-  // `bag.focus` after `hostStackId` changes closes that gap.
-  //
-  // Keyed ONLY on `[hostStackId]` so this fires on cross-pane moves
-  // without firing on other deps' changes. `hasMountedRef` skips the
-  // initial-mount run so this effect does not double-fire with the
-  // primary restore effect above; only subsequent `hostStackId`
-  // transitions trigger the refocus. The active-card gate and the
-  // pre-check inside `applyFocusSnapshot` keep the refocus from
-  // stealing focus out from under a user who has since clicked
-  // elsewhere. L23, R07.
-  const hasMountedRef = useRef(false);
-  useLayoutEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
-    if (!hostContentEl) return;
-    const bag = store.getCardState(cardId);
-    if (!bag || !bag.focus || bag.focus.kind === "none") return;
-    // Content-owning cards manage focus themselves ([D07]). CardHost
-    // must not drive focus for them even on a cross-pane move; the
-    // engine's own onSelectionChanged-driven publish plus the deck-
-    // store's focus-change subscription in selection-guard keep the
-    // card's selection painted correctly across the move.
-    if (bag.content !== undefined) return;
-    if (!isActiveCardOfActivePane(store, cardId)) return;
-    const cardRoot = findCardRoot(hostContentEl, cardId);
-    if (!cardRoot) return;
-    traceApplyFocusSnapshot("cross-pane-move", cardId, cardRoot, bag.focus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostStackId]);
+  // Cross-pane-move focus restore is owned by
+  // `transferFocusAfterMove` in `focus-transfer.ts`, called
+  // synchronously from `deck-manager.ts#_detachCard` /
+  // `_moveCardToPane` after their `notify()`. The legacy
+  // `[hostStackId]`-keyed `useLayoutEffect` that lived here —
+  // observing `hostStackId` transitions and re-applying
+  // `bag.focus` via `applyFocusSnapshot` — was retired in
+  // selection plan #step-23c. CardHost is no longer a focus
+  // restorer for cross-pane moves; it remains the cold-boot
+  // mount-restore path (the primary restore effect above) for
+  // initial focus on first mount.
 
   // Activation-driven focus + selection transfer is owned by
   // `transferFocusForActivation` in `focus-transfer.ts`, called

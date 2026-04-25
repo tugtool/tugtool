@@ -397,6 +397,16 @@ function TabView({
   const handleTabPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
 
+    // Drag-start focus save (selection plan #step-23c). Fires
+    // unconditionally — even sub-threshold clicks save, since saves
+    // are cheap and the symmetric "save-at-gesture-start" contract
+    // is what eliminates the cross-pane drag focus race. The
+    // coordinator looks up the pane's currently-active card and
+    // routes to `captureFocusForDragStart`, preserving `bag.focus`
+    // and `bag.domSelection` before the browser's mousedown default
+    // blurs the focused element.
+    cardDragCoordinator.notifyPotentialDragStart(stackId);
+
     const nativeEvent = event.nativeEvent;
     const tabElement = event.currentTarget;
     const startX = nativeEvent.clientX;

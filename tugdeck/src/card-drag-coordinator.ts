@@ -24,6 +24,10 @@
  */
 
 import type { IDeckManagerStore } from "./deck-manager-store";
+import {
+  captureFocusForDragStart,
+  transferFocusAfterMove,
+} from "./focus-transfer";
 
 // ---- Constants ----
 
@@ -143,11 +147,13 @@ class CardDragCoordinator {
   private boundOnPointerMove: (e: PointerEvent) => void;
   private boundOnPointerUp: (e: PointerEvent) => void;
   private boundOnPointerCancel: () => void;
+  private boundOnDocumentKeydown: (e: KeyboardEvent) => void;
 
   constructor() {
     this.boundOnPointerMove = this.onPointerMove.bind(this);
     this.boundOnPointerUp = this.onPointerUp.bind(this);
     this.boundOnPointerCancel = this.onPointerCancel.bind(this);
+    this.boundOnDocumentKeydown = this.onDocumentKeydown.bind(this);
   }
 
   // ---------------------------------------------------------------------------
@@ -171,6 +177,36 @@ class CardDragCoordinator {
    */
   get isDragging(): boolean {
     return this.dragActive;
+  }
+
+  /**
+   * Notify the coordinator that a tab pointerdown has fired and the
+   * gesture *may* escalate to a drag past the 5px threshold. Called
+   * unconditionally from `tug-tab-bar.tsx#handleTabPointerDown` —
+   * even sub-threshold clicks fire it, since saves are cheap and the
+   * symmetric "save-at-gesture-start" contract is what eliminates
+   * the cross-pane drag focus race.
+   *
+   * Internally invokes
+   * {@link captureFocusForDragStart} for the pane's currently-active
+   * card so the active card's `bag.focus` and `bag.domSelection` are
+   * captured before the browser's mousedown default has a chance to
+   * blur the focused element.
+   *
+   * Routed through this method (rather than calling
+   * `captureFocusForDragStart` directly from `TugTabBar`) so the
+   * tab-bar component stays decoupled from the deck store at the
+   * import level — `cardDragCoordinator` is already its single
+   * coordination dependency.
+   *
+   * Selection plan #step-23c.
+   */
+  notifyPotentialDragStart(paneId: string): void {
+    const store = this.store;
+    if (!store) return;
+    const pane = store.getSnapshot().panes.find((p) => p.id === paneId);
+    if (!pane) return;
+    captureFocusForDragStart({ sourceCardId: pane.activeCardId, store });
   }
 
   /**
@@ -242,6 +278,13 @@ class CardDragCoordinator {
     tabElement.addEventListener("pointermove", this.boundOnPointerMove);
     tabElement.addEventListener("pointerup", this.boundOnPointerUp);
     tabElement.addEventListener("pointercancel", this.boundOnPointerCancel);
+
+    // Document-level Escape listener (selection plan #step-23c).
+    // Capture phase so the cancel decision lands before any nested
+    // dialog or popover keydown handler can consume the event. The
+    // listener lives only for the drag's lifetime (cleanup removes
+    // it) so it cannot leak across gestures.
+    document.addEventListener("keydown", this.boundOnDocumentKeydown, true);
 
     // Snapshot initial position for RAF frame.
     this.latestPointerX = event.clientX;
@@ -359,8 +402,61 @@ class CardDragCoordinator {
       this.rafId = null;
     }
 
+    // Snapshot before cleanup so the post-cleanup refocus knows
+    // which card to target.
+    const sourceCardId = this.sourceCardId;
+
     // cleanup() removes all visual artifacts and listeners; no DeckManager call.
     this.cleanup();
+
+    // Refocus into the dragged card's pre-drag DOM location
+    // (selection plan #step-23c). The card never moved (no commit
+    // ran), so its CardHost is still mounted under the original
+    // pane and the registered host root resolves correctly. The
+    // drag-start save preserved bag.focus / bag.domSelection so
+    // the helper can restore them.
+    this.fireDragCancel(sourceCardId);
+  }
+
+  /**
+   * Document-level keydown handler installed for the drag's
+   * lifetime (selection plan #step-23c). On Escape, runs the same
+   * cancel sequence as pointercancel: cleanup-without-commit, then
+   * refocus into the original DOM location.
+   *
+   * Capture phase so the cancel decision lands before any nested
+   * dialog / popover / responder-chain keydown handler can consume
+   * the event. Other keys are ignored.
+   */
+  private onDocumentKeydown(event: KeyboardEvent): void {
+    if (!this.dragActive) return;
+    if (event.key !== "Escape") return;
+
+    // Cancel any pending RAF frame.
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+
+    const sourceCardId = this.sourceCardId;
+    this.cleanup();
+    this.fireDragCancel(sourceCardId);
+  }
+
+  /**
+   * Refocus into the dragged card's original DOM location after a
+   * cancel (Escape or pointercancel). No-op when no store is bound
+   * or when `cardId` is empty (defensive — `cleanup()` empties the
+   * id field, so callers must snapshot before cleanup).
+   *
+   * Routed through {@link transferFocusAfterMove} for symmetry with
+   * the post-drop refocus path: same resolve / gate / focus +
+   * restore logic, just with no preceding mutation.
+   */
+  private fireDragCancel(cardId: string): void {
+    if (!this.store) return;
+    if (cardId === "") return;
+    transferFocusAfterMove({ sourceCardId: cardId, store: this.store });
   }
 
   private onPointerUp(e: PointerEvent): void {
@@ -722,6 +818,11 @@ class CardDragCoordinator {
       // Clear dragging dim.
       this.sourceTabElement.removeAttribute("data-dragging");
     }
+
+    // Remove document-level Escape listener (selection plan
+    // #step-23c). Symmetrically paired with the addEventListener
+    // call in startDrag — capture-phase, true.
+    document.removeEventListener("keydown", this.boundOnDocumentKeydown, true);
 
     // Remove ghost element.
     if (this.ghostElement) {

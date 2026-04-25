@@ -81,7 +81,10 @@ import {
   type CardAssembler,
 } from "./card-state-orchestrator";
 import { deckTrace, type SaveCallbackSource } from "./deck-trace";
-import { transferFocusForActivation } from "./focus-transfer";
+import {
+  transferFocusAfterMove,
+  transferFocusForActivation,
+} from "./focus-transfer";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -1721,6 +1724,19 @@ export class DeckManager implements IDeckManagerStore {
       "_detachCard",
     );
 
+    // Refocus after the move (selection plan #step-23c). The
+    // detached card's CardHost has just been re-parented under the
+    // new pane via React's portal reconciliation; its registered
+    // host root now points at the post-commit DOM. The drag-start
+    // save (captureFocusForDragStart) preserved bag.focus + bag
+    // .domSelection while the input was still focused, so the
+    // helper can resolve the saved snapshot and restore focus
+    // inside the moved card. When the pre-move save (line above
+    // the flip) clobbered bag.focus to "none" because activeElement
+    // was on body, resolveActivationTarget falls through to the
+    // default-focus path so the card still receives the caret.
+    transferFocusAfterMove({ sourceCardId: cardId, store: this });
+
     return newPaneId;
   }
 
@@ -1759,43 +1775,31 @@ export class DeckManager implements IDeckManagerStore {
     this.invokeSaveCallback(cardId, "manual");
 
     const sourceWillBeDestroyed = sourceStack.cardIds.length === 1;
-    const sourceIsActive = this.deckState.activePaneId === sourcePaneId;
 
-    // Post-move `activePaneId`: shift to target when the source was
-    // active AND will be destroyed (otherwise we'd leave a stale
-    // reference to a removed stack). In every other case `activePaneId`
-    // stays put — plan transition 7 only flips the first responder when
-    // the target is/becomes the active stack.
-    const postMoveActivePaneId =
-      sourceWillBeDestroyed && sourceIsActive
-        ? targetPaneId
-        : this.deckState.activePaneId;
+    // Post-move `activePaneId`: always shift to the target. Cross-
+    // pane move is exclusively driven by the user's drag gesture
+    // (the only production caller is `cardDragCoordinator.onPointerUp`
+    // committing a "merge"-mode drop), and the user's intent in
+    // dragging a card to another pane is to follow the card —
+    // attention moves with the gesture. Pre-#step-23c the target
+    // only became active when the source was destroyed, which left
+    // the dragged card mounted but not focused; users had to click
+    // back into it to resume work. Always activating the target
+    // closes that gap and lets `transferFocusAfterMove` resolve
+    // a focus-destination card on the post-commit DOM.
+    const postMoveActivePaneId = targetPaneId;
 
     const spliced = spliceCardFromStack(sourceStack, cardId);
 
-    // Determine the composite first-responder bit after the move.
-    let newFR: string | null;
-    if (postMoveActivePaneId === targetPaneId) {
-      // Target is/becomes the active stack → moved card is first responder.
-      newFR = cardId;
-    } else if (
-      postMoveActivePaneId === sourcePaneId &&
-      !sourceWillBeDestroyed
-    ) {
-      // Source remains active; its new `activeCardId` depends on whether
-      // the moved card was the source's active-in-stack pre-move.
-      newFR = spliced.activeCardId;
-    } else if (postMoveActivePaneId !== undefined) {
-      const other = this.deckState.panes.find(
-        (s) => s.id === postMoveActivePaneId,
-      );
-      newFR = other?.activeCardId ?? null;
-    } else {
-      newFR = null;
-    }
+    // Composite first-responder bit: the moved card is the active
+    // card of the active pane post-move, so it becomes FR
+    // unconditionally.
+    const newFR: string = cardId;
 
-    // Transition 7 / 7b: flip composite bit iff it changes. Card
-    // identity is preserved across the move, so no destruction event.
+    // Transition 7: flip composite bit. Card identity is preserved
+    // across the move, so no destruction event. Post-flip,
+    // transferFocusAfterMove restores focus into the card's new DOM
+    // location (selection plan #step-23c).
     this._flipFirstResponder(
       newFR,
       () => {
@@ -1826,23 +1830,36 @@ export class DeckManager implements IDeckManagerStore {
           cardIds: newTargetCardIds,
           activeCardId: cardId,
         };
-        const finalStacks = intermediateStacks.map((s) =>
-          s.id === targetPaneId ? updatedTargetStack : s,
+
+        // Bump the target pane to the end of the panes array (z-
+        // top). Mirrors `_commitStandardFirstResponderFlip` — the
+        // deck's "focused card" is read as the activeCardId of the
+        // last (top-most) pane, so the target needs to be at the
+        // end for the moved card to be observable as the FR.
+        const withoutTarget = intermediateStacks.filter(
+          (s) => s.id !== targetPaneId,
         );
+        const finalStacks: readonly TugPaneState[] = [
+          ...withoutTarget,
+          updatedTargetStack,
+        ];
 
         this.deckState = {
           ...this.deckState,
           panes: finalStacks,
-          ...(postMoveActivePaneId !== undefined
-            ? { activePaneId: postMoveActivePaneId }
-            : { activePaneId: undefined }),
+          activePaneId: postMoveActivePaneId,
         };
         this.notify();
         this.scheduleSave();
-        if (newFR !== null) this.putFocusedCardIdGuarded(newFR);
+        this.putFocusedCardIdGuarded(newFR);
       },
       "_moveCardToPane",
     );
+
+    // Refocus after the move (selection plan #step-23c). See the
+    // matching comment in _detachCard for the L23 / drag-start-save
+    // contract.
+    transferFocusAfterMove({ sourceCardId: cardId, store: this });
   }
 
   // ---- Collapse management ----

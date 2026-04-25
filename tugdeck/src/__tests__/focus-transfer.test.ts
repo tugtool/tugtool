@@ -1,26 +1,21 @@
 /**
- * focus-transfer.test.ts — unit tests for the one fully-implemented
- * entry of the Step 23A focus-transfer scaffold: `resolveActivationTarget`.
+ * focus-transfer.test.ts — unit tests for the side-effect-free
+ * resolver `resolveActivationTarget`.
  *
- * The resolver is side-effect-free and returns one of three variants
- * per the module's documented decision tree. Each test sets up a
- * small `FocusTransferStore` stub + a detached DOM subtree, calls the
- * resolver, and asserts the resulting `ActivationTarget`.
+ * The resolver returns one of four variants
+ * (`focus-element` / `dispatch-activated` / `default-focus` /
+ * `none`) per the module's documented decision tree. Each test
+ * sets up a small `FocusTransferStore` stub + a detached DOM
+ * subtree, calls the resolver, and asserts the resulting
+ * `ActivationTarget`.
  *
- * `captureFocusForDragStart` and `transferFocusAfterMove` ship as
- * throwing signatures at Step 23A; one smoke test per entry
- * confirms each throws an informative message until Step 23C wires
- * them up.
- *
- * `transferFocusForActivation`'s body landed in Step 23B Pass 3
- * split (a). Behavior coverage is in the in-app sweep
- * (`tests/in-app/m01-tab-switch-fc.test.ts`,
- * `m01-rapid-cadence.test.ts`, and the M03/M16 equivalents) — the
- * helper drives a real WebKit focus call and a real selection-
- * range restore, and only the in-app harness can faithfully
- * exercise that surface. Per the project's "no happy-dom tests"
- * rule, this unit file does not stand up a fake DOM with focus
- * semantics to retest the helper here.
+ * Behavior coverage for `transferFocusForActivation`,
+ * `captureFocusForDragStart`, and `transferFocusAfterMove` lives
+ * in the in-app harness (m01/m03/m16 + m06/m07/m21) — those
+ * helpers drive real WebKit focus calls, real selection-range
+ * restores, and real React commit timing. Per the project's
+ * happy-dom scoping rule, this unit file does not stand up a fake
+ * DOM with focus semantics to retest those helpers here.
  */
 
 import "./setup-rtl";
@@ -29,9 +24,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 
 import type { CardStateBag } from "../layout-tree";
 import {
-  captureFocusForDragStart,
   resolveActivationTarget,
-  transferFocusAfterMove,
   type FocusTransferStore,
 } from "../focus-transfer";
 
@@ -236,30 +229,8 @@ describe("resolveActivationTarget", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Side-effecting entries — Step 23C still pending; their bodies throw.
-// ---------------------------------------------------------------------------
-
-describe("Step-23C side-effecting entries (throw with step pointer)", () => {
-  test("captureFocusForDragStart throws with Step 23C pointer", () => {
-    expect(() =>
-      captureFocusForDragStart({
-        sourceCardId: "a",
-        store: {} as unknown as Parameters<
-          typeof captureFocusForDragStart
-        >[0]["store"],
-      }),
-    ).toThrow(/Step 23C/);
-  });
-
-  test("transferFocusAfterMove throws with Step 23C pointer", () => {
-    expect(() =>
-      transferFocusAfterMove({
-        sourceCardId: "a",
-        store: {} as unknown as Parameters<
-          typeof transferFocusAfterMove
-        >[0]["store"],
-      }),
-    ).toThrow(/Step 23C/);
-  });
-});
+// `captureFocusForDragStart` and `transferFocusAfterMove` shipped
+// in selection plan #step-23c. The stub-assertion tests that
+// previously lived here (asserting the throws) are gone — behavior
+// coverage for these helpers lives in the in-app drag harness
+// (m06-cross-pane-drag, m07-card-detach, m21-drag-aborted).

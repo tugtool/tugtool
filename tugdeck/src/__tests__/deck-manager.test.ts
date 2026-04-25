@@ -2465,7 +2465,13 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(b);
   });
 
-  it("T-11-6-1b-07b: moveCardToPane into an inactive stack fires no flip events", () => {
+  it("T-11-6-1b-07b: moveCardToPane into an inactive stack activates the target and flips FR to the moved card", () => {
+    // Cross-pane move always activates the target pane (selection
+    // plan #step-23c). The user drags a card to another pane to
+    // follow it — attention moves with the gesture. Pre-#step-23c
+    // the FR stayed on the source's remaining card and the user
+    // had to click back into the moved card; the new contract is
+    // that the moved card becomes the new FR unconditionally.
     registerCard(makeRegistration("hello"));
     registerCard(makeRegistration("terminal"));
     registerCard(makeRegistration("git"));
@@ -2480,13 +2486,19 @@ describe("DeckManager first-responder transitions (11.6.1b)", () => {
     expect(manager.getFirstResponderCardId()).toBe(a);
     const log = attachTransitionLog(manager);
 
-    // Move b from src (active, multi-card) to tgt (inactive). src stays
-    // active with a as its activeCard. tgt's activeCard becomes b but
-    // tgt is not the active stack so no flip.
+    // Move b from src (active, multi-card) to tgt (inactive). The
+    // move activates tgt and makes b the FR — full flip from a → b
+    // even though tgt was inactive at call time.
     manager.moveCardToPane(srcStackId, b, tgtStackId, 0);
 
-    expect(log).toEqual([]);
-    expect(manager.getFirstResponderCardId()).toBe(a);
+    expect(log).toEqual([
+      `willDeact:${a}`,
+      `willAct:${b}`,
+      `didDeact:${a}`,
+      `didAct:${b}`,
+    ]);
+    expect(manager.getFirstResponderCardId()).toBe(b);
+    expect(manager.getDeckState().activePaneId).toBe(tgtStackId);
   });
 
   it("T-11-6-1b-08a: removeCard on FR in a multi-card stack flips to neighbor then destroys", () => {

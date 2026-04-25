@@ -45,7 +45,10 @@ import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
-import { transferFocusForActivation } from "@/focus-transfer";
+import {
+  captureFocusForDragStart,
+  transferFocusForActivation,
+} from "@/focus-transfer";
 
 // ===========================================================================
 // CardTitleBar (window title chrome)
@@ -778,6 +781,23 @@ export function TugPane({
 
   const handleDragStart = useCallback(
     (event: React.PointerEvent) => {
+      // Drag-start focus save (selection plan #step-23c). The pane
+      // title bar is not focusable, so WebKit's mousedown default
+      // would normally blur whatever element inside the active
+      // card has focus. Saving the active card's bag in capture
+      // phase — before the blur lands — preserves `bag.focus` and
+      // `bag.domSelection` so the helper can restore them after
+      // the gesture (drop, cancel, or even no-op release).
+      // The save is unconditional: cheap, idempotent with the
+      // subsequent debounced save.
+      const currentActiveCardId = activeCardIdRef.current;
+      if (currentActiveCardId) {
+        captureFocusForDragStart({
+          sourceCardId: currentActiveCardId,
+          store,
+        });
+      }
+
       if (!frameRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
@@ -974,9 +994,9 @@ export function TugPane({
       frame.addEventListener("pointerup", onPointerUp);
     },
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
-    // onCardMerged, and activeCardId are stable or handled via closure capture.
+    // onCardMerged, activeCardId, and store are stable or handled via closure capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y],
+    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y, store],
   );
 
   // ---------------------------------------------------------------------------

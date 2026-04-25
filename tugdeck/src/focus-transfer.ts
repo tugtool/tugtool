@@ -58,10 +58,21 @@
  *   cards) still receive the caret via the
  *   {@link DEFAULT_FOCUS_SELECTORS} chain.
  *
- * - **Steps 23C / 23D** — `captureFocusForDragStart`,
- *   `transferFocusAfterMove`, and `reactivateCurrentFocusDestination`
- *   (the app-lifecycle entry) still throw; their implementations
- *   land in their respective steps.
+ * - **Step 23C** — `captureFocusForDragStart` and
+ *   `transferFocusAfterMove` ship. The drag-start save fires in
+ *   capture phase from `tug-pane.tsx#handleDragStart` and
+ *   `tug-tab-bar.tsx#handleTabPointerDown` (before the browser's
+ *   mousedown default blurs the focused element). The drop hook
+ *   fires from `deck-manager.ts#_detachCard` / `_moveCardToPane`
+ *   after `notify()` so the helper sees the post-commit DOM. The
+ *   drag coordinator's `onDragCancel` callback (Escape /
+ *   pointercancel) routes through the same helper to refocus into
+ *   the card's pre-drag DOM location. Step-11's cross-pane
+ *   `[hostStackId]`-keyed `useLayoutEffect` retires in this step.
+ *
+ * - **Step 23D** — `reactivateCurrentFocusDestination` (the app-
+ *   lifecycle entry) still throws; its implementation lands in
+ *   its step.
  *
  * ## The activation target
  *
@@ -568,18 +579,28 @@ export interface CaptureFocusForDragStartOptions {
 
 /**
  * Snapshot focus and DOM selection for a card whose pane / tab is
- * being dragged. The snapshot is stored on the drag coordinator's
- * per-gesture context so {@link transferFocusAfterMove} can restore
- * it after the drop commits.
+ * being dragged. Called unconditionally on the gesture-start
+ * pointerdown — even if the click never crosses the drag threshold,
+ * a save is cheap and idempotent with the subsequent debounced
+ * save. Capturing on pointerdown (before the browser's mousedown
+ * default has a chance to blur the focused element inside the
+ * card) is the only place that can preserve `bag.focus` and
+ * `bag.domSelection` across a drag gesture.
  *
- * Implemented in Step 23C. Step 23A ships the signature only.
+ * The save is delegated to the store's per-card save callback so
+ * the captured bag picks up everything (focus, scroll, selection,
+ * form-controls, region-scrolls, opt-in components) in one pass —
+ * the same surface the close-handoff and debounced saves use.
+ *
+ * Idempotent on no-op: if the card has no registered save callback
+ * (orchestrator hasn't seen a `registerSaveCallback` for this id
+ * yet — possible if the gesture starts pre-mount on an unloaded
+ * deck), `invokeSaveCallback` no-ops silently.
  */
 export function captureFocusForDragStart(
-  _options: CaptureFocusForDragStartOptions,
+  options: CaptureFocusForDragStartOptions,
 ): void {
-  throw new Error(
-    "captureFocusForDragStart: not implemented (lands in Step 23C of tugplan-selection)",
-  );
+  options.store.invokeSaveCallback(options.sourceCardId, "manual");
 }
 
 /**
@@ -594,16 +615,105 @@ export interface TransferFocusAfterMoveOptions {
 
 /**
  * Restore focus and DOM selection to `sourceCardId` after a drop /
- * re-parent commits. Reads the snapshot captured at drag start,
- * resolves against the post-commit DOM, gates through the focus-theft
- * rules, and transfers.
+ * re-parent commits, or after a drag is cancelled (Escape /
+ * pointercancel). Three-step body — no save here; drag-start
+ * already captured the bag.
  *
- * Implemented in Step 23C. Step 23A ships the signature only.
+ *   1. Resolve the activation target via {@link resolveActivationTarget}.
+ *   2. Read the registered host root via `store.peekCardHostRoot`
+ *      and gate through {@link canProgrammaticallyFocus}.
+ *   3. Transfer:
+ *      - `focus-element` → `el.focus()` + `restoreCardDomSelection`
+ *      - `default-focus` → `traceApplyDefaultFocus` walk
+ *      - `dispatch-activated` → `store.invokeActivationCallback`
+ *      - `none` → return
+ *
+ * Called by `deck-manager#_detachCard` / `_moveCardToPane` after
+ * their `notify()` (so the moved card's DOM is in its post-commit
+ * location), and by the drag coordinator's onDragCancel hook
+ * (Escape / pointercancel — no commit ran, focus restores into the
+ * card's original DOM location). React reconciliation has already
+ * landed at the moment the helper runs in both cases, so no
+ * `flushSync` is needed (the helper does no `commitMutation` of its
+ * own).
  */
 export function transferFocusAfterMove(
-  _options: TransferFocusAfterMoveOptions,
+  options: TransferFocusAfterMoveOptions,
 ): void {
-  throw new Error(
-    "transferFocusAfterMove: not implemented (lands in Step 23C of tugplan-selection)",
+  const { sourceCardId, store } = options;
+
+  // Step 1 — Resolve.
+  const target = resolveActivationTarget(sourceCardId, store);
+  if (target.kind === "none") return;
+
+  // Step 2 — Gate.
+  const targetCardHostEl = store.peekCardHostRoot(sourceCardId);
+  const allowed = canProgrammaticallyFocus(
+    sourceCardId,
+    store.getSnapshot(),
+    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
   );
+  if (!allowed) return;
+
+  // Step 3 — Transfer.
+  if (target.kind === "focus-element") {
+    const doc = target.el.ownerDocument;
+    const activeBefore = formatElement(doc.activeElement);
+    target.el.focus();
+    const activeAfter = formatElement(doc.activeElement);
+    deckTrace.record({
+      kind: "focus-call",
+      site: "focus-transfer-after-move",
+      cardId: sourceCardId,
+      targetSelector: describeTargetSelector(target.el, store, sourceCardId),
+      activeBefore,
+      activeAfter,
+      hidden: isElementHidden(target.el),
+    });
+
+    const bag = store.getCardState(sourceCardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      const cardRoot =
+        targetCardHostEl ?? store.peekCardHostRoot(sourceCardId);
+      if (cardRoot !== null) {
+        selectionGuard.restoreCardDomSelection(
+          sourceCardId,
+          bag.domSelection,
+          cardRoot,
+        );
+        deckTrace.record({
+          kind: "selection-restore",
+          cardId: sourceCardId,
+          via: "restoreCardDomSelection",
+        });
+      }
+    }
+    return;
+  }
+
+  if (target.kind === "default-focus") {
+    traceApplyDefaultFocus(
+      "focus-transfer-after-move-default",
+      sourceCardId,
+      target.cardRoot,
+    );
+    const bag = store.getCardState(sourceCardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      selectionGuard.restoreCardDomSelection(
+        sourceCardId,
+        bag.domSelection,
+        target.cardRoot,
+      );
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId: sourceCardId,
+        via: "restoreCardDomSelection",
+      });
+    }
+    return;
+  }
+
+  // `dispatch-activated` — content factory's onCardActivated handles
+  // its own targeting.
+  store.invokeActivationCallback(sourceCardId);
 }
