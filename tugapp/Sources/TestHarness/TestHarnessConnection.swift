@@ -40,7 +40,16 @@ final class TestHarnessConnection {
     /// unchanged. Major version still `1`, so harnesses built against
     /// `1.0.0` continue to handshake cleanly against `1.1.0` (minor
     /// version is additive).
-    static let surfaceVersion = "1.1.0"
+    ///
+    /// `1.2.0` (Step 4, harness extensions): adds the four
+    /// app-lifecycle simulation verbs (`simulateAppResign`,
+    /// `simulateAppBecomeActive`, `simulateAppHide`,
+    /// `simulateAppUnhide`). Each invokes the matching `NSApp`
+    /// primitive on main and waits up to 1000ms for the
+    /// corresponding `NSApplication.did...Notification` to fire;
+    /// timeout surfaces as `AppLifecycleTimeoutError`. Additive;
+    /// major stays `1`.
+    static let surfaceVersion = "1.2.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -127,6 +136,11 @@ final class TestHarnessConnection {
             dispatchNativeVerb(id: id, verbObj: obj)
         case "checkAccessibilityPermission":
             dispatchCheckAccessibilityPermission(id: id, verbObj: obj)
+        case "simulateAppResign",
+             "simulateAppBecomeActive",
+             "simulateAppHide",
+             "simulateAppUnhide":
+            dispatchAppLifecycleVerb(id: id, method: method, verbObj: obj)
         case "getElementScreenBounds":
             guard let selector = obj["selector"] as? String else {
                 respondError(id: id, name: "ProtocolError", message: "getElementScreenBounds: missing 'selector'")
@@ -290,6 +304,41 @@ final class TestHarnessConnection {
                     "height": outH,
                 ]
                 self.respond(id: id, ok: true, payload: ["value": rect])
+            }
+        }
+    }
+
+    // MARK: - App-lifecycle verbs (Spec [#s01-hardware-rpc], Step 4)
+
+    /// Top-level dispatch for the `simulateApp*` verb family. Each
+    /// verb invokes the matching `NSApp` primitive on main and waits
+    /// up to 1000ms (or the wire-supplied `timeoutMs`) for the
+    /// corresponding `NSApplication.did...Notification` to fire.
+    ///
+    /// Bounces through `DispatchQueue.global(qos: .userInitiated).async`
+    /// so the main run loop stays free to deliver the notification —
+    /// the helper inside `AppLifecycleHandlers` marshals the trigger
+    /// onto main synchronously and parks on a `DispatchSemaphore`
+    /// from the background queue while the notification fires on
+    /// main and signals.
+    private func dispatchAppLifecycleVerb(
+        id: Int,
+        method: String,
+        verbObj: [String: Any],
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                try AppLifecycleHandlers.dispatch(method: method, verbObj: verbObj)
+                self.respond(id: id, ok: true, payload: ["value": NSNull()])
+            } catch let error as AppLifecycleError {
+                self.respondError(id: id, name: error.wireName, message: error.description)
+            } catch {
+                self.respondError(
+                    id: id,
+                    name: "AppLifecycleError",
+                    message: "\(error)",
+                )
             }
         }
     }

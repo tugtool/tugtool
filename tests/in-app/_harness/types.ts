@@ -25,11 +25,16 @@ export type RpcMethod =
   | "nativeDoubleClick"
   | "nativeRightClick"
   | "nativeDrag"
+  | "nativeDragWithoutRelease"
   | "nativeMouseDown"
   | "nativeMouseUp"
   | "nativeKey"
   | "nativeType"
-  | "holdModifier";
+  | "holdModifier"
+  | "simulateAppResign"
+  | "simulateAppBecomeActive"
+  | "simulateAppHide"
+  | "simulateAppUnhide";
 
 /**
  * Viewport-space point passed to the native-gesture verbs. `{x, y}` is
@@ -198,6 +203,15 @@ export type Request =
     }
   | {
       id: number;
+      method: "nativeDragWithoutRelease";
+      from: ViewportPoint;
+      to: ViewportPoint;
+      button?: NativeMouseButton;
+      mouseDownDelayMs?: number;
+      mouseUpDelayMs?: number;
+    }
+  | {
+      id: number;
       method: "nativeMouseDown";
       viewportPoint: ViewportPoint;
       button?: NativeMouseButton;
@@ -224,6 +238,26 @@ export type Request =
       method: "holdModifier";
       modifiers: readonly NativeModifier[];
       innerVerbs: readonly InnerNativeVerb[];
+    }
+  | {
+      id: number;
+      method: "simulateAppResign";
+      timeoutMs?: number;
+    }
+  | {
+      id: number;
+      method: "simulateAppBecomeActive";
+      timeoutMs?: number;
+    }
+  | {
+      id: number;
+      method: "simulateAppHide";
+      timeoutMs?: number;
+    }
+  | {
+      id: number;
+      method: "simulateAppUnhide";
+      timeoutMs?: number;
     };
 
 /**

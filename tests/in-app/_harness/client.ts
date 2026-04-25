@@ -882,6 +882,73 @@ export function nativeType(
   return caller.rpcCall<void>("nativeType", { text });
 }
 
+// ---------------------------------------------------------------------------
+// App-lifecycle simulation (Spec [#s01-hardware-rpc], Step 4)
+//
+// Each verb invokes the matching `NSApp` primitive on the Tug.app
+// main thread and waits up to 1000ms for the corresponding
+// `NSApplication.did...Notification` to fire on the real
+// AppDelegate. The harness's RPC timeout defaults to 2000ms so the
+// client always sees the typed `AppLifecycleTimeoutError` first if
+// the delegate misses, rather than the generic transport timeout.
+//
+// Per [D07]: these are real lifecycle transitions, not synthesized
+// delegate-method invocations — the existing `AppDelegate.application*`
+// handlers (which forward to tugdeck via `app-lifecycle` control
+// frames) fire as a consequence.
+//
+// Common pattern: tests pair a resign/become-active or hide/unhide
+// to exercise the cascade selection plan #step-23d wires up. The
+// optional `timeoutMs` is for deliberate-timeout test paths (e.g.
+// calling `simulateAppHide` while already hidden).
+// ---------------------------------------------------------------------------
+
+export interface AppLifecycleOptions {
+  /**
+   * Server-side bound on how long Swift waits for the matching
+   * `NSApplication.did...Notification` after invoking the trigger.
+   * Default 1000ms. Pass a much lower value (e.g. 1ms) to deliberately
+   * exercise the timeout path.
+   */
+  timeoutMs?: number;
+}
+
+export function simulateAppResign(
+  caller: HarnessCaller,
+  opts?: AppLifecycleOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = {};
+  if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
+  return caller.rpcCall<void>("simulateAppResign", params);
+}
+
+export function simulateAppBecomeActive(
+  caller: HarnessCaller,
+  opts?: AppLifecycleOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = {};
+  if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
+  return caller.rpcCall<void>("simulateAppBecomeActive", params);
+}
+
+export function simulateAppHide(
+  caller: HarnessCaller,
+  opts?: AppLifecycleOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = {};
+  if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
+  return caller.rpcCall<void>("simulateAppHide", params);
+}
+
+export function simulateAppUnhide(
+  caller: HarnessCaller,
+  opts?: AppLifecycleOptions,
+): Promise<void> {
+  const params: Record<string, unknown> = {};
+  if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
+  return caller.rpcCall<void>("simulateAppUnhide", params);
+}
+
 /**
  * Press every modifier in `modifiers`, run `thunk`, release them in
  * reverse order — all as a single atomic Swift-side call. The inner

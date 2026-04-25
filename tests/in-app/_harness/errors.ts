@@ -150,3 +150,29 @@ export class UnknownKeyError extends Error {
     Object.setPrototypeOf(this, UnknownKeyError.prototype);
   }
 }
+
+/**
+ * Thrown when one of the `simulateApp*` verbs invokes its NSApp
+ * primitive but the matching `NSApplication.did...Notification`
+ * does not fire within the bounded wait window (default 1000ms).
+ *
+ * The most common cause is calling a verb when the app is already
+ * in the requested state — e.g. `simulateAppHide` when the app is
+ * already hidden. NSApp short-circuits the request and posts no
+ * notification.
+ *
+ * `event` is the notification name the Swift bridge was waiting
+ * for ("didResignActive", "didBecomeActive", "didHide",
+ * "didUnhide"); useful for branching in tests that exercise
+ * deliberate-timeout paths.
+ */
+export class AppLifecycleTimeoutError extends Error {
+  readonly name = "AppLifecycleTimeoutError" as const;
+  readonly event: string;
+
+  constructor(message: string, event: string) {
+    super(message);
+    this.event = event;
+    Object.setPrototypeOf(this, AppLifecycleTimeoutError.prototype);
+  }
+}

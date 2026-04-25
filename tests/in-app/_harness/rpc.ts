@@ -24,6 +24,7 @@
 import {
   AccessibilityPermissionMissingError,
   AppCrashedError,
+  AppLifecycleTimeoutError,
   CoordinateOutOfBoundsError,
   NativeTypeAsciiOnlyError,
   TimeoutError,
@@ -248,6 +249,15 @@ export function translateError(
       return new AccessibilityPermissionMissingError(wire.message);
     case "UnknownKeyError":
       return new UnknownKeyError(wire.message);
+    case "AppLifecycleTimeoutError": {
+      // Server message format: "NSApplication <event> notification did
+      // not fire within <ms>ms". Best-effort parse so the error's
+      // `event` field is populated; on miss, fall back to "" so test
+      // code that doesn't branch on event isn't penalized.
+      const m = wire.message.match(/NSApplication\s+(\w+)\s+notification/);
+      const event = m?.[1] ?? "";
+      return new AppLifecycleTimeoutError(wire.message, event);
+    }
     default: {
       const err = new Error(wire.message);
       // Preserve the server-side name for `.name`-based switches.

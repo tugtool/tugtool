@@ -77,6 +77,7 @@ export {
 } from "./matchers";
 export type {
   ActiveElementInfo,
+  AppLifecycleOptions,
   CaretState,
   ClickOptions,
   ClientMethodNames,
@@ -110,8 +111,14 @@ export type {
  * stays `1`. Tugdeck-side `SURFACE_VERSION` (in
  * `tugdeck/src/test-surface.ts`) is bumped in Step 3 when the TS-side
  * `__tug.*` surface methods land.
+ *
+ * `1.2.0` (Step 4, harness extensions): adds the four app-lifecycle
+ * simulation verbs (`simulateAppResign`, `simulateAppBecomeActive`,
+ * `simulateAppHide`, `simulateAppUnhide`). Additive; major stays `1`.
+ * The tugdeck-side `__tug.*` surface gains no new methods at this
+ * version — these are pure RPC verbs handled at the Swift bridge.
  */
-export const EXPECTED_SURFACE_VERSION = "1.1.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.2.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -611,6 +618,42 @@ export class App {
   /** Type ASCII text (non-ASCII is rejected with a typed error). */
   nativeType(text: string): Promise<void> {
     return client.nativeType(this as HarnessCaller, text);
+  }
+
+  // -------------------------------------------------------------------
+  // App-lifecycle simulation ([D07], Spec [#s01-hardware-rpc] / Step 4)
+  //
+  // Each method invokes the matching `NSApp` primitive on Tug.app's
+  // main thread and awaits the corresponding
+  // `NSApplication.did...Notification`. The real `AppDelegate`
+  // forwards the lifecycle event to tugdeck via an `app-lifecycle`
+  // control frame, so observers downstream (selection guard,
+  // deck.saveAndFlush, etc.) see exactly what they would in a manual
+  // run. On miss, throws `AppLifecycleTimeoutError`.
+  // -------------------------------------------------------------------
+
+  /** `NSApp.deactivate()`; awaits `applicationDidResignActive:`. */
+  simulateAppResign(opts?: client.AppLifecycleOptions): Promise<void> {
+    return client.simulateAppResign(this as HarnessCaller, opts);
+  }
+
+  /**
+   * `NSApp.activate(ignoringOtherApps: true)`; awaits
+   * `applicationDidBecomeActive:`. Useful as the second half of a
+   * resign/return cycle to verify post-activation reactivation.
+   */
+  simulateAppBecomeActive(opts?: client.AppLifecycleOptions): Promise<void> {
+    return client.simulateAppBecomeActive(this as HarnessCaller, opts);
+  }
+
+  /** `NSApp.hide(nil)`; awaits `applicationDidHide:`. */
+  simulateAppHide(opts?: client.AppLifecycleOptions): Promise<void> {
+    return client.simulateAppHide(this as HarnessCaller, opts);
+  }
+
+  /** `NSApp.unhide(nil)`; awaits `applicationDidUnhide:`. */
+  simulateAppUnhide(opts?: client.AppLifecycleOptions): Promise<void> {
+    return client.simulateAppUnhide(this as HarnessCaller, opts);
   }
 
   /**

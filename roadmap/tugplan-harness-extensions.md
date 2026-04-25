@@ -1516,23 +1516,25 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 
 **Artifacts:**
 - Swift handlers for `simulateAppResign`, `simulateAppBecomeActive`, `simulateAppHide`, `simulateAppUnhide` — each invokes the NSApp primitive on the main thread and waits for the corresponding delegate callback to fire (bounded 1000ms); `AppLifecycleTimeoutError` on timeout.
-- `tugdeck/src/test-surface.ts` — typed methods on `__tug`.
+- `tests/in-app/_harness/index.ts` — typed methods on the `App` class (these verbs are pure RPC and do not touch `window.__tug`, so the tugdeck-side `test-surface.ts` is unchanged).
 - `tests/in-app/_harness/errors.ts` — adds `AppLifecycleTimeoutError`.
 
 **Tasks:**
-- [ ] Swift: implement `simulateAppResign` via `NSApp.deactivate()`; wait for `applicationDidResignActive:` to fire.
-- [ ] Swift: mirror for `BecomeActive` (`NSApp.activate(ignoringOtherApps: true)` + `applicationDidBecomeActive:`).
-- [ ] Swift: mirror for `Hide` (`NSApp.hide(nil)` + `applicationDidHide:`).
-- [ ] Swift: mirror for `Unhide` (`NSApp.unhide(nil)` + `applicationDidUnhide:`).
-- [ ] Timeout handling: if the expected delegate callback does not fire within 1000ms, return `AppLifecycleTimeoutError`.
-- [ ] TS surface: wrap as typed methods with 2000ms default RPC timeout (enough margin over the server-side wait).
+- [x] Swift: implement `simulateAppResign` via `NSApp.deactivate()` + Finder activation fallback (see Author note 2026-04-25); wait for `applicationDidResignActive:` to fire.
+- [x] Swift: mirror for `BecomeActive` (`NSApp.activate(ignoringOtherApps: true)` + `applicationDidBecomeActive:`).
+- [x] Swift: mirror for `Hide` (`NSApp.hide(nil)` + `applicationDidHide:`).
+- [x] Swift: mirror for `Unhide` (`NSApp.unhide(nil)` + `applicationDidUnhide:`).
+- [x] Timeout handling: if the expected delegate callback does not fire within 1000ms, return `AppLifecycleTimeoutError`.
+- [x] TS surface: wrap as typed methods with 2000ms default RPC timeout (enough margin over the server-side wait).
 
 **Tests:**
-- [ ] `tests/in-app/_smoke-app-lifecycle.test.ts` (scratch; deleted after Step 6) — verifies each of the four handlers returns successfully when called in isolation; deliberate timeout by passing a 1ms override to verify error path.
+- [x] `tests/in-app/_smoke-app-lifecycle.test.ts` (scratch; deleted after Step 6) — verifies each of the four handlers returns successfully when called in isolation; deliberate timeout by passing `timeoutMs: 1` after the app is already hidden (NSApp.hide() is a no-op when already hidden, so the notification reliably misses the wait window).
 
 **Checkpoint:**
-- [ ] `bun test tests/in-app/_smoke-app-lifecycle.test.ts` exits 0.
-- [ ] Binary-size diff still within noise.
+- [x] `just test-in-app-fast _smoke-app-lifecycle.test.ts` exits 0.
+- [x] Binary-size diff still within noise.
+
+**Author note (2026-04-25).** Two implementation deviations worth pinning. First, `NSApp.deactivate()` alone is silently ignored on macOS Sonoma+ when there's no other "active" app queued to receive activation — `applicationDidResignActive:` never posts. The Swift handler now activates Finder via `NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.activate(options: [])` after calling `deactivate()`. Finder is system-essential and always running, so it's a reliable target; this matches the user-facing scenario "user clicks Finder, Tug.app loses focus" that M04 is meant to exercise. Second, the deliberate-timeout test uses "call simulateAppHide while already hidden" rather than just a tight `timeoutMs: 1` against a fresh call — the latter would race the run loop on a fast machine. Calling hide while already hidden is deterministically a no-op (NSApp short-circuits), so combined with `timeoutMs: 1` the verb is guaranteed to surface `AppLifecycleTimeoutError`. Surface version bumped Swift `1.1.0`→`1.2.0` and TS `EXPECTED_SURFACE_VERSION` `1.1.0`→`1.2.0` (additive minor; major stays 1). The plan's `tugdeck/src/test-surface.ts` artifact is dropped — `simulateApp*` are pure RPC verbs handled at the Swift bridge, with no `window.__tug.*` surface change.
 
 ---
 
