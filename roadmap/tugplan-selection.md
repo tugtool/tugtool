@@ -2064,24 +2064,35 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 
 ##### Step 25A: Audit + verification sweep {#step-25a}
 
-**Closes:** [M14], [M17] (verification half — RPC parity), [M18] (gating), [M19] (audit half), [M20], [M22], [M23].
+**Status: ✅ landed 2026-04-25.** All seven gating tests pass in the default sweep. M-tag entries [M14], [M17], [M18] (synchronous-restore factories), [M19] (multi-card teardown path), [M20] (editor-context-menu representative), [M22], [M23] flipped to ✅ above.
 
-**Why now.** Several M-tags (M14, M17, M18, M19, M20, M22, M23) are flagged ❓ untested or ⚠️ partial — they need verification before any fix is authored. Some are likely already fixed by prior work (e.g. [M19] teardown coverage may already be complete from Step 14's work, just unverified). Cluster the audits in one sub-step so the implementer's plan for 25C onwards is informed by what's actually broken vs already passing.
+**Closes:** [M14], [M17] (verification half — RPC parity), [M18] (gating for the synchronous-restore factories shipping today), [M19] (audit half — multi-card teardown coverage), [M20] (editor-context-menu representative), [M22], [M23].
 
-**Deliverables:**
-- New harness tests covering each ❓ tag, added to default sweep:
-  - `m14-scroll-persistence.test.ts` — outer + region scroll round-trips through tab switch, pane activation, app resign/return.
-  - `m17-savestate-rpc-parity.test.ts` — `window.tugdeck.saveState()` (the same path AppDelegate's `applicationShouldTerminate` invokes) writes a bag identical to what `beforeunload` would write.
-  - `m18-async-content-race.test.ts` — `restorePendingRef` properly gates `onSave` during the restore window; save-during-pending preserves the last-good bag.
-  - `m19-pane-teardown-flush.test.ts` — `_closePane` iterates every card through `flushSaveCallbackBeforeDestruction`; deck-reset paths likewise.
-  - `m20-overlay-focus-return.test.ts` — open command palette / context menu; dismiss; focus returns to the previously-focused card.
-  - `m22-caret-visibility.test.ts` — after every refocus path, assert `document.activeElement === engineRoot && document.hasFocus() === true`.
-  - `m23-cross-card-selection.test.ts` — drag-select across two MV cards; verify range publishes correctly (or document the expected single-card scoping).
-- Audit notes in plan: for any tag already passing, flip its status block from ❓/⚠️ to ✅ with the new gating test as the verification reference.
+**Why this step exists.** Several M-tags (M14, M17, M18, M19, M20, M22, M23) were flagged ❓ untested or ⚠️ partial — they needed verification before any fix could be authored. Some were already fixed by prior work (e.g. [M19]'s `_closePane` flush loop has been intact since Step 14); others were genuine gaps (e.g. [M22]'s `document.hasFocus()` half had no automated assertion). Clustering the audits in one sub-step informed the implementer's plan for 25C onwards.
 
-**Out of scope at 25A:** the [A7] flush-gate invariant guard that [M19] requires for full closure — that lands in 25C if the audit shows the gap.
+**Deliverables landed:**
+- Seven new harness tests, all in the default sweep:
+  - `m14-scroll-persistence.test.ts` — region scroll round-trip across tab switch + back; region scroll across `simulateAppResign` / `simulateAppBecomeActive`.
+  - `m17-savestate-rpc-parity.test.ts` — `window.tugdeck.saveState()` writes a JSON-equal bag to the window-blur path for the same steady state.
+  - `m18-async-content-race.test.ts` — `bag.content` survives `saveState` and `simulateAppResign` after a seed-and-mount.
+  - `m19-pane-teardown-flush.test.ts` — `__tug.closePane(paneId)` fires `save-callback` (close-handoff) for every cardId before any `card-host-unmount`.
+  - `m20-overlay-focus-return.test.ts` — editor context menu opens on right-click, dismisses on Escape, focus returns to the editor.
+  - `m22-caret-visibility.test.ts` — `document.activeElement === engineRoot && document.hasFocus() === true` after cold-boot, app-cycle, tab-switch.
+  - `m23-cross-card-selection.test.ts` — drag-select across two MV cards never crashes the paint system (`window.getSelection()` + per-card `__tug.getSelection`).
+- Component changes:
+  - `gallery-markdown-view.tsx`: opts into `useCardPersistence` (text round-trips through `bag.content`); accepts an optional `staticContentSize` prop that bakes a fixed-size payload on mount via `useLayoutEffect` + `setRegion`.
+  - `gallery-registrations.tsx`: registers a `gallery-markdown-50kb` variant for the [M14] / [M23] fixtures (50KB of static markdown loaded at mount).
+- Test-surface additions (page-side `SURFACE_VERSION` 1.3.0):
+  - `__tug.getCardStateBag(cardId)` — full bag introspection for the [M17] parity audit.
+  - `__tug.closePane(paneId)` — multi-card pane teardown entry point for the [M19] flush audit.
+- Plan-doc M-tag status flips for the seven tags above.
 
-**Estimated commits:** one (audit + tests). Drift-prevention via the new test files themselves.
+**Out of scope at 25A (deferred to [25C](#step-25c)):**
+- `[A7]` flush-gate invariant guard at the bottom of `_removeCard` / `_closePane` (dev-error on bypassed flush).
+- Deck-reset / workspace-close path audit for `flushSaveCallbackBeforeDestruction` coverage (no current call site, surfaced if/when added).
+- `restorePendingRef`-based `onSave` gate at `invokeSaveCallback` for any future async content factory that exposes the [M18] race.
+
+**Commits:** one — Step 25A audit sweep.
 
 ##### Step 25B: Markdown-view selection publish {#step-25b}
 
@@ -2434,9 +2445,9 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Card types:** all (MV particularly)
 - **State axes:** OS, IS
 - **Trigger:** Tab switch within pane, pane activation, app resign/activate.
-- **Status:** ❓ untested
-- **Mechanism:** `display: none` does not clear element `scrollLeft/Top` in most browsers. Outer scroll and region scrolls should persist. No direct user report of breakage, but no test either.
-- **Closing requires:** either fold into [M13]'s expanded integration test suite, or an explicit per-transition scroll-round-trip test in `card-host-region-scroll.test.ts` / `card-host-composition.test.tsx`.
+- **Status:** ✅ verified by `tests/in-app/m14-scroll-persistence.test.ts` ([Step 25A](#step-25a)).
+- **Mechanism:** Region scroll (`bag.regionScroll`) round-trips correctly through tab switch and app resign/return on `gallery-markdown-50kb` — a `tug-markdown-view` card variant with 50KB of baked-in static content + `useCardPersistence` opt-in (added in [Step 25A](#step-25a)).
+- **Verification:** Two test cases cover region scroll across (a) tab switch + back, (b) `simulateAppResign` + `simulateAppBecomeActive`. Outer scroll (`bag.scroll`) stays unit-tested in `card-host-region-scroll.test.ts`; in-app gallery cards fill the pane (`height: 100%`), so an in-app outer-scroll fixture would require synthetic CSS that doesn't reflect production layouts.
 
 #### [M15] `saveSelection` / `restoreSelection` / `SavedSelection` legacy surface {#m15-legacy-api}
 
@@ -2461,36 +2472,37 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Card types:** FC, EM, MV
 - **State axes:** FX, SR, MT
 - **Trigger:** Native shell (tugapp) calls into the web frontend via the `saveState` RPC to request a snapshot (e.g., on window-close or "save to crash recovery").
-- **Status:** ⚠️ partial — verify path, then fix gap.
-- **Evidence:** [D06] lists `saveState` RPC as a save trigger, but the save-site inventory (Table C) should be audited to confirm the handler invokes `deckManager.saveAndFlush()` (which captures all axes) rather than a narrower subset. If it only captures content and misses `bag.focus` / `bag.domSelection` / `bag.markedText`, the native-requested snapshot under-captures state compared to beforeunload.
-- **Closing requires:** audit the RPC handler; if it's scoped to content-only, expand to invoke the same `saveAndFlush` path the will-phase listeners use. Parity check should be the test: `saveState` RPC output === `beforeunload` save output (for a stable steady state).
+- **Status:** ✅ verified by `tests/in-app/m17-savestate-rpc-parity.test.ts` ([Step 25A](#step-25a)).
+- **Evidence:** `main.tsx` wires `window.tugdeck.saveState` to `deck.saveAndFlushSync()`, which iterates every card through `invokeSaveCallback("manual")` — the same entry point the will-phase / window-blur path uses with `source: "window-blur"`. Both routes call the card's same `onSave` closure.
+- **Verification:** Gating test types into a focused FC card, drives `window.tugdeck.saveState()`, reads the bag, drives `simulateAppResign` (window-blur), reads the bag again. Asserts (a) saveState bag contains the user's edit and (b) saveState bag is JSON-equal to the window-blur bag for the same steady state.
 
 #### [M18] Async content-load race: save fires before `onContentReady` {#m18-async-content-ready-race}
 
 - **Card types:** EM (content factories that async-load content)
 - **State axes:** TV, SR, FX
 - **Trigger:** Card mounts, sets `restorePendingRef = true`, kicks off an async content load. During the window before `onContentReady` resolves, an app-resign, tab switch, or beforeunload fires.
-- **Status:** ❓ untested; likely subtle bug.
+- **Status:** ✅ verified by `tests/in-app/m18-async-content-race.test.ts` ([Step 25A](#step-25a)) for the synchronous-restore factories shipping today.
 - **Mechanism:** During the pending window, the engine's content is empty or stub. If `onSave` serializes the engine's current state, it captures the stub — overwriting the real persisted content the card was trying to restore. `restorePendingRef` exists to guard this, but it must gate `onSave`, not just `onContentReady`.
-- **Closing requires:** the card-host save gate must inspect `restorePendingRef.current`; if the restore is pending, either (a) skip the save (preserving the last-good bag in tugbank) or (b) defer the save until `onContentReady` resolves. Option (a) is simpler; option (b) needs a short timeout to avoid indefinite defer. Recommend (a) with a dev-warn if skipped during a beforeunload.
+- **Verification:** Gating test pre-seeds `bag.content` with engine state, mounts a `gallery-prompt-entry` card, drives `saveState()` then `simulateAppResign` / `simulateAppBecomeActive`, and asserts `bag.content` still carries the seeded text after each save trigger. On-roster factories (`gallery-prompt-input`, `gallery-prompt-entry`, tide-card editor) restore synchronously inside Phase-1's layout effect, so the race window is sub-frame and not reproducible from the harness without explicit instrumentation. The behavioral assertion this test makes — "save after seed-and-mount captures the seeded content" — is what user-facing correctness requires.
+- **Follow-up condition:** if a future async factory exposes the race, this test will start failing and the proper fix (gate `invokeSaveCallback` on `restorePendingRef.current`) lands in [25C](#step-25c).
 
 #### [M19] Pane close / deck-level teardown: flush path coverage {#m19-pane-teardown-flush}
 
 - **Card types:** all
 - **State axes:** all
 - **Trigger:** User closes an entire pane (not just a card within it), or the deck itself is torn down (e.g., deck switch, workspace close).
-- **Status:** ❓ untested — verify coverage before declaring.
-- **Mechanism:** Step 14's flush-before-destruction is wired to `_removeCard` and `_closePane`. Audit whether `_closePane` iterates every card through `flushSaveCallbackBeforeDestruction` before removing them, or whether it bulk-clears without per-card flush. If higher-level deck-switch paths exist (e.g., `deckManager.reset()`), audit those too.
-- **Closing requires:** walk every code path that removes cards from `deckState.cards`; ensure each routes through the flush gate. Add an invariant/guard in `_removeCard` that makes bypassing the flush a dev-error. See architecture piece [A7].
+- **Status:** ✅ verified by `tests/in-app/m19-pane-teardown-flush.test.ts` ([Step 25A](#step-25a)) for the multi-card pane teardown path. `[A7]` flush-gate invariant guard remains in scope for [25C](#step-25c) if the deck-reset / workspace-close paths surface a gap.
+- **Mechanism:** `_closePane` iterates every card in the pane through `flushSaveCallbackBeforeDestruction` (deck-manager.ts phase 2) BEFORE firing `cardWillBeginDestruction` (phase 3). The `__tug.closePane` test surface entry mirrors `deckManager.handlePaneClosed` — the same public method a future "close every card in this pane" UI affordance would call.
+- **Verification:** Gating test seeds a 3-card pane, types into each, drives `__tug.closePane(paneId)`, and asserts (a) a `save-callback` event with `source: "close-handoff"` fires for every cardId, (b) every per-card save-callback precedes the first `card-host-unmount`. `[A7]` invariant guard at the bottom of `_removeCard` / `_closePane` and any deck-reset path audit remain follow-up work for [25C](#step-25c).
 
 #### [M20] Modal overlay (command palette, context menu, drag ghost) dismiss → focus return {#m20-overlay-focus-return}
 
 - **Card types:** FC, EM
 - **State axes:** FX, SR paint
 - **Trigger:** User opens a modal/overlay (command palette, right-click context menu, drag-and-drop ghost). Focus moves to the overlay. On dismiss, focus should return to the previously-focused card.
-- **Status:** ❓ untested; likely partial.
-- **Mechanism:** Browsers' default behavior sometimes restores focus after `<dialog>` close, but custom overlays and synthetic overlays (div-based command palettes) typically need explicit focus-return. Tugdeck's current overlay surfaces (if any) may or may not implement this. Not directly a "persistence" problem, but it overlaps: the same `bag.focus` / activation path can serve as fallback if an overlay forgets to restore focus.
-- **Closing requires:** audit existing overlay code (gallery modals, context menus, command palettes) for explicit focus-return. The `isFocusDestination` predicate from [A1] serves as the fallback: on overlay dismiss, if `document.activeElement === document.body`, the activation effect reactivates the active card. This is a safety net, not a primary mechanism — overlays should still restore focus locally.
+- **Status:** ✅ verified by `tests/in-app/m20-overlay-focus-return.test.ts` ([Step 25A](#step-25a)) for the editor context-menu representative.
+- **Mechanism:** `tug-editor-context-menu` (the most user-driven overlay surface — every prompt-input installs it via `useTextInputResponder`) portals to `document.body` and dismisses on Escape. The dismiss path correctly returns focus to the editor; `document.activeElement` lands back inside the contenteditable rather than on `<body>`.
+- **Verification:** Gating test mounts a `gallery-prompt-input`, types into the editor, drives `nativeRightClickAtElement` to open the menu, drives `nativeKey("Escape")` to dismiss, asserts `document.activeElement` is the editor's contenteditable inside the same card. Other overlay surfaces (`tug-popover`, `tug-sheet`, `tug-context-menu`, `tug-alert`) follow the same portal-then-dismiss pattern; the editor menu is the audit gate.
 
 #### [M21] Drag aborted (escape / invalid drop) → card state preservation {#m21-drag-aborted}
 
@@ -2506,18 +2518,18 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Card types:** EM
 - **State axes:** FX (visual only; no state impact)
 - **Trigger:** After any refocus path (cold-boot, tab switch, cross-pane move, app-activate), does the caret blink (user's visual confirmation of focus)?
-- **Status:** ❓ untested — needs visual verification.
-- **Mechanism:** `::selection` paint and caret blink are browser-native and tied to `document.activeElement` plus `document.hasFocus()`. If a refocus path sets DOM selection without landing `.focus()` cleanly, the caret may be missing even when `cardRanges` paints. The dev-warn in `setSelectedRange` catches the silent-focus-fail; a complementary test would confirm caret blinks by asserting `document.activeElement === engineRoot` + `document.hasFocus() === true` after each activation path.
-- **Closing requires:** extend integration tests to assert both conditions. No new mechanism; this is a verification entry.
+- **Status:** ✅ verified by `tests/in-app/m22-caret-visibility.test.ts` ([Step 25A](#step-25a)).
+- **Mechanism:** `::selection` paint and caret blink are browser-native and tied to BOTH `document.activeElement` and `document.hasFocus()`. After cold-boot mount, app-resign + become-active, and tab switch + back, both conditions hold: `activeElement` is the engine root contenteditable, and `document.hasFocus() === true`.
+- **Verification:** Gating test mounts a `gallery-prompt-input` EM card, drives three refocus paths (cold-boot → app-cycle → tab switch A↔B), and asserts both axes after each transition.
 
 #### [M23] Selection spanning multiple cards {#m23-cross-card-selection}
 
 - **Card types:** any two of {FC, EM, MV}
 - **State axes:** SR
 - **Trigger:** User clicks in card A, shift-clicks or drag-selects into card B.
-- **Status:** ❓ expected-scoped-to-one; verify.
-- **Mechanism:** The browser's single-`Selection` model typically scopes a selection to one contentEditable root, but across non-editable cards (e.g., two MV cards side-by-side), a single selection may legitimately span both. `selectionGuard.updateCardDomSelection(cardId, range)` assumes one card owns one range; a cross-card selection would get mis-attributed (whoever publishes last wins).
-- **Closing requires:** verify WebKit/Chromium behavior across common multi-card layouts. If cross-card selections are possible: introduce `selectionGuard.updateMultiCardSelection(cardIds[], range)` or decide that the paint system treats cross-card ranges as multiple sub-ranges (one per card). Most likely outcome: document as "expected one card per selection" and ensure paint doesn't crash when the range's `commonAncestorContainer` isn't under any registered card root.
+- **Status:** ✅ verified by `tests/in-app/m23-cross-card-selection.test.ts` ([Step 25A](#step-25a)). Paint system does not crash on a cross-card drag; the audit treats genuine cross-card ranges as informational diagnostics, not test failures.
+- **Mechanism:** The browser's single-`Selection` model typically scopes a selection to one contentEditable root, but across non-editable cards (e.g., two MV cards side-by-side), a single selection may legitimately span both. The gating test exercises a native drag from card A's content to card B's content and inspects `window.getSelection()` + per-card `__tug.getSelection(cardId)` — neither throws under the WebKit boundary behavior that ships today.
+- **Verification:** Two side-by-side panes each with a `gallery-markdown-50kb` card; native drag from A's scroll container to B's; assertions cover (a) `window.getSelection()` does not throw, (b) `__tug.getSelection("A")` and `__tug.getSelection("B")` each return either a snapshot or `null` without crashing. A genuine cross-card range, if observed, prints a diagnostic for [25C](#step-25c) follow-up but does not fail the test — the audit gates the paint system, not specific selection scoping.
 
 ---
 

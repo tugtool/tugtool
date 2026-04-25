@@ -88,8 +88,17 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
  * not on `__tug.*` — page-side delegates would be a layering
  * violation (only Swift can spawn subprocesses). Major stays `1`;
  * additive.
+ *
+ * `1.3.0` (selection plan Step 25A audit sweep): adds
+ * {@link TugTestSurface.getCardStateBag} (full bag introspection
+ * for [M17] saveState-RPC-parity) and {@link TugTestSurface.closePane}
+ * (whole-pane teardown for [M19] flush coverage). Markdown content
+ * fixtures for [M14] / [M23] ride through a separate
+ * `gallery-markdown-50kb` card registration that bakes 50KB of
+ * static content on mount — no test-specific surface needed.
+ * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.2.0" as const;
+export const SURFACE_VERSION = "1.3.0" as const;
 
 /**
  * Snapshot of the caret / selection for a single card, as returned by
@@ -451,6 +460,27 @@ export interface TugTestSurface {
    * lag the AppKit notification by several milliseconds.
    */
   getHasFocus(): boolean;
+
+  /**
+   * Read a card's full {@link CardStateBag} from the deck's in-
+   * memory cache. Returns `null` when no bag exists. Does NOT
+   * force a save first — callers wanting fresh state should call
+   * `window.tugdeck.saveState()` (or trigger a will-phase save)
+   * first. Used by the selection plan [M17] saveState-RPC-parity
+   * audit for structural diffs of the bag across save paths.
+   */
+  getCardStateBag(cardId: string): CardStateBag | null;
+
+  /**
+   * Close an entire pane by id. Mirrors `deckManager.handlePaneClosed`,
+   * the entry point a "close every card in this pane" UI affordance
+   * would call. Used by the selection plan [M19] pane-teardown-flush
+   * audit so a multi-card pane's `_closePane` flush loop can be
+   * exercised directly rather than driven through the per-tab close
+   * button (which routes through `_removeCard` and only delegates to
+   * `_closePane` for the last surviving card in a single-card pane).
+   */
+  closePane(paneId: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1170,15 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     getHasFocus(): boolean {
       return deck.getSnapshot().hasFocus;
+    },
+
+    getCardStateBag(cardId: string): CardStateBag | null {
+      const bag = deck.getCardState(cardId);
+      return bag === undefined ? null : bag;
+    },
+
+    closePane(paneId: string): void {
+      deck.handlePaneClosed(paneId);
     },
   };
 }

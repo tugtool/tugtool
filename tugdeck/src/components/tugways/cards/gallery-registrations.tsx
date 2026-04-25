@@ -380,6 +380,20 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
+  // Pre-baked variant: mounts with 50KB of static markdown loaded
+  // immediately. Used by selection plan [M14] / [M23] harness tests
+  // for predictable scrollable content; useful as a manual
+  // theme-debug fixture too. Same component code, distinct id.
+  registerCard({
+    componentId: "gallery-markdown-50kb",
+    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="50kb" />,
+    defaultMeta: { title: "TugMarkdownView (50KB)", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
   // ===========================================================================
   // Selection
   // ===========================================================================

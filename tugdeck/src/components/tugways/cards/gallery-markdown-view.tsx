@@ -24,11 +24,12 @@
  * @module components/tugways/cards/gallery-markdown-view
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownView } from "@/components/tugways/tug-markdown-view";
 import type { TugMarkdownViewHandle, TugMarkdownTimingMetrics } from "@/components/tugways/tug-markdown-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useCardPersistence } from "@/components/tugways/use-card-persistence";
 
 // ---------------------------------------------------------------------------
 // Content generators
@@ -165,12 +166,45 @@ interface DiagnosticInfo {
 // ---------------------------------------------------------------------------
 
 /**
+ * Props accepted by {@link GalleryMarkdownView}.
+ *
+ * `staticContentSize` (when set) bakes a fixed-size static markdown
+ * payload into the card and renders it on mount, BEFORE any user
+ * gesture. The size key matches the size-selector buttons. The
+ * intent is twofold:
+ *
+ *   1. Manual demo: a card variant that shows real markdown
+ *      content immediately rather than the empty-on-mount default —
+ *      handy for theming and visual smoke-checks.
+ *   2. Test fixture: harness tests that need predictable scrollable
+ *      content (selection plan [M14] scroll persistence, [M23]
+ *      cross-card selection) seed cards with the variant component
+ *      id and get deterministic content with no UI driving.
+ *
+ * `useCardPersistence` `onRestore` overrides the bake-in if a saved
+ * `bag.content` arrives — both run inside the same React commit, no
+ * paint flicker. `onSave` returns the latest text the engine
+ * holds, so the user's edits round-trip across app-lifecycle saves.
+ */
+export interface GalleryMarkdownViewProps {
+  staticContentSize?: SizeKey;
+}
+
+/**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
  * A single TugMarkdownView is always mounted. A size selector (50KB | 1MB | 10MB)
  * controls the content size for Stream and Static actions.
+ *
+ * Card persistence: opts into `useCardPersistence`. `onSave` returns
+ * the latest markdown text the card has rendered (via Static, Stream
+ * accumulate, or `onRestore`); `onRestore` replays a saved string
+ * through the engine via `setRegion`. The seed-via-bag path (used by
+ * harness tests) and the bake-in (`staticContentSize` prop) both
+ * route through the same `currentTextRef` so `onSave` always
+ * reflects the current visible content.
  */
-export function GalleryMarkdownView() {
+export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewProps = {}) {
   const [selectedSize, setSelectedSize] = useState<SizeKey>('50kb');
   const [isStreaming, setIsStreaming] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticInfo>({
@@ -185,6 +219,13 @@ export function GalleryMarkdownView() {
 
   // Imperative ref to TugMarkdownView
   const markdownRef = useRef<TugMarkdownViewHandle>(null);
+
+  // Last text the card rendered (single-region semantics — last write
+  // wins). Read by `useCardPersistence`'s `onSave` so the bag carries
+  // the user-visible text across app-lifecycle save triggers, and
+  // updated by every write site (Static / Stream / Clear / bake-in /
+  // onRestore).
+  const currentTextRef = useRef("");
 
   // Streaming store
   const streamingStoreRef = useRef<PropertyStore | null>(null);
@@ -284,6 +325,7 @@ export function GalleryMarkdownView() {
       }
       streamAccumulatedRef.current += currentChunks[idx];
       streamingStore.set("text", streamAccumulatedRef.current, "transport");
+      currentTextRef.current = streamAccumulatedRef.current;
       streamChunkIndexRef.current++;
       setDiagnostics((prev) => ({
         ...prev,
@@ -314,6 +356,7 @@ export function GalleryMarkdownView() {
         break;
     }
     markdownRef.current?.setRegion('static-' + Date.now(), content);
+    currentTextRef.current = content;
   }, [selectedSize]);
 
   // ---- Action: Clear ----
@@ -323,6 +366,7 @@ export function GalleryMarkdownView() {
     streamChunkIndexRef.current = 0;
     streamingStore.set("text", "", "gallery");
     markdownRef.current?.clear();
+    currentTextRef.current = "";
     setDiagnostics((prev) => ({
       ...prev,
       streamProgress: "idle",
@@ -340,6 +384,54 @@ export function GalleryMarkdownView() {
       }
     };
   }, []);
+
+  // Bake-in: when `staticContentSize` is set, render the matching
+  // pre-generated markdown payload on mount via the engine's
+  // `setRegion`. Runs in a `useLayoutEffect` so the bake-in commits
+  // before the next paint — no flicker of "empty card → content".
+  // L03 — registration-style mount-time setup uses `useLayoutEffect`.
+  // The child's `useImperativeHandle` (also a `useLayoutEffect`)
+  // populates `markdownRef.current` first (children-before-parents
+  // ordering), so the ref is set when this effect runs.
+  //
+  // 10MB is generated lazily because the constants module would
+  // otherwise hold ~10MB of string at import time.
+  useLayoutEffect(() => {
+    if (staticContentSize === undefined) return;
+    let content: string;
+    switch (staticContentSize) {
+      case '1kb': content = STATIC_1KB_CONTENT; break;
+      case '10kb': content = STATIC_10KB_CONTENT; break;
+      case '50kb': content = STATIC_50KB_CONTENT; break;
+      case '1mb': content = STATIC_1MB_CONTENT; break;
+      case '10mb':
+        if (!static10MbContentRef.current) {
+          static10MbContentRef.current = generateMarkdown(sizeToBytes('10mb'));
+        }
+        content = static10MbContentRef.current;
+        break;
+    }
+    markdownRef.current?.setRegion('baked', content);
+    currentTextRef.current = content;
+  }, [staticContentSize]);
+
+  // Card persistence wiring. `onSave` returns the latest text the
+  // card has rendered (Static / Stream / bake-in / restore all
+  // update `currentTextRef`). `onRestore` replays a saved string
+  // through the engine via `setRegion`. Restore runs in CardHost's
+  // mount-restore phase 1 — by then `markdownRef.current` is set
+  // (TugMarkdownView's `useImperativeHandle` is a layout effect and
+  // children fire before parents). When both bake-in and restore
+  // arrive in the same commit, restore overrides because CardHost's
+  // restore-effect runs after this component's layout effects.
+  useCardPersistence<string>({
+    onSave: () => currentTextRef.current,
+    onRestore: (state) => {
+      if (typeof state !== "string" || state.length === 0) return;
+      markdownRef.current?.setRegion("restored", state);
+      currentTextRef.current = state;
+    },
+  });
 
   return (
     <div className="cg-content" data-testid="gallery-markdown-view" style={{ padding: 0, gap: 0, overflow: "hidden", height: "100%" }}>
