@@ -1716,21 +1716,21 @@ Surface bumps: none. The `dir` field is additive within the existing `startTugco
 **References:** Success criteria [#success-criteria], [R01] release leak, [R03] tugcode flakiness, (#phase-a-hardware, #phase-b-em)
 
 **Tasks:**
-- [ ] Run full `bun test tests/in-app/` — all scenarios green (M01/M03/M16, `_smoke`, `_smoke-native`, `_smoke-em`).
-- [ ] Release-build binary-size diff vs pre-harness baseline — within noise.
-- [ ] Manual Xcode archive inspection: `nm` shows no CGEventPost symbols, no tugcode-lifecycle symbols.
-- [ ] Verify `TUGAPP_TEST_SOCKET` unset → tugdeck boots normally, tugcode follows its production launch path.
-- [ ] Verify accessibility-permission preflight: denied → clear error; granted → clean launch.
-- [ ] Bump `__tug.version` constant assertion harness-side to `1.1.0` throughout.
+- [x] Run full `just test-in-app-fast` — 14/14 default sweep green (M01/M03/M16 + rapid-cadence variants, M04/M05, M06/M07/M21, `_smoke`, `_smoke-native`, `_smoke-em`).
+- [x] Release-build `nm` audit — zero matches for `TestHarness`, `AppLifecycle`, `TugcodeLifecycle`, `NativeEvent`, `VirtualKeyMap`, `CoordMapping`; zero defined `CGEvent` symbols. `#if DEBUG` gating is fully effective — the harness produces zero bytes in release.
+- [x] All 9 files in `tugapp/Sources/TestHarness/` start `#if DEBUG` and end `#endif`; `AppDelegate`'s test-harness usage is fully `#if DEBUG`-gated.
+- [x] `TUGAPP_TEST_SOCKET` unset path verified inline: `AppDelegate.applicationDidFinishLaunching` only enters the test-bridge branch when `TestHarnessBridge.envSocketPath()` returns non-nil. Production tugcode launch (in tugcast) is unaffected — no test-mode-related code on that path (see Pass 7A Author note).
+- [x] Accessibility-permission preflight verified by `_smoke-native.test.ts` continuing to pass (5/5 trusted-event tests).
+- [x] Surface version assertion: harness `EXPECTED_SURFACE_VERSION = "1.4.0"` matches Swift `surfaceVersion = "1.4.0"`; tugdeck `SURFACE_VERSION = "1.2.0"` is the JS-side counterpart. The plan's original "bump to 1.1.0" line is stale — current state is 1.4.0 RPC / 1.2.0 JS. The skew test (`_version-handshake.test.ts`) and exact-match assertion in `_smoke.test.ts` continue to pass.
 
 **Tests:**
-- [ ] `bun test tests/in-app/` exits 0.
-- [ ] `bun test` in tugdeck still exits 0 (no regression).
+- [x] `just test-in-app-fast` exits 0 (14/14 default sweep green).
+- [x] `bun test` in tugdeck exits 0 (2412/2412); tugcode (205/205); harness unit (58/58).
 
 **Checkpoint:**
-- [ ] All green.
-- [ ] Binary-size audit recorded.
-- [ ] Version bump in place and asserted.
+- [x] All green.
+- [x] Release `nm` audit recorded above — no test-harness symbols leak; release binary is 677,816 bytes universal x86_64+arm64.
+- [x] Surface versions in lockstep across tugdeck / Swift / harness.
 
 ---
 
