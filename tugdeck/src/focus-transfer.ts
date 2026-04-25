@@ -41,14 +41,23 @@
  * the target, gates through the focus-theft rules, and executes the
  * transfer. There is no RAF, no microtask hop, no React effect.
  *
- * ## What this step ships
+ * ## What has shipped
  *
- * Step 23A lands the module seam only. The three side-effecting
- * entries — `transferFocusForActivation`, `captureFocusForDragStart`,
- * `transferFocusAfterMove` — are declared with their final signatures
- * but throw so any accidental caller fails loudly until the step that
- * owns the wiring lands them. The one entry that is fully implemented
- * here is `resolveActivationTarget`, which every later step reuses.
+ * - **Step 23A** — module seam: types, store registrations, the
+ *   `resolveActivationTarget` resolver. The three side-effecting
+ *   entries were stubs that threw with step pointers.
+ *
+ * - **Step 23B Pass 3 split (a)** — `transferFocusForActivation`'s
+ *   five-step body lands here, plus its first caller wiring inside
+ *   `pane-focus-controller.ts` (Branch A activation). Splits (b) and
+ *   (c) wire the remaining gesture sources (`tug-pane.tsx`,
+ *   `deck-manager.ts#_removeCard` / `_closePane`) and retire the
+ *   legacy `[A3]` `useLayoutEffect` in `CardHost`.
+ *
+ * - **Steps 23C / 23D** — `captureFocusForDragStart`,
+ *   `transferFocusAfterMove`, and `reactivateCurrentFocusDestination`
+ *   (the app-lifecycle entry) still throw; their implementations
+ *   land in their respective steps.
  *
  * ## The activation target
  *
@@ -132,7 +141,41 @@
  * @module focus-transfer
  */
 
+import { flushSync } from "react-dom";
+
+import { selectionGuard } from "./components/tugways/selection-guard";
+import { deckTrace, formatElement } from "./deck-trace";
+import { canProgrammaticallyFocus } from "./focus-theft-gate";
+
 import type { IDeckManagerStore } from "./deck-manager-store";
+
+/**
+ * Local replica of `card-host.tsx`'s `isElementHidden`. Detects
+ * elements that are visually absent because some ancestor (or the
+ * element itself) is `display: none`. `offsetParent` is null in
+ * that case for non-`position: fixed` elements; we accept fixed-
+ * positioned elements as "not hidden" because they intentionally
+ * have no offsetParent but remain visible.
+ *
+ * Replicated rather than imported so this module stays free of
+ * dependencies on React component files (per the module header's
+ * "framework-local, no React" contract). Two ~12-line copies is
+ * cheaper than the alternative — promoting the helper into a
+ * shared utility module — at this scope.
+ */
+function isElementHidden(el: HTMLElement | null): boolean {
+  if (el === null) return false;
+  if (el.offsetParent === null) {
+    const style =
+      typeof window !== "undefined" &&
+      typeof window.getComputedStyle === "function"
+        ? window.getComputedStyle(el)
+        : null;
+    if (style !== null && style.position === "fixed") return false;
+    return true;
+  }
+  return false;
+}
 
 /**
  * The resolved destination of an activation-driven focus transfer.
@@ -287,15 +330,151 @@ export interface TransferFocusForActivationOptions {
  * resolve the incoming card's target, gate through the focus-theft
  * rules, and transfer focus / DOM selection.
  *
- * Implemented in Step 23B. Step 23A ships the signature only; calling
- * this throws so that accidental callers fail loudly.
+ * Implemented in Step 23B (Pass 3 split (a) of the
+ * `#step-23-execution-strategy`). The five-step body below mirrors
+ * the plan's spec verbatim.
+ *
+ * **Interim status (Pass 3 splits (a) + (b)):** the legacy `[A3]`
+ * `useLayoutEffect` in `CardHost` remains live until split (c)
+ * retires it. That means each activation transition emits both
+ * the helper's `focus-call` (site `"focus-transfer"`) and the
+ * legacy effect's `focus-call` (site `"a3-…"`). Both target the
+ * same element; `el.focus()` is idempotent on an already-focused
+ * element, so the duplication is observable in the deck-trace ring
+ * but not in user-visible focus / caret behavior. The existing
+ * `toContainOrderedSubset` matchers accept either occurrence.
  */
 export function transferFocusForActivation(
-  _options: TransferFocusForActivationOptions,
+  options: TransferFocusForActivationOptions,
 ): void {
-  throw new Error(
-    "transferFocusForActivation: not implemented (lands in Step 23B of tugplan-selection)",
+  const {
+    outgoingCardId,
+    incomingCardId,
+    store,
+    commitMutation,
+    outgoingWillBeDestroyed,
+  } = options;
+
+  // Step 1 — Save outgoing.
+  //
+  // Skipped when there is no outgoing (`null`), when the same card
+  // is "transitioning" to itself (no-op activation), or when the
+  // outgoing card is being destroyed by the same mutation
+  // (`_removeCard` / `_closePane` already runs
+  // `flushSaveCallbackBeforeDestruction` in its phase 2).
+  if (
+    outgoingCardId !== null &&
+    outgoingCardId !== incomingCardId &&
+    outgoingWillBeDestroyed !== true
+  ) {
+    store.invokeSaveCallback(outgoingCardId);
+  }
+
+  // Step 2 — Commit the mutation.
+  //
+  // `flushSync` forces React to apply the store-driven render
+  // synchronously inside this call, so by the time the resolver
+  // runs in step 3 the incoming card's subtree has already
+  // transitioned from `display: none` to `display: contents`
+  // (intra-pane tab switch in `tug-pane.tsx#performSelectCard`)
+  // and the host root is mounted (close-handoff in `_removeCard`).
+  // For callers that are outside React's event system already
+  // (document-level pointerdown listeners), `useSyncExternalStore`
+  // would force the same synchronous re-render even without
+  // `flushSync` — but wrapping unconditionally is harmless and
+  // keeps the contract uniform.
+  if (commitMutation !== undefined) {
+    flushSync(() => {
+      commitMutation();
+    });
+  }
+
+  // Step 3 — Resolve target against post-commit DOM.
+  const target = resolveActivationTarget(incomingCardId, store);
+  if (target.kind === "none") return;
+
+  // Step 4 — Gate through focus-theft rules ([A8]).
+  //
+  // Reads `document.activeElement` directly; we are post-commit so
+  // the DOM is consistent with the store snapshot we hand the gate.
+  const targetCardHostEl = store.peekCardHostRoot(incomingCardId);
+  const allowed = canProgrammaticallyFocus(
+    incomingCardId,
+    store.getSnapshot(),
+    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
   );
+  if (!allowed) return;
+
+  // Step 5 — Transfer.
+  if (target.kind === "focus-element") {
+    const doc = target.el.ownerDocument;
+    const activeBefore = formatElement(doc.activeElement);
+    target.el.focus();
+    const activeAfter = formatElement(doc.activeElement);
+    deckTrace.record({
+      kind: "focus-call",
+      site: "focus-transfer",
+      cardId: incomingCardId,
+      targetSelector: describeTargetSelector(target.el, store, incomingCardId),
+      activeBefore,
+      activeAfter,
+      hidden: isElementHidden(target.el),
+    });
+
+    const bag = store.getCardState(incomingCardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      const cardRoot =
+        targetCardHostEl ?? store.peekCardHostRoot(incomingCardId);
+      if (cardRoot !== null) {
+        selectionGuard.restoreCardDomSelection(
+          incomingCardId,
+          bag.domSelection,
+          cardRoot,
+        );
+        deckTrace.record({
+          kind: "selection-restore",
+          cardId: incomingCardId,
+          via: "restoreCardDomSelection",
+        });
+      }
+    }
+    return;
+  }
+
+  // `dispatch-activated` — the content factory's registered
+  // callback handles its own targeting.
+  store.invokeActivationCallback(incomingCardId);
+}
+
+/**
+ * Best-effort selector string for the resolved target, used as the
+ * `targetSelector` field of the `focus-call` deck-trace event. The
+ * selector matches the same form `card-host.tsx`'s
+ * `traceApplyFocusSnapshot` records, so trace-based diagnosis can
+ * compare helper vs. legacy-effect call sites apples-to-apples.
+ */
+function describeTargetSelector(
+  el: HTMLElement,
+  store: FocusTransferStore,
+  cardId: string,
+): string {
+  const bag = store.getCardState(cardId);
+  const focus = bag?.focus;
+  if (focus !== undefined && focus !== null) {
+    if (focus.kind === "form-control") {
+      return `[data-tug-persist-value="${focus.persistKey}"]`;
+    }
+    if (focus.kind === "dom") {
+      return `[data-tug-focus-key="${focus.focusKey}"]`;
+    }
+    if (focus.kind === "component-owned") {
+      return "component-owned";
+    }
+  }
+  // Fallback — should not occur for a `focus-element` resolution
+  // (the resolver returned `none` if focus was null/none) but
+  // keeps the trace event well-formed regardless.
+  return el.tagName.toLowerCase();
 }
 
 /**

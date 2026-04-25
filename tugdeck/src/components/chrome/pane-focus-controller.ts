@@ -103,6 +103,7 @@
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 import { useDeckManager } from "@/deck-manager-context";
+import { transferFocusForActivation } from "@/focus-transfer";
 
 export function usePaneFocusController(
   deckRootRef: React.RefObject<HTMLDivElement | null>,
@@ -200,29 +201,30 @@ export function usePaneFocusController(
       const pane = store.getSnapshot().panes.find((p) => p.id === paneId);
       if (!pane) return;
 
-      // Save the outgoing card before activation flips the composite
-      // first-responder bit. Mirrors the intra-pane tab-switch path
-      // (tug-pane.tsx performSelectCard, which calls
-      // `store.invokeSaveCallback(outgoingCardId)` before
-      // `setActiveCardInPane`). Without this, cross-pane clicks
-      // would skip the outgoing-card save and M03-shaped tests
-      // would miss the save-callback event.
+      // Route the activation through `transferFocusForActivation`
+      // (selection plan #step-23b, Pass 3 split (a)). The helper
+      // owns the save → commit → resolve → gate → focus sequence
+      // for rows 1–3 of the activation trigger taxonomy; for this
+      // call site (row 2, pane-chrome activation) the
+      // `commitMutation` closure is `store.activateCard`. The
+      // helper's internal save step replaces the explicit
+      // `invokeSaveCallback` block this site previously carried;
+      // it skips correctly when outgoing is null or matches
+      // incoming, so semantics for same-pane clicks and first
+      // activations are preserved.
       //
-      // Skip when the first responder is already the pane's active
-      // card — that path is a same-bit click and the save would be
-      // noise.
-      const outgoingCardId = store.getFirstResponderCardId();
-      if (outgoingCardId !== null && outgoingCardId !== pane.activeCardId) {
-        store.invokeSaveCallback(outgoingCardId);
-      }
-
       // `activateCard` is safe on the already-active card id:
       // `_flipFirstResponder`'s same-bit branch short-circuits
       // will/didActivate events (deck-manager.ts:262–266). Our
       // didActivate observer's `if (deselectedRef.current)` check
       // also avoids redundant DOM writes on repeated same-pane
       // clicks.
-      store.activateCard(pane.activeCardId);
+      transferFocusForActivation({
+        outgoingCardId: store.getFirstResponderCardId(),
+        incomingCardId: pane.activeCardId,
+        store,
+        commitMutation: () => store.activateCard(pane.activeCardId),
+      });
     }
 
     // Mousedown capture listener: suppress the browser's default focus-

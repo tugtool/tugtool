@@ -7,10 +7,20 @@
  * small `FocusTransferStore` stub + a detached DOM subtree, calls the
  * resolver, and asserts the resulting `ActivationTarget`.
  *
- * The three side-effecting entries (`transferFocusForActivation`,
- * `captureFocusForDragStart`, `transferFocusAfterMove`) ship as
- * throwing signatures at Step 23A. A single smoke test confirms each
- * throws an informative message.
+ * `captureFocusForDragStart` and `transferFocusAfterMove` ship as
+ * throwing signatures at Step 23A; one smoke test per entry
+ * confirms each throws an informative message until Step 23C wires
+ * them up.
+ *
+ * `transferFocusForActivation`'s body landed in Step 23B Pass 3
+ * split (a). Behavior coverage is in the in-app sweep
+ * (`tests/in-app/m01-tab-switch-fc.test.ts`,
+ * `m01-rapid-cadence.test.ts`, and the M03/M16 equivalents) — the
+ * helper drives a real WebKit focus call and a real selection-
+ * range restore, and only the in-app harness can faithfully
+ * exercise that surface. Per the project's "no happy-dom tests"
+ * rule, this unit file does not stand up a fake DOM with focus
+ * semantics to retest the helper here.
  */
 
 import "./setup-rtl";
@@ -22,7 +32,6 @@ import {
   captureFocusForDragStart,
   resolveActivationTarget,
   transferFocusAfterMove,
-  transferFocusForActivation,
   type FocusTransferStore,
 } from "../focus-transfer";
 
@@ -205,24 +214,10 @@ describe("resolveActivationTarget", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Side-effecting entries — throw until Step 23B/C land wiring.
+// Side-effecting entries — Step 23C still pending; their bodies throw.
 // ---------------------------------------------------------------------------
 
-describe("side-effecting entries (Step 23A: throw with step pointer)", () => {
-  test("transferFocusForActivation throws with Step 23B pointer", () => {
-    expect(() =>
-      transferFocusForActivation({
-        outgoingCardId: "a",
-        incomingCardId: "b",
-        // The store parameter is fully-typed IDeckManagerStore in the
-        // real signature; tests only need to confirm the throw.
-        store: {} as unknown as Parameters<
-          typeof transferFocusForActivation
-        >[0]["store"],
-      }),
-    ).toThrow(/Step 23B/);
-  });
-
+describe("Step-23C side-effecting entries (throw with step pointer)", () => {
   test("captureFocusForDragStart throws with Step 23C pointer", () => {
     expect(() =>
       captureFocusForDragStart({
