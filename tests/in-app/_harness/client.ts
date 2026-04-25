@@ -962,12 +962,47 @@ export function simulateAppUnhide(
 // already-running, spawn failure, log-file open failure).
 // ---------------------------------------------------------------------------
 
+/**
+ * Schema version of the transcript document, mirroring tugcode's
+ * `TRANSCRIPT_SCHEMA_VERSION` constant in `stub-replay.ts`. Tests
+ * that author transcripts inline use this constant so a future
+ * schema bump trips a typecheck rather than producing a transcript
+ * tugcode silently rejects.
+ */
+export const TUGCODE_TRANSCRIPT_SCHEMA_VERSION = 1 as const;
+
+/**
+ * One replay turn — outputs to emit when the N-th `user_message`
+ * arrives over stdin. `index` MUST equal the array position; the
+ * loader on the tugcode side rejects the transcript otherwise.
+ *
+ * `outputs` are tugcode `OutboundMessage` shapes (`assistant_text`
+ * / `turn_complete` / etc.). The harness type is `unknown[]` here
+ * to avoid coupling `tests/in-app/`'s tsc graph to tugcode's
+ * runtime types — round-trip is opaque.
+ */
+export interface TugcodeTranscriptTurn {
+  index: number;
+  description?: string;
+  outputs: unknown[];
+}
+
+/**
+ * Transcript document handed to `app.startTugcode({ mode: "stub" })`.
+ * Mirrors `tugcode/src/stub-replay.ts::TugcodeTranscript`. Swift
+ * round-trips it via `JSONSerialization` to a temp file under
+ * $TMPDIR and passes `--stub-transcript=<path>` to tugcode.
+ */
+export interface TugcodeTranscript {
+  schemaVersion: typeof TUGCODE_TRANSCRIPT_SCHEMA_VERSION;
+  tugcodeVersion: string;
+  turns: TugcodeTranscriptTurn[];
+}
+
 export interface StartTugcodeOptions {
   /**
-   * "stub" or "live". Step 5 spawns the same way for both modes;
-   * the discriminator is wire-stable so test files written today
-   * don't need to be re-edited when Step 6 lands the stub-mode
-   * branch.
+   * "stub" or "live". Stub mode requires `transcript`; the Swift
+   * handler refuses to spawn without it.
    */
   mode: "stub" | "live";
   /**
@@ -980,6 +1015,20 @@ export interface StartTugcodeOptions {
    * When omitted, output goes to `/dev/null`.
    */
   logFilePath?: string;
+  /**
+   * Stub-replay transcript. Required when `mode === "stub"`.
+   *
+   * Author note: the harness plan originally proposed separate
+   * `seedTugcodeTranscript` / `seedTugcodeError` verbs invoked
+   * after `startTugcode`. Pass 7B folds them into `startTugcode`'s
+   * opts because the only known consumer (the stub-mode smoke
+   * tests) always knows the full transcript at launch time, and
+   * the seed-then-start ordering creates state-coupling without
+   * gain. To inject errors, build them as `error`-typed outputs
+   * inside the relevant `turn.outputs[]` array — that's how the
+   * tugcode replay engine emits them anyway.
+   */
+  transcript?: TugcodeTranscript;
 }
 
 export interface StartTugcodeResult {
@@ -994,11 +1043,32 @@ export function startTugcode(
   const params: Record<string, unknown> = { mode: opts.mode };
   if (opts.binaryPath !== undefined) params.binaryPath = opts.binaryPath;
   if (opts.logFilePath !== undefined) params.logFilePath = opts.logFilePath;
+  if (opts.transcript !== undefined) {
+    params.transcript = opts.transcript as unknown as Record<string, unknown>;
+  }
   return caller.rpcCall<StartTugcodeResult>("startTugcode", params);
 }
 
 export function stopTugcode(caller: HarnessCaller): Promise<void> {
   return caller.rpcCall<void>("stopTugcode", {});
+}
+
+/**
+ * Append a single JSON IPC frame to tugcode's stdin (the harness
+ * appends the newline). Used by tests that drive the tugcode IPC
+ * loop directly — typically a `protocol_init` followed by one or
+ * more `user_message` frames in stub-replay mode.
+ *
+ * The line is sent as-is; `JSON.stringify` it client-side first
+ * if you have an object. Production tugcode talks via tugcast
+ * which also writes JSON-per-line; this verb provides the same
+ * shape for tests without needing a tugcast in the loop.
+ */
+export function writeTugcodeStdin(
+  caller: HarnessCaller,
+  line: string,
+): Promise<void> {
+  return caller.rpcCall<void>("writeTugcodeStdin", { line });
 }
 
 /**

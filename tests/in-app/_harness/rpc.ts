@@ -29,6 +29,8 @@ import {
   NativeTypeAsciiOnlyError,
   TimeoutError,
   TugcodeLaunchError,
+  TugcodeTranscriptMismatchError,
+  TugcodeVersionSkewError,
   UnknownKeyError,
   VersionSkewError,
 } from "./errors";
@@ -252,6 +254,22 @@ export function translateError(
       return new UnknownKeyError(wire.message);
     case "TugcodeLaunchError":
       return new TugcodeLaunchError(wire.message);
+    case "TugcodeVersionSkewError": {
+      // Server-side message format mirrors VersionSkewError:
+      // "...expected=<v>...actual=<v>...". Best-effort parse;
+      // either field defaults to "" when unrecognized.
+      const m = wire.message.match(/expected=([^\s,]+).*actual=([^\s,)]+)/);
+      const expected = m?.[1] ?? "";
+      const actual = m?.[2] ?? "";
+      return new TugcodeVersionSkewError(wire.message, expected, actual);
+    }
+    case "TugcodeTranscriptMismatchError": {
+      // No structured fields on the wire today — the harness-side
+      // sidecar verifier (transcript.ts) constructs this directly
+      // with full path + hash context. Server emits a bare message
+      // form for consistency; the typed fields fall back to "".
+      return new TugcodeTranscriptMismatchError(wire.message, "", "", "");
+    }
     case "AppLifecycleTimeoutError": {
       // Server message format: "NSApplication <event> notification did
       // not fire within <ms>ms". Best-effort parse so the error's

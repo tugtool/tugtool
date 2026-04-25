@@ -56,7 +56,18 @@ final class TestHarnessConnection {
     /// 6 will extend `startTugcode`'s payload with the
     /// `--stub-transcript=<fd>` branch and add transcript-seeding
     /// verbs. Additive; major stays `1`.
-    static let surfaceVersion = "1.3.0"
+    ///
+    /// `1.4.0` (Step 6, harness extensions): `startTugcode`'s
+    /// payload gains an optional `transcript` field carrying the
+    /// stub-replay document. When present (and `mode == "stub"`),
+    /// the Swift handler writes it to a temp file under $TMPDIR
+    /// and passes `--stub-transcript=<path>` to tugcode, which
+    /// routes through its deterministic replay engine. The plan's
+    /// originally-separate `seedTugcodeTranscript` /
+    /// `seedTugcodeError` verbs are folded into `startTugcode`'s
+    /// opts (see Author note in harness plan Step 6). Additive;
+    /// major stays `1`.
+    static let surfaceVersion = "1.4.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -154,7 +165,8 @@ final class TestHarnessConnection {
              "simulateAppUnhide":
             dispatchAppLifecycleVerb(id: id, method: method, verbObj: obj)
         case "startTugcode",
-             "stopTugcode":
+             "stopTugcode",
+             "writeTugcodeStdin":
             dispatchTugcodeLifecycleVerb(id: id, method: method, verbObj: obj)
         case "getElementScreenBounds":
             guard let selector = obj["selector"] as? String else {
@@ -345,14 +357,57 @@ final class TestHarnessConnection {
                     let mode = (verbObj["mode"] as? String) ?? "stub"
                     let binaryPath = verbObj["binaryPath"] as? String
                     let logFilePath = verbObj["logFilePath"] as? String
+                    // The harness ferries the transcript as a JSON
+                    // dict (already parsed JS-side); re-encode it
+                    // here so Swift can drop a single string into
+                    // the temp file. Avoids piping bytes through a
+                    // separate fd-inheritance path.
+                    let transcriptJson: String?
+                    if let transcriptObj = verbObj["transcript"] {
+                        guard JSONSerialization.isValidJSONObject(transcriptObj) else {
+                            self.respondError(
+                                id: id,
+                                name: "ProtocolError",
+                                message: "startTugcode: transcript is not a JSON-serializable object",
+                            )
+                            return
+                        }
+                        do {
+                            let data = try JSONSerialization.data(
+                                withJSONObject: transcriptObj,
+                            )
+                            transcriptJson = String(data: data, encoding: .utf8)
+                        } catch {
+                            self.respondError(
+                                id: id,
+                                name: "ProtocolError",
+                                message: "startTugcode: transcript re-serialize failed: \(error)",
+                            )
+                            return
+                        }
+                    } else {
+                        transcriptJson = nil
+                    }
                     let pid = try self.tugcodeLifecycle.start(
                         mode: mode,
                         binaryPath: binaryPath,
                         logFilePath: logFilePath,
+                        transcriptJson: transcriptJson,
                     )
                     self.respond(id: id, ok: true, payload: ["value": ["pid": Int(pid)] as [String: Any]])
                 case "stopTugcode":
                     self.tugcodeLifecycle.stop()
+                    self.respond(id: id, ok: true, payload: ["value": NSNull()])
+                case "writeTugcodeStdin":
+                    guard let line = verbObj["line"] as? String else {
+                        self.respondError(
+                            id: id,
+                            name: "ProtocolError",
+                            message: "writeTugcodeStdin: missing 'line' string",
+                        )
+                        return
+                    }
+                    try self.tugcodeLifecycle.writeStdinLine(line)
                     self.respond(id: id, ok: true, payload: ["value": NSNull()])
                 default:
                     self.respondError(

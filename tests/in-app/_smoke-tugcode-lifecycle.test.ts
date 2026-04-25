@@ -35,22 +35,38 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import {
+  launchTugApp,
+  TUGCODE_TRANSCRIPT_SCHEMA_VERSION,
+  type TugcodeTranscript,
+} from "./_harness";
 import { TugcodeLaunchError } from "./_harness/errors";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+
+/**
+ * Minimal transcript for spawn/kill smokes — schema-valid but
+ * zero turns. Stub mode requires `transcript` since 7B; this
+ * placeholder keeps the spawn/kill assertions honest without
+ * exercising the replay engine (covered by `_smoke-tugcode-stub.test.ts`).
+ */
+const EMPTY_TRANSCRIPT: TugcodeTranscript = {
+  schemaVersion: TUGCODE_TRANSCRIPT_SCHEMA_VERSION,
+  tugcodeVersion: "0.8.0",
+  turns: [],
+};
 
 describe.skipIf(!SHOULD_RUN)("phase B tugcode-lifecycle smoke", () => {
   test("startTugcode + stopTugcode round-trip resolves with pid", async () => {
     const app = await launchTugApp({ testName: "smoke-tugcode-lifecycle-rt" });
     try {
-      const result = await app.startTugcode({ mode: "stub" });
+      const result = await app.startTugcode({ mode: "stub", transcript: EMPTY_TRANSCRIPT });
       expect(typeof result.pid).toBe("number");
       expect(result.pid).toBeGreaterThan(0);
 
       // Second start succeeds after stop (handler state clears).
       await app.stopTugcode();
-      const result2 = await app.startTugcode({ mode: "stub" });
+      const result2 = await app.startTugcode({ mode: "stub", transcript: EMPTY_TRANSCRIPT });
       expect(result2.pid).toBeGreaterThan(0);
       expect(result2.pid).not.toBe(result.pid); // fresh subprocess
       await app.stopTugcode();
@@ -62,11 +78,11 @@ describe.skipIf(!SHOULD_RUN)("phase B tugcode-lifecycle smoke", () => {
   test("startTugcode while already running throws TugcodeLaunchError", async () => {
     const app = await launchTugApp({ testName: "smoke-tugcode-lifecycle-already-running" });
     try {
-      await app.startTugcode({ mode: "stub" });
+      await app.startTugcode({ mode: "stub", transcript: EMPTY_TRANSCRIPT });
 
       let caught: unknown = null;
       try {
-        await app.startTugcode({ mode: "stub" });
+        await app.startTugcode({ mode: "stub", transcript: EMPTY_TRANSCRIPT });
       } catch (err) {
         caught = err;
       }
@@ -86,7 +102,7 @@ describe.skipIf(!SHOULD_RUN)("phase B tugcode-lifecycle smoke", () => {
       const samples: number[] = [];
       for (let i = 0; i < 10; i++) {
         const t0 = performance.now();
-        await app.startTugcode({ mode: "stub" });
+        await app.startTugcode({ mode: "stub", transcript: EMPTY_TRANSCRIPT });
         await app.stopTugcode();
         samples.push(performance.now() - t0);
       }

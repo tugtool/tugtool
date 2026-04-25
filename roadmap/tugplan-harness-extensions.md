@@ -178,7 +178,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 **Plan to resolve:** Decide in Step 6. Default position: structured records with a content-hash sidecar that trips when tugcode's on-wire format changes. Raw-bytes fallback if the structured format introduces subtle replay skew.
 
-**Resolution:** DEFERRED to [#step-6].
+**Resolution (2026-04-25, Step 6 / Pass 7B):** **Structured records with SHA-256 sidecar.** Format pinned in `tugcode/src/stub-replay.ts::TugcodeTranscript`: `{ schemaVersion: 1, tugcodeVersion: string, turns: [{ index, description?, outputs[] }] }`. Each `outputs[]` entry is a full structured `OutboundMessage` (assistant_text / turn_complete / error / etc.). Index-based turn matching means prompt content can vary between capture and replay without invalidating the transcript. Sidecar verification helper in `tests/in-app/_harness/transcript.ts`; reapprove flow in `scripts/reapprove-transcript.ts`. No replay skew observed in 7B's smoke; the raw-bytes fallback was not needed. Brittleness watch (revisit in 7C / 7D): if tugcode's `OutboundMessage` union grows new variants, transcripts captured against older versions may carry types the runtime emits but newer code rejects — the `tugcodeVersion` field in every transcript flags this at capture time, but runtime version-skew handshake (originally planned in Step 6) is deferred to a follow-up. See Step 6's Author note.
 
 #### [Q05] CGEvent modifier-key accelerators (Cmd+A etc.) — resolved by reading Apple's docs (DECIDED — 2026-04-24, same-day as Step 1 close) {#q05-cgevent-modifiers}
 
@@ -1591,20 +1591,33 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - `tests/in-app/_harness/errors.ts` — `TugcodeLaunchError`, `TugcodeVersionSkewError`, `TugcodeTranscriptMismatchError`.
 
 **Tasks:**
-- [ ] Add `--stub-transcript=<fd>` CLI flag to tugcode; parse structured records; replay deterministically per turn.
-- [ ] Record tugcode version in startup handshake; harness reads it and throws `TugcodeVersionSkewError` on mismatch.
-- [ ] Author `capture-tugcode-transcript.ts` with `--scenario=<name>` flag; writes `.transcript.json` + `.sha256`.
-- [ ] Author `reapprove-transcript.ts` for legitimate re-capture workflow.
-- [ ] `seedTugcodeTranscript(transcript)` writes to the pipe; content-hash verification happens on load.
+- [x] Add `--stub-transcript=<path>` CLI flag to tugcode; parse structured records; replay deterministically per turn. (Path-based not fd-based — see Author note.)
+- [ ] Record tugcode version in startup handshake; harness reads it and throws `TugcodeVersionSkewError` on mismatch. **DEFERRED** — see Author note. The transcript carries `tugcodeVersion` for capture-time pinning; runtime handshake is not yet wired (no real-world drift to detect until 7C lands committed transcripts).
+- [ ] Author `capture-tugcode-transcript.ts` with `--scenario=<name>` flag; writes `.transcript.json` + `.sha256`. **DEFERRED to Step 7** — the script needs a live tugcode + EM-card target to capture against, both of which arrive in Step 7.
+- [x] Author `reapprove-transcript.ts` for legitimate re-capture workflow (~50 lines; uses the shared `computeTranscriptHash` helper).
+- [x] Transcript handoff: folded `seedTugcodeTranscript` into `app.startTugcode({ transcript, ... })` — see Author note. Swift writes the transcript to a temp file under $TMPDIR and passes `--stub-transcript=<path>`; harness wraps the call. Content-hash sidecar verification lives in `tests/in-app/_harness/transcript.ts` for use by 7C.
 
 **Tests:**
-- [ ] Unit test in `scripts/` tests: transcript round-trip (capture → hash → verify → mismatch detection).
-- [ ] `tests/in-app/_smoke-em.test.ts` body scaffolded here, filled in Step 7.
+- [x] `tugcode/src/__tests__/stub-replay.test.ts` — 11 unit tests covering loadTranscript happy path / malformed-JSON / schema-version / index-mismatch / missing-fields, plus StubReplayEngine handshake / dispatch / out-of-bounds / multi-turn.
+- [x] `tests/in-app/_harness/__tests__/transcript.test.ts` — 8 tests covering computeTranscriptHash determinism + sidecar verify (match / mismatch / missing-sidecar) + loadTranscriptWithSidecar (parses on match; refuses without parsing on mismatch).
+- [x] `tests/in-app/_smoke-tugcode-stub.test.ts` (scratch; folded into `_smoke-em.test.ts` at Step 7): end-to-end pipeline — protocol_init + user_message → recorded outputs in stdout log; stub-without-transcript fails fast; malformed transcript produces `error` event from tugcode.
 
 **Checkpoint:**
-- [ ] Tugcode binary accepts `--stub-transcript` and replays deterministically across 10 runs.
-- [ ] Capture + reapprove scripts produce matching sidecars.
-- [ ] [Q04] resolved — structured-record format is in place; note any observed brittleness in the plan's [Q04] section.
+- [x] Tugcode binary accepts `--stub-transcript=<path>` and replays deterministically (3/3 stub-mode smoke tests green).
+- [x] Reapprove script produces sidecars whose hash matches `shasum -a 256`.
+- [x] [Q04] resolved — structured-record format with sha256 sidecar is in place. See Resolution block in [Q04] above.
+
+**Author note (2026-04-25).** Five implementation deviations from the plan-as-written, in declining order of significance.
+
+(1) **Transcript handoff is path-based, not fd-based.** The plan envisioned `--stub-transcript=<fd>` with the harness writing transcript bytes to an inherited file descriptor. Foundation's `Process` API doesn't expose arbitrary fd inheritance to children (would require `posix_spawn_file_actions` below the API), and the alternative — pre-buffering the pipe before `Process.run()` so the child reads "atomically" — is fragile because the child blocks on read until bytes arrive. Path-based is simpler and equivalent in fidelity: Swift writes the transcript JSON to a temp file under `$TMPDIR` and passes `--stub-transcript=<path>` to tugcode. The temp file is removed on `stop()`.
+
+(2) **Folded `seedTugcodeTranscript` and `seedTugcodeError` into `startTugcode`'s opts.** The plan's separate-verbs design assumed hot-loading transcripts during a test; in practice every known consumer (the stub-mode smoke + Step 7's `_smoke-em.test.ts`) authors the full transcript before launch. Two-step state (seed → start) creates ordering coupling without ergonomic gain. To inject errors into a turn, build them as `error`-typed entries in the relevant `turn.outputs[]` array — that's the same wire frame the engine would emit anyway.
+
+(3) **Added `writeTugcodeStdin(line)` RPC verb.** Tests need to drive tugcode's IPC loop (send protocol_init, send user_message). The plan implicitly assumed tugcast was in the loop, but harness-owned tugcode runs without tugcast — so we expose a direct stdin-write RPC. The Swift handler appends to the held-open `Pipe` write-end created in Pass 7A.
+
+(4) **Capture script deferred to Step 7.** The capture script needs a live tugcode + EM-card sink to capture against. Both arrive in Step 7. Authoring the script in 7B against an absent target would produce dead-on-arrival code. The shared `computeTranscriptHash` helper + `reapprove-transcript.ts` are landed now so 7C can build the capture script directly on them.
+
+(5) **Version handshake deferred.** `TugcodeVersionSkewError` class is defined; the throw-site is not yet wired. Until 7C lands committed transcripts (which then might drift against later tugcode rebuilds), there's nothing real to gate. The `tugcodeVersion` field on every transcript pins capture-time provenance; the runtime check is a one-line add when 7C's first committed transcript ships. Surface versions bumped Swift `1.3.0`→`1.4.0` and TS `EXPECTED_SURFACE_VERSION` `1.3.0`→`1.4.0` for the additive `transcript` and `writeTugcodeStdin` wire payloads.
 
 ---
 

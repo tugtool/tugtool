@@ -92,7 +92,10 @@ export type {
   SelectionSnapshot,
   StartTugcodeOptions,
   StartTugcodeResult,
+  TugcodeTranscript,
+  TugcodeTranscriptTurn,
 } from "./client";
+export { TUGCODE_TRANSCRIPT_SCHEMA_VERSION } from "./client";
 export type {
   AccessibilityStatus,
   NativeModifier,
@@ -125,8 +128,15 @@ export type {
  * `stopTugcode`). The Step 5 surface is spawn/kill only; Step 6
  * extends the start payload with `--stub-transcript=<fd>` and
  * adds transcript-seeding verbs. Additive; major stays `1`.
+ *
+ * `1.4.0` (Step 6, harness extensions): `startTugcode`'s payload
+ * gains an optional `transcript` field carrying the stub-replay
+ * document. Swift writes it to a temp file under $TMPDIR and
+ * passes `--stub-transcript=<path>` to tugcode, which routes
+ * through its deterministic replay engine. Additive; major stays
+ * `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.3.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.4.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -696,6 +706,17 @@ export class App {
    */
   stopTugcode(): Promise<void> {
     return client.stopTugcode(this as HarnessCaller);
+  }
+
+  /**
+   * Append a single JSON IPC frame to tugcode's stdin. The Swift
+   * handler tacks on the newline. Use this to drive the tugcode
+   * IPC loop directly in stub-replay tests (`protocol_init`,
+   * `user_message`, etc.). Caller `JSON.stringify`s the object
+   * client-side; the wire-passed string is forwarded as-is.
+   */
+  writeTugcodeStdin(line: string): Promise<void> {
+    return client.writeTugcodeStdin(this as HarnessCaller, line);
   }
 
   /**

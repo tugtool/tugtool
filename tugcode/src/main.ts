@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Tugcode: Claude Code bridge — stream-json IPC between Claude Code and tugcast
 
-import { readLine, writeLine } from "./ipc.ts";
+import { readLine, writeLine, writeLineAndExit } from "./ipc.ts";
 import {
   isProtocolInit,
   isUserMessage,
@@ -14,6 +14,7 @@ import {
   isStopTask,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
+import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -41,6 +42,11 @@ let sessionId: string | undefined;
 // claims `sessionId` as its own id) and resuming an existing
 // conversation. Absent / unknown values fall through to "new".
 let sessionMode: "new" | "resume" = "new";
+// `--stub-transcript=<path>` (or `--stub-transcript <path>`) routes
+// the IPC loop through the deterministic replay engine in
+// `stub-replay.ts` instead of spawning claude. Test-only;
+// production tugcode never sees this flag.
+let stubTranscriptPath: string | undefined;
 const args = Bun.argv.slice(2); // Skip bun and script path
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dir" && i + 1 < args.length) {
@@ -53,6 +59,11 @@ for (let i = 0; i < args.length; i++) {
     const raw = args[i + 1];
     sessionMode = raw === "resume" ? "resume" : "new";
     i++;
+  } else if (args[i].startsWith("--stub-transcript=")) {
+    stubTranscriptPath = args[i].slice("--stub-transcript=".length);
+  } else if (args[i] === "--stub-transcript" && i + 1 < args.length) {
+    stubTranscriptPath = args[i + 1];
+    i++;
   }
 }
 
@@ -63,11 +74,14 @@ if (!sessionId) {
 }
 
 console.log(
-  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode})`,
+  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
 );
 
-// Session manager (initialized after protocol handshake)
+// Session manager (initialized after protocol handshake). Only
+// populated in the live (claude-spawning) path; stub-replay mode
+// leaves this null and routes all messages through `stubReplay`.
 let sessionManager: SessionManager | null = null;
+let stubReplay: StubReplayEngine | null = null;
 
 // Graceful signal handlers: close stdin and kill claude process. SIGTERM
 // and SIGHUP are both routed through the same path. SIGHUP covers the
@@ -98,6 +112,35 @@ process.on("SIGHUP", () => shutdownOnSignal("SIGHUP"));
 // the live claude subprocess doesn't keep Bun's event loop alive and
 // leave tugcode running as an orphan.
 async function main() {
+  // Stub-replay mode: load the transcript up front so a malformed
+  // file fails fast (before the harness has issued protocol_init).
+  // The engine doesn't emit anything until protocol_init arrives.
+  if (stubTranscriptPath !== undefined) {
+    try {
+      const transcript = loadTranscript(stubTranscriptPath);
+      stubReplay = new StubReplayEngine({
+        transcript,
+        sessionId: sessionId ?? crypto.randomUUID(),
+        emit: (msg) => writeLine(msg),
+      });
+    } catch (err) {
+      // writeLineAndExit awaits Bun.write before process.exit so
+      // the error frame actually lands in tugcode's stdout pipe.
+      // A bare writeLine + process.exit races the async write
+      // against the exit and silently drops the frame.
+      await writeLineAndExit(
+        {
+          type: "error",
+          message: `${err instanceof Error ? err.message : String(err)}`,
+          recoverable: false,
+          ipc_version: 2,
+        },
+        1,
+      );
+      return; // unreachable in production; guard for tests that stub process.exit
+    }
+  }
+
   for await (const msg of readLine()) {
     if (isProtocolInit(msg)) {
       // Protocol handshake
@@ -109,6 +152,13 @@ async function main() {
           ipc_version: 2,
         });
         process.exit(1);
+      }
+
+      // Stub mode: synthesize the handshake from the replay engine
+      // and skip claude-spawn entirely.
+      if (stubReplay !== null) {
+        stubReplay.synthesizeHandshake(msg.version);
+        continue;
       }
 
       // Create session manager and initialize claude process
@@ -140,6 +190,16 @@ async function main() {
         process.exit(1);
       }
     } else if (isUserMessage(msg)) {
+      // Stub mode: dispatch the next recorded turn. Out-of-bounds
+      // produces an error event from the engine and asks us to
+      // shut down.
+      if (stubReplay !== null) {
+        const ok = stubReplay.dispatchTurn();
+        if (!ok) {
+          process.exit(1);
+        }
+        continue;
+      }
       if (sessionManager) {
         sessionManager.handleUserMessage(msg).catch((err) => {
           console.error("handleUserMessage failed:", err);

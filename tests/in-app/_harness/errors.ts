@@ -154,14 +154,11 @@ export class UnknownKeyError extends Error {
 /**
  * Thrown when `startTugcode` fails — either because the binary
  * path is missing/invalid, the `Process.run()` call errored, the
- * stdout/stderr log file could not be opened, or a tugcode child
- * is already running on this connection. The wire `name` is
+ * stdout/stderr log file could not be opened, the stub-mode
+ * transcript could not be written, or a tugcode child is already
+ * running on this connection. The wire `name` is
  * `TugcodeLaunchError`; `message` carries the actionable detail
  * (e.g. "tugcode binary not found at <path>").
- *
- * Step 6 will add two siblings (`TugcodeVersionSkewError` for
- * handshake mismatch, `TugcodeTranscriptMismatchError` for
- * content-hash sidecar miss).
  */
 export class TugcodeLaunchError extends Error {
   readonly name = "TugcodeLaunchError" as const;
@@ -169,6 +166,55 @@ export class TugcodeLaunchError extends Error {
   constructor(message: string) {
     super(message);
     Object.setPrototypeOf(this, TugcodeLaunchError.prototype);
+  }
+}
+
+/**
+ * Thrown when a transcript's `tugcodeVersion` does not match the
+ * binary version the harness expects. Reserved for the long-term
+ * transcript-stability story per harness plan #step-6 [D06]; the
+ * runtime emit-and-throw path is not yet wired (deferred to a
+ * follow-up). Class is defined here so test code can reference it
+ * once the wiring lands.
+ */
+export class TugcodeVersionSkewError extends Error {
+  readonly name = "TugcodeVersionSkewError" as const;
+  readonly expected: string;
+  readonly actual: string;
+
+  constructor(message: string, expected: string, actual: string) {
+    super(message);
+    this.expected = expected;
+    this.actual = actual;
+    Object.setPrototypeOf(this, TugcodeVersionSkewError.prototype);
+  }
+}
+
+/**
+ * Thrown by the transcript loader (`tests/in-app/_harness/transcript.ts`)
+ * when a transcript file's content does not match its `.sha256`
+ * sidecar. The capture / reapprove scripts produce sidecar files
+ * for committed transcripts; runtime test code calling
+ * `loadTranscriptWithSidecar` gets this error if the transcript
+ * has been edited without rerunning `reapprove-transcript.ts`.
+ */
+export class TugcodeTranscriptMismatchError extends Error {
+  readonly name = "TugcodeTranscriptMismatchError" as const;
+  readonly transcriptPath: string;
+  readonly expectedHash: string;
+  readonly actualHash: string;
+
+  constructor(
+    message: string,
+    transcriptPath: string,
+    expectedHash: string,
+    actualHash: string,
+  ) {
+    super(message);
+    this.transcriptPath = transcriptPath;
+    this.expectedHash = expectedHash;
+    this.actualHash = actualHash;
+    Object.setPrototypeOf(this, TugcodeTranscriptMismatchError.prototype);
   }
 }
 

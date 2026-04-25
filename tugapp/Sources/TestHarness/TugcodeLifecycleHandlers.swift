@@ -102,30 +102,40 @@ final class TugcodeLifecycleHandlers {
 
     /// Pipe whose write-end we hold so tugcode's stdin stays open.
     /// tugcode treats stdin EOF as a shutdown signal (see
-    /// `tugcode/src/main.ts` "stdin closed, shutting down"). Step
-    /// 6 will write transcript bytes through this pipe; Step 5
-    /// just holds it open.
+    /// `tugcode/src/main.ts` "stdin closed, shutting down").
     private var stdinPipe: Pipe?
 
     /// File handle for stdout/stderr capture. Closed during `stop()`.
     private var logFileHandle: FileHandle?
 
+    /// Path to the temp file that carries the stub-mode transcript
+    /// to tugcode via `--stub-transcript=<path>`. Stored so `stop()`
+    /// can clean it up — without this, every test run would leave
+    /// orphan transcript files in $TMPDIR.
+    private var transcriptFilePath: String?
+
     /// Spawn a tugcode subprocess.
     ///
     /// - Parameters:
-    ///   - mode: "stub" or "live". In Step 5 both modes spawn the
-    ///     same way (no extra flags). Step 6 adds the
-    ///     `--stub-transcript=<fd>` branch on `mode == "stub"`.
+    ///   - mode: "stub" or "live". In stub mode the handler writes
+    ///     `transcriptJson` to a temp file and passes
+    ///     `--stub-transcript=<path>` so tugcode routes through its
+    ///     deterministic replay engine instead of spawning claude.
     ///   - binaryPath: absolute path to the tugcode executable.
     ///     When nil, falls back to `TUGAPP_TUGCODE_BINARY` env var.
     ///   - logFilePath: absolute path that tugcode's stdout +
     ///     stderr stream into. When nil, output goes to `/dev/null`.
+    ///   - transcriptJson: JSON-encoded transcript document for
+    ///     stub-mode replay. Required when `mode == "stub"`;
+    ///     ignored otherwise. Written to a temp file in $TMPDIR
+    ///     and torn down on `stop()`.
     /// - Returns: pid of the spawned process.
     /// - Throws: `TugcodeLifecycleError` on any failure.
     func start(
         mode: String,
         binaryPath: String?,
         logFilePath: String?,
+        transcriptJson: String? = nil,
     ) throws -> Int32 {
         if process != nil {
             throw TugcodeLifecycleError.alreadyRunning
@@ -140,12 +150,35 @@ final class TugcodeLifecycleHandlers {
             throw TugcodeLifecycleError.binaryNotFound(binPath)
         }
 
+        // Stub-mode requires a transcript. Write the JSON to a temp
+        // file under $TMPDIR with a UUID to avoid cross-test races,
+        // then pass the path via `--stub-transcript=<path>`. The
+        // file is removed on `stop()`.
+        var args: [String] = []
+        if mode == "stub" {
+            guard let json = transcriptJson, !json.isEmpty else {
+                throw TugcodeLifecycleError.spawnFailed(
+                    "stub mode requires transcriptJson",
+                )
+            }
+            let tmpDir = NSTemporaryDirectory()
+            let path = (tmpDir as NSString).appendingPathComponent(
+                "tugcode-transcript-\(UUID().uuidString).json",
+            )
+            do {
+                try json.write(toFile: path, atomically: true, encoding: .utf8)
+            } catch {
+                throw TugcodeLifecycleError.spawnFailed(
+                    "failed to write transcript temp file at \(path): \(error)",
+                )
+            }
+            self.transcriptFilePath = path
+            args.append("--stub-transcript=\(path)")
+        }
+
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binPath)
-        // Args: empty in Step 5. Step 6 will compose
-        // `["--stub-transcript=\(fd)"]` when mode == "stub".
-        _ = mode
-        proc.arguments = []
+        proc.arguments = args
 
         // Hold tugcode's stdin open. The Pipe's writeFileHandle
         // stays in our struct — when we eventually drop it (via
@@ -196,6 +229,33 @@ final class TugcodeLifecycleHandlers {
         return proc.processIdentifier
     }
 
+    /// Append `line` (followed by a newline) to tugcode's stdin.
+    /// Used by tests to drive the IPC loop directly: a test sends
+    /// `protocol_init` and `user_message` lines this way, then
+    /// reads tugcode's stdout from `logFilePath` to verify the
+    /// replay emitted the expected outputs.
+    ///
+    /// No-op when no tugcode is running. Throws
+    /// `TugcodeLifecycleError.spawnFailed` (re-using the wire name
+    /// `TugcodeLaunchError`) on a write failure — typically means
+    /// tugcode has exited and the pipe broke.
+    func writeStdinLine(_ line: String) throws {
+        guard let pipe = stdinPipe else { return }
+        let payload = line.hasSuffix("\n") ? line : line + "\n"
+        guard let data = payload.data(using: .utf8) else {
+            throw TugcodeLifecycleError.spawnFailed(
+                "writeStdinLine: failed to encode payload as UTF-8",
+            )
+        }
+        do {
+            try pipe.fileHandleForWriting.write(contentsOf: data)
+        } catch {
+            throw TugcodeLifecycleError.spawnFailed(
+                "writeStdinLine: \(error)",
+            )
+        }
+    }
+
     /// Terminate the currently-running tugcode subprocess. Idempotent —
     /// safe to call when no process is running.
     func stop() {
@@ -228,9 +288,16 @@ final class TugcodeLifecycleHandlers {
 
         try? logFileHandle?.close()
 
+        // Clean up the stub-mode transcript temp file. tugcode has
+        // (or will shortly) exited so the file is no longer in use.
+        if let path = transcriptFilePath {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+
         self.process = nil
         self.stdinPipe = nil
         self.logFileHandle = nil
+        self.transcriptFilePath = nil
     }
 }
 #endif

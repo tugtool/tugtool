@@ -36,7 +36,8 @@ export type RpcMethod =
   | "simulateAppHide"
   | "simulateAppUnhide"
   | "startTugcode"
-  | "stopTugcode";
+  | "stopTugcode"
+  | "writeTugcodeStdin";
 
 /**
  * Viewport-space point passed to the native-gesture verbs. `{x, y}` is
@@ -265,9 +266,9 @@ export type Request =
       id: number;
       method: "startTugcode";
       /**
-       * "stub" or "live". Step 5 spawns the same way for both;
-       * Step 6 will add the `--stub-transcript=<fd>` branch on
-       * `mode === "stub"`.
+       * "stub" or "live". Stub mode requires a `transcript`;
+       * Swift writes it to a temp file and passes
+       * `--stub-transcript=<path>` to tugcode.
        */
       mode: "stub" | "live";
       /**
@@ -280,10 +281,24 @@ export type Request =
        * When omitted, output goes to `/dev/null`.
        */
       logFilePath?: string;
+      /**
+       * Stub-replay transcript document. Required when
+       * `mode === "stub"`. Shape mirrors
+       * `tugcode/src/stub-replay.ts::TugcodeTranscript` — the
+       * field is opaque on the wire because Swift round-trips it
+       * through `JSONSerialization` straight to the temp file.
+       */
+      transcript?: Record<string, unknown>;
     }
   | {
       id: number;
       method: "stopTugcode";
+    }
+  | {
+      id: number;
+      method: "writeTugcodeStdin";
+      /** A single JSON IPC frame; Swift appends a newline. */
+      line: string;
     };
 
 /**
