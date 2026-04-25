@@ -500,6 +500,7 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
           onBlockMeasured={handleBlockMeasured}
           onTiming={handleTiming}
           className="gallery-md-view"
+          persistKey="markdown-view"
         />
       </div>
     </div>

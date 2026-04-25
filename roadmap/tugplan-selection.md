@@ -2096,16 +2096,17 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 
 ##### Step 25B: Markdown-view selection publish {#step-25b}
 
+**Status:** ✅ landed 2026-04-25.
+
 **Closes:** [M10] per [L23] (user-visible state must round-trip). Implements [A5].
 
-**Deliverables:**
-- `tug-markdown-view` gains `persistKey` prop and `useCardPersistence({ onSave, onRestore })`.
-- A `useLayoutEffect` subscribes to `document.selectionchange`; filter ranges whose `commonAncestorContainer` is within `rootEl`; call `selectionGuard.updateCardDomSelection(cardId, range)` on match.
-- `onSave` writes `bag.domSelection` from `selectionGuard.cardRanges.get(cardId)`.
-- `onRestore` is a no-op (the existing CardHost mount-restore path replays the range via `restoreCardDomSelection`).
-- New harness test `m10-markdown-selection.test.ts`: select text in a markdown-view card; tab-switch + cmd-tab; assert range round-trips and the `::highlight(inactive-selection)` paint is correct.
+**Deliverables (landed):**
+- `tug-markdown-view.tsx`: added a `persistKey?: string` prop. When set inside a `CardHost` (i.e. `useCardId` resolves to a non-null id), a `useLayoutEffect` subscribes to `document.selectionchange` and publishes any range whose `commonAncestorContainer` is within the scroll container via `selectionGuard.updateCardDomSelection(cardId, range)`. Out-of-card ranges and `rangeCount === 0` events are silently ignored — clearing belongs to the unmount cleanup, which calls `updateCardDomSelection(cardId, null)` exactly once.
+- `tug-markdown-view.tsx`: also calls `useCardPersistence({ onSave: () => undefined, onRestore: () => {} })` so `bag.content` stays absent and `CardHost`'s `captureCardState` falls into the `!ownsSelectionAndFocus` branch — `bag.domSelection` is captured automatically from `selectionGuard.cardRanges`, and the cold-boot mount-restore path replays it via `selectionGuard.restoreCardDomSelection`.
+- `gallery-markdown-view.tsx`: passes `persistKey="markdown-view"` to the underlying `TugMarkdownView` so harness fixtures for [M10] / [M14] / [M23] inherit the selection-publish behavior automatically.
+- New harness test `m10-markdown-selection.test.ts`: programmatically selects 20 chars in card A's first block, tab-switches A → B, asserts `getCaretState("A")` still resolves to the same `Range` AND that `CSS.highlights.get("inactive-selection")` contains a Range whose text matches; runs `simulateAppResign` + `simulateAppBecomeActive`, asserts the snapshot still resolves; tab-switches B → A, asserts native `window.getSelection()` text matches the saved Range — i.e. the focused card's range was restored to native `::selection` by the deck-store-driven `updatePaint` (the same path that installs the one-shot `mousedown` interceptor when a focus return lands on a card with a saved Range).
 
-**Estimated commits:** one. Drift-prevention via the new test.
+**Commits:** one — Step 25B markdown-view selection publish.
 
 ##### Step 25C: Unified flush-on-teardown gate {#step-25c}
 
@@ -2399,9 +2400,9 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Card types:** MV
 - **State axes:** SR
 - **Trigger:** User selects text in a markdown-view card (for copy). Any transition (reload, tab switch, pane switch, resign) loses the selection.
-- **Status:** ❌ broken (by omission) — **must close per [L23]** ("preserve user-visible state"). Ephemerality is not a permitted exception; a copy-selection a user just made is user-visible state.
-- **Mechanism:** Markdown-view regions don't carry a `persistKey`, don't use `useCardPersistence`, and don't participate in `selectionGuard.cardRanges` (no `onSelectionChanged` publish). The selection exists in `window.getSelection()` but nothing captures it.
-- **Closing requires:** `tug-markdown-view` gains a `persistKey` and uses `useCardPersistence`. It subscribes to `document.selectionchange`, filters to selections whose `commonAncestorContainer` is within its root, and calls `selectionGuard.updateCardDomSelection(cardId, range)` (publish path identical to engine-managed cards). On save, its `onSave` writes `bag.domSelection`. On restore, the existing cold-boot restore in `CardHost` replays the range via `restoreCardDomSelection`. Two additions beyond the publish wiring: the card's restore must be idempotent against mid-restore DOM mutation (markdown re-render), and the `::highlight(inactive-selection)` paint already covers the visual side once the range is in `cardRanges`. See architecture piece [A5].
+- **Status:** ✅ closed at [25B](#step-25b) — `tug-markdown-view` gained `persistKey` + a `document.selectionchange` listener that publishes the user's `Range` to `selectionGuard.updateCardDomSelection(cardId, range)` whenever the range's `commonAncestorContainer` is inside the scroll container. Round-trip gated by `m10-markdown-selection.test.ts` (tab-switch + cmd-tab; native `::selection` and the `inactive-selection` custom highlight both verified).
+- **Mechanism (was):** Markdown-view regions didn't carry a `persistKey`, didn't use `useCardPersistence`, and didn't participate in `selectionGuard.cardRanges` (no `onSelectionChanged` publish). The selection existed in `window.getSelection()` but nothing captured it.
+- **Mechanism (now):** With `persistKey` set, the view installs a `useLayoutEffect`-scoped `selectionchange` listener that publishes any in-card `Range` to `selectionGuard`. The card-level paint authority (`updatePaint`) buckets the range into native `::selection` (focused card with window focus) or `::highlight(inactive-selection)` (every other case) on every `cardRanges` update, every deck-store notify, and every resign/become-active. On a focus return that has a saved `Range`, the one-shot capture-phase `mousedown` interceptor stops the click that triggered the switch from collapsing the about-to-be-restored selection. The `useCardPersistence` registration's `onSave` returns `undefined` so `bag.content` stays absent — `CardHost`'s `captureCardState` then takes the `!ownsSelectionAndFocus` branch and serializes `bag.domSelection` from `selectionGuard.cardRanges` automatically. The cold-boot mount-restore path replays the range via `selectionGuard.restoreCardDomSelection`.
 
 #### [M11] Card close → reopen: no "reopen" path exists {#m11-card-close-reopen}
 

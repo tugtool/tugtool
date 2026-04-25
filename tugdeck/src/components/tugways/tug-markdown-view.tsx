@@ -58,6 +58,8 @@ import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "@/componen
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { selectionGuard } from "@/components/tugways/selection-guard";
+import { useCardId, useCardPersistence } from "@/components/tugways/use-card-persistence";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
@@ -224,6 +226,24 @@ export interface TugMarkdownViewProps {
   onTiming?: (metrics: TugMarkdownTimingMetrics) => void;
   /** CSS class for the scroll container. */
   className?: string;
+  /**
+   * When set, opts the view into card-level selection persistence.
+   *
+   * Subscribes to `document.selectionchange` and publishes any range
+   * whose `commonAncestorContainer` is within the scroll container to
+   * `selectionGuard.updateCardDomSelection(cardId, range)` (cardId is
+   * read from the enclosing `CardPersistenceContext`). The
+   * card-level paint authority then carries the range through tab
+   * switches, app resign/become-active, and cold-boot mount-restore
+   * via `selectionGuard.restoreCardDomSelection`.
+   *
+   * No-op when the component is rendered outside a `CardHost`
+   * (`useCardId` returns null) or when `persistKey` is `undefined`.
+   *
+   * Implements [A5] (markdown-view selection publish) per [L23]
+   * (user-visible state must round-trip).
+   */
+  persistKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +319,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onBlockMeasured,
     onTiming,
     className,
+    persistKey,
   }, ref) {
   // ---- DOM refs ----
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1218,6 +1239,70 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable
   }, []);
+
+  // ---- Selection publish [A5] ----
+  //
+  // When `persistKey` is set and the view is mounted inside a
+  // `CardHost`, publish the user's `Range` to `selectionGuard` so the
+  // card-level paint authority can carry it across tab switches, app
+  // resign/become-active, and (via the `CardHost` mount-restore path)
+  // cold-boot. The `selectionchange` listener is the only intervention
+  // — paint, dim/restore, and the inactive-selection custom highlight
+  // are all owned downstream by `selectionGuard`.
+  //
+  // Filtering: any `Range` whose `commonAncestorContainer` is not a
+  // descendant of the scroll container is ignored. This keeps a drag
+  // that began in another card from registering this card's id, which
+  // would corrupt `cardRanges` (the framework treats each entry as
+  // "this card's selection").
+  //
+  // L03 — `useLayoutEffect` so the listener is installed before any
+  // user gesture that could fire `selectionchange`. L23 — the publish
+  // ensures `bag.domSelection` capture / restore round-trips the
+  // user's selection across save/restore boundaries.
+  const cardId = useCardId();
+  useLayoutEffect(() => {
+    if (persistKey === undefined) return;
+    if (cardId === null) return;
+    const root = scrollContainerRef.current;
+    if (!root) return;
+
+    const onSelectionChange = () => {
+      // Only PUBLISH new ranges that originate inside this view.
+      // Never clear via this listener: a focus shift away from the
+      // card collapses native selection but the user's selection in
+      // THIS card is still the published-truth (paint authority dims
+      // it through the `inactive-selection` highlight on every
+      // deck-store notify). Clearing belongs to the unmount cleanup
+      // below, where the entry is genuinely going away.
+      const sel = root.ownerDocument.getSelection();
+      if (sel === null || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const ca = range.commonAncestorContainer;
+      if (ca !== root && !root.contains(ca)) return;
+      selectionGuard.updateCardDomSelection(cardId, range);
+    };
+
+    root.ownerDocument.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      root.ownerDocument.removeEventListener("selectionchange", onSelectionChange);
+      selectionGuard.updateCardDomSelection(cardId, null);
+    };
+  }, [persistKey, cardId]);
+
+  // Card-persistence registration. `onSave` returns `undefined` so
+  // `bag.content` stays absent and `CardHost`'s `captureCardState`
+  // takes the `!ownsSelectionAndFocus` branch — `bag.domSelection` is
+  // captured automatically from `selectionGuard.cardRanges` (seeded
+  // by the listener above) and restored via
+  // `selectionGuard.restoreCardDomSelection`. `onRestore` is a no-op
+  // ([D07] / 25B plan). The hook also registers an
+  // `onCardActivated` channel so future focus-transfer needs land
+  // here without a second `register` call.
+  useCardPersistence<undefined>({
+    onSave: () => undefined,
+    onRestore: () => {},
+  });
 
   // Compose scrollContainerRef with responderRef so one DOM element gets
   // both: the scroll container ref for windowing logic and the responder
