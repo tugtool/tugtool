@@ -1489,7 +1489,7 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 | 4 | Cross-pane drag / detach ([M06](#m06-cross-pane-em) FC-half, [M07](#m07-card-detach) FC-half, [M21](#m21-drag-aborted)) | multi-phase | same card, DOM re-parents | save at drag-start (pane chrome `pointerdown`); refocus at drop (`_moveCardToPane` / `_detachCard`) or cancel (Escape / `pointercancel`; drop-into-void is not a cancel, it detaches) |
 | 5 | App resign → resume / window focus ([M04](#m04-app-resign-return), [M05](#m05-app-hide-unhide), [A4](#a4-app-lifecycle-activation)) | external event | current first-responder → itself | window `blur` save + window `focus` reactivate ([Step 20](#step-20) listener extended in [Step 23D](#step-23d)) |
 | 6 | EM card activations ([M02](#m02-tab-switch-em), [M06](#m06-cross-pane-em) EM-half, [M07](#m07-card-detach) EM-half, [M09](#m09-inactive-mount)) | sync or external | engine owns focus | registered `onCardActivated` callback (dispatched from row 1 / 2 / 3 / 4 / 5 paths by card-flavor) |
-| 7 | Cold-boot mount | structural | — | `CardHost` mount effect (unchanged; not in Steps 23A–23E) |
+| 7 | Cold-boot mount | structural | — | `CardHost` mount effect for FC cards (unchanged); EM-card selection paint addressed by [Step 23F](#step-23f) after a real-app gap surfaced post-23E |
 
 ##### Step breakdown
 
@@ -1498,8 +1498,9 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 - **[Step 23C](#step-23c)** — Retires Step-11's cross-pane `[hostStackId]`-keyed effect. Wires row 4 (drag-start save + drop/cancel refocus) through the helper. Drag-coordinator integration is explicit: pointerdown-save hook, post-drop refocus hook, and drag-cancel refocus hook are all named. Closes the FC/MV halves of [M06], [M07], and [M21].
 - **[Step 23D](#step-23d)** — Wires row 5 ([A4] app-lifecycle) through the helper. The `window.focus` listener installed in [Step 20](#step-20) routes through a new `reactivateCurrentFocusDestination(store)` entry. Closes [M04] and [M05]. **Absorbs what was previously labeled M-phase 3.**
 - **[Step 23E](#step-23e)** — EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated` (row 6). Closes the EM halves of [M02], [M06], [M07], and [M09]. Retires any ad-hoc engine-internal refocus code superseded by the helper.
+- **[Step 23F](#step-23f)** — Cold-boot EM-card selection paint. Surfaced as a real-app gap during manual verification after 23E. Closes row 7 for EM cards specifically (FC cold-boot was already working).
 
-Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E. 23C and 23D touch disjoint files (drag path vs. window-focus listener) and can land in either order once 23B is in.
+Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E → 23F. 23C and 23D touch disjoint files (drag path vs. window-focus listener) and can land in either order once 23B is in. 23F is a row-7 closer surfaced by post-23E manual verification.
 
 ##### Execution strategy: ping-pong with harness extensions {#step-23-execution-strategy}
 
@@ -1526,6 +1527,7 @@ Steps 23B–23E land their behavior changes against `roadmap/tugplan-harness-ext
 | 7D | Harness Step 8 ✅ | harness | Live-mode smoke: `tests/in-app/_smoke-em-live.test.ts` exercises real tugcode → Claude Code → Anthropic; gated behind `TUGCODE_LIVE=1` (default sweep skips it). New `dir` field on `StartTugcodeOptions` mapping to tugcode's `--dir <path>` arg. README addition documenting the opt-in flag. **Tugdeck-side observation deferred** alongside the tugcast-bypass plumbing — smoke asserts on bare-tugcode protocol shape (assistant_text + turn_complete in stdout log) rather than `getEmCardState`. Capture script also deferred. | Per harness plan Step 8; one commit; small. |
 | 7-close | Harness Step 9 verification sweep | verification | Run full `bun test tests/in-app/`; release-build binary-size diff vs pre-harness baseline; Xcode archive `nm` audit confirms no CGEvent / tugcode-lifecycle symbols leak to release; `TUGAPP_TEST_SOCKET` unset → tugdeck boots normally + tugcode follows production launch path; Accessibility preflight verified. **No commit unless something fails.** | Per harness plan Step 9; verification only. |
 | 8 | [Step 23E](#step-23e) | selection | EM content factories register `onCardActivated`; retire any ad-hoc engine-internal refocus code; install the deferred `_flipFirstResponder` dev-only assertion. New M02/M06-EM/M07-EM/M09 in-app tests using harness Phase B's EM-card surface. | One commit; new EM-half scenario tests plus the assertion-installation. |
+| 9 | [Step 23F](#step-23f) | selection | Cold-boot EM-card selection paint (row 7). Surfaced by manual verification of tide-card after Pass 8 lands. Spike-and-fix: instrument the cold-boot path, identify which of save-time-null / WebKit-quirk / hasFocus-race / engine-not-ready drops the selection, land the fix. New `m32-em-cold-boot-selection.test.ts` as forward regression gate. Drift-prevention cycle. | One commit + diagnostic-trace event additions. |
 
 **Pass 2 result note (2026-04-24).** The rapid-cadence files were authored expecting them to fail today (the [A3] sibling-effect race the strategy was designed to drive 23B against). They pass deterministically across multiple consecutive runs at the harness's natural cadence (~50ms between clicks: Swift's 20ms intra-click delay + ~10ms RPC round-trip per `nativeClickAtElement`, well under the plan's <100ms gate). Most plausible explanation: Step 3b's `pane-focus-controller` mousedown `preventDefault` already closed the user-visible symptom — WebKit no longer blurs focus during pane-chrome / tab clicks, so the [A3] restore lands on a stable target rather than racing a focus-clearing default. The architectural problem is unchanged (DOM writes routed through React's render cycle violate [L22]/[L23]); Step 23B is now architectural cleanup rather than a bug fix. The rapid-cadence files become *forward* regression gates: they lock in current passing behavior so 23B's helper migration cannot reintroduce a regression at any of M01/M03/M16's cadences. Step 23B's existing checkpoints are unchanged; the rapid-cadence verification line ("Manual verification at rapid cadence (<100 ms between clicks)") flips from human-verified to test-file-verified once the migration lands and the files are still green.
 
@@ -1849,6 +1851,65 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
 - Step 23's retrospective notes that the Step-23 `[A3]` landed as a React effect and that Steps 23A–23E moved the implementation out of React to satisfy [L22] / [L23] after a sibling-effect ordering race was observed at rapid gesture cadence.
 - Architecture coverage matrix ([#architecture-coverage](#architecture-coverage)) [M06] and [M07] rows get explicit "(FC-half: Step 23C / EM-half: Step 23E)" annotations to match the References updates in those steps.
 - The "End of M-phase 2" summary in Step 23E's checkpoint replaces the previous version that referenced Step 24.
+
+---
+
+#### Step 23F: Cold-boot EM-card selection paint {#step-23f}
+
+**Depends on:** #step-23e
+
+**Commit:** `fix(em-cards): restore EM-card selection on cold-boot`
+
+**References:** [A3](#a3-shared-activation-effect); [A4](#a4-app-lifecycle-activation); row 7 of the [activation trigger taxonomy](#activation-trigger-taxonomy); `card-host.tsx`, `tug-text-engine.ts`, `tug-prompt-input.tsx`, `tug-prompt-entry.tsx`.
+
+**Why this step exists.** Manual verification on a real Tug.app rebuild surfaced a row-7 gap: type+select inside a tide card's `TugPromptEntry`, quit, relaunch — the text restores but the selection does NOT. Steps 23A–23E carved cold-boot out as "structural; not in scope," assuming the pre-existing `CardHost` mount-restore + `engine.restoreState` chain handled it. The chain reaches the engine, the engine carries selection in its persistence shape (`TugTextEditingState.selection: { start, end } | null`), and `engine.restoreState` calls `setSelectedRange` which focuses the root and applies the selection. Yet the user-observed behavior is "no selection on relaunch." Something in the cold-boot path drops the selection between save-time capture and post-mount paint. Step 23F closes this.
+
+**Triage shortlist (to resolve during the spike that opens this step).** One of these — possibly more than one — is the culprit. The implementer's first task is to instrument and identify which:
+
+1. **Save-time `selection: null`.** `TugTextEditingState.selection`'s docstring says "Null if editor was not focused" at capture time. `getSelectedRange` reads `window.getSelection()` and returns `null` when `sel.anchorNode` is outside `this.root`. If the dock click that triggered quit moved focus before `applicationShouldTerminate` fires `saveState`, the engine captures `null` and there's nothing to restore. The save-on-blur listener landed in [Pass 6 / Step 23D](#step-23d) flushes synchronously on `window.blur`, which should pre-empt the dock-click race — but only if `window.blur` arrives before the dock click moves focus. Verify via deck-trace: enable trace, type+select, quit, inspect the persisted `bag.content.perRoute[currentRoute].selection` at restore time.
+2. **WebKit selectionchange-on-focus quirk.** `tug-text-engine.ts:510-518` (the `setSelectedRange` comment) flags this: `.focus()` on a contenteditable AFTER a programmatic selection has been set fires an asynchronous `selectionchange` that collapses the caret to position 0. The engine's `setSelectedRange` guards against this by focusing FIRST. `applyFocusSnapshot` (`card-host.tsx:321`) has a complementary guard ("respect any focus already inside the card — return early"). The two guards together SHOULD prevent the quirk. Verify the ordering on cold-boot: does `applyFocusSnapshot` run before or after `engine.restoreState`? If the engine's setSelectedRange is what land the focus + selection together, applyFocusSnapshot's "already inside" guard fires and we're safe. If applyFocusSnapshot runs FIRST (focuses contenteditable but no selection set), then engine.restoreState's `willFocus = (activeElement !== root && !root.contains(activeElement))` evaluates false, so it skips the focus call and applies selection — which should also be safe. Both orderings should work; verify both with the trace.
+3. **WKWebView `document.hasFocus()` at boot.** When the WebView first loads, `document.hasFocus()` may be false until the OS dispatches the first activation. If `engine.restoreState` runs before that first activation, the selection lands on a "non-focused document" and WebKit may drop it on the next user interaction. The `[A4]` save-on-blur / restore-on-focus pair in [Step 23D](#step-23d) handles app-lifecycle within a running session but does NOT handle cold-boot — the deckStore is freshly constructed; nothing is the "current first responder" yet. `reactivateCurrentFocusDestination` returns early on null first responder, so it's a no-op on cold-boot.
+4. **`TugPromptEntry`'s `pendingRestoreRef`-equivalent gap.** The standalone `TugPromptInputPersistence` component buffers state via `pendingRestoreRef` if the engine isn't ready when `onRestore` fires. `TugPromptEntry` (which tide-card uses) calls `input.restoreState(saved)` via the imperative delegate — which internally is `engineRef.current?.restoreState(state)`. If `engineRef.current` is null at the moment the delegate forwards the call, the no-op silently drops the restore. The expected effect ordering (children's layout effects before parent's, CardHost's onRestore call after that) should populate `engineRef.current` first, but the `pendingRestoreRef` buffering exists for a reason — verify the engine is in fact present when `TugPromptEntry`'s `onRestore` fires.
+
+**Artifacts:**
+- **Diagnostic trace events.** Add two new deck-trace event kinds:
+  - `cold-boot-restore-snapshot` — fires from CardHost's mount-restore right before `onRestore` is invoked. Fields: `cardId`, `componentId`, `hasContent: boolean`, `engineSelection: { start: number; end: number } | null` (extracted defensively from `bag.content` for EM cards). Lets the trace tell us what was on disk.
+  - `engine-restore-applied` — fires from each EM factory's engine `restoreState` call site (TugTextEngine internal, or the wrapping factory). Fields: `cardId`, `engine`, `selectionApplied: { start: number; end: number } | null`, `domSelectionAfter: { start: number; end: number } | null` (read via `engine.getSelectedRange()` immediately after `setSelectedRange` returns). Tells us whether the selection landed in the live DOM at all.
+- **Fix.** Whichever of the four shortlist culprits is the actual cause, the fix lands here. Likely shapes:
+  - If (1) save-time null: extend the save-on-blur path to `applicationShouldTerminate`'s save loop too — call `selectionGuard.captureCurrentSelection()` or equivalent before invoking save callbacks, so the engine sees its own range as anchored even after WebKit's pre-quit focus shuffle.
+  - If (2) selectionchange quirk: tighten the focus-ordering guards. The engine's `setSelectedRange` and CardHost's `applyFocusSnapshot` should be the only two paths that can end up calling `.focus()` on the engine root during cold-boot; sequence them so `applyFocusSnapshot` always runs first when a saved snapshot exists, and the engine's `setSelectedRange` skips its own focus call.
+  - If (3) hasFocus race: defer the selection apply until `document.hasFocus() === true` OR until the first `window.focus` event fires. Implement as a one-shot `pendingSelectionRestoreRef` on the engine; check on `window.focus` and re-apply if pending.
+  - If (4) engine-not-ready: hoist the `pendingRestoreRef`-style buffering into TugPromptEntry's `onRestore` so a missing engine on first call gets re-applied when the engine reports ready.
+- **In-app smoke `tests/in-app/m32-em-cold-boot-selection.test.ts`** (new, permanent): seeds a deck via `seedDeckState` with a `gallery-prompt-entry` card carrying a pre-cooked `bag.content` whose `perRoute[currentRoute].selection` is non-null; activates the card; awaits `engine-ready`; reads `getEmCardState(cardId).engineSelection`; asserts it matches the seeded value. Adding it to the default `just test-in-app-fast` sweep makes this a forward regression gate.
+- **Activation taxonomy update.** Update the row-7 entry in [#activation-trigger-taxonomy](#activation-trigger-taxonomy) to no longer say "unchanged; not in Steps 23A–23E"; instead, point at Step 23F as the row-7 fix site. Add a one-line note at the top of the Step Breakdown subsection: "[Step 23F](#step-23f) — Cold-boot EM-card selection paint. Closes a gap surfaced by manual verification of tide-card after [Step 23E](#step-23e) landed."
+
+**Tasks:**
+- [ ] Spike (≤2 hours): add `cold-boot-restore-snapshot` and `engine-restore-applied` deck-trace events; instrument the relevant call sites; do a real quit-relaunch on a tide-card with text+selection; dump the trace; identify which of the four triage shortlist items (or a combination) actually drops the selection.
+- [ ] Author the fix per the diagnosis. Single-purpose commit.
+- [ ] Author `m32-em-cold-boot-selection.test.ts` against the seed-and-restore flow. Add to the default sweep.
+- [ ] Drift-prevention cycle: revert the production fix locally → confirm the new test fails → restore → confirm green. Document in the commit message.
+- [ ] Plan-doc: update the row-7 taxonomy entry; flip Step 23F's checkboxes to `[x]`; add a Pass 23F result note matching the shape of Pass 6/7's notes.
+
+**Upholds:**
+- **[L22]** — the cold-boot fix should not introduce new React-effect-driven DOM writes; the existing engine-internal `setSelectedRange` (synchronous, called from a layout effect or a direct mount-restore) is the only legitimate site.
+- **[L23]** — selection captured at quit time must round-trip cleanly. If the issue is save-time `null`, the fix is in the capture path, not the restore path.
+
+**Tests:**
+- [ ] `tests/in-app/m32-em-cold-boot-selection.test.ts` exits 0 in default sweep.
+- [ ] Manual verification: type and select inside a tide card; quit Tug.app; relaunch; assert visible selection paint shows the same span.
+- [ ] `bun test` (tugdeck) full suite green; `bun x tsc --noEmit` exits 0.
+
+**Checkpoint:**
+- [ ] Manual verification passes.
+- [ ] In-app smoke green.
+- [ ] No regression at any existing M-series scenario.
+
+**Why this isn't 23E.** Step 23E is row 6 (runtime EM activation via `onCardActivated`). Cold-boot is row 7 — different mechanism, different mount-time effect site. Bundling them into one step would hide the cold-boot fix's distinct test, distinct trace events, and distinct revert-to-red diagnostic path under a step whose primary commit is about a different concern. Keeping 23F separate keeps the bisect crisp if either change regresses.
+
+**Plan-doc updates (apply during 23F's commit):**
+- Row 7 of the activation trigger taxonomy table updated to point at Step 23F.
+- The Step breakdown subsection adds a Step 23F bullet.
+- The "End of M-phase 2" summary in Step 23E's checkpoint references 23F as the row-7 closer (was previously "row 7 unchanged").
 
 ---
 
