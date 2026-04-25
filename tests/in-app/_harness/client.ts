@@ -1104,6 +1104,14 @@ export interface StartTugcodeOptions {
    * tugcode replay engine emits them anyway.
    */
   transcript?: TugcodeTranscript;
+  /**
+   * Project directory passed to tugcode as `--dir <path>`. Mostly
+   * relevant in live mode (tugcode hands it to claude as the cwd
+   * for tool execution). Stub mode ignores it. When omitted,
+   * tugcode uses its own `process.cwd()` (which is the harness's
+   * cwd at spawn time — typically not a valid project root).
+   */
+  dir?: string;
 }
 
 export interface StartTugcodeResult {
@@ -1121,6 +1129,7 @@ export function startTugcode(
   if (opts.transcript !== undefined) {
     params.transcript = opts.transcript as unknown as Record<string, unknown>;
   }
+  if (opts.dir !== undefined) params.dir = opts.dir;
   return caller.rpcCall<StartTugcodeResult>("startTugcode", params);
 }
 

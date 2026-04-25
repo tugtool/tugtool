@@ -289,6 +289,12 @@ export type Request =
        * through `JSONSerialization` straight to the temp file.
        */
       transcript?: Record<string, unknown>;
+      /**
+       * Project directory; passed to tugcode as `--dir <path>`.
+       * Mostly relevant in live mode (tugcode hands it to claude
+       * as the cwd for tool execution). Stub mode ignores it.
+       */
+      dir?: string;
     }
   | {
       id: number;

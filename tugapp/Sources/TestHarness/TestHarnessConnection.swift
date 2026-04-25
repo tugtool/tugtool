@@ -388,11 +388,13 @@ final class TestHarnessConnection {
                     } else {
                         transcriptJson = nil
                     }
+                    let dir = verbObj["dir"] as? String
                     let pid = try self.tugcodeLifecycle.start(
                         mode: mode,
                         binaryPath: binaryPath,
                         logFilePath: logFilePath,
                         transcriptJson: transcriptJson,
+                        dir: dir,
                     )
                     self.respond(id: id, ok: true, payload: ["value": ["pid": Int(pid)] as [String: Any]])
                 case "stopTugcode":

@@ -136,6 +136,7 @@ final class TugcodeLifecycleHandlers {
         binaryPath: String?,
         logFilePath: String?,
         transcriptJson: String? = nil,
+        dir: String? = nil,
     ) throws -> Int32 {
         if process != nil {
             throw TugcodeLifecycleError.alreadyRunning
@@ -150,11 +151,15 @@ final class TugcodeLifecycleHandlers {
             throw TugcodeLifecycleError.binaryNotFound(binPath)
         }
 
-        // Stub-mode requires a transcript. Write the JSON to a temp
-        // file under $TMPDIR with a UUID to avoid cross-test races,
-        // then pass the path via `--stub-transcript=<path>`. The
-        // file is removed on `stop()`.
+        // Compose CLI args. `--dir <path>` lands first (mirrors
+        // production tugcast's spawn). `--stub-transcript=<path>`
+        // is appended only in stub mode (live mode never receives
+        // the flag).
         var args: [String] = []
+        if let dir = dir, !dir.isEmpty {
+            args.append("--dir")
+            args.append(dir)
+        }
         if mode == "stub" {
             guard let json = transcriptJson, !json.isEmpty else {
                 throw TugcodeLifecycleError.spawnFailed(

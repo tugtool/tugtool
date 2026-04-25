@@ -32,14 +32,42 @@ TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_smoke.test.ts
 
 Environment variables honored by `launchTugApp`:
 
-| Variable               | Purpose                                                      |
-|------------------------|--------------------------------------------------------------|
-| `TUGAPP_IN_APP_TEST=1` | Enables the `describe.skipIf(!SHOULD_RUN)` gate in tests.    |
-| `TUGAPP_DEBUG_PATH`    | Absolute path to the debug `Tug.app` binary (override).      |
-| `TUGAPP_TEST_SOCKET`   | Reserved; set by the harness when spawning the subprocess.   |
+| Variable                  | Purpose                                                      |
+|---------------------------|--------------------------------------------------------------|
+| `TUGAPP_IN_APP_TEST=1`    | Enables the `describe.skipIf(!SHOULD_RUN)` gate in tests.    |
+| `TUGAPP_DEBUG_PATH`       | Absolute path to the debug `Tug.app` binary (override).      |
+| `TUGAPP_TUGCODE_BINARY`   | Absolute path to the tugcode binary (used by EM-card tests). |
+| `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
+| `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`_smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
 
 Per-run log files are written under `tests/in-app/logs/` when a test
 passes `testName` to `launchTugApp`; the directory is gitignored.
+
+## Running live-mode tugcode smoke
+
+`tests/in-app/_smoke-em-live.test.ts` exercises a real tugcode →
+Claude Code → Anthropic API round-trip. Because it consumes API
+credits and requires live credentials, it is gated behind
+`TUGCODE_LIVE=1` and stays out of the default `just test-in-app-fast`
+sweep. The default `just test-in-app-fast` run skips this file
+deterministically — you do not need to opt out.
+
+To run it locally:
+
+```bash
+# 1. Ensure your Anthropic credentials are set up the way Claude Code
+#    expects (typically ANTHROPIC_API_KEY or `claude login`'s
+#    persisted creds).
+# 2. Run with both gates open:
+TUGCODE_LIVE=1 just test-in-app-fast _smoke-em-live.test.ts
+```
+
+The test sends a single deterministic prompt ("Reply with the single
+word: ack.") so token cost stays in single digits per run. First-token
+latency is allowed up to 20s for cold-start claude; full-turn up to
+60s. Failure surfaces the last 50 lines of tugcode's stdout/stderr to
+stderr so credentials issues / API errors are diagnosable without
+spelunking through `$TMPDIR`.
 
 ## Lifecycle model: one App per file, explicit reset
 
