@@ -1501,6 +1501,37 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 
 Dependency chain: 23A → 23B → (23C ‖ 23D) → 23E. 23C and 23D touch disjoint files (drag path vs. window-focus listener) and can land in either order once 23B is in.
 
+##### Execution strategy: ping-pong with harness extensions {#step-23-execution-strategy}
+
+Steps 23B–23E land their behavior changes against `roadmap/tugplan-harness-extensions.md`'s in-app harness as the primary regression gate. Two of the five sub-steps (23D, 23E) require harness primitives that are not yet built; the strategy below interleaves harness work and selection-plan work so each behavior change ships with an automated end-to-end test against real Tug.app, not a human-in-the-loop ritual.
+
+**Why ping-pong, not harness-first.** The harness is now confirmed faithful (Phase A acceptance — see `tugplan-harness-extensions.md` [#step-3b]); each new selection-plan behavior change is testable as soon as its harness piece is in. Front-loading all of harness Phases A/B/C before any 23B–23E work would block six weeks of behavior change behind harness throughput. Interleaving keeps both fronts moving and uses every newly-landed primitive immediately, while harness-first builds tooling that sits unused until the selection plan catches up.
+
+**Rapid-cadence is moving from a manual ritual to an automated gate.** Steps 23B/23C/23D each carry a "manual verification at rapid cadence" checkpoint as their regression-closure gate. Those checkpoints predate the trusted-click pipeline. Now that `nativeClickAtElement` works, every "rapid cadence" verification graduates to a dedicated in-app test file (one per scenario) that issues the same gestures back-to-back with no inter-call waits. Slow-cadence baselines stay in their existing files (`m01-tab-switch-fc.test.ts`, `m03-pane-activation.test.ts`, `m16-tab-close-handoff.test.ts`); rapid-cadence variants live alongside in `m01-rapid-cadence.test.ts`, `m03-rapid-cadence.test.ts`, `m16-rapid-cadence.test.ts` so failures name the cadence in the file path and either set can be disabled independently if it ever needs to be.
+
+**Pass map.** The strategy executes in eight passes. Each pass is one or two commits; selection-plan passes follow the existing one-step-one-commit discipline modulo the explicit allowance to split 23B (per author note, 2026-04-24). Harness-side passes follow `tugplan-harness-extensions.md`'s step boundaries.
+
+| # | Pass | Type | Purpose | Output |
+|---|------|------|---------|--------|
+| 1 | Doc sync | doc | Close stale checkboxes; cite real commit hashes; correct stale `nativeDrag` docstrings. | One commit; no behavior change. |
+| 2 | Rapid-cadence test files | harness | Lift Steps 23B/23C/23D's "manual rapid-cadence" gate to automated. Author `m01-rapid-cadence.test.ts`, `m03-rapid-cadence.test.ts`, `m16-rapid-cadence.test.ts` (initially failing — they document the [A3] sibling-effect race). | Three new test files, three failing tests, one commit. |
+| 3 | [Step 23B](#step-23b) | selection | Retire the [A3] React effect; wire rows 1–3 (intra-pane tab click, pane-chrome activation, tab-close handoff) through `transferFocusForActivation`. Pass 2's rapid-cadence tests flip to green. | Up to three commits per the split-allowed authorisation: (a) `transferFocusForActivation` body + `pane-focus-controller` wiring, (b) `tug-pane`/`deck-manager` wiring + `flushSync` sandwich, (c) [A3] effect retirement + test rename. |
+| 4 | [Step 23C](#step-23c) | selection | Multi-phase drag: drag-start save, drop refocus, Escape/`pointercancel` refocus. Retire Step-11's cross-pane `useLayoutEffect`. Author M06/M07/M21 in-app tests using the existing `nativeDrag` + `nativeKey("Escape")`. | One commit (per plan); new `m06-cross-pane-drag.test.ts` / `m07-card-detach.test.ts` / `m21-drag-aborted.test.ts` files; rapid-cadence variants if the slow versions reveal a race. |
+| 5 | Harness Step 4 | harness | Swift app-lifecycle handlers (`simulateAppResign` / `BecomeActive` / `Hide` / `Unhide`) per `tugplan-harness-extensions.md` [#step-4]. Required dependency for selection [Step 23D](#step-23d). | Per harness plan Step 4. |
+| 6 | [Step 23D](#step-23d) | selection | Wire row 5 ([A4] app-lifecycle) through `reactivateCurrentFocusDestination`. Window-`blur` save flush; window-`focus` reactivation. New M04/M05 in-app tests using harness Step 4's primitives. | One commit; `m04-app-resign-return.test.ts`, `m05-app-hide-unhide.test.ts`. |
+| 7 | Harness Phase B (Steps 5–8) | harness | Tugcode subprocess lifecycle, stub-transcript replay, EM-card observation surface, EM smoke test. Required dependency for selection [Step 23E](#step-23e). | Per harness plan Steps 5–8. |
+| 8 | [Step 23E](#step-23e) | selection | EM content factories register `onCardActivated`; retire any ad-hoc engine-internal refocus code; install the deferred `_flipFirstResponder` dev-only assertion. New M02/M06-EM/M07-EM/M09 in-app tests using harness Phase B's EM-card surface. | One commit; new EM-half scenario tests plus the assertion-installation. |
+
+**Discipline rules.**
+
+- Every selection-plan pass closes with the in-app sweep + tugdeck unit tests + tugdeck typecheck (`bunx --bun tsc --noEmit`) all green. No "regression to chase later" is permitted.
+- Rapid-cadence variants run as part of the default `just test-in-app-fast` sweep — adding them to the sweep is part of Pass 2's checklist. A passing rapid-cadence file is the regression gate; do not flip its corresponding selection-plan checkpoint without it.
+- A pass that surfaces a real production bug (e.g. Pass 4's drag-cancel scenarios may surface coordinator-side races) MUST land the production fix in the same pass, paralleling Step 3b's pattern: the test exists to prove user-visible behavior is correct, not to prove the test framework is consistent. Production fix in its own commit; test rewrite in its own commit; doc note in `roadmap/m-series-reconciliation.md` if appropriate.
+- Harness-side passes (5, 7) follow `tugplan-harness-extensions.md`'s author notes verbatim. Any deviation discovered during implementation lands as an `**Author note (YYYY-MM-DD):**` block in the harness plan, mirroring how Step 3b documented its findings.
+- The "manual verification at rapid cadence" lines on Steps 23B/23C/23D's checkpoints are explicitly retired by Pass 2's automated files. Each of those checkboxes flips to "verified by `<rapid-cadence-test-file>`" once the corresponding production change lands and the file is green. Slow-cadence manual verification of new behavior (e.g. cmd-tab away and back for [A4]) stays manual until the test exists; once it does, it's gone.
+
+**Plan-doc posture.** This [execution strategy](#step-23-execution-strategy) section is the canonical guide for executing 23A–23E. It does not modify any individual sub-step's body — those keep their existing artifacts/tasks/tests/checkpoints. The strategy section's job is sequencing, naming the harness blockers, and making the rapid-cadence gate explicit.
+
 ---
 
 #### Step 23A: Scaffold the focus-transfer module + store registration channels {#step-23a}
