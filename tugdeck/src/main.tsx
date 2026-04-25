@@ -148,15 +148,15 @@ if (!container) {
 
   // DEBUG-only test-mode flag ([D02], [D08]). The Swift host injects
   // `window.__tugTestMode = true` via a `WKUserScript` at
-  // `atDocumentStart` when `TUGAPP_TEST_SOCKET` is set at app launch;
-  // that script runs before this module executes, so the read here is
-  // deterministic. The `import.meta.env.DEV` gate is a belt-and-braces
-  // check — release builds never inject the user script in the first
-  // place ([D03]), but the double-guard keeps the read from doing
-  // anything in production even if the global were set by some other
-  // path.
-  const isTestMode =
-    import.meta.env.DEV && window.__tugTestMode === true;
+  // `atDocumentStart` when `TUGAPP_TEST_SOCKET` is set at app launch.
+  // That script is gated by `#if DEBUG` in
+  // `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`, so
+  // production users never have the global set — making this read
+  // safe regardless of build mode. The previous `import.meta.env.DEV`
+  // co-gate was a belt-and-braces tree-shake hint; we drop it so the
+  // in-app harness can run against a prod-built `dist/` (no Vite),
+  // which is ~700ms faster on cold launch.
+  const isTestMode = window.__tugTestMode === true;
 
   // Create deck manager with the pre-fetched layout, initial theme, card states,
   // and focused card ID. In test mode, `DeckManager` ignores the
@@ -175,9 +175,11 @@ if (!container) {
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
 
-  // Install `window.__tug` test-harness surface when BOTH
-  // `import.meta.env.DEV` and `window.__tugTestMode === true` hold.
-  // The attach is a no-op otherwise; release builds tree-shake it.
+  // Install `window.__tug` test-harness surface when
+  // `window.__tugTestMode === true`. The attach is a no-op otherwise;
+  // production users never have the global set, since the
+  // `WKUserScript` that injects it is `#if DEBUG`-gated in
+  // `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
   // See `test-surface.ts` for the full surface contract
   // (Spec [#s03-tug-surface]) and attach-site rationale ([D03]/[D08]).
   attachTugTestSurface(deck);

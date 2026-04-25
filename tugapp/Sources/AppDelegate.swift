@@ -262,6 +262,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func loadPreferences() {
         devModeEnabled = ProcessManager.readTugbankBool(domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled)
         sourceTreePath = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath)
+
+        // In-app harness path: force production mode regardless of the
+        // tugbank setting. The harness loads from tugcast's pre-built
+        // `dist/` (served via ServeDir) instead of spawning Vite — saves
+        // ~700ms on cold launch by skipping the Vite subprocess + the
+        // first-request TS-on-demand transform. Test-only; manual
+        // launches still honor whatever the user has set in tugbank.
+        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1" {
+            devModeEnabled = false
+        }
     }
 
     private func savePreferences() {

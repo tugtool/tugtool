@@ -555,7 +555,15 @@ class ProcessManager {
         // Rust side, producing a silent PathBuf::from("") → relative-path
         // failure in ServeDir rather than falling back to the dev-only
         // CARGO_MANIFEST_DIR walk.
-        if let resourcePath = Bundle.main.resourcePath {
+        //
+        // In the in-app harness, point at the source tree instead of the
+        // bundle so a `bun run build` in tugdeck refreshes the dist tugcast
+        // serves — no xcodebuild needed between iterations. Production
+        // launches keep the bundle path.
+        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1",
+           let path = sourceTree {
+            env["TUGCAST_RESOURCE_ROOT"] = path
+        } else if let resourcePath = Bundle.main.resourcePath {
             env["TUGCAST_RESOURCE_ROOT"] = resourcePath
         }
         proc.environment = env
@@ -572,6 +580,15 @@ class ProcessManager {
         if Self.readTugbankBool(domain: "dev.tugtool.app", key: "no-auth") {
             args += ["--no-auth"]
             NSLog("ProcessManager: --no-auth enabled via tugbank")
+        }
+        // In-app harness: pass --force so tugcast kills any zombie process
+        // holding port 55255 before binding. Between in-app test files the
+        // recipe `pkill -x Tug`s the parent but tugcast lives in its own
+        // process group (setpgid) and survives until its parent_watch
+        // notices, so the next launch races on the port and otherwise
+        // pays the supervisor's 1-second backoff.
+        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1" {
+            args += ["--force"]
         }
         proc.arguments = args
 

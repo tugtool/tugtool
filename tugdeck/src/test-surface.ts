@@ -1228,11 +1228,14 @@ declare global {
  * scenarios where the DeckManager instance changes mid-session.
  */
 export function attachTugTestSurface(deck: DeckManager): void {
-  if (
-    import.meta.env?.DEV === true &&
-    typeof window !== "undefined" &&
-    window.__tugTestMode === true
-  ) {
+  // Gate on `window.__tugTestMode` only. Production users never have this
+  // global set (it is injected by a DEBUG-only `WKUserScript` in Tug.app —
+  // see `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`), so the
+  // attach is a no-op in production. Dropping the `import.meta.env.DEV`
+  // half of the previous gate lets the in-app harness drive a prod-built
+  // `dist/` (no Vite) — the launch path that runs `vite build` once and
+  // serves static files is ~700ms faster than the dev-server path.
+  if (typeof window !== "undefined" && window.__tugTestMode === true) {
     window.__tug = createTugTestSurface(deck);
   }
 }

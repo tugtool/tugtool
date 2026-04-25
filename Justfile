@@ -424,6 +424,15 @@ test-in-app-fast *FILES:
             "$APP_DIR" >/dev/null 2>&1 || true
     fi
 
+    # Refresh tugdeck/dist so the harness (which loads from prod-built
+    # static files via tugcast's ServeDir, not Vite — see TUGAPP_IN_APP_TEST
+    # branch in AppDelegate.loadPreferences) reflects the current source.
+    # Vite is fast for incremental builds (~200ms when nothing changed,
+    # ~1.5s on first run after a source edit). Skipping Vite at launch
+    # time is worth ~700ms per launch on cold disk, so the trade is
+    # decisively in favor of building once up-front.
+    (cd tugdeck && bun run build >/dev/null)
+
     # Clean slate: kill stale Tug processes before the first spawn.
     pkill -x Tug 2>/dev/null || true
     sleep 0.3
