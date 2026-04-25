@@ -363,6 +363,7 @@ test-in-app:
     export TUGBANK_PATH="$SCRATCH_DB"
     export TUGAPP_IN_APP_TEST=1
     export TUGAPP_DEBUG_PATH="$APP_BIN"
+    export TUGAPP_TUGCODE_BINARY="$REPO_ROOT/tugrust/target/debug/tugcode"
     cd tests/in-app
     STATUS=0
     for f in _smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
@@ -433,6 +434,10 @@ test-in-app-fast *FILES:
 
     export TUGAPP_IN_APP_TEST=1
     export TUGAPP_DEBUG_PATH="$APP_BIN"
+    # tugcode binary path (Pass 7A — harness Step 5). Located via
+    # `bun build --compile` in `just test-in-app`'s [1/7] step.
+    REPO_ROOT_FAST="$(pwd)"
+    export TUGAPP_TUGCODE_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugcode"
     cd tests/in-app
 
     # Default sweep mirrors `test-in-app`'s loop.

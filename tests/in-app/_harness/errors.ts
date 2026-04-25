@@ -152,6 +152,27 @@ export class UnknownKeyError extends Error {
 }
 
 /**
+ * Thrown when `startTugcode` fails — either because the binary
+ * path is missing/invalid, the `Process.run()` call errored, the
+ * stdout/stderr log file could not be opened, or a tugcode child
+ * is already running on this connection. The wire `name` is
+ * `TugcodeLaunchError`; `message` carries the actionable detail
+ * (e.g. "tugcode binary not found at <path>").
+ *
+ * Step 6 will add two siblings (`TugcodeVersionSkewError` for
+ * handshake mismatch, `TugcodeTranscriptMismatchError` for
+ * content-hash sidecar miss).
+ */
+export class TugcodeLaunchError extends Error {
+  readonly name = "TugcodeLaunchError" as const;
+
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, TugcodeLaunchError.prototype);
+  }
+}
+
+/**
  * Thrown when one of the `simulateApp*` verbs invokes its NSApp
  * primitive but the matching `NSApplication.did...Notification`
  * does not fire within the bounded wait window (default 1000ms).

@@ -34,7 +34,9 @@ export type RpcMethod =
   | "simulateAppResign"
   | "simulateAppBecomeActive"
   | "simulateAppHide"
-  | "simulateAppUnhide";
+  | "simulateAppUnhide"
+  | "startTugcode"
+  | "stopTugcode";
 
 /**
  * Viewport-space point passed to the native-gesture verbs. `{x, y}` is
@@ -258,6 +260,30 @@ export type Request =
       id: number;
       method: "simulateAppUnhide";
       timeoutMs?: number;
+    }
+  | {
+      id: number;
+      method: "startTugcode";
+      /**
+       * "stub" or "live". Step 5 spawns the same way for both;
+       * Step 6 will add the `--stub-transcript=<fd>` branch on
+       * `mode === "stub"`.
+       */
+      mode: "stub" | "live";
+      /**
+       * Absolute path to the tugcode executable. When omitted,
+       * Swift falls back to the `TUGAPP_TUGCODE_BINARY` env var.
+       */
+      binaryPath?: string;
+      /**
+       * Absolute path that tugcode's stdout + stderr stream into.
+       * When omitted, output goes to `/dev/null`.
+       */
+      logFilePath?: string;
+    }
+  | {
+      id: number;
+      method: "stopTugcode";
     };
 
 /**

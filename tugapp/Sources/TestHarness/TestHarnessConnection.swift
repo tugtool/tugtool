@@ -49,11 +49,23 @@ final class TestHarnessConnection {
     /// corresponding `NSApplication.did...Notification` to fire;
     /// timeout surfaces as `AppLifecycleTimeoutError`. Additive;
     /// major stays `1`.
-    static let surfaceVersion = "1.2.0"
+    ///
+    /// `1.3.0` (Step 5, harness extensions): adds the harness-owned
+    /// tugcode subprocess lifecycle verbs (`startTugcode` /
+    /// `stopTugcode`). The Step 5 surface is spawn/kill only; Step
+    /// 6 will extend `startTugcode`'s payload with the
+    /// `--stub-transcript=<fd>` branch and add transcript-seeding
+    /// verbs. Additive; major stays `1`.
+    static let surfaceVersion = "1.3.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
     private weak var webView: WKWebView?
+
+    /// Per-connection tugcode subprocess lifecycle holder. Spawned
+    /// via `startTugcode` RPC and torn down on `close()` so a
+    /// disconnect (or graceful Tug.app quit) doesn't leak a child.
+    private let tugcodeLifecycle = TugcodeLifecycleHandlers()
 
     var onDisconnect: (() -> Void)?
 
@@ -141,6 +153,9 @@ final class TestHarnessConnection {
              "simulateAppHide",
              "simulateAppUnhide":
             dispatchAppLifecycleVerb(id: id, method: method, verbObj: obj)
+        case "startTugcode",
+             "stopTugcode":
+            dispatchTugcodeLifecycleVerb(id: id, method: method, verbObj: obj)
         case "getElementScreenBounds":
             guard let selector = obj["selector"] as? String else {
                 respondError(id: id, name: "ProtocolError", message: "getElementScreenBounds: missing 'selector'")
@@ -304,6 +319,56 @@ final class TestHarnessConnection {
                     "height": outH,
                 ]
                 self.respond(id: id, ok: true, payload: ["value": rect])
+            }
+        }
+    }
+
+    // MARK: - Tugcode subprocess lifecycle verbs (Spec [#s03-tugcode-lifecycle], Step 5)
+
+    /// Top-level dispatch for `startTugcode` / `stopTugcode`. The
+    /// underlying `Process` API blocks briefly during `run()` /
+    /// `terminate()` (waitUntilExit on SIGKILL fallback), so we
+    /// hop to a background queue to keep the WebKit run loop
+    /// responsive. Errors translate via `TugcodeLifecycleError`'s
+    /// `wireName` to the typed `TugcodeLaunchError` on the harness
+    /// side.
+    private func dispatchTugcodeLifecycleVerb(
+        id: Int,
+        method: String,
+        verbObj: [String: Any],
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                switch method {
+                case "startTugcode":
+                    let mode = (verbObj["mode"] as? String) ?? "stub"
+                    let binaryPath = verbObj["binaryPath"] as? String
+                    let logFilePath = verbObj["logFilePath"] as? String
+                    let pid = try self.tugcodeLifecycle.start(
+                        mode: mode,
+                        binaryPath: binaryPath,
+                        logFilePath: logFilePath,
+                    )
+                    self.respond(id: id, ok: true, payload: ["value": ["pid": Int(pid)] as [String: Any]])
+                case "stopTugcode":
+                    self.tugcodeLifecycle.stop()
+                    self.respond(id: id, ok: true, payload: ["value": NSNull()])
+                default:
+                    self.respondError(
+                        id: id,
+                        name: "ProtocolError",
+                        message: "unsupported tugcode-lifecycle method: \"\(method)\"",
+                    )
+                }
+            } catch let error as TugcodeLifecycleError {
+                self.respondError(id: id, name: error.wireName, message: error.description)
+            } catch {
+                self.respondError(
+                    id: id,
+                    name: "TugcodeLifecycleError",
+                    message: "\(error)",
+                )
             }
         }
     }
@@ -748,6 +813,10 @@ final class TestHarnessConnection {
     }
 
     func close() {
+        // Tear down any running tugcode child first so a graceful
+        // disconnect (or AppDelegate.applicationShouldTerminate)
+        // doesn't leak a zombie subprocess past the test.
+        tugcodeLifecycle.stop()
         fileHandle.readabilityHandler = nil
         fileHandle.closeFile()
     }

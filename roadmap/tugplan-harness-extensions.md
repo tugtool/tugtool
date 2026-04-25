@@ -170,7 +170,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 **Plan to resolve:** Decide in Step 5 after measuring tugcode startup latency. If < 500ms, per-test-file wins on simplicity. If >= 500ms, add the reset RPC.
 
-**Resolution:** DEFERRED to [#step-5].
+**Resolution (2026-04-25, Step 5 / Pass 7A):** **Per-test-file lifecycle.** Measured via `_smoke-tugcode-lifecycle.test.ts`'s 10-cycle latency probe: median start+stop+RPC wall-clock = 13.2ms (min 11.5ms / max 13.7ms) on Apple Silicon, debug-build tugcode. Well under the 500ms threshold; no `resetTugcode()` RPC needed. The simplicity win on per-test-file isolation (fresh process per file, no reset-state correctness risk) outweighs the negligible per-file overhead.
 
 #### [Q04] Stream-json transcript format: canonical bytes vs structured records (DEFERRED) {#q04-transcript-format}
 
@@ -1554,20 +1554,24 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - Production tugcode-launch path gated behind `!testMode` (ensures test mode does not also trigger the production launch).
 
 **Tasks:**
-- [ ] Implement `startTugcode` handler: subprocess spawn, pipe fd setup for stub transcript.
-- [ ] Implement `stopTugcode` handler: teardown per [D04].
-- [ ] Measure tugcode startup latency across 10 runs; record result to decide [Q03].
-- [ ] If startup <500ms per [Q03] resolution: keep per-test-file lifecycle. If >=500ms: add `resetTugcode()` RPC, decide in this step.
-- [ ] Guard production tugcode-launch path behind `!testMode`.
-- [ ] Route stdout/stderr to log file.
+- [x] Implement `startTugcode` handler: subprocess spawn (Process), held-open stdin pipe so tugcode doesn't EOF-exit on launch, log routing to opts.logFilePath OR /dev/null. Step 5 spawn passes no extra flags; Step 6 will add `--stub-transcript=<fd>`.
+- [x] Implement `stopTugcode` handler: close stdin pipe write-end, SIGTERM, poll up to 2000ms for exit, SIGKILL on timeout. Idempotent.
+- [x] Measure tugcode startup latency across 10 runs; record result to decide [Q03] (see Author note 2026-04-25).
+- [x] [Q03] resolved: per-test-file lifecycle (no resetTugcode RPC needed). Median start+stop+RPC wall-clock 13.2ms; well under the 500ms decision threshold.
+- [x] Production tugcode-launch path: see Author note. Tugcast spawns tugcode per AI session on demand, NOT at app boot. Test mode never triggers AI sessions, so the production path is naturally inactive — the gate is a no-op today and can be revisited if/when tugcast adds an at-boot tugcode warm-spawn.
+- [x] Route stdout/stderr to log file (or /dev/null when opts.logFilePath is unset).
+- [x] Connection close hook: `TestHarnessConnection.close()` calls `tugcodeLifecycle.stop()` so a graceful disconnect doesn't leak a zombie.
 
 **Tests:**
-- [ ] `tests/in-app/_smoke-tugcode-lifecycle.test.ts` (scratch; folded into Step 7): launch tugcode, verify process running, stop, verify process gone.
+- [x] `tests/in-app/_smoke-tugcode-lifecycle.test.ts` (scratch; folded into Step 7): three tests covering start+stop round-trip + pid uniqueness, already-running guard throws TugcodeLaunchError, 10-cycle latency measurement.
 
 **Checkpoint:**
-- [ ] Swift DEBUG build succeeds.
-- [ ] `_smoke-tugcode-lifecycle.test.ts` passes.
-- [ ] Tugcode startup latency measurement recorded in plan ([Q03] resolution updated in place).
+- [x] Swift DEBUG build succeeds, no warnings.
+- [x] `just test-in-app-fast _smoke-tugcode-lifecycle.test.ts` passes (3/3 in 7.63s).
+- [x] Tugcode startup latency: median 13.2ms / min 11.5ms / max 13.7ms across 10 cycles (recorded inline in [Q03] section above).
+- [x] Full default sweep `just test-in-app-fast` still 13/13 green.
+
+**Author note (2026-04-25).** Three implementation deviations worth pinning. First, the production tugcode-launch path is in tugcast (Rust), not in tugapp Swift — tugcast spawns tugcode per AI session in `feeds/agent_bridge.rs::TugcodeSpawner`, NOT at tugcast / Tug.app boot. The plan's "Production tugcode-launch path gated behind `!testMode`" task is therefore a no-op at this step: under the harness, tugdeck never initiates an AI session, so tugcast never reaches the spawner. The gate would only matter if tugcast added an at-boot warm-spawn; we can revisit then. Second, tugcode shuts down on stdin EOF (its `[tugcode] stdin closed, shutting down` exit branch), so the Swift handler holds a `Pipe`'s write-end open for the lifetime of the child. The pipe write-end will be repurposed in Step 6 to write transcript bytes for stub-mode replay — the FD plumbing lands now even though the writer is silent in Step 5. Third, surface version bumped Swift `1.2.0`→`1.3.0` and TS `EXPECTED_SURFACE_VERSION` `1.2.0`→`1.3.0` (additive minor; major stays 1). The smoke test's `_smoke.test.ts` exact-match assertion stays consistent because both sides bump in lockstep.
 
 ---
 

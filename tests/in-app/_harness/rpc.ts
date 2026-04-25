@@ -28,6 +28,7 @@ import {
   CoordinateOutOfBoundsError,
   NativeTypeAsciiOnlyError,
   TimeoutError,
+  TugcodeLaunchError,
   UnknownKeyError,
   VersionSkewError,
 } from "./errors";
@@ -249,6 +250,8 @@ export function translateError(
       return new AccessibilityPermissionMissingError(wire.message);
     case "UnknownKeyError":
       return new UnknownKeyError(wire.message);
+    case "TugcodeLaunchError":
+      return new TugcodeLaunchError(wire.message);
     case "AppLifecycleTimeoutError": {
       // Server message format: "NSApplication <event> notification did
       // not fire within <ms>ms". Best-effort parse so the error's

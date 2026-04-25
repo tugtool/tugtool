@@ -949,6 +949,58 @@ export function simulateAppUnhide(
   return caller.rpcCall<void>("simulateAppUnhide", params);
 }
 
+// ---------------------------------------------------------------------------
+// Tugcode subprocess lifecycle (Spec [#s03-tugcode-lifecycle], Step 5)
+//
+// The harness spawns and tears down a tugcode subprocess that's
+// independent of production's tugcast → tugcode-per-AI-session
+// path. Step 5's API is spawn/kill only — Step 6 will extend the
+// payload with `--stub-transcript=<fd>` plumbing and add
+// `seedTugcodeTranscript` / `seedTugcodeError` for replay.
+//
+// Errors translate to `TugcodeLaunchError` (missing binary,
+// already-running, spawn failure, log-file open failure).
+// ---------------------------------------------------------------------------
+
+export interface StartTugcodeOptions {
+  /**
+   * "stub" or "live". Step 5 spawns the same way for both modes;
+   * the discriminator is wire-stable so test files written today
+   * don't need to be re-edited when Step 6 lands the stub-mode
+   * branch.
+   */
+  mode: "stub" | "live";
+  /**
+   * Absolute path to the tugcode executable. When omitted, Swift
+   * falls back to the `TUGAPP_TUGCODE_BINARY` env var.
+   */
+  binaryPath?: string;
+  /**
+   * Absolute path that tugcode's stdout + stderr stream into.
+   * When omitted, output goes to `/dev/null`.
+   */
+  logFilePath?: string;
+}
+
+export interface StartTugcodeResult {
+  /** Pid of the spawned tugcode subprocess. */
+  pid: number;
+}
+
+export function startTugcode(
+  caller: HarnessCaller,
+  opts: StartTugcodeOptions,
+): Promise<StartTugcodeResult> {
+  const params: Record<string, unknown> = { mode: opts.mode };
+  if (opts.binaryPath !== undefined) params.binaryPath = opts.binaryPath;
+  if (opts.logFilePath !== undefined) params.logFilePath = opts.logFilePath;
+  return caller.rpcCall<StartTugcodeResult>("startTugcode", params);
+}
+
+export function stopTugcode(caller: HarnessCaller): Promise<void> {
+  return caller.rpcCall<void>("stopTugcode", {});
+}
+
 /**
  * Press every modifier in `modifiers`, run `thunk`, release them in
  * reverse order — all as a single atomic Swift-side call. The inner

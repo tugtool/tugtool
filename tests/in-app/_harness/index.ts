@@ -90,6 +90,8 @@ export type {
   ResetOptions,
   SeedDeckStateArgs,
   SelectionSnapshot,
+  StartTugcodeOptions,
+  StartTugcodeResult,
 } from "./client";
 export type {
   AccessibilityStatus,
@@ -117,8 +119,14 @@ export type {
  * `simulateAppHide`, `simulateAppUnhide`). Additive; major stays `1`.
  * The tugdeck-side `__tug.*` surface gains no new methods at this
  * version — these are pure RPC verbs handled at the Swift bridge.
+ *
+ * `1.3.0` (Step 5, harness extensions): adds the harness-owned
+ * tugcode subprocess lifecycle verbs (`startTugcode` /
+ * `stopTugcode`). The Step 5 surface is spawn/kill only; Step 6
+ * extends the start payload with `--stub-transcript=<fd>` and
+ * adds transcript-seeding verbs. Additive; major stays `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.2.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.3.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -654,6 +662,40 @@ export class App {
   /** `NSApp.unhide(nil)`; awaits `applicationDidUnhide:`. */
   simulateAppUnhide(opts?: client.AppLifecycleOptions): Promise<void> {
     return client.simulateAppUnhide(this as HarnessCaller, opts);
+  }
+
+  // -------------------------------------------------------------------
+  // Tugcode subprocess lifecycle ([D04], Spec [#s03-tugcode-lifecycle] / Step 5)
+  //
+  // Spawn and kill a harness-owned tugcode child. Step 5 exposes
+  // spawn/kill only; Step 6 will add `seedTugcodeTranscript` /
+  // `seedTugcodeError`. At most one tugcode child per harness
+  // connection; a second `startTugcode` while one is running
+  // throws `TugcodeLaunchError`.
+  // -------------------------------------------------------------------
+
+  /**
+   * Spawn a tugcode subprocess. Returns `{ pid }`. The Swift handler
+   * resolves the binary path from `opts.binaryPath` first, then the
+   * `TUGAPP_TUGCODE_BINARY` env var; missing both throws
+   * `TugcodeLaunchError`.
+   *
+   * Stdout/stderr go to `opts.logFilePath` (truncated on open) or
+   * `/dev/null` when unset. Tests that want to inspect tugcode's
+   * output should pass an absolute log path under
+   * `tests/in-app/logs/`.
+   */
+  startTugcode(opts: client.StartTugcodeOptions): Promise<client.StartTugcodeResult> {
+    return client.startTugcode(this as HarnessCaller, opts);
+  }
+
+  /**
+   * SIGTERM the tugcode child, wait up to 2000ms for graceful exit,
+   * SIGKILL on timeout. Idempotent — calling on a non-running
+   * harness is a no-op.
+   */
+  stopTugcode(): Promise<void> {
+    return client.stopTugcode(this as HarnessCaller);
   }
 
   /**

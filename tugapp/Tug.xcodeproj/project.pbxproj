@@ -23,6 +23,7 @@
 		AA0000010000000000000011 /* VirtualKeyMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000011 /* VirtualKeyMap.swift */; };
 		AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* NativeEventHandlers.swift */; };
 		AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* AppLifecycleHandlers.swift */; };
+		AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		AA0000020000000000000011 /* VirtualKeyMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualKeyMap.swift; sourceTree = "<group>"; };
 		AA0000020000000000000012 /* NativeEventHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEventHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000013 /* AppLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleHandlers.swift; sourceTree = "<group>"; };
+		AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugcodeLifecycleHandlers.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -95,6 +97,7 @@
 				AA0000020000000000000011 /* VirtualKeyMap.swift */,
 				AA0000020000000000000012 /* NativeEventHandlers.swift */,
 				AA0000020000000000000013 /* AppLifecycleHandlers.swift */,
+				AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */,
 			);
 			path = TestHarness;
 			sourceTree = "<group>";
@@ -187,6 +190,7 @@
 				AA0000010000000000000011 /* VirtualKeyMap.swift in Sources */,
 				AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */,
 				AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */,
+				AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
