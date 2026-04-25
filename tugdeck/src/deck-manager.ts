@@ -1166,8 +1166,26 @@ export class DeckManager implements IDeckManagerStore {
     };
   }
 
-  invokeActivationCallback(cardId: string): void {
-    this.activationCallbacks.get(cardId)?.();
+  invokeActivationCallback(cardId: string, dispatchedFrom: string): void {
+    const callback = this.activationCallbacks.get(cardId);
+    if (callback === undefined) return;
+
+    // Record the engine-activation-dispatched trace event ahead of
+    // invoking the callback so the trace ring's order matches
+    // dispatch order. The factory's onCardActivated body stays
+    // simple — focus the engine root, that's it; the framework
+    // owns the observability surface.
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (card !== undefined) {
+      deckTrace.record({
+        kind: "engine-activation-dispatched",
+        cardId,
+        engine: card.componentId,
+        dispatchedFrom,
+      });
+    }
+
+    callback();
   }
 
   registerCardHostRoot(cardId: string, el: HTMLElement | null): void {

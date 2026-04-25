@@ -1015,9 +1015,40 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       const card = snapshot.cards.find((c) => c.id === cardId);
       if (card === undefined) return null;
 
+      // EM persistence comes in two shapes:
+      //
+      //   - Raw `TugTextEditingState`: `{ text, atoms, selection }`.
+      //     This is what TugPromptInput's standalone
+      //     useCardPersistence (`gallery-prompt-input`) returns.
+      //
+      //   - TugPromptEntry wrapper:
+      //     `{ currentRoute, perRoute: { [route]: TugTextEditingState }, maximized }`.
+      //     This is what TugPromptEntry returns
+      //     (`gallery-prompt-entry`, tide-card). Reach into
+      //     `perRoute[currentRoute]` to get the engine state for
+      //     the active route.
+      //
+      // Detection is shape-based rather than componentId-based so
+      // a future EM factory that adopts either shape works
+      // automatically. `perRoute` + `currentRoute` together are
+      // the discriminator for the wrapper shape.
       const content = bag.content as Record<string, unknown>;
-      const text = typeof content.text === "string" ? content.text : "";
-      const selection = "selection" in content ? content.selection : null;
+      let engineState: Record<string, unknown> = content;
+      if (
+        typeof content.currentRoute === "string" &&
+        typeof content.perRoute === "object" &&
+        content.perRoute !== null
+      ) {
+        const perRoute = content.perRoute as Record<string, unknown>;
+        const route = content.currentRoute as string;
+        const inner = perRoute[route];
+        if (typeof inner === "object" && inner !== null) {
+          engineState = inner as Record<string, unknown>;
+        }
+      }
+      const text = typeof engineState.text === "string" ? engineState.text : "";
+      const selection =
+        "selection" in engineState ? engineState.selection : null;
 
       return {
         kind: "em",

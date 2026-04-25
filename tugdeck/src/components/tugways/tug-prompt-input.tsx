@@ -350,6 +350,30 @@ function TugPromptInputPersistence({
   // never fires, and the card stays invisible.
   const [, setRestoreCount] = useState(0);
   useCardPersistence<TugTextEditingState>({
+    onCardActivated: () => {
+      // Row 6 — activation gesture lands on this EM card. Mirror
+      // the delegate's `focus()` pattern: a contenteditable whose
+      // browser Selection has no range inside it shows no caret
+      // even when activeElement === root, so place a collapsed
+      // caret at end-of-content first.
+      const engine = engineRef.current;
+      if (!engine) return;
+      const root = engine.root;
+      const sel = window.getSelection();
+      if (sel !== null) {
+        const inside = sel.rangeCount > 0 && root.contains(sel.anchorNode);
+        if (!inside) {
+          try {
+            sel.collapse(root, root.childNodes.length);
+          } catch {
+            // Some browsers throw if the anchor/offset is invalid
+            // (e.g., root temporarily detached). Fall through to
+            // focus() and let the browser do what it can.
+          }
+        }
+      }
+      root.focus({ preventScroll: true });
+    },
     onSave: () => {
       const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
       const engine = engineRef.current;

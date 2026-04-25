@@ -329,8 +329,16 @@ export interface IDeckManagerStore {
    * unregistered). Callers are expected to have passed
    * {@link resolveActivationTarget} and received
    * `{ kind: "dispatch-activated" }` before reaching here.
+   *
+   * `dispatchedFrom` tags the activation gesture-source for the
+   * `engine-activation-dispatched` deck-trace event (recorded
+   * inside the implementation, not the callback body). Use one
+   * of the entry-point names from `focus-transfer.ts`:
+   * `"transfer-for-activation"` (rows 1–3 — intra-pane / pane-chrome
+   * / tab-close), `"transfer-after-move"` (row 4 — drag drop or
+   * cancel), `"reactivate-current"` (row 5 — app-lifecycle return).
    */
-  invokeActivationCallback: (cardId: string) => void;
+  invokeActivationCallback: (cardId: string, dispatchedFrom: string) => void;
 
   /**
    * Register the live `[data-card-host][data-card-id="…"]` DOM

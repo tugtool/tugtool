@@ -772,6 +772,17 @@ export const TugPromptEntry = React.forwardRef<
   // (`promptInputRef`, `rootRef`) are populated by the time onRestore
   // fires — parent effects run after child mounts.
   useCardPersistence<TugPromptEntryPersistedState>({
+    onCardActivated: () => {
+      // Row 6 of the activation taxonomy: when this EM card
+      // becomes the destination of an activation gesture, the
+      // framework dispatches here. The delegate's `focus()` does
+      // the right thing — places a caret if none, then focuses
+      // the engine root. The framework's own
+      // `engine-activation-dispatched` deck-trace event is
+      // recorded in `DeckManager.invokeActivationCallback` ahead
+      // of this call, so the callback body stays single-purpose.
+      promptInputRef.current?.focus();
+    },
     onSave: () => {
       const input = promptInputRef.current;
       const perRoute = { ...savedContentByRouteRef.current };

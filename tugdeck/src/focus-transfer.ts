@@ -539,7 +539,7 @@ export function transferFocusForActivation(
 
   // `dispatch-activated` — the content factory's registered
   // callback handles its own targeting.
-  store.invokeActivationCallback(incomingCardId);
+  store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
 }
 
 /**
@@ -721,7 +721,7 @@ export function transferFocusAfterMove(
 
   // `dispatch-activated` — content factory's onCardActivated handles
   // its own targeting.
-  store.invokeActivationCallback(sourceCardId);
+  store.invokeActivationCallback(sourceCardId, "transfer-after-move");
 }
 
 /**
@@ -828,5 +828,5 @@ export function reactivateCurrentFocusDestination(
 
   // `dispatch-activated` — content factory's onCardActivated handles
   // its own targeting.
-  store.invokeActivationCallback(cardId);
+  store.invokeActivationCallback(cardId, "reactivate-current");
 }

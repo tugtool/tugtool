@@ -2862,19 +2862,19 @@ describe("DeckManager focus-transfer channels", () => {
       manager.registerActivationCallback("c1", () => {
         fired += 1;
       });
-      manager.invokeActivationCallback("c1");
+      manager.invokeActivationCallback("c1", "test");
       expect(fired).toBe(1);
     });
 
     it("invokeActivationCallback is a silent no-op when nothing is registered", () => {
-      expect(() => manager.invokeActivationCallback("unknown")).not.toThrow();
+      expect(() => manager.invokeActivationCallback("unknown", "test")).not.toThrow();
     });
 
     it("last-registration wins per cardId", () => {
       const log: string[] = [];
       manager.registerActivationCallback("c1", () => log.push("first"));
       manager.registerActivationCallback("c1", () => log.push("second"));
-      manager.invokeActivationCallback("c1");
+      manager.invokeActivationCallback("c1", "test");
       expect(log).toEqual(["second"]);
     });
 
@@ -2884,7 +2884,7 @@ describe("DeckManager focus-transfer channels", () => {
         fired += 1;
       });
       unregister();
-      manager.invokeActivationCallback("c1");
+      manager.invokeActivationCallback("c1", "test");
       expect(fired).toBe(0);
     });
 
@@ -2897,7 +2897,7 @@ describe("DeckManager focus-transfer channels", () => {
       // The first unregister is called after the second register has
       // displaced it. Must NOT clear the second registration.
       unregisterFirst();
-      manager.invokeActivationCallback("c1");
+      manager.invokeActivationCallback("c1", "test");
       expect(log).toEqual(["second"]);
     });
 

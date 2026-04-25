@@ -574,7 +574,7 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     );
   }
 
-  it("T-P07e: store.invokeActivationCallback(cardId) fires the registered onCardActivated", () => {
+  it("T-P07e: store.invokeActivationCallback(cardId, dispatchedFrom) fires the registered onCardActivated", () => {
     const store = makeMockStore();
     const cardId = "card-store-channel";
 
@@ -599,8 +599,8 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     });
 
     // Before the fire, the store channel has the wrapper registered.
-    store.invokeActivationCallback(cardId);
-    store.invokeActivationCallback(cardId);
+    store.invokeActivationCallback(cardId, "test");
+    store.invokeActivationCallback(cardId, "test");
     expect(invocations).toBe(2);
   });
 
@@ -642,7 +642,7 @@ describe("useCardPersistence – onCardActivated field ([A2], Step 22)", () => {
     // The store-channel wrapper reads `onCardActivatedRef.current` at
     // call time, so the caller's latest implementation fires without
     // re-registration.
-    store.invokeActivationCallback(cardId);
+    store.invokeActivationCallback(cardId, "test");
     expect(v2).toHaveBeenCalledTimes(1);
   });
 });
