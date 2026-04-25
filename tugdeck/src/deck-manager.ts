@@ -81,6 +81,7 @@ import {
   type CardAssembler,
 } from "./card-state-orchestrator";
 import { deckTrace, type SaveCallbackSource } from "./deck-trace";
+import { transferFocusForActivation } from "./focus-transfer";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -684,6 +685,13 @@ export class DeckManager implements IDeckManagerStore {
     // the destruction events. The closed stack is still in state at
     // this point — the commit just moves `activePaneId` off the
     // closing stack.
+    //
+    // Routed through `transferFocusForActivation` on the active-pane
+    // branch (selection plan #step-23b, Pass 3 split (b)). The helper
+    // is only called when there is a surviving pane to receive focus
+    // (`newFR !== null`); when the deck becomes empty there is no
+    // incoming card to focus and the raw `_flipFirstResponder` path
+    // applies.
     if (closedContainsOldFR) {
       const remainingStacks = this.deckState.panes.filter(
         (s) => s.id !== paneId,
@@ -694,21 +702,30 @@ export class DeckManager implements IDeckManagerStore {
           : null;
       const newFR = newTopStack?.activeCardId ?? null;
       const newActivePaneId = newTopStack?.id;
-      this._flipFirstResponder(
-        newFR,
-        () => {
-          this.deckState = {
-            ...this.deckState,
-            ...(newActivePaneId !== undefined
-              ? { activePaneId: newActivePaneId }
-              : { activePaneId: undefined }),
-          };
-          this.notify();
-          this.scheduleSave();
-          if (newFR !== null) this.putFocusedCardIdGuarded(newFR);
-        },
-        "_closePane",
-      );
+      const flipCommit = (): void => {
+        this.deckState = {
+          ...this.deckState,
+          ...(newActivePaneId !== undefined
+            ? { activePaneId: newActivePaneId }
+            : { activePaneId: undefined }),
+        };
+        this.notify();
+        this.scheduleSave();
+        if (newFR !== null) this.putFocusedCardIdGuarded(newFR);
+      };
+      if (newFR !== null) {
+        transferFocusForActivation({
+          outgoingCardId: currentFR,
+          incomingCardId: newFR,
+          store: this,
+          outgoingWillBeDestroyed: true,
+          commitMutation: () => {
+            this._flipFirstResponder(newFR, flipCommit, "_closePane");
+          },
+        });
+      } else {
+        this._flipFirstResponder(newFR, flipCommit, "_closePane");
+      }
     }
 
     // Phase 2: flush each card's save callback then fire destruction.
@@ -1475,26 +1492,46 @@ export class DeckManager implements IDeckManagerStore {
     // BEFORE destruction. Commit updates `win.activeCardId` but
     // leaves `cardId` in `win.cardIds` — destruction in phase 2
     // removes it. Two commits, two notifies.
+    //
+    // Routed through `transferFocusForActivation` (selection plan
+    // #step-23b, Pass 3 split (b)). The helper's `commitMutation`
+    // closure is the entire `_flipFirstResponder` call so the
+    // existing will/commit/did ordering is preserved inside the
+    // `flushSync` boundary, and the new FR's card host is mounted
+    // and visible by the time step 5 attempts focus transfer.
+    //
+    // `outgoingWillBeDestroyed: true` skips the helper's outgoing
+    // save step — phase 2 below runs `flushSaveCallbackBeforeDestruction`
+    // for the same card, which is the canonical destruction-flush.
+    // Saving twice would mask the destruction-ordering audit (P9).
     if (wasRemovingFR) {
-      this._flipFirstResponder(
-        newActiveCardId,
-        () => {
-          const flippedStack: TugPaneState = {
-            ...win,
-            activeCardId: newActiveCardId,
-          };
-          this.deckState = {
-            ...this.deckState,
-            panes: this.deckState.panes.map((s) =>
-              s.id === paneId ? flippedStack : s,
-            ),
-          };
-          this.notify();
-          this.scheduleSave();
-          this.putFocusedCardIdGuarded(newActiveCardId);
+      transferFocusForActivation({
+        outgoingCardId: cardId,
+        incomingCardId: newActiveCardId,
+        store: this,
+        outgoingWillBeDestroyed: true,
+        commitMutation: () => {
+          this._flipFirstResponder(
+            newActiveCardId,
+            () => {
+              const flippedStack: TugPaneState = {
+                ...win,
+                activeCardId: newActiveCardId,
+              };
+              this.deckState = {
+                ...this.deckState,
+                panes: this.deckState.panes.map((s) =>
+                  s.id === paneId ? flippedStack : s,
+                ),
+              };
+              this.notify();
+              this.scheduleSave();
+              this.putFocusedCardIdGuarded(newActiveCardId);
+            },
+            "_removeCard",
+          );
         },
-        "_removeCard",
-      );
+      });
     }
 
     // Phase 2: save, then destruction + removal. Save runs first so

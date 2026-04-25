@@ -45,6 +45,7 @@ import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
+import { transferFocusForActivation } from "@/focus-transfer";
 
 // ===========================================================================
 // CardTitleBar (window title chrome)
@@ -431,11 +432,29 @@ export function TugPane({
 
   const performSelectCard = useCallback(
     (newCardId: string) => {
-      const outgoingCardId = activeCardIdRef.current;
-      if (outgoingCardId) {
-        store.invokeSaveCallback(outgoingCardId);
-      }
-      store.setActiveCardInPane(stackId, newCardId);
+      // Route the intra-pane tab switch through `transferFocusForActivation`
+      // (selection plan #step-23b, Pass 3 split (b)). This is row 1 of the
+      // activation trigger taxonomy: tab click within a pane.
+      //
+      // The helper's five-step body subsumes the previous explicit
+      // save + setActiveCardInPane pair: step 1 saves the outgoing
+      // bag (skipped for null / same-card / outgoingWillBeDestroyed),
+      // step 2 invokes `commitMutation` inside `flushSync` so the
+      // incoming card's `display: none` flips to `display: contents`
+      // before resolution, steps 3–5 resolve / gate / focus.
+      //
+      // The `flushSync` sandwich is load-bearing here: tab clicks
+      // dispatch through React's synthetic event system, so without
+      // it `setActiveCardInPane`'s `notify()` would be batched and
+      // step 5's `.focus()` would land on a still-`display:none`
+      // element (silent failure). See plan #step-23b's M01 closure
+      // gate.
+      transferFocusForActivation({
+        outgoingCardId: activeCardIdRef.current ?? null,
+        incomingCardId: newCardId,
+        store,
+        commitMutation: () => store.setActiveCardInPane(stackId, newCardId),
+      });
     },
     [store, stackId],
   );

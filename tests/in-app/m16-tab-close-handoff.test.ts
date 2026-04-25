@@ -183,27 +183,45 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
       // -----------------------------------------------------------------
       // Trace assertions for the close → handoff transition.
       //
-      // Production emission order:
+      // Production emission order (post-#step-23b Pass 3 split (b),
+      // 2026-04-24 — `_removeCard` routes the FR flip through
+      // `transferFocusForActivation`, whose `flushSync` forces React
+      // to commit the activation transition synchronously inside the
+      // helper):
       //   1. destination-flip c1 → true, destination-flip c2 → false
-      //      (observer fires after store mutates in `_removeCard`).
+      //      (observer fires after store mutates inside the helper's
+      //      flushSync).
       //   2. fr-flip c2 → c1 with trigger="_removeCard".
-      //   3. save-callback c2 (via `flushSaveCallbackBeforeDestruction`
+      //   3. A3 activation effect for c1 runs synchronously inside
+      //      flushSync; c1 was never saved, so the default-focus
+      //      fallback fires focus-call with site="a3-default-focus"
+      //      (see tugdeck/src/components/chrome/card-host.tsx
+      //      DEFAULT_FOCUS_SELECTORS). The helper itself emits no
+      //      focus-call: `resolveActivationTarget(c1)` returns
+      //      `kind: "none"` because c1 has no saved bag.focus.
+      //   4. save-callback c2 (via `flushSaveCallbackBeforeDestruction`
       //      — deck-manager preserves the closed card's bag so the
-      //      M11 reopen path has state to restore).
-      //   4. card-host-unmount c2.
-      //   5. A3 activation effect for c1 runs; c1 was never saved,
-      //      so the default-focus fallback fires focus-call with
-      //      site="a3-default-focus" (see
-      //      tugdeck/src/components/chrome/card-host.tsx
-      //      DEFAULT_FOCUS_SELECTORS).
+      //      M11 reopen path has state to restore). Runs in
+      //      `_removeCard`'s phase 2 after the helper returns.
+      //   5. card-host-unmount c2.
+      //
+      // Pre-split-(b), the focus-call landed AFTER save-callback +
+      // card-host-unmount because React's re-render was deferred
+      // outside the synchronous _removeCard call. Routing through the
+      // helper pulls the React commit (and the [A3] effect's
+      // focus-call) into the activation transition itself. User-
+      // visible behavior is unchanged: c1 receives focus either way.
+      // [A3] is retired in split (c); at that point the focus-call
+      // disappears for cards with no saved bag.focus and the
+      // assertion list is revisited.
       // -----------------------------------------------------------------
       const traceClose = await app.getDeckTrace({ since: markClose });
       expect(traceClose).toContainOrderedSubset([
         { kind: "destination-flip", cardId: "c1", to: true },
         { kind: "fr-flip", to: "c1", trigger: "_removeCard" },
+        { kind: "focus-call", cardId: "c1" },
         { kind: "save-callback", cardId: "c2" },
         { kind: "card-host-unmount", cardId: "c2" },
-        { kind: "focus-call", cardId: "c1" },
       ]);
     } catch (err) {
       // On failure, dump the last 200 lines of the subprocess log to
