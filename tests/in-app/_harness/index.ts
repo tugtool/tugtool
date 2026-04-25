@@ -84,6 +84,7 @@ export type {
   DeckTraceEvent,
   ElementBounds,
   ElementStateSnapshot,
+  EmCardState,
   HarnessCaller,
   NativeClickOptions,
   NativeDragOptions,
@@ -473,6 +474,38 @@ export class App {
   /** Inverse of {@link App.registerSelectionBoundary}. */
   unregisterSelectionBoundary(cardId: string): Promise<void> {
     return client.unregisterSelectionBoundary(this as HarnessCaller, cardId);
+  }
+
+  // -------------------------------------------------------------------
+  // EM-card observation (tugdeck SURFACE_VERSION 1.2.0)
+  // -------------------------------------------------------------------
+
+  /**
+   * Read an EM card's engine state. `null` when the card is
+   * unknown or is not an EM card (no `bag.content` from an
+   * onSave-returning-engine-state factory). The page-side surface
+   * forces a save before reading, so the returned state reflects
+   * current engine content rather than a stale debounced save.
+   */
+  getEmCardState(cardId: string): Promise<client.EmCardState | null> {
+    return client.getEmCardState(this as HarnessCaller, cardId);
+  }
+
+  /** Synchronous probe: has `engine-ready` been recorded for `cardId`? */
+  isEngineReady(cardId: string): Promise<boolean> {
+    return client.isEngineReady(this as HarnessCaller, cardId);
+  }
+
+  /**
+   * Block until the engine for `cardId` has emitted `engine-ready`,
+   * or until `timeoutMs` (default 2000ms) elapses. Throws
+   * `TimeoutError` on budget exceeded.
+   */
+  awaitEngineReady(
+    cardId: string,
+    opts?: WaitForConditionOptions,
+  ): Promise<void> {
+    return client.awaitEngineReady(this as HarnessCaller, cardId, opts);
   }
 
   // -------------------------------------------------------------------

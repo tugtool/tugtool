@@ -31,6 +31,7 @@ import type {
 } from "@/lib/tug-text-engine";
 import { useCardPersistence, useCardId } from "@/components/tugways/use-card-persistence";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { deckTrace } from "@/deck-trace";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTugBoxDisabled } from "@/components/tugways/internal/tug-box-context";
@@ -658,6 +659,19 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       };
 
       engineRef.current = engine;
+
+      // Emit `engine-ready` for harness tests that gate on EM-card
+      // engine init. The cardId is read from the ref so that a
+      // stand-alone TugPromptInput (no enclosing CardHost) is
+      // silent — there's no card to associate the event with.
+      const readyCardId = cardIdRef.current;
+      if (readyCardId !== null) {
+        deckTrace.record({
+          kind: "engine-ready",
+          cardId: readyCardId,
+          engine: "tug-prompt-input",
+        });
+      }
 
       // Wire engine → selectionGuard. Every movement of the engine's
       // DOM selection is relayed so the guard's card-level paint logic

@@ -199,6 +199,28 @@ export type DeckTraceEvent = {
       kind: "commit-tick";
       count: number;
     }
+  | {
+      // Fired by EM-engine factories once their engine has finished
+      // mounting and is ready to accept input / publish state.
+      // `engine` tags the factory ("tug-prompt-input", "tide-card",
+      // "gallery-prompt-entry"). Used by harness tests to gate
+      // assertions on engine-state surface methods.
+      kind: "engine-ready";
+      cardId: string;
+      engine: string;
+    }
+  | {
+      // Fired when an EM-engine factory's `onCardActivated` callback
+      // runs as a result of an activation gesture. `dispatchedFrom`
+      // names the trigger row from the activation taxonomy
+      // (selection plan #activation-trigger-taxonomy). Wired at each
+      // factory's onCardActivated registration in selection plan
+      // Step 23E; Pass 7C only defines the shape.
+      kind: "engine-activation-dispatched";
+      cardId: string;
+      engine: string;
+      dispatchedFrom: string;
+    }
 );
 
 /**
@@ -217,7 +239,9 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "focusout" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "save-callback" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "selection-restore" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "commit-tick" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-ready" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "engine-activation-dispatched" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities

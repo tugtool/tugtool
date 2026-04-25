@@ -74,8 +74,21 @@ import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard
  * (see `tugapp/Sources/TestHarness/NativeEventHandlers.swift`) — JS
  * cannot post `CGEvent`s, so there is nothing for `__tug` to expose
  * for those verbs. Major stays `1`; additive.
+ *
+ * `1.2.0` (harness extensions Step 7 / Pass 7C): adds EM-card
+ * observation surface — {@link TugTestSurface.getEmCardState} and
+ * {@link TugTestSurface.awaitEngineReady}. The full plan also
+ * lists `getEngineSelection` and `drainTugcodeTurn`, but those are
+ * deferred (see harness plan Step 7 Author note): the former is
+ * subsumed by `getEmCardState().engineSelection`, the latter
+ * requires tugcast-bypass plumbing not yet in place. Tugcode
+ * lifecycle delegates (`startTugcode` / `stopTugcode` / etc.)
+ * live as RPC verbs on the App handle in `_harness/index.ts`,
+ * not on `__tug.*` — page-side delegates would be a layering
+ * violation (only Swift can spawn subprocesses). Major stays `1`;
+ * additive.
  */
-export const SURFACE_VERSION = "1.1.0" as const;
+export const SURFACE_VERSION = "1.2.0" as const;
 
 /**
  * Snapshot of the caret / selection for a single card, as returned by
@@ -214,6 +227,57 @@ export interface ActiveElementInfo {
 }
 
 /**
+ * Snapshot of an engine-managed (EM) card's state, as returned by
+ * {@link TugTestSurface.getEmCardState}. EM cards are factories
+ * whose `useCardPersistence`'s `onSave` returns a structured
+ * engine state object (text, selection, atoms — see
+ * `lib/tug-text-engine.ts::TugTextEditingState`). The framework
+ * stashes that object as `bag.content`; this surface method
+ * reads it back and tags it with the card's `componentId` so
+ * tests can branch on engine flavor.
+ *
+ * `streamState` and `lastTurnSeq` are stub fields at Pass 7C
+ * scope: the harness's tugcode is not (yet) wired into tugdeck's
+ * production AI session path, so no streaming activity is
+ * observable from this surface today. The fields are present so
+ * test code can pin against them now without rewriting when 7D /
+ * a later integration adds the real values.
+ */
+export interface EmCardState {
+  kind: "em";
+  /**
+   * The card's `componentId` — e.g. `"gallery-prompt-input"`,
+   * `"gallery-prompt-entry"`, `"tide-card"`. Tagged so tests can
+   * branch on engine flavor without consulting deck state
+   * separately.
+   */
+  engine: string;
+  /**
+   * Plain-text content of the engine's current document. Read
+   * from `bag.content.text` (the engine's `captureState()` shape
+   * for TugTextEngine). Empty string when the engine has no
+   * `text` field captured.
+   */
+  text: string;
+  /**
+   * Engine-specific selection snapshot, as captured by
+   * `engine.captureState().selection`. Shape varies by engine —
+   * the surface does not normalize. `null` when no selection.
+   */
+  engineSelection: unknown;
+  /**
+   * Streaming status. Stub at Pass 7C scope (always `"idle"`);
+   * wired to real tugcode integration in a later pass.
+   */
+  streamState: "idle" | "streaming" | "error";
+  /**
+   * Last completed turn sequence number. Stub at Pass 7C scope
+   * (always `0`); wired in a later pass.
+   */
+  lastTurnSeq: number;
+}
+
+/**
  * Selection snapshot returned by {@link TugTestSurface.getSelection}.
  * Superset of {@link CaretState} — covers the page-wide `Selection`
  * object (contentEditable, arbitrary spans) in addition to form
@@ -304,6 +368,41 @@ export interface TugTestSurface {
    */
   registerSelectionBoundary(cardId: string, selector: string): void;
   unregisterSelectionBoundary(cardId: string): void;
+
+  // ---- EM-card observation (SURFACE_VERSION 1.2.0, harness Step 7) ----
+
+  /**
+   * Read an EM card's engine state. Returns `null` when the card
+   * is unknown OR is not an EM card (no `bag.content` written by
+   * an `onSave`-returning-engine-state factory). The returned
+   * shape's `engine` field tags the factory by `componentId`.
+   *
+   * Fires {@link DeckManager.invokeSaveCallback} synchronously
+   * before reading so the bag reflects the engine's current
+   * state, not the last debounced save (which may be hundreds of
+   * ms stale). The cost is one engine `captureState()` call —
+   * negligible — and the alternative would force tests to
+   * manually drive a save before every read.
+   */
+  getEmCardState(cardId: string): EmCardState | null;
+
+  /**
+   * Synchronous "has the engine for `cardId` already emitted its
+   * `engine-ready` event?" probe. Returns `true` when the deck-
+   * trace ring contains an `engine-ready` event for the card,
+   * `false` otherwise. The matching emit site lives at each EM-
+   * engine factory's mount-time engine init (Pass 7C wires
+   * `tug-prompt-input.tsx`; tide-card / gallery-prompt-entry
+   * follow as they pick up their own sites).
+   *
+   * The harness's `awaitEngineReady` wraps this in
+   * `waitForCondition` for the blocking variant — the JS surface
+   * itself stays synchronous because evalJS-side busy-waits
+   * can't observe trace ring writes from the same thread. The
+   * trace ring is bounded but generous (512); the event survives
+   * for any realistic test setup window.
+   */
+  isEngineReady(cardId: string): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -893,6 +992,55 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     unregisterSelectionBoundary(cardId: string): void {
       selectionGuard.unregisterBoundary(cardId);
+    },
+
+    // ---- EM-card observation (SURFACE_VERSION 1.2.0) ----
+
+    getEmCardState(cardId: string): EmCardState | null {
+      // Force a save so the bag reflects current engine state
+      // rather than a stale snapshot from the last debounced /
+      // visibilitychange flush. `invokeSaveCallback` no-ops if no
+      // save callback is registered for the cardId, so this is
+      // safe even when the card has no engine.
+      deck.invokeSaveCallback(cardId, "manual");
+      const bag = deck.getCardState(cardId);
+      if (bag === undefined || bag.content === undefined) return null;
+
+      // Look up the card's componentId for the `engine` tag.
+      // `getSnapshot()` reads the same `cards[]` array reactive
+      // consumers see, so a card that was just removed is a
+      // miss — return null in that race rather than synthesizing
+      // a partial state.
+      const snapshot = deck.getSnapshot();
+      const card = snapshot.cards.find((c) => c.id === cardId);
+      if (card === undefined) return null;
+
+      const content = bag.content as Record<string, unknown>;
+      const text = typeof content.text === "string" ? content.text : "";
+      const selection = "selection" in content ? content.selection : null;
+
+      return {
+        kind: "em",
+        engine: card.componentId,
+        text,
+        engineSelection: selection,
+        streamState: "idle",
+        lastTurnSeq: 0,
+      };
+    },
+
+    isEngineReady(cardId: string): boolean {
+      // Walk the trace ring in reverse — the most-recent
+      // `engine-ready` for `cardId` is what the test cares about
+      // (older entries from a different mount cycle are
+      // irrelevant once a new engine for the same id has reported
+      // ready).
+      const events = deckTrace.dump();
+      for (let i = events.length - 1; i >= 0; i--) {
+        const e = events[i];
+        if (e.kind === "engine-ready" && e.cardId === cardId) return true;
+      }
+      return false;
     },
   };
 }

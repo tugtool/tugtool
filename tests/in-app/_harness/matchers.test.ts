@@ -408,6 +408,17 @@ const EVENT_FIXTURES: Record<
     kind: "commit-tick",
     count: 3,
   },
+  "engine-ready": {
+    kind: "engine-ready",
+    cardId: "c2",
+    engine: "tug-prompt-input",
+  },
+  "engine-activation-dispatched": {
+    kind: "engine-activation-dispatched",
+    cardId: "c2",
+    engine: "tug-prompt-input",
+    dispatchedFrom: "row-1",
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {

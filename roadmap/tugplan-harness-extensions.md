@@ -1630,28 +1630,43 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 **References:** [D10] engine caret variant, [L01] new trace events, Spec [#s02-em-card-surface], (#em-surface, #stub-transcripts)
 
 **Artifacts:**
-- `tugdeck/src/test-surface.ts` — `getEmCardState`, `getEngineSelection`, `awaitEngineReady`, `drainTugcodeTurn`, `startTugcode`, `stopTugcode`, `seedTugcodeTranscript`, `seedTugcodeError`.
-- `tugdeck/src/deck-trace.ts` — add `engine-ready` and `engine-activation-dispatched` event kinds per [L01].
-- `tugdeck/src/components/chrome/card-host.tsx` and each EM-engine content factory (`tide-card`, `tug-prompt-input`, `gallery-prompt-entry`) emit the two new trace events.
-- `tests/in-app/fixtures/tugcode/em-smoke.transcript.json` — minimal "hello world" transcript + sidecar.
-- `tests/in-app/_smoke-em.test.ts` — stub-mode end-to-end smoke: launch, `startTugcode({ mode: "stub" })`, `seedTugcodeTranscript`, activate EM card, drive one turn, assert `getEmCardState(cardId).streamState === "idle"` and text content.
+- `tugdeck/src/test-surface.ts` — adds `getEmCardState` + `isEngineReady` / harness-side `awaitEngineReady`. The plan's originally-listed `getEngineSelection` and `drainTugcodeTurn` are subsumed/deferred — see Author note. Tugcode lifecycle delegates (`startTugcode` / `stopTugcode` / etc.) live as RPC verbs on the App handle, NOT on `__tug.*` (only Swift can spawn subprocesses; routing through page-side `__tug.*` would be a layering violation).
+- `tugdeck/src/deck-trace.ts` — adds `engine-ready` and `engine-activation-dispatched` event kinds per [L01]. Both kinds defined; `engine-ready` has an emit site in `tug-prompt-input.tsx`. `engine-activation-dispatched` emit sites land at selection plan Step 23E with the `onCardActivated` registrations.
+- `tugdeck/src/components/tugways/tug-prompt-input.tsx` — emits `engine-ready` after the engine's mount-time `useLayoutEffect` finishes. tide-card and gallery-prompt-entry inherit via composition (both wrap TugPromptInput / TugPromptEntry, which use TugTextEngine internally); their dedicated emit sites can land alongside Step 23E if needed.
+- `tests/in-app/_smoke-em.test.ts` — three-test EM-card observation smoke (engine-ready trace, getEmCardState round-trip after typing, getEmCardState returns null for FC cards). Promoted from scratch — added to `just test-in-app-fast` default sweep.
+- `tests/in-app/fixtures/tugcode/em-smoke.transcript.json` — DEFERRED to a follow-up. The capture script that produces it is also deferred (see Step 8 / Author note); the smoke at Pass 7C scope doesn't drive a real tugcode round-trip.
 
 **Tasks:**
-- [ ] Extend `DeckTraceEvent` union with `engine-ready` and `engine-activation-dispatched`.
-- [ ] Wire the two new trace events at each EM-engine factory.
-- [ ] Implement `getEmCardState` (reads from engine adapter); `engine` field tags the factory.
-- [ ] Implement `awaitEngineReady` via `waitForCondition` on `getEmCardState(cardId) !== null && streamState !== "error"`.
-- [ ] Implement `drainTugcodeTurn` via `waitForCondition` on `getEmCardState(cardId).streamState === "idle"` after last turn.
-- [ ] Author the `em-smoke` transcript + sidecar via `capture-tugcode-transcript.ts`.
-- [ ] Author `_smoke-em.test.ts`: the canonical EM smoke.
+- [x] Extend `DeckTraceEvent` union with `engine-ready` and `engine-activation-dispatched`.
+- [x] Wire `engine-ready` trace event at `tug-prompt-input.tsx` mount-time engine init. `engine-activation-dispatched` sites land at Step 23E.
+- [x] Implement `getEmCardState` — fires `invokeSaveCallback` synchronously, reads `bag.content`, tags `engine` from the card's componentId. Returns `null` for non-EM cards / unknown ids.
+- [x] Implement `isEngineReady` (synchronous trace-ring scan) + harness `awaitEngineReady` (`waitForCondition` wrapper). Plan's `awaitEngineReady` was page-side; that shape couldn't observe trace ring writes from inside `evalJS` — see Author note.
+- [ ] Implement `drainTugcodeTurn` via `waitForCondition` on `getEmCardState(cardId).streamState === "idle"`. **DEFERRED** to a follow-up — needs tugcode → tugdeck integration not yet in place at Pass 7C scope; `streamState` is currently a stub field always returning `"idle"`.
+- [ ] Author the `em-smoke` transcript + sidecar via `capture-tugcode-transcript.ts`. **DEFERRED** to Step 8 — see Author note. The capture script needs live mode AND the tugcast bypass to be useful as a fixture sink.
+- [x] Author `_smoke-em.test.ts`: the canonical EM observation smoke.
 
 **Tests:**
-- [ ] `tests/in-app/_smoke-em.test.ts` exits 0.
-- [ ] Scratch `_smoke-tugcode-lifecycle.test.ts` deleted (its coverage is subsumed by `_smoke-em.test.ts`).
+- [x] `just test-in-app-fast _smoke-em.test.ts` exits 0 (3/3 in 7.55s).
+- [x] Scratch `_smoke-tugcode-lifecycle.test.ts` and `_smoke-tugcode-stub.test.ts` deleted (their coverage is subsumed by `_smoke-em.test.ts` for surface validation; runtime tugcode-replay coverage moves to Step 8's live-mode smoke when it lands).
 
 **Checkpoint:**
-- [ ] `bun test tests/in-app/_smoke-em.test.ts` exits 0.
-- [ ] `bun test tests/in-app/` still green (M01/M03/M16 + `_smoke` + `_smoke-native` + `_smoke-em`).
+- [x] `just test-in-app-fast _smoke-em.test.ts` exits 0.
+- [x] `just test-in-app-fast` (full default sweep) still 14/14 green (`_smoke` + `_smoke-native` + `_smoke-em` + 11 M-series files).
+- [x] tugdeck unit tests 2412/2412; tsc clean both packages.
+
+**Author note (2026-04-25).** Five implementation deviations from the plan-as-written, in declining order of significance.
+
+(1) **Tugcode integration into tugdeck deferred.** The plan envisioned `_smoke-em.test.ts` as a stub-mode end-to-end smoke: harness's tugcode replays a transcript → tugcast routes the bytes → tugdeck observes the streamed output via `getEmCardState`. Pass 7A discovered tugcast spawns its own tugcode per AI session — the harness-spawned tugcode is orphan from tugdeck's perspective. Fixing that requires tugcast-side changes (Rust) to read a test env var and defer to the harness-owned tugcode (or pipe-pass tugcode's stdout into tugcast's input). Out of scope for Pass 7C. The smoke retreats to "EM-card observation surface validation": seed an EM card, type into it via native gestures, assert the surface readbacks. The tugcode → tugdeck round-trip is tabled for a future pass when the tugcast-bypass plumbing lands; `streamState` and `lastTurnSeq` are stub fields with placeholder values until then.
+
+(2) **`awaitEngineReady` lives on the harness side, not the JS surface.** The plan's `awaitEngineReady(cardId, timeoutMs?)` was a page-side method. That shape can't actually observe trace ring writes during a busy-wait — `evalJS` runs synchronously on WebKit's main thread, the same thread that records `engine-ready`. A loop inside `evalJS` would never see the event. The fix: synchronous `__tug.isEngineReady(cardId)` on the JS side (one-shot trace scan), plus a harness-side `app.awaitEngineReady(cardId, opts?)` that wraps `isEngineReady` in a `waitForCondition` for the blocking variant.
+
+(3) **`getEngineSelection` subsumed by `getEmCardState`.** The plan listed `getEngineSelection(cardId)` as a separate method. In the implementation, the EM card's selection lives at `state.engineSelection` inside `getEmCardState`'s return value — a separate getter would be redundant. Tests that need just the selection read `(await app.getEmCardState(cardId))?.engineSelection`.
+
+(4) **`drainTugcodeTurn` deferred.** Same root cause as (1) — without tugcode → tugdeck integration, `streamState` never transitions out of `"idle"`, so a wait-for-idle has nothing meaningful to gate on. Lands when the integration does.
+
+(5) **Capture script (`scripts/capture-tugcode-transcript.ts`) deferred to Step 8.** The script needs a live tugcode + a tugdeck-observable sink to capture against. The latter doesn't exist at Pass 7C, so the script's value is zero today. Sliding it into Step 8 — alongside live-mode smoke setup — keeps both pieces in the same commit boundary.
+
+Surface bumps: tugdeck `SURFACE_VERSION` `1.1.0`→`1.2.0` for the `__tug.*` additions; Swift `surfaceVersion` and harness `EXPECTED_SURFACE_VERSION` stay at `1.4.0` (no RPC changes).
 
 ---
 

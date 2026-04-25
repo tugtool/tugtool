@@ -617,6 +617,81 @@ export function unregisterSelectionBoundary(
 }
 
 // ---------------------------------------------------------------------------
+// EM-card observation (SURFACE_VERSION 1.2.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors `tugdeck/src/test-surface.ts` → `EmCardState`. Stub
+ * fields (`streamState`, `lastTurnSeq`) are present at Pass 7C
+ * scope so test code shapes pin against the final layout, but
+ * always carry placeholder values until tugcode integration
+ * lands in a later pass.
+ */
+export interface EmCardState {
+  kind: "em";
+  engine: string;
+  text: string;
+  engineSelection: unknown;
+  streamState: "idle" | "streaming" | "error";
+  lastTurnSeq: number;
+}
+
+/**
+ * Read an EM card's engine state. Returns `null` when the card
+ * is unknown or is not an EM card. The page-side surface fires
+ * `invokeSaveCallback` synchronously before reading so the
+ * returned state reflects current engine content rather than a
+ * stale debounced save.
+ */
+export function getEmCardState(
+  caller: HarnessCaller,
+  cardId: string,
+  evalOpts?: EvalJsOptions,
+): Promise<EmCardState | null> {
+  const script = callSurface(
+    `window.__tug.getEmCardState(${lit(cardId)})`,
+  );
+  return caller.evalJS<EmCardState | null>(script, evalOpts);
+}
+
+/**
+ * Synchronous "has the engine for `cardId` already emitted its
+ * `engine-ready` deck-trace event?" probe. Mostly useful inside
+ * a `waitForCondition` body — the harness's `awaitEngineReady`
+ * wraps it in `waitForCondition` for the blocking variant.
+ */
+export function isEngineReady(
+  caller: HarnessCaller,
+  cardId: string,
+  evalOpts?: EvalJsOptions,
+): Promise<boolean> {
+  const script = callSurface(
+    `window.__tug.isEngineReady(${lit(cardId)})`,
+  );
+  return caller.evalJS<boolean>(script, evalOpts);
+}
+
+/**
+ * Block until the engine for `cardId` has emitted its
+ * `engine-ready` event, or until `timeoutMs` (default 2000ms)
+ * elapses. Throws `TimeoutError` on budget exceeded — same
+ * contract as `expectFocusedCard`. Wraps a `waitForCondition`
+ * over `__tug.isEngineReady(cardId)` so polling happens in the
+ * RPC layer, not inside `evalJS` (which would freeze the page
+ * thread that records the trace event the test is waiting for).
+ */
+export async function awaitEngineReady(
+  caller: HarnessCaller,
+  cardId: string,
+  opts?: WaitForConditionOptions,
+): Promise<void> {
+  const script =
+    `(typeof window.__tug !== "undefined") && ` +
+    `(window.__tug.isEngineReady(${lit(cardId)}) === true)`;
+  await caller.waitForCondition<boolean>(script, opts);
+}
+
+// ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)
 //
@@ -1242,4 +1317,7 @@ export type ClientMethodNames =
   | "getSelection"
   | "getComputedStyleValue"
   | "registerSelectionBoundary"
-  | "unregisterSelectionBoundary";
+  | "unregisterSelectionBoundary"
+  // EM-card observation (SURFACE_VERSION 1.2.0)
+  | "getEmCardState"
+  | "isEngineReady";

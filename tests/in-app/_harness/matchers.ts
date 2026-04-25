@@ -132,6 +132,17 @@ export type DeckTraceEventShape = {
       kind: "commit-tick";
       count: number;
     }
+  | {
+      kind: "engine-ready";
+      cardId: string;
+      engine: string;
+    }
+  | {
+      kind: "engine-activation-dispatched";
+      cardId: string;
+      engine: string;
+      dispatchedFrom: string;
+    }
 );
 
 /**
@@ -152,6 +163,8 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "save-callback",
   "selection-restore",
   "commit-tick",
+  "engine-ready",
+  "engine-activation-dispatched",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -354,6 +367,10 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `selection-restore ${fmt(e.cardId)} via=${fmt(e.via)}`;
     case "commit-tick":
       return `commit-tick count=${fmt(e.count)}`;
+    case "engine-ready":
+      return `engine-ready ${fmt(e.cardId)} engine=${fmt(e.engine)}`;
+    case "engine-activation-dispatched":
+      return `engine-activation-dispatched ${fmt(e.cardId)} engine=${fmt(e.engine)} from=${fmt(e.dispatchedFrom)}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.
