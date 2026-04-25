@@ -86,6 +86,7 @@ export type SaveCallbackSource =
   | "debounced"
   | "visibilitychange"
   | "beforeunload"
+  | "window-blur"
   | "manual";
 
 /** Entry-point tag on `selection-restore` events. */

@@ -438,7 +438,7 @@ test-in-app-fast *FILES:
     # Default sweep mirrors `test-in-app`'s loop.
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(_smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m07-card-detach.test.ts m21-drag-aborted.test.ts)
+        FILES=(_smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m07-card-detach.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts)
     else
         read -r -a FILES <<< "$FILES_INPUT"
     fi

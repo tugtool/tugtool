@@ -70,9 +70,15 @@
  *   the card's pre-drag DOM location. Step-11's cross-pane
  *   `[hostStackId]`-keyed `useLayoutEffect` retires in this step.
  *
- * - **Step 23D** — `reactivateCurrentFocusDestination` (the app-
- *   lifecycle entry) still throws; its implementation lands in
- *   its step.
+ * - **Step 23D** — `reactivateCurrentFocusDestination` ships. The
+ *   window-`focus` listener installed in `deck-manager.ts#installDeckStoreFocusListeners`
+ *   calls it after `setHasFocus(true)` so the current first
+ *   responder reacquires its caret + selection on cmd-tab return /
+ *   click-back-from-Finder. The companion window-`blur` listener
+ *   flushes the first responder's save callback before flipping
+ *   `state.hasFocus = false`, so the bag the helper reads on
+ *   re-focus reflects the pre-blur state regardless of debounce
+ *   or `visibilitychange` timing.
  *
  * ## The activation target
  *
@@ -716,4 +722,111 @@ export function transferFocusAfterMove(
   // `dispatch-activated` — content factory's onCardActivated handles
   // its own targeting.
   store.invokeActivationCallback(sourceCardId);
+}
+
+/**
+ * Re-focus the current first responder after the tugdeck window
+ * regains OS focus (cmd-tab return, click-back-from-Finder, etc.).
+ *
+ * Called from `installDeckStoreFocusListeners`'s window-`focus`
+ * handler, AFTER `setHasFocus(true)` has flipped the gate axis.
+ * Three-step body — no save here; the companion window-`blur`
+ * handler already flushed the bag synchronously before the
+ * `hasFocus` axis went false:
+ *
+ *   1. Resolve `cardId` from `store.getFirstResponderCardId()`. If
+ *      `null` (canvas-background deselect, or boot before the first
+ *      activation), return — there is no destination to reactivate.
+ *   2. Resolve the activation target via {@link resolveActivationTarget}.
+ *   3. Read the host root via `store.peekCardHostRoot` and gate
+ *      through {@link canProgrammaticallyFocus}. The gate's
+ *      `state.hasFocus` branch is correctly `true` at this point
+ *      because the listener flipped it to `true` immediately before
+ *      this call.
+ *   4. Transfer:
+ *      - `focus-element` → `el.focus()` + `restoreCardDomSelection`
+ *      - `default-focus` → `traceApplyDefaultFocus` walk
+ *      - `dispatch-activated` → `store.invokeActivationCallback`
+ *      - `none` → return
+ *
+ * No `commitMutation`. The window-`focus` event arrives outside any
+ * pending React commit; React reconciliation has already drained
+ * by the time the helper runs, so `flushSync` would be redundant.
+ */
+export function reactivateCurrentFocusDestination(
+  store: IDeckManagerStore,
+): void {
+  const cardId = store.getFirstResponderCardId();
+  if (cardId === null) return;
+
+  const target = resolveActivationTarget(cardId, store);
+  if (target.kind === "none") return;
+
+  const targetCardHostEl = store.peekCardHostRoot(cardId);
+  const allowed = canProgrammaticallyFocus(
+    cardId,
+    store.getSnapshot(),
+    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
+  );
+  if (!allowed) return;
+
+  if (target.kind === "focus-element") {
+    const doc = target.el.ownerDocument;
+    const activeBefore = formatElement(doc.activeElement);
+    target.el.focus();
+    const activeAfter = formatElement(doc.activeElement);
+    deckTrace.record({
+      kind: "focus-call",
+      site: "focus-transfer-reactivate",
+      cardId,
+      targetSelector: describeTargetSelector(target.el, store, cardId),
+      activeBefore,
+      activeAfter,
+      hidden: isElementHidden(target.el),
+    });
+
+    const bag = store.getCardState(cardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      const cardRoot = targetCardHostEl ?? store.peekCardHostRoot(cardId);
+      if (cardRoot !== null) {
+        selectionGuard.restoreCardDomSelection(
+          cardId,
+          bag.domSelection,
+          cardRoot,
+        );
+        deckTrace.record({
+          kind: "selection-restore",
+          cardId,
+          via: "restoreCardDomSelection",
+        });
+      }
+    }
+    return;
+  }
+
+  if (target.kind === "default-focus") {
+    traceApplyDefaultFocus(
+      "focus-transfer-reactivate-default",
+      cardId,
+      target.cardRoot,
+    );
+    const bag = store.getCardState(cardId);
+    if (bag?.domSelection !== undefined && bag.domSelection !== null) {
+      selectionGuard.restoreCardDomSelection(
+        cardId,
+        bag.domSelection,
+        target.cardRoot,
+      );
+      deckTrace.record({
+        kind: "selection-restore",
+        cardId,
+        via: "restoreCardDomSelection",
+      });
+    }
+    return;
+  }
+
+  // `dispatch-activated` — content factory's onCardActivated handles
+  // its own targeting.
+  store.invokeActivationCallback(cardId);
 }

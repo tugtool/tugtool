@@ -82,6 +82,7 @@ import {
 } from "./card-state-orchestrator";
 import { deckTrace, type SaveCallbackSource } from "./deck-trace";
 import {
+  reactivateCurrentFocusDestination,
   transferFocusAfterMove,
   transferFocusForActivation,
 } from "./focus-transfer";
@@ -107,10 +108,32 @@ function installDeckStoreFocusListeners(): void {
   if (typeof window === "undefined") return;
   focusListenersInstalled = true;
   const onFocus = (): void => {
-    getDeckStore()?.setHasFocus(true);
+    const store = getDeckStore();
+    if (store === null) return;
+    // Order matters: setHasFocus(true) must land before the helper
+    // call because canProgrammaticallyFocus reads state.hasFocus —
+    // the gate would refuse a transfer issued while hasFocus is
+    // still false from the prior blur.
+    store.setHasFocus(true);
+    reactivateCurrentFocusDestination(store);
   };
   const onBlur = (): void => {
-    getDeckStore()?.setHasFocus(false);
+    const store = getDeckStore();
+    if (store === null) return;
+    // Synchronous save-on-blur. Closes the stale-bag residual: a
+    // user who cmd-tabs away mid-typing leaves `bag.focus` /
+    // `bag.formControls` reflecting the moment of the last
+    // debounced save (which may be hundreds of ms stale). Without
+    // this flush, the subsequent reactivate on window-focus would
+    // restore stale form-control values. visibilitychange covers
+    // tab-hide on browsers, but window-blur without tab-hide is
+    // the common cmd-tab case on macOS — saving here makes the
+    // pre-resign capture unconditional.
+    const fr = store.getFirstResponderCardId();
+    if (fr !== null) {
+      store.invokeSaveCallback(fr, "window-blur");
+    }
+    store.setHasFocus(false);
   };
   window.addEventListener("focus", onFocus);
   window.addEventListener("blur", onBlur);
