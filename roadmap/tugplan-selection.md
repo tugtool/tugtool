@@ -2556,6 +2556,142 @@ Skip if Layer 3's (a) or (b) closed the bake-in race already. Otherwise:
 
 **Sequencing.** Independent of [25C.2](#step-25c2)'s landed work (different code paths inside the editor vs. the markdown view) but uses 25C.2's `tugbankRead` / `quitGracefully` / temp-tugbank scaffolding without modification. Independent of [25D](#step-25d)–[25G](#step-25g) — those are component opt-ins that reach a different bag axis (`bag.components`), this work extends `bag.content`. Can land before or after them.
 
+##### Step 25C.4: Eliminate restore-side selection race; route via active/inactive paint split {#step-25c4}
+
+**Status:** proposal.
+
+**Why this exists.** Step 25C.3 closed the engine's persistence shape and asserted authoritative control over browser-mirrored state for a single editor in a single card. Manual repro revealed that the restore mechanism still misbehaves once a deck contains *more than one* prompt-input/prompt-entry/tide editor. Two scenarios:
+
+1. *Inactive card steals the document's active selection on reload.* Tide is deactivated and rendering its remembered selection via the inactive paint. The TugPromptInput gallery card on the right is active. `Developer > Reload`. After reload: Tide's selection is now the *browser's active selection* (bright native highlight) — i.e., Tide's editor stole focus from the gallery card.
+
+2. *Active card loses its selection on reload.* The TugPromptInput gallery card has a fresh selection and is the active card. Tide is deactivated. `Developer > Reload`. After reload: the gallery card's selection is gone; Tide's earlier remembered selection is back as the bright native highlight on the wrong card.
+
+These are the same bug, viewed from two angles.
+
+**Root cause.** `window.getSelection()` is **document-global** — there is exactly one active Selection per page, owned by the focused element. The framework's restore path is uniform across all cards:
+
+```
+For each card with persisted bag.content:
+  CardHost calls engine.restoreState(state)
+    → mirror.selection = state.selection
+    → setSelectedRange(start, end)
+      → root.focus({preventScroll: true})       // claims document focus
+      → window.getSelection().removeAllRanges() // wipes page-wide selection
+      → window.getSelection().addRange(...)     // writes page-wide selection
+```
+
+When a deck has *N* cards each with a persisted selection, *N* restores fire on reload. They sequentially focus their roots and write to the global Selection. Whichever fires last wins — the rightful active card may not be the last writer; every other card's selection is destroyed inside `removeAllRanges()`. The race is fundamental to the path: every card is using the same global single-instance resource.
+
+**The framework gap.** The engine's persistence layer conflates two distinct selection categories that the framework otherwise already distinguishes:
+
+- **The document's active selection.** Exactly one per page. Owned by the focused element. Backed by `window.getSelection()`. Painted natively by the browser as the bright `::selection` highlight. Belongs to whichever card is the focus destination ([D10]).
+- **A card's remembered selection.** Many per page — every card the user has put a selection in remembers where. Backed by `selectionGuard.cardRanges[cardId]`. Painted via the *inactive paint* (selectionGuard's CSS treatment for "this card has a selection but isn't the focused card"). Already used in steady-state interaction: when the user clicks a different card, the previous card's selection moves into this category and the new card's becomes the active selection.
+
+Today's restore funnels every card's remembered selection through the active-selection channel. The inactive paint isn't a destination at restore time. selectionGuard's `cardRanges` cache is empty after a reload — nothing seeded it. The only way the framework knows how to surface a remembered selection is by *writing it as the document's active selection*, which is wrong for every card except the focus destination.
+
+The same conflation is what creates the focus race: every card's `setSelectedRange` calls `root.focus()`. Every editor is asking to be the focused element. Whichever wins the call order wins the active state. The user's bag.focus information — which already names the correct focus destination ([D10]) — is overridden by the last writer's `focus()`.
+
+**Why scrollTop is fine, but selection isn't.** scrollTop is per-element. Each editor's `root.scrollTop` is its own DOM property. No cross-card resource is shared; no race exists. The mirror→DOM scroll write in 25C.3 is correct as-is. Selection is the only axis with this problem.
+
+**The three coordinated changes.**
+
+**1. Engine paint API split: separate "active" paint from "inactive" paint.**
+
+The engine gains two paint methods, replacing the single `applyMirrorToDom`:
+
+- `paintMirrorAsActive()` — writes `mirror.selection` through `setSelectedRange` (focus + global Selection.addRange). Writes `mirror.scrollTop` to `root.scrollTop`. Used by exactly *one* editor per page at a time — the focus destination. The path is the existing one; nothing new in the active branch.
+
+- `paintMirrorAsInactive(publish: (range: Range | null) => void)` — builds a DOM Range from `mirror.selection` via `flatToDom`, calls `publish(range)`. **Does not** touch `window.getSelection`. **Does not** call `focus()`. Writes `mirror.scrollTop` to `root.scrollTop` (per-element, no race). Used by every editor that isn't the active focus destination. The `publish` callback is the seam — the engine doesn't need to know `selectionGuard` exists; the component routes `publish` to `selectionGuard.updateCardDomSelection(cardId, range)`.
+
+Why a callback rather than wiring `selectionGuard` into the engine: selectionGuard needs `cardId`. The engine doesn't know its `cardId`. Plumbing it in is invasive and pollutes the engine with deck-layer concerns. The component already has `cardId` and lives at the seam between engine and deck — it's the right place to bridge the two.
+
+**2. CardHost passes active state into the persistence callbacks.**
+
+CardHost already determines the focus destination (it owns `bag.focus` reads and the `applyFocusSnapshot` call per [D10]). At every persistence-callback invocation, CardHost knows whether this card is the focus destination right now. Today it doesn't communicate that to `onRestore` / `onCardActivated`.
+
+- Extend the callback signatures so CardHost can pass `{ isActive: boolean }`:
+
+  ```ts
+  onRestore: (state: T, opts: { isActive: boolean }) => void
+  onCardActivated: () => void           // unchanged — fires only on the active card by definition
+  onCardWillDeactivate?: () => void     // new — fires on the previously-active card when activation moves
+  ```
+
+- `onRestore` fires for every card on cold-mount; the `isActive` flag tells the consumer which paint path to take.
+- `onCardActivated` already has activation semantics; it stays the trigger for `paintMirrorAsActive`.
+- `onCardWillDeactivate` is new: it gives the previously-active card a place to call `paintMirrorAsInactive` so the inactive paint takes over the moment the global Selection moves to a sibling card. Without it, the engine's emit chain catches user-initiated focus moves but not programmatic deactivations.
+
+**3. Component-side wiring routes by active state.**
+
+`TugPromptInput`'s `TugPromptInputPersistence` and `TugPromptEntry`'s `useCardPersistence` consume the new contract:
+
+- `onRestore(state, { isActive })`:
+  - `engine.restoreState(state)` — updates the engine's authoritative model (mirror + content); keep this engine-internal, no DOM-Selection writes here. The 25C.3 mirror update remains as-is.
+  - If `isActive`: `engine.paintMirrorAsActive()` — focus + global Selection + scroll.
+  - Else: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardId, range))` — selectionGuard publish + scroll, no focus.
+
+- `onCardActivated()`: `engine.paintMirrorAsActive()`. Today the activation hook calls `setSelectedRange`; this becomes the explicit active-paint variant. Same DOM effect.
+
+- `onCardWillDeactivate()`: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardId, range))`. Hands the selection over to selectionGuard before focus moves elsewhere.
+
+Tide-card already routes through `TugPromptEntry` for its editor; no per-card-type code in tide. The same routing applies uniformly to every editor.
+
+**Why the engine's permanent ResizeObserver doesn't need an active/inactive split.**
+
+The 25C.3 ResizeObserver pairs `autoResize` with a mirror→DOM repaint. That repaint is selection + scrollTop. The selection part of that repaint, post-25C.4, must respect active state.
+
+Two implementation choices:
+- **(a)** Engine keeps the ResizeObserver but the repaint becomes scroll-only (`engine.repaintMirrorScroll()`). The component installs its own observer when active state changes are relevant — or uses `onCardActivated` / `onCardWillDeactivate` exclusively, skipping ResizeObserver-driven selection repaints entirely. Layout-driven re-establishment of the *active* selection is handled by the active-card's hook firing again via `onCardActivated` if needed.
+- **(b)** Engine ResizeObserver routes to `paintMirrorAsActive` or `paintMirrorAsInactive` based on a `getActive: () => boolean` callback the component supplies at construction.
+
+**Recommend (a).** Cleaner separation: engine ResizeObserver = layout stabilization (autoResize) + scroll repaint. Selection routing is a deck-layer concern (the deck knows which card is active). Component-side onCardActivated / onCardWillDeactivate are the deck-layer's hooks; the engine doesn't need a back-channel into deck state.
+
+**Test plan.**
+
+New test file: `tests/in-app/m26-deck-wide-restore-consistency.test.ts`. Two-card decks where each card carries a persisted selection and the active state matters.
+
+**Test cases (3 layouts × 2 reload triggers = 6):**
+
+| Layout | Active card | Inactive card |
+|---|---|---|
+| L1 | gallery-prompt-input #A | gallery-prompt-input #B |
+| L2 | gallery-prompt-input | tide |
+| L3 | tide | gallery-prompt-input |
+
+Each layout × each trigger (`appReload`, `quitGracefully` + relaunch) is one test.
+
+**Phase A:** Seed both cards with text + selection in `bag.content`. The active card has `bag.focus` pointing to its engine root. Wait for both engines ready. Trigger reload.
+
+**Phase B (post-restore) invariants — assert on each test:**
+
+- *Single focus.* `document.activeElement` is the active card's editor (`[data-card-id="${active}"] [data-tug-prompt-input-root] [contenteditable]`). Inactive cards' editors are not the activeElement.
+- *Single global Selection.* `window.getSelection().rangeCount === 1` and `window.getSelection().getRangeAt(0)` is anchored inside the active card's root. The `toString()` matches the active card's seeded selection text.
+- *Inactive cards' selections survive in selectionGuard.* `__tug.getCaretState(inactiveCardId)` returns a `range` snapshot whose `text` matches the inactive card's seeded selection text.
+- *Inactive paint is on inactive cards.* The inactive card's editor (or its enclosing card root) carries the inactive-selection class / data-attribute that selectionGuard applies. The active card does not.
+- *Bag-on-disk consistency.* All four 25C.3 axes (text + atoms + selection + scrollTop) round-trip on every card on every trigger, regardless of active state. Today this passes for the active card and fails for inactive cards (their selections are destroyed by the active card's `removeAllRanges`, captured back as `null`, persisted as `null`).
+
+**Pre-25C.4:** every test fails on at least one invariant — typically the focus invariant (wrong card has activeElement) or the global Selection invariant (wrong card's text in `window.getSelection`) or the inactive-paint invariant (no inactive paint anywhere because nothing's in selectionGuard).
+
+**Post-25C.4:** every test passes deterministically.
+
+**Auxiliary impacts.**
+
+- *m24 and m25 single-card matrices.* Likely no change — both have one card per test, where the single card is unambiguously the focus destination. Verify after the layer lands.
+- *m32 / m35 cold-boot / app-switch tests.* These also involve single active cards. Should pass without modification.
+- *m02 / m06 tab-switch tests.* These involve two cards in the same pane but only one is mounted with `bag.content` at a time (the other is empty). Should pass.
+
+**Deliverables.**
+
+1. Engine paint API split: `paintMirrorAsActive`, `paintMirrorAsInactive(publish)`, `repaintMirrorScroll`. Retire `applyMirrorToDom` (or keep as a thin wrapper that picks active by default, deprecated).
+2. CardHost: extend `onRestore` signature to pass `{ isActive }`. Add `onCardWillDeactivate` to the callbacks record. Wire firings.
+3. TugPromptInput / TugPromptEntry: route `onRestore` and `onCardActivated` / `onCardWillDeactivate` through the active/inactive paint methods. Pass cardId-bound `selectionGuard.updateCardDomSelection` into the inactive publish callback.
+4. New harness test: `m26-deck-wide-restore-consistency.test.ts` (6 tests).
+5. Audit: full default sweep green; m24 + m25 + m26 all pass.
+
+**Estimated commits:** two — (1) engine API split + CardHost wiring + component routing; (2) m26 harness test + Justfile sweep wiring. Could be one commit if the test is added alongside the implementation, but a separate test commit makes the gating evidence cleaner (test fails on commit 1's parent, passes on commit 1).
+
+**Sequencing.** Depends on [25C.3](#step-25c3) (landed). Independent of [25D](#step-25d)–[25G](#step-25g). Should land before any future component opt-ins introduce additional selection-aware components, since this layer establishes the active/inactive contract every such component will need to honor.
+
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
 **Closes:** [M27] subset (layout state); first installments of [M30] (virtual focus).
