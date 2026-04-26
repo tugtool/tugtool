@@ -108,6 +108,31 @@ enum AppLifecycleHandlers {
                 timeoutMs: timeoutMs,
                 trigger: { NSApp.unhide(nil) },
             )
+        case "quitGracefully":
+            // Don't park on a `willTerminate` semaphore here:
+            // `applicationShouldTerminate`'s completion handler in
+            // `AppDelegate` calls `testHarnessBridge?.close()` (which
+            // closes our `FileHandle`) BEFORE
+            // `NSApp.reply(toApplicationShouldTerminate: true)` posts
+            // `willTerminate`. A response write after the close would
+            // race the fd teardown and risk an
+            // `NSFileHandleOperationException`.
+            //
+            // Schedule the terminate on the next main-loop tick.
+            // `dispatch` returns immediately on this background
+            // queue; the caller (`dispatchAppLifecycleVerb`) writes
+            // the `ok` response to the still-open socket BEFORE
+            // `NSApp.terminate(nil)` runs. The test side awaits
+            // `subprocess.exited` for the actual confirmation that
+            // the OS killed the process.
+            //
+            // `timeoutMs` from the wire is accepted for forward
+            // compatibility but currently unused — the bound that
+            // matters is the JS-side `subprocess.exited` race in
+            // `App.quitGracefully`.
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         default:
             throw AppLifecycleError.unknownVerb(method)
         }

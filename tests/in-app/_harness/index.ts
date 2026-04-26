@@ -136,8 +136,16 @@ export type {
  * passes `--stub-transcript=<path>` to tugcode, which routes
  * through its deterministic replay engine. Additive; major stays
  * `1`.
+ *
+ * `1.5.0` (selection plan Step 25C.2 Layer 2): adds the
+ * `quitGracefully` verb. Schedules `NSApp.terminate(nil)` on
+ * main so the full `applicationShouldTerminate` path runs —
+ * including `window.tugdeck.saveState()` — before the OS exits
+ * the process. Tests use this to gate cold-boot scenarios that
+ * need the save side to actually reach tugbank disk.
+ * Additive; major stays `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.4.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.5.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -726,6 +734,61 @@ export class App {
   /** `NSApp.unhide(nil)`; awaits `applicationDidUnhide:`. */
   simulateAppUnhide(opts?: client.AppLifecycleOptions): Promise<void> {
     return client.simulateAppUnhide(this as HarnessCaller, opts);
+  }
+
+  /**
+   * Quit Tug.app via the full `applicationShouldTerminate` path
+   * (so `window.tugdeck.saveState()` fires + tugcast PUTs flush to
+   * tugbank disk before the process exits). Distinct from
+   * {@link App.close} which SIGTERMs immediately and bypasses the
+   * save trigger.
+   *
+   * The Swift handler schedules `NSApp.terminate(nil)` on main and
+   * returns; we await `subprocess.exited` for the actual signal
+   * that the OS killed the process. The default exit window is
+   * 10s — long enough for a slow tugcast PUT chain, short enough
+   * that a stuck quit fails loudly.
+   *
+   * After this call resolves, the `App` instance is closed; further
+   * RPCs will throw `AppCrashedError`. Calling `close()` afterward
+   * is a no-op.
+   */
+  async quitGracefully(opts?: { timeoutMs?: number }): Promise<void> {
+    if (this.closed) return;
+    // Fire the RPC. The Swift handler writes its `ok` response BEFORE
+    // scheduling the terminate, so under normal flow the call resolves
+    // cleanly. If the kernel buffer hasn't drained the response by the
+    // time `testHarnessBridge.close()` runs, the rpc client surfaces
+    // `AppCrashedError` instead — both outcomes mean "quit was
+    // accepted", so we treat them identically.
+    const params: Record<string, unknown> = {};
+    if (opts?.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs;
+    void this.rpcCall<void>("quitGracefully", params).catch(() => {
+      // Swallow — the connection drops mid-quit by design.
+    });
+    // Bound on the actual process exit. The graceful path runs
+    // saveAndFlushSync (sync XHR per card) + processManager.stop's
+    // 5s tugcast grace; 10s is comfortably above that.
+    const timeoutMs = opts?.timeoutMs ?? 10000;
+    const exitedPromise = this.subprocess.exited.then(() => "exited" as const);
+    const timeoutPromise = new Promise<"timeout">((resolve) =>
+      setTimeoutNative(() => resolve("timeout"), timeoutMs),
+    );
+    const winner = await Promise.race([exitedPromise, timeoutPromise]);
+    if (winner === "timeout") {
+      // App didn't exit on its own. Fall back to the SIGKILL teardown
+      // in close() and surface a clear error.
+      await this.close();
+      throw new Error(
+        `quitGracefully: subprocess did not exit within ${timeoutMs}ms`,
+      );
+    }
+    // Process exited cleanly. Run the same teardown close() does so
+    // log streams + signal handlers + socket file all unwind.
+    this.closed = true;
+    try { this.onUnlink(); } catch { /* socket already gone */ }
+    try { this.logStream?.end(); } catch { /* best-effort */ }
+    try { this.detachSignals(); } catch { /* best-effort */ }
   }
 
   // -------------------------------------------------------------------

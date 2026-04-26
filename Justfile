@@ -364,9 +364,13 @@ test-in-app:
     export TUGAPP_IN_APP_TEST=1
     export TUGAPP_DEBUG_PATH="$APP_BIN"
     export TUGAPP_TUGCODE_BINARY="$REPO_ROOT/tugrust/target/debug/tugcode"
+    # tugbank binary path (selection plan Step 25C.2 Layer 2). Used
+    # by `tests/in-app/_harness/tugbank-helpers.ts` for cold-boot
+    # disk-side reads.
+    export TUGAPP_TUGBANK_BINARY="$REPO_ROOT/tugrust/target/debug/tugbank"
     cd tests/in-app
     STATUS=0
-    for f in _smoke.test.ts _smoke-native.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
+    for f in _smoke.test.ts _smoke-native.test.ts _smoke-cold-boot.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
         echo "---- $f ----"
         bun test "$f" || STATUS=$?
         # Between files, kill any stragglers before the next spawn so
@@ -447,12 +451,16 @@ test-in-app-fast *FILES:
     # `bun build --compile` in `just test-in-app`'s [1/7] step.
     REPO_ROOT_FAST="$(pwd)"
     export TUGAPP_TUGCODE_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugcode"
+    # tugbank binary path (selection plan Step 25C.2 Layer 2). Used
+    # by `tests/in-app/_harness/tugbank-helpers.ts` to read tugbank
+    # state from disk between two-process cold-boot phases.
+    export TUGAPP_TUGBANK_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugbank"
     cd tests/in-app
 
     # Default sweep mirrors `test-in-app`'s loop.
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts m10-markdown-selection.test.ts m14-scroll-persistence.test.ts m17-savestate-rpc-parity.test.ts m18-async-content-race.test.ts m19-pane-teardown-flush.test.ts m20-overlay-focus-return.test.ts m22-caret-visibility.test.ts m23-cross-card-selection.test.ts m32-em-cold-boot-selection.test.ts m33-em-fresh-card-activation.test.ts m34-em-focus-after-move.test.ts m35-em-app-switch-selection.test.ts m35-tide-app-switch-selection.test.ts)
+        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts _smoke-cold-boot.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts m10-markdown-selection.test.ts m14-scroll-persistence.test.ts m17-savestate-rpc-parity.test.ts m18-async-content-race.test.ts m19-pane-teardown-flush.test.ts m20-overlay-focus-return.test.ts m22-caret-visibility.test.ts m23-cross-card-selection.test.ts m32-em-cold-boot-selection.test.ts m33-em-fresh-card-activation.test.ts m34-em-focus-after-move.test.ts m35-em-app-switch-selection.test.ts m35-tide-app-switch-selection.test.ts)
     else
         read -r -a FILES <<< "$FILES_INPUT"
     fi

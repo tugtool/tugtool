@@ -67,7 +67,17 @@ final class TestHarnessConnection {
     /// `seedTugcodeError` verbs are folded into `startTugcode`'s
     /// opts (see Author note in harness plan Step 6). Additive;
     /// major stays `1`.
-    static let surfaceVersion = "1.4.0"
+    ///
+    /// `1.5.0` (selection plan Step 25C.2 Layer 2): adds the
+    /// `quitGracefully` verb. Schedules `NSApp.terminate(nil)` on
+    /// main, which fires the full `applicationShouldTerminate`
+    /// path including `window.tugdeck.saveState()`. Distinct from
+    /// `simulateApp*` verbs in that the connection is expected to
+    /// be torn down by `applicationShouldTerminate`'s completion
+    /// handler — the response is written before terminate runs;
+    /// callers await `subprocess.exited` for the real signal.
+    /// Additive; major stays `1`.
+    static let surfaceVersion = "1.5.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -162,7 +172,8 @@ final class TestHarnessConnection {
         case "simulateAppResign",
              "simulateAppBecomeActive",
              "simulateAppHide",
-             "simulateAppUnhide":
+             "simulateAppUnhide",
+             "quitGracefully":
             dispatchAppLifecycleVerb(id: id, method: method, verbObj: obj)
         case "startTugcode",
              "stopTugcode",

@@ -60,12 +60,22 @@ async fn main() {
         force_kill_port_holder(cli.port);
     }
 
-    // Resolve bank path: use --bank-path if provided, otherwise default to ~/.tugbank.db
-    let bank_path: PathBuf = cli.bank_path.clone().unwrap_or_else(|| {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
-            .join(".tugbank.db")
-    });
+    // Resolve bank path: --bank-path flag > TUGBANK_PATH env var > ~/.tugbank.db.
+    // Mirrors the precedence the `tugbank` CLI uses (see tugrust/crates/tugbank/src/main.rs).
+    // Honoring the env var lets harness tests that set TUGBANK_PATH for Tug.app
+    // reach tugcast (spawned from Tug.app's env) without a code path to thread
+    // the flag through ProcessManager.
+    let bank_path: PathBuf = cli.bank_path.clone()
+        .or_else(|| {
+            std::env::var_os("TUGBANK_PATH")
+                .map(PathBuf::from)
+                .filter(|p| !p.as_os_str().is_empty())
+        })
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
+                .join(".tugbank.db")
+        });
 
     info!(
         session = %cli.session,
