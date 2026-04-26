@@ -479,7 +479,20 @@ class SelectionGuard {
       // silently — the card keeps whatever live Range it had.
       return;
     }
-    this.updateCardDomSelection(cardId, range);
+    // Restore is fundamentally different from a live publish: native
+    // `::selection` for the focused card is NOT already current
+    // (something else — e.g. a `.focus()` call from
+    // `traceApplyDefaultFocus`, or a fresh cold-boot mount — left
+    // it collapsed). Calling `updateCardDomSelection` here would
+    // dispatch `updatePaint` with a `{ changedCardId }` hint and
+    // hit the short-circuit that skips `setBaseAndExtent` for the
+    // focused card. Set `cardRanges` directly and run an unhinted
+    // `updatePaint` so the focused card's range syncs back into
+    // `window.getSelection()` via the full-rebuild branch. The
+    // hint optimization only makes sense for live caret moves, not
+    // restore.
+    this.cardRanges.set(cardId, range);
+    this.updatePaint();
   }
 
   // ---- Paint ----
