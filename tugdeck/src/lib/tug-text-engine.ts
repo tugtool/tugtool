@@ -151,6 +151,22 @@ export interface TugTextEditingState {
   atoms: { position: number; type: string; label: string; value: string }[];
   /** Cursor/selection as flat offsets. Null if editor was not focused. */
   selection: { start: number; end: number } | null;
+  /**
+   * Editor's contenteditable `scrollTop` at capture time. Null or omitted
+   * means "no asserted scroll position" — restore leaves the editor's
+   * scroll at whatever bake-in default the new mount lands on. A number
+   * means "set `root.scrollTop` to this value after the text + atoms +
+   * selection have been applied" ([L23], selection plan Step 25C.3).
+   *
+   * Optional in the type so existing literal constructions (empty seeds,
+   * legacy fixtures, on-disk payloads written before this field existed)
+   * compile and decode without churn — `undefined` and `null` are
+   * semantically identical at the restore site. The engine's own
+   * `captureState` always writes a number when the contenteditable is
+   * connected; older payloads round-trip through this slot as
+   * `undefined`.
+   */
+  scrollTop?: number | null;
 }
 
 /**
@@ -806,7 +822,17 @@ export class TugTextEngine {
         atomIdx++;
       }
     }
-    return { text, atoms, selection: this.getSelectedRange() };
+    return {
+      text,
+      atoms,
+      selection: this.getSelectedRange(),
+      // Capture the contenteditable's scroll offset so a save→restore
+      // round-trip preserves the user's chosen scroll position
+      // ([L23]). The DOM read is cheap (`scrollTop` is cached on the
+      // node) and a disconnected root reports 0, which is the correct
+      // null-equivalent for an unmounted engine.
+      scrollTop: this.root.scrollTop,
+    };
   }
 
   restoreState(state: TugTextEditingState): void {
@@ -863,6 +889,26 @@ export class TugTextEngine {
       this.autoResize();
       if (state.selection) {
         this.setSelectedRange(state.selection.start, state.selection.end);
+      }
+      // Restore the contenteditable's scroll offset AFTER text + atoms
+      // + selection have committed and `autoResize` has settled the
+      // root's height. WebKit clamps `scrollTop` against
+      // `scrollHeight - clientHeight`; setting it before the DOM is
+      // populated would land at 0. A `null` / `undefined` slot means
+      // "no asserted position" — leave the editor wherever bake-in
+      // landed, matching legacy on-disk payloads from before this
+      // field existed ([L23], selection plan Step 25C.3 Layer 3).
+      //
+      // Direct DOM write is correct under [L06]: scroll position is
+      // *data* (non-rendering consumers — persistence, undo, scroll-
+      // restore retry — read it), but the persistence layer's
+      // application of that data is a DOM write through the engine's
+      // root, not a React state change. The L06 test ("does any
+      // non-rendering consumer depend on this state?") returns yes,
+      // so storing scroll in `bag.content` is correct; the write
+      // mechanism is direct DOM because the engine isn't React.
+      if (typeof state.scrollTop === "number") {
+        this.root.scrollTop = state.scrollTop;
       }
     } finally {
       this._suppressSelectionEmits = false;
