@@ -2048,6 +2048,7 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 | [25A](#step-25a) | [M14], [M17], [M18], [M19], [M20], [M22], [M23] | none | (audit + verify) |
 | [25B](#step-25b) | [M10] | [A9] (done) | [A5] markdown-view publish |
 | [25C](#step-25c) | [M19] (audit half) | [25A](#step-25a) finding | [A7] unified flush gate |
+| [25C.2](#step-25c2) | [M10] cold-boot, [M14] cold-boot (re-opens) | [25B](#step-25b) (landed) | two-process harness + cold-boot debug |
 | [25D](#step-25d) | [M27] subset (layout state), [M30] subset (virtual focus on tab-bar / option-group) | [A9] (done) | [A9d] component opt-in batch 1 |
 | [25E](#step-25e) | [M30] (remainder), [M27] subset | [A9] (done) | [A9d] component opt-in batch 2 |
 | [25F](#step-25f) | [M26] (overlay policy + opt-in) | [A9] (done), [25E](#step-25e) | [A9d] component opt-in batch 3 |
@@ -2120,6 +2121,214 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 - The 25A test extended to gate the new invariant.
 
 **Estimated commits:** one (likely small).
+
+##### Step 25C.2: Two-process cold-boot harness + markdown persistence cold-boot fix {#step-25c2}
+
+**Status:** proposal — open questions answered; ready for review.
+
+**Why this exists.** [Step 25B](#step-25b) landed `tug-markdown-view` selection publish and flipped [M10] / [M14] / [M23] to ✅ in the verification matrix. Manual verification surfaced that a TugMarkdownView (50KB) gallery card with a scroll position and selection — quit Tug.app, relaunch — restores neither. Reading the bag directly from tugbank (`tugbank read dev.tugtool.deck.cardstate <cardId>`) shows the save side IS working: `regionScroll.markdown-view.y = 26922` and a populated `domSelection` are on disk after quit. The break is on the load + cold-mount + virtualization-bake-in race side, none of which the current in-app sweep exercises.
+
+**The systemic gap.** Every test in the in-app sweep runs ONE Tug.app process for its lifetime. Tests that claim to gate persistence-on-quit (`m17-savestate-rpc-parity`) compare in-memory bags. Tests that claim to gate cold-boot restore (`m32-em-cold-boot-selection`, `m10-markdown-cold-boot` — the latter has been removed as confirmation theater) use `seedDeckState` to populate the in-memory `cardStateCache` and immediately re-mount. None of them go: (a) write bag to tugbank disk on quit, (b) terminate the WebView process, (c) start a fresh process, (d) read the bag back, (e) verify the live state. That gap is exactly what hid the markdown-view restore bug.
+
+**Open questions — answered.**
+
+The proposal originally listed three open questions. Investigation closed all three; the answers shape the harness design below.
+
+1. *Tugbank ownership across processes — RESOLVED, no plumbing work needed.*
+   - `AppDelegate.applicationDidFinishLaunching` already reads `TUGBANK_PATH` for the Swift-side `TugbankClient` (`tugapp/Sources/AppDelegate.swift:45-50`).
+   - `ProcessManager.startProcess` inherits Tug.app's full env — `var env = ProcessInfo.processInfo.environment` — when spawning tugcast (`tugapp/Sources/ProcessManager.swift:549`), so tugcast sees `TUGBANK_PATH` automatically.
+   - tugcast's `main.rs:67` falls back to `~/.tugbank.db` only when `TUGBANK_PATH` is unset.
+   - The harness's `launchTugApp` already plumbs `opts.env` through `--env KEY=VALUE` flags to `/usr/bin/open` (`tests/in-app/_harness/index.ts:1325-1331`), which sets the env on the launched Tug.app.
+   - **Implication:** `launchTugApp({env: {TUGBANK_PATH: tempPath}})` works as-is. No env-plumbing code to add. Both Tug.app's TugbankClient (Swift, direct sqlite) and tugcast's HTTP `put_key` handler (Rust, sqlite via `tugbank-core`) point at the same temp file. Both processes use `SQLITE_OPEN_READWRITE | WAL | busy_timeout=5000`, so concurrent open is safe.
+
+2. *Process-quit save guarantee — RESOLVED, but `app.close()` is the wrong primitive.*
+   - The save chain is sound when triggered: `AppDelegate.applicationShouldTerminate` returns `.terminateLater` and the completion handler at `AppDelegate.swift:184-198` blocks `processManager.stop()` on `evaluateJavaScript("window.tugdeck?.saveState?.()")`'s completion. That completion fires only after `saveAndFlushSync` returns (`tugdeck/src/deck-manager.ts:1310-1318`), which loops over save callbacks and calls `flushDirtyCardStates({sync: true})` → `putCardState({sync: true})` (`tugdeck/src/settings-api.ts:121-135`) → synchronous XHR PUT to tugcast → `put_key` (`tugcast/src/defaults.rs:293-339`) → `tokio::task::spawn_blocking(client.set(...))` (awaited) → `DefaultsStore::open` with `synchronous=NORMAL` WAL writes. By the time the XHR returns, the row is committed in the WAL; the next process opening the same file sees it.
+   - **The gap is the trigger.** Today's `app.close()` runs `pkill -x Tug` SIGTERM/SIGKILL (`index.ts:1376`). A bare SIGTERM does NOT route through `applicationShouldTerminate` — Cocoa's run loop has no SIGTERM handler that calls into the delegate. So today's harness teardown bypasses the entire save path.
+   - **Implication:** The new `app.quitGracefully()` primitive must call `NSApp.terminate(nil)` (which DOES fire `applicationShouldTerminate`) via a new RPC verb, and the harness must wait for the process to exit naturally rather than killing it.
+
+3. *Selection seed determinism — RESOLVED via fixture choice.*
+   - `gallery-markdown-view.tsx:137-145` already supports a `'1kb'` size variant — but `gallery-registrations.tsx:387-395` only registers the `50kb` flavor.
+   - 1KB of static markdown fits in one viewport at the gallery card's default size, so all blocks render and `block-container.children` indices are stable across re-mount. Selection paths captured against a fully-rendered tree restore deterministically.
+   - **Implication:** Add a `componentId: "gallery-markdown-1kb"` registration. Use it for the cold-boot selection seed test. Use the existing `gallery-markdown-50kb` for the cold-boot scroll test (which doesn't depend on selection-anchor stability) and for any future virtualization-aware selection follow-up.
+
+**Scope.**
+
+The work splits into four layers, each landable as its own commit. Order matters — each layer is the gate for the next.
+
+**Layer 1 — `gallery-markdown-1kb` fixture (1 small commit).**
+
+Add the missing registration in `tugdeck/src/components/tugways/cards/gallery-registrations.tsx` mirroring the `50kb` block:
+
+```tsx
+registerCard({
+  componentId: "gallery-markdown-1kb",
+  contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="1kb" />,
+  defaultMeta: { title: "TugMarkdownView (1KB)", icon: "FileText", closable: true },
+  family: "developer",
+  acceptsFamilies: ["developer"],
+  sizePolicy: GALLERY_COMPLEX_SIZE,
+  category: CATEGORIES.textInput,
+});
+```
+
+Pure addition — no behavioral change. Zero new tests at this layer; verifies via the existing tugdeck unit suite.
+
+**Layer 2 — Test-harness primitives (1 commit, the foundation).**
+
+Land the harness surface that the new tests will lean on. Each primitive is independently testable with a smoke test before the cold-boot tests are written.
+
+- *`quitGracefully` RPC verb — Swift side.*
+  - New file or extension: `tugapp/Sources/TestHarness/AppLifecycleHandlers.swift` (already houses the four `simulateApp*` verbs — same family).
+  - Add a `case "quitGracefully":` branch that:
+    1. Subscribes to `NSApplication.willTerminateNotification` on `NotificationCenter.default` from the main queue, signaling a `DispatchSemaphore`.
+    2. `DispatchQueue.main.async { NSApp.terminate(nil) }` — fires `applicationShouldTerminate` → save path → `NSApp.reply(toApplicationShouldTerminate: true)` → `applicationWillTerminate` notification.
+    3. `semaphore.wait(timeout: .now() + .milliseconds(timeoutMs))` — default 5000ms (long: save can take seconds when tugcast is busy).
+    4. On timeout, throws a typed error `AppLifecycleError.quitTimeout(timeoutMs:)`. Note the test will not see the response on success — the socket dies with the app.
+  - Bump `surfaceVersion` to `1.5.0` in `TestHarnessConnection.swift` and the matching constant in `tests/in-app/_harness/index.ts:140`.
+- *`app.quitGracefully(opts?)` JS-side wrapper.*
+  - Add to `App` class in `tests/in-app/_harness/index.ts`. The wire-level `rpc.call` is fire-and-forget here: the connection drops mid-call as the app dies. Catch the connection-close error and treat it as success; await `subprocess.exited` to confirm.
+  - Skip Cocoa's "really quit?" dialog: harness only runs in DEBUG builds where unsaved-changes prompts don't surface.
+- *`mkTempTugbank()` and `readTugbankCardState()` helpers.*
+  - New file: `tests/in-app/_harness/tugbank-helpers.ts` (TS module, not a runtime piece of the App class).
+  - `mkTempTugbank(): string` — returns a unique path under `os.tmpdir()` like `/tmp/tugapp-test-tugbank-<uuid>.db`. Does NOT create the file; tugbank/tugcast create it on first write. Caller passes this path as `env.TUGBANK_PATH`.
+  - `readTugbankCardState(path, cardId): CardStateBag | null` — shells out via `Bun.spawnSync` to `tugbank --path <path> --json read dev.tugtool.deck.cardstate <cardId>`. Returns `null` on exit code 2 (not found), the parsed JSON otherwise. Throws on other exit codes.
+  - `clearTugbankCardState(path, cardId): void` — `tugbank --path <path> delete dev.tugtool.deck.cardstate <cardId>`. Used between Phase A and Phase B in tests that want a known starting point.
+  - `rmTempTugbank(path): void` — unlinks the temp DB and any WAL/SHM siblings.
+  - Resolves the `tugbank` binary via `process.env.TUGAPP_TUGBANK_BINARY` first, then `which tugbank`. Recipe-level support added in `Justfile`.
+- *`app.waitForMarkdownReady(cardId, opts?)` and `app.waitForScrollSettled(cardId, regionKey, expectedY, opts?)`.*
+  - Both are JS-side wrappers over the existing `waitForCondition` RPC. Deferred to Layer 4 if the cold-boot tests don't actually need them yet — but they're cheap and let us delete duplicated `waitForCondition` boilerplate from m14, m23, m10-markdown-selection.
+  - `waitForMarkdownReady` blocks until the card's `[data-tug-scroll-key="markdown-view"]` exists, has `block-container` populated with `data-block-index`-tagged children, and `scrollHeight > clientHeight + 200` (the same gate `m14` uses inline today).
+  - `waitForScrollSettled` blocks until `el.scrollTop` is within `tolerance` (default 8px) of `expectedY` AND has held across N consecutive `requestAnimationFrame` ticks (default N=3). N-stable polling is what catches the bake-in race: ResizeObserver-driven spacer growth nudges the value once before settling.
+
+Smoke test gating Layer 2: a **single** new `_smoke-cold-boot.test.ts` file that:
+1. Calls `mkTempTugbank()` to get a path.
+2. Launches Tug.app with `env.TUGBANK_PATH = path`.
+3. `evalJS("await fetch('/api/defaults/dev.tugtool.test/key', {method:'PUT', headers: {...}, body: '...'})")` — writes a known value through tugcast.
+4. `app.quitGracefully()` — waits for app exit.
+5. Shells out to `tugbank --path <path> read dev.tugtool.test key` and asserts the value round-tripped.
+6. Relaunches against the same path; reads the same value back through tugcast (`fetch('/api/defaults/dev.tugtool.test/key')`); asserts.
+7. `rmTempTugbank(path)`.
+
+This smoke test proves all Layer-2 primitives end-to-end before any cold-boot test depends on them. If it fails, Layer 3 doesn't get written. If it passes, every primitive is known-good.
+
+**Layer 3 — The two cold-boot tests (1 commit).**
+
+Both tests follow the same Phase-A / Phase-B convention. Naming: keep in `tests/in-app/`, prefix with the existing M-tag for traceability.
+
+*`m14-cold-boot-scroll.test.ts`*
+
+Test metadata convention (lives as a docstring header on the `describe` block):
+
+```ts
+/**
+ * m14-cold-boot-scroll.test.ts — region-scroll restore across full
+ * Tug.app process restart.
+ *
+ * ## Two-phase contract
+ *
+ * Each test in this file runs **two separate Tug.app processes**
+ * sharing one temp tugbank file. The phases are sequential, never
+ * parallel; teardown of phase A precedes launch of phase B.
+ *
+ * | Phase | Tugbank state at launch | Action      | Assertion                                    |
+ * |-------|-------------------------|-------------|----------------------------------------------|
+ * | A     | empty (fresh temp DB)   | scroll then | tugbank disk has regionScroll.markdown-view  |
+ * |       |                         | quitGracefully | y matching the scrolled offset            |
+ * | B     | populated (from A)      | wait, observe | live el.scrollTop matches the saved offset|
+ *
+ * Phase A failing means the save path didn't reach disk (or didn't
+ * fire on quit). Phase B failing means the load + restore path
+ * didn't apply the bag. The split makes diagnosis cheap.
+ *
+ * ## Tugbank lifecycle
+ *
+ * The temp tugbank path is created by `mkTempTugbank()` in beforeAll
+ * and removed by `rmTempTugbank()` in afterAll. Each test owns its
+ * own path — no cross-test sharing.
+ *
+ * ## Closes
+ * - [M14] cold-boot variant. The existing m14-scroll-persistence
+ *   already gates tab-switch + simulateAppResign round-trips; this
+ *   file adds the cold-boot variant they cannot exercise.
+ */
+```
+
+Test body sketch:
+
+```ts
+describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot", () => {
+  test("scroll position survives quit + relaunch", async () => {
+    const tugbankPath = mkTempTugbank();
+    try {
+      // Phase A: empty tugbank → seed → scroll → quit gracefully.
+      {
+        const app = await launchTugApp({
+          testName: "m14-cold-boot-scroll-A",
+          env: { TUGBANK_PATH: tugbankPath },
+        });
+        try {
+          await app.seedDeckState({ /* gallery-markdown-50kb on card "A" */ });
+          await app.waitForMarkdownReady("A");
+          await app.evalJS(`/* set scrollTop = 600 + dispatch scroll event */`);
+          await app.waitForCondition(`/* el.scrollTop === 600 */`);
+          await app.quitGracefully();
+        } finally {
+          // quitGracefully resolves on normal exit; fall through.
+        }
+      }
+      // Phase A assertion: bag is on disk.
+      const onDisk = readTugbankCardState(tugbankPath, "A");
+      expect(onDisk?.regionScroll?.["markdown-view"]?.y).toBeCloseTo(600, 8);
+      // Phase B: relaunch against same tugbank, assert restore.
+      {
+        const app = await launchTugApp({
+          testName: "m14-cold-boot-scroll-B",
+          env: { TUGBANK_PATH: tugbankPath },
+        });
+        try {
+          await app.waitForMarkdownReady("A");
+          await app.waitForScrollSettled("A", "markdown-view", 600);
+          // Final live read: redundant with waitForScrollSettled but
+          // makes the assertion explicit in the test body.
+          const live = await app.evalJS<number>(/* return el.scrollTop */);
+          expect(live).toBeCloseTo(600, 8);
+        } finally {
+          await app.close();
+        }
+      }
+    } finally {
+      rmTempTugbank(tugbankPath);
+    }
+  });
+});
+```
+
+*`m10-cold-boot-selection.test.ts`* — same shape, different fixture (`gallery-markdown-1kb`) and assertions:
+- Phase A: mount, anchor selection to a known span (`{startOffset: 5, endOffset: 25}` on the first text node — deterministic with all blocks rendered), `quitGracefully`.
+- Phase A assertion: `readTugbankCardState`'s `domSelection` is non-null and matches the captured paths.
+- Phase B: relaunch, wait for ready, assert `__tug.getCaretState("A")` returns the saved range and the native `::selection` paint is visible.
+
+Both tests must FAIL before Layer 4 lands and PASS after — that's the gating contract.
+
+**Layer 4 — The actual fix (1–2 commits, gated on what Layer 3 exposes).**
+
+What lands here depends on what the new tests show. Likely candidates, ordered by probable scope:
+
+- *Region-scroll race.* The bake-in's estimated heights produce a `scrollHeight` smaller than the saved `scrollTop` on first apply, so the browser clamps. ResizeObserver-driven spacer growth (a `style.height` mutation) later raises `scrollHeight` past the target. The current mount-restore `MutationObserver` in `card-host.tsx` is `childList: true, subtree: true` only — it doesn't observe `style` attribute mutations. Fix: add `attributes: true, attributeFilter: ["style"]`, and replace the one-shot `regionApplied` Set with `regionSettled` semantics (re-apply until `el.scrollTop` lands within tolerance, then mark settled). One commit.
+- *Selection re-anchor on settled scroll.* The cold-boot mount-restore sequence applies the scroll first, then DOM selection. If the scroll restore takes multiple frames (per above), the selection apply may run before block-container children at the saved indices exist. Fix: defer `restoreCardDomSelection` until after the matching region marks settled, OR re-apply on the same MutationObserver tick. Same commit as scroll fix in most cases — they share infrastructure.
+- *Content-relative selection encoding* (out of 25C.2's commit budget if needed). If 1kb passes but 50kb still fails after the above, path-based serialization is fundamentally fragile across virtualization. Re-architect to encode `{blockIndex: heightIndexPosition, intraBlockOffset: number}` instead of DOM child paths. Scoped to a follow-up step (25C.3) if Layer 3's 50kb test demands it.
+
+**Deliverables.**
+
+- Layer 1: one-line registration addition (`gallery-markdown-1kb`).
+- Layer 2: `quitGracefully` Swift handler + JS wrapper, surface version bump, `tugbank-helpers.ts`, `_smoke-cold-boot.test.ts` proving the primitives work.
+- Layer 3: `m14-cold-boot-scroll.test.ts`, `m10-cold-boot-selection.test.ts`. Both must fail on this commit; the failure mode confirms the bug exists.
+- Layer 4: the fix that flips Layer 3's tests to pass. Hypothesis-test the scroll-race fix first; selection fix second.
+- Audit: extend `m17-savestate-rpc-parity` and `m32-em-cold-boot-selection` to use `quitGracefully` + `readTugbankCardState` where the Phase-A-on-disk assertion strengthens their claim. Where the existing test body is honest about scope (m32's docstring is), the audit may decide an additive Phase B is enough; where the claim was misleading, rename to match.
+
+**Estimated commits:** four — (1) Layer 1 fixture registration, (2) Layer 2 harness primitives + smoke test, (3) Layer 3 cold-boot tests (failing-as-expected), (4) Layer 4 fix. A fifth if content-relative selection encoding is required for the 50kb selection variant.
+
+**Sequencing.** Independent of [25C](#step-25c) (different code paths). Depends on [25B](#step-25b) (landed). Can run in parallel with [25D](#step-25d)–[25G](#step-25g) since it touches harness + persistence-restore code, not the component opt-in roster. Each layer is its own commit; do not bundle Layer 3 with Layer 4 — the failing-as-expected commit is part of the gating evidence.
 
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 

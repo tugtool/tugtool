@@ -394,6 +394,22 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.textInput,
   });
 
+  // Pre-baked variant: mounts with 1KB of static markdown — small
+  // enough that all blocks fit in one viewport, so block-container
+  // children render fully and are stable across re-mount. Used by
+  // the cold-boot selection harness test where deterministic
+  // anchor paths matter; the 50KB variant exercises the
+  // virtualization-aware path separately.
+  registerCard({
+    componentId: "gallery-markdown-1kb",
+    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="1kb" />,
+    defaultMeta: { title: "TugMarkdownView (1KB)", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
   // ===========================================================================
   // Selection
   // ===========================================================================
