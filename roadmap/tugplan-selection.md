@@ -2768,7 +2768,13 @@ If selectionGuard's existing paint mechanism doesn't match what the plan assumes
 
 ##### Step 25C.5: Bag as single source of truth — restore-on-activation contract {#step-25c5}
 
-**Status:** proposal — awaiting review.
+**Status:** Layer 1 landed; Layer 2 abandoned (architectural mismatch with mass-save flows; see Layer 2 section below); Layers 3–6 retain the mirror as documented and proceed.
+
+**Why the scope changed.** The original proposal claimed "bag is the single source of truth, drop the engine mirror." Layer 2's implementation revealed this premise is wrong for engine cards: mass-save flows (`prepareForReload`, `saveAndFlushSync`) fire `invokeSaveCallback` for every card AFTER focus has moved, so `getSelectedRange()` returns null for cards whose focus moved out of root, and the mass-save destroys the previously-correct bag. The mirror's auto-track via in-root `selectionchange` was load-bearing for that case.
+
+The mirror is reframed: it's a *cache for save resilience*, faithful to bag.content.selection, populated from live DOM events while focus is in-root, read by `captureState` when live DOM cannot be trusted. Conceptually it IS the bag's in-memory counterpart at the engine layer — not a parallel SOT.
+
+The remaining layers (3, 4, 5, 6) target other duplications (the engine→selectionGuard relay, mount-only form-control restore, sprawling docstrings) and stand on their own without Layer 2.
 
 **Why this exists.** The 25C.x series accumulated layered restoration mechanisms, each fixing a specific bug:
 
@@ -2848,15 +2854,30 @@ Sites likely needing fixes:
 
 Add a smoke test that asserts `bag.focus` correctly identifies the deactivating card's focused input on every activation-trigger shape. The smoke gates Layer 2.
 
-**Layer 2 — Drop engine `_browserMirror`.**
+**Layer 2 — Drop engine `_browserMirror`. ABANDONED — see findings below.**
 
-`captureState` reads live DOM (existing `getSelectedRange` + `root.scrollTop`). `restoreState` writes live DOM (existing logic, minus the mirror-write line). Drop the document-level `selectionchange` listener's `_browserMirror.selection = …` write (`tug-text-engine.ts:751-754`). Drop the `getMirroredSelection` fallback in `captureState` (`tug-text-engine.ts:968-983`).
+**Status:** abandoned after implementation. Reverted; revisit only if a future architectural change makes mass-save flows unnecessary.
 
-The `setSelectedRange` synchronous mirror-write (`tug-text-engine.ts:698`) goes away too — the live DOM is the truth.
+**What was attempted.** Drop `_browserMirror` field. `captureState` reads live DOM (`getSelectedRange` + `root.scrollTop`). Drop the document-level `selectionchange` listener's mirror-write, the `setSelectedRange` synchronous mirror-write, the scroll listener's mirror-write, and the `clear()` mirror reset. `paintMirrorAsActive(state?)` / `paintMirrorAsInactive(publish, state?)` accept the bag as a parameter; without state, fall back to live DOM. A `_pendingScrollTop` transient was added for cold-boot scroll re-assertion in the layout observer.
 
-The `_browserMirror` field declaration and all its reads/writes are removed in this commit.
+**What broke.** Two test failures during implementation:
 
-Test gate: m24, m25, m26, m32, m35-em pass. (m27 may need Layer 3 to fully pass; revisit.)
+1. *m24 (cold-boot scrollTop) — partially recoverable.* Pre-Layer-2 the layout observer's `repaintMirrorScroll` re-asserted scrollTop on every observed layout change, fighting the hidden→visible bake-in race that clamps scrollTop to 0. The `_pendingScrollTop` transient nearly fixed this, but exposed a deeper problem (#2 below).
+
+2. *m25 (deactivation roundtrip) — load-bearing.* Mass-save flows (`prepareForReload`, `saveAndFlushSync`) call `invokeSaveCallback` for ALL save-callback-registered cards. By the time these fire, focus has already moved to the new active card. For engine cards (`window.getSelection()` is document-global), `captureState` reads `getSelectedRange() === null` and overwrites the previously-correct `bag.content.selection` (set at deactivation save) with `null`. Without the mirror's auto-track, the bag is destroyed by the very mass-save that's supposed to persist it.
+
+**Layer 1's audit was incomplete.** It verified deactivation-driven save fires while focus is still in the outgoing card. It did NOT cover *reload-driven* mass-save (a separate trigger that runs much later, after multiple activation transitions). The mirror was load-bearing for that second case.
+
+**Architectural conclusion.** The mirror IS the right design for engine cards. It's not redundant with the bag — it serves as a save-time cache when live DOM cannot be read (focus has moved out of root). The proposal's premise — "live DOM is always the truth at save time" — is false for mass-save flows.
+
+**Two paths to revisit Layer 2 in the future** (out of scope for now):
+
+- Make `prepareForReload` / `saveAndFlushSync` skip cards whose live DOM read would return null (rely on the bag already having the value from earlier deactivation saves). Requires distinguishing "stale-because-focus-moved" from "stale-because-user-edited," which the architecture doesn't currently track.
+- Track a "save dirtiness" bit per card so mass-save only re-captures cards that have actually changed since their last individual save. Larger surface area; touches every save callsite.
+
+**What survives from Layer 2.** Layer 1's audit + smoke gate (`_smoke-capture-phase-save.test.ts`) is real progress: it proves the *deactivation-driven* save timing is correct, which is the load-bearing premise for Layers 3 and 4. The mirror remains, but it's now documented as a *cache for save resilience* rather than a parallel source of truth.
+
+The remaining layers below are unaffected by this abandonment — they target selectionGuard's relay (Layer 3) and CardHost's form-control restore semantics (Layer 4) without depending on mirror removal.
 
 **Layer 3 — selectionGuard reads bags for inactive paint.**
 
@@ -2868,34 +2889,40 @@ selectionGuard's existing deck-store subscription drives `updatePaint` on every 
 
 Optionally: cache the constructed Range objects per card, invalidated only when `bag.content` changes for that card. Avoids re-running `flatToDom` on every notify in large decks.
 
+The bag here is sourced from the engine's mirror at save time (Layer 2 abandoned, mirror remains). `updatePaint`'s read of `bag.content.selection` is therefore reading values the mirror wrote on the most recent save — same effective data path the relay carried, just sourced from a settled bag rather than a live event stream.
+
 Test gate: m27 (deactivation-inactive-paint), m26 (multi-card consistency) pass.
 
 **Layer 4 — Activation-time form-control restore.**
 
 Drop CardHost's mount-restore form-control `WeakSet` gating (`card-host.tsx:899`). Replace with: every activation transition through `transferFocusForActivation` applies the activated card's `bag.formControls` (via the install-prevent-mousedown helper for click-driven activations; inline for programmatic).
 
-Drop CardHost's `lastFocusedPersistKeyRef` and its focusin listener — Layer 1's capture-phase save makes `bag.focus` correct without the fallback.
+Drop CardHost's `lastFocusedPersistKeyRef` and its focusin listener — Layer 1's capture-phase save (verified by `_smoke-capture-phase-save.test.ts`) makes `bag.focus` correct without the fallback.
 
 `captureFocus` returns to its pre-m36 signature (single argument).
 
+This layer is unaffected by Layer 2's abandonment — it touches form-control axes (`bag.formControls`, `bag.focus`), not engine selection. Form-controls already follow capture-on-save / apply-on-restore semantics; this layer makes apply happen at activation time uniformly instead of mount-only.
+
 Test gate: m36 passes via the new path; m26 (multi-card) passes; mount-time cold-boot still restores correctly.
 
-**Layer 5 — Engine paint API consolidation.**
+**Layer 5 — REVISITED scope. Engine paint API surfaces accept `state` parameter; mirror retained.**
 
-Drop `paintMirrorAsActive` / `paintMirrorAsInactive`. Engine has one apply path: `restoreState`. CardHost calls `restoreState` on activation; the active card's selection is naturally in `window.getSelection()`; inactive cards' selections are pulled from bag by selectionGuard.
+Originally proposed: drop `paintMirrorAsActive` / `paintMirrorAsInactive` entirely. Layer 2's abandonment makes this version impossible — the mirror IS the source of truth at the engine layer for save-resilience. Revisited scope:
 
-Drop the `onCardWillDeactivate` callback's `paintMirrorAsInactive` call site — selectionGuard's bag-driven repaint replaces it.
-
-Drop `onRestore({isActive})` from 25C.4 — `isActive` is no longer needed at the consumer level since the apply path doesn't branch on it.
+- `paintMirrorAsActive(state?)` / `paintMirrorAsInactive(publish, state?)` accept an optional `state` parameter (the bag). When supplied (cold-boot restore), the paint methods use bag values directly instead of reading the mirror. When omitted (cmd-tab return), they fall back to the mirror as today. Same outcome on both paths; the parameter is a clarity/documentation win, not a behavior change.
+- `onCardWillDeactivate`'s `paintMirrorAsInactive` call site stays — the mirror→selectionGuard handover at deactivation is still needed.
+- `onRestore({isActive})` stays — Layer 4 needs it for the active/inactive split at cold-boot.
 
 Test gate: full sweep including m24–m36.
 
-**Layer 6 — Audit + cleanup.**
+**Layer 6 — Audit + cleanup (reduced scope).**
 
-- Remove now-unused exports (`paintMirrorAsActive`, `paintMirrorAsInactive`, `getMirroredSelection`, `_browserMirror` types, `installFormControlReapplyOnNextMousedown` if subsumed, etc.).
-- Update docstrings across `tug-text-engine.ts`, `card-host.tsx`, `focus-transfer.ts`, `selection-guard.ts` to reflect the simplified architecture.
+- Remove now-unused fallbacks/code that Layers 3–4 superseded (`installFormControlReapplyOnNextMousedown` if Layer 4 subsumes it, etc.).
+- Update docstrings across `tug-text-engine.ts`, `card-host.tsx`, `focus-transfer.ts`, `selection-guard.ts` to reflect the actual landed architecture (mirror retained, capture-phase save audited, selectionGuard reads bag).
 - Verify no orphan code paths.
-- Update the [25C.4](#step-25c4) entry's "what's still here" surface to reflect the consolidation.
+- Update the [25C.4](#step-25c4) entry's "what's still here" surface to reflect any consolidation.
+
+The mirror, `paintMirrorAsActive`, `paintMirrorAsInactive`, and `getMirroredSelection` all REMAIN — Layer 2's abandonment preserved them.
 
 **Tuglaw compliance map.**
 
