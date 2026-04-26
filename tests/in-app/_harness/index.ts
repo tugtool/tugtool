@@ -791,6 +791,84 @@ export class App {
     try { this.detachSignals(); } catch { /* best-effort */ }
   }
 
+  /**
+   * Soft-reload Tug.app — same code path as the `Developer > Reload`
+   * menu, exercising the in-process save-flush + WKWebView reload
+   * (Tug.app and tugcast both survive). Distinct from
+   * {@link App.quitGracefully} which terminates the entire process.
+   *
+   * Sequence:
+   *   1. Read the current `__tug.getReadyGen()` value (a counter
+   *      `attachTugTestSurface` bumps on every page boot, persisted
+   *      across reload via `sessionStorage`).
+   *   2. Fire `__tug.appReload()` — invokes
+   *      `dispatchAction({action:"reload"})`, which routes through
+   *      the `action-dispatch.ts:registerAction("reload",...)` handler
+   *      that calls `prepareForReload` (synchronous flush via XHR to
+   *      tugcast) before `location.reload()`. This `evalJS` may
+   *      resolve cleanly OR error mid-navigation; both outcomes mean
+   *      the reload is in flight.
+   *   3. Poll `getReadyGen()` until it returns a value strictly
+   *      greater than the pre-reload read — the deterministic "new
+   *      page is up and `__tug` is online again" signal. The poll is
+   *      tolerant of transient `evalJS` errors during navigation.
+   *
+   * Default timeout 8000ms — covers a slow tugcast PUT chain plus
+   * WKWebView reload + `main.tsx` boot. Throws on timeout with the
+   * captured pre-reload generation in the message so flake
+   * triage can distinguish "trigger never landed" (gen never
+   * advanced) from "appReload completed but late" (timeout race).
+   *
+   * @selector L23 — the reload trigger fires the existing
+   * `prepareForReload` path that drains every save callback and
+   * flushes synchronously to tugbank disk before the page navigates.
+   */
+  async appReload(opts?: { timeoutMs?: number }): Promise<void> {
+    const timeoutMs = opts?.timeoutMs ?? 8000;
+    const pollMs = 100;
+
+    // Read the pre-reload generation. Fall back to 0 when `__tug` /
+    // `getReadyGen` aren't present so old surface versions surface
+    // as a clean "fresh attach" rather than a thrown EvalError.
+    const prev = await this.evalJS<number>(
+      `((typeof window.__tug !== "undefined" && typeof window.__tug.getReadyGen === "function") ? window.__tug.getReadyGen() : 0)`,
+    );
+
+    // Fire the reload. The script runs synchronously (just calls
+    // `dispatchAction`), but `prepareForReload` runs in a microtask
+    // chain that completes BEFORE the actual `location.reload()`.
+    // Either evaluation completes cleanly OR errors when navigation
+    // invalidates the page; both outcomes are "reload in flight".
+    await this.evalJS<unknown>(
+      `((window.__tug && typeof window.__tug.appReload === "function") ? (window.__tug.appReload(), null) : null)`,
+    ).catch(() => {
+      // Mid-navigation evalJS may surface as EvalError or
+      // AppCrashedError. The reload itself is what we want; swallow.
+    });
+
+    // Custom poll loop — `waitForCondition`'s server-side polling
+    // treats `evaluateJavaScript` errors as fatal, but transient
+    // errors are EXPECTED here as the page navigates. Bun-side
+    // polling lets us tolerate them.
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const gen = await this.evalJS<number>(
+          `((typeof window.__tug !== "undefined" && typeof window.__tug.getReadyGen === "function") ? window.__tug.getReadyGen() : 0)`,
+        );
+        if (gen > prev) return;
+      } catch {
+        // Page in mid-navigation — keep polling.
+      }
+      await new Promise<void>((resolve) =>
+        setTimeoutNative(() => resolve(), pollMs),
+      );
+    }
+    throw new Error(
+      `appReload: __tug did not re-attach within ${timeoutMs}ms (pre-reload gen=${prev})`,
+    );
+  }
+
   // -------------------------------------------------------------------
   // Tugcode subprocess lifecycle ([D04], Spec [#s03-tugcode-lifecycle] / Step 5)
   //

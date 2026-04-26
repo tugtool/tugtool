@@ -50,6 +50,7 @@ import type { DeckState, CardStateBag } from "./layout-tree";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { dispatchAction } from "./action-dispatch";
 
 // ---------------------------------------------------------------------------
 // Public types (Spec [#s03-tug-surface])
@@ -97,8 +98,34 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
  * `gallery-markdown-50kb` card registration that bakes 50KB of
  * static content on mount — no test-specific surface needed.
  * Additive; major stays `1`.
+ *
+ * `1.4.0` (selection plan Step 25C.3 Layer 1): adds
+ * {@link TugTestSurface.appReload} and
+ * {@link TugTestSurface.getReadyGen}. `appReload` invokes the
+ * same `dispatchAction({ action: "reload" })` path the
+ * `Developer > Reload` menu fires — `prepareForReload` →
+ * synchronous flush → `location.reload()`. `getReadyGen` returns
+ * a generation counter that {@link attachTugTestSurface}
+ * increments at every page boot, persisted across reloads via
+ * `sessionStorage`. The bun-side `app.appReload()` records the
+ * pre-reload value, fires `appReload`, and polls `getReadyGen`
+ * until it advances — that's the "the new page is up" signal,
+ * tolerant of mid-navigation `evaluateJavaScript` errors.
+ * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.3.0" as const;
+export const SURFACE_VERSION = "1.4.0" as const;
+
+/**
+ * `sessionStorage` key for the cross-reload generation counter.
+ * `attachTugTestSurface` increments it on every page boot. The bun
+ * harness's `app.appReload()` records the pre-reload value and
+ * polls until it advances; that's the deterministic "the new page
+ * has booted and `__tug` is ready again" signal. Survives
+ * `location.reload()` because `sessionStorage` is per-tab/origin
+ * and not cleared by reload (only by tab close), so the new page
+ * sees the previous value and increments past it.
+ */
+const READY_GEN_STORAGE_KEY = "__tugReadyGen";
 
 /**
  * Snapshot of the caret / selection for a single card, as returned by
@@ -378,6 +405,53 @@ export interface TugTestSurface {
    */
   registerSelectionBoundary(cardId: string, selector: string): void;
   unregisterSelectionBoundary(cardId: string): void;
+
+  // ---- Reload primitives (SURFACE_VERSION 1.4.0, selection plan Step 25C.3 Layer 1) ----
+
+  /**
+   * Trigger a soft reload via the same code path as the
+   * `Developer > Reload` menu: `dispatchAction({action:"reload"})`,
+   * which routes through the registered handler in
+   * `action-dispatch.ts` —
+   * `prepareForReload().then(() => location.reload())`. The
+   * `prepareForReload` chain saves layout, drains every card's
+   * save callback, and synchronously flushes dirty state through
+   * tugcast to tugbank disk before the page navigates ([L23]).
+   *
+   * The action handler dedupes via a module-scoped `reloadPending`
+   * flag, so a second `appReload()` in the same JS context is a
+   * silent no-op. The flag resets on the new page (fresh module
+   * instance), so subsequent reloads after a successful round-trip
+   * work.
+   *
+   * Returns synchronously after kicking off the
+   * `prepareForReload` Promise — `location.reload()` fires from
+   * the `.then()` once the flush completes. Callers that need to
+   * wait for the new page must poll {@link getReadyGen} for an
+   * advancing value (the bun-side `app.appReload()` wrapper does
+   * this).
+   */
+  appReload(): void;
+
+  /**
+   * Return the current "ready generation" — a counter
+   * {@link attachTugTestSurface} increments on every page boot,
+   * persisted across `location.reload()` via `sessionStorage`.
+   *
+   * The bun harness reads this BEFORE calling {@link appReload},
+   * fires the reload, and then polls until `getReadyGen()`
+   * returns a strictly greater value. That's the deterministic
+   * "the new page has booted and `__tug` is online again"
+   * signal — robust against the mid-navigation
+   * `evaluateJavaScript` errors WKWebView can produce while the
+   * page transitions.
+   *
+   * Returns `0` when no value is stored yet (first attach in a
+   * fresh tab); `attachTugTestSurface` writes a `1` immediately,
+   * so a caller observing `0` at any point after the surface is
+   * attached has hit a page-storage misconfiguration.
+   */
+  getReadyGen(): number;
 
   // ---- EM-card observation (SURFACE_VERSION 1.2.0, harness Step 7) ----
 
@@ -1072,6 +1146,22 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       selectionGuard.unregisterBoundary(cardId);
     },
 
+    // ---- Reload primitives (SURFACE_VERSION 1.4.0) ----
+
+    appReload(): void {
+      // Same dispatch the `Developer > Reload` menu fires (see
+      // `action-dispatch.ts` `registerAction("reload", ...)`).
+      // Routing through `dispatchAction` rather than calling
+      // `prepareForReload` + `location.reload()` directly keeps the
+      // dedup guard (`reloadPending`) and any future reload-side
+      // bookkeeping in one place. [L23]
+      dispatchAction({ action: "reload" });
+    },
+
+    getReadyGen(): number {
+      return readReadyGen();
+    },
+
     // ---- EM-card observation (SURFACE_VERSION 1.2.0) ----
 
     getEmCardState(cardId: string): EmCardState | null {
@@ -1184,6 +1274,42 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 }
 
 // ---------------------------------------------------------------------------
+// Ready-generation helpers (SURFACE_VERSION 1.4.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the current ready-gen counter from `sessionStorage`. Returns
+ * `0` when the slot is missing or unparseable. Defensive parsing
+ * because `sessionStorage` values are user-controllable in principle —
+ * the harness never writes garbage, but a malformed value should
+ * round-trip as a fresh start rather than a thrown exception that
+ * tears down the whole test surface.
+ */
+function readReadyGen(): number {
+  if (typeof sessionStorage === "undefined") return 0;
+  const raw = sessionStorage.getItem(READY_GEN_STORAGE_KEY);
+  if (raw === null) return 0;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Increment the ready-gen counter and write it back. Called by
+ * {@link attachTugTestSurface} on every page boot — including the
+ * one after a `location.reload()`. The bun harness's
+ * `app.appReload()` reads the counter pre-reload and polls until it
+ * advances post-reload to confirm the new page is online.
+ *
+ * Silent no-op when `sessionStorage` is unavailable (non-browser
+ * environments running tests against this module).
+ */
+function bumpReadyGen(): void {
+  if (typeof sessionStorage === "undefined") return;
+  const next = readReadyGen() + 1;
+  sessionStorage.setItem(READY_GEN_STORAGE_KEY, String(next));
+}
+
+// ---------------------------------------------------------------------------
 // `window.__tug` binding — DEV + __tugTestMode only
 // ---------------------------------------------------------------------------
 
@@ -1237,5 +1363,12 @@ export function attachTugTestSurface(deck: DeckManager): void {
   // serves static files is ~700ms faster than the dev-server path.
   if (typeof window !== "undefined" && window.__tugTestMode === true) {
     window.__tug = createTugTestSurface(deck);
+    // Advance the ready-gen counter so the bun harness's
+    // `app.appReload()` can detect post-reload re-attach by
+    // polling for a strictly greater value than the pre-reload
+    // read. The counter persists across `location.reload()` via
+    // `sessionStorage` (per-tab/origin, not cleared by reload),
+    // so the new page increments past the old.
+    bumpReadyGen();
   }
 }
