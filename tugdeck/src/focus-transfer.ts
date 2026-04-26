@@ -173,12 +173,14 @@
 import { flushSync } from "react-dom";
 
 import { isEngineManagedCard } from "./card-registry";
+import { applyFormControlSnapshot } from "./components/chrome/card-host";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deckTrace, formatElement } from "./deck-trace";
 import { traceApplyDefaultFocus } from "./default-focus";
 import { canProgrammaticallyFocus } from "./focus-theft-gate";
 
 import type { IDeckManagerStore } from "./deck-manager-store";
+import type { CardStateBag } from "./layout-tree";
 
 /**
  * Local replica of `card-host.tsx`'s `isElementHidden`. Detects
@@ -520,9 +522,9 @@ export function transferFocusForActivation(
     });
 
     const bag = store.getCardState(incomingCardId);
+    const cardRoot =
+      targetCardHostEl ?? store.peekCardHostRoot(incomingCardId);
     if (bag?.domSelection !== undefined && bag.domSelection !== null) {
-      const cardRoot =
-        targetCardHostEl ?? store.peekCardHostRoot(incomingCardId);
       if (cardRoot !== null) {
         selectionGuard.restoreCardDomSelection(
           incomingCardId,
@@ -535,6 +537,9 @@ export function transferFocusForActivation(
           via: "restoreCardDomSelection",
         });
       }
+    }
+    if (bag !== undefined && cardRoot !== null) {
+      installFormControlReapplyOnNextMousedown(bag, cardRoot, incomingCardId);
     }
     return;
   }
@@ -568,12 +573,110 @@ export function transferFocusForActivation(
         via: "restoreCardDomSelection",
       });
     }
+    if (bag !== undefined) {
+      installFormControlReapplyOnNextMousedown(bag, target.cardRoot, incomingCardId);
+    }
     return;
   }
 
   // `dispatch-activated` — the content factory's registered
   // callback handles its own targeting.
   store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
+}
+
+/**
+ * Install a one-shot capture-phase `mousedown` listener that
+ * suppresses the browser's caret-placement default and re-applies
+ * the activated card's form-control snapshot to the input the user
+ * just clicked.
+ *
+ * ## Why this is needed
+ *
+ * `transferFocusForActivation` runs in the pointerdown handler that
+ * also triggered the activation. The matching mousedown for the same
+ * physical click hasn't fired yet. WebKit's mousedown default
+ * action will (a) focus the click target and (b) place a collapsed
+ * caret at the click position — clobbering any saved selection on
+ * the input. The mount-restore effect in `card-host.tsx` applies
+ * form-control snapshots once per element per mount (`WeakSet`-
+ * gated), so a card that was deactivated then re-activated WITHOUT
+ * remount has no path that re-applies its saved selection.
+ *
+ * ## Why an event listener, not timing
+ *
+ * `requestAnimationFrame` / `setTimeout(0)` / `queueMicrotask` would
+ * be a guess at "when has the mousedown's default action run." None
+ * of those are deterministic ordering primitives — [L05] explicitly
+ * forbids RAF for ordering with React commits, and the same logic
+ * applies to any timing-based defer here. A capture-phase
+ * `mousedown` listener fires before the target's listeners, before
+ * the default action, deterministically, in the browser's event
+ * dispatch sequence. `event.preventDefault()` then suppresses the
+ * default action, keeping the application strictly ordered against
+ * a known event boundary.
+ *
+ * ## Pattern
+ *
+ * Same shape as `selectionGuard.installPreventMousedown` (used for
+ * range-published selections). The only addition here is the post-
+ * preventDefault application of the form-control snapshot:
+ * `preventDefault` stopped the browser from focusing the input AND
+ * placing the caret, so we manually focus and apply the saved
+ * selection.
+ *
+ * `{ once: true, capture: true }` — fires for the next mousedown
+ * (typically the same physical click that triggered this
+ * activation), then auto-removes. If the activation was
+ * programmatic with no upcoming click, the listener stays installed
+ * until the next mousedown anywhere — same tradeoff as
+ * `installPreventMousedown`. In practice, every activation
+ * transition is click-driven, so the listener gets consumed by the
+ * intended click. [L23]
+ *
+ * Selection plan Step 25C.3 follow-up (m36-inactive-card-app-switch).
+ */
+function installFormControlReapplyOnNextMousedown(
+  bag: CardStateBag,
+  cardRoot: HTMLElement,
+  cardId: string,
+): void {
+  const formSnapshots = bag.formControls;
+  if (!formSnapshots || Object.keys(formSnapshots).length === 0) return;
+
+  const handler = (event: MouseEvent): void => {
+    const target = event.target instanceof Element ? event.target : null;
+    const clickedInput = target?.closest<HTMLInputElement | HTMLTextAreaElement>(
+      "input[data-tug-persist-value], textarea[data-tug-persist-value]",
+    );
+    if (clickedInput === null || clickedInput === undefined) return;
+    if (!cardRoot.contains(clickedInput)) return;
+
+    const persistKey = clickedInput.getAttribute("data-tug-persist-value");
+    if (persistKey === null) return;
+    const snap = formSnapshots[persistKey];
+    if (snap === undefined) return;
+
+    // Suppress the mousedown's default action. The browser would
+    // otherwise focus the input AND collapse any selection to a
+    // caret at the click position; both effects clobber the saved
+    // state we're about to restore.
+    event.preventDefault();
+
+    // Manually focus the input — preventDefault stopped the
+    // browser's default focus action.
+    if (clickedInput.ownerDocument.activeElement !== clickedInput) {
+      clickedInput.focus({ preventScroll: true });
+    }
+
+    applyFormControlSnapshot(clickedInput, snap);
+    deckTrace.record({
+      kind: "selection-restore",
+      cardId,
+      via: "applyFocusSnapshot",
+    });
+  };
+
+  document.addEventListener("mousedown", handler, { capture: true, once: true });
 }
 
 /**
