@@ -563,7 +563,44 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       },
     });
     smartScrollRef.current = smartScroll;
+
+    // Listen for the `tug-region-scroll-set` event dispatched by
+    // CardHost's `applyRegionScrolls` during cold-boot / cross-mount
+    // region-scroll restore. The event carries the saved
+    // `{ top, left }` position; we apply it via SmartScroll's
+    // `scrollTo` (so the programmatic phase is recorded) and call
+    // `disengageFollowBottom` so the next ResizeObserver-driven
+    // height refinement does NOT re-slam scrollTop to the bottom.
+    //
+    // `preventDefault()` signals to the dispatcher that we owned
+    // the apply — `applyRegionScrolls` skips its fallback direct
+    // `scrollTop` assignment when this happens. Generic scroll
+    // regions without a SmartScroll listener don't preventDefault,
+    // and the dispatcher falls back to the direct assignment.
+    const onRegionScrollSet = (event: Event) => {
+      const ce = event as CustomEvent<{ top?: number; left?: number }>;
+      const container = scrollContainerRef.current;
+      const ss = smartScrollRef.current;
+      if (!container || !ss) return;
+      event.preventDefault();
+      if (typeof ce.detail.left === "number") {
+        container.scrollLeft = ce.detail.left;
+      }
+      if (typeof ce.detail.top === "number") {
+        ss.scrollTo({ top: ce.detail.top, animated: false });
+      }
+      ss.disengageFollowBottom();
+    };
+    scrollContainerRef.current.addEventListener(
+      "tug-region-scroll-set",
+      onRegionScrollSet,
+    );
+
     return () => {
+      scrollContainerRef.current?.removeEventListener(
+        "tug-region-scroll-set",
+        onRegionScrollSet,
+      );
       smartScroll.dispose();
       smartScrollRef.current = null;
     };

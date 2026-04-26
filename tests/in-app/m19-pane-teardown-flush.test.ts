@@ -120,7 +120,11 @@ describe.skipIf(!SHOULD_RUN)("m19: _closePane flushes every card before destruct
         if (e.kind === "card-host-unmount" && firstUnmountAt === Number.POSITIVE_INFINITY) {
           firstUnmountAt = i;
         }
-        if (e.kind === "save-callback" && e.source === "close-handoff") {
+        if (
+          e.kind === "save-callback" &&
+          e.source === "close-handoff" &&
+          typeof e.cardId === "string"
+        ) {
           lastSaveAt[e.cardId] = i;
         }
       }

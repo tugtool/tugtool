@@ -567,8 +567,26 @@ export function applyRegionScrolls(
       `[data-tug-scroll-key="${CSS.escape(key)}"]`,
     );
     if (!el) continue;
-    el.scrollLeft = pos.x;
-    el.scrollTop = pos.y;
+    // Dispatch a cancelable `tug-region-scroll-set` event before
+    // touching `scrollLeft` / `scrollTop` directly. Components like
+    // `tug-markdown-view` that wrap their scroll container in a
+    // SmartScroll instance listen for this event so they can
+    // simultaneously (a) apply the requested scroll position and
+    // (b) disengage SmartScroll's follow-bottom flag — without (b)
+    // the next ResizeObserver-driven height refinement re-slams
+    // `scrollTop` to the bottom, defeating cold-boot restore.
+    // Generic scroll regions don't install a listener, so the
+    // event is not preventDefaulted and we fall back to the direct
+    // assignment.
+    const event = new CustomEvent<{ top: number; left: number }>(
+      "tug-region-scroll-set",
+      { detail: { top: pos.y, left: pos.x }, cancelable: true, bubbles: false },
+    );
+    const wasHandled = !el.dispatchEvent(event);
+    if (!wasHandled) {
+      el.scrollLeft = pos.x;
+      el.scrollTop = pos.y;
+    }
   }
 }
 
@@ -870,7 +888,24 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     if (!formSnapshots && !regionSnapshot) return;
 
     const formApplied = new WeakSet<Element>();
-    const regionApplied = new Set<string>();
+    // For region scrolls we can't mark "applied after one shot" — a
+    // virtualized scroller (most notably `tug-markdown-view`) renders
+    // estimated-height blocks first, so its `scrollHeight` is below
+    // the saved `scrollTop` on the initial apply. The browser
+    // clamps the assignment, then ResizeObserver-driven height
+    // refinement grows the spacer divs (which mutates their `style`
+    // attribute) and `scrollHeight` catches up. Track the settled
+    // state instead: re-apply on every observed mutation until
+    // `el.scrollTop` lands within tolerance of the saved value,
+    // then mark settled and stop fighting any subsequent scroll.
+    //
+    // The matching MutationObserver below adds `attributes: true,
+    // attributeFilter: ["style"]` so the spacer-height mutations
+    // fire `apply()`; without that, only `childList` mutations
+    // would trigger re-application and the bake-in race would
+    // never resolve. See selection plan Step 25C.2 Layer 4.
+    const regionSettled = new Set<string>();
+    const REGION_SCROLL_TOLERANCE_PX = 8;
 
     const apply = () => {
       const cardRoot = findCardRoot(hostContentEl, cardId);
@@ -887,18 +922,28 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         }
       }
       if (regionSnapshot) {
-        // Only apply regions we haven't applied yet. `applyRegionScrolls`
-        // would otherwise re-slam the scroll on every subtree mutation,
-        // fighting the user after they scrolled post-restore.
         const pending: RegionScrollSnapshot = {};
         let hasPending = false;
         for (const [key, pos] of Object.entries(regionSnapshot)) {
-          if (regionApplied.has(key)) continue;
+          if (regionSettled.has(key)) continue;
           const el = cardRoot.querySelector<HTMLElement>(
             `[data-tug-scroll-key="${CSS.escape(key)}"]`,
           );
           if (!el) continue;
-          regionApplied.add(key);
+          // If the element already sits within tolerance of the
+          // saved position, mark it settled and stop fighting any
+          // subsequent user scroll. Covers two cases: (a) the
+          // saved-position-is-zero no-op, and (b) the post-bake-in
+          // pass where ResizeObserver has finished growing the
+          // spacer and our previous `applyRegionScrolls` has
+          // already landed the scrollTop on target.
+          if (
+            Math.abs(el.scrollTop - pos.y) <= REGION_SCROLL_TOLERANCE_PX &&
+            Math.abs(el.scrollLeft - pos.x) <= REGION_SCROLL_TOLERANCE_PX
+          ) {
+            regionSettled.add(key);
+            continue;
+          }
           pending[key] = pos;
           hasPending = true;
         }
@@ -910,7 +955,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const cardRoot = findCardRoot(hostContentEl, cardId);
     if (!cardRoot) return;
     const observer = new MutationObserver(apply);
-    observer.observe(cardRoot, { childList: true, subtree: true });
+    observer.observe(cardRoot, {
+      childList: true,
+      subtree: true,
+      // `style` mutations catch the virtualization-driven spacer-
+      // height growth that grows `scrollHeight` past the saved
+      // `scrollTop`. Without this, the initial clamped assignment
+      // never re-runs and the user lands at scrollTop=0.
+      attributes: true,
+      attributeFilter: ["style"],
+    });
     return () => observer.disconnect();
   }, [cardId, hostStackId, hostContentEl, store]);
 

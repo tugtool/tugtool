@@ -104,7 +104,6 @@ describe.skipIf(!SHOULD_RUN)("m23: cross-card drag-select doesn't crash the pain
       await app.nativeDragElement(
         `[data-card-id="A"] [data-tug-scroll-key="markdown-view"]`,
         { selector: `[data-card-id="B"] [data-tug-scroll-key="markdown-view"]` },
-        { steps: 12, stepDelayMs: 8 },
       );
 
       // Window-level selection: must not throw, must be self-consistent.

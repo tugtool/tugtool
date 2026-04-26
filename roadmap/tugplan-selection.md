@@ -2327,13 +2327,36 @@ describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot", () => {
 
 Both tests must FAIL before Layer 4 lands and PASS after — that's the gating contract.
 
-**Layer 4 — The actual fix (1–2 commits, gated on what Layer 3 exposes).**
+**Layer 4 — The actual fix (1 commit). LANDED.**
 
-What lands here depends on what the new tests show. Likely candidates, ordered by probable scope:
+**The actual root cause (different from Layer 3's hypothesis):** the proposal predicted the bug was a clamp-on-first-apply that the `MutationObserver attributeFilter: ["style"]` retry would solve. That's part of the story but not the load-bearing piece. The real cause is `tug-markdown-view`'s `SmartScroll`: it defaults `followBottom: true`, and during ResizeObserver-driven bake-in the "if isFollowingBottom, slam `scrollTop = 0x40000000`" branch (`tug-markdown-view.tsx:504-505` and `:557-559`) re-clamps `scrollTop` to the bottom every time the spacer heights grow. Setting `el.scrollTop = 600` directly — what `applyRegionScrolls` did, what the m14-cold-boot-scroll Phase A test did — couldn't survive bake-in: by save time the bag captured the bottom-most scrollTop, not the user's chosen position. Phase B then "restored" to that bogus value AND got re-slammed to bottom on its own bake-in.
 
-- *Region-scroll race.* The bake-in's estimated heights produce a `scrollHeight` smaller than the saved `scrollTop` on first apply, so the browser clamps. ResizeObserver-driven spacer growth (a `style.height` mutation) later raises `scrollHeight` past the target. The current mount-restore `MutationObserver` in `card-host.tsx` is `childList: true, subtree: true` only — it doesn't observe `style` attribute mutations. Fix: add `attributes: true, attributeFilter: ["style"]`, and replace the one-shot `regionApplied` Set with `regionSettled` semantics (re-apply until `el.scrollTop` lands within tolerance, then mark settled). One commit.
-- *Selection re-anchor on settled scroll.* The cold-boot mount-restore sequence applies the scroll first, then DOM selection. If the scroll restore takes multiple frames (per above), the selection apply may run before block-container children at the saved indices exist. Fix: defer `restoreCardDomSelection` until after the matching region marks settled, OR re-apply on the same MutationObserver tick. Same commit as scroll fix in most cases — they share infrastructure.
-- *Content-relative selection encoding* (out of 25C.2's commit budget if needed). If 1kb passes but 50kb still fails after the above, path-based serialization is fundamentally fragile across virtualization. Re-architect to encode `{blockIndex: heightIndexPosition, intraBlockOffset: number}` instead of DOM child paths. Scoped to a follow-up step (25C.3) if Layer 3's 50kb test demands it.
+**The fix.** Introduce a `tug-region-scroll-set` custom DOM event as the canonical "set scroll position" primitive for region scroll containers. tug-markdown-view installs a listener on its scroll container that:
+
+1. Calls `SmartScroll.scrollTo({ top, animated: false })` to apply the requested position.
+2. Calls `SmartScroll.disengageFollowBottom()` so subsequent ResizeObserver-driven height growth does NOT re-slam to bottom.
+3. Calls `event.preventDefault()` to signal the dispatcher that the apply was handled.
+
+`applyRegionScrolls` (in `card-host.tsx`) dispatches the cancelable event before falling back to direct `scrollLeft` / `scrollTop` assignment — generic scroll regions without a SmartScroll listener don't preventDefault, so they fall through to the existing direct-assignment path with no behavior change.
+
+The CardHost mount-restore retry mechanism (Layer 4 also keeps this from the proposal): the per-mount `regionSettled` Set replaces the one-shot `regionApplied` Set, and the `MutationObserver` adds `attributes: true, attributeFilter: ["style"]`. This handles the smaller residual race where the very first apply lands at a clamped scrollTop because content hasn't fully baked in — subsequent spacer growth re-fires `apply()` and we re-assert until `el.scrollTop` sits within 8px of the saved position.
+
+**Test side.** The m14-cold-boot-scroll Phase A test was changed to dispatch the same `tug-region-scroll-set` event instead of setting `el.scrollTop` directly (the latter would be re-slammed by SmartScroll's follow-bottom on bake-in, and the saved bag would carry the wrong value). This is consistent with the production restore path: both go through the same primitive.
+
+**Result.**
+
+- `m14-cold-boot-scroll.test.ts` — 5/5 stable. Now in the default Justfile sweep.
+- `m10-cold-boot-selection.test.ts` — still 5/5 stable.
+- All adjacent tests (m04, m05, m10-markdown-selection, m14-scroll-persistence, m17-savestate-rpc-parity, m23-cross-card-selection, _smoke-cold-boot) green — no regressions.
+
+**Files touched.**
+
+- `tugdeck/src/components/chrome/card-host.tsx` — `applyRegionScrolls` dispatches the event; mount-restore uses `regionSettled` semantics + style-attribute observer.
+- `tugdeck/src/components/tugways/tug-markdown-view.tsx` — listener for `tug-region-scroll-set` that calls `SmartScroll.scrollTo` + `disengageFollowBottom` + `preventDefault`.
+- `tests/in-app/m14-cold-boot-scroll.test.ts` — Phase A dispatches the event; status doc flipped.
+- `Justfile` — `m14-cold-boot-scroll.test.ts` added to default sweep.
+
+**Selection-on-virtualized-content note.** The 50KB selection variant remains unimplemented as a follow-up (25C.3 if needed). The user's manual relaunch bug for selection on the 50KB card may still surface; a subsequent commit can add an m10-cold-boot-selection-50kb test. The likely fix there is content-relative selection encoding (block index + intra-block offset) rather than DOM child paths; that's a re-architecting of `captureDomSelection` / `restoreCardDomSelection` and is genuinely out-of-scope for 25C.2.
 
 **Deliverables.**
 

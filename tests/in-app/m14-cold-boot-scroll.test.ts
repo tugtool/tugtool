@@ -36,18 +36,12 @@
  * cache merge (test cold-boot). The user's reported bug lives in
  * that apply code, not in the read path; the test exercises it.
  *
- * ## Status: EXPECTED TO FAIL until Step 25C.2 Layer 4 lands the
- * scroll-race fix
+ * ## Status: PASSING (in the default Justfile sweep)
  *
- * Per the Step 25C.2 plan (`roadmap/tugplan-selection.md`), Phase A
- * should pass (save-side already works — verified manually by
- * reading the user's real `~/.tugbank.db` after a quit) and Phase B
- * should fail with a `el.scrollTop !== expected` assertion. That
- * failure mode IS the Layer 4 gating evidence.
- *
- * **NOT in the default Justfile sweep until Layer 4.** Run via:
- *
- *     just test-in-app-fast m14-cold-boot-scroll.test.ts
+ * Layer 4 (the `tug-region-scroll-set` event + SmartScroll
+ * disengage-follow-bottom + MutationObserver `attributeFilter`
+ * retry) flipped this from failing to passing. See
+ * `roadmap/tugplan-selection.md` Step 25C.2.
  *
  * ## Closes
  *
@@ -144,14 +138,22 @@ describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot across full process restart"
             { timeoutMs: 4000 },
           );
 
-          // Set scroll to the known offset and wait for the live
-          // value to land (the scroll event triggers the regionScroll
-          // capture via the CardHost listener).
+          // Dispatch the `tug-region-scroll-set` event tug-markdown-view
+          // listens for (the same event CardHost's applyRegionScrolls
+          // uses during cold-boot restore). Setting scrollTop directly
+          // would race SmartScroll's follow-bottom mode — by the time
+          // the bag is captured at quitGracefully, ResizeObserver-driven
+          // bake-in would have re-slammed scrollTop to the bottom.
+          // Routing through the event tells SmartScroll to disengage
+          // follow-bottom AND apply the requested position.
           await app.evalJS<void>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(markdownScrollSelectorFor(CARD_ID))});
-              el.scrollTop = ${REGION_SCROLL_TARGET};
-              el.dispatchEvent(new Event('scroll', { bubbles: true }));
+              el.dispatchEvent(new CustomEvent('tug-region-scroll-set', {
+                detail: { top: ${REGION_SCROLL_TARGET}, left: 0 },
+                cancelable: true,
+                bubbles: false,
+              }));
             })()`,
           );
           await app.waitForCondition<boolean>(
