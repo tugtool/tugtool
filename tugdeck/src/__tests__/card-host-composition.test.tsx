@@ -432,7 +432,15 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
     selectionGuard.reset();
   });
 
-  it("engine.setSelectedRange publishes a Range to selectionGuard.cardRanges under the enclosing cardId", () => {
+  it("paintMirrorAsInactive(publish) publishes a Range to selectionGuard.cardRanges under the enclosing cardId", () => {
+    // Selection plan Step 25C.5 Layer 3: the per-keystroke
+    // engine→selectionGuard relay is gone. `selectionGuard.cardRanges`
+    // is now populated at deactivation transitions via
+    // `paintMirrorAsInactive(publish)`, where the engine builds a
+    // Range from its current state and hands it to the publish
+    // callback (typically `range => selectionGuard.updateCardDomSelection(...)`).
+    // This test exercises that publish path directly via the
+    // imperative handle.
     const card: CardState = {
       id: "c-prompt",
       componentId: "prompt-probe",
@@ -445,8 +453,6 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
     const delegate = promptProbeHandles.delegate;
     expect(delegate).not.toBeNull();
 
-    // Seed the engine with text so the 3–7 offsets resolve to real DOM
-    // positions; without content, `setSelectedRange` has nothing to point at.
     act(() => {
       delegate!.restoreState({
         text: "hello world",
@@ -454,12 +460,18 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
         selection: null,
       });
     });
-    // Prime: at this point the restore-null path has emitted once; guard
-    // has no entry. Verify.
+    // Pre-paint: cardRanges has no entry for this card.
     expect(selectionGuard.getCardRange("c-prompt")).toBeUndefined();
 
+    // Set the engine's selection (writes window.getSelection only —
+    // does NOT publish to selectionGuard post-Layer-3) and then
+    // explicitly route via paintMirrorAsInactive — this is the
+    // production path the deactivation hook takes.
     act(() => {
       delegate!.setSelectedRange(3, 7);
+      delegate!.paintMirrorAsInactive((range) => {
+        selectionGuard.updateCardDomSelection("c-prompt", range);
+      });
     });
 
     const range = selectionGuard.getCardRange("c-prompt");
@@ -497,6 +509,11 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
         selection: null,
       });
       delegate!.setSelectedRange(1, 5);
+      // Layer 3: explicit publish via the deactivation paint path
+      // (no automatic relay seeds cardRanges anymore).
+      delegate!.paintMirrorAsInactive((range) => {
+        selectionGuard.updateCardDomSelection("c-prompt-unmount", range);
+      });
     });
 
     expect(selectionGuard.getCardRange("c-prompt-unmount")).toBeDefined();
@@ -505,7 +522,7 @@ describe("CardHost → TugPromptInput → selectionGuard wiring", () => {
       unmount();
     });
 
-    // After unmount, the engine's cleanup has fired
+    // After unmount, the engine's cleanup fires
     // `updateCardDomSelection(id, null)` and `unregisterBoundary(id)`.
     // Either path clears the entry; the observable is the same.
     expect(selectionGuard.getCardRange("c-prompt-unmount")).toBeUndefined();

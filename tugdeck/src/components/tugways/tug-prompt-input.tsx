@@ -788,19 +788,24 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         });
       }
 
-      // Wire engine → selectionGuard. Every movement of the engine's
-      // DOM selection is relayed so the guard's card-level paint logic
-      // (installed in Step 5) can keep the `inactive-selection`
-      // highlight in sync without reading engine internals. [D05], [L10].
+      // Selection plan Step 25C.5 Layer 3: the per-keystroke
+      // engine→selectionGuard relay is dropped. selectionGuard's
+      // `cardRanges` is no longer the live mirror of every selection
+      // movement — instead it is updated at deactivation transitions
+      // via `paintMirrorAsInactive(publish)`, which publishes the
+      // outgoing card's final selection at the moment focus moves
+      // away. While a card is active, its selection lives in
+      // `window.getSelection()` (native ::selection paint);
+      // selectionGuard's `cardRanges` entry for the active card is
+      // intentionally allowed to go stale because nothing paints from
+      // it (the inactive Highlight skips the focused card). The
+      // entry refreshes when the card next deactivates.
       //
-      // The relay reads `cardIdRef.current` at fire time so a stand-alone
-      // input (no enclosing `CardHost`) is silent — nothing to publish
-      // for, nothing to clear.
-      const unsubscribeFromEngine = engine.onSelectionChanged((range) => {
-        const id = cardIdRef.current;
-        if (id === null) return;
-        selectionGuard.updateCardDomSelection(id, range);
-      });
+      // Removing the relay closes a `selectionchange`-rate write loop
+      // that fired on every caret move while the user was typing —
+      // pure waste, since the active card's cardRanges value was
+      // never painted. [L23] cardRanges is a paint cache, not a
+      // truth-of-record; its truth-of-record is the bag.
 
       // Apply any state buffered by onRestore that fired before engine
       // creation. The buffer carries the `isActive` snapshot CardHost
@@ -836,7 +841,6 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       }
 
       return () => {
-        unsubscribeFromEngine();
         const id = cardIdRef.current;
         if (id !== null) {
           // Drop the last-known Range from the guard so downstream paint
