@@ -288,23 +288,47 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  *
  * Pure read; does not mutate focus, selection, or any DOM state.
  */
-export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
+export function captureFocus(
+  cardRoot: HTMLElement,
+  fallbackPersistKey?: string | null,
+): FocusSnapshot {
   const active = cardRoot.ownerDocument.activeElement;
-  if (!(active instanceof HTMLElement)) return { kind: "none" };
-  if (!cardRoot.contains(active)) return { kind: "none" };
+  if (active instanceof HTMLElement && cardRoot.contains(active)) {
+    const persistKey = active.getAttribute("data-tug-persist-value");
+    if (persistKey !== null && persistKey !== "") {
+      return { kind: "form-control", persistKey };
+    }
 
-  const persistKey = active.getAttribute("data-tug-persist-value");
-  if (persistKey !== null && persistKey !== "") {
-    return { kind: "form-control", persistKey };
+    const focusKey = active.getAttribute("data-tug-focus-key");
+    if (focusKey !== null && focusKey !== "") {
+      return { kind: "dom", focusKey };
+    }
+
+    for (const selector of COMPONENT_OWNED_SELECTORS) {
+      if (active.closest(selector)) return { kind: "component-owned" };
+    }
   }
 
-  const focusKey = active.getAttribute("data-tug-focus-key");
-  if (focusKey !== null && focusKey !== "") {
-    return { kind: "dom", focusKey };
-  }
-
-  for (const selector of COMPONENT_OWNED_SELECTORS) {
-    if (active.closest(selector)) return { kind: "component-owned" };
+  // Fallback: focus has already moved out of the card (typical for
+  // a save callback firing on deactivation — the click that drove
+  // the deactivation also moved focus to the sibling card). Use the
+  // last-known focused persistKey tracked by CardHost's focusin
+  // listener, when the matching element is still in the card root.
+  // Without this fallback, deactivation captures `{ kind: "none" }`,
+  // the resolver falls through to the default-focus chain on
+  // re-activation, and focus lands on the FIRST persistKey input
+  // instead of the one the user actually had focused. [L23]
+  if (
+    fallbackPersistKey !== undefined &&
+    fallbackPersistKey !== null &&
+    fallbackPersistKey !== ""
+  ) {
+    const el = cardRoot.querySelector(
+      `[data-tug-persist-value="${CSS.escape(fallbackPersistKey)}"]`,
+    );
+    if (el !== null) {
+      return { kind: "form-control", persistKey: fallbackPersistKey };
+    }
   }
 
   return { kind: "none" };
@@ -632,6 +656,18 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // element at fire time, not the mount-time capture. L07.
   const hostContentElRef = useRef<HTMLDivElement | null>(null);
   hostContentElRef.current = hostContentEl;
+
+  // Last-focused `data-tug-persist-value` inside this card's root.
+  // Updated on every `focusin` whose target carries a persistKey. Used
+  // as a fallback by `captureFocus` when the deactivation save fires
+  // AFTER the click that moved focus to a sibling card — at that
+  // moment `document.activeElement` no longer points inside this
+  // card, so the activeElement-based capture would return
+  // `{ kind: "none" }` and the user's last input choice would be lost.
+  // The ref persists across deactivation/reactivation cycles within
+  // a single mount; cleared when the user genuinely focuses away from
+  // any persistKey-tagged input inside this card. [L23]
+  const lastFocusedPersistKeyRef = useRef<string | null>(null);
 
   // Content restore is imperative and trigger-driven. The trigger is the
   // child calling `register(callbacks)` — its own `useLayoutEffect` is
@@ -1039,7 +1075,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         : null;
     const focus: FocusSnapshot =
       cardRoot && !ownsSelectionAndFocus
-        ? captureFocus(cardRoot)
+        ? captureFocus(cardRoot, lastFocusedPersistKeyRef.current)
         : { kind: "none" };
     const bag: CardStateBag = {
       ...(scroll !== undefined ? { scroll } : {}),
@@ -1224,6 +1260,35 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       });
     };
   }, [cardId, rootEl, store, hostStackId]);
+
+  // Track the last `data-tug-persist-value` element to receive focus
+  // inside this card root. The ref backs `captureFocus`'s fallback
+  // path: when the deactivation save fires after focus has already
+  // moved to a sibling card, `document.activeElement` no longer
+  // points inside this card — but the LAST focusin we observed
+  // inside this card identifies the input the user actually had
+  // focused. That's the persistKey we want to record in
+  // `bag.focus`. [L03] — listener registers inside the root's
+  // useLayoutEffect so it's in place before any pointer events that
+  // could drive a deactivation. [L23] — preserves the user's focus
+  // choice across activation transitions. [L22] — direct DOM event
+  // observation; the captured persistKey drives a DOM-write at
+  // restore time, not React state.
+  useLayoutEffect(() => {
+    if (rootEl === null) return;
+    const handleFocusin = (event: FocusEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const input = target.closest("[data-tug-persist-value]");
+      if (input === null || !rootEl.contains(input)) return;
+      const key = input.getAttribute("data-tug-persist-value");
+      if (key !== null && key !== "") {
+        lastFocusedPersistKeyRef.current = key;
+      }
+    };
+    rootEl.addEventListener("focusin", handleFocusin);
+    return () => rootEl.removeEventListener("focusin", handleFocusin);
+  }, [rootEl]);
 
   // ---- Render ----
   if (!registration) {

@@ -270,6 +270,25 @@ describe.skipIf(!SHOULD_RUN)(
             postReactivate.selectionEnd,
             "post-reactivate: selection end must be 2 (user selected entire 'md')",
           ).toBe(2);
+
+          // Focus must land on the md input — the input the user
+          // actually had focused before deactivation. Without the
+          // focusin-tracked fallback in `captureFocus`, the
+          // deactivation save captures `bag.focus = { kind: "none" }`
+          // (focus had already moved to B's input by save time), and
+          // the resolver falls through to the default-focus chain
+          // which picks the FIRST persistKey input — `sm`, not `md`.
+          const focusedPersistKey = await app.evalJS<string | null>(
+            `(function(){
+              var active = document.activeElement;
+              if (!(active instanceof Element)) return null;
+              return active.getAttribute("data-tug-persist-value");
+            })()`,
+          );
+          expect(
+            focusedPersistKey,
+            "post-reactivate: focus must land on the md input the user originally focused, not the sm input from the default-focus chain",
+          ).toBe(INPUT_MD_KEY);
         } finally {
           await app.close();
         }
