@@ -431,6 +431,66 @@ export class TugTextEngine {
   // intermediate states stay private.
   private _suppressSelectionEmits = false;
 
+  // -------------------------------------------------------------------
+  // Browser-mirrored state — the engine's authoritative model
+  // -------------------------------------------------------------------
+  //
+  // The engine's persisted shape ([L23]) commingles two categories of
+  // state:
+  //
+  //   - **Content state** (text, atoms): owned by the engine, stored
+  //     in DOM nodes that are stable across hidden/detached/inactive
+  //     transitions. The browser doesn't mutate these for its own
+  //     reasons. `getText()` and `getAtoms()` read from the DOM
+  //     directly because the DOM IS the canonical storage.
+  //
+  //   - **Browser-mirrored state** (selection, scrollTop): the *browser*
+  //     owns these — `window.getSelection()` is a global, `el.scrollTop`
+  //     is a property the browser can reset (hidden element, layout
+  //     clamping, focus moving to another control). Reading the live
+  //     browser at capture time persists whatever the browser happens
+  //     to show, which may not be the user's intent (e.g. a save fired
+  //     during a card deactivation runs while focus has just moved to
+  //     a sibling, so `getSelection()` returns the sibling's selection
+  //     and `scrollTop` is 0 because the editor was just hidden).
+  //
+  // The engine MIRRORS browser-mirrored state into this model at
+  // *publish points* — moments where the engine knows the value
+  // reflects the user's intended state. `captureState()` reads from
+  // the mirror; never from the live browser. `restoreState()` writes
+  // to the mirror first, then to the DOM.
+  //
+  // Publish points:
+  //
+  //   - `setSelectedRange(start, end)` — synchronous mirror write, then
+  //     DOM write (`removeAllRanges` + `addRange`).
+  //   - `selectionchange` (filtered to in-root) — user moved the caret
+  //     or extended the selection inside the editor; mirror picks up
+  //     the new flat offsets.
+  //   - `scroll` (filtered to visible) — user wheeled, dragged the
+  //     scrollbar, or arrowed past the viewport edge; mirror picks up
+  //     `root.scrollTop`. The visibility filter rejects events fired
+  //     by involuntary clamps (e.g. a hidden element's `scrollTop`
+  //     getting clamped by a 0 `clientHeight`).
+  //   - `clear()` — both axes go to "no asserted state".
+  //   - `restoreState(state)` — both axes are written from `state`.
+  //
+  // The mirror is NEVER updated at non-publish points: focus moving
+  // outside the root, an element going hidden/detached, layout
+  // clamping below `scrollHeight`. The browser's view of the world
+  // becomes incorrect; the engine's view stays correct because no
+  // listener fired on those transitions.
+  //
+  // L06 alignment: scroll position and selection are *data* (non-
+  // rendering consumers — persistence, undo, restore — read them).
+  // Holding them in this engine-internal model is correct. The DOM
+  // writes that follow are appearance-zone updates ([L06]). The
+  // engine isn't React state; the persistence pipeline is.
+  private _browserMirror: {
+    selection: { start: number; end: number } | null;
+    scrollTop: number;
+  } = { selection: null, scrollTop: 0 };
+
   // IME composition state.
   // _composing is true between compositionstart and compositionend.
   // _compositionJustEnded is set on compositionend and cleared on keyup.
@@ -468,6 +528,53 @@ export class TugTextEngine {
     this.root = root;
     this.setupEvents();
     this.updateEmpty();
+    this._installLayoutObserver();
+  }
+
+  // -------------------------------------------------------------------
+  // Layout observation — permanent ResizeObserver on root
+  // -------------------------------------------------------------------
+  //
+  // The browser tells us when the editor's box dimensions change
+  // (visibility transitions, parent flex resizing, content-driven
+  // panel growth settling). Every such transition is a moment when:
+  //   1. `autoResize` should re-run so the editor's own height
+  //      reflects current content.
+  //   2. The mirror should be re-painted to DOM so user-visible state
+  //      survives the transition.
+  //
+  // This is a single, permanent observer — not a budget-bounded
+  // retry. Layout-driven transitions are the deterministic publish
+  // points for "the moment to repaint"; we react to them instead of
+  // guessing with timers. [L23]
+  private _layoutObserver: ResizeObserver | null = null;
+  private _suppressLayoutObserver = false;
+
+  private _installLayoutObserver(): void {
+    if (typeof ResizeObserver !== "function") return;
+    this._layoutObserver = new ResizeObserver(() => {
+      // Suppress recursion: `autoResize` writes `style.height`, which
+      // fires the observer again. The flag breaks the loop after one
+      // cycle. `autoResize` is idempotent at convergence (writing the
+      // same height yields the same height), so a single re-paint
+      // is sufficient.
+      if (this._suppressLayoutObserver) return;
+      if (!this.root.isConnected) return;
+      this._suppressLayoutObserver = true;
+      try {
+        // Pair: layout reconciliation, then mirror→DOM paint.
+        // `autoResize` brings the editor's own height into agreement
+        // with the current content (covering the case where it ran
+        // earlier while the editor was hidden and computed wrong);
+        // `applyMirrorToDom` then writes the user's persisted
+        // selection / scrollTop into the now-correctly-sized DOM.
+        this.autoResize();
+        this.applyMirrorToDom();
+      } finally {
+        this._suppressLayoutObserver = false;
+      }
+    });
+    this._layoutObserver.observe(this.root);
   }
 
   // =================================================================
@@ -579,6 +686,12 @@ export class TugTextEngine {
     } finally {
       this._suppressSelectionEmits = wasSuppressed;
     }
+    // Programmatic publish point — write the mirror synchronously
+    // before the async selectionchange arrives. captureState reads
+    // from `_browserMirror.selection`, so a save callback firing
+    // immediately after this returns sees the value just committed
+    // instead of waiting for the browser's async event. [L23]
+    this._browserMirror.selection = { start, end: end ?? start };
     // If a parent call (e.g. `restoreState`) already owns the emit at
     // its own tail, don't double-fire; defer to the parent.
     if (!wasSuppressed) this.emitSelectionChanged();
@@ -626,6 +739,15 @@ export class TugTextEngine {
       anchorOffset = sel.anchorOffset;
       focusNode = sel.focusNode;
       focusOffset = sel.focusOffset;
+      // User-driven publish point. The document `selectionchange`
+      // listener filters out-of-root events, so this branch only runs
+      // when the user moved the caret/range INSIDE the editor — exactly
+      // when we want to update the persisted shape. captureState reads
+      // from `_browserMirror.selection`. [L23]
+      this._browserMirror.selection = {
+        start: domToFlat(this.root, range.startContainer, range.startOffset),
+        end: domToFlat(this.root, range.endContainer, range.endOffset),
+      };
     }
 
     const hadRange = this._lastEmittedHadRange;
@@ -789,6 +911,13 @@ export class TugTextEngine {
       this._suppressSelectionEmits = false;
     }
     this._empty = true;
+    // Clear publish point — both axes of the mirror reset to "no
+    // asserted state". The prior selection's flat offsets no longer
+    // reference any DOM, and an empty editor can't carry a meaningful
+    // scroll offset. Without this, a captureState immediately after
+    // `clear()` would return stale state. [L23]
+    this._browserMirror.selection = null;
+    this._browserMirror.scrollTop = 0;
     this.updateEmpty();
     this.onChange?.();
     this.emitSelectionChanged();
@@ -822,16 +951,21 @@ export class TugTextEngine {
         atomIdx++;
       }
     }
+    // Browser-mirrored axes (selection, scrollTop) come from
+    // `_browserMirror` — the engine's authoritative model. Reading
+    // `window.getSelection()` or `root.scrollTop` here would persist
+    // whatever the browser happens to show at this instant, which is
+    // wrong when the editor is hidden / focus has moved / scrollTop
+    // has been involuntarily clamped (e.g. on a card deactivation
+    // when the save callback fires). The mirror is updated only at
+    // *publish points* (programmatic engine writes,
+    // selectionchange-in-root, scroll-while-visible), so it always
+    // reflects the user's intended state. [L23]
     return {
       text,
       atoms,
-      selection: this.getSelectedRange(),
-      // Capture the contenteditable's scroll offset so a save→restore
-      // round-trip preserves the user's chosen scroll position
-      // ([L23]). The DOM read is cheap (`scrollTop` is cached on the
-      // node) and a disconnected root reports 0, which is the correct
-      // null-equivalent for an unmounted engine.
-      scrollTop: this.root.scrollTop,
+      selection: this._browserMirror.selection,
+      scrollTop: this._browserMirror.scrollTop,
     };
   }
 
@@ -887,33 +1021,90 @@ export class TugTextEngine {
       this._empty = state.text.length === 0 || state.text === "\n";
       this.updateEmpty();
       this.autoResize();
+      // Restore publish point — write the mirror first, then apply
+      // to DOM via `applyMirrorToDom`. `setSelectedRange` writes
+      // `_browserMirror.selection` synchronously; the explicit
+      // `_browserMirror.scrollTop` write below is the parallel for
+      // the scroll axis. The mirror is now the SOT; the DOM is what
+      // we paint when activation, focus, or any other "now would be
+      // a good time to assert state" trigger calls
+      // `applyMirrorToDom`. [L23]
       if (state.selection) {
         this.setSelectedRange(state.selection.start, state.selection.end);
+      } else {
+        this._browserMirror.selection = null;
       }
-      // Restore the contenteditable's scroll offset AFTER text + atoms
-      // + selection have committed and `autoResize` has settled the
-      // root's height. WebKit clamps `scrollTop` against
-      // `scrollHeight - clientHeight`; setting it before the DOM is
-      // populated would land at 0. A `null` / `undefined` slot means
-      // "no asserted position" — leave the editor wherever bake-in
-      // landed, matching legacy on-disk payloads from before this
-      // field existed ([L23], selection plan Step 25C.3 Layer 3).
-      //
-      // Direct DOM write is correct under [L06]: scroll position is
-      // *data* (non-rendering consumers — persistence, undo, scroll-
-      // restore retry — read it), but the persistence layer's
-      // application of that data is a DOM write through the engine's
-      // root, not a React state change. The L06 test ("does any
-      // non-rendering consumer depend on this state?") returns yes,
-      // so storing scroll in `bag.content` is correct; the write
-      // mechanism is direct DOM because the engine isn't React.
-      if (typeof state.scrollTop === "number") {
-        this.root.scrollTop = state.scrollTop;
-      }
+      this._browserMirror.scrollTop =
+        typeof state.scrollTop === "number" ? state.scrollTop : 0;
+      this.applyMirrorToDom();
     } finally {
       this._suppressSelectionEmits = false;
     }
     this.emitSelectionChanged();
+  }
+
+  /**
+   * Repaint the browser-mirrored axes from the model to the DOM.
+   *
+   * The mirror is the source of truth for selection and scrollTop;
+   * the DOM is a view of it. Browsers reset the DOM when an element
+   * goes hidden (scrollTop clamps to 0; selection moves with focus),
+   * so the engine repaints when DOM and mirror diverge.
+   *
+   * **Paint-only**, deliberately. Layout work (`autoResize`) belongs
+   * to the layout observer below — running it here during fragile
+   * transitions (the activation moment, before the new pane has
+   * fully resolved its dimensions) can race the focus call. The
+   * observer fires on every dimension change with `autoResize` paired
+   * to a paint, which is the deterministic moment to reconcile
+   * layout and mirror together.
+   *
+   * Selection: only write the mirror when the live DOM does NOT
+   * already have an in-root selection. The live DOM's in-root
+   * selection is the user's actual current state — typing,
+   * clicking, or arrow-key navigation just placed it there, and
+   * `selectionchange` will refresh the mirror in the next async
+   * task. Writing the mirror to DOM in this window would undo the
+   * user's input. The mirror's value is needed only when the DOM
+   * has lost its selection — focus moved to a sibling card, the
+   * editor was hidden and re-shown, etc. — i.e., precisely the
+   * case the in-root check rejects.
+   *
+   * Skips silently when the engine root is detached — there is no
+   * DOM to paint to. A subsequent layout transition (caught by the
+   * permanent ResizeObserver below) will reapply once the root is
+   * back. [L23]
+   */
+  applyMirrorToDom(): void {
+    if (!this.root.isConnected) return;
+    if (this._browserMirror.selection && !this._liveSelectionInRoot()) {
+      this.setSelectedRange(
+        this._browserMirror.selection.start,
+        this._browserMirror.selection.end,
+      );
+    }
+    if (this.root.scrollTop !== this._browserMirror.scrollTop) {
+      this.root.scrollTop = this._browserMirror.scrollTop;
+    }
+  }
+
+  /**
+   * Read the mirror's last-known in-root selection. The activation
+   * hooks fall back to this when the live DOM selection has moved
+   * out of root (the editor was deactivated, focus is elsewhere).
+   * Returns `null` when the mirror has no asserted selection — for
+   * example a fresh mount that hasn't seen any user input yet.
+   * [L23]
+   */
+  getMirroredSelection(): { start: number; end: number } | null {
+    return this._browserMirror.selection;
+  }
+
+  /** Predicate: does `window.getSelection()` have a Range anchored inside our root? */
+  private _liveSelectionInRoot(): boolean {
+    const sel = window.getSelection();
+    if (sel === null || sel.rangeCount === 0) return false;
+    return this.root.contains(sel.anchorNode);
   }
 
   /** Re-evaluate sizing. Called by the component when external conditions change. */
@@ -1810,36 +2001,51 @@ export class TugTextEngine {
 
     // 9 & 10. Change detection + auto-resize + typeahead — input event
     this.listen(root, "input", (e: Event) => {
-      const ie = e as InputEvent;
-      const inputType = ie.inputType ?? "";
-      // Track emptiness as state. Insertions → not empty.
-      // Deletions and undo/redo → re-check via getText().
-      // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
-      if (inputType.startsWith("insert")) {
-        this._empty = false;
-      } else {
-        const text = this.getText();
-        this._empty = text.length === 0 || text === "\n";
-      }
-      this.updateEmpty();
-      this.autoResize();
-      this.scrollCaretIntoView();
-      this.onChange?.();
-
-      // Skip all typeahead logic during IME composition — only react to
-      // committed text. Composition produces intermediate strings that are
-      // meaningless as file/command queries.
-      if (!this._composing) {
-        if (this._typeahead.active) {
-          this.updateTypeaheadQuery();
-        } else if (Object.keys(this.completionProviders).length > 0) {
-          this.detectTypeaheadTrigger();
+      // Suppress the layout observer for the duration of this handler.
+      // `autoResize` writes `style.height`, which fires `ResizeObserver`,
+      // which would otherwise call `applyMirrorToDom` and write
+      // `_browserMirror.selection` back to DOM — but the mirror is
+      // briefly stale here (the browser just moved the caret in
+      // response to the input; `selectionchange` fires async). Letting
+      // the layout observer run mid-input would undo the user's
+      // keystroke. The handler's own `autoResize` is enough; the
+      // observer's job is layout-driven repaint (visibility transitions,
+      // parent resizes), not input echo. [L23]
+      this._suppressLayoutObserver = true;
+      try {
+        const ie = e as InputEvent;
+        const inputType = ie.inputType ?? "";
+        // Track emptiness as state. Insertions → not empty.
+        // Deletions and undo/redo → re-check via getText().
+        // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
+        if (inputType.startsWith("insert")) {
+          this._empty = false;
+        } else {
+          const text = this.getText();
+          this._empty = text.length === 0 || text === "\n";
         }
-      }
+        this.updateEmpty();
+        this.autoResize();
+        this.scrollCaretIntoView();
+        this.onChange?.();
 
-      // Prefix detection: first character triggers route change
-      if (this.routePrefixes.length > 0 && inputType.startsWith("insert")) {
-        this.detectRoutePrefix();
+        // Skip all typeahead logic during IME composition — only react to
+        // committed text. Composition produces intermediate strings that are
+        // meaningless as file/command queries.
+        if (!this._composing) {
+          if (this._typeahead.active) {
+            this.updateTypeaheadQuery();
+          } else if (Object.keys(this.completionProviders).length > 0) {
+            this.detectTypeaheadTrigger();
+          }
+        }
+
+        // Prefix detection: first character triggers route change
+        if (this.routePrefixes.length > 0 && inputType.startsWith("insert")) {
+          this.detectRoutePrefix();
+        }
+      } finally {
+        this._suppressLayoutObserver = false;
       }
     });
 
@@ -1867,6 +2073,28 @@ export class TugTextEngine {
         return;
       }
       this.emitSelectionChanged();
+    });
+
+    // 10c. Root-level scroll — user-driven publish point for the
+    // scrollTop axis of `_browserMirror`. Fires when the user
+    // wheels, drags the scrollbar, arrows past the viewport edge, or
+    // when a programmatic write changes scrollTop (in which case the
+    // mirror was already written synchronously by the call site —
+    // this update is a no-op in steady state).
+    //
+    // Visibility filter: only update the mirror when the root is in
+    // the live render tree and isn't a hidden subtree. Browsers may
+    // fire `scroll` events when an element is hidden via
+    // `display: none` (scrollTop reset to 0 as part of layout) or
+    // when `clientHeight` shrinks below `scrollTop`. Those are NOT
+    // user-driven scrolls; updating the mirror from them would
+    // destroy the user's intended position the moment a card is
+    // deactivated. The filter rejects any scroll event fired when
+    // the engine's content area isn't being rendered. [L23]
+    this.listen(root, "scroll", () => {
+      if (!root.isConnected) return;
+      if ((root as HTMLElement).offsetParent === null) return;
+      this._browserMirror.scrollTop = root.scrollTop;
     });
 
     // 11. IME composition tracking
