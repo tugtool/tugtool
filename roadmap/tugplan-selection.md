@@ -2558,9 +2558,9 @@ Skip if Layer 3's (a) or (b) closed the bake-in race already. Otherwise:
 
 ##### Step 25C.4: Eliminate restore-side selection race; route via active/inactive paint split {#step-25c4}
 
-**Status:** proposal.
+**Status:** proposal — audited for tuglaw compliance; refinements woven inline below. Tuglaw citations are normative, not decorative — every architectural decision below names the law(s) that govern it.
 
-**Why this exists.** Step 25C.3 closed the engine's persistence shape and asserted authoritative control over browser-mirrored state for a single editor in a single card. Manual repro revealed that the restore mechanism still misbehaves once a deck contains *more than one* prompt-input/prompt-entry/tide editor. Two scenarios:
+**Why this exists.** Step 25C.3 closed the engine's persistence shape and asserted authoritative control over browser-mirrored state for a single editor in a single card. Manual repro revealed that the restore mechanism still misbehaves once a deck contains *more than one* prompt-input/prompt-entry/tide editor. This is an [L23] failure: an internal implementation operation (the multi-card restore loop) destroys user-visible state (every card's selection except the last writer's). Two scenarios:
 
 1. *Inactive card steals the document's active selection on reload.* Tide is deactivated and rendering its remembered selection via the inactive paint. The TugPromptInput gallery card on the right is active. `Developer > Reload`. After reload: Tide's selection is now the *browser's active selection* (bright native highlight) — i.e., Tide's editor stole focus from the gallery card.
 
@@ -2582,30 +2582,44 @@ For each card with persisted bag.content:
 
 When a deck has *N* cards each with a persisted selection, *N* restores fire on reload. They sequentially focus their roots and write to the global Selection. Whichever fires last wins — the rightful active card may not be the last writer; every other card's selection is destroyed inside `removeAllRanges()`. The race is fundamental to the path: every card is using the same global single-instance resource.
 
-**The framework gap.** The engine's persistence layer conflates two distinct selection categories that the framework otherwise already distinguishes:
+**The framework gap.** The engine's persistence layer conflates two distinct selection categories that the framework otherwise already distinguishes (the distinction is established and enforced by [L12] — selectionGuard is the canonical owner of card-scoped selection state):
 
 - **The document's active selection.** Exactly one per page. Owned by the focused element. Backed by `window.getSelection()`. Painted natively by the browser as the bright `::selection` highlight. Belongs to whichever card is the focus destination ([D10]).
-- **A card's remembered selection.** Many per page — every card the user has put a selection in remembers where. Backed by `selectionGuard.cardRanges[cardId]`. Painted via the *inactive paint* (selectionGuard's CSS treatment for "this card has a selection but isn't the focused card"). Already used in steady-state interaction: when the user clicks a different card, the previous card's selection moves into this category and the new card's becomes the active selection.
+- **A card's remembered selection.** Many per page — every card the user has put a selection in remembers where. Backed by `selectionGuard.cardRanges[cardId]`. Painted via the *inactive paint* — selectionGuard's CSS treatment for "this card has a selection but isn't the focused card." Per [L06], that paint is appearance state and lives in CSS / DOM data attributes (selectionGuard's existing surface), not in React state. Already used in steady-state interaction: when the user clicks a different card, the previous card's selection moves into this category and the new card's becomes the active selection.
 
 Today's restore funnels every card's remembered selection through the active-selection channel. The inactive paint isn't a destination at restore time. selectionGuard's `cardRanges` cache is empty after a reload — nothing seeded it. The only way the framework knows how to surface a remembered selection is by *writing it as the document's active selection*, which is wrong for every card except the focus destination.
 
 The same conflation is what creates the focus race: every card's `setSelectedRange` calls `root.focus()`. Every editor is asking to be the focused element. Whichever wins the call order wins the active state. The user's bag.focus information — which already names the correct focus destination ([D10]) — is overridden by the last writer's `focus()`.
 
-**Why scrollTop is fine, but selection isn't.** scrollTop is per-element. Each editor's `root.scrollTop` is its own DOM property. No cross-card resource is shared; no race exists. The mirror→DOM scroll write in 25C.3 is correct as-is. Selection is the only axis with this problem.
+**Why scrollTop is fine, but selection isn't.** scrollTop is per-element. Each editor's `root.scrollTop` is its own DOM property. No cross-card resource is shared; no race exists. The mirror→DOM scroll write in 25C.3 is correct as-is and remains [L23]-compliant. Selection is the only axis with this problem.
+
+**Defining "active" precisely.** The plan uses "active card" to mean exactly one thing: the **deck-level first responder** — i.e., the card that holds the document's focus authority for the entire page. This is *not* the same as "the active card of a pane." A multi-pane deck has multiple pane-active cards (one per pane), but only one is the deck-level first responder (the active card of the active pane).
+
+The framework already names this concretely: `deckManager.getFirstResponderCardId()`. CardHost determines `isActive` for a given card by
+
+```
+isActive = deck.getFirstResponderCardId() === this.cardId
+```
+
+at every persistence-callback invocation. Pane-active cards in non-active panes are *not* active by this definition; their persisted selections route through the inactive-paint channel, same as fully-deactivated cards. This precision matters for the multi-pane test scenario below — exactly one card per page can call `paintMirrorAsActive`, no matter how many panes the deck has.
+
+The L02 obligation: CardHost reads `getFirstResponderCardId()` from the deck-store via its existing `useSyncExternalStore` subscription (or a non-React imperative read on the deck-manager singleton — both are L02-compliant; what's forbidden is `useEffect`-copying external state into React state). The `isActive` value passed to `onRestore` is a snapshot of that read, not a copy stored in React state.
 
 **The three coordinated changes.**
 
-**1. Engine paint API split: separate "active" paint from "inactive" paint.**
+**1. Engine paint API split: separate "active" paint from "inactive" paint. Governed by [L23] (state preservation) and [L10] (one responsibility per layer).**
 
 The engine gains two paint methods, replacing the single `applyMirrorToDom`:
 
-- `paintMirrorAsActive()` — writes `mirror.selection` through `setSelectedRange` (focus + global Selection.addRange). Writes `mirror.scrollTop` to `root.scrollTop`. Used by exactly *one* editor per page at a time — the focus destination. The path is the existing one; nothing new in the active branch.
+- `paintMirrorAsActive()` — writes `mirror.selection` through `setSelectedRange` (focus + global Selection.addRange). Writes `mirror.scrollTop` to `root.scrollTop`. Used by exactly *one* editor per page at a time — the deck-level first responder (per the precise definition above). The path is the existing one; nothing new in the active branch.
 
-- `paintMirrorAsInactive(publish: (range: Range | null) => void)` — builds a DOM Range from `mirror.selection` via `flatToDom`, calls `publish(range)`. **Does not** touch `window.getSelection`. **Does not** call `focus()`. Writes `mirror.scrollTop` to `root.scrollTop` (per-element, no race). Used by every editor that isn't the active focus destination. The `publish` callback is the seam — the engine doesn't need to know `selectionGuard` exists; the component routes `publish` to `selectionGuard.updateCardDomSelection(cardId, range)`.
+- `paintMirrorAsInactive(publish: (range: Range | null) => void)` — builds a DOM Range from `mirror.selection` via `flatToDom`, calls `publish(range)`. **Does not** touch `window.getSelection`. **Does not** call `focus()`. Writes `mirror.scrollTop` to `root.scrollTop` (per-element, no race). Used by every editor that isn't the deck-level first responder. The `publish` callback is the L10 seam — the engine doesn't know `selectionGuard` exists; the component routes `publish` to `selectionGuard.updateCardDomSelection(cardId, range)`.
 
-Why a callback rather than wiring `selectionGuard` into the engine: selectionGuard needs `cardId`. The engine doesn't know its `cardId`. Plumbing it in is invasive and pollutes the engine with deck-layer concerns. The component already has `cardId` and lives at the seam between engine and deck — it's the right place to bridge the two.
+Why a callback rather than wiring `selectionGuard` into the engine ([L10] enforcement): selectionGuard needs `cardId`. The engine doesn't know its `cardId` (and shouldn't — that's deck-layer knowledge). Plumbing it in pollutes the engine with deck-layer concerns and creates a backward dependency from engine to selectionGuard. The component already has `cardId` and lives at the seam between engine and deck. It's the only layer that can bridge the two without violating L10.
 
-**2. CardHost passes active state into the persistence callbacks.**
+Why a dedicated `publish` parameter rather than reusing the engine's existing `onSelectionChanged` subscriber chain ([L10] semantic separation): the `onSelectionChanged` chain emits *live* DOM-selection events (the user moved the caret, the engine wrote a new selection, etc.). Repurposing it for inactive-paint publishing would conflate two channels with different semantics — live emit fires asynchronously after every selection change, while inactive-paint publish is a one-shot deliberate handoff. Keeping them on separate channels keeps each channel's contract clean.
+
+**2. CardHost passes active state into the persistence callbacks. Governed by [L02] (deck-store reads), [L10] (CardHost is the per-card context bridge), and [L23] (the restore ordering specified below preserves user-visible state by construction).**
 
 CardHost already determines the focus destination (it owns `bag.focus` reads and the `applyFocusSnapshot` call per [D10]). At every persistence-callback invocation, CardHost knows whether this card is the focus destination right now. Today it doesn't communicate that to `onRestore` / `onCardActivated`.
 
@@ -2617,80 +2631,140 @@ CardHost already determines the focus destination (it owns `bag.focus` reads and
   onCardWillDeactivate?: () => void     // new — fires on the previously-active card when activation moves
   ```
 
-- `onRestore` fires for every card on cold-mount; the `isActive` flag tells the consumer which paint path to take.
+- `onRestore` fires for every card on cold-mount; the `isActive` flag tells the consumer which paint path to take. CardHost computes `isActive` from `deck.getFirstResponderCardId() === cardId` per the "Defining 'active' precisely" section above.
 - `onCardActivated` already has activation semantics; it stays the trigger for `paintMirrorAsActive`.
 - `onCardWillDeactivate` is new: it gives the previously-active card a place to call `paintMirrorAsInactive` so the inactive paint takes over the moment the global Selection moves to a sibling card. Without it, the engine's emit chain catches user-initiated focus moves but not programmatic deactivations.
 
-**3. Component-side wiring routes by active state.**
+*Hook-family placement: the persistence callbacks, not `useCardDelegate`.* The codebase already has two parallel hook surfaces — `useCardDelegate({cardDidActivate, cardDidMove, cardDidResize})` (lifecycle hooks, past-tense "did") and `useCardPersistence({onSave, onRestore, onCardActivated})` (persistence callbacks). The plan adds `onCardWillDeactivate` to the **persistence callbacks** family, not the lifecycle hooks. Rationale: `onCardActivated` already lives there and serves the same selection-paint purpose; the new hook's caller is the same paint logic; co-locating them keeps the component's restore/activation/deactivation flow in one cohesive registration. Future work could unify the two hook surfaces ([L19] component-authoring uniformity) but that's out of 25C.4's scope.
+
+*Restore ordering — [L23] enforcement.* CardHost MUST fire onRestore for inactive cards before the active card claims focus. Specifically:
+
+1. For every card with persisted `bag.content`, fire `onRestore(state, { isActive })`. Inactive cards run `paintMirrorAsInactive(publish)` — selectionGuard publish + scroll, no focus claim, no global Selection mutation.
+2. After all inactive restores have completed, the active card's onRestore runs `paintMirrorAsActive()` — focus + global Selection + scroll. This is the only `focus()` claim on the page; no race.
+3. `applyFocusSnapshot` (the existing [D10] mechanism) re-affirms the active card's focus — idempotent because step 2 already focused it.
+
+This ordering means the active card's `removeAllRanges()` happens *last*, when no other card's selection is in `window.getSelection()` to be destroyed. Inactive cards' selections are safely held in `selectionGuard.cardRanges` and rendered via the inactive paint — which uses CSS / `data-` attributes, not `window.getSelection()`, so the active card's `removeAllRanges()` does not touch them. Compliance with [L23] is by construction, not by retry.
+
+**3. Component-side wiring routes by active state. Governed by [L07] (refs over closure capture), [L10] (component owns the engine↔deck bridge), and [L23] (the explicit selection handover at deactivation).**
 
 `TugPromptInput`'s `TugPromptInputPersistence` and `TugPromptEntry`'s `useCardPersistence` consume the new contract:
 
 - `onRestore(state, { isActive })`:
   - `engine.restoreState(state)` — updates the engine's authoritative model (mirror + content); keep this engine-internal, no DOM-Selection writes here. The 25C.3 mirror update remains as-is.
   - If `isActive`: `engine.paintMirrorAsActive()` — focus + global Selection + scroll.
-  - Else: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardId, range))` — selectionGuard publish + scroll, no focus.
+  - Else: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardIdRef.current!, range))` — selectionGuard publish + scroll, no focus.
 
 - `onCardActivated()`: `engine.paintMirrorAsActive()`. Today the activation hook calls `setSelectedRange`; this becomes the explicit active-paint variant. Same DOM effect.
 
-- `onCardWillDeactivate()`: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardId, range))`. Hands the selection over to selectionGuard before focus moves elsewhere.
+- `onCardWillDeactivate()`: `engine.paintMirrorAsInactive(range => selectionGuard.updateCardDomSelection(cardIdRef.current!, range))`. Hands the selection over to selectionGuard before focus moves elsewhere.
+
+*[L07] cardId-via-ref idiom — mandatory, not optional.* The publish callback above MUST close over `cardIdRef.current`, not over `cardId` directly. The pattern `cardIdRef.current` is the established [L07] idiom in `tug-prompt-input.tsx` (introduced in [Step 23F](#step-23f) for cross-pane move robustness) — `cardId` from `useCardId()` is held in a `useRef` and updated on every render so callbacks registered once at mount read the live value at fire time. Direct `cardId` capture is forbidden because:
+
+  1. The `useCardPersistence` registration happens at mount via `useLayoutEffect` (per [L03]) and the registered callbacks survive re-renders. A direct capture freezes the cardId at registration time.
+  2. Cross-pane moves preserve the cardId in practice but the ref pattern keeps the contract safe under any future change to identity semantics.
+
+  Verbatim: `const cardId = useCardId(); const cardIdRef = useRef(cardId); cardIdRef.current = cardId;` then close over `cardIdRef.current` in every persistence callback. Same idiom for any non-React reference the callback needs (e.g., `engineRef`, `selectionGuard` is a stable singleton and may be captured directly).
 
 Tide-card already routes through `TugPromptEntry` for its editor; no per-card-type code in tide. The same routing applies uniformly to every editor.
 
-**Why the engine's permanent ResizeObserver doesn't need an active/inactive split.**
+**Engine's permanent ResizeObserver: scope narrows to scroll-only. Governed by [L10] (engine doesn't reach into deck state) and [L23] (selectionGuard's CSS-driven inactive paint re-renders on layout changes without engine intervention).**
 
-The 25C.3 ResizeObserver pairs `autoResize` with a mirror→DOM repaint. That repaint is selection + scrollTop. The selection part of that repaint, post-25C.4, must respect active state.
+The 25C.3 ResizeObserver pairs `autoResize` with a mirror→DOM repaint. Post-25C.4, the **selection** part of that repaint moves out of the engine entirely. The new shape:
 
-Two implementation choices:
-- **(a)** Engine keeps the ResizeObserver but the repaint becomes scroll-only (`engine.repaintMirrorScroll()`). The component installs its own observer when active state changes are relevant — or uses `onCardActivated` / `onCardWillDeactivate` exclusively, skipping ResizeObserver-driven selection repaints entirely. Layout-driven re-establishment of the *active* selection is handled by the active-card's hook firing again via `onCardActivated` if needed.
+- Engine ResizeObserver scope: `autoResize` + `repaintMirrorScroll()` (new public method that writes `mirror.scrollTop` to `root.scrollTop`, idempotent at convergence). NO selection writes. NO focus claims.
+- Selection routing on layout transitions: handled by `onCardActivated` / `onCardWillDeactivate` hooks at the component layer.
+
+The two implementation choices considered:
+- **(a)** Engine ResizeObserver becomes scroll-only as described. Component-side `onCardActivated` / `onCardWillDeactivate` are the deck-layer's hooks; the engine doesn't need a back-channel into deck state. ✅ Selected.
 - **(b)** Engine ResizeObserver routes to `paintMirrorAsActive` or `paintMirrorAsInactive` based on a `getActive: () => boolean` callback the component supplies at construction.
 
-**Recommend (a).** Cleaner separation: engine ResizeObserver = layout stabilization (autoResize) + scroll repaint. Selection routing is a deck-layer concern (the deck knows which card is active). Component-side onCardActivated / onCardWillDeactivate are the deck-layer's hooks; the engine doesn't need a back-channel into deck state.
+(b) is rejected. It violates [L10]: introducing a `getActive` callback gives the engine a back-channel to deck state. The engine has no business knowing which card is the focus destination — that's a deck-layer fact. (a) keeps the engine layer-pure: the engine handles its own DOM (autoResize + scrollTop), and deck-layer activation events drive selection routing through the existing component-side hooks.
+
+*Why no inactive-paint repaint is needed on layout changes ([L23] preserved through CSS).* For inactive cards, the inactive paint is rendered by selectionGuard's CSS treatment — keyed on data attributes / classes selectionGuard applies to the card root, with the Range stored in `selectionGuard.cardRanges[cardId]`. Once an inactive selection is in selectionGuard's cache (written by `updateCardDomSelection` at `onRestore` / `onCardWillDeactivate` time), the CSS paint re-renders on every layout change automatically — no JavaScript needed, no engine repaint trigger. [L23] holds because the data lives in the canonical store; layout changes don't disturb the store.
+
+For active cards, layout changes that clamp scrollTop are handled by the engine ResizeObserver's scroll repaint. Selection on the active card lives in `window.getSelection()` and the browser preserves it across most layout transitions — and on the rare cases it doesn't (e.g., a parent visibility flip that moves focus), `onCardActivated` re-fires and runs `paintMirrorAsActive` again.
 
 **Test plan.**
 
-New test file: `tests/in-app/m26-deck-wide-restore-consistency.test.ts`. Two-card decks where each card carries a persisted selection and the active state matters.
+New test file: `tests/in-app/m26-deck-wide-restore-consistency.test.ts`. Multi-card decks where each card carries a persisted selection and the active state matters. The matrix exercises both single-pane (multiple cards as tabs) and multi-pane geometries to gate the precise "active = deck-level first responder" definition.
 
-**Test cases (3 layouts × 2 reload triggers = 6):**
+**Test cases (4 layouts × 2 reload triggers = 8):**
 
-| Layout | Active card | Inactive card |
-|---|---|---|
-| L1 | gallery-prompt-input #A | gallery-prompt-input #B |
-| L2 | gallery-prompt-input | tide |
-| L3 | tide | gallery-prompt-input |
+| Layout | Pane geometry | Active card (deck FR) | Inactive cards |
+|---|---|---|---|
+| L1 | 1 pane, 2 cards (tabs) | gallery-prompt-input #A | gallery-prompt-input #B |
+| L2 | 1 pane, 2 cards (tabs) | gallery-prompt-input | tide |
+| L3 | 1 pane, 2 cards (tabs) | tide | gallery-prompt-input |
+| L4 | 2 panes, 1 card each | gallery-prompt-input (in active pane) | tide (in non-active pane, but pane-active there) |
+
+L4 is the load-bearing case for the "active = deck-level first responder, NOT pane-active" precision. Tide is the active card of P2, but P2 is not the active pane; tide is therefore *not* the deck-level first responder. Tide's selection must route through `paintMirrorAsInactive`. The inverse (active pane is P2) is covered by symmetry — L4's matrix entry implies a matching reverse layout if needed during implementation, but one orientation is enough to gate the multi-pane semantics.
 
 Each layout × each trigger (`appReload`, `quitGracefully` + relaunch) is one test.
 
-**Phase A:** Seed both cards with text + selection in `bag.content`. The active card has `bag.focus` pointing to its engine root. Wait for both engines ready. Trigger reload.
+**Phase A:** Seed all cards with text + selection in `bag.content`. The active card (deck-level first responder) has `bag.focus` pointing to its engine root. Wait for all engines ready. Trigger reload.
 
 **Phase B (post-restore) invariants — assert on each test:**
 
-- *Single focus.* `document.activeElement` is the active card's editor (`[data-card-id="${active}"] [data-tug-prompt-input-root] [contenteditable]`). Inactive cards' editors are not the activeElement.
+- *Single focus.* `document.activeElement` is the active card's editor (`[data-card-id="${active}"] [data-tug-prompt-input-root] [contenteditable]`). Every inactive card's editor is NOT the activeElement.
 - *Single global Selection.* `window.getSelection().rangeCount === 1` and `window.getSelection().getRangeAt(0)` is anchored inside the active card's root. The `toString()` matches the active card's seeded selection text.
-- *Inactive cards' selections survive in selectionGuard.* `__tug.getCaretState(inactiveCardId)` returns a `range` snapshot whose `text` matches the inactive card's seeded selection text.
-- *Inactive paint is on inactive cards.* The inactive card's editor (or its enclosing card root) carries the inactive-selection class / data-attribute that selectionGuard applies. The active card does not.
+- *Inactive cards' selections survive in selectionGuard.* For every inactive card, `__tug.getCaretState(inactiveCardId)` returns a `range` snapshot whose `text` matches that card's seeded selection text.
+- *Inactive paint is on inactive cards, not on the active card.* For every inactive card, the inactive-paint surface is present on its editor / card root. For the active card, the inactive-paint surface is absent. The exact surface (CSS class, `data-` attribute) must match what selectionGuard's existing paint mechanism uses — see "selectionGuard CSS surface verification" below.
 - *Bag-on-disk consistency.* All four 25C.3 axes (text + atoms + selection + scrollTop) round-trip on every card on every trigger, regardless of active state. Today this passes for the active card and fails for inactive cards (their selections are destroyed by the active card's `removeAllRanges`, captured back as `null`, persisted as `null`).
 
 **Pre-25C.4:** every test fails on at least one invariant — typically the focus invariant (wrong card has activeElement) or the global Selection invariant (wrong card's text in `window.getSelection`) or the inactive-paint invariant (no inactive paint anywhere because nothing's in selectionGuard).
 
 **Post-25C.4:** every test passes deterministically.
 
+**selectionGuard CSS surface verification — implementation prerequisite.**
+
+The plan asserts that selectionGuard renders inactive selections via a CSS treatment keyed on a class or `data-` attribute applied to the card root. The user's image #1 confirms the visual mechanism exists — the dim/inactive paint on Tide's deactivated selection is exactly this surface. Before writing the m26 test (and before the implementation can complete), verify:
+
+1. The exact CSS surface selectionGuard uses (specific selector — class name like `.has-inactive-selection`, attribute like `[data-tug-card-inactive-selection]`, or whatever the implementation chose).
+2. The `selectionGuard.updateCardDomSelection(cardId, range)` write path wires that surface — i.e., publishing a Range puts the card root into the inactive-paint state automatically, and clearing the Range removes it.
+3. The paint surface is visible to a DOM query (so the m26 test can assert presence/absence).
+
+If selectionGuard's existing paint mechanism doesn't match what the plan assumes (e.g., the inactive paint is overlay-element-based rather than CSS-class-based), the test's "Inactive paint is on inactive cards" invariant must adapt to the actual surface. This is verification work that lands as the first task of implementation, before any engine API split is written.
+
 **Auxiliary impacts.**
 
-- *m24 and m25 single-card matrices.* Likely no change — both have one card per test, where the single card is unambiguously the focus destination. Verify after the layer lands.
+- *m24 and m25 single-card matrices.* Likely no change — both have one card per test, where the single card is unambiguously the deck-level first responder (and thus the focus destination). Verify after the layer lands.
 - *m32 / m35 cold-boot / app-switch tests.* These also involve single active cards. Should pass without modification.
 - *m02 / m06 tab-switch tests.* These involve two cards in the same pane but only one is mounted with `bag.content` at a time (the other is empty). Should pass.
 
 **Deliverables.**
 
+0. **selectionGuard CSS surface verification.** Confirm the exact selector/attribute the inactive-paint CSS treatment uses, and that `selectionGuard.updateCardDomSelection` toggles it as expected. Any deviation from what this plan assumes is reconciled here, before any code is written. A short note in the implementation log records the verified surface for reference.
 1. Engine paint API split: `paintMirrorAsActive`, `paintMirrorAsInactive(publish)`, `repaintMirrorScroll`. Retire `applyMirrorToDom` (or keep as a thin wrapper that picks active by default, deprecated).
-2. CardHost: extend `onRestore` signature to pass `{ isActive }`. Add `onCardWillDeactivate` to the callbacks record. Wire firings.
-3. TugPromptInput / TugPromptEntry: route `onRestore` and `onCardActivated` / `onCardWillDeactivate` through the active/inactive paint methods. Pass cardId-bound `selectionGuard.updateCardDomSelection` into the inactive publish callback.
-4. New harness test: `m26-deck-wide-restore-consistency.test.ts` (6 tests).
+2. CardHost: extend `onRestore` signature to pass `{ isActive }`. Add `onCardWillDeactivate` to the persistence-callbacks record (next to `onCardActivated`, NOT in `useCardDelegate`). Wire firings. Specify and enforce the [L23] restore ordering (inactive cards' onRestore complete before active card's `paintMirrorAsActive` claims focus).
+3. TugPromptInput / TugPromptEntry: route `onRestore` and `onCardActivated` / `onCardWillDeactivate` through the active/inactive paint methods. Pass `cardIdRef.current!`-based `selectionGuard.updateCardDomSelection` into the inactive publish callback (per the [L07] mandatory pattern above — direct `cardId` capture is forbidden).
+4. New harness test: `m26-deck-wide-restore-consistency.test.ts` (8 tests — 4 layouts × 2 triggers; L4 covers the multi-pane "active = deck-level first responder, NOT pane-active" precision).
 5. Audit: full default sweep green; m24 + m25 + m26 all pass.
 
-**Estimated commits:** two — (1) engine API split + CardHost wiring + component routing; (2) m26 harness test + Justfile sweep wiring. Could be one commit if the test is added alongside the implementation, but a separate test commit makes the gating evidence cleaner (test fails on commit 1's parent, passes on commit 1).
+**Estimated commits:** two — (1) engine API split + CardHost wiring + component routing (the verification step from #0 lands as part of this commit's investigation); (2) m26 harness test + Justfile sweep wiring. Could be one commit if the test is added alongside the implementation, but a separate test commit makes the gating evidence cleaner (test fails on commit 1's parent, passes on commit 1).
 
 **Sequencing.** Depends on [25C.3](#step-25c3) (landed). Independent of [25D](#step-25d)–[25G](#step-25g). Should land before any future component opt-ins introduce additional selection-aware components, since this layer establishes the active/inactive contract every such component will need to honor.
+
+**Tuglaw compliance index.** Cross-reference of which laws govern which decisions in this step, for unambiguous reference during implementation:
+
+| Decision | Governing law(s) | Section |
+|---|---|---|
+| Active vs. remembered selection categorization | [L12], [L23] | "The framework gap" |
+| `selectionGuard.cardRanges` is canonical for inactive selections | [L12] | "The framework gap" |
+| Inactive paint via CSS / `data-` attributes (not React state) | [L06] | "The framework gap" |
+| `isActive` = `deck.getFirstResponderCardId() === cardId` | [D10] | "Defining 'active' precisely" |
+| CardHost reads deck-store via existing snapshot, no useEffect copy | [L02] | "Defining 'active' precisely" |
+| Engine paint API split (active vs. inactive) | [L23], [L10] | "The three coordinated changes" §1 |
+| Engine ignorant of `selectionGuard` (publish-callback seam) | [L10] | "The three coordinated changes" §1 |
+| `publish` parameter dedicated; not reusing `onSelectionChanged` | [L10] | "The three coordinated changes" §1 |
+| `onRestore({isActive})` signature; `onCardWillDeactivate` added | [L02], [L10], [L23] | "The three coordinated changes" §2 |
+| Restore ordering: inactive first, active last | [L23] | "The three coordinated changes" §2 |
+| Hook on persistence-callbacks family, not `useCardDelegate` | [L19] (uniform-authoring scoped to family) | "The three coordinated changes" §2 |
+| Component routing via `cardIdRef.current` (mandatory) | [L07] | "The three coordinated changes" §3 |
+| Selection handover at deactivation (`onCardWillDeactivate`) | [L23] | "The three coordinated changes" §3 |
+| Engine ResizeObserver scope = autoResize + scroll only | [L10], [L23] | "Engine's permanent ResizeObserver" |
+| Inactive-paint CSS auto-renders on layout — no JS repaint | [L23] | "Engine's permanent ResizeObserver" |
+| Test L4 (multi-pane active = deck FR, not pane-active) | [D10] | "Test plan" |
+| selectionGuard CSS surface verification before implementation | [L23] | "Deliverables" §0 |
 
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
