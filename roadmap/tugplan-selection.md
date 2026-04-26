@@ -2370,6 +2370,192 @@ The CardHost mount-restore retry mechanism (Layer 4 also keeps this from the pro
 
 **Sequencing.** Independent of [25C](#step-25c) (different code paths). Depends on [25B](#step-25b) (landed). Can run in parallel with [25D](#step-25d)–[25G](#step-25g) since it touches harness + persistence-restore code, not the component opt-in roster. Each layer is its own commit; do not bundle Layer 3 with Layer 4 — the failing-as-expected commit is part of the gating evidence.
 
+##### Step 25C.3: Complete state preservation for `tug-prompt-input`, `tug-prompt-entry`, and the Tide card across reload + relaunch {#step-25c3}
+
+**Status:** proposal — awaiting review.
+
+**Why this exists.** Manual repro on the running app: a Tide card with a prompt that has been scrolled (multi-line content overflowing the editor's max-rows window) and a non-collapsed selection inside that prompt loses BOTH on `Developer > Reload` and on quit + relaunch. Same regression on the gallery cards `gallery-prompt-input` and `gallery-prompt-entry`. The Tide stream pane (TugMarkdownView above the entry) restores correctly — that's [25C.2](#step-25c2)'s `tug-region-scroll-set` work paying off. The gap is in the prompt editor itself.
+
+**The L23 violation.** The prompt-input editor's persistence shape is *incomplete*. `TugTextEditingState` (the engine's serialized snapshot in `tug-text-engine.ts:147-154`) records `text` + `atoms` + `selection`. It does not record the editor's internal `scrollTop`. The compound `TugPromptEntry` then layers `{ currentRoute, perRoute, maximized }` over this same `TugTextEditingState` for each route — also no scroll. That's an outright omission, not a subtle race: the current persistence shape *cannot* express the user's scroll position at all. On every reload, scroll resets to the bake-in default (top, or whatever WebKit lands on for a freshly mounted contentEditable). That is destruction of user-visible state, with no recovery attempt — the simplest L23 failure mode.
+
+The selection failure is a separate gap on the same component. Selection IS in `TugTextEditingState`, and the engine's `restoreState` calls `setSelectedRange` ([L23]'s "diff and mutate minimally" path). But on cold-boot, `TugPromptEntry.onRestore` runs while `promptInputRef.current` IS populated (the imperative handle is set during the child's mount commit) but the underlying `TugTextEngine` instance ISN'T — `engineRef.current` becomes non-null only inside the input's own engine-lifetime `useLayoutEffect`, which runs AFTER the entry's parent-effect. The delegate's `restoreState` is `engineRef.current?.restoreState(state)` — silent no-op when the engine doesn't yet exist. The entry has no equivalent of the input's `pendingRestoreRef` buffer (that buffer is conditional on the input owning persistence, which the entry disables via `persistState={false}`). Net effect: on cold-boot through the entry's persistence path, `text` + `atoms` + `selection` all silently fail to apply.
+
+These are not isolated component bugs. They are the same shape: the persistence interface for these components is *not closed under "everything the user can see and put there."* L23 says save-and-restore is destruction with attempted recovery; an *incomplete* save-and-restore is destruction without even an attempt. The fix has to be a comprehensive enumeration of user-visible state per component, with a test that verifies every item round-trips on every persistence trigger — not another patch on a per-symptom basis.
+
+**Scope of "user-visible state" for each target component.**
+
+The audit table drives the fix and the tests. Every row is a piece of state the user can see or that they put there; every column is whether it round-trips today on each trigger. ✅ = round-trips, ❌ = lost, ⚠️ = race-prone.
+
+| Component / item                          | tab-switch | cmd-tab (resign/return) | `Developer > Reload` | quit + relaunch |
+|-------------------------------------------|:----------:|:-----------------------:|:--------------------:|:---------------:|
+| **`tug-prompt-input` (standalone)**        |            |                         |                      |                 |
+| text content                              | ✅          | ✅                       | ✅                    | ⚠️ (cold-boot race) |
+| atoms (file mentions, slash commands)     | ✅          | ✅                       | ✅                    | ⚠️ (cold-boot race) |
+| selection (collapsed caret + non-collapsed range) | ✅  | ✅ (post-23G)            | ⚠️                    | ❌                |
+| editor `scrollTop`                        | ❌          | ❌                       | ❌                    | ❌                |
+| **`tug-prompt-entry` (standalone)**        |            |                         |                      |                 |
+| `currentRoute`                            | ✅          | ✅                       | ✅                    | ✅                |
+| `perRoute[r].text` / `.atoms` / `.selection` | ✅       | ✅                       | ⚠️                    | ❌ (cold-boot race) |
+| editor `scrollTop` (per-route)            | ❌          | ❌                       | ❌                    | ❌                |
+| `maximized`                               | ✅          | ✅                       | ✅                    | ✅                |
+| **Tide card**                              |            |                         |                      |                 |
+| stream-pane scroll (TugMarkdownView above) | ✅ (25B/C.2) | ✅                     | ✅                    | ✅                |
+| split-pane divider position               | ❌          | ❌                       | ❌                    | ❌                |
+| entry-pane state (cascaded from above)    | ✅          | ✅                       | ⚠️                    | ❌                |
+| `lastError` banner dismissal              | n/a (UI-only, dismissed=undismissed across reload by design) ||||
+
+The split-pane divider row is intentional but out-of-scope: it's [Step 25D](#step-25d)'s deliverable. The audit lists it for completeness so 25D's work doesn't surprise anyone reading this gap analysis.
+
+**The fix in principle, before details.** Two changes, each in its own commit:
+
+1. **Extend the engine's persistence shape so it CAN express scroll.** `TugTextEditingState` gains a `scrollTop: number | null`. `TugTextEngine.captureState` reads `this.root.scrollTop`; `TugTextEngine.restoreState` writes it. Existing payloads decode as `{ ..., scrollTop: null }` (back-compat: a saved `null` means "do not assert a scroll position" and the editor mounts at its natural offset). The compound `TugPromptEntry`'s per-route map carries the same expanded shape transparently — no schema work at the entry level.
+
+2. **Close the engine-creation race in the entry's restore path.** Mirror the input's `pendingRestoreRef` pattern at the delegate boundary: when the entry calls `input.restoreState(saved)` and the engine doesn't exist yet, the call must be buffered inside the input and replayed when the engine completes its `useLayoutEffect`. The cleanest seam is the imperative handle's `restoreState` itself — make it always buffer if the engine isn't ready, regardless of whether the input owns persistence. Today's pendingRestoreRef is gated on `persistState={true}`; remove that gate.
+
+Both changes are tuglaws-compliant by construction:
+
+- **L23**: extending the persistence shape closes the omission directly — every user-visible item now has a place to live in the bag. The race fix means the restore *always* reaches the engine; "save and restore" stops being "save and silently fail to restore."
+- **L02**: persistence reads/writes go through `useCardPersistence` (the existing `useSyncExternalStore`-adjacent registration channel for tugbank), not `useEffect`-copying-into-state. No change.
+- **L03**: the entry's restore happens inside its existing `useLayoutEffect` (via `useCardPersistence`'s registration). The pendingRestoreRef replay fires inside the input's existing engine-lifetime `useLayoutEffect`. Both already conform.
+- **L06**: scroll position is *data*, not appearance — non-rendering consumers (the persistence layer, undo, etc.) read it. So storing it in the engine state and restoring through `engine.restoreState` is correct; this is not an L06 violation pulling appearance into React. The DOM write itself (`this.root.scrollTop = state.scrollTop`) is direct DOM, not React state.
+- **L07**: the entry's `onRestore` already reads through refs. No change.
+- **L22**: not relevant — there's no store-driven DOM update path being added.
+
+**Concrete repro.**
+
+*Manual.* On a current `main` build, with HMR/dev mode disabled (or after a `bun run build` + relaunch):
+1. Open the app to a fresh deck. Add a Tide card. Bind it to any project path.
+2. Type ~30 lines of text into the prompt entry — enough to make the editor's internal scrollbar appear.
+3. Scroll the editor up (so the visible window is NOT at the bottom of the typed text).
+4. Use the mouse to select a span of, say, 20 characters somewhere in the visible window.
+5. `Developer > Reload` (Cmd-R).
+6. Observe: the typed text comes back. The selection is gone. The scroll position has reset (usually to the top, sometimes to the bottom depending on which slot the engine's bake-in lands at).
+7. Quit Tug.app. Relaunch.
+8. Observe: same loss; in some races, the typed text may also be missing on the relaunch path (the cold-boot engine race).
+
+*Automated, gated by Layer 3.* New test file `tests/in-app/m24-prompt-state-roundtrip.test.ts` — full matrix of (component × trigger × state-axis), expanded below in Layer 3.
+
+**Open questions — needing answers before Layer 4.**
+
+1. *Should the engine's restore set `scrollTop` synchronously inside `restoreState`, or wait for the next layout pass?* WebKit's contentEditable computes scroll bounds lazily; setting `scrollTop = N` before the layout has assigned a `scrollHeight` clamps to 0. The `tug-region-scroll-set` work in [25C.2](#step-25c2) ran into the same issue and solved it with a `MutationObserver(attributeFilter: ["style"])` retry inside CardHost. Same approach here, OR have the engine's `restoreState` defer scroll application until its existing post-restore microtask. Decide during Layer 4 — the failing test will tell us which is robust.
+2. *Selection-after-engine-creation: does the buffered replay fire `engine.setSelectedRange` correctly when the contentEditable hasn't received DOM focus yet?* [Step 23G](#step-23g) closed the WebKit selectionchange-on-focus quirk by routing through `engine.setSelectedRange` (focus-then-select). The replay path needs the same routing — straight `engine.restoreState` already calls into `setSelectedRange` internally, so this should "just work," but the test must verify a non-collapsed range survives the buffered path, not only the in-process path that happens to never have a null engine.
+3. *Should `Developer > Reload` and `quit + relaunch` use the same harness primitive?* They route through different save paths today: reload calls `deckManager.prepareForReload()` (synchronous save + flush) before `location.reload()`; relaunch calls `applicationShouldTerminate` → `saveAndFlushSync`. Behavior should be equivalent (both block on a synchronous flush before tearing down), but the harness should have *both* primitives so a regression in either path surfaces independently.
+
+**Scope.**
+
+Five layers. Each lands as its own commit.
+
+**Layer 1 — `appReload` harness primitive (1 commit).**
+
+Add the soft-reload counterpart to `quitGracefully`. Maps to `Developer > Reload`'s code path so a regression in the reload save-flush path is testable distinctly from a regression in the terminate save-flush path.
+
+- *Swift side.* New `case "appReload":` in `tugapp/Sources/TestHarness/AppLifecycleHandlers.swift`. The handler:
+  1. Subscribes to a JS-side ready signal (the new test surface emits `__tug.notifyReady()` after `main.tsx` finishes its `initActionDispatch` + `DeckManager` boot — same hook the smoke tests already wait for, plumbed through a new `awaitNextReady()` Swift-side waiter).
+  2. `evaluateJavaScript("dispatchAction({action:'reload'})")` on the `WKWebView` (the same dispatch the menu fires; `action-dispatch.ts:207-213` already implements `prepareForReload().then(() => location.reload())`).
+  3. Waits for the post-reload ready signal up to a configurable timeout (default 8000ms — the WKWebView reload + Vite re-asset window + main.tsx boot can be slow on first cold cache).
+  4. Returns success when the new `__tug` surface is online; throws `AppLifecycleError.reloadTimeout` otherwise.
+- *JS-side wrapper.* `app.appReload(opts?: { timeoutMs?: number })`. Resolves when the new `__tug` surface is online. The harness's existing `__tug.assertHostRootRegistered` / `waitForCondition` helpers automatically pick up the new JS context — no need to re-establish the test socket (Swift owns it, and Swift survives the reload).
+- *Surface version bump.* `1.5.0` → `1.6.0` in `TestHarnessConnection.swift` and `tests/in-app/_harness/index.ts`.
+
+Smoke test gating Layer 1: extend `_smoke-cold-boot.test.ts` (or a sibling `_smoke-app-reload.test.ts`) to:
+1. Launch the app with a temp tugbank.
+2. PUT a key via tugcast HTTP.
+3. `app.appReload()`.
+4. GET the same key back through tugcast (same Tug.app process, same tugcast process — both survive the reload).
+5. Assert round-trip.
+
+If this smoke fails, no later layer ships.
+
+**Layer 2 — Failing test: comprehensive prompt-state round-trip matrix (1 commit).**
+
+New file `tests/in-app/m24-prompt-state-roundtrip.test.ts`. Three target cards × four state axes × two reload triggers. Each combination is a separate test case — concise body, shared helpers, no skipped assertions.
+
+Cards:
+- `gallery-prompt-input` — pure standalone.
+- `gallery-prompt-entry` — compound, single route.
+- `tide-card` — production card. Bound via `__tug.bindTideSession` (the test surface added in commit 29435bce that skips the picker).
+
+State axes seeded in Phase A:
+- text (8 lines, total ~30 lines including `\n`s — enough to overflow the 12-row max).
+- atoms (one `@filename` mention via the typeahead path).
+- selection (non-collapsed range mid-text, e.g. offsets 50–100).
+- scrollTop (scroll the editor up so the saved offset is non-zero AND non-bottom).
+
+For `gallery-prompt-entry` and `tide-card`, also seed:
+- second route (`$` shell): different text, different selection, different scroll.
+
+Reload triggers per test case:
+- `app.appReload()` — Layer 1 primitive.
+- `app.quitGracefully()` + relaunch with the same temp tugbank — existing primitive.
+
+Phase A asserts the bag on disk via `tugbankRead`:
+- `bag.content.text === seededText`
+- `bag.content.atoms.length === 1` and `atoms[0].label === "filename.ts"`
+- `bag.content.selection === { start: 50, end: 100 }`
+- `bag.content.scrollTop === seededScrollTop` (this assertion FAILS today — `scrollTop` is undefined in the saved bag)
+
+Phase B (post-reload / post-relaunch) asserts the live state:
+- `__tug.evalJS("…engine.getText()…")` matches.
+- `__tug.evalJS("…engine.getAtoms()…")` matches.
+- `__tug.getCaretState(cardId)` returns the saved range.
+- `__tug.evalJS("…editorEl.scrollTop…")` is within 8px of seeded (uses the same N-stable polling shape `m14-cold-boot-scroll` uses post-25C.2).
+
+Every Phase B assertion fails today. That is the gating evidence; Layer 2 ships exactly when the test file ships and exactly when every test case is FAILING in the expected way (not erroring, not skipped — running to completion and failing on the asserted axis). If a test errors out before reaching the assertion, that's a harness bug to fix in Layer 2 itself, not a green light to advance.
+
+**Layer 3 — `TugTextEditingState` shape extension (1 commit).**
+
+Engine-only change. No callers' code rewires; existing payloads decode without migration.
+
+- *`tug-text-engine.ts:147-154`.* Add `scrollTop: number | null` to `TugTextEditingState`. Document: `null` means "no asserted position"; a number means "restore the editor's `root.scrollTop` to this value." Existing on-disk payloads round-trip as `null`.
+- *`TugTextEngine.captureState`.* After computing text + atoms + selection, append `scrollTop: this.root.scrollTop` (the contentEditable root). Always a number from the engine's side; `null` only appears on payloads written before this change.
+- *`TugTextEngine.restoreState`.* After applying text + atoms + selection (in that order, so the DOM exists by the time scroll is asserted), if `state.scrollTop !== null`, set `this.root.scrollTop = state.scrollTop`. The contentEditable's bake-in race (post-restore reflows that change `scrollHeight`) is the same one [25C.2](#step-25c2) closed for `tug-markdown-view`. Two acceptable resolutions:
+  - **(a)** Engine-internal retry: install a one-shot `MutationObserver` inside `restoreState` that re-asserts `scrollTop` until either (i) `el.scrollTop` is within 1px of the requested value for two consecutive attribute changes, or (ii) a 2-frame timeout elapses. Self-contained.
+  - **(b)** Hoist to CardHost via `data-tug-scroll-key`: tag the contentEditable root `data-tug-scroll-key="prompt-input-editor"` and let the existing `applyRegionScrolls` mechanism (`card-host.tsx`) carry the saved value. Reuses tested code; introduces a new bag axis (`bag.regionScroll`) for the editor instead of carrying scroll inside `bag.content`.
+  - Decide between (a) and (b) during Layer 4 with the failing test running. (b) is more uniform with the rest of the codebase but doubles the number of axes the editor's restore reads from. (a) is local to the engine and matches where text/atoms/selection live. Default to (a) unless the test reveals a race only (b)'s mechanism handles. **L06 note:** scroll position is data (non-rendering consumers read it), so (a)'s direct DOM write is fine — it's the engine's persistence layer, not React state, doing the write.
+
+After this commit, Phase A's "scrollTop is on disk" assertion in m24 must pass. Phase B's "scrollTop is restored live" may still race depending on (a) vs (b) — Layer 5 closes the residual.
+
+**Layer 4 — Engine-creation race fix in `TugPromptInput.restoreState` delegate (1 commit).**
+
+Today's `pendingRestoreRef` (line 449 + the engine-lifetime effect at line 738-749) buffers state arriving via `TugPromptInputPersistence.onRestore` when the engine isn't ready. Generalize it to also catch state arriving via the imperative handle's `restoreState` method, so the entry's `input.restoreState(saved)` call inside `TugPromptEntry.onRestore` lands deterministically.
+
+- *Imperative handle update.* `useImperativeHandle` body's `restoreState(state)` becomes:
+  ```ts
+  restoreState(state: TugTextEditingState) {
+    const engine = engineRef.current;
+    if (engine) {
+      engine.restoreState(state);
+      return;
+    }
+    pendingRestoreRef.current = state;
+    // setRestoreCount-style nudge so onContentReady fires after replay
+  }
+  ```
+- *Engine-creation effect.* Already replays `pendingRestoreRef.current` at line 738-749. Update the trace recording so `engine: "gallery-prompt-input"` becomes correct for entry-driven replays too — i.e., record `engine: "gallery-prompt-entry-via-input"` or a similar disambiguator so the deck-trace surfaces which path drove the restore.
+- *Remove the `persistState`-conditional gate.* Today `TugPromptInputPersistence` is the only writer to `pendingRestoreRef`; with the imperative-handle path also writing, the buffer must exist for both `persistState=true` and `persistState=false`. Move the `pendingRestoreRef` declaration out of any conditional. (It already lives in the input's main body — verify with the audit.)
+- *Tide card focus interaction.* `tide-card.tsx:1015-1036` registers `cardDidActivate: () => entryDelegateRef.current?.focus()`. Activation can fire while the engine is still being constructed (cold-boot, fresh card). The focus delegate already routes through `engine.setSelectedRange` ([Step 23G](#step-23g)), but on a null engine it silently returns. Symmetrize: if the engine isn't ready when `focus()` is called, queue a "focus on ready" flag in a ref and have the engine-creation effect drain it after `pendingRestoreRef` is replayed.
+
+After this commit, Phase B's text/atoms/selection assertions in m24 must pass for `gallery-prompt-input`, `gallery-prompt-entry`, and `tide-card`. Scroll assertions may still race depending on Layer 3's (a)/(b) decision.
+
+**Layer 5 — Residual scroll-bake-in retry, if needed (1 commit, conditional).**
+
+Skip if Layer 3's (a) or (b) closed the bake-in race already. Otherwise:
+- If Layer 3 chose (a) (engine-internal retry): widen the retry window or hoist to (b).
+- If Layer 3 chose (b) (`data-tug-scroll-key`): tune the existing `regionSettled` retry tolerance for the editor's faster bake-in (it's smaller than the markdown view, so settle should be quicker but more sensitive to thrash).
+
+**Deliverables.**
+
+- Layer 1: `appReload` Swift handler + JS wrapper, surface bump, smoke test.
+- Layer 2: `m24-prompt-state-roundtrip.test.ts`. All 24 test cases (3 cards × 4 axes × 2 triggers) wired and FAILING on appropriate axes.
+- Layer 3: `TugTextEditingState.scrollTop`, engine capture/restore, decision on (a) vs (b).
+- Layer 4: Imperative-handle pendingRestoreRef path; activation-on-engine-ready handoff for tide.
+- Layer 5: Conditional scroll-bake-in tuning.
+- Audit: m24's matrix turns fully green; no regressions in m04 (resign/return), m10 (tab-switch + cold-boot), m17 (savestate-rpc), m23 (cross-card), m32 (em cold-boot), m35 (em / tide app-switch). Run the full in-app sweep before Layer 5 (or on the bundled Layer 4 commit if Layer 5 is skipped).
+
+**Estimated commits:** four or five.
+
+**Sequencing.** Independent of [25C.2](#step-25c2)'s landed work (different code paths inside the editor vs. the markdown view) but uses 25C.2's `tugbankRead` / `quitGracefully` / temp-tugbank scaffolding without modification. Independent of [25D](#step-25d)–[25G](#step-25g) — those are component opt-ins that reach a different bag axis (`bag.components`), this work extends `bag.content`. Can land before or after them.
+
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
 **Closes:** [M27] subset (layout state); first installments of [M30] (virtual focus).
