@@ -2766,6 +2766,182 @@ If selectionGuard's existing paint mechanism doesn't match what the plan assumes
 | Test L4 (multi-pane active = deck FR, not pane-active) | [D10] | "Test plan" |
 | selectionGuard CSS surface verification before implementation | [L23] | "Deliverables" §0 |
 
+##### Step 25C.5: Bag as single source of truth — restore-on-activation contract {#step-25c5}
+
+**Status:** proposal — awaiting review.
+
+**Why this exists.** The 25C.x series accumulated layered restoration mechanisms, each fixing a specific bug:
+
+- [25C.2](#step-25c2) — cold-boot scroll restore via `tug-region-scroll-set` event.
+- [25C.3](#step-25c3) — `scrollTop` axis on `TugTextEditingState` plus an engine-internal mirror.
+- [25C.4](#step-25c4) — split paint into active vs. inactive channels; added `onCardWillDeactivate`.
+- 25C.3 follow-ups: m25 (engine `_browserMirror` + `getMirroredSelection`-fallback in `captureState` to survive deactivation), m36 (`installFormControlReapplyOnNextMousedown` + `lastFocusedPersistKeyRef`-fallback in `captureFocus` to survive cmd-tab + re-activation click).
+
+Each fix layered another mechanism on top. The architecture now carries multiple coexisting sources of truth for the same state:
+
+1. **`bag.content`** (engine cards) / **`bag.formControls`** (form-control cards) — on-disk persistence (tugbank).
+2. **engine `_browserMirror`** — in-memory shadow of selection + scrollTop.
+3. **`selectionGuard.cardRanges`** — per-card Range cache for inactive paint, populated via the engine's `onSelectionChanged` relay.
+4. **`CardHost.lastFocusedPersistKeyRef`** — in-memory shadow of last focused persistKey.
+5. **Live DOM** (`window.getSelection()`, `el.selectionStart`, `el.scrollTop`) — what the user actually sees.
+
+These can drift. m36 surfaced the drift: the bag had the right state on disk, but the click clobbered live DOM, and the in-memory mirrors didn't help re-apply because they had been clobbered too. The fix took two patches (selection re-apply via mousedown-prevent, focus re-target via focusin tracking) and added two more shadow mechanisms.
+
+The pattern is: every new bug in this surface area requires another layer to keep the layers consistent. Architectural debt compounds.
+
+**The simplification.** Treat **`bag.*` as the single source of truth**. Replace "save and restore" semantics with **"capture on deactivate, apply on activate"** as a strict contract:
+
+- **DEACTIVATE → CAPTURE.** Read live DOM into `bag`. Save fires while focus is still in the card (capture-phase pointerdown), so `document.activeElement` correctly identifies the focused element and `el.scrollTop` reads the user's chosen offset before any layout change can clamp it.
+- **ACTIVATE → APPLY.** Write `bag` into live DOM. Sets value, selection, scroll, focus from bag.
+- **BETWEEN.** Bag is frozen. Live DOM may drift (mousedown clobbered caret, app blur cleared selection, parent re-layout reset scrollTop) — that drift is irrelevant because the next activation re-applies the bag verbatim.
+
+The contract closes the m36 class of bug **by construction**. There is no "shadow that auto-tracks DOM"; auto-tracking was what made the engine mirror clobberable. Bag is updated only at deactivation; nothing else writes to it. Drift between activations cannot poison the bag because nothing reads from drifted DOM into bag during that window.
+
+**This already exists for some axes.** `bag.formControls`, `bag.scroll`, `bag.regionScroll` already follow capture-on-save / apply-on-restore semantics — that's why m24/m25/m26/m27/m36 cover them with simple test shapes. The simplification brings the engine's selection + scrollTop axes IN LINE with the rest of the system. The mirror in `tug-text-engine.ts` is an exception that 25C.3 added; this step retires the exception.
+
+**What this drops.**
+
+1. **Engine `_browserMirror`.** `bag.content` is the persisted shadow; the engine doesn't need a parallel cache. `captureState` reads live DOM (`getSelectedRange`, `root.scrollTop`). `restoreState` writes live DOM (existing logic).
+
+2. **Engine document-level `selectionchange` mirror-update path** (`tug-text-engine.ts:751-754`). Removes the auto-tracking that turned every user-driven selection move into a mirror write. The engine still emits `onSelectionChanged` for subscribers (used for the typeahead positioning and other live-feedback paths); only the mirror-write side effect goes away.
+
+3. **`selectionGuard.cardRanges` engine-relay** (`tug-prompt-input.tsx:799-803`). selectionGuard reads each card's `bag.content.selection` (or `bag.domSelection`) directly via the deck-store, builds Ranges in `flatToDom`, and adds them to the inactive Highlight. No third source of truth.
+
+4. **`CardHost.lastFocusedPersistKeyRef`** (added in m36's focus fix). The capture-phase deactivation save runs while focus is still in the card; `document.activeElement` is sufficient and correct.
+
+5. **`CardHost` mount-restore `formApplied` WeakSet** (`card-host.tsx:899`). Replaced by activation-time application. The WeakSet existed because the mount-restore effect could re-fire via MutationObserver and re-apply against user-typed content. With activation-time apply only, no observer is needed — apply runs once per activation transition.
+
+6. **`installFormControlReapplyOnNextMousedown`** (focus-transfer.ts, m36). Subsumed by a generalized "apply bag at activation" path that runs uniformly for all bag axes. The install-mousedown-prevent pattern stays as the deterministic-ordering primitive (per [L05] — no RAF, no microtask), but its caller becomes a single uniform apply entry point instead of an axis-specific helper.
+
+7. **Engine paint API split (`paintMirrorAsActive` / `paintMirrorAsInactive`)** from [25C.4](#step-25c4). Replaced by: the engine's `restoreState` writes live DOM (one path); CardHost decides downstream routing (active card's selection is naturally in `window.getSelection()`; inactive cards' selections are pulled by selectionGuard from bag). The split's purpose — preventing N cards from racing on `removeAllRanges()` — is preserved by selectionGuard reading from bag (no engine writes to `window.getSelection()` for inactive cards) plus capture-phase deactivation handover (active selection moves to the new active card before any other writes).
+
+**What this keeps.**
+
+- All m24–m36 test gates pass. The simplification preserves end-to-end behavior; it removes redundant mechanisms without changing user-visible state preservation.
+- CSS Custom Highlight inactive paint. Browser's single `window.getSelection()` constraint is forced; selectionGuard's CSS-Highlight machinery stays — it just sources Ranges from bag instead of from the engine relay.
+- The active vs. inactive paint distinction from 25C.4 — preserved at the *outcome* level, not necessarily at the *API* level. Active cards' selections live in `window.getSelection()`; inactive cards' live in the inactive Highlight. The engine no longer carries the routing decision.
+- Cold-boot restore. Same path, sourced from `bag`-on-disk via existing tugbank pipeline. Mount-time apply is a special case of "first activation."
+- Content-owning vs. DOM-authority cards. Different bag axes; same architecture.
+
+**What this requires.**
+
+- **Capture-phase save at every activation trigger.** Every gesture that changes the deck-level first responder (inter-pane click, intra-pane tab click, app-resign cascade, programmatic activation) must save the outgoing card before the gesture's mousedown can move focus or fire any layout change. This generalizes the existing `captureFocusForDragStart` pattern (`tug-pane.tsx#handleDragStart`, `tug-tab-bar.tsx#handleTabPointerDown`) to all activation triggers.
+
+- **Activation-time apply.** When a card activates, apply its bag to live DOM. For form-controls, run after mousedown's default clobber via the existing one-shot capture-phase mousedown listener pattern (`selectionGuard.installPreventMousedown`, m36's helper). The pattern is deterministic event ordering, not RAF/timing — preserves [L05] compliance.
+
+- **selectionGuard inactive-paint sourced from bag.** `selectionGuard.updatePaint` walks each non-active card's `bag.content.selection` / `bag.domSelection`, builds a Range via `flatToDom` (or via the existing `restoreCardDomSelection` for non-engine cards), adds to the inactive Highlight. Subscribes to deck-store changes (already does) — the existing notify chain triggers updatePaint.
+
+**Layer plan.**
+
+Each layer lands as one commit. Layers gate on the m24–m36 sweep — if a layer breaks any test, that layer needs revision before continuing.
+
+**Layer 1 — Capture-phase save audit.**
+
+Walk every activation trigger and verify save fires in capture phase before mousedown can move focus or before display-toggle layout changes can clamp scroll. Existing capture-phase sites:
+- `tug-pane.tsx#handleDragStart` — already capture phase.
+- `tug-tab-bar.tsx#handleTabPointerDown` — already capture phase.
+
+Sites likely needing fixes:
+- `pane-focus-controller.ts#onPointerDown` — currently calls `transferFocusForActivation` which calls `invokeSaveCallback(outgoingCardId)`. Verify the listener is registered with `{ capture: true }` and the save invocation precedes the activation mutation.
+- `tug-pane.tsx#performSelectCard` (intra-pane tab click) — verify save runs before `display: none` is applied to the outgoing card.
+- App-resign cascade (`lifecycle-cascade.ts`) — fires at `applicationWillResignActive`. The OS-level cmd-tab gesture is not an internal mousedown; focus is still in the card. Verify save fires before any focus-loss listener can fire.
+
+Add a smoke test that asserts `bag.focus` correctly identifies the deactivating card's focused input on every activation-trigger shape. The smoke gates Layer 2.
+
+**Layer 2 — Drop engine `_browserMirror`.**
+
+`captureState` reads live DOM (existing `getSelectedRange` + `root.scrollTop`). `restoreState` writes live DOM (existing logic, minus the mirror-write line). Drop the document-level `selectionchange` listener's `_browserMirror.selection = …` write (`tug-text-engine.ts:751-754`). Drop the `getMirroredSelection` fallback in `captureState` (`tug-text-engine.ts:968-983`).
+
+The `setSelectedRange` synchronous mirror-write (`tug-text-engine.ts:698`) goes away too — the live DOM is the truth.
+
+The `_browserMirror` field declaration and all its reads/writes are removed in this commit.
+
+Test gate: m24, m25, m26, m32, m35-em pass. (m27 may need Layer 3 to fully pass; revisit.)
+
+**Layer 3 — selectionGuard reads bags for inactive paint.**
+
+Drop the `engine.onSelectionChanged → selectionGuard.updateCardDomSelection` relay in `tug-prompt-input.tsx:799-803`.
+
+Extend selectionGuard's `updatePaint` to walk each non-active card's `bag.content.selection` (resolved against the card's host root via `flatToDom`) plus `bag.domSelection` (existing path via `restoreCardDomSelection`). Build Ranges; add to the inactive Highlight.
+
+selectionGuard's existing deck-store subscription drives `updatePaint` on every notify. cardStateCache changes notify, so bag updates trigger repaint automatically.
+
+Optionally: cache the constructed Range objects per card, invalidated only when `bag.content` changes for that card. Avoids re-running `flatToDom` on every notify in large decks.
+
+Test gate: m27 (deactivation-inactive-paint), m26 (multi-card consistency) pass.
+
+**Layer 4 — Activation-time form-control restore.**
+
+Drop CardHost's mount-restore form-control `WeakSet` gating (`card-host.tsx:899`). Replace with: every activation transition through `transferFocusForActivation` applies the activated card's `bag.formControls` (via the install-prevent-mousedown helper for click-driven activations; inline for programmatic).
+
+Drop CardHost's `lastFocusedPersistKeyRef` and its focusin listener — Layer 1's capture-phase save makes `bag.focus` correct without the fallback.
+
+`captureFocus` returns to its pre-m36 signature (single argument).
+
+Test gate: m36 passes via the new path; m26 (multi-card) passes; mount-time cold-boot still restores correctly.
+
+**Layer 5 — Engine paint API consolidation.**
+
+Drop `paintMirrorAsActive` / `paintMirrorAsInactive`. Engine has one apply path: `restoreState`. CardHost calls `restoreState` on activation; the active card's selection is naturally in `window.getSelection()`; inactive cards' selections are pulled from bag by selectionGuard.
+
+Drop the `onCardWillDeactivate` callback's `paintMirrorAsInactive` call site — selectionGuard's bag-driven repaint replaces it.
+
+Drop `onRestore({isActive})` from 25C.4 — `isActive` is no longer needed at the consumer level since the apply path doesn't branch on it.
+
+Test gate: full sweep including m24–m36.
+
+**Layer 6 — Audit + cleanup.**
+
+- Remove now-unused exports (`paintMirrorAsActive`, `paintMirrorAsInactive`, `getMirroredSelection`, `_browserMirror` types, `installFormControlReapplyOnNextMousedown` if subsumed, etc.).
+- Update docstrings across `tug-text-engine.ts`, `card-host.tsx`, `focus-transfer.ts`, `selection-guard.ts` to reflect the simplified architecture.
+- Verify no orphan code paths.
+- Update the [25C.4](#step-25c4) entry's "what's still here" surface to reflect the consolidation.
+
+**Tuglaw compliance map.**
+
+| Decision | Law(s) | Rationale anchor |
+|---|---|---|
+| Bag as single source of truth | [L23] | "The simplification" |
+| Capture-phase save (focus still in card) | [L23] | Layer 1 |
+| Apply-at-activation, not auto-track | [L23] | "What this drops" item 2 |
+| selectionGuard reads bag (no engine relay) | [L10] | Layer 3 |
+| `installPreventMousedown` for click-driven re-apply | [L05] (no timing-based defer) | "What this requires" |
+| CardHost is the per-card seam; engine ignorant of cardId | [L10] | retained from [25C.4](#step-25c4) |
+| Inactive paint via CSS Custom Highlight | [L06] | retained from [25C.4](#step-25c4) |
+| Test gates m24–m36 | [L23] | "Test plan" |
+
+**Test plan.**
+
+The existing m24–m36 tests are the spec. The simplification is correct iff the entire suite continues to pass after each layer. No new test files are required; this step adds NO behavior, only removes mechanisms whose purpose is already covered by simpler primitives.
+
+The m24–m36 cases collectively gate every behavior this step touches:
+- m24/m25 — text/atoms/selection/scrollTop round-trip across reload + relaunch + deactivation.
+- m26 — deck-wide multi-card consistency on reload (multiple cards with selections and the active-card race the 25C.4 split was designed for).
+- m27 — inactive paint at correct DOM positions across deactivation gestures.
+- m32 — cold-boot selection restore for engine cards.
+- m35-em / m35-tide — selection survives app-blur/focus while card is active.
+- m36 — selection AND focus restored after cmd-tab cycle + re-activation click.
+
+The Layer 1 smoke test gates the capture-phase save audit.
+
+**Risks and open questions.**
+
+1. *Pointerdown capture-phase save audit may surface new save-timing bugs.* The current architecture's loose save-timing tolerance (mirrors compensate) hides bugs that strict capture-phase save will expose. Layer 1's smoke is the gate; if it fails on existing gestures, those need fixes inside Layer 1's scope (or as separate prerequisite commits). If a new gesture-source proves untrappable in capture phase, the simplification's premise is broken — fall back to a more conservative scope.
+
+2. *selectionGuard reading from bag may be more expensive than cached cardRanges.* Each `updatePaint` iterates non-active cards' bags. For large decks (50+ cards) measurable. Mitigate by caching constructed Range objects per card, invalidated only on `bag.content` changes for that card. Defer the cache until measured-needed.
+
+3. *Capture-phase save timing in `transferFocusForActivation`.* The current sequence is `invokeSaveCallback(outgoing) → invokeDeactivationCallback(outgoing) → flushSync(commit) → resolve target → focus → selection-restore`. The save must reach disk-bag (or in-memory cardStateCache) BEFORE the commit and resolve steps run, so the activation reads up-to-date bag state. Current code does this; verify the audit doesn't introduce a regression.
+
+4. *Removing the engine's `selectionchange`-driven mirror update may break the live `onSelectionChanged` subscriber chain.* Audit subscribers — typeahead positioning, accessory chrome, etc. — to confirm they don't read mirror state via `getMirroredSelection`.
+
+5. *Layer 5's removal of `paintMirrorAsActive`/`paintMirrorAsInactive` changes engine-public surface.* External callers (gallery cards, tide-card, tugway tests) reference these methods. Audit and update at the same commit.
+
+**Estimated commits:** five or six.
+
+**Sequencing.** Independent of [25D](#step-25d)–[25L](#step-25l) (those are component opt-ins; this is framework simplification, mostly within engine + selection-guard + focus-transfer). Depends on [25C.4](#step-25c4) (which established the active/inactive paint split this step consolidates away). Each layer lands as its own commit; m24–m36 sweep gates each.
+
+If the user (or implementer) decides mid-stream that a layer's risk outweighs the gain, the step can stop after Layers 1–3 (which removes the worst of the duplication: engine mirror + cardRanges relay) and defer Layers 4–6 to a follow-up. Layers 4–6 are bigger and touch more API; Layers 1–3 are the most clearly-load-bearing simplifications.
+
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
 **Closes:** [M27] subset (layout state); first installments of [M30] (virtual focus).
