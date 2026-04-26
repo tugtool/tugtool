@@ -169,6 +169,18 @@ function spliceCardFromStack(
   return { cardIds, activeCardId };
 }
 
+/**
+ * Read the DEBUG-only `__tugPersistInTestMode` flag. When `true` AND
+ * `__tugTestMode` is also `true`, the test-mode persistence bypass
+ * in the `put*Guarded` wrappers is skipped — writes go through.
+ * Used by cold-boot harness tests that pair test-mode IPC with
+ * per-test `TUGBANK_PATH` isolation. See selection plan Step 25C.2
+ * Layer 3 and `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
+ */
+function shouldPersistInTestMode(): boolean {
+  return typeof window !== "undefined" && window.__tugPersistInTestMode === true;
+}
+
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
@@ -1972,9 +1984,16 @@ export class DeckManager implements IDeckManagerStore {
    * checkpoint (`grep 'this.testMode' deck-manager.ts`) report exactly
    * one occurrence per wrapped write family while still covering every
    * live caller.
+   *
+   * `__tugPersistInTestMode` (selection plan Step 25C.2 Layer 3)
+   * is the explicit escape hatch for cold-boot harness tests: when
+   * true, the test-mode bypass is skipped and the write goes
+   * through. Tests that opt in pair this with a per-test
+   * `TUGBANK_PATH` so pollution of the user's real tugbank is
+   * impossible.
    */
   private putFocusedCardIdGuarded(focusedCardId: string): void {
-    if (this.testMode) return;
+    if (this.testMode && !shouldPersistInTestMode()) return;
     putFocusedCardId(focusedCardId);
   }
 
@@ -1982,10 +2001,11 @@ export class DeckManager implements IDeckManagerStore {
    * Fire-and-forget `putLayout` with a test-mode bypass. Returns a
    * `Promise<void>` so `prepareForReload` (the sole awaiter) still
    * sees a resolved Promise under test mode — no behavioral change
-   * for callers, no network I/O.
+   * for callers, no network I/O. See {@link putFocusedCardIdGuarded}
+   * for the `__tugPersistInTestMode` escape hatch.
    */
   private putLayoutGuarded(layout: object): Promise<void> {
-    if (this.testMode) return Promise.resolve();
+    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve();
     return putLayout(layout);
   }
 
@@ -1993,14 +2013,15 @@ export class DeckManager implements IDeckManagerStore {
    * Fire-and-forget `putCardState` with a test-mode bypass. Returns a
    * resolved `Promise<void>` under test mode so `flushDirtyCardStates`
    * can still `Promise.all` the batch without special-casing the
-   * empty-network branch.
+   * empty-network branch. See {@link putFocusedCardIdGuarded} for
+   * the `__tugPersistInTestMode` escape hatch.
    */
   private putCardStateGuarded(
     cardId: string,
     bag: CardStateBag,
     options?: { keepalive?: boolean; sync?: boolean },
   ): Promise<void> {
-    if (this.testMode) return Promise.resolve();
+    if (this.testMode && !shouldPersistInTestMode()) return Promise.resolve();
     return putCardState(cardId, bag, options);
   }
 

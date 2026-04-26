@@ -1207,6 +1207,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     connectPollMs: opts.connectPollMs ?? 100,
     env: {
       ...process.env,
+      ...(opts.persistInTestMode ? { TUGAPP_PERSIST_IN_TEST_MODE: "1" } : {}),
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,
     },

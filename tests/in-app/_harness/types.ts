@@ -408,4 +408,21 @@ export interface LaunchTugAppOptions {
    * to avoid coupling those suites to the AX grant state.
    */
   skipAccessibilityPreflight?: boolean;
+
+  /**
+   * Disable test-mode's persistence-bypass so tugbank writes from
+   * `deck-manager`'s `put*Guarded` wrappers actually go through.
+   * Used by cold-boot harness tests (selection plan Step 25C.2)
+   * paired with a per-test `TUGBANK_PATH` so pollution of the
+   * developer's real `~/.tugbank.db` is impossible.
+   *
+   * Sets `TUGAPP_PERSIST_IN_TEST_MODE=1` on the launched Tug.app's
+   * environment; Swift's `TestHarnessUserScript` then injects
+   * `window.__tugPersistInTestMode = true` alongside `__tugTestMode`,
+   * which `deck-manager` reads to skip the bypass.
+   *
+   * Defaults to false. Ordinary in-app tests should leave it unset
+   * to keep the bypass active and writes silent.
+   */
+  persistInTestMode?: boolean;
 }

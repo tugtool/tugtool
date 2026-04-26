@@ -53,6 +53,24 @@ declare global {
      * this path because the WKUserScript is gated by `#if DEBUG`.
      */
     __tugTestMode?: boolean;
+    /**
+     * DEBUG-only escape hatch on test-mode's persistence bypass.
+     * When `true` AND `__tugTestMode` is also `true`, tugdeck still
+     * skips the boot-time tugbank reads (so `seedDeckState` remains
+     * the source of state truth) but the `put*Guarded` wrappers
+     * actually issue their tugbank writes instead of short-circuiting.
+     *
+     * Used by cold-boot harness tests (selection plan Step 25C.2)
+     * that pair test-mode IPC with per-test `TUGBANK_PATH` isolation
+     * — the temp DB makes the test-mode pollution prevention
+     * redundant, and the writes are required for Phase A's "bag is
+     * on disk" assertion.
+     *
+     * Set by a `WKUserScript` injected at `atDocumentStart` when
+     * the Swift host starts with `TUGAPP_PERSIST_IN_TEST_MODE=1`.
+     * Release builds never reach this path (`#if DEBUG`-gated).
+     */
+    __tugPersistInTestMode?: boolean;
   }
 }
 

@@ -20,8 +20,20 @@ enum TestHarnessUserScript {
     /// Install the `__tugTestMode` injection and enable Web Inspector
     /// on the given config. Must be called before the WebView loads
     /// its first URL.
+    ///
+    /// When `TUGAPP_PERSIST_IN_TEST_MODE=1` is set on the launched
+    /// app's environment, also injects `__tugPersistInTestMode = true`.
+    /// That flag is the cold-boot harness's escape hatch on
+    /// `deck-manager`'s `put*Guarded` test-mode bypass: writes still
+    /// go through to tugbank when both flags are true. The bypass
+    /// itself stays in place for ordinary in-app tests so the
+    /// developer's real `~/.tugbank.db` is never touched. See
+    /// selection plan Step 25C.2 Layer 3.
     static func install(into config: WKWebViewConfiguration) {
-        let source = "window.__tugTestMode = true;"
+        var source = "window.__tugTestMode = true;"
+        if ProcessInfo.processInfo.environment["TUGAPP_PERSIST_IN_TEST_MODE"] == "1" {
+            source += "\nwindow.__tugPersistInTestMode = true;"
+        }
         let script = WKUserScript(
             source: source,
             injectionTime: .atDocumentStart,

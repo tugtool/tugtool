@@ -2212,7 +2212,23 @@ Smoke test gating Layer 2: a **single** new `_smoke-cold-boot.test.ts` file that
 
 This smoke test proves all Layer-2 primitives end-to-end before any cold-boot test depends on them. If it fails, Layer 3 doesn't get written. If it passes, every primitive is known-good.
 
-**Layer 3 — The two cold-boot tests (1 commit).**
+**Layer 3 — The two cold-boot tests (1 commit). LANDED.**
+
+**Status update (post-implementation):** Layer 3 added a small escape hatch that surfaced during implementation:
+
+- *Test-mode persistence bypass.* `deck-manager`'s `put*Guarded` wrappers (`putCardStateGuarded`, `putLayoutGuarded`, `putFocusedCardIdGuarded`) short-circuit ALL tugbank writes when `__tugTestMode === true`. With the harness's TUGAPP_TEST_SOCKET set, that flag is on — so quitGracefully → saveAndFlushSync → putCardState wrote nothing to disk, and Phase A's "bag is on disk" assertion saw `null`.
+- *Layer 3 ships an opt-in escape.* New flag `__tugPersistInTestMode`, injected by `TestHarnessUserScript` when the launched app's env has `TUGAPP_PERSIST_IN_TEST_MODE=1`. `put*Guarded` checks both flags: skip writes only when `testMode && !persistInTestMode`. Cold-boot tests opt in via `launchTugApp({persistInTestMode: true})`. Existing tests don't set the flag, so behavior is unchanged for them. Per-test `TUGBANK_PATH` isolation (Layer 2) makes the bypass redundant for opted-in tests anyway.
+
+**Findings — what failed and what passed:**
+
+- *m14-cold-boot-scroll on `gallery-markdown-50kb`* — **fails** at Phase B's `waitForScrollSettled` after Phase A's 4 disk-side assertions pass. The bag IS on disk with `regionScroll["markdown-view"].y` matching the seeded scroll, and `el.scrollTop` never lands at the saved value within the 4s settle window. This is the Layer 4 gating evidence. **NOT in the default Justfile sweep until Layer 4 fixes it.**
+- *m10-cold-boot-selection on `gallery-markdown-1kb`* — **passes** end-to-end (11 expects, ~2s). With all blocks rendered (no virtualization), saved `domSelection` paths resolve to stable DOM nodes on re-mount and `selectionGuard` re-anchors the range correctly. **In the default Justfile sweep** as a regression-prevention gate.
+
+**Layer 4 scope narrows accordingly.** The non-virtualized selection round-trip is already correct; the fix needs to address only the scroll-restore race on virtualized markdown content. The 50KB-selection / content-relative-encoding follow-up remains out-of-scope for 25C.2 unless Layer 4's investigation surfaces it.
+
+---
+
+Original Layer 3 spec (preserved for reference):
 
 Both tests follow the same Phase-A / Phase-B convention. Naming: keep in `tests/in-app/`, prefix with the existing M-tag for traceability.
 
