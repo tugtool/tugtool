@@ -94,6 +94,17 @@ enum AppLifecycleHandlers {
                 timeoutMs: timeoutMs,
                 trigger: { NSApp.activate(ignoringOtherApps: true) },
             )
+            // `didBecomeActive` fires when Tug's app-level activation
+            // commits, but macOS WindowServer's window-z-order update
+            // (which routes `CGEvent` mouse posts) is asynchronous
+            // and lags the notification by ~50ms on Apple Silicon
+            // macOS 14-15. A `nativeClick` posted immediately after
+            // this verb returns then races that update and can land
+            // on the previously-frontmost window — typically
+            // Finder's desktop, foregrounded by `simulateAppResign`'s
+            // `deactivateSelf`. The settle gives WindowServer time
+            // to make Tug's window topmost at click coordinates.
+            Thread.sleep(forTimeInterval: 0.2)
         case "simulateAppHide":
             try waitForLifecycle(
                 notification: NSApplication.didHideNotification,

@@ -1421,29 +1421,37 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
     stdin: "ignore",
   });
 
-  // Wrap `.kill` so SIGTERM reliably reaches the Tug.app process.
+  // Wrap `.kill` so SIGTERM reliably reaches the Tug.app process AND
+  // its tugcast child. Without the tugcast kill, `app.close()`
+  // (SIGTERM-to-Tug-only) leaks tugcast: it lives in its own process
+  // group (Tug's `ProcessManager` only kills the group from the
+  // graceful `applicationShouldTerminate` path; bare SIGTERM bypasses
+  // that). The next launch then races port-55255 reclamation, which
+  // surfaces as flakes in tests that run back-to-back.
   const originalKill = subprocess.kill.bind(subprocess);
   const wrappedKill = (signal?: string): void => {
     const sig = signal ?? "SIGTERM";
-    // `pkill -x Tug` matches the executable name exactly. The
-    // harness's test-in-app recipe already pkills Tug between test
-    // files, so this is idempotent.
-    try {
-      const spawnSync = (
-        globalThis as unknown as {
-          Bun?: {
-            spawnSync: (opts: Record<string, unknown>) => { exitCode: number };
-          };
-        }
-      ).Bun?.spawnSync;
-      spawnSync?.({
-        cmd: ["/usr/bin/pkill", sig === "SIGKILL" ? "-KILL" : "-TERM", "-x", "Tug"],
-        stdout: "ignore",
-        stderr: "ignore",
-        stdin: "ignore",
-      });
-    } catch {
-      // ignore — the fallback below still runs
+    const spawnSync = (
+      globalThis as unknown as {
+        Bun?: {
+          spawnSync: (opts: Record<string, unknown>) => { exitCode: number };
+        };
+      }
+    ).Bun?.spawnSync;
+    // `pkill -x <name>` matches the executable name exactly. Both
+    // matches are idempotent — they no-op if the named process
+    // isn't running.
+    for (const name of ["Tug", "tugcast"]) {
+      try {
+        spawnSync?.({
+          cmd: ["/usr/bin/pkill", sig === "SIGKILL" ? "-KILL" : "-TERM", "-x", name],
+          stdout: "ignore",
+          stderr: "ignore",
+          stdin: "ignore",
+        });
+      } catch {
+        // ignore — the fallback below still runs
+      }
     }
     // Also signal the `open -W` wrapper so its `.exited` resolves
     // promptly on the harness side.

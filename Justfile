@@ -345,9 +345,12 @@ test-in-app:
     TUGBANK_PATH="$SCRATCH_DB" tugbank write dev.tugtool.app dev-mode-enabled true
 
     echo "==> [6/7] Kill any stale Tug processes and free vite port 55155"
-    # Leaked Tug instances from a previous run will hold tugbank locks,
-    # mess with the Dock, and race on vite port 55155. Always clean up.
+    # Leaked Tug AND tugcast instances from a previous run will hold
+    # tugbank locks, mess with the Dock, and race on ports 55155 and
+    # 55255. tugcast outlives Tug when the prior run ended via
+    # SIGTERM (`app.close()`) instead of the graceful path.
     pkill -x Tug 2>/dev/null || true
+    pkill -x tugcast 2>/dev/null || true
     sleep 0.3
     if PID="$(lsof -ti tcp:55155 2>/dev/null)"; then kill "$PID" 2>/dev/null || true; sleep 0.5; fi
 
@@ -355,6 +358,7 @@ test-in-app:
     # test crash, just-recipe error). pkill is idempotent and safe.
     cleanup() {
         pkill -x Tug 2>/dev/null || true
+        pkill -x tugcast 2>/dev/null || true
         rm -f "$SCRATCH_DB"
     }
     trap cleanup EXIT INT TERM
@@ -373,8 +377,12 @@ test-in-app:
     for f in _smoke.test.ts _smoke-native.test.ts _smoke-cold-boot.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts; do
         echo "---- $f ----"
         bun test "$f" || STATUS=$?
-        # Between files, kill any stragglers before the next spawn so
-        # port 55155 is free and we don't accumulate Dock icons.
+        # Between files, kill any stragglers so port 55155 is free
+        # and Dock icons don't accumulate. The harness's wrappedKill
+        # already pkills tugcast on `app.close()`, so the between-
+        # file pkill stays Tug-only to keep the inter-file pause
+        # short (extra pkills disturb WindowServer activation
+        # state, surfacing as Finder-activation races in tests).
         pkill -x Tug 2>/dev/null || true
         sleep 0.3
     done
@@ -437,12 +445,20 @@ test-in-app-fast *FILES:
     # decisively in favor of building once up-front.
     (cd tugdeck && bun run build >/dev/null)
 
-    # Clean slate: kill stale Tug processes before the first spawn.
+    # Clean slate: kill stale Tug AND tugcast processes before the
+    # first spawn. tugcast lives in its own process group; a prior
+    # run that ended via `app.close()` (SIGTERM, not the graceful
+    # path) leaks it past Tug's death and causes port-55255
+    # collisions on the next launch.
     pkill -x Tug 2>/dev/null || true
+    pkill -x tugcast 2>/dev/null || true
     sleep 0.3
 
     # Clean up on exit so a Ctrl-C or test crash leaves no orphans.
-    cleanup() { pkill -x Tug 2>/dev/null || true; }
+    cleanup() {
+        pkill -x Tug 2>/dev/null || true
+        pkill -x tugcast 2>/dev/null || true
+    }
     trap cleanup EXIT INT TERM
 
     export TUGAPP_IN_APP_TEST=1
@@ -470,7 +486,11 @@ test-in-app-fast *FILES:
         echo "---- $f ----"
         bun test "$f" || STATUS=$?
         # Between files, kill stragglers so port 55155 is free and
-        # Dock icons don't accumulate.
+        # Dock icons don't accumulate. The harness's wrappedKill
+        # already pkills tugcast on `app.close()`, so the between-
+        # file pkill stays Tug-only — extra pkills disturb
+        # WindowServer activation state and surface as Finder-
+        # activation races in subsequent tests.
         pkill -x Tug 2>/dev/null || true
         sleep 0.3
     done
