@@ -32,6 +32,7 @@ export function makeMockStore(
   const cardStateCache = new Map<string, CardStateBag>();
   const saveCallbacks = new Map<string, () => void>();
   const activationCallbacks = new Map<string, () => void>();
+  const deactivationCallbacks = new Map<string, () => void>();
   const cardHostRoots = new Map<string, HTMLElement>();
   const componentRegistries = new Map<string, ComponentPersistenceRegistry>();
   const orchestrator = new CardStateOrchestrator((cardId) =>
@@ -103,6 +104,17 @@ export function makeMockStore(
     },
     invokeActivationCallback: (cardId: string) => {
       activationCallbacks.get(cardId)?.();
+    },
+    registerDeactivationCallback: (cardId: string, callback: () => void) => {
+      deactivationCallbacks.set(cardId, callback);
+      return () => {
+        if (deactivationCallbacks.get(cardId) === callback) {
+          deactivationCallbacks.delete(cardId);
+        }
+      };
+    },
+    invokeDeactivationCallback: (cardId: string) => {
+      deactivationCallbacks.get(cardId)?.();
     },
     registerCardHostRoot: (cardId: string, el: HTMLElement | null) => {
       if (el === null) {

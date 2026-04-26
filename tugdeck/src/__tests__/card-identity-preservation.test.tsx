@@ -232,6 +232,7 @@ class Store implements IDeckManagerStore {
   };
 
   private activationCallbacks = new Map<string, () => void>();
+  private deactivationCallbacks = new Map<string, () => void>();
   private cardHostRoots = new Map<string, HTMLElement>();
   registerActivationCallback = (cardId: string, cb: () => void): (() => void) => {
     this.activationCallbacks.set(cardId, cb);
@@ -243,6 +244,17 @@ class Store implements IDeckManagerStore {
   };
   invokeActivationCallback = (cardId: string): void => {
     this.activationCallbacks.get(cardId)?.();
+  };
+  registerDeactivationCallback = (cardId: string, cb: () => void): (() => void) => {
+    this.deactivationCallbacks.set(cardId, cb);
+    return () => {
+      if (this.deactivationCallbacks.get(cardId) === cb) {
+        this.deactivationCallbacks.delete(cardId);
+      }
+    };
+  };
+  invokeDeactivationCallback = (cardId: string): void => {
+    this.deactivationCallbacks.get(cardId)?.();
   };
   registerCardHostRoot = (cardId: string, el: HTMLElement | null): void => {
     if (el === null) this.cardHostRoots.delete(cardId);

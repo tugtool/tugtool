@@ -31,11 +31,38 @@ import { DeckManagerContext } from "../../deck-manager-context";
  *
  * Spec S05 ([D02])
  */
+/**
+ * Options accepted by `onRestore`, threaded by CardHost at restore time.
+ *
+ * `isActive` names the deck-level first responder: the card that holds
+ * the document's focus authority for the entire page. CardHost computes
+ * this as `deck.getFirstResponderCardId() === cardId` per Step 25C.4's
+ * "Defining 'active' precisely" section. Pane-active cards in non-active
+ * panes are NOT active by this definition; their persisted selections
+ * route through the inactive-paint channel via
+ * `engine.paintMirrorAsInactive(publish)`.
+ *
+ * Selection plan Step 25C.4. [L23], [D10].
+ */
+export interface CardRestoreOptions {
+  /** True iff this card is the deck-level first responder at the moment
+   *  of restore. Drives `paintMirrorAsActive` vs `paintMirrorAsInactive`
+   *  routing in the consumer. */
+  isActive: boolean;
+}
+
 export interface UseCardPersistenceOptions<T> {
   /** Called by CardHost on tab deactivation. Must return JSON-serializable state. */
   onSave: () => T;
-  /** Called by CardHost on tab activation with the previously saved state. */
-  onRestore: (state: T) => void;
+  /**
+   * Called by CardHost on cold-mount restore (and on tab activation
+   * for content-owning cards). The `opts.isActive` flag tells the
+   * consumer whether this card is the deck-level first responder —
+   * the consumer routes selection paint through
+   * `paintMirrorAsActive` (active) or `paintMirrorAsInactive(publish)`
+   * (inactive) accordingly. Selection plan Step 25C.4. [L23].
+   */
+  onRestore: (state: T, opts: CardRestoreOptions) => void;
   /**
    * Called when this card transitions to being the focus destination —
    * i.e. `isFocusDestination` flips from `false` to `true`. Typical
@@ -43,7 +70,7 @@ export interface UseCardPersistenceOptions<T> {
    *
    * ```ts
    * onCardActivated: () => {
-   *   engine.root.focus({ preventScroll: true });
+   *   engine.paintMirrorAsActive();
    * }
    * ```
    *
@@ -59,6 +86,21 @@ export interface UseCardPersistenceOptions<T> {
    * re-applies `bag.focus` + `bag.domSelection` directly for them.
    */
   onCardActivated?: () => void;
+  /**
+   * Called when this card is about to lose focus-destination status —
+   * i.e. activation is about to move to a sibling card. The consumer
+   * uses this to hand its selection over to the inactive-paint channel
+   * (via `engine.paintMirrorAsInactive(publish)`) before the new
+   * active card claims focus + global Selection. Without this, the
+   * deactivated card's selection is destroyed when the new card calls
+   * `setSelectedRange` (which runs `removeAllRanges` on the global
+   * Selection).
+   *
+   * Selection plan Step 25C.4. [L23] enforcement.
+   *
+   * Optional. FC (DOM-authority) cards don't need this.
+   */
+  onCardWillDeactivate?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +124,12 @@ export interface UseCardPersistenceOptions<T> {
  */
 export interface CardPersistenceCallbacks {
   onSave: () => unknown;
-  onRestore: (state: unknown) => void;
+  /**
+   * Called by CardHost on cold-mount restore (and on tab activation
+   * for content-owning cards). `opts.isActive` is the deck-level
+   * first-responder snapshot — selection plan Step 25C.4 [L23].
+   */
+  onRestore: (state: unknown, opts: CardRestoreOptions) => void;
   /**
    * Written by CardHost before calling `onRestore`. Fired by the hook's
    * no-deps `useLayoutEffect` after the child's DOM commits. Optional because
@@ -120,6 +167,19 @@ export interface CardPersistenceCallbacks {
    * `bag.domSelection` directly.
    */
   onCardActivated?: () => void;
+  /**
+   * Called when this card is about to lose focus-destination status,
+   * before another card's activation hook claims the global Selection.
+   * Mirror image of `onCardActivated`. Lets the consumer route its
+   * selection into the inactive-paint channel
+   * (`paintMirrorAsInactive(publish)`) so the about-to-be-active
+   * card's `removeAllRanges()` doesn't destroy this card's selection.
+   *
+   * Selection plan Step 25C.4 [L23] enforcement.
+   *
+   * Optional. FC (DOM-authority) cards leave it unset.
+   */
+  onCardWillDeactivate?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,11 +275,15 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   // Store the caller's options in refs so the registered wrappers never go
   // stale when options change on re-renders (Rule 5).
   const onSaveRef = useRef<(() => T) | undefined>(undefined);
-  const onRestoreRef = useRef<((state: T) => void) | undefined>(undefined);
+  const onRestoreRef = useRef<
+    ((state: T, opts: CardRestoreOptions) => void) | undefined
+  >(undefined);
   const onCardActivatedRef = useRef<(() => void) | undefined>(undefined);
+  const onCardWillDeactivateRef = useRef<(() => void) | undefined>(undefined);
   onSaveRef.current = options.onSave;
   onRestoreRef.current = options.onRestore;
   onCardActivatedRef.current = options.onCardActivated;
+  onCardWillDeactivateRef.current = options.onCardWillDeactivate;
 
   // Ref-flag mechanism ([D02], [D03], Spec S02):
   // CardHost sets restorePendingRef.current = true before calling onRestore.
@@ -244,13 +308,15 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
 
     const callbacks: CardPersistenceCallbacks = {
       onSave: () => onSaveRef.current?.() as unknown,
-      onRestore: (state: unknown) => onRestoreRef.current?.(state as T),
+      onRestore: (state: unknown, opts: CardRestoreOptions) =>
+        onRestoreRef.current?.(state as T, opts),
       // Forward through a stable ref-reading wrapper so the latest
       // caller-supplied implementation fires even when `options`
       // changes across re-renders (Rule 5). `undefined` when the
       // caller didn't provide it — the dispatcher in [A3] checks for
       // presence before invoking.
       onCardActivated: () => onCardActivatedRef.current?.(),
+      onCardWillDeactivate: () => onCardWillDeactivateRef.current?.(),
       restorePendingRef,
     };
 
@@ -262,7 +328,10 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
     // runs deactivation, but the ref callbacks will still be valid until
     // unmount completes, so this is safe.
     return () => {
-      register({ onSave: () => undefined, onRestore: () => {} });
+      register({
+        onSave: () => undefined,
+        onRestore: () => {},
+      });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [register]);
@@ -289,6 +358,19 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
     if (!store || !cardId) return;
     const unregister = store.registerActivationCallback(cardId, () => {
       onCardActivatedRef.current?.();
+    });
+    return unregister;
+  }, [store, cardId]);
+
+  // Parallel registration on the deck store's deactivation-callback
+  // channel. Selection plan Step 25C.4 [L23]: lets the store dispatch
+  // `onCardWillDeactivate` to this card before the new active card
+  // claims focus + global Selection. Same ref-reading wrapper pattern
+  // as activation; same Rule 3 / Rule 5 compliance.
+  useLayoutEffect(() => {
+    if (!store || !cardId) return;
+    const unregister = store.registerDeactivationCallback(cardId, () => {
+      onCardWillDeactivateRef.current?.();
     });
     return unregister;
   }, [store, cardId]);

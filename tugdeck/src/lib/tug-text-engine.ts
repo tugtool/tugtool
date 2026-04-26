@@ -562,14 +562,18 @@ export class TugTextEngine {
       if (!this.root.isConnected) return;
       this._suppressLayoutObserver = true;
       try {
-        // Pair: layout reconciliation, then mirror→DOM paint.
+        // Pair: layout reconciliation, then scroll-only repaint.
         // `autoResize` brings the editor's own height into agreement
         // with the current content (covering the case where it ran
         // earlier while the editor was hidden and computed wrong);
-        // `applyMirrorToDom` then writes the user's persisted
-        // selection / scrollTop into the now-correctly-sized DOM.
+        // `repaintMirrorScroll` reasserts the user's scrollTop on
+        // the now-correctly-sized DOM. **Selection** is NOT touched
+        // here — that's the deck-layer's call (active vs inactive
+        // routing through component-side hooks). Selection plan
+        // Step 25C.4 [L10]: engine ResizeObserver does layout
+        // stabilization + scroll only, never selection.
         this.autoResize();
-        this.applyMirrorToDom();
+        this.repaintMirrorScroll();
       } finally {
         this._suppressLayoutObserver = false;
       }
@@ -1021,68 +1025,126 @@ export class TugTextEngine {
       this._empty = state.text.length === 0 || state.text === "\n";
       this.updateEmpty();
       this.autoResize();
-      // Restore publish point — write the mirror first, then apply
-      // to DOM via `applyMirrorToDom`. `setSelectedRange` writes
-      // `_browserMirror.selection` synchronously; the explicit
-      // `_browserMirror.scrollTop` write below is the parallel for
-      // the scroll axis. The mirror is now the SOT; the DOM is what
-      // we paint when activation, focus, or any other "now would be
-      // a good time to assert state" trigger calls
-      // `applyMirrorToDom`. [L23]
-      if (state.selection) {
-        this.setSelectedRange(state.selection.start, state.selection.end);
-      } else {
-        this._browserMirror.selection = null;
-      }
+      // Restore is mirror-only — no DOM Selection write, no focus
+      // claim, no `window.getSelection()` mutation. The component
+      // layer chooses the paint path (`paintMirrorAsActive` or
+      // `paintMirrorAsInactive`) based on whether this card is the
+      // deck-level first responder, and runs that paint after this
+      // method returns. Selection plan Step 25C.4 enforces the
+      // restore-ordering invariant — every inactive card's onRestore
+      // completes before the active card claims focus + global
+      // Selection — by deferring the paint to the component layer.
+      // [L23], [L10].
+      this._browserMirror.selection = state.selection ?? null;
       this._browserMirror.scrollTop =
         typeof state.scrollTop === "number" ? state.scrollTop : 0;
-      this.applyMirrorToDom();
     } finally {
       this._suppressSelectionEmits = false;
     }
-    this.emitSelectionChanged();
+    // Don't emit here. The paint method the component runs after
+    // this returns is the canonical publish point — emitting
+    // a stale (pre-paint) selection would write `null` into
+    // `selectionGuard.cardRanges` for an instant before the paint
+    // re-publishes. Skipping the emit keeps the publish single-step.
   }
 
   /**
-   * Repaint the browser-mirrored axes from the model to the DOM.
+   * Paint the browser-mirrored axes for an *active* card (the
+   * deck-level first responder).
    *
-   * The mirror is the source of truth for selection and scrollTop;
-   * the DOM is a view of it. Browsers reset the DOM when an element
-   * goes hidden (scrollTop clamps to 0; selection moves with focus),
-   * so the engine repaints when DOM and mirror diverge.
+   * Selection: routes through `setSelectedRange`, which focuses the
+   * root and writes the global `window.getSelection()` via
+   * `addRange`. Used by exactly *one* editor per page at a time —
+   * the only call site that legitimately claims document focus and
+   * mutates the global Selection. Selection plan Step 25C.4's
+   * restore-ordering invariant guarantees this method runs *after*
+   * every inactive card's paint, so the active card's
+   * `removeAllRanges()` has nothing else's state to destroy.
    *
-   * **Paint-only**, deliberately. Layout work (`autoResize`) belongs
-   * to the layout observer below — running it here during fragile
-   * transitions (the activation moment, before the new pane has
-   * fully resolved its dimensions) can race the focus call. The
-   * observer fires on every dimension change with `autoResize` paired
-   * to a paint, which is the deterministic moment to reconcile
-   * layout and mirror together.
+   * scrollTop: direct DOM write to `root.scrollTop`. Per-element,
+   * not racy across cards.
    *
-   * Selection: only write the mirror when the live DOM does NOT
-   * already have an in-root selection. The live DOM's in-root
-   * selection is the user's actual current state — typing,
-   * clicking, or arrow-key navigation just placed it there, and
-   * `selectionchange` will refresh the mirror in the next async
-   * task. Writing the mirror to DOM in this window would undo the
-   * user's input. The mirror's value is needed only when the DOM
-   * has lost its selection — focus moved to a sibling card, the
-   * editor was hidden and re-shown, etc. — i.e., precisely the
-   * case the in-root check rejects.
-   *
-   * Skips silently when the engine root is detached — there is no
-   * DOM to paint to. A subsequent layout transition (caught by the
-   * permanent ResizeObserver below) will reapply once the root is
-   * back. [L23]
+   * Skips silently when the engine root is detached. The permanent
+   * layout observer below will catch up on the next layout
+   * transition. [L23], [L10].
    */
-  applyMirrorToDom(): void {
+  paintMirrorAsActive(): void {
     if (!this.root.isConnected) return;
-    if (this._browserMirror.selection && !this._liveSelectionInRoot()) {
+    if (this._browserMirror.selection) {
       this.setSelectedRange(
         this._browserMirror.selection.start,
         this._browserMirror.selection.end,
       );
     }
+    if (this.root.scrollTop !== this._browserMirror.scrollTop) {
+      this.root.scrollTop = this._browserMirror.scrollTop;
+    }
+  }
+
+  /**
+   * Paint the browser-mirrored axes for an *inactive* card (every
+   * card that is not the deck-level first responder).
+   *
+   * Selection: builds a DOM Range from `mirror.selection` via
+   * `flatToDom` and hands it to the caller's `publish` callback —
+   * the L10 seam between this engine (which doesn't know about
+   * `selectionGuard`) and the deck-layer routing (which does, via
+   * `cardId`). The component routes `publish` to
+   * `selectionGuard.updateCardDomSelection(cardId, range)`;
+   * selectionGuard adds the range to the `inactive-selection`
+   * CSS Custom Highlight, painted via `::highlight(inactive-selection)`.
+   *
+   * Does **not** call `root.focus()`. Does **not** touch
+   * `window.getSelection()`. The card stays unfocused; the document's
+   * active selection belongs to whichever card is the deck-level
+   * first responder — its `paintMirrorAsActive` writes that.
+   *
+   * scrollTop: direct DOM write to `root.scrollTop`. Per-element,
+   * not racy across cards. Inactive cards still need their
+   * scrollTop preserved — the user expects to find the editor at the
+   * same scroll offset when it later activates.
+   *
+   * Skips silently when the engine root is detached. [L23], [L10],
+   * [L12] (selectionGuard owns card-scoped selection state).
+   */
+  paintMirrorAsInactive(publish: (range: Range | null) => void): void {
+    if (!this.root.isConnected) return;
+    if (this._browserMirror.selection !== null) {
+      const sel = this._browserMirror.selection;
+      const start = flatToDom(this.root, sel.start);
+      const end = flatToDom(this.root, sel.end);
+      const range = document.createRange();
+      try {
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        publish(range);
+      } catch {
+        // Offsets out of range — DOM mutated since the mirror was
+        // written. Best-effort: clear any stale published range so
+        // the inactive paint doesn't render against dead nodes.
+        publish(null);
+      }
+    } else {
+      publish(null);
+    }
+    if (this.root.scrollTop !== this._browserMirror.scrollTop) {
+      this.root.scrollTop = this._browserMirror.scrollTop;
+    }
+  }
+
+  /**
+   * Repaint just the scroll axis. Called by the permanent layout
+   * observer below — layout transitions can clamp `scrollTop`, so
+   * the observer pairs `autoResize` with this scroll-only repaint
+   * to reassert the user's chosen offset on every box-dimension
+   * change. NO selection write, NO focus claim — those belong to
+   * `paintMirrorAsActive` / `paintMirrorAsInactive` and are routed
+   * by the component layer based on the deck-level active state.
+   * [L10] (engine doesn't reach into deck state); [L23] (scroll
+   * preserved through layout transitions).
+   */
+  repaintMirrorScroll(): void {
+    if (!this.root.isConnected) return;
     if (this.root.scrollTop !== this._browserMirror.scrollTop) {
       this.root.scrollTop = this._browserMirror.scrollTop;
     }
@@ -2002,14 +2064,14 @@ export class TugTextEngine {
     // 9 & 10. Change detection + auto-resize + typeahead — input event
     this.listen(root, "input", (e: Event) => {
       // Suppress the layout observer for the duration of this handler.
-      // `autoResize` writes `style.height`, which fires `ResizeObserver`,
-      // which would otherwise call `applyMirrorToDom` and write
-      // `_browserMirror.selection` back to DOM — but the mirror is
-      // briefly stale here (the browser just moved the caret in
-      // response to the input; `selectionchange` fires async). Letting
-      // the layout observer run mid-input would undo the user's
-      // keystroke. The handler's own `autoResize` is enough; the
-      // observer's job is layout-driven repaint (visibility transitions,
+      // `autoResize` writes `style.height`, which fires
+      // `ResizeObserver`, which would otherwise re-run `autoResize` +
+      // `repaintMirrorScroll` — recursive layout work that the
+      // handler is already doing itself. The flag keeps the work
+      // single-pass. Selection routing is not at risk here (the
+      // observer is scroll-only post-25C.4), but the recursion
+      // still wastes cycles. The handler's own `autoResize` is enough;
+      // the observer's job is layout-driven repaint (visibility transitions,
       // parent resizes), not input echo. [L23]
       this._suppressLayoutObserver = true;
       try {

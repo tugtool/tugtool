@@ -442,19 +442,30 @@ export function transferFocusForActivation(
     outgoingWillBeDestroyed,
   } = options;
 
-  // Step 1 — Save outgoing.
+  // Step 1 — Save outgoing + hand its selection over to the
+  // inactive-paint channel.
   //
   // Skipped when there is no outgoing (`null`), when the same card
   // is "transitioning" to itself (no-op activation), or when the
   // outgoing card is being destroyed by the same mutation
   // (`_removeCard` / `_closePane` already runs
   // `flushSaveCallbackBeforeDestruction` in its phase 2).
+  //
+  // The deactivation callback fires before the activation mutation
+  // commits, so the outgoing card's editor routes its selection into
+  // `selectionGuard.cardRanges` (via `paintMirrorAsInactive(publish)`)
+  // before the incoming card's activation hook runs
+  // `setSelectedRange` — which would otherwise call
+  // `removeAllRanges()` on the global Selection and destroy the
+  // outgoing card's selection. Selection plan Step 25C.4 [L23]
+  // enforcement.
   if (
     outgoingCardId !== null &&
     outgoingCardId !== incomingCardId &&
     outgoingWillBeDestroyed !== true
   ) {
     store.invokeSaveCallback(outgoingCardId);
+    store.invokeDeactivationCallback(outgoingCardId, "transfer-for-activation");
   }
 
   // Step 2 — Commit the mutation.

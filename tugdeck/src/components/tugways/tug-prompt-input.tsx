@@ -218,6 +218,31 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * @param char — one of the configured route prefix characters (e.g. `">"`, `"$"`, `":"`).
    */
   setRoute(char: string): void;
+  /**
+   * Paint the engine's `_browserMirror` to the DOM as an *active*
+   * card — the deck-level first responder. Routes selection through
+   * `setSelectedRange` (focus + global Selection) and writes
+   * scrollTop. Selection plan Step 25C.4. [L23], [D10].
+   *
+   * Called by wrapper compounds (e.g. `TugPromptEntry`) on
+   * activation transitions and on cold-mount restore when the
+   * wrapping card is the deck-level first responder. Direct callers
+   * should ensure the restore-ordering invariant: every inactive
+   * card's paint completes before the active card's paint runs.
+   */
+  paintMirrorAsActive(): void;
+  /**
+   * Paint the engine's `_browserMirror` to the DOM as an *inactive*
+   * card — every card that is not the deck-level first responder.
+   * Builds a Range from `mirror.selection` and routes through the
+   * `publish` callback (typically
+   * `range => selectionGuard.updateCardDomSelection(cardId, range)`),
+   * which adds the Range to selectionGuard's `cardRanges` and
+   * paints via the `inactive-selection` CSS Custom Highlight. NO
+   * focus claim, NO `window.getSelection()` mutation. Writes
+   * scrollTop. Selection plan Step 25C.4. [L10], [L12], [L23].
+   */
+  paintMirrorAsInactive(publish: (range: Range | null) => void): void;
 }
 
 /**
@@ -342,7 +367,9 @@ function TugPromptInputPersistence({
   cardIdRef,
 }: {
   engineRef: React.RefObject<TugTextEngine | null>;
-  pendingRestoreRef: React.RefObject<TugTextEditingState | null>;
+  pendingRestoreRef: React.RefObject<
+    { state: TugTextEditingState; isActive: boolean } | null
+  >;
   cardIdRef: React.RefObject<string | null>;
 }) {
   // The TugPane persistence protocol expects onRestore to trigger a re-render
@@ -351,32 +378,54 @@ function TugPromptInputPersistence({
   // the direct DOM write via restoreState produces no re-render, onContentReady
   // never fires, and the card stays invisible.
   const [, setRestoreCount] = useState(0);
+  // Helper: route the engine's mirror selection through selectionGuard
+  // for the inactive-paint channel. The closure reads `cardIdRef.current`
+  // at fire time per [L07] (mandatory cardIdRef pattern from Step 25C.4
+  // — cross-pane moves preserve cardId in practice but the ref keeps
+  // the contract safe under any future identity-semantics change).
+  const publishToSelectionGuard = (range: Range | null): void => {
+    const id = cardIdRef.current;
+    if (id === null) return;
+    selectionGuard.updateCardDomSelection(id, range);
+  };
   useCardPersistence<TugTextEditingState>({
     onCardActivated: () => {
-      // Row 6 — activation gesture lands on this EM card. Restore
-      // focus to the engine root via `setSelectedRange` (which
-      // uses the WebKit-safe focus-then-select ordering, [Step
-      // 23G]). Selection comes from either the live DOM (if it
-      // happens to still have an in-root range) or the engine's
-      // authoritative model (`getMirroredSelection`). The mirror
-      // is updated at every user-input publish point, so its value
-      // is the user's intended selection regardless of whether the
-      // live DOM lost it during deactivation.
+      // Row 6 — activation gesture lands on this EM card. Selection
+      // plan Step 25C.4: this is the only call site that legitimately
+      // claims document focus + global Selection for this editor.
+      // `paintMirrorAsActive` writes mirror.selection through
+      // `setSelectedRange` (WebKit-safe focus-then-select per [Step
+      // 23G]) and writes mirror.scrollTop. The deactivation hook
+      // for the previously-active card has already routed its
+      // selection into the inactive-paint channel — so this card's
+      // `removeAllRanges()` has nothing else's state to destroy.
       //
-      // scrollTop restoration is handled separately by the
-      // engine's permanent ResizeObserver: when the activation
-      // makes the editor's box dimensions change, the observer
-      // pairs `autoResize` with `applyMirrorToDom` and writes the
-      // mirror's scrollTop back into the now-visible DOM. [L23]
+      // If the mirror has no selection (fresh mount, no prior user
+      // input), fall through to the "place caret at end" default —
+      // also routed through `setSelectedRange` for the WebKit-safe
+      // focus path. [L23]
       const engine = engineRef.current;
       if (!engine) return;
-      const saved = engine.getSelectedRange() ?? engine.getMirroredSelection();
-      if (saved !== null) {
-        engine.setSelectedRange(saved.start, saved.end);
+      if (engine.getMirroredSelection() !== null) {
+        engine.paintMirrorAsActive();
         return;
       }
       const text = engine.getText();
       engine.setSelectedRange(text.length, text.length);
+    },
+    onCardWillDeactivate: () => {
+      // Selection plan Step 25C.4 [L23] enforcement: hand the
+      // selection over to the inactive-paint channel before the new
+      // active card claims focus + global Selection.
+      // `paintMirrorAsInactive` builds a Range from mirror.selection
+      // and routes it through `publishToSelectionGuard`, which
+      // writes to `selectionGuard.cardRanges[cardId]`. selectionGuard
+      // adds the range to the `inactive-selection` CSS Custom
+      // Highlight; the editor stays unfocused. NO global Selection
+      // mutation.
+      const engine = engineRef.current;
+      if (!engine) return;
+      engine.paintMirrorAsInactive(publishToSelectionGuard);
     },
     onSave: () => {
       const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
@@ -384,16 +433,32 @@ function TugPromptInputPersistence({
       if (!engine) return empty;
       return engine.captureState();
     },
-    onRestore: (state) => {
+    onRestore: (state, { isActive }) => {
+      // Selection plan Step 25C.4 [L23] restore-ordering invariant:
+      // CardHost fires onRestore for every card on cold-mount; this
+      // consumer branches on `isActive` to choose the paint channel.
+      // The active card (deck-level first responder) writes through
+      // `paintMirrorAsActive` (focus + global Selection). Every
+      // inactive card writes through `paintMirrorAsInactive(publish)`
+      // (selectionGuard.cardRanges, no focus claim, no global
+      // Selection mutation). The ordering invariant — every
+      // inactive card's restore completes before the active card's
+      // — is enforced by CardHost; this consumer just picks the
+      // right channel.
+      //
       // CardHost defers this call until AFTER CardPortal's
-      // `useLayoutEffect` has attached the slot to the host
-      // element, so the engine root is connected to the document
-      // when `engine.restoreState` runs and `setSelectedRange` can
-      // land its `.focus()` + `addRange` on a live node. Selection
-      // plan Step 23F gap-1.
+      // `useLayoutEffect` has attached the slot to the host element,
+      // so the engine root is connected to the document when
+      // `engine.restoreState` runs and the subsequent paint method
+      // can land on a live node. Selection plan Step 23F gap-1.
       const engine = engineRef.current;
       if (engine) {
         engine.restoreState(state);
+        if (isActive) {
+          engine.paintMirrorAsActive();
+        } else {
+          engine.paintMirrorAsInactive(publishToSelectionGuard);
+        }
         const id = cardIdRef.current;
         if (id !== null) {
           deckTrace.record({
@@ -405,7 +470,7 @@ function TugPromptInputPersistence({
           });
         }
       } else {
-        pendingRestoreRef.current = state;
+        pendingRestoreRef.current = { state, isActive };
       }
       setRestoreCount(c => c + 1);
     },
@@ -455,7 +520,15 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     const containerRef = useRef<HTMLDivElement>(null);
     const completionRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<TugTextEngine | null>(null);
-    const pendingRestoreRef = useRef<TugTextEditingState | null>(null);
+    // Buffered onRestore payload for the rare case where onRestore
+    // fires before the engine's mount-effect creates the engine.
+    // Carries both the editing state AND the `isActive` snapshot from
+    // CardHost so the engine-creation effect can paint via the right
+    // channel (paintMirrorAsActive vs paintMirrorAsInactive) when it
+    // replays the buffered restore. Selection plan Step 25C.4 [L23].
+    const pendingRestoreRef = useRef<
+      { state: TugTextEditingState; isActive: boolean } | null
+    >(null);
 
     // Expose TugTextInputDelegate — the UITextInput-inspired API [L07]
     useImperativeHandle(ref, () => ({
@@ -487,22 +560,25 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       focus() {
         // Post-condition: after this returns, the user can type —
         // activeElement is the contenteditable AND a visible caret
-        // is placed inside it. Selection comes from the live DOM if
-        // it still has an in-root range, otherwise from the engine's
-        // mirror (`getMirroredSelection`) — which holds the user's
-        // intended selection regardless of whether the DOM lost it
-        // during a deactivation. `setSelectedRange` enforces the
-        // WebKit-safe focus-then-select ordering ([Step 23G]).
+        // is placed inside it. The engine's mirror is the SOT for
+        // selection; `paintMirrorAsActive` writes it through
+        // `setSelectedRange` (WebKit-safe focus-then-select per
+        // [Step 23G]) and writes mirror.scrollTop. When the mirror
+        // has no selection (fresh mount), fall through to the
+        // "place caret at end" default — also through
+        // `setSelectedRange` for the same WebKit-safe path.
         //
-        // scrollTop restoration on activation is handled by the
-        // engine's permanent ResizeObserver, which pairs
-        // `autoResize` with `applyMirrorToDom` whenever the
-        // editor's box dimensions change. [L23]
+        // Selection plan Step 25C.4: this method is invoked by
+        // wrapper compounds (TugPromptEntry, tide-card via the
+        // entry) on activation. CardHost / focus-transfer guarantees
+        // any previously-active card's selection has been routed to
+        // the inactive-paint channel before this fires, so the
+        // `removeAllRanges()` inside setSelectedRange doesn't
+        // destroy any other card's state. [L23]
         const engine = engineRef.current;
         if (!engine) return;
-        const saved = engine.getSelectedRange() ?? engine.getMirroredSelection();
-        if (saved !== null) {
-          engine.setSelectedRange(saved.start, saved.end);
+        if (engine.getMirroredSelection() !== null) {
+          engine.paintMirrorAsActive();
           return;
         }
         const text = engine.getText();
@@ -519,6 +595,10 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
       captureState() { return engineRef.current?.captureState() ?? { text: "", atoms: [], selection: null }; },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
+      paintMirrorAsActive() { engineRef.current?.paintMirrorAsActive(); },
+      paintMirrorAsInactive(publish: (range: Range | null) => void) {
+        engineRef.current?.paintMirrorAsInactive(publish);
+      },
       regenerateAtoms() { engineRef.current?.regenerateAtoms(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
       // Composition-layer method widening TugTextInputDelegate [Q01].
@@ -722,10 +802,26 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         selectionGuard.updateCardDomSelection(id, range);
       });
 
-      // Apply any state buffered by onRestore that fired before engine creation
+      // Apply any state buffered by onRestore that fired before engine
+      // creation. The buffer carries the `isActive` snapshot CardHost
+      // computed at the original onRestore call time, so we route to
+      // the same paint channel the persistence helper would have
+      // chosen had the engine been ready. [L23] preservation. The
+      // `cardIdRef.current` capture honors [L07]'s ref-not-direct
+      // pattern. Selection plan Step 25C.4.
       if (pendingRestoreRef.current) {
-        const buffered = pendingRestoreRef.current;
+        const { state: buffered, isActive } = pendingRestoreRef.current;
         engine.restoreState(buffered);
+        if (isActive) {
+          engine.paintMirrorAsActive();
+        } else {
+          engine.paintMirrorAsInactive((range) => {
+            const id = cardIdRef.current;
+            if (id !== null) {
+              selectionGuard.updateCardDomSelection(id, range);
+            }
+          });
+        }
         pendingRestoreRef.current = null;
         const id = cardIdRef.current;
         if (id !== null) {

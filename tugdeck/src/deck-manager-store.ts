@@ -341,6 +341,31 @@ export interface IDeckManagerStore {
   invokeActivationCallback: (cardId: string, dispatchedFrom: string) => void;
 
   /**
+   * Register a deactivation callback for `cardId`. Returns an
+   * unregister function. Mirror image of
+   * {@link registerActivationCallback}: fires when the card is about
+   * to lose focus-destination status, so the consumer can hand its
+   * selection over to the inactive-paint channel before the new
+   * active card claims focus + global Selection. Selection plan
+   * Step 25C.4 [L23] enforcement.
+   */
+  registerDeactivationCallback: (
+    cardId: string,
+    callback: () => void,
+  ) => () => void;
+
+  /**
+   * Fire the registered deactivation callback for `cardId`. Silently
+   * no-ops when no callback is registered. Called by
+   * `transferFocusForActivation` ahead of activation transitions so
+   * the previously-active card can route its selection to
+   * `selectionGuard` (via `paintMirrorAsInactive`) before the new
+   * active card's `setSelectedRange` runs `removeAllRanges()` on the
+   * global Selection. Selection plan Step 25C.4 [L23].
+   */
+  invokeDeactivationCallback: (cardId: string, dispatchedFrom: string) => void;
+
+  /**
    * Register the live `[data-card-host][data-card-id="…"]` DOM
    * element for `cardId`. `CardHost` calls this from a callback-ref
    * composed with a `useLayoutEffect` so the registry is populated

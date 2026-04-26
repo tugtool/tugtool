@@ -170,7 +170,7 @@ describe("TugTextEngine.restoreState — fast-path skip", () => {
     }
   });
 
-  it("restoreState(A) then restoreState(A') where only selection changed: DOM unchanged, but setSelectedRange still runs", async () => {
+  it("restoreState(A) then restoreState(A') where only selection changed: DOM unchanged, mirror updated", async () => {
     const stateA = makeTextState("hello world", { start: 0, end: 5 });
     ctx.engine.restoreState(stateA);
 
@@ -187,7 +187,17 @@ describe("TugTextEngine.restoreState — fast-path skip", () => {
       stop();
     }
 
-    // Selection did move — `setSelectedRange` still fired.
+    // Selection did move — the engine's `_browserMirror.selection` is
+    // the SOT post-25C.4. `restoreState` is mirror-only; callers
+    // invoke `paintMirrorAsActive` / `paintMirrorAsInactive` to write
+    // the DOM. Verify the mirror update by asking the engine for its
+    // mirrored selection.
+    expect(ctx.engine.getMirroredSelection()).toEqual({ start: 6, end: 11 });
+
+    // The active-paint path writes through `setSelectedRange` to
+    // `window.getSelection()`. Exercise it explicitly to verify the
+    // post-restore paint still lands selection in the DOM.
+    ctx.engine.paintMirrorAsActive();
     const sel = window.getSelection();
     expect(sel).not.toBeNull();
     if (sel === null) return;
@@ -195,15 +205,19 @@ describe("TugTextEngine.restoreState — fast-path skip", () => {
     expect(sel.focusOffset).toBe(11);
   });
 
-  it("selection is applied even on the skip path", () => {
+  it("selection is applied even on the skip path (via paintMirrorAsActive)", () => {
     const stateA = makeTextState("hello world", { start: 2, end: 4 });
     ctx.engine.restoreState(stateA);
     // Move the caret with setSelectedRange, so the engine's current
     // selection diverges from stateA's recorded selection.
     ctx.engine.setSelectedRange(0, 0);
 
-    // Re-restore stateA — DOM matches, only selection needs re-aligning.
+    // Re-restore stateA — DOM matches, only the mirror's selection
+    // needs re-aligning. Post-25C.4: `restoreState` updates the
+    // mirror; `paintMirrorAsActive` writes through to the DOM.
     ctx.engine.restoreState(stateA);
+    expect(ctx.engine.getMirroredSelection()).toEqual({ start: 2, end: 4 });
+    ctx.engine.paintMirrorAsActive();
 
     const sel = window.getSelection();
     expect(sel).not.toBeNull();

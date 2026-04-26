@@ -128,7 +128,7 @@ describe("useCardPersistence – callback registration and invocation", () => {
 
     // TugPane calls onRestore on activation with saved state.
     const savedState = { value: 99 };
-    callbacks!.onRestore(savedState);
+    callbacks!.onRestore(savedState, { isActive: true });
     expect(onRestore).toHaveBeenCalledTimes(1);
     expect(restoredValues).toEqual([savedState]);
   });
@@ -252,7 +252,7 @@ describe("useCardPersistence – TugPane context round-trip", () => {
     expect(saved).toEqual(contentState);
 
     // Simulate activation: TugPane calls onRestore with the saved state.
-    callbacks.onRestore(saved);
+    callbacks.onRestore(saved, { isActive: true });
     expect(restoredStates).toHaveLength(1);
     expect(restoredStates[0]).toEqual(contentState);
   });
@@ -392,7 +392,7 @@ describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", 
         domTextAtReady = el?.textContent ?? null;
         readyFiredWithState = domTextAtReady;
       };
-      callbacks.onRestore("restored-value");
+      callbacks.onRestore("restored-value", { isActive: true });
     });
 
     // onContentReady should have fired with the restored DOM state.

@@ -66,6 +66,7 @@ import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCardPersistence, useCardId } from "./use-card-persistence";
+import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
@@ -780,17 +781,40 @@ export const TugPromptEntry = React.forwardRef<
   // route atom if none). TugPane's orchestration guarantees both refs
   // (`promptInputRef`, `rootRef`) are populated by the time onRestore
   // fires — parent effects run after child mounts.
+  // Helper: route the embedded input's mirror selection through
+  // selectionGuard for the inactive-paint channel. The closure reads
+  // `cardIdForTraceRef.current` at fire time per [L07] (mandatory
+  // cardIdRef pattern from Step 25C.4 — cross-pane moves preserve
+  // cardId in practice but the ref keeps the contract safe under any
+  // future identity-semantics change).
+  const publishToSelectionGuard = (range: Range | null): void => {
+    const id = cardIdForTraceRef.current;
+    if (id === null) return;
+    selectionGuard.updateCardDomSelection(id, range);
+  };
   useCardPersistence<TugPromptEntryPersistedState>({
     onCardActivated: () => {
       // Row 6 of the activation taxonomy: when this EM card
       // becomes the destination of an activation gesture, the
-      // framework dispatches here. The delegate's `focus()` does
-      // the right thing — places a caret if none, then focuses
-      // the engine root. The framework's own
+      // framework dispatches here. The delegate's `focus()` runs
+      // `paintMirrorAsActive` (focus + global Selection + scroll)
+      // via the imperative handle. The framework's own
       // `engine-activation-dispatched` deck-trace event is
       // recorded in `DeckManager.invokeActivationCallback` ahead
-      // of this call, so the callback body stays single-purpose.
+      // of this call. Selection plan Step 25C.4: this is the
+      // single legitimate `focus()` claim per page; the
+      // deactivation hook for the previously-active card has
+      // already routed its selection into the inactive-paint
+      // channel before this fires. [L23].
       promptInputRef.current?.focus();
+    },
+    onCardWillDeactivate: () => {
+      // Selection plan Step 25C.4 [L23] enforcement. Hand the
+      // input's selection over to selectionGuard via
+      // `paintMirrorAsInactive(publish)` before the new active
+      // card's `setSelectedRange` runs `removeAllRanges()` on the
+      // global Selection. NO focus claim.
+      promptInputRef.current?.paintMirrorAsInactive(publishToSelectionGuard);
     },
     onSave: () => {
       const input = promptInputRef.current;
@@ -804,7 +828,7 @@ export const TugPromptEntry = React.forwardRef<
         maximized: maximizedRef.current ?? false,
       };
     },
-    onRestore: (state) => {
+    onRestore: (state, { isActive }) => {
       // Defensive shape check. Before commit 99809d06 the child
       // `TugPromptInput` owned persistence and wrote a flat
       // `TugTextEditingState` payload. After the upgrade, an old
@@ -837,12 +861,22 @@ export const TugPromptEntry = React.forwardRef<
       if (input) {
         const saved = perRoute[currentRoute];
         if (saved) {
+          // restoreState updates the engine's mirror but does NOT
+          // touch DOM Selection or focus (Step 25C.4 mirror-only
+          // restore). The paint method below — chosen by `isActive`
+          // — is what writes selection to the DOM. The active card
+          // gets `paintMirrorAsActive` (focus + global Selection);
+          // every inactive card gets `paintMirrorAsInactive(publish)`
+          // (selectionGuard publish, no focus claim, no global
+          // Selection mutation). [L23] enforcement.
           input.restoreState(saved);
+          if (isActive) {
+            input.paintMirrorAsActive();
+          } else {
+            input.paintMirrorAsInactive(publishToSelectionGuard);
+          }
           // Diagnostic for the cold-boot selection-paint gap
-          // (selection plan Step 23F gap-1). CardHost defers this
-          // onRestore call until AFTER CardPortal's slot.appendChild
-          // has attached the engine root, so `selectionApplied` and
-          // `domSelectionAfter` should match.
+          // (selection plan Step 23F gap-1).
           if (cardIdForTraceRef.current !== null) {
             deckTrace.record({
               kind: "engine-restore-applied",

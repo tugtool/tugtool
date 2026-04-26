@@ -1159,6 +1159,16 @@ export class DeckManager implements IDeckManagerStore {
   private activationCallbacks: Map<string, () => void> = new Map();
 
   /**
+   * Per-card deactivation callbacks (parallel to
+   * {@link activationCallbacks}). Selection plan Step 25C.4 [L23]:
+   * fires when a card is about to lose focus-destination status, so
+   * the consumer can route its selection into the inactive-paint
+   * channel via `paintMirrorAsInactive(publish)` before the new
+   * active card claims focus + global Selection.
+   */
+  private deactivationCallbacks: Map<string, () => void> = new Map();
+
+  /**
    * Live `[data-card-host][data-card-id="…"]` elements, keyed by
    * cardId. Written by `CardHost` from a callback-ref so mount,
    * unmount, and (if it ever occurs) element-identity changes are all
@@ -1197,6 +1207,21 @@ export class DeckManager implements IDeckManagerStore {
       });
     }
 
+    callback();
+  }
+
+  registerDeactivationCallback(cardId: string, callback: () => void): () => void {
+    this.deactivationCallbacks.set(cardId, callback);
+    return () => {
+      if (this.deactivationCallbacks.get(cardId) === callback) {
+        this.deactivationCallbacks.delete(cardId);
+      }
+    };
+  }
+
+  invokeDeactivationCallback(cardId: string, _dispatchedFrom: string): void {
+    const callback = this.deactivationCallbacks.get(cardId);
+    if (callback === undefined) return;
     callback();
   }
 

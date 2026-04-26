@@ -779,7 +779,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     });
 
     callbacks.restorePendingRef.current = true;
-    callbacks.onRestore(bag.content);
+    // Compute `isActive` from the deck-level first responder snapshot
+    // ([D10]). Per Step 25C.4 [L23], the consumer's onRestore branches
+    // on this flag: active cards run `paintMirrorAsActive` (focus +
+    // global Selection); inactive cards run
+    // `paintMirrorAsInactive(publish)` (selectionGuard publish, no
+    // focus claim, no global Selection mutation). The non-React read
+    // on the deck-store singleton is L02-compliant — no useEffect
+    // copying external state into React state.
+    const isActive = store.getFirstResponderCardId() === cardId;
+    callbacks.onRestore(bag.content, { isActive });
     hasAppliedContentRestoreRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, hostContentEl, store, callbacksVersion]);
