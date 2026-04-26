@@ -65,7 +65,9 @@ async fn main() {
     // Honoring the env var lets harness tests that set TUGBANK_PATH for Tug.app
     // reach tugcast (spawned from Tug.app's env) without a code path to thread
     // the flag through ProcessManager.
-    let bank_path: PathBuf = cli.bank_path.clone()
+    let bank_path: PathBuf = cli
+        .bank_path
+        .clone()
         .or_else(|| {
             std::env::var_os("TUGBANK_PATH")
                 .map(PathBuf::from)
