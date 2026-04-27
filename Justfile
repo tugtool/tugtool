@@ -324,10 +324,36 @@ build-app:
     # ad-hoc signature; `--deep` covers nested frameworks;
     # `--preserve-metadata=...` keeps entitlements + the designated
     # requirement string intact.
+    #
+    # We capture codesign's combined output to a temp file and check
+    # the exit code explicitly. The previous shape
+    # (`codesign ... | grep -v ... || true`) swallowed codesign
+    # failures because the trailing `|| true` neutralized the pipe's
+    # non-zero exit (PIPESTATUS[0] under `set -o pipefail`).
     echo "==> [5/5] Re-sign with '$SIGNING_IDENTITY' for stable AX grant"
-    codesign --sign "$SIGNING_IDENTITY" --force --deep \
+    CODESIGN_LOG="$(mktemp -t tugapp-codesign.XXXX.log)"
+    if ! codesign --sign "$SIGNING_IDENTITY" --force --deep \
         --preserve-metadata=entitlements,requirements \
-        "$APP_DIR" 2>&1 | grep -v 'replacing existing signature' || true
+        "$APP_DIR" > "$CODESIGN_LOG" 2>&1; then
+        echo "error: codesign --sign failed:" >&2
+        cat "$CODESIGN_LOG" >&2
+        rm -f "$CODESIGN_LOG"
+        exit 1
+    fi
+    # Filter the noise line ('replacing existing signature') but keep
+    # everything else — warnings about deprecated flags, etc., should
+    # surface even on success.
+    grep -v 'replacing existing signature' "$CODESIGN_LOG" || true
+    rm -f "$CODESIGN_LOG"
+
+    # Verify the bundle's signature is valid post re-sign. A botched
+    # signature would otherwise only surface as an opaque WebKit /
+    # AX failure when the test sweep runs.
+    if ! codesign --verify --strict "$APP_DIR" 2>&1; then
+        echo "error: codesign --verify --strict failed; bundle is invalid" >&2
+        exit 1
+    fi
+
     echo "    Tug.app binary: $APP_BIN"
     echo
     echo "==> Built. Now run 'just app-test' to run tests."
