@@ -41,6 +41,7 @@ aside
 .tugtool/state.db-shm
 .tugtool/deck-settings.json
 .tugtool/.session
+.tugtool/code-sign-fingerprint
 
 node_modules/
 

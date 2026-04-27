@@ -354,6 +354,33 @@ build-app:
         exit 1
     fi
 
+    # Capture the bundle's designated requirement (DR) into a
+    # sentinel so subsequent `app-test` runs can detect drift. The
+    # DR — not the bundle hash — is what TCC keys Accessibility
+    # grants on, so two builds signed by the same identity have
+    # identical fingerprints, while a fresh 'Tug Dev' cert with
+    # a different public key produces a different DR (and silently
+    # invalidates the AX grant).
+    #
+    # `awk -F'=> '` splits on the literal '=> ' separator that
+    # codesign uses between 'designated' and the requirement string.
+    # `exit` after the first match keeps the value to a single line
+    # in case codesign emits multiple designated lines (it doesn't
+    # today, but defensive).
+    SENTINEL_DIR=".tugtool"
+    SENTINEL_FILE="${SENTINEL_DIR}/code-sign-fingerprint"
+    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
+    if [ -z "$CURRENT_DR" ]; then
+        echo "warn: could not extract designated requirement; skipping fingerprint capture" >&2
+    else
+        mkdir -p "$SENTINEL_DIR"
+        # Atomic write: temp file in the same dir, then mv.
+        SENTINEL_TMP="$(mktemp "${SENTINEL_DIR}/code-sign-fp.XXXXXX")"
+        printf '%s\n' "$CURRENT_DR" > "$SENTINEL_TMP"
+        mv "$SENTINEL_TMP" "$SENTINEL_FILE"
+        echo "    Sentinel: $SENTINEL_FILE"
+    fi
+
     echo "    Tug.app binary: $APP_BIN"
     echo
     echo "==> Built. Now run 'just app-test' to run tests."
