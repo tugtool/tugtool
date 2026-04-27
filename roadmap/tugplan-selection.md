@@ -3098,13 +3098,28 @@ The original proposal classified `tug-alert`, `tug-confirm-popover`, and `tug-po
 
 ##### Step 25K: Pass 10 cleanup deferred from Step 23E {#step-25k}
 
-**Closes:** the Pass 10 cleanup items deferred at [Step 23E](#step-23e)'s checkpoint.
+**Status:** ✅ audit deliverable closed (no retirements needed, finding documented below). Dev-assertion deliverable deferred with rationale.
 
-**Deliverables:**
-- Grep audit for ad-hoc `engine.root.focus()` paths now redundant with the `engine.setSelectedRange`-based delegate `focus()` (post-[Step 23G](#step-23g)). Retire any direct `.focus()` calls superseded by the engine API.
-- Install the `_flipFirstResponder` dev-only assertion: a runtime check that fires in DEV when a `.focus()` call lands on a contenteditable that already holds a programmatic selection, AS A WARNING about the WebKit selectionchange-on-focus quirk. Caller-aware so the engine's own `setSelectedRange` is exempt.
+**Closes:** the audit half of the Pass 10 cleanup items deferred at [Step 23E](#step-23e)'s checkpoint. Dev-assertion stays open.
 
-**Estimated commits:** one. Independent; can land any time after Step 23G.
+**Deliverable 1 — grep audit for redundant `.focus()` paths. Closed (no retirements needed).**
+
+Surveyed every `engine.root.focus()` / `this.root.focus()` call site outside test code:
+
+- 7 sites in `tug-text-engine.ts`: `selectAll`, `selectWordAtPoint`, `insertText`, `insertAtom`, `deleteSelection`, `paste` (×2). Each pairs `this.root.focus()` with a `document.execCommand(...)` or `Selection.modify(...)` operation. `execCommand` requires `document.activeElement` to match its target; the focus call is the contract for that API, not a redundant selection-claim.
+- 1 site in `tug-prompt-input.tsx:1131`: browser-fallback paste path. Focus the contenteditable so `execCommand("paste")` dispatches its event on the right node.
+
+The Step 23G `setSelectedRange`-based delegate `focus()` does NOT supersede these — it covers selection-via-focus (programmatic caret placement + selection write), a different code path from execCommand-driven mutation. No call sites retired.
+
+**Deliverable 2 — `_flipFirstResponder` dev-only assertion. Deferred (speculative; no regression today).**
+
+Originally proposed: DEV-only runtime check fires when `.focus()` lands on a contenteditable holding a programmatic selection (the WebKit selectionchange-on-focus quirk). Caller-aware so `engine.setSelectedRange` is exempt.
+
+Post-[23G](#step-23g) reality: the legitimate path to focus a contenteditable now flows through `engine.setSelectedRange` (focus-then-select, WebKit-safe). `_flipFirstResponder` itself does not call `.focus()` — that's [`transferFocusForActivation`](#step-23c)'s job, which routes through the engine's selection API for EM cards. The assertion would therefore only fire for code that BYPASSES the post-23G contract; the current codebase has no such bypass.
+
+The assertion remains valuable as preventive coverage if a future code path shortcuts the engine API, but it is not load-bearing today and authoring + maintaining a caller-aware guard adds surface area for marginal benefit. Deferred as a "land if a real regression surfaces" item; can be re-opened from [Step 25L](#step-25l)'s integration-test sweep if a gap appears.
+
+**Estimated commits (actual):** one — plan-doc only.
 
 ##### Step 25L: Final cleanup ([M13], [M15], Step NN doc pass) {#step-25l}
 
