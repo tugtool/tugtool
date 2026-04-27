@@ -221,7 +221,93 @@ attribution is instant.
 
 See [`scripts/setup-dev-signing.sh`](../../scripts/setup-dev-signing.sh)
 for the one-time stable-signing setup ([D14]) that makes the grant
-persist across rebuilds.
+persist across rebuilds. When the grant breaks unexpectedly, see
+the next section.
+
+## Accessibility grant failure modes
+
+The macOS Accessibility (TCC) grant is keyed to the bundle's code-
+signing **designated requirement (DR)** — a string composed of the
+bundle identifier plus the cert's leaf hash, not the binary's content
+hash. Two builds signed by the same `Tug Dev` cert share a DR and
+share a grant; anything that changes the DR forces a re-grant.
+
+When `just app-test` starts failing with
+`AccessibilityPermissionMissingError` or every CGEvent-backed test
+silently no-ops, walk this checklist.
+
+### What can invalidate the grant
+
+1. **`Tug Dev` cert deleted and re-created.** A new self-signed cert
+   has a different private key → different leaf hash → different DR.
+   The fingerprint sentinel at `.tugtool/code-sign-fingerprint`
+   detects this and `just app-test` prints a `[warn] code-sign
+   fingerprint drift detected` diagnostic.
+2. **`Tug.app` bundle moved or renamed.** TCC grants are also keyed
+   to bundle path / identifier; moving the build product or editing
+   the bundle id in `project.pbxproj` will invalidate the grant.
+3. **Bare `xcodebuild` between runs.** Running an Xcode IDE Build
+   (or `xcodebuild` directly without going through `just build-app`)
+   re-signs ad-hoc, which produces a wholly different DR. `just
+   app-test`'s defensive re-sign handles this transparently — but
+   only if the `Tug Dev` cert is still installed.
+4. **macOS major upgrade.** A major version bump can occasionally
+   wipe TCC entries. Diagnoses as a one-shot re-grant requirement.
+5. **Manual revoke.** System Settings → Privacy & Security →
+   Accessibility, untoggling Tug.app.
+
+### Diagnosis checklist
+
+When AX is broken, work through these in order:
+
+1. **Confirm the identity is still installed:**
+   ```sh
+   security find-identity -p codesigning | grep "Tug Dev"
+   ```
+   If empty → run `just setup-dev-signing` to recreate, then
+   `just build-app` to re-sign.
+
+2. **Confirm the bundle's DR matches the sentinel:**
+   ```sh
+   APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+       -configuration Debug -destination 'platform=macOS,arch=arm64' \
+       -showBuildSettings 2>/dev/null \
+       | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
+   diff <(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}') \
+        .tugtool/code-sign-fingerprint
+   ```
+   Empty diff → fingerprint is fresh. Non-empty → drift; the AX grant
+   is almost certainly invalidated.
+
+3. **Confirm Accessibility shows Tug.app and is enabled:** open
+   System Settings → Privacy & Security → Accessibility. If Tug.app
+   isn't listed, run `just app-test harness-smoke/smoke-native.test.ts`
+   once to trigger the system grant dialog. If it's listed but
+   greyed-out or untoggled, toggle it on.
+
+4. **If the grant is stale and re-toggling doesn't work, reset and
+   re-grant:**
+   ```sh
+   tccutil reset Accessibility dev.tugtool.app
+   ```
+   Then run `just app-test harness-smoke/smoke-native.test.ts` to
+   trigger the dialog fresh.
+
+### Last-resort bypass
+
+If you need to run the harness without the AX-grant dance — e.g.,
+during initial onboarding before `just setup-dev-signing` has run, or
+when diagnosing whether the re-sign step itself is the culprit — set:
+
+```sh
+APP_TEST_SKIP_RESIGN=1 just app-test
+```
+
+`app-test` will skip the re-sign entirely. Tests that need
+`CGEvent.post` (every `at*` scenario, plus `smoke-native.test.ts`)
+will fail; tests that don't need AX (`smoke.test.ts`,
+`double-connect.test.ts`, `version-handshake.test.ts`,
+`wait-for-condition.test.ts`, `smoke-em.test.ts`) will pass.
 
 ## Smoke vs. scenario tests
 
