@@ -183,7 +183,7 @@ A developer changing Swift menu strings must preserve this vocabulary: Card-leve
 | `tugdeck/src/components/tugways/tug-pane-banner.tsx` | Pane-scoped modal banner (error/status variants) |
 | `tugdeck/src/components/tugways/tug-tab-bar.tsx` | Presentational tab strip for multi-card Panes |
 | `tugdeck/src/components/tugways/hooks/use-card-data.ts` | `useCardData`, `CardDataProvider`, `CardDataContext` |
-| `tugdeck/src/components/tugways/use-card-persistence.tsx` | `useCardPersistence`, `CardPersistenceContext`, `CardPersistenceCallbacks` |
+| `tugdeck/src/components/tugways/use-card-state-preservation.tsx` | `useCardStatePreservation`, `CardStatePreservationContext`, `CardStatePreservationCallbacks` |
 | `tugdeck/src/card-registry.ts` | `registerCard`, `CardMeta`, `CardRegistration` |
 | `tugdeck/src/serialization.ts` | v4 ⇄ v3 migration on read; v4 only on write |
 | `tugdeck/src/components/tugways/action-vocabulary.ts` | `FOCUS_PANE`, `ADD_CARD_TO_ACTIVE_PANE`, `CLOSE`, ... |
