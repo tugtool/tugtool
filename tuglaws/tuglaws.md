@@ -64,7 +64,7 @@ The test: *can the user end the interaction with a result that was never committ
 
 ### L23. Internal implementation operations must never lose, destroy, or cease to apply user-visible state. {#l23}
 
-Scroll position, selection, focus, and visible content are user data — the user put them there. A re-lex, re-parse, DOM rebuild, or any other internal bookkeeping operation must preserve these invariants. "Save and restore" is not preservation; it is destruction with attempted recovery. The correct approach is to diff and mutate minimally so user-visible state is never disturbed.
+Scroll position, selection, focus, and visible content are user data — the user put them there. A re-lex, re-parse, DOM rebuild, or any other internal bookkeeping operation must preserve these invariants. "Save and restore" is not preservation; it is destruction with attempted recovery. The correct approach is to diff and mutate minimally so user-visible state is never disturbed. See [state-preservation.md](state-preservation.md) for the [A9] component-state preservation protocol that operationalizes this law across the card-state pipeline.
 
 ---
 
@@ -76,7 +76,7 @@ File structure, module docstring, props interface, `data-slot`, `@tug-pairings`,
 
 ### L09. TugPane composes chrome and owns geometry; Cards never set their own position, size, or z-order. {#l09}
 
-TugPane handles drag, resize, stacking, title bar, tabs, accessory, and content region. Cards supply content identity only. See [pane-model.md](pane-model.md) for the full Deck → Pane → Card model. [D15, D31, L25]
+TugPane handles drag, resize, stacking, title bar, tabs, accessory, and content region. Cards supply content identity only. See [pane-model.md](pane-model.md) for the full Deck → Pane → Card model, and [lifecycle-delegates.md](lifecycle-delegates.md) for the deck-level `TugCardDelegate` event pipe through which Pane geometry events (`cardWillMove`, `cardDidMove`, `cardWillResize`, `cardDidResize`) reach cards. [D15, D31, L25]
 
 ### L10. One responsibility per layer. {#l10}
 

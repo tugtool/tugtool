@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-04-27T23:34:07Z
+---
+
+## step-7: Cross-reference repairs per SC08/SC09/SC10. tuglaws.md: L23 cross-refs state-preservation.md; L09 cross-refs lifecycle-delegates.md. pane-model.md: Cross-Links section adds entries for state-preservation.md and lifecycle-delegates.md. app-test-inventory.md: every [A9] paragraph (7 total) now carries a state-preservation.md link in the same paragraph (SC10 awk gate green). bun x tsc --noEmit exit 0; bun test 2414/0.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-6
 date: 2025-04-27T23:29:16Z
 ---

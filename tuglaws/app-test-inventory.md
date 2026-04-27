@@ -81,7 +81,7 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 #### [AT0010] Markdown-view copy-selection persistence
 - **Status:** ✅ closed at Step 25B.
 - **Tests:** `at0010-markdown-selection.test.ts`, `at0010-cold-boot-selection.test.ts`.
-- **Summary:** `tug-markdown-view` opts into the [A9] state preservation protocol; copy-selection round-trips through `bag.domSelection` + selectionGuard's CSS Custom Highlight.
+- **Summary:** `tug-markdown-view` opts into the [A9] state preservation protocol (see [state-preservation.md](state-preservation.md)); copy-selection round-trips through `bag.domSelection` + selectionGuard's CSS Custom Highlight.
 
 #### [AT0011] Card close → reopen
 - **Status:** ⬛ not-a-feature (M-Q4 resolution).
@@ -150,10 +150,10 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 
 ### Component-roster tags (AT0024–AT0031)
 
-Component-level state preservation — gaps surfaced from the L23 audit of the stateful component roster. All route through the [A9] Component State Preservation Protocol.
+Component-level state preservation — gaps surfaced from the L23 audit of the stateful component roster. All route through the [A9] Component State Preservation Protocol (see [state-preservation.md](state-preservation.md) for the full protocol).
 
 #### [AT0024] No component-level state preservation protocol
-- **Status:** ✅ closed at Step 19 ([A9] foundational landed).
+- **Status:** ✅ closed at Step 19 ([A9] foundational landed; see [state-preservation.md](state-preservation.md)).
 - **Tests:** `selection-persistence-integration.test.tsx` (foundational gate); per-component coverage in AT0027/AT0030/AT0031.
 - **Summary:** `useComponentStatePreservation` + `ComponentStatePreservationRegistry` provide the protocol; components opt in via `componentStatePreservationKey`.
 
@@ -165,17 +165,17 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 #### [AT0026] Open-overlay persistence semantics
 - **Status:** ✅ closed at Step 25F.
 - **Tests:** `at0026-overlay-persistence.test.ts`.
-- **Summary:** `tug-sheet` is PERSISTENT (opts into [A9]); `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` are EPHEMERAL by design.
+- **Summary:** `tug-sheet` is PERSISTENT (opts into [A9]; see [state-preservation.md](state-preservation.md)); `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` are EPHEMERAL by design.
 
 #### [AT0027] Layout state — split-pane divider, accordion expansion
 - **Status:** ✅ closed at Step 25D / 25E.
 - **Tests:** `at0027-layout-state-persistence.test.ts`.
-- **Summary:** `tug-accordion` opts into [A9]; `tug-split-pane` keeps its existing `storageKey` → tugbank path (pane-scope by intent). 25E extended the same Closed status to switch / radio-group / choice-group / option-group / slider / value-input.
+- **Summary:** `tug-accordion` opts into [A9] (see [state-preservation.md](state-preservation.md)); `tug-split-pane` keeps its existing `storageKey` → tugbank path (pane-scope by intent). 25E extended the same Closed status to switch / radio-group / choice-group / option-group / slider / value-input.
 
 #### [AT0028] Banner / bulletin dismiss
 - **Status:** ❌ open (deferred).
 - **Tests:** none yet.
-- **Summary:** Originally planned as Step 25I; deferred. Closure requires a separate user-preferences store under `dev.tugtool.user.dismissals/{bannerId}`, distinct from the card-scope [A9] protocol.
+- **Summary:** Originally planned as Step 25I; deferred. Closure requires a separate user-preferences store under `dev.tugtool.user.dismissals/{bannerId}`, distinct from the card-scope [A9] protocol (see [state-preservation.md](state-preservation.md)).
 
 #### [AT0029] Scroll-key audit across components
 - **Status:** ❌ open (deferred).
@@ -185,7 +185,7 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 #### [AT0030] Virtual-focus / focus-within for composite components
 - **Status:** ✅ closed at Step 25E (selected-value axis); virtual-focus-without-selection deferred.
 - **Tests:** `at0030-virtual-focus.test.ts`.
-- **Summary:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` capture their selected value via [A9]. The narrower "focused but not selected" axis is deferred — niche edge case.
+- **Summary:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` capture their selected value via [A9] (see [state-preservation.md](state-preservation.md)). The narrower "focused but not selected" axis is deferred — niche edge case.
 
 #### [AT0031] `tug-prompt-entry` chrome state (`route`, `toolsOpen`)
 - **Status:** ✅ closed for `gallery-prompt-entry` at Step 25G; tide-card lazy-mount gap documented.
