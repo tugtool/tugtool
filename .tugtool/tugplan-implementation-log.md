@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-27T23:01:21Z
+---
+
+## step-2: git mv selection-model.md -> card-state-model.md, inserted Cross-references banner, renamed Scroll Persistence -> Preservation, added Form-control Value Preservation section, reduced ResponderChainProvider section to cross-ref, added Cross-Links closing section. Updated cross-refs in pane-model.md, component-authoring.md, responder-chain.md, plus comment-only path updates in selection-guard.ts and use-copyable-text.tsx.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-1
 date: 2025-04-27T22:54:32Z
 ---

@@ -196,7 +196,7 @@ A developer changing Swift menu strings must preserve this vocabulary: Card-leve
 ## Cross-Links
 
 - [tuglaws.md](tuglaws.md) — L09 (Pane composes chrome and owns geometry), L10 (layered responsibility), L11 (controls/responders), L12 (selection boundary), L23 (state preservation across bookkeeping)
-- [selection-model.md](selection-model.md) — the Card boundary referenced throughout
+- [card-state-model.md](card-state-model.md) — the Card boundary referenced throughout
 - [responder-chain.md](responder-chain.md) — the chain-walk that makes Pane-state and Card-content actions route to the right layer
 - [action-naming.md](action-naming.md) — Pane / Card naming in action vocabulary
 - [design-decisions.md](design-decisions.md) — D15, D16, D17, D27, D30, D31, D49, D50, D51, D52

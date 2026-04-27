@@ -766,7 +766,7 @@ For form inputs that follow the field token family.
 
 ## Selection and Focus
 
-Every component participates in the selection model. See [selection-model.md](selection-model.md) for the full design.
+Every component participates in the selection model. See [card-state-model.md](card-state-model.md) for the full design.
 
 ### Selection categories
 

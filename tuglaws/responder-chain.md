@@ -627,6 +627,7 @@ Each of these used to exist in the codebase before L11 and the A-phases landed, 
 **Sibling documents:**
 - [action-naming.md](action-naming.md) — the kebab-case name convention, the `TUG_ACTIONS` constants, the three-way classification
 - [component-authoring.md](component-authoring.md) — the component author's checklist, which defers the chain mechanics to this document
+- [card-state-model.md](card-state-model.md) — for the focus-refusal mechanism, see `card-state-model.md`
 
 **Source files:**
 - `tugdeck/src/components/tugways/responder-chain.ts` — `ResponderChainManager`, `ActionEvent`, `ActionHandler`, `ResponderNode`, the dispatch methods, the observer API, the first-responder sync

@@ -1,6 +1,10 @@
-# Selection Model
+# Card State Model
 
-How text selection works across tugdeck cards.
+*Selection, focus, scroll, and form-control values across tabs, pane activation, and reload.*
+
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
+
+---
 
 ## Three Selection Categories
 
@@ -65,6 +69,9 @@ Controls (buttons, checkboxes, switches, sliders, etc.) refuse focus on click vi
 
 ## Focus State Preservation Attributes
 
+For the underlying capture/restore mechanism that drives these
+attributes, see [state-preservation.md](state-preservation.md).
+
 `CardHost`'s save path captures `document.activeElement` into `bag.focus`
 (a `FocusSnapshot`) so cold-boot restore can return the cursor to the
 element the user left it on. Three opt-in attributes drive classification
@@ -82,7 +89,10 @@ appear in the bag. Restore applies `bag.focus` only for the active card
 of the active pane on cold boot; in-app transitions leave focus alone
 (the DOM never unmounts).
 
-## Scroll Persistence Attributes
+## Scroll Preservation Attributes
+
+For the underlying capture/restore mechanism, see
+[state-preservation.md](state-preservation.md).
 
 A card's *outer* scroll (the host-content element) is always saved into
 `bag.scroll` and needs no attribute. *Inner* scrollable regions — most
@@ -97,6 +107,31 @@ also survive reload (captured into `bag.regionScroll`).
 The component's own runtime scroll logic (clamps, sticky-to-bottom,
 virtualization) continues to handle in-session behavior; this attribute
 only affects cold-boot restore.
+
+## Form-control Value Preservation
+
+Native `<input>` and `<textarea>` controls (and the tug-* widgets that
+wrap them — `tug-input`, `tug-textarea`, `tug-value-input`) opt into
+value preservation by carrying `data-tug-state-key="<key>"` on the
+form-control element. The framework captures `.value` (plus selection
+range and scroll position where applicable) into the card's bag at
+save time and reapplies it on cold-boot restore. The same key doubles
+as the focus key — authors do not add a second `data-tug-focus-key`
+attribute on a form control.
+
+| Attribute | Saved | Purpose |
+|-----------|-------|---------|
+| `data-tug-state-key="<key>"` | `.value`, selection, scroll | Native form-control value preservation. Key must be unique within the card subtree. |
+
+The protocol behind these attributes — when capture runs, how late-
+mounting controls are restored, what `bag.formControls` looks like —
+is documented in [state-preservation.md](state-preservation.md). This
+doc describes the per-axis contract; that doc describes the
+mechanism.
+
+Controlled inputs where React owns `value` (the parent component
+re-renders on every keystroke) do not opt in — the component's own
+prop pipeline is already preserving value.
 
 ## Context Menu Hierarchy
 
@@ -208,15 +243,9 @@ SelectionGuard and editing components' selection models are separate systems:
 
 ## ResponderChainProvider Document-Level Infrastructure
 
-ResponderChainProvider installs several document-level listeners beyond SelectionGuard:
-
-| Event | Phase | Purpose |
-|-------|-------|---------|
-| `pointerdown` | capture | First-responder promotion (skips `data-tug-focus="refuse"` controls) |
-| `mousedown` | capture | Focus refusal (`preventDefault` on `data-tug-focus="refuse"` controls) |
-| `focusin` | capture | First-responder promotion for keyboard Tab navigation |
-| `contextmenu` | bubble | Fallback "No Actions" menu (suppresses native context menu) |
-| `keydown` | capture + bubble | Four-stage keyboard pipeline |
+For the document-level listener inventory (first-responder promotion,
+focus refusal, fallback context menu, the four-stage keyboard
+pipeline), see [responder-chain.md](responder-chain.md).
 
 ---
 
@@ -230,5 +259,18 @@ ResponderChainProvider installs several document-level listeners beyond Selectio
 | `use-copyable-text.tsx` | Hook for copyable components (right-click → Copy) |
 | `tug-pane.css` | `::selection` token rules, `::highlight(inactive-selection)`, `data-tug-select` attribute CSS |
 | `globals.css` | `user-select: none` baseline on body |
-| `card-host.tsx` | Calls `useSelectionBoundary(cardId, cardRootRef)` on the card-host div |
+| `card-host.tsx` | Calls `useSelectionBoundary(cardId, cardRootRef)` on the card-host div; runs `captureFocus` for the focus-preservation contract |
 | `tug-label.tsx` | First consumer of `useCopyableText` (via `copyable` prop) |
+| `use-component-state-preservation.tsx` | Hook that implements the `data-tug-state-key` form-control value-preservation contract |
+| `use-card-state-preservation.tsx` | Hook that implements the card-level `bag.focus` / `bag.scroll` / `bag.regionScroll` capture and restore |
+
+---
+
+## Cross-Links
+
+- [state-preservation.md](state-preservation.md) — the protocol behind the per-axis preservation contracts (focus, scroll, form-control value): when capture runs, how late-mounting controls are restored, the `CardStateBag` and `FocusSnapshot` shapes
+- [lifecycle-delegates.md](lifecycle-delegates.md) — where `cardWillBeginDestruction` and the rest of the deck-level event pipe live; preservation hooks ride atop this pipe
+- [pane-model.md](pane-model.md) — Card boundary geometry, Pane vs. Card responsibility split, the layered model selection containment sits inside
+- [responder-chain.md](responder-chain.md) — first-responder promotion, focus refusal, the keyboard pipeline; the document-level listener inventory referenced by the Selection-and-Focus rules above
+- [tuglaws.md](tuglaws.md) — L11 (controls / responders), L12 (selection boundary), L23 (state preservation across bookkeeping)
+- [design-decisions.md](design-decisions.md) — D49, D50 (state-preservation protocol), D51, D52
