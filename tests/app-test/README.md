@@ -1,6 +1,6 @@
-# `tests/in-app/`
+# `tests/app-test/`
 
-In-app integration tests that drive a real `Tug.app` subprocess through
+App-test integration tests that drive a real `Tug.app` subprocess through
 the DEBUG-only `TestHarness` Unix-socket bridge. Unlike the colocated
 tests under `tugdeck/src/__tests__/`, these tests do **not** use
 happy-dom — they talk to the actual WKWebView inside the launched app.

@@ -15,7 +15,7 @@
  *
  * Whenever a transcript JSON is *legitimately* edited or
  * recaptured. The runtime sidecar verifier in
- * `tests/in-app/_harness/transcript.ts` refuses to load a
+ * `tests/app-test/_harness/transcript.ts` refuses to load a
  * transcript whose hash drifts from the sidecar — the test
  * failure message points back here.
  *
@@ -25,7 +25,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve as pathResolve } from "node:path";
-import { computeTranscriptHash, sidecarPathFor } from "../tests/in-app/_harness/transcript";
+import { computeTranscriptHash, sidecarPathFor } from "../tests/app-test/_harness/transcript";
 
 function main(): number {
   const args = process.argv.slice(2);
