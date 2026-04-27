@@ -1,5 +1,5 @@
 /**
- * _version-handshake.test.ts — Version-skew regression test for the
+ * version-handshake.test.ts — Version-skew regression test for the
  * `version` RPC handshake. Covers harness test:
  *
  *   "Version-skew test: harness with wrong expected version
@@ -18,7 +18,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_version-handshake.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/version-handshake.test.ts
  *
  * Design notes:
  * - The test must NOT leave a live subprocess behind if the throw
@@ -30,8 +30,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
-import { VersionSkewError } from "./_harness/errors";
+import { launchTugApp } from "../_harness";
+import { VersionSkewError } from "../_harness/errors";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

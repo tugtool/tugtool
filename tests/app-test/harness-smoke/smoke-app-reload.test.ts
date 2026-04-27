@@ -1,5 +1,5 @@
 /**
- * _smoke-app-reload.test.ts — Layer-1 gate for the soft-reload
+ * smoke-app-reload.test.ts — Layer-1 gate for the soft-reload
  * harness primitive for reload paths.
  *
  * ## What this file pins
@@ -27,7 +27,7 @@
  * primitive is broken" with "the production save/restore path is
  * broken." A separate smoke gate keeps those clearly separated.
  *
- * ## Distinction from `_smoke-cold-boot.test.ts`
+ * ## Distinction from `smoke-cold-boot.test.ts`
  *
  * Cold-boot's smoke gate exercises `app.quitGracefully()` (full
  * process restart) + `tugbankRead` (disk-side read between two Tug
@@ -37,12 +37,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
   seedTugbankForLaunch,
-} from "./_harness/tugbank-helpers";
+} from "../_harness/tugbank-helpers";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

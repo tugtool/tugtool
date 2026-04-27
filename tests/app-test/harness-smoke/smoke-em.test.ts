@@ -1,5 +1,5 @@
 /**
- * _smoke-em.test.ts — EM-card observation surface smoke ([AT0010] area).
+ * smoke-em.test.ts — EM-card observation surface smoke ([AT0010] area).
  * Permanent test file (not scratch).
  *
  * ## What this file pins
@@ -40,7 +40,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

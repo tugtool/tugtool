@@ -1,5 +1,5 @@
 /**
- * _smoke-em-live.test.ts — live-mode tugcode smoke (IME / live path). NOT part of the default
+ * smoke-em-live.test.ts — live-mode tugcode smoke (IME / live path). NOT part of the default
  * sweep — gated behind `TUGCODE_LIVE=1` because:
  *
  *   - it spawns a real tugcode process
@@ -9,14 +9,14 @@
  *
  * Run locally with:
  *
- *     TUGCODE_LIVE=1 just test-in-app-fast _smoke-em-live.test.ts
+ *     TUGCODE_LIVE=1 just test-in-app-fast smoke-em-live.test.ts
  *
  * ## What this file pins
  *
  * The live-mode `startTugcode` path: spawn → protocol_init →
  * user_message → assistant_text + turn_complete on stdout.
  *
- * Unlike stub-mode smoke (`_smoke-tugcode-stub.test.ts`), live mode
+ * Unlike stub-mode smoke (`smoke-tugcode-stub.test.ts`), live mode
  * goes through the real claude pipeline,
  * so the response content is non-deterministic. We assert only on
  * the protocol shape:
@@ -52,7 +52,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 const TUGCODE_LIVE = process.env.TUGCODE_LIVE === "1";

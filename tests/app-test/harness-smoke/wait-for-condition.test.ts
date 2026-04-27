@@ -1,5 +1,5 @@
 /**
- * _wait-for-condition.test.ts — In-app tests for the `waitForCondition`
+ * wait-for-condition.test.ts — In-app tests for the `waitForCondition`
  * primitive and structured error responses. Covers
  * test requirements:
  *
@@ -16,11 +16,11 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_wait-for-condition.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/wait-for-condition.test.ts
  *
  * Design notes:
  * - Each test launches its own `App` instance and closes it in the
- *   `finally` block. This matches `_smoke.test.ts` and guarantees
+ *   `finally` block. This matches `smoke.test.ts` and guarantees
  *   cleanup even if `expect(...)` throws.
  * - Tests use tight `timeoutMs` / `pollMs` budgets so the whole suite
  *   runs quickly when invoked; the values also double as regression
@@ -34,8 +34,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
-import { TimeoutError } from "./_harness/errors";
+import { launchTugApp } from "../_harness";
+import { TimeoutError } from "../_harness/errors";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

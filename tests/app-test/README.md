@@ -27,7 +27,7 @@ cd tugapp && xcodebuild -scheme Tug -configuration Debug build
 TUGAPP_IN_APP_TEST=1 bun test tests/app-test/
 
 # Or a single file:
-TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_smoke.test.ts
+TUGAPP_IN_APP_TEST=1 bun test tests/app-test/smoke.test.ts
 ```
 
 Environment variables honored by `launchTugApp`:
@@ -38,14 +38,14 @@ Environment variables honored by `launchTugApp`:
 | `TUGAPP_DEBUG_PATH`       | Absolute path to the debug `Tug.app` binary (override).      |
 | `TUGAPP_TUGCODE_BINARY`   | Absolute path to the tugcode binary (used by EM-card tests). |
 | `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
-| `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`_smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
+| `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
 
 Per-run log files are written under `tests/app-test/logs/` when a test
 passes `testName` to `launchTugApp`; the directory is gitignored.
 
 ## Running live-mode tugcode smoke
 
-`tests/app-test/_smoke-em-live.test.ts` exercises a real tugcode →
+`tests/app-test/smoke-em-live.test.ts` exercises a real tugcode →
 Claude Code → Anthropic API round-trip. Because it consumes API
 credits and requires live credentials, it is gated behind
 `TUGCODE_LIVE=1` and stays out of the default `just test-in-app-fast`
@@ -59,7 +59,7 @@ To run it locally:
 #    expects (typically ANTHROPIC_API_KEY or `claude login`'s
 #    persisted creds).
 # 2. Run with both gates open:
-TUGCODE_LIVE=1 just test-in-app-fast _smoke-em-live.test.ts
+TUGCODE_LIVE=1 just test-in-app-fast smoke-em-live.test.ts
 ```
 
 The test sends a single deterministic prompt ("Reply with the single
@@ -76,7 +76,7 @@ it in a `finally` block. Inside a file, tests may share the `App` if
 they call `app.reset()` between scenarios — but **no state is shared
 across files**. This matches the Phase 2 bridge's single-connection
 contract (see [D12] in the parent plan and the double-connect test
-in `_double-connect.test.ts`).
+in `double-connect.test.ts`).
 
 Canonical shape:
 
@@ -192,11 +192,11 @@ preflights this on every spawn and throws
 with actionable guidance naming the bundle path / id + a
 `tccutil reset` recipe for stale grants.
 
-Protocol-only tests (`_smoke.test.ts`, `_double-connect.test.ts`,
-`_log-capture.test.ts`, `_wait-for-condition.test.ts`) pass
+Protocol-only tests (`smoke.test.ts`, `double-connect.test.ts`,
+`log-capture.test.ts`, `wait-for-condition.test.ts`) pass
 `skipAccessibilityPreflight: true` so they stay independent of the
 grant state. Scenario tests (AT0001/AT0003/AT0016, and the Phase A
-`_smoke-native.test.ts`) leave the default strict — if the grant is
+`smoke-native.test.ts`) leave the default strict — if the grant is
 missing, the failure attribution is instant.
 
 See [`scripts/setup-dev-signing.sh`](../../scripts/setup-dev-signing.sh)
@@ -207,7 +207,7 @@ persist across rebuilds.
 
 1. **Name the file.** `tests/app-test/<scenario>.test.ts`. Files
    prefixed with `_` are reserved for harness-internal smoke and
-   protocol tests (`_smoke.test.ts`, `_version-handshake.test.ts`,
+   protocol tests (`smoke.test.ts`, `version-handshake.test.ts`,
    etc.).
 
 2. **Gate on `TUGAPP_IN_APP_TEST=1`.** Use
@@ -274,7 +274,7 @@ timeout + error.
 ```
 tests/app-test/
   _harness/            # Bun-side harness library. Do not import from tests; use @/_harness.
-  _smoke.test.ts       # Minimal launchTugApp → evalJS → close. Keep passing.
+  smoke.test.ts       # Minimal launchTugApp → evalJS → close. Keep passing.
   _*.test.ts           # Harness-internal protocol/lifecycle tests.
   <scenario>.test.ts   # User-authored scenario tests.
   bunfig.toml          # [test] root = "." — no happy-dom preload.

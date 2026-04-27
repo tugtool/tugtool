@@ -1,5 +1,5 @@
 /**
- * _smoke.test.ts — Minimal end-to-end smoke test for the bridge.
+ * smoke.test.ts — Minimal end-to-end smoke test for the bridge.
  *
  * Covers test requirement:
  *   launchTugApp → evalJS("1 + 1") → close → expect 2.
@@ -14,11 +14,11 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_smoke.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/smoke.test.ts
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, EXPECTED_SURFACE_VERSION } from "./_harness";
+import { launchTugApp, EXPECTED_SURFACE_VERSION } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

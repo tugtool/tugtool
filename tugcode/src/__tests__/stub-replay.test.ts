@@ -1,6 +1,6 @@
 // stub-replay.test.ts — unit coverage for the deterministic transcript
 // replay engine. The runtime path through tugcode's main.ts is
-// covered end-to-end by `tests/app-test/_smoke-tugcode-stub.test.ts`;
+// covered end-to-end by `tests/app-test/smoke-tugcode-stub.test.ts`;
 // these tests exercise the load + dispatch logic in isolation
 // without spawning the binary.
 

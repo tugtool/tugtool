@@ -1,5 +1,5 @@
 /**
- * _log-capture.test.ts — Per-test subprocess log capture. Covers
+ * log-capture.test.ts — Per-test subprocess log capture. Covers
  * harness test:
  *
  *   "Log-capture test: evalJS(\"console.log('test log')\") then close;
@@ -24,7 +24,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_log-capture.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/log-capture.test.ts
  *
  * Design notes:
  * - The test uses a unique marker string so a flake involving an
@@ -39,7 +39,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

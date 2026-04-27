@@ -1,5 +1,5 @@
 /**
- * _smoke-capture-phase-save.test.ts — Layer 1 gate for selection
+ * smoke-capture-phase-save.test.ts — Layer 1 gate for selection
  * capture-phase save.
  *
  * ## What this gates
@@ -60,7 +60,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, type App } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

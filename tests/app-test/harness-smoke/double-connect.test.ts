@@ -1,5 +1,5 @@
 /**
- * _double-connect.test.ts — "Second connect gets ECONNREFUSED"
+ * double-connect.test.ts — "Second connect gets ECONNREFUSED"
  * regression test for the Swift listener's single-client guarantee.
  * Covers harness test:
  *
@@ -19,7 +19,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_double-connect.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/double-connect.test.ts
  *
  * Design notes:
  * - We can't use `launchTugApp` for the second "client" — it always
@@ -31,7 +31,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

@@ -16,7 +16,7 @@ import Foundation
 // spawn point so they can:
 //
 //   1. Verify EM-card lifecycle paths run end-to-end against a real
-//      tugcode (`_smoke-em.test.ts`).
+//      tugcode (`smoke-em.test.ts`).
 //   2. Drive the stream-json transcript via a controlled pipe
 //      (`--stub-transcript=<fd>` mode).
 //

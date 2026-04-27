@@ -1,5 +1,5 @@
 /**
- * _smoke-native.test.ts — Phase A native-gesture smoke test.
+ * smoke-native.test.ts — Phase A native-gesture smoke test.
  *
  * ## What this file pins
  *
@@ -57,7 +57,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, type App } from "../_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 

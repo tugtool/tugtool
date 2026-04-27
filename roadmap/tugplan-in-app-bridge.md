@@ -40,7 +40,7 @@ Three concerns drive the design. (1) **Boot timing** must be deterministic: `tes
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `TUGAPP_TEST_SOCKET=/tmp/tugapp-test-<uuid>.sock` launched Tug.app subprocess responds to `evalJS("1+1")` with `{ ok: true, value: 2 }`. (Verified: `bun test tests/app-test/_smoke.test.ts` exits 0.)
+- `TUGAPP_TEST_SOCKET=/tmp/tugapp-test-<uuid>.sock` launched Tug.app subprocess responds to `evalJS("1+1")` with `{ ok: true, value: 2 }`. (Verified: `bun test tests/app-test/smoke.test.ts` exits 0.)
 - `window.__tugTestMode` is observable in `main.tsx` before `new DeckManager(...)` is constructed. (Verified: Swift-side unit test asserts WKUserScript injection timing; tugdeck-side log line.)
 - `window.__tug.version === "1.0.0"` assertion passes on handshake; mismatched harness version throws `VersionSkewError`. (Verified: unit test on harness client + one mismatched-version test.)
 - Release-build binary of Tug.app contains zero bytes of bridge code. (Verified: `wc -c` diff before/after; `strings` grep for `TUGAPP_TEST_SOCKET` / `evalJS` on release archive.)
@@ -62,7 +62,7 @@ Three concerns drive the design. (1) **Boot timing** must be deterministic: `tes
 10. TypeScript-side `main.tsx` integration: read `window.__tugTestMode` at module top level; pass `testMode: true` to `new DeckManager(...)`; attach `window.__tug` only under the double guard.
 11. bun harness library at `tests/app-test/_harness/`: `launchTugApp`, typed RPC client, `toContainOrderedSubset` matcher, gesture/reset/seed wrappers, error classes (`TimeoutError`, `AppCrashedError`, `VersionSkewError`).
 12. `tests/app-test/` workspace config: `tsconfig.json`, `bun test` glob, `logs/` directory (gitignored), exclusion from `tugdeck/` happy-dom suite.
-13. One trivial smoke test: `launchTugApp → evalJS("1+1") → close` at `tests/app-test/_smoke.test.ts`.
+13. One trivial smoke test: `launchTugApp → evalJS("1+1") → close` at `tests/app-test/smoke.test.ts`.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -383,7 +383,7 @@ tests/app-test/
 │   ├── rpc.ts          # NDJSON framing, request-id correlation, error translation
 │   ├── types.ts        # Request<T>, Response<T>, DeckTraceEvent re-export
 │   └── index.ts        # launchTugApp, App class, gesture/reset/seed wrappers
-├── _smoke.test.ts      # launchTugApp → evalJS("1+1") → close
+├── smoke.test.ts      # launchTugApp → evalJS("1+1") → close
 ├── at0001-tab-switch-fc.test.ts    # parent Step 13
 ├── at0003-pane-activation.test.ts  # parent Step 14
 ├── at0016-tab-close-handoff.test.ts # parent Step 15
@@ -529,7 +529,7 @@ Restates parent plan Spec [#s06-boot-choreography] in Swift-side terms. When `TU
 - **Migration plan:** Not applicable for Phase 2 first landing. Future versions of the `__tug` surface land under new tugplans; harness client bumps in the same commit.
 - **Rollout plan:**
   - DEBUG-only by construction. Release builds are unaffected.
-  - First merge to `main` leaves `tests/app-test/_smoke.test.ts` passing locally; parent plan Phase 3 adds the AT-series tests.
+  - First merge to `main` leaves `tests/app-test/smoke.test.ts` passing locally; parent plan Phase 3 adds the AT-series tests.
   - Rollback strategy: revert the commits that introduce `tugapp/Sources/TestHarness/`, `tugdeck/src/test-surface.ts`, `tests/app-test/_harness/`. No production code path depends on any of them.
 
 ---
@@ -558,7 +558,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 | `tests/app-test/_harness/errors.ts` | `TimeoutError`, `AppCrashedError`, `VersionSkewError` (this plan's Spec [#s02-error-classes]). |
 | `tests/app-test/_harness/matchers.ts` | `toContainOrderedSubset` matcher. |
 | `tests/app-test/_harness/types.ts` | `Request`, `Response<T>` types; `DeckTraceEvent` re-export. |
-| `tests/app-test/_smoke.test.ts` | Smoke test: `launchTugApp → evalJS("1+1") → close`. |
+| `tests/app-test/smoke.test.ts` | Smoke test: `launchTugApp → evalJS("1+1") → close`. |
 | `tests/app-test/tsconfig.json` | TypeScript config for in-app tests. |
 | `tests/app-test/.gitignore` | Excludes `logs/`. |
 
@@ -610,7 +610,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 |----------|---------|-------------|
 | **Unit (Swift)** | WKUserScript injection timing; socket-security sequence unit tests | `UserScriptTimingTests.swift`, security-sequence test |
 | **Unit (TypeScript, happy-dom allowed)** | RPC client serialization, error-class translation, matcher logic | `tests/app-test/_harness/` unit tests (pure logic only) |
-| **In-app integration (real WKWebView)** | Smoke test through the real bridge | `tests/app-test/_smoke.test.ts` |
+| **In-app integration (real WKWebView)** | Smoke test through the real bridge | `tests/app-test/smoke.test.ts` |
 | **Golden / Contract** | Pin `version`, `Request`, `Response` wire shapes | `tests/app-test/_harness/rpc.test.ts` |
 
 **What we do not use:**
@@ -803,7 +803,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 
 ---
 
-#### Step 7: `_smoke.test.ts` and first round-trip {#step-7}
+#### Step 7: `smoke.test.ts` and first round-trip {#step-7}
 
 **Depends on:** #step-6
 
@@ -812,7 +812,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 **References:** [D05] hand-written RPC client, Spec [#s01-rpc-protocol], (#success-criteria)
 
 **Artifacts:**
-- `tests/app-test/_smoke.test.ts`
+- `tests/app-test/smoke.test.ts`
 
 **Tasks:**
 - [ ] Author the smoke test: `const app = await launchTugApp(); expect(await app.evalJS("1+1")).toBe(2); await app.close();`.
@@ -824,7 +824,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 - [ ] Smoke test fails loudly with `VersionSkewError` when the constant on the TS side is temporarily bumped to `"2.0.0"` (drift-prevention check).
 
 **Checkpoint:**
-- [ ] `bun test tests/app-test/_smoke.test.ts` exits 0.
+- [ ] `bun test tests/app-test/smoke.test.ts` exits 0.
 - [ ] `ps -ef | grep Tug.app` after the test shows zero leftover subprocesses.
 - [ ] `ls /tmp/tugapp-test-*.sock` after the test shows zero leftover socket files.
 
@@ -866,7 +866,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `bun test tests/app-test/_smoke.test.ts` exits 0 locally on macOS against a debug build (verification: repeat 10× with zero flakes).
+- [ ] `bun test tests/app-test/smoke.test.ts` exits 0 locally on macOS against a debug build (verification: repeat 10× with zero flakes).
 - [ ] `window.__tug.version === "1.0.0"` handshake passes; mismatch throws `VersionSkewError` (verification: smoke test + temporary version bump test).
 - [ ] Release-build `strings` grep for `TUGAPP_TEST_SOCKET`, `TestHarness`, `__tugTestMode` returns zero matches.
 - [ ] Release-build binary-size delta vs pre-Phase-2 baseline is < 1% (verification: `wc -c` on notarized archive before/after).
@@ -875,7 +875,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 - [ ] `UserScriptTimingTests` passes, verifying `__tugTestMode` is readable before tugdeck's first script tag evaluates.
 
 **Acceptance tests:**
-- [ ] `tests/app-test/_smoke.test.ts` passes against a freshly built debug Tug.app.
+- [ ] `tests/app-test/smoke.test.ts` passes against a freshly built debug Tug.app.
 - [ ] `UserScriptTimingTests` passes in Xcode.
 - [ ] `xcodebuild -scheme Tug -configuration Debug build` exits 0.
 - [ ] `xcodebuild -scheme Tug -configuration Release build` exits 0 and the resulting binary passes the release-build grep check.
@@ -890,7 +890,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Smoke test green | `bun test tests/app-test/_smoke.test.ts` exits 0 (10/10 runs) |
+| Smoke test green | `bun test tests/app-test/smoke.test.ts` exits 0 (10/10 runs) |
 | DEBUG guard holds | `grep -L '#if DEBUG' tugapp/Sources/TestHarness/*.swift` returns empty |
 | Release binary clean | `strings <release-archive> \| grep -E 'TUGAPP_TEST_SOCKET\|TestHarness\|__tugTestMode'` returns empty |
 | Binary-size delta | `wc -c` diff < 1% vs pre-Phase-2 baseline |

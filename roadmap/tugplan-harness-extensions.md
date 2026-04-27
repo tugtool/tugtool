@@ -67,9 +67,9 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 #### Success Criteria (Measurable) {#success-criteria}
 
 - Every in-app test failure emits a diagnostic block that (a) names the production `file.tsx:line:col` of each trace event, (b) shows `{active, fr, focused}` store state at the moment each event was recorded, and (c) annotates any subset-match violation with a one-line explanation (e.g., "Order violation: entry #1 appears at trace[1], BEFORE entry #0 match at trace[4]"). (Verified: AT0001/AT0003/AT0016 reconciliation PRs cite production line numbers quoted directly from the test output.)
-- `__tug.nativeClick(x, y)` dispatches a macOS `CGEventPost` mouse-down / mouse-up that reaches WebKit as `isTrusted: true`; the in-app test that asserts trusted-event arrival passes. (Verified: `tests/app-test/_smoke-native.test.ts` exits 0.)
+- `__tug.nativeClick(x, y)` dispatches a macOS `CGEventPost` mouse-down / mouse-up that reaches WebKit as `isTrusted: true`; the in-app test that asserts trusted-event arrival passes. (Verified: `tests/app-test/smoke-native.test.ts` exits 0.)
 - `tests/app-test/at0003-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click (no `focusElement`, no `app.click`); the rewritten test passes end-to-end against a real DEBUG Tug.app. Manual reproduction of the same gesture flow in the running app matches the test's outcome. (Verified: `grep -c 'focusElement\|app\.click(' tests/app-test/at0003-pane-activation.test.ts` returns 0; `just test-in-app` exits 0; manual repro matches.)
-- A tugcode subprocess launches under harness control, performs one stream-json turn against a canned request, and the turn is observable via `__tug.getEmCardState(cardId)`. (Verified: `tests/app-test/_smoke-em.test.ts` exits 0.)
+- A tugcode subprocess launches under harness control, performs one stream-json turn against a canned request, and the turn is observable via `__tug.getEmCardState(cardId)`. (Verified: `tests/app-test/smoke-em.test.ts` exits 0.)
 - Every AT-series scenario in the table with an infrastructure column of "synthesized", "CGEventPost", or "EM-card" has a green in-app test. (Verified: row-by-row test files exist under `tests/app-test/` and `bun test tests/app-test/` exits 0.)
 - Each new AT-series test fails predictably when its target fix is reverted by hand. (Verified: per-test drift-prevention exercise documented in Step 17.)
 - Release-build binary size unchanged vs pre-harness baseline (within noise threshold). (Verified: `wc -c` diff + `nm` symbol check.)
@@ -170,7 +170,7 @@ This plan builds the two missing primitives (hardware events, EM-card lifecycle)
 
 **Plan to resolve:** Decide in Step 5 after measuring tugcode startup latency. If < 500ms, per-test-file wins on simplicity. If >= 500ms, add the reset RPC.
 
-**Resolution (2026-04-25, Step 5 / Pass 7A):** **Per-test-file lifecycle.** Measured via `_smoke-tugcode-lifecycle.test.ts`'s 10-cycle latency probe: median start+stop+RPC wall-clock = 13.2ms (min 11.5ms / max 13.7ms) on Apple Silicon, debug-build tugcode. Well under the 500ms threshold; no `resetTugcode()` RPC needed. The simplicity win on per-test-file isolation (fresh process per file, no reset-state correctness risk) outweighs the negligible per-file overhead.
+**Resolution (2026-04-25, Step 5 / Pass 7A):** **Per-test-file lifecycle.** Measured via `smoke-tugcode-lifecycle.test.ts`'s 10-cycle latency probe: median start+stop+RPC wall-clock = 13.2ms (min 11.5ms / max 13.7ms) on Apple Silicon, debug-build tugcode. Well under the 500ms threshold; no `resetTugcode()` RPC needed. The simplicity win on per-test-file isolation (fresh process per file, no reset-state correctness risk) outweighs the negligible per-file overhead.
 
 #### [Q04] Stream-json transcript format: canonical bytes vs structured records (DEFERRED) {#q04-transcript-format}
 
@@ -265,7 +265,7 @@ No `.flags` setters. No `type = .flagsChanged` override. Tap stays `.cgSessionEv
   - Default to stub-transcript mode for deterministic canned responses (real tugcode only for smoke tests).
   - `drainTugcodeTurn()` helper waits on tugcode's completion signal specifically, not a wall-clock timer.
   - Content-hash on transcripts detects silent drift (per [D06]).
-- **Residual risk:** Real-tugcode smoke tests may occasionally fail on loaded dev machines. Accepted; those tests are clearly marked `_smoke-em-live.test.ts` and not part of the default run.
+- **Residual risk:** Real-tugcode smoke tests may occasionally fail on loaded dev machines. Accepted; those tests are clearly marked `smoke-em-live.test.ts` and not part of the default run.
 
 **Risk R04: AT-series test maintenance cost** {#r04-mseries-maintenance}
 
@@ -340,7 +340,7 @@ No `.flags` setters. No `type = .flagsChanged` override. Tap stays `.cgSessionEv
 #### [D05] Tugcode has two modes: live (real model calls) and stub (canned transcript) (DECIDED) {#d05-tugcode-modes}
 
 **Decision:** Harness launches tugcode in one of two modes:
-- **Live mode:** real tugcode subprocess, real model API calls. Used only for `_smoke-em-live.test.ts` to verify the bridge works end-to-end.
+- **Live mode:** real tugcode subprocess, real model API calls. Used only for `smoke-em-live.test.ts` to verify the bridge works end-to-end.
 - **Stub mode (default):** tugcode receives a canned stream-json transcript via `__tug.seedTugcodeTranscript(transcript)` and replays it deterministically on each turn.
 
 **Rationale:**
@@ -751,7 +751,7 @@ Full write-up in Deep Dive [#tugcode-lifecycle]. Contract points:
 
 1. **Spawn**: Tug.app launches tugcode subprocess when `__tug.startTugcode(opts)` is called; binary path resolved via `TUGAPP_TUGCODE_BINARY` env with default fallback.
 2. **Stub mode**: tugcode started with `--stub-transcript=<fd>`; harness provides the transcript via `seedTugcodeTranscript`.
-3. **Live mode**: tugcode started with normal args (real model, real credentials); reserved for `_smoke-em-live.test.ts`.
+3. **Live mode**: tugcode started with normal args (real model, real credentials); reserved for `smoke-em-live.test.ts`.
 4. **Teardown**: `__tug.stopTugcode()` sends `SIGTERM`; `SIGKILL` follows after 2000ms if process still alive.
 5. **Observability**: tugcode stdout/stderr route to `tests/app-test/logs/<test>-tugcode.log` (companion to Tug.app's log file).
 6. **Version**: tugcode's version string is recorded on successful launch; mismatch against harness-expected version throws `TugcodeVersionSkewError`.
@@ -852,14 +852,14 @@ Phase A:
 - `tugapp/Sources/TestHarness/TestHarnessConnection.swift` — dispatch table grows with every new native verb.
 - `tugdeck/src/test-surface.ts` — gains native gestures (`nativeClick[AtElement]`, `nativeDoubleClick[AtElement]`, `nativeRightClick[AtElement]`, `nativeDrag[Element]`, `nativeMouseDown/Up`), keyboard (`nativeKey`, `nativeType`, `holdModifier`), and introspection (`getElementText`, `getElementValue`, `getElementAttribute`, `getElementBounds`, `getElementScreenBounds`, `getElementState`, `getActiveElement`, `getSelection`, `getComputedStyle`).
 - `tests/app-test/_spike-cgevent.test.ts` — THROWAWAY spike test lands in Step 1, deleted at step close.
-- `tests/app-test/_smoke-native.test.ts` — scaffolded empty in Step 2, filled in Step 3 with five tests (single-click trust, type, Cmd+A, drag-endpoint selection, double-click word-select).
+- `tests/app-test/smoke-native.test.ts` — scaffolded empty in Step 2, filled in Step 3 with five tests (single-click trust, type, Cmd+A, drag-endpoint selection, double-click word-select).
 - `tests/app-test/_harness/errors.ts` — gains `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`, `NativeTypeAsciiOnlyError`.
 
 Phase B:
 - `tugapp/<phase-b-files>` — tugcode subprocess spawn + teardown (gated `#if DEBUG`).
 - `tugdeck/src/test-surface.ts` — gains EM-card methods.
-- `tests/app-test/_smoke-em.test.ts` — stub-mode round-trip smoke.
-- `tests/app-test/_smoke-em-live.test.ts` — live-mode smoke.
+- `tests/app-test/smoke-em.test.ts` — stub-mode round-trip smoke.
+- `tests/app-test/smoke-em-live.test.ts` — live-mode smoke.
 - `tests/app-test/fixtures/tugcode/*.transcript.json` — stub transcripts per [L02].
 - `scripts/capture-tugcode-transcript.ts` — authoring helper.
 - `scripts/reapprove-transcript.ts` — sidecar updater.
@@ -884,9 +884,9 @@ See [#risks] above.
 |------|---------|
 | `tugapp/<phase-a-bridge>` | Swift CGEventPost handlers, app-lifecycle NSApp handlers, accessibility-permission check (all `#if DEBUG`) |
 | `tugapp/<phase-b-bridge>` | Swift tugcode subprocess spawn/teardown handlers (all `#if DEBUG`) |
-| `tests/app-test/_smoke-native.test.ts` | `isTrusted: true` delivery smoke test |
-| `tests/app-test/_smoke-em.test.ts` | EM-card stub-mode round-trip smoke |
-| `tests/app-test/_smoke-em-live.test.ts` | EM-card live tugcode smoke (non-default) |
+| `tests/app-test/smoke-native.test.ts` | `isTrusted: true` delivery smoke test |
+| `tests/app-test/smoke-em.test.ts` | EM-card stub-mode round-trip smoke |
+| `tests/app-test/smoke-em-live.test.ts` | EM-card live tugcode smoke (non-default) |
 | `tests/app-test/fixtures/tugcode/` | Canned transcript fixtures + sidecars per [L02] |
 | `tests/app-test/_harness/scenarios.ts` | Shared pane/card seeding helpers for AT-series tests |
 | `scripts/capture-tugcode-transcript.ts` | Authoring helper for stub transcripts |
@@ -968,7 +968,7 @@ See [#risks] above.
 | **In-app integration (real WKWebView, synthesized events)** | Inherited from base plan | AT0001/AT0003/AT0016 baseline, plus scenarios marked "synthesized" in [#s04-mseries-scenarios] |
 | **In-app integration (real WKWebView, CGEventPost)** | Trusted-event-gated scenarios | Scenarios marked "CGEventPost" in the table |
 | **In-app integration (real WKWebView, EM-card stub transcripts)** | EM-card scenarios with deterministic tugcode | Scenarios marked "EM-card (stub)" in the table |
-| **In-app smoke (real tugcode, live)** | One-off round-trip sanity | `_smoke-em-live.test.ts` — non-default, run on demand |
+| **In-app smoke (real tugcode, live)** | One-off round-trip sanity | `smoke-em-live.test.ts` — non-default, run on demand |
 | **App-lifecycle integration** | Macros over NSApp delegate callbacks | AT0004/AT0005 |
 | **Drift prevention** | Per-test revert-and-retest cycle | Every new AT-series test — per [D12] |
 
@@ -1015,7 +1015,7 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 **Tests:**
 - [ ] `bun test tests/app-test/_harness/matchers.test.ts` — new unit tests pass; existing tests unaffected.
-- [ ] `bun test tests/app-test/_smoke.test.ts` still green.
+- [ ] `bun test tests/app-test/smoke.test.ts` still green.
 - [ ] Manual: re-run `just test-in-app` against AT0001; confirm failure dump carries `@ deck-manager.ts:NNN:NN` or similar on each event.
 
 **Checkpoint:**
@@ -1240,7 +1240,7 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 
 #### Step 2: Swift `CGEventPost` handlers — full gesture + keyboard surface {#step-2}
 
-**Status:** LANDED (2026-04-24). Shipped `NativeEventHandlers.swift` (click, double-click with 80ms pinned interval, right-click, endpoint-only drag, mouse-down/up primitives, `nativeKey`, `nativeType`, `holdModifier` with `defer`-based modifier release) and `VirtualKeyMap.swift` (US-English ASCII + named-key table, ~120 entries, hand-rolled self-tests in `runUnitTests()`). Dispatch table extended in `TestHarnessConnection.swift` with 9 new verbs. Swift + TS `SURFACE_VERSION` bumped to `1.1.0`. Typed error classes added to `tests/app-test/_harness/errors.ts` + wired into `translateError`. `_smoke-native.test.ts` scaffold landed (skipped; Step 3 fills bodies). No regressions: 2 smoke + AT0001 + AT0003 + AT0016 all green.
+**Status:** LANDED (2026-04-24). Shipped `NativeEventHandlers.swift` (click, double-click with 80ms pinned interval, right-click, endpoint-only drag, mouse-down/up primitives, `nativeKey`, `nativeType`, `holdModifier` with `defer`-based modifier release) and `VirtualKeyMap.swift` (US-English ASCII + named-key table, ~120 entries, hand-rolled self-tests in `runUnitTests()`). Dispatch table extended in `TestHarnessConnection.swift` with 9 new verbs. Swift + TS `SURFACE_VERSION` bumped to `1.1.0`. Typed error classes added to `tests/app-test/_harness/errors.ts` + wired into `translateError`. `smoke-native.test.ts` scaffold landed (skipped; Step 3 fills bodies). No regressions: 2 smoke + AT0001 + AT0003 + AT0016 all green.
 
 **Depends on:** #step-1 (reuses `CoordMapping.swift` from Step 1; variant choice from [D02]).
 
@@ -1287,14 +1287,14 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
   - [x] `holdModifier(mods:innerVerbs:)` — presses modifier-key `keyDown` events, runs inner verbs via recursive `executeNativeVerb`, releases modifiers in reverse order via `defer`. Inner-verb failures release modifiers cleanly — no stuck-modifier bleed.
 - [x] Wire every verb into the `TestHarnessConnection.swift` dispatch table via `dispatchNativeVerb` → `executeNativeVerb` (shared by top-level dispatch and `holdModifier` recursion). Each verb JSON-decodes args via `parsePoint` / `parseButton` / `parseModifiers` helpers; native errors translate to typed wire errors via `NativeEventError.wireName`.
 - [x] Swift-side unit tests for `VirtualKeyMap` (runtime `runUnitTests()` fixtures; XCTest target deferred until one exists).
-- [x] Bump `__tug.version` to `1.1.0` in Swift (`TestHarnessConnection.surfaceVersion`). **TS `EXPECTED_SURFACE_VERSION` bumped in Step 2 too** (not Step 3 as originally planned) because `_smoke.test.ts` asserts exact-match equality — the staggered-bump plan would have left the smoke test red. Tugdeck-side `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` still awaits Step 3.
+- [x] Bump `__tug.version` to `1.1.0` in Swift (`TestHarnessConnection.surfaceVersion`). **TS `EXPECTED_SURFACE_VERSION` bumped in Step 2 too** (not Step 3 as originally planned) because `smoke.test.ts` asserts exact-match equality — the staggered-bump plan would have left the smoke test red. Tugdeck-side `SURFACE_VERSION` in `tugdeck/src/test-surface.ts` still awaits Step 3.
 - [x] Every new Swift file + every new dispatch-table case inside `#if DEBUG ... #endif`.
 
 **Tests:**
 
 - [x] `VirtualKeyMap` Swift unit cases (a/A, z/Z, 0/), 1/!, space, , / <, / / ?, ` / ~, Enter/Return/Tab/Escape/Backspace/Delete, all arrows) wired via `runUnitTests()`.
 - [x] `CoordMapping` Swift unit cases (from Step 1) still pass unmodified.
-- [x] `tests/app-test/_smoke-native.test.ts` — scaffold landed with 5 `describe.skip`'d tests, Step 3 fills bodies.
+- [x] `tests/app-test/smoke-native.test.ts` — scaffold landed with 5 `describe.skip`'d tests, Step 3 fills bodies.
 - [x] `bun test ./_harness/rpc.test.ts ./_harness/matchers.test.ts` — 46 pass / 0 fail.
 - [x] `just test-in-app` — 2 smoke + AT0001 + AT0003 + AT0016 all green; no regressions.
 
@@ -1345,7 +1345,7 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 - `tests/app-test/_harness/errors.ts` — adds `AccessibilityPermissionMissingError`, `CoordinateOutOfBoundsError`, `NativeTypeAsciiOnlyError`.
 - `tests/app-test/_harness/client.ts` — typed client wrappers for every new verb; `launchTugApp` calls `checkAccessibilityPermission` as first RPC after version handshake; throws if denied.
 - `tests/app-test/_harness/index.ts` — `App` class exposes the same methods with the harness's usual shape (promise-returning, matchers-aware).
-- `tests/app-test/_smoke-native.test.ts` — fills in the scaffold from Step 2. Five tests, one per critical path:
+- `tests/app-test/smoke-native.test.ts` — fills in the scaffold from Step 2. Five tests, one per critical path:
   1. **Trusted single-click** — `nativeClickAtElement("button#…")`; a one-shot listener records `isTrusted`; assert `true`.
   2. **Trusted type** — `nativeClickAtElement("input#…")` then `nativeType("hello")`; assert `input.value === "hello"`.
   3. **Cmd+A selects all** — `nativeClickAtElement("input#…")`, pre-fill, `nativeKey("a", ["cmd"])`; assert `{selectionStart: 0, selectionEnd: value.length}`.
@@ -1359,19 +1359,19 @@ Six additive upgrades to the deck-trace recording surface and the harness matche
 - [x] Implement the typed client wrappers in `_harness/client.ts` for every new verb (native gestures + introspection + `checkAccessibilityPermission` + `getElementScreenBounds`).
 - [x] Implement `launchTugApp` preflight: calls `checkAccessibilityPermission` as the final handshake step; throws `AccessibilityPermissionMissingError` with actionable System-Settings guidance on denial. Harness-internal protocol tests opt out via `skipAccessibilityPreflight: true`.
 - [x] Bump `__tug.version` surface assertion from `1.0.0` to `1.1.0`; update harness expected-version constant.
-- [x] Author `_smoke-native.test.ts` per the five tests above. (Test 4 needed environmental setup — tugdeck's `selectionGuard` blocks `selectstart` outside registered card boundaries. Added `__tug.registerSelectionBoundary` so the ad-hoc fixture overlay can mirror what a real card does on mount.)
+- [x] Author `smoke-native.test.ts` per the five tests above. (Test 4 needed environmental setup — tugdeck's `selectionGuard` blocks `selectstart` outside registered card boundaries. Added `__tug.registerSelectionBoundary` so the ad-hoc fixture overlay can mirror what a real card does on mount.)
 - [x] Extend `tests/app-test/README.md` with a section documenting the new surface (native gestures, introspection primitives, `holdModifier` usage pattern, AX preflight).
 
 **Tests:**
 
-- [x] `bun test tests/app-test/_smoke-native.test.ts` exits 0 with accessibility permission granted. (5/5 green.)
+- [x] `bun test tests/app-test/smoke-native.test.ts` exits 0 with accessibility permission granted. (5/5 green.)
 - [x] Manual test: revoke permission, run smoke; harness exits 1 with a readable error citing the System Settings path. (Error class carries bundle path + id + `tccutil reset` recipe.)
 - [x] `bun test tests/app-test/` does not regress any prior test (AT0001/AT0003/AT0016 still green).
 
 **Checkpoint:**
 
 - [x] `bun x tsc --noEmit` exits 0 in `tests/app-test/` and `tugdeck/`. (Five pre-existing errors in `tugdeck/src/__tests__/card-host-default-focus.test.ts` predate Step 3 and are unchanged.)
-- [x] `bun test tests/app-test/_smoke-native.test.ts` exits 0 (all five tests green).
+- [x] `bun test tests/app-test/smoke-native.test.ts` exits 0 (all five tests green).
 - [x] `bun test tests/app-test/` full sweep green (`_smoke` 2/2, `_smoke-native` 5/5, `m01` 1/1, `m03` 1/1, `m16` 1/1).
 - [x] `grep -nE "window\.__tug\.(native|holdModifier)" tugdeck/src/` shows only DEV-gated uses. (Returns no matches — native gestures are RPC-verb-only, never surfaced on `window.__tug`.)
 - [x] `__tug.version` is `1.1.0`; TS handshake constant matches.
@@ -1391,7 +1391,7 @@ All four adjustments live in `tugapp/Sources/TestHarness/NativeEventHandlers.swi
 
 #### Step 3b: Rewrite AT0003 with trusted click events (Phase A acceptance test) {#step-3b}
 
-**Depends on:** #step-3 (requires the `nativeClickAtElement` TS surface, accessibility preflight, and a green `_smoke-native.test.ts`).
+**Depends on:** #step-3 (requires the `nativeClickAtElement` TS surface, accessibility preflight, and a green `smoke-native.test.ts`).
 
 **Commit:** `test(in-app): rewrite AT0003 with trusted click events`
 
@@ -1491,12 +1491,12 @@ This step does two things:
 **Tests:**
 
 - [ ] `tests/app-test/at0021-drag-aborted.test.ts` — backfilled per above. The test must not skip.
-- [ ] Sanity smoke: in `_smoke-native.test.ts` or a new sibling file, verify `nativeDragWithoutRelease + nativeMouseUp` produces the same painted-selection outcome as the existing `nativeDrag` smoke test (pins the decomposition).
+- [ ] Sanity smoke: in `smoke-native.test.ts` or a new sibling file, verify `nativeDragWithoutRelease + nativeMouseUp` produces the same painted-selection outcome as the existing `nativeDrag` smoke test (pins the decomposition).
 
 **Checkpoint:**
 
 - [ ] `bun test tests/app-test/at0021-drag-aborted.test.ts` exits 0 (no skip).
-- [ ] `bun test tests/app-test/_smoke-native.test.ts` still 5/5 green; new decomposition smoke is included or the existing endpoint-drag test passes verbatim.
+- [ ] `bun test tests/app-test/smoke-native.test.ts` still 5/5 green; new decomposition smoke is included or the existing endpoint-drag test passes verbatim.
 - [ ] Full `just test-in-app-fast` sweep stays green.
 - [ ] Manual gesture in the running app: drag a tab >5px, press Escape, observe focus return inside the source card. The trusted-event automated test now covers this; manual check is a one-shot regression sanity.
 
@@ -1528,10 +1528,10 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - [x] TS surface: wrap as typed methods with 2000ms default RPC timeout (enough margin over the server-side wait).
 
 **Tests:**
-- [x] `tests/app-test/_smoke-app-lifecycle.test.ts` (scratch; deleted after Step 6) — verifies each of the four handlers returns successfully when called in isolation; deliberate timeout by passing `timeoutMs: 1` after the app is already hidden (NSApp.hide() is a no-op when already hidden, so the notification reliably misses the wait window).
+- [x] `tests/app-test/smoke-app-lifecycle.test.ts` (scratch; deleted after Step 6) — verifies each of the four handlers returns successfully when called in isolation; deliberate timeout by passing `timeoutMs: 1` after the app is already hidden (NSApp.hide() is a no-op when already hidden, so the notification reliably misses the wait window).
 
 **Checkpoint:**
-- [x] `just test-in-app-fast _smoke-app-lifecycle.test.ts` exits 0.
+- [x] `just test-in-app-fast smoke-app-lifecycle.test.ts` exits 0.
 - [x] Binary-size diff still within noise.
 
 **Author note (2026-04-25).** Two implementation deviations worth pinning. First, `NSApp.deactivate()` alone is silently ignored on macOS Sonoma+ when there's no other "active" app queued to receive activation — `applicationDidResignActive:` never posts. The Swift handler now activates Finder via `NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.activate(options: [])` after calling `deactivate()`. Finder is system-essential and always running, so it's a reliable target; this matches the user-facing scenario "user clicks Finder, Tug.app loses focus" that AT0004 is meant to exercise. Second, the deliberate-timeout test uses "call simulateAppHide while already hidden" rather than just a tight `timeoutMs: 1` against a fresh call — the latter would race the run loop on a fast machine. Calling hide while already hidden is deterministically a no-op (NSApp short-circuits), so combined with `timeoutMs: 1` the verb is guaranteed to surface `AppLifecycleTimeoutError`. Surface version bumped Swift `1.1.0`→`1.2.0` and TS `EXPECTED_SURFACE_VERSION` `1.1.0`→`1.2.0` (additive minor; major stays 1). The plan's `tugdeck/src/test-surface.ts` artifact is dropped — `simulateApp*` are pure RPC verbs handled at the Swift bridge, with no `window.__tug.*` surface change.
@@ -1563,15 +1563,15 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - [x] Connection close hook: `TestHarnessConnection.close()` calls `tugcodeLifecycle.stop()` so a graceful disconnect doesn't leak a zombie.
 
 **Tests:**
-- [x] `tests/app-test/_smoke-tugcode-lifecycle.test.ts` (scratch; folded into Step 7): three tests covering start+stop round-trip + pid uniqueness, already-running guard throws TugcodeLaunchError, 10-cycle latency measurement.
+- [x] `tests/app-test/smoke-tugcode-lifecycle.test.ts` (scratch; folded into Step 7): three tests covering start+stop round-trip + pid uniqueness, already-running guard throws TugcodeLaunchError, 10-cycle latency measurement.
 
 **Checkpoint:**
 - [x] Swift DEBUG build succeeds, no warnings.
-- [x] `just test-in-app-fast _smoke-tugcode-lifecycle.test.ts` passes (3/3 in 7.63s).
+- [x] `just test-in-app-fast smoke-tugcode-lifecycle.test.ts` passes (3/3 in 7.63s).
 - [x] Tugcode startup latency: median 13.2ms / min 11.5ms / max 13.7ms across 10 cycles (recorded inline in [Q03] section above).
 - [x] Full default sweep `just test-in-app-fast` still 13/13 green.
 
-**Author note (2026-04-25).** Three implementation deviations worth pinning. First, the production tugcode-launch path is in tugcast (Rust), not in tugapp Swift — tugcast spawns tugcode per AI session in `feeds/agent_bridge.rs::TugcodeSpawner`, NOT at tugcast / Tug.app boot. The plan's "Production tugcode-launch path gated behind `!testMode`" task is therefore a no-op at this step: under the harness, tugdeck never initiates an AI session, so tugcast never reaches the spawner. The gate would only matter if tugcast added an at-boot warm-spawn; we can revisit then. Second, tugcode shuts down on stdin EOF (its `[tugcode] stdin closed, shutting down` exit branch), so the Swift handler holds a `Pipe`'s write-end open for the lifetime of the child. The pipe write-end will be repurposed in Step 6 to write transcript bytes for stub-mode replay — the FD plumbing lands now even though the writer is silent in Step 5. Third, surface version bumped Swift `1.2.0`→`1.3.0` and TS `EXPECTED_SURFACE_VERSION` `1.2.0`→`1.3.0` (additive minor; major stays 1). The smoke test's `_smoke.test.ts` exact-match assertion stays consistent because both sides bump in lockstep.
+**Author note (2026-04-25).** Three implementation deviations worth pinning. First, the production tugcode-launch path is in tugcast (Rust), not in tugapp Swift — tugcast spawns tugcode per AI session in `feeds/agent_bridge.rs::TugcodeSpawner`, NOT at tugcast / Tug.app boot. The plan's "Production tugcode-launch path gated behind `!testMode`" task is therefore a no-op at this step: under the harness, tugdeck never initiates an AI session, so tugcast never reaches the spawner. The gate would only matter if tugcast added an at-boot warm-spawn; we can revisit then. Second, tugcode shuts down on stdin EOF (its `[tugcode] stdin closed, shutting down` exit branch), so the Swift handler holds a `Pipe`'s write-end open for the lifetime of the child. The pipe write-end will be repurposed in Step 6 to write transcript bytes for stub-mode replay — the FD plumbing lands now even though the writer is silent in Step 5. Third, surface version bumped Swift `1.2.0`→`1.3.0` and TS `EXPECTED_SURFACE_VERSION` `1.2.0`→`1.3.0` (additive minor; major stays 1). The smoke test's `smoke.test.ts` exact-match assertion stays consistent because both sides bump in lockstep.
 
 ---
 
@@ -1600,7 +1600,7 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 **Tests:**
 - [x] `tugcode/src/__tests__/stub-replay.test.ts` — 11 unit tests covering loadTranscript happy path / malformed-JSON / schema-version / index-mismatch / missing-fields, plus StubReplayEngine handshake / dispatch / out-of-bounds / multi-turn.
 - [x] `tests/app-test/_harness/__tests__/transcript.test.ts` — 8 tests covering computeTranscriptHash determinism + sidecar verify (match / mismatch / missing-sidecar) + loadTranscriptWithSidecar (parses on match; refuses without parsing on mismatch).
-- [x] `tests/app-test/_smoke-tugcode-stub.test.ts` (scratch; folded into `_smoke-em.test.ts` at Step 7): end-to-end pipeline — protocol_init + user_message → recorded outputs in stdout log; stub-without-transcript fails fast; malformed transcript produces `error` event from tugcode.
+- [x] `tests/app-test/smoke-tugcode-stub.test.ts` (scratch; folded into `smoke-em.test.ts` at Step 7): end-to-end pipeline — protocol_init + user_message → recorded outputs in stdout log; stub-without-transcript fails fast; malformed transcript produces `error` event from tugcode.
 
 **Checkpoint:**
 - [x] Tugcode binary accepts `--stub-transcript=<path>` and replays deterministically (3/3 stub-mode smoke tests green).
@@ -1611,7 +1611,7 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 
 (1) **Transcript handoff is path-based, not fd-based.** The plan envisioned `--stub-transcript=<fd>` with the harness writing transcript bytes to an inherited file descriptor. Foundation's `Process` API doesn't expose arbitrary fd inheritance to children (would require `posix_spawn_file_actions` below the API), and the alternative — pre-buffering the pipe before `Process.run()` so the child reads "atomically" — is fragile because the child blocks on read until bytes arrive. Path-based is simpler and equivalent in fidelity: Swift writes the transcript JSON to a temp file under `$TMPDIR` and passes `--stub-transcript=<path>` to tugcode. The temp file is removed on `stop()`.
 
-(2) **Folded `seedTugcodeTranscript` and `seedTugcodeError` into `startTugcode`'s opts.** The plan's separate-verbs design assumed hot-loading transcripts during a test; in practice every known consumer (the stub-mode smoke + Step 7's `_smoke-em.test.ts`) authors the full transcript before launch. Two-step state (seed → start) creates ordering coupling without ergonomic gain. To inject errors into a turn, build them as `error`-typed entries in the relevant `turn.outputs[]` array — that's the same wire frame the engine would emit anyway.
+(2) **Folded `seedTugcodeTranscript` and `seedTugcodeError` into `startTugcode`'s opts.** The plan's separate-verbs design assumed hot-loading transcripts during a test; in practice every known consumer (the stub-mode smoke + Step 7's `smoke-em.test.ts`) authors the full transcript before launch. Two-step state (seed → start) creates ordering coupling without ergonomic gain. To inject errors into a turn, build them as `error`-typed entries in the relevant `turn.outputs[]` array — that's the same wire frame the engine would emit anyway.
 
 (3) **Added `writeTugcodeStdin(line)` RPC verb.** Tests need to drive tugcode's IPC loop (send protocol_init, send user_message). The plan implicitly assumed tugcast was in the loop, but harness-owned tugcode runs without tugcast — so we expose a direct stdin-write RPC. The Swift handler appends to the held-open `Pipe` write-end created in Pass 7A.
 
@@ -1633,7 +1633,7 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - `tugdeck/src/test-surface.ts` — adds `getEmCardState` + `isEngineReady` / harness-side `awaitEngineReady`. The plan's originally-listed `getEngineSelection` and `drainTugcodeTurn` are subsumed/deferred — see Author note. Tugcode lifecycle delegates (`startTugcode` / `stopTugcode` / etc.) live as RPC verbs on the App handle, NOT on `__tug.*` (only Swift can spawn subprocesses; routing through page-side `__tug.*` would be a layering violation).
 - `tugdeck/src/deck-trace.ts` — adds `engine-ready` and `engine-activation-dispatched` event kinds per [L01]. Both kinds defined; `engine-ready` has an emit site in `tug-prompt-input.tsx`. `engine-activation-dispatched` emit sites land at selection plan Step 23E with the `onCardActivated` registrations.
 - `tugdeck/src/components/tugways/tug-prompt-input.tsx` — emits `engine-ready` after the engine's mount-time `useLayoutEffect` finishes. tide-card and gallery-prompt-entry inherit via composition (both wrap TugPromptInput / TugPromptEntry, which use TugTextEngine internally); their dedicated emit sites can land alongside Step 23E if needed.
-- `tests/app-test/_smoke-em.test.ts` — three-test EM-card observation smoke (engine-ready trace, getEmCardState round-trip after typing, getEmCardState returns null for FC cards). Promoted from scratch — added to `just test-in-app-fast` default sweep.
+- `tests/app-test/smoke-em.test.ts` — three-test EM-card observation smoke (engine-ready trace, getEmCardState round-trip after typing, getEmCardState returns null for FC cards). Promoted from scratch — added to `just test-in-app-fast` default sweep.
 - `tests/app-test/fixtures/tugcode/em-smoke.transcript.json` — DEFERRED to a follow-up. The capture script that produces it is also deferred (see Step 8 / Author note); the smoke at Pass 7C scope doesn't drive a real tugcode round-trip.
 
 **Tasks:**
@@ -1643,20 +1643,20 @@ Step 3c was deferred from selection plan #step-23c (Pass 4) — it surfaced as a
 - [x] Implement `isEngineReady` (synchronous trace-ring scan) + harness `awaitEngineReady` (`waitForCondition` wrapper). Plan's `awaitEngineReady` was page-side; that shape couldn't observe trace ring writes from inside `evalJS` — see Author note.
 - [ ] Implement `drainTugcodeTurn` via `waitForCondition` on `getEmCardState(cardId).streamState === "idle"`. **DEFERRED** to a follow-up — needs tugcode → tugdeck integration not yet in place at Pass 7C scope; `streamState` is currently a stub field always returning `"idle"`.
 - [ ] Author the `em-smoke` transcript + sidecar via `capture-tugcode-transcript.ts`. **DEFERRED** to Step 8 — see Author note. The capture script needs live mode AND the tugcast bypass to be useful as a fixture sink.
-- [x] Author `_smoke-em.test.ts`: the canonical EM observation smoke.
+- [x] Author `smoke-em.test.ts`: the canonical EM observation smoke.
 
 **Tests:**
-- [x] `just test-in-app-fast _smoke-em.test.ts` exits 0 (3/3 in 7.55s).
-- [x] Scratch `_smoke-tugcode-lifecycle.test.ts` and `_smoke-tugcode-stub.test.ts` deleted (their coverage is subsumed by `_smoke-em.test.ts` for surface validation; runtime tugcode-replay coverage moves to Step 8's live-mode smoke when it lands).
+- [x] `just test-in-app-fast smoke-em.test.ts` exits 0 (3/3 in 7.55s).
+- [x] Scratch `smoke-tugcode-lifecycle.test.ts` and `smoke-tugcode-stub.test.ts` deleted (their coverage is subsumed by `smoke-em.test.ts` for surface validation; runtime tugcode-replay coverage moves to Step 8's live-mode smoke when it lands).
 
 **Checkpoint:**
-- [x] `just test-in-app-fast _smoke-em.test.ts` exits 0.
+- [x] `just test-in-app-fast smoke-em.test.ts` exits 0.
 - [x] `just test-in-app-fast` (full default sweep) still 14/14 green (`_smoke` + `_smoke-native` + `_smoke-em` + 11 AT-series files).
 - [x] tugdeck unit tests 2412/2412; tsc clean both packages.
 
 **Author note (2026-04-25).** Five implementation deviations from the plan-as-written, in declining order of significance.
 
-(1) **Tugcode integration into tugdeck deferred.** The plan envisioned `_smoke-em.test.ts` as a stub-mode end-to-end smoke: harness's tugcode replays a transcript → tugcast routes the bytes → tugdeck observes the streamed output via `getEmCardState`. Pass 7A discovered tugcast spawns its own tugcode per AI session — the harness-spawned tugcode is orphan from tugdeck's perspective. Fixing that requires tugcast-side changes (Rust) to read a test env var and defer to the harness-owned tugcode (or pipe-pass tugcode's stdout into tugcast's input). Out of scope for Pass 7C. The smoke retreats to "EM-card observation surface validation": seed an EM card, type into it via native gestures, assert the surface readbacks. The tugcode → tugdeck round-trip is tabled for a future pass when the tugcast-bypass plumbing lands; `streamState` and `lastTurnSeq` are stub fields with placeholder values until then.
+(1) **Tugcode integration into tugdeck deferred.** The plan envisioned `smoke-em.test.ts` as a stub-mode end-to-end smoke: harness's tugcode replays a transcript → tugcast routes the bytes → tugdeck observes the streamed output via `getEmCardState`. Pass 7A discovered tugcast spawns its own tugcode per AI session — the harness-spawned tugcode is orphan from tugdeck's perspective. Fixing that requires tugcast-side changes (Rust) to read a test env var and defer to the harness-owned tugcode (or pipe-pass tugcode's stdout into tugcast's input). Out of scope for Pass 7C. The smoke retreats to "EM-card observation surface validation": seed an EM card, type into it via native gestures, assert the surface readbacks. The tugcode → tugdeck round-trip is tabled for a future pass when the tugcast-bypass plumbing lands; `streamState` and `lastTurnSeq` are stub fields with placeholder values until then.
 
 (2) **`awaitEngineReady` lives on the harness side, not the JS surface.** The plan's `awaitEngineReady(cardId, timeoutMs?)` was a page-side method. That shape can't actually observe trace ring writes during a busy-wait — `evalJS` runs synchronously on WebKit's main thread, the same thread that records `engine-ready`. A loop inside `evalJS` would never see the event. The fix: synchronous `__tug.isEngineReady(cardId)` on the JS side (one-shot trace scan), plus a harness-side `app.awaitEngineReady(cardId, opts?)` that wraps `isEngineReady` in a `waitForCondition` for the blocking variant.
 
@@ -1679,7 +1679,7 @@ Surface bumps: tugdeck `SURFACE_VERSION` `1.1.0`→`1.2.0` for the `__tug.*` add
 **References:** [D05] two modes, [R03] tugcode flakiness, Spec [#s03-tugcode-lifecycle]
 
 **Artifacts:**
-- `tests/app-test/_smoke-em-live.test.ts` — live-mode round-trip against real tugcode (real model, real credentials). Marked with a `describe.skipIf(process.env.TUGCODE_LIVE !== "1")` guard so it runs only when explicitly requested.
+- `tests/app-test/smoke-em-live.test.ts` — live-mode round-trip against real tugcode (real model, real credentials). Marked with a `describe.skipIf(process.env.TUGCODE_LIVE !== "1")` guard so it runs only when explicitly requested.
 - `tests/app-test/README.md` — gains "Running live-mode smoke" subsection.
 
 **Tasks:**
@@ -1689,7 +1689,7 @@ Surface bumps: tugdeck `SURFACE_VERSION` `1.1.0`→`1.2.0` for the `__tug.*` add
 - [x] Document the setup and opt-in flag in `tests/app-test/README.md`.
 
 **Tests:**
-- [x] `TUGCODE_LIVE=1 just test-in-app-fast _smoke-em-live.test.ts` is the local dev runner; needs Anthropic credentials.
+- [x] `TUGCODE_LIVE=1 just test-in-app-fast smoke-em-live.test.ts` is the local dev runner; needs Anthropic credentials.
 - [x] Default `just test-in-app-fast` skips the live test (verified — 14/14 default-sweep pass; the file is excluded from the FILES list in Justfile and gated by `describe.skipIf` on the env var).
 
 **Checkpoint:**
@@ -1720,8 +1720,8 @@ Surface bumps: none. The `dir` field is additive within the existing `startTugco
 - [x] Release-build `nm` audit — zero matches for `TestHarness`, `AppLifecycle`, `TugcodeLifecycle`, `NativeEvent`, `VirtualKeyMap`, `CoordMapping`; zero defined `CGEvent` symbols. `#if DEBUG` gating is fully effective — the harness produces zero bytes in release.
 - [x] All 9 files in `tugapp/Sources/TestHarness/` start `#if DEBUG` and end `#endif`; `AppDelegate`'s test-harness usage is fully `#if DEBUG`-gated.
 - [x] `TUGAPP_TEST_SOCKET` unset path verified inline: `AppDelegate.applicationDidFinishLaunching` only enters the test-bridge branch when `TestHarnessBridge.envSocketPath()` returns non-nil. Production tugcode launch (in tugcast) is unaffected — no test-mode-related code on that path (see Pass 7A Author note).
-- [x] Accessibility-permission preflight verified by `_smoke-native.test.ts` continuing to pass (5/5 trusted-event tests).
-- [x] Surface version assertion: harness `EXPECTED_SURFACE_VERSION = "1.4.0"` matches Swift `surfaceVersion = "1.4.0"`; tugdeck `SURFACE_VERSION = "1.2.0"` is the JS-side counterpart. The plan's original "bump to 1.1.0" line is stale — current state is 1.4.0 RPC / 1.2.0 JS. The skew test (`_version-handshake.test.ts`) and exact-match assertion in `_smoke.test.ts` continue to pass.
+- [x] Accessibility-permission preflight verified by `smoke-native.test.ts` continuing to pass (5/5 trusted-event tests).
+- [x] Surface version assertion: harness `EXPECTED_SURFACE_VERSION = "1.4.0"` matches Swift `surfaceVersion = "1.4.0"`; tugdeck `SURFACE_VERSION = "1.2.0"` is the JS-side counterpart. The plan's original "bump to 1.1.0" line is stale — current state is 1.4.0 RPC / 1.2.0 JS. The skew test (`version-handshake.test.ts`) and exact-match assertion in `smoke.test.ts` continue to pass.
 
 **Tests:**
 - [x] `just test-in-app-fast` exits 0 (14/14 default sweep green).
@@ -1972,10 +1972,10 @@ Surface bumps: none. The `dir` field is additive within the existing `startTugco
 - [x] AT-series test failures write a full `tests/app-test/logs/<test>-trace.json` artifact for offline analysis. (Landed 0f, wired into AT0016.)
 - [x] AT-series test failures emit the Tug.app log tail (200 lines) *before* the bun assertion error. (Landed 0d, 2026-04-24.)
 - [x] Matcher failure messages carry a one-line-per-event summary above the full JSON dump. (Landed 0e, 2026-04-24.)
-- [ ] `tests/app-test/_smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
+- [ ] `tests/app-test/smoke-native.test.ts` passes; `isTrusted: true` delivery verified.
 - [ ] `tests/app-test/at0003-pane-activation.test.ts` uses `nativeClickAtElement` for every user-gesture click, passes `just test-in-app`, and matches interactive real-app behavior. (3b.)
-- [ ] `tests/app-test/_smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.
-- [ ] `tests/app-test/_smoke-em-live.test.ts` passes on opt-in (`TUGCODE_LIVE=1`).
+- [ ] `tests/app-test/smoke-em.test.ts` passes; tugcode stub-mode round-trip verified.
+- [ ] `tests/app-test/smoke-em-live.test.ts` passes on opt-in (`TUGCODE_LIVE=1`).
 - [ ] `__tug.version === "1.1.0"`; harness handshake asserts.
 - [ ] Every row in [#s04-mseries-scenarios] marked with a test-file location has a green test.
 - [ ] Per-test drift-prevention documented for every new AT-series test landed by this plan.
@@ -2007,10 +2007,10 @@ Surface bumps: none. The `dir` field is additive within the existing `startTugco
 | Matcher annotations | Force an AT0001 out-of-order failure; terminal output contains "Order violation" and a numbered one-line summary |
 | Log-tail-first on failure | Force an AT0001 failure; Tug.app log tail banner appears before the bun assertion error |
 | Trace artifact | Force an AT0001 failure; `tests/app-test/logs/at0001-tab-switch-fc-trace.json` exists and `jq '.' <file>` succeeds |
-| Native-event smoke | `bun test tests/app-test/_smoke-native.test.ts` exits 0 |
+| Native-event smoke | `bun test tests/app-test/smoke-native.test.ts` exits 0 |
 | AT0003 trusted-click rewrite | `grep -cE "focusElement\|app\.click\(" tests/app-test/at0003-pane-activation.test.ts` = 0; `just test-in-app` exits 0; manual real-app repro matches |
-| EM-card smoke | `bun test tests/app-test/_smoke-em.test.ts` exits 0 |
-| Live EM-card smoke | `TUGCODE_LIVE=1 bun test tests/app-test/_smoke-em-live.test.ts` exits 0 |
+| EM-card smoke | `bun test tests/app-test/smoke-em.test.ts` exits 0 |
+| Live EM-card smoke | `TUGCODE_LIVE=1 bun test tests/app-test/smoke-em-live.test.ts` exits 0 |
 | AT-series sweep | `bun test tests/app-test/m*.test.ts` exits 0, all rows in [#s04-mseries-scenarios] marked present have files |
 | Drift prevention | Per-test revert-cycle documented in PR descriptions |
 | Release binary unchanged | `wc -c` diff within noise; `nm` inspection shows no extension symbols |

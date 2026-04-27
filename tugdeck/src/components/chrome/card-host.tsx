@@ -289,7 +289,7 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  */
 export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
   // Dropped m36's `fallbackPersistKey` parameter.
-  // Audit (verified by `_smoke-capture-phase-save.test.ts`)
+  // Audit (verified by `smoke-capture-phase-save.test.ts`)
   // proved every activation-trigger source already saves in capture
   // phase — `document.activeElement` is correct at save time, no
   // fallback needed.
@@ -641,7 +641,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `captureFocus`. The fallback was a
   // workaround for the case where the deactivation save fired AFTER
   // focus moved to a sibling card. Layer 1's audit (verified by
-  // `_smoke-capture-phase-save.test.ts`) proved every activation-
+  // `smoke-capture-phase-save.test.ts`) proved every activation-
   // trigger source already saves in capture phase before focus moves
   // — the fallback is unnecessary in steady state. `captureFocus`
   // returned to its single-argument signature.)
@@ -1256,7 +1256,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // (Retired the `lastFocusedPersistKeyRef` focusin listener that m36
   // added. Capture-phase deactivation save
   // is the canonical capture point; `document.activeElement` is
-  // sufficient there. See `_smoke-capture-phase-save.test.ts`.)
+  // sufficient there. See `smoke-capture-phase-save.test.ts`.)
 
   // ---- Render ----
   if (!registration) {

@@ -1,5 +1,5 @@
 /**
- * _smoke-cold-boot.test.ts — Layer-2 gate for the two-process
+ * smoke-cold-boot.test.ts — Layer-2 gate for the two-process
  * cold-boot harness primitives.
  *
  * ## What this file pins
@@ -56,13 +56,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp } from "../_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
   seedTugbankForLaunch,
   tugbankRead,
-} from "./_harness/tugbank-helpers";
+} from "../_harness/tugbank-helpers";
 
 const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
 
