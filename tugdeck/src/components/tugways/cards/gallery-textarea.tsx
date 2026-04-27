@@ -40,7 +40,7 @@ export function GalleryTextarea() {
     <div className="cg-content" data-testid="gallery-textarea">
 
       {/*
-        `componentStatePreservationKey` opts each textarea into DOM-authority persistence
+        `componentStatePreservationKey` opts each textarea into DOM-authority state preservation
         (CardHost captures `.value` / selection / scroll at save time and
         reapplies on restore). Keys must be unique within this card's
         content tree; by convention we use a

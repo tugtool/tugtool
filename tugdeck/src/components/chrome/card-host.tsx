@@ -148,7 +148,7 @@ function supportsTextSelection(
 }
 
 /**
- * DOM-authority persistence for native `<input>` and `<textarea>` elements
+ * DOM-authority state preservation for native `<input>` and `<textarea>` elements
  * carrying `data-tug-state-key="<key>"`. Walks the card's own subtree
  * and snapshots each element's value, scroll, and selection offsets keyed
  * by the attribute value.
@@ -522,7 +522,7 @@ export function applyFormControlSnapshot(
 }
 
 /**
- * DOM-authority persistence for nested scrollable regions inside a card.
+ * DOM-authority state preservation for nested scrollable regions inside a card.
  *
  * Walks the card subtree for every element carrying
  * `data-tug-scroll-key="<key>"` and snapshots its `scrollLeft` /

@@ -13,7 +13,7 @@
  * implementation operations (mount-time React state init) destroyed
  * user-visible state.
  *
- * Uses `componentStatePreservationKey` + `useComponentPersistence` to each
+ * Uses `componentStatePreservationKey` + `useComponentStatePreservation` to each
  * component. Two patterns coexist:
  *
  *   - **Uncontrolled-friendly** (`tug-switch`, `tug-radio-group`):
@@ -53,7 +53,7 @@
  * persistence by the framework-level tests (m04 app-resign-return,
  * m05 app-hide-unhide, m17 saveState RPC parity), which exercise
  * the same will-phase save → cardStateCache write path that
- * `useComponentPersistence` rides on. Component-specific cmd-tab
+ * `useComponentStatePreservation` rides on. Component-specific cmd-tab
  * coverage can be added as a follow-up if a regression surfaces.
  *
  * Each test seeds `bag.components.{componentStatePreservationKey}` with a non-default

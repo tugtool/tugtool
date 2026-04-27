@@ -11,9 +11,24 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken |
-| Status | proposed |
+| Status | complete (2026-04-27) |
 | Target branch | `state-preservation-rename` |
 | Last updated | 2026-04-27 |
+
+### Audit Close-out {#audit-close-out}
+
+All 12 success criteria green at Step 7:
+
+- **SC1–SC5, SC11a–b** (grep contracts on identifiers, DOM attribute, prose): 0 hits.
+- **SC6** (no `*persistence*` files under `tugways/`): empty.
+- **SC7** (no `*persist*` files under `__tests__/` except grandfathered `selection-persistence-greps.test.ts`): empty.
+- **SC8** `bun x tsc --noEmit`: exit 0.
+- **SC9** `bun test`: 2414/2414 pass.
+- **SC10** `just app-test`: 45/45 files green; 101/101 tests pass; `VERDICT: PASS`.
+
+Steps 1–7 landed across 7 commits (`05507e10` plan → `47d759e2` Steps 1+2 → `48942334` Step 3 → `42d150b0` Step 4 → `6f8feced` Step 5 → `42147b9e` Step 6 → Step 7 audit-only commit pending).
+
+Step 7 also caught and fixed 7 residual `useComponentPersistence` mentions in app-test docstrings (at0026/27/30/31) plus 8 "DOM-authority persistence" / "Component Persistence Protocol" prose holdouts in card-host, tug-input, tug-textarea, gallery-input/textarea/registrations, and `content-ready-spike.test.tsx`. No behavior changes, no regressions.
 
 ---
 

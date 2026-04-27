@@ -390,7 +390,7 @@ describe("S6: Independent sibling components", () => {
 // S7: Full state-preservation context indirection (mirrors real tug-pane-chrome)
 // ===========================================================================
 
-describe("S7: Persistence context indirection", () => {
+describe("S7: State-preservation context indirection", () => {
   it("the pattern works through context registration (like real useCardStatePreservation)", () => {
     // This simulates the full real pattern:
     // 1. Parent (TugPane) provides registration context

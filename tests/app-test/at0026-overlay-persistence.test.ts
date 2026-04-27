@@ -12,7 +12,7 @@
  * for the open-flag axis: an internal implementation operation
  * (mount-time `useState(false)`) destroyed user-visible state.
  *
- * Uses `componentStatePreservationKey` + `useComponentPersistence` to
+ * Uses `componentStatePreservationKey` + `useComponentStatePreservation` to
  * `TugSheet`. The component is uncontrolled-only — open lives in
  * `useState` — so capture reads the live value, restore writes back
  * via `setOpen`. Per-surface payloads (form fields inside the
@@ -41,7 +41,7 @@
  *     load → restore.
  *   - The cmd-tab transition is not added; m04 / m05 / m17 already
  *     cover the will-phase save → cardStateCache write path that
- *     `useComponentPersistence` rides on.
+ *     `useComponentStatePreservation` rides on.
  *
  * The test seeds `bag.components.{componentStatePreservationKey}` with `{ open: true }`,
  * drives `appReload`, and asserts the sheet's portal-rendered content

@@ -11,7 +11,7 @@
  * engine drafts already persisted via `bag.content`
  * (`{ currentRoute, perRoute, maximized }`) and are gated by [AT0024].
  *
- * Uses `useComponentPersistence` registered with
+ * Uses `useComponentStatePreservation` registered with
  * `componentStatePreservationKey="entry-chrome"` that captures `{ toolsOpen }` into
  * `bag.components[componentStatePreservationKey]`. The active route stays in
  * `bag.content.currentRoute` because it is the index into
@@ -52,7 +52,7 @@
  * the editor. CardHost's component-restore effect is one-shot at
  * card mount (gated by `hasRestoredComponentsRef`), so it fires
  * before tide's `TugPromptEntry` exists and registers via
- * `useComponentPersistence`. The seeded `bag.components.entry-chrome`
+ * `useComponentStatePreservation`. The seeded `bag.components.entry-chrome`
  * payload is dropped as an orphan. This is a gap in the [A9c]
  * orchestrator's lazy-mount handling, not in 25G's wiring; closing
  * it requires either re-firing component-restore on registry

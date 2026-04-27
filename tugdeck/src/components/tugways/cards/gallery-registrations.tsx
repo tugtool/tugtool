@@ -777,10 +777,10 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.architecture,
   });
 
-  // Canonical manual-verification card for the Component Persistence
-  // Protocol ([D13], [A9]). Every component that opts in should land a
-  // new section here so reload / tab-switch / cmd-tab survival is easy
-  // to sanity-check by hand.
+  // Canonical manual-verification card for the Component State
+  // Preservation Protocol ([D13], [A9]). Every component that opts in
+  // should land a new section here so reload / tab-switch / cmd-tab
+  // survival is easy to sanity-check by hand.
   registerCard({
     componentId: "gallery-state-preservation",
     contentFactory: (_cardId) => <GalleryStatePreservation />,

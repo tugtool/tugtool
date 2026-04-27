@@ -11,7 +11,7 @@
  * an internal implementation operation (mount-time Radix init)
  * destroyed user-visible state.
  *
- * Uses `componentStatePreservationKey` + `useComponentPersistence` to
+ * Uses `componentStatePreservationKey` + `useComponentStatePreservation` to
  * TugAccordion. Uncontrolled accordions mirror Radix's value in a
  * `useState` so capture/restore can read/write it; controlled
  * accordions dispatch `toggleSection` through the responder chain

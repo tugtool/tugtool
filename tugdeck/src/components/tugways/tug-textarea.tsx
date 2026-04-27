@@ -110,7 +110,7 @@ export interface TugTextareaProps
    */
   borderless?: boolean;
   /**
-   * Opt into DOM-authority persistence. When set, the rendered
+   * Opt into DOM-authority state preservation. When set, the rendered
    * `<textarea>` carries `data-tug-state-key={componentStatePreservationKey}`.
    * CardHost's save path captures the element's `value`, selection,
    * and scroll at save time and reapplies them on restore.
