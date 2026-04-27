@@ -255,6 +255,37 @@ dmg:
 setup-dev-signing:
     scripts/setup-dev-signing.sh
 
+# Remove the local `Tug Dev` code-signing identity from the login
+# keychain and clear the build-time fingerprint sentinel. Use this
+# when decommissioning the project on a machine, debugging confused
+# signing state, or migrating to a different signing identity.
+#
+# Idempotent: re-running after the cert is gone reports
+# "nothing to remove" and exits 0.
+#
+# After teardown, `just app-test` will hit the fail-loud path
+# (unless APP_TEST_SKIP_RESIGN=1 is set). Run `just setup-dev-signing`
+# + `just build-app` to restore working signing.
+teardown-dev-signing:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
+        echo "Removing 'Tug Dev' identity from login keychain..."
+        # delete-identity matches on the certificate common name (`-c`)
+        # and removes the cert + private key pair atomically.
+        security delete-identity -c "Tug Dev" >/dev/null
+        echo "✓ 'Tug Dev' identity removed."
+    else
+        echo "'Tug Dev' identity not found in login keychain; nothing to remove."
+    fi
+    if [ -f .tugtool/code-sign-fingerprint ]; then
+        rm -f .tugtool/code-sign-fingerprint
+        echo "✓ Sentinel .tugtool/code-sign-fingerprint cleared."
+    fi
+    echo
+    echo "Done. To restore working signing, run:"
+    echo "  just setup-dev-signing && just build-app"
+
 # Build Tug.app (Debug) end-to-end: Rust debug binaries, tugdeck deps
 # + production dist, app-test deps, xcodebuild, and a re-sign with the
 # local `Tug Dev` identity so the Accessibility grant persists across
@@ -431,54 +462,78 @@ app-test *FILES:
         exit 1
     fi
 
-    # Re-sign with the stable identity so the AX grant persists.
-    # Three branches:
-    #   - Identity present: re-sign; on failure, exit non-zero with a
-    #     diagnostic. Previously the trailing `|| true` swallowed
-    #     failures, making botched signatures look like AX-grant
-    #     issues downstream.
-    #   - Identity missing AND APP_TEST_SKIP_RESIGN=1: print a notice
-    #     and skip. Useful for first-time onboarding.
-    #   - Identity missing without the opt-out: exit non-zero with an
-    #     actionable message naming `just setup-dev-signing` and the
-    #     env-var bypass.
-    if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
-        if ! codesign --sign "Tug Dev" --force --deep \
-            --preserve-metadata=entitlements,requirements \
-            "$APP_DIR" >/dev/null 2>&1; then
-            echo "error: codesign re-sign failed during app-test setup" >&2
-            exit 1
-        fi
-    elif [ "${APP_TEST_SKIP_RESIGN:-}" = "1" ]; then
-        echo "==> APP_TEST_SKIP_RESIGN=1: skipping re-sign ('Tug Dev' identity not found)"
-    else
-        echo "error: 'Tug Dev' code-signing identity missing." >&2
-        echo "       Run 'just setup-dev-signing' to install it," >&2
-        echo "       or set APP_TEST_SKIP_RESIGN=1 to bypass." >&2
-        echo "       See tests/app-test/README.md → 'Accessibility grant" >&2
-        echo "       failure modes' for diagnosis." >&2
-        exit 1
-    fi
-
-    # Drift detection: compare the bundle's current designated
-    # requirement (DR) against the sentinel captured by the last
-    # successful `build-app`. A mismatch is almost always the
-    # symptom of a re-created 'Tug Dev' cert (different public key
-    # → different DR → AX grant invalidated). We warn but don't
-    # fatal here — the user may have re-granted AX manually, in
-    # which case the sweep should still proceed; if AX is actually
-    # broken the harness's per-spawn preflight will throw
-    # AccessibilityPermissionMissingError with full context.
+    # Compute the bundle's current designated requirement (DR) ONCE,
+    # plus the sentinel value from the last successful `build-app`.
+    # Both the early-skip optimization and the post-resign drift check
+    # reuse them.
     SENTINEL_FILE=".tugtool/code-sign-fingerprint"
     CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
-    if [ -z "$CURRENT_DR" ]; then
-        echo "[warn] code-sign: could not extract designated requirement from $APP_DIR" >&2
-    elif [ -f "$SENTINEL_FILE" ]; then
+    SAVED_DR=""
+    if [ -f "$SENTINEL_FILE" ]; then
         SAVED_DR="$(cat "$SENTINEL_FILE")"
-        if [ "$CURRENT_DR" != "$SAVED_DR" ]; then
+    fi
+
+    # Optimization: if the bundle DR already matches the sentinel,
+    # the bundle is signed with the same identity that's behind the
+    # AX grant — re-signing would be a no-op (worst case: re-sign
+    # with a re-created 'Tug Dev' cert that has a different leaf
+    # hash, which would silently invalidate the AX grant). Skip it.
+    #
+    # Falls through to the re-sign branch when:
+    #   - DR extraction failed (CURRENT_DR is empty),
+    #   - sentinel doesn't exist yet (first run after teardown +
+    #     setup, or before first build-app),
+    #   - DR mismatches sentinel (Xcode IDE Build between runs,
+    #     or cert re-created since last build-app).
+    if [ -n "$CURRENT_DR" ] && [ -n "$SAVED_DR" ] && [ "$CURRENT_DR" = "$SAVED_DR" ]; then
+        echo "==> Re-sign skipped (bundle DR matches sentinel)"
+    else
+        # Re-sign with the stable identity so the AX grant persists.
+        # Three branches:
+        #   - Identity present: re-sign; on failure, exit non-zero
+        #     with a diagnostic. Previously the trailing `|| true`
+        #     swallowed failures, making botched signatures look like
+        #     AX-grant issues downstream.
+        #   - Identity missing AND APP_TEST_SKIP_RESIGN=1: print a
+        #     notice and skip. Useful for first-time onboarding.
+        #   - Identity missing without the opt-out: exit non-zero
+        #     with an actionable message naming
+        #     `just setup-dev-signing` and the env-var bypass.
+        if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
+            if ! codesign --sign "Tug Dev" --force --deep \
+                --preserve-metadata=entitlements,requirements \
+                "$APP_DIR" >/dev/null 2>&1; then
+                echo "error: codesign re-sign failed during app-test setup" >&2
+                exit 1
+            fi
+        elif [ "${APP_TEST_SKIP_RESIGN:-}" = "1" ]; then
+            echo "==> APP_TEST_SKIP_RESIGN=1: skipping re-sign ('Tug Dev' identity not found)"
+        else
+            echo "error: 'Tug Dev' code-signing identity missing." >&2
+            echo "       Run 'just setup-dev-signing' to install it," >&2
+            echo "       or set APP_TEST_SKIP_RESIGN=1 to bypass." >&2
+            echo "       See tests/app-test/README.md → 'Accessibility grant" >&2
+            echo "       failure modes' for diagnosis." >&2
+            exit 1
+        fi
+
+        # Drift detection: re-extract the post-resign DR (re-signing
+        # may have changed it if the cert was re-created since the
+        # last build-app) and compare against the sentinel. A
+        # mismatch here means the cert behind the saved fingerprint
+        # is no longer the cert signing the bundle. We warn but
+        # don't fatal — the user may have re-granted AX manually,
+        # in which case the sweep should still proceed; if AX is
+        # actually broken the harness's per-spawn preflight will
+        # throw AccessibilityPermissionMissingError with full
+        # context.
+        POST_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
+        if [ -z "$POST_DR" ]; then
+            echo "[warn] code-sign: could not extract designated requirement from $APP_DIR" >&2
+        elif [ -n "$SAVED_DR" ] && [ "$POST_DR" != "$SAVED_DR" ]; then
             echo "[warn] code-sign fingerprint drift detected." >&2
             echo "       Saved : $SAVED_DR" >&2
-            echo "       Current: $CURRENT_DR" >&2
+            echo "       Current: $POST_DR" >&2
             echo "       AX grant likely invalidated; see tests/app-test/README.md" >&2
             echo "       § 'Accessibility grant failure modes' for diagnosis." >&2
         fi
