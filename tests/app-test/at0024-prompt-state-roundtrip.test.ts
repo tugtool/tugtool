@@ -28,7 +28,7 @@
  *      input's own `useLayoutEffect` — and the `pendingRestoreRef`
  *      buffer that catches engine-not-ready is gated on the input
  *      OWNING persistence, which the entry disables via
- *      `persistState={false}`. The result: cold-boot restores
+ *      `preserveState={false}`. The result: cold-boot restores
  *      that fire while the engine is still being constructed
  *      silently no-op.
  *

@@ -22,7 +22,7 @@ import React from "react";
 import type { IDeckManagerStore } from "../deck-manager-store";
 import type { DeckState, CardStateBag } from "../layout-tree";
 import { DeckManagerContext } from "../deck-manager-context";
-import { ComponentPersistenceRegistry } from "../components/tugways/component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "../components/tugways/component-state-preservation-registry";
 import { CardStateOrchestrator } from "../card-state-orchestrator";
 
 /** Build a minimal no-op DeckManager store mock suitable for unit tests. */
@@ -34,9 +34,9 @@ export function makeMockStore(
   const activationCallbacks = new Map<string, () => void>();
   const deactivationCallbacks = new Map<string, () => void>();
   const cardHostRoots = new Map<string, HTMLElement>();
-  const componentRegistries = new Map<string, ComponentPersistenceRegistry>();
+  const componentStatePreservationRegistries = new Map<string, ComponentStatePreservationRegistry>();
   const orchestrator = new CardStateOrchestrator((cardId) =>
-    componentRegistries.get(cardId),
+    componentStatePreservationRegistries.get(cardId),
   );
 
   const base: IDeckManagerStore = {
@@ -78,16 +78,16 @@ export function makeMockStore(
       saveCallbacks.get(id)?.();
     },
     togglePaneCollapse: () => {},
-    getComponentRegistry: (cardId: string) => {
-      let registry = componentRegistries.get(cardId);
+    getComponentStatePreservationRegistry: (cardId: string) => {
+      let registry = componentStatePreservationRegistries.get(cardId);
       if (!registry) {
-        registry = new ComponentPersistenceRegistry();
-        componentRegistries.set(cardId, registry);
+        registry = new ComponentStatePreservationRegistry();
+        componentStatePreservationRegistries.set(cardId, registry);
       }
       return registry;
     },
-    peekComponentRegistry: (cardId: string) =>
-      componentRegistries.get(cardId),
+    peekComponentStatePreservationRegistry: (cardId: string) =>
+      componentStatePreservationRegistries.get(cardId),
     registerCardAssembler: (cardId, assembler) =>
       orchestrator.registerAssembler(cardId, assembler),
     captureCardState: (cardId) => orchestrator.captureCardState(cardId),

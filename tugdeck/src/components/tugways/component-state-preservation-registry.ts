@@ -1,14 +1,15 @@
 /**
- * ComponentPersistenceRegistry — per-card registry of opt-in component
- * persistence entries.
+ * ComponentStatePreservationRegistry — per-card registry of opt-in
+ * component state preservation entries.
  *
- * Foundational plumbing for the Component Persistence Protocol ([D13],
- * architecture piece [A9]). Stateful `tugways` components opt into
- * persistence by registering a `persistKey` plus capture/restore closures
- * via `useComponentPersistence`. The registry holds one entry per scoped
- * key and exposes a parent-first iteration order so the framework can
- * harvest the full component tree into a single `bag.components` axis at
- * capture time and restore it in the same order.
+ * Foundational plumbing for the Component State Preservation Protocol
+ * ([D13], architecture piece [A9]). Stateful `tugways` components opt
+ * into state preservation by registering a `componentStatePreservationKey`
+ * plus capture/restore closures via `useComponentStatePreservation`.
+ * The registry holds one entry per scoped key and exposes a
+ * parent-first iteration order so the framework can harvest the full
+ * component tree into a single `bag.components` axis at capture time
+ * and restore it in the same order.
  *
  * One registry instance is created per card on first `register` call and
  * cleared / discarded when the card is destroyed (see
@@ -17,7 +18,7 @@
  * (`captureCardState` / `restoreCardState`) lives elsewhere and consumes
  * this registry.
  *
- * References: [D13] component persistence protocol, [A9a] hook
+ * References: [D13] component state preservation protocol, [A9a] hook
  * registration, [A9b] scope nesting, [A9c] framework orchestration.
  */
 
@@ -27,10 +28,11 @@ import { isDevEnv } from "../../lib/dev-env";
 /**
  * A single entry in the registry.
  *
- * The closures are held as refs so `useComponentPersistence` can sync the
- * latest render's closures on every render without tearing down the
- * registration. The framework reads `captureRef.current` / `restoreRef.current`
- * at harvest time, so a stale closure never enters the bag.
+ * The closures are held as refs so `useComponentStatePreservation` can
+ * sync the latest render's closures on every render without tearing
+ * down the registration. The framework reads `captureRef.current` /
+ * `restoreRef.current` at harvest time, so a stale closure never enters
+ * the bag.
  *
  * `treePath` records the component's position in the card's React tree as
  * a sequence of child indices from the card root down. It is the sort key
@@ -57,23 +59,25 @@ function compareTreePaths(a: readonly number[], b: readonly number[]): number {
 }
 
 /**
- * Per-card registry of opt-in component persistence entries.
+ * Per-card registry of opt-in component state preservation entries.
  *
  * Each scoped key maps to one `RegistryEntry`. Keys are the product of
- * any enclosing `<PersistenceScope prefix>` context and the component's
- * own `persistKey` prop; uniqueness at card scope is a dev-only invariant
- * enforced here (duplicates throw in dev, silently overwrite in prod to
- * keep the app alive if a bug slips through).
+ * any enclosing `<ComponentStatePreservationScope prefix>` context and
+ * the component's own `componentStatePreservationKey` prop; uniqueness
+ * at card scope is a dev-only invariant enforced here (duplicates throw
+ * in dev, silently overwrite in prod to keep the app alive if a bug
+ * slips through).
  */
-export class ComponentPersistenceRegistry {
+export class ComponentStatePreservationRegistry {
   private readonly entries: Map<string, RegistryEntry> = new Map();
 
   /**
-   * Register a component for persistence.
+   * Register a component for state preservation.
    *
-   * `scopedKey` is the fully-qualified key (after `<PersistenceScope>`
-   * prefixing). `treePath` records the registrant's position in the card's
-   * React tree so iteration can walk parent-first.
+   * `scopedKey` is the fully-qualified key (after
+   * `<ComponentStatePreservationScope>` prefixing). `treePath` records
+   * the registrant's position in the card's React tree so iteration can
+   * walk parent-first.
    *
    * Dev-only: throws if `scopedKey` is already registered. In production
    * the new entry replaces the old silently — the alternative (throwing
@@ -89,7 +93,7 @@ export class ComponentPersistenceRegistry {
     if (this.entries.has(scopedKey)) {
       if (isDevEnv()) {
         throw new Error(
-          `[A9] duplicate persistKey within card scope: "${scopedKey}"`,
+          `[A9] duplicate componentStatePreservationKey within card scope: "${scopedKey}"`,
         );
       }
     }
@@ -102,7 +106,7 @@ export class ComponentPersistenceRegistry {
 
   /**
    * Unregister the entry for `scopedKey`. No-op if the key is absent.
-   * Called from `useComponentPersistence`'s cleanup.
+   * Called from `useComponentStatePreservation`'s cleanup.
    */
   unregister(scopedKey: string): void {
     this.entries.delete(scopedKey);

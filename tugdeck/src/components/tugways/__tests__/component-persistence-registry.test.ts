@@ -1,6 +1,6 @@
 /**
- * ComponentPersistenceRegistry — registry semantics under the Component
- * Persistence Protocol ([D13], [A9]).
+ * ComponentStatePreservationRegistry — registry semantics under the
+ * Component State Preservation Protocol ([D13], [A9]).
  *
  * These tests pin the primitives the framework relies on without
  * exercising the React hook layer above it:
@@ -9,8 +9,8 @@
  *      ancestors before descendants (per [D13] / Q3 resolution) so a
  *      composite's capture sees a consistent subtree.
  *   2. Duplicate scopedKey throws in dev — the dev-only invariant that
- *      catches persistKey collisions at registration time rather than
- *      silently overwriting state at capture time.
+ *      catches componentStatePreservationKey collisions at registration
+ *      time rather than silently overwriting state at capture time.
  *   3. Unregister removes an entry cleanly and frees the key.
  *   4. clear() empties the registry in one shot (called from the deck
  *      manager's card-destruction path).
@@ -23,7 +23,7 @@
 
 import { describe, test, expect } from "bun:test";
 import type { RefObject } from "react";
-import { ComponentPersistenceRegistry } from "../component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "../component-state-preservation-registry";
 
 function makeCaptureRef<T>(fn: () => T): RefObject<() => unknown> {
   return { current: fn as () => unknown };
@@ -35,9 +35,9 @@ function makeRestoreRef<T>(
   return { current: fn as (saved: unknown) => void };
 }
 
-describe("ComponentPersistenceRegistry — tree-order iteration", () => {
+describe("ComponentStatePreservationRegistry — tree-order iteration", () => {
   test("entriesInTreeOrder returns parents before descendants", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     // Deliberate mixed registration order — iteration order must come
     // from treePath, not insertion order.
     registry.register(
@@ -82,7 +82,7 @@ describe("ComponentPersistenceRegistry — tree-order iteration", () => {
   });
 
   test("sibling order follows tree-path index", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "s2",
       makeCaptureRef(() => 0),
@@ -110,7 +110,7 @@ describe("ComponentPersistenceRegistry — tree-order iteration", () => {
   });
 
   test("entries with identical treePath fall back to insertion order", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "first",
       makeCaptureRef(() => 0),
@@ -138,9 +138,9 @@ describe("ComponentPersistenceRegistry — tree-order iteration", () => {
   });
 });
 
-describe("ComponentPersistenceRegistry — uniqueness", () => {
+describe("ComponentStatePreservationRegistry — uniqueness", () => {
   test("duplicate scopedKey throws in dev", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "dup",
       makeCaptureRef(() => 0),
@@ -154,13 +154,13 @@ describe("ComponentPersistenceRegistry — uniqueness", () => {
         makeRestoreRef(() => undefined),
         [1],
       );
-    }).toThrow(/duplicate persistKey within card scope: "dup"/);
+    }).toThrow(/duplicate componentStatePreservationKey within card scope: "dup"/);
   });
 });
 
-describe("ComponentPersistenceRegistry — unregister", () => {
+describe("ComponentStatePreservationRegistry — unregister", () => {
   test("unregister removes the entry and frees the key", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "one",
       makeCaptureRef(() => "A"),
@@ -185,7 +185,7 @@ describe("ComponentPersistenceRegistry — unregister", () => {
   });
 
   test("unregister on unknown key is a no-op", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "present",
       makeCaptureRef(() => 0),
@@ -197,9 +197,9 @@ describe("ComponentPersistenceRegistry — unregister", () => {
   });
 });
 
-describe("ComponentPersistenceRegistry — clear", () => {
+describe("ComponentStatePreservationRegistry — clear", () => {
   test("clear empties the registry", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     registry.register(
       "a",
       makeCaptureRef(() => 0),

@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -133,9 +133,10 @@ export interface TugCheckboxProps {
    */
   role?: TugCheckboxRole;
   /**
-   * Opt the checkbox into the Component Persistence Protocol ([D13], [A9]).
-   * When provided (and rendered inside a card), the checkbox's checked
-   * state is captured into `bag.components[persistKey]` at save time and
+   * Opt the checkbox into the Component State Preservation Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * checkbox's checked state is captured into
+   * `bag.components[componentStatePreservationKey]` at save time and
    * reapplied on the next card mount.
    *
    * Controlled (`checked` prop provided): restore dispatches a `toggle`
@@ -144,18 +145,19 @@ export interface TugCheckboxProps {
    * uncontrolled mode, the checkbox tracks its own state internally so
    * restore can programmatically update it.
    *
-   * Keys are unique within a card scope (the Step 16 registry enforces
-   * this in dev via a throw); use `<PersistenceScope prefix="…">` to
-   * namespace embedded checkboxes.
+   * Keys are unique within a card scope (the registry enforces this in
+   * dev via a throw); use `<ComponentStatePreservationScope prefix="…">`
+   * to namespace embedded checkboxes.
    *
-   * Absence of `persistKey` means "not persisted" — gallery demos and
-   * tests that render the checkbox standalone stay unaffected.
+   * Absence of `componentStatePreservationKey` means "not preserved" —
+   * gallery demos and tests that render the checkbox standalone stay
+   * unaffected.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugCheckbox`'s persisted state. */
-interface TugCheckboxPersistState {
+/** Serialized shape of `TugCheckbox`'s preserved state. */
+interface TugCheckboxState {
   checked: boolean;
 }
 
@@ -176,7 +178,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       className,
       "aria-label": ariaLabel,
       role,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -195,10 +197,11 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     // (classic controlled mode). When it doesn't, Radix normally owns
     // internal state via `defaultChecked` — but that state is opaque
     // to us, so we can't programmatically restore it. To keep opt-in
-    // persistence working cleanly in the uncontrolled case, mirror
-    // Radix's state in our own `useState` when `persistKey` is set and
-    // pass it to Radix as `checked`. The user still clicks the same
-    // element; `handleCheckedChange` keeps the mirror in sync.
+    // state preservation working cleanly in the uncontrolled case,
+    // mirror Radix's state in our own `useState` when
+    // `componentStatePreservationKey` is set and pass it to Radix as
+    // `checked`. The user still clicks the same element;
+    // `handleCheckedChange` keeps the mirror in sync.
     const isExternallyControlled = checked !== undefined;
     const [internalChecked, setInternalChecked] = useState<TugCheckedState>(
       defaultChecked ?? false,
@@ -227,20 +230,21 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
 
-    // Opt-in Component Persistence Protocol. The hook no-ops when
-    // `persistKey` is undefined, so standalone / gallery uses remain
-    // unaffected. Capture reads the `effectiveChecked` source of
-    // truth; restore updates internal state in the uncontrolled path
-    // and dispatches a `toggle` for the controlled path (a best-effort
-    // re-dispatch; the parent is still in charge). [D13] / [A9].
-    useComponentPersistence<TugCheckboxPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. The hook no-ops
+    // when `componentStatePreservationKey` is undefined, so standalone
+    // / gallery uses remain unaffected. Capture reads the
+    // `effectiveChecked` source of truth; restore updates internal
+    // state in the uncontrolled path and dispatches a `toggle` for the
+    // controlled path (a best-effort re-dispatch; the parent is still
+    // in charge). [D13] / [A9].
+    useComponentStatePreservation<TugCheckboxState>({
+      componentStatePreservationKey,
       captureState: () => ({ checked: effectiveChecked === true }),
       restoreState: (saved) => {
         const nextBool =
-          typeof (saved as TugCheckboxPersistState | undefined)?.checked ===
+          typeof (saved as TugCheckboxState | undefined)?.checked ===
           "boolean"
-            ? (saved as TugCheckboxPersistState).checked
+            ? (saved as TugCheckboxState).checked
             : false;
         if (isExternallyControlled) {
           controlDispatch({

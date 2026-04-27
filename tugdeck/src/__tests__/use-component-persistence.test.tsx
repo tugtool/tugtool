@@ -1,8 +1,9 @@
 /**
- * useComponentPersistence + <PersistenceScope> behavior tests.
+ * useComponentStatePreservation + <ComponentStatePreservationScope>
+ * behavior tests.
  *
- * Pins the opt-in Component Persistence Protocol ([D13], [A9]) surface
- * visible to component authors:
+ * Pins the opt-in Component State Preservation Protocol ([D13], [A9])
+ * surface visible to component authors:
  *
  *   1. Mount-time register / unmount-time unregister via the hook's
  *      `useLayoutEffect` — per [L03] registration lands before any
@@ -11,13 +12,15 @@
  *      up immediately through the registry's `captureRef.current()`
  *      path, confirming the framework never sees stale mount-time
  *      closures.
- *   3. `<PersistenceScope prefix>` prepends `prefix + "/"` to child
- *      `persistKey`s; nested scopes concatenate additively.
+ *   3. `<ComponentStatePreservationScope prefix>` prepends `prefix +
+ *      "/"` to child `componentStatePreservationKey`s; nested scopes
+ *      concatenate additively.
  *   4. Duplicate scoped keys at the same card scope throw in dev via
- *      the registry's assertion from Step 16.
- *   5. Graceful no-op when rendered outside a `CardComponentRegistryContext`
- *      provider — hook registers nothing, and a single dev-warn fires
- *      per mount (not per render).
+ *      the registry's assertion.
+ *   5. Graceful no-op when rendered outside a
+ *      `CardComponentStatePreservationContext` provider — hook
+ *      registers nothing, and a single dev-warn fires per mount (not
+ *      per render).
  */
 
 import "./setup-rtl";
@@ -26,38 +29,38 @@ import React from "react";
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { render, cleanup, act } from "@testing-library/react";
 
-import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "@/components/tugways/component-state-preservation-registry";
 import {
-  CardComponentRegistryContext,
-  PersistenceScope,
-  useComponentPersistence,
-  usePersistenceScopePrefix,
-} from "@/components/tugways/use-component-persistence";
+  CardComponentStatePreservationContext,
+  ComponentStatePreservationScope,
+  useComponentStatePreservation,
+  useComponentStatePreservationScopePrefix,
+} from "@/components/tugways/use-component-state-preservation";
 
 function renderUnderCard(
-  registry: ComponentPersistenceRegistry,
+  registry: ComponentStatePreservationRegistry,
   ui: React.ReactElement,
 ) {
   return render(
-    <CardComponentRegistryContext.Provider
+    <CardComponentStatePreservationContext.Provider
       value={{ registry, prefix: "", treePath: [] }}
     >
       {ui}
-    </CardComponentRegistryContext.Provider>,
+    </CardComponentStatePreservationContext.Provider>,
   );
 }
 
 function Consumer({
-  persistKey,
+  componentStatePreservationKey,
   value,
   onRestore,
 }: {
-  persistKey: string;
+  componentStatePreservationKey: string;
   value: unknown;
   onRestore?: (saved: unknown) => void;
 }): null {
-  useComponentPersistence({
-    persistKey,
+  useComponentStatePreservation({
+    componentStatePreservationKey,
     captureState: () => value,
     restoreState: (saved) => onRestore?.(saved),
   });
@@ -68,13 +71,13 @@ afterEach(() => {
   cleanup();
 });
 
-describe("useComponentPersistence — registration lifecycle", () => {
+describe("useComponentStatePreservation — registration lifecycle", () => {
   test("mount registers; unmount unregisters", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
 
     const { unmount } = renderUnderCard(
       registry,
-      <Consumer persistKey="item" value={1} />,
+      <Consumer componentStatePreservationKey="item" value={1} />,
     );
 
     expect(registry.keys()).toEqual(new Set(["item"]));
@@ -84,10 +87,10 @@ describe("useComponentPersistence — registration lifecycle", () => {
   });
 
   test("framework reads the latest captureState closure (ref-sync)", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
 
     function Wrapper({ value }: { value: number }): React.ReactElement {
-      return <Consumer persistKey="n" value={value} />;
+      return <Consumer componentStatePreservationKey="n" value={value} />;
     }
 
     const { rerender } = renderUnderCard(registry, <Wrapper value={1} />);
@@ -98,11 +101,11 @@ describe("useComponentPersistence — registration lifecycle", () => {
     // Re-render with a new captured value; registry entry stays the
     // same (no re-register), but ref.current returns the new closure.
     rerender(
-      <CardComponentRegistryContext.Provider
+      <CardComponentStatePreservationContext.Provider
         value={{ registry, prefix: "", treePath: [] }}
       >
         <Wrapper value={42} />
-      </CardComponentRegistryContext.Provider>,
+      </CardComponentStatePreservationContext.Provider>,
     );
 
     const [[, entry2]] = registry.entriesInTreeOrder();
@@ -110,48 +113,48 @@ describe("useComponentPersistence — registration lifecycle", () => {
   });
 });
 
-describe("useComponentPersistence — <PersistenceScope>", () => {
-  test("scope prepends prefix + '/' to child persistKeys", () => {
-    const registry = new ComponentPersistenceRegistry();
+describe("useComponentStatePreservation — <ComponentStatePreservationScope>", () => {
+  test("scope prepends prefix + '/' to child componentStatePreservationKeys", () => {
+    const registry = new ComponentStatePreservationRegistry();
 
     renderUnderCard(
       registry,
-      <PersistenceScope prefix="panel">
-        <Consumer persistKey="expanded" value={true} />
-      </PersistenceScope>,
+      <ComponentStatePreservationScope prefix="panel">
+        <Consumer componentStatePreservationKey="expanded" value={true} />
+      </ComponentStatePreservationScope>,
     );
 
     expect(registry.keys()).toEqual(new Set(["panel/expanded"]));
   });
 
   test("nested scopes concatenate additively", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
 
     renderUnderCard(
       registry,
-      <PersistenceScope prefix="outer">
-        <PersistenceScope prefix="inner">
-          <Consumer persistKey="leaf" value={0} />
-        </PersistenceScope>
-      </PersistenceScope>,
+      <ComponentStatePreservationScope prefix="outer">
+        <ComponentStatePreservationScope prefix="inner">
+          <Consumer componentStatePreservationKey="leaf" value={0} />
+        </ComponentStatePreservationScope>
+      </ComponentStatePreservationScope>,
     );
 
     expect(registry.keys()).toEqual(new Set(["outer/inner/leaf"]));
   });
 
   test("ancestors sort before descendants in tree-order iteration", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
 
     renderUnderCard(
       registry,
       <>
-        <Consumer persistKey="root" value="R" />
-        <PersistenceScope prefix="panel">
-          <Consumer persistKey="inside" value="I" />
-          <PersistenceScope prefix="inner">
-            <Consumer persistKey="deep" value="D" />
-          </PersistenceScope>
-        </PersistenceScope>
+        <Consumer componentStatePreservationKey="root" value="R" />
+        <ComponentStatePreservationScope prefix="panel">
+          <Consumer componentStatePreservationKey="inside" value="I" />
+          <ComponentStatePreservationScope prefix="inner">
+            <Consumer componentStatePreservationKey="deep" value="D" />
+          </ComponentStatePreservationScope>
+        </ComponentStatePreservationScope>
       </>,
     );
 
@@ -161,24 +164,24 @@ describe("useComponentPersistence — <PersistenceScope>", () => {
     expect(ordered).toEqual(["root", "panel/inside", "panel/inner/deep"]);
   });
 
-  test("usePersistenceScopePrefix returns the accumulated prefix", () => {
+  test("useComponentStatePreservationScopePrefix returns the accumulated prefix", () => {
     const seen: string[] = [];
     function Probe(): null {
-      seen.push(usePersistenceScopePrefix());
+      seen.push(useComponentStatePreservationScopePrefix());
       return null;
     }
 
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     renderUnderCard(
       registry,
       <>
         <Probe />
-        <PersistenceScope prefix="outer">
+        <ComponentStatePreservationScope prefix="outer">
           <Probe />
-          <PersistenceScope prefix="inner">
+          <ComponentStatePreservationScope prefix="inner">
             <Probe />
-          </PersistenceScope>
-        </PersistenceScope>
+          </ComponentStatePreservationScope>
+        </ComponentStatePreservationScope>
       </>,
     );
 
@@ -186,39 +189,42 @@ describe("useComponentPersistence — <PersistenceScope>", () => {
   });
 });
 
-describe("useComponentPersistence — uniqueness", () => {
+describe("useComponentStatePreservation — uniqueness", () => {
   test("duplicate scopedKey within a card throws in dev", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
 
     // Render one consumer to seat the key.
-    renderUnderCard(registry, <Consumer persistKey="dup" value={1} />);
+    renderUnderCard(
+      registry,
+      <Consumer componentStatePreservationKey="dup" value={1} />,
+    );
 
     // Rendering a second consumer with the same scopedKey into the
     // same registry should throw from the registry assertion.
     expect(() => {
       render(
-        <CardComponentRegistryContext.Provider
+        <CardComponentStatePreservationContext.Provider
           value={{ registry, prefix: "", treePath: [] }}
         >
-          <Consumer persistKey="dup" value={2} />
-        </CardComponentRegistryContext.Provider>,
+          <Consumer componentStatePreservationKey="dup" value={2} />
+        </CardComponentStatePreservationContext.Provider>,
       );
-    }).toThrow(/duplicate persistKey within card scope: "dup"/);
+    }).toThrow(/duplicate componentStatePreservationKey within card scope: "dup"/);
   });
 
-  test("<PersistenceScope prefix=''> throws in dev", () => {
+  test("<ComponentStatePreservationScope prefix=''> throws in dev", () => {
     expect(() => {
       render(
-        <PersistenceScope prefix="">
-          <Consumer persistKey="x" value={0} />
-        </PersistenceScope>,
+        <ComponentStatePreservationScope prefix="">
+          <Consumer componentStatePreservationKey="x" value={0} />
+        </ComponentStatePreservationScope>,
       );
     }).toThrow(/non-empty `prefix`/);
   });
 });
 
-describe("useComponentPersistence — opt-in via optional persistKey", () => {
-  test("persistKey === undefined: no registration, no dev-warn", () => {
+describe("useComponentStatePreservation — opt-in via optional componentStatePreservationKey", () => {
+  test("componentStatePreservationKey === undefined: no registration, no dev-warn", () => {
     const consoleWarns: unknown[][] = [];
     const originalWarn = console.warn;
     console.warn = (...args: unknown[]) => {
@@ -226,15 +232,15 @@ describe("useComponentPersistence — opt-in via optional persistKey", () => {
     };
     try {
       function OptOut(): null {
-        useComponentPersistence({
-          persistKey: undefined,
+        useComponentStatePreservation({
+          componentStatePreservationKey: undefined,
           captureState: () => "captured",
           restoreState: () => undefined,
         });
         return null;
       }
 
-      const registry = new ComponentPersistenceRegistry();
+      const registry = new ComponentStatePreservationRegistry();
       // Even inside a card, a component that opts out registers nothing.
       const { unmount } = renderUnderCard(registry, <OptOut />);
       expect(registry.keys().size).toBe(0);
@@ -249,11 +255,15 @@ describe("useComponentPersistence — opt-in via optional persistKey", () => {
     }
   });
 
-  test("toggling persistKey from undefined to a string registers the entry", () => {
-    const registry = new ComponentPersistenceRegistry();
-    function Toggle({ persistKey }: { persistKey?: string }): null {
-      useComponentPersistence({
-        persistKey,
+  test("toggling componentStatePreservationKey from undefined to a string registers the entry", () => {
+    const registry = new ComponentStatePreservationRegistry();
+    function Toggle({
+      componentStatePreservationKey,
+    }: {
+      componentStatePreservationKey?: string;
+    }): null {
+      useComponentStatePreservation({
+        componentStatePreservationKey,
         captureState: () => "X",
         restoreState: () => undefined,
       });
@@ -264,17 +274,17 @@ describe("useComponentPersistence — opt-in via optional persistKey", () => {
     expect(registry.keys().size).toBe(0);
 
     rerender(
-      <CardComponentRegistryContext.Provider
+      <CardComponentStatePreservationContext.Provider
         value={{ registry, prefix: "", treePath: [] }}
       >
-        <Toggle persistKey="late" />
-      </CardComponentRegistryContext.Provider>,
+        <Toggle componentStatePreservationKey="late" />
+      </CardComponentStatePreservationContext.Provider>,
     );
     expect(registry.keys()).toEqual(new Set(["late"]));
   });
 });
 
-describe("useComponentPersistence — outside-card graceful no-op", () => {
+describe("useComponentStatePreservation — outside-card graceful no-op", () => {
   const consoleErrors: unknown[][] = [];
   const consoleWarns: unknown[][] = [];
   let originalWarn: typeof console.warn;
@@ -299,22 +309,22 @@ describe("useComponentPersistence — outside-card graceful no-op", () => {
   });
 
   test("rendering outside a card: no throw, one dev-warn, no registration", () => {
-    // Render with NO CardComponentRegistryContext provider. Default
-    // context carries `registry: null` so the hook dev-warns and
-    // no-ops.
+    // Render with NO CardComponentStatePreservationContext provider.
+    // Default context carries `registry: null` so the hook dev-warns
+    // and no-ops.
     const { rerender } = render(
-      <Consumer persistKey="solo" value={"A"} />,
+      <Consumer componentStatePreservationKey="solo" value={"A"} />,
     );
 
     // A single warn per call site; no throws; no render errors.
     expect(consoleWarns.length).toBe(1);
     expect(consoleErrors).toEqual([]);
     const firstArg = consoleWarns[0][0] as string;
-    expect(firstArg).toMatch(/useComponentPersistence\("solo"\)/);
+    expect(firstArg).toMatch(/useComponentStatePreservation\("solo"\)/);
 
     // Re-rendering the same mount does not re-warn.
     act(() => {
-      rerender(<Consumer persistKey="solo" value={"B"} />);
+      rerender(<Consumer componentStatePreservationKey="solo" value={"B"} />);
     });
     expect(consoleWarns.length).toBe(1);
   });

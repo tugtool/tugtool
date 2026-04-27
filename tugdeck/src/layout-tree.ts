@@ -44,7 +44,7 @@ export interface CardStateBag {
    * value. Captured at save time by walking the card-host subtree.
    * Reapplied on restore and on any DOM mutation that introduces a matching
    * element later (to handle late mounts). DOM-authority persistence for
-   * native input state that sits outside `useCardPersistence`'s opt-in path.
+   * native input state that sits outside `useCardStatePreservation`'s opt-in path.
    */
   formControls?: Record<string, FormControlSnapshot>;
   /** Nested-region scroll snapshot keyed by `data-tug-scroll-key`. */
@@ -55,10 +55,11 @@ export interface CardStateBag {
   focus?: FocusSnapshot | null;
   /**
    * Opt-in per-component state harvested at capture time, keyed by the
-   * scoped `persistKey` each component registered via
-   * `useComponentPersistence`. Populated by the Component Persistence
-   * Protocol ([D13], [A9]); absent when the card uses no opt-in
-   * components, empty when it uses some but none produced state.
+   * scoped `componentStatePreservationKey` each component registered
+   * via `useComponentStatePreservation`. Populated by the Component
+   * State Preservation Protocol ([D13], [A9]); absent when the card
+   * uses no opt-in components, empty when it uses some but none
+   * produced state.
    */
   components?: Record<string, unknown>;
 }

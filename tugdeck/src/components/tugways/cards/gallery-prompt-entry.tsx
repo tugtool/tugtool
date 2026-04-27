@@ -405,7 +405,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
                 toolsContent={toolsContent}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
-                persistKey="entry-chrome"
+                componentStatePreservationKey="entry-chrome"
               />
             </TugBox>
           </ResponderScope>

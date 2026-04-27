@@ -29,7 +29,7 @@ import type {
   TugTextInputDelegate,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
-import { useCardPersistence, useCardId } from "@/components/tugways/use-card-persistence";
+import { useCardStatePreservation, useCardId } from "@/components/tugways/use-card-state-preservation";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
@@ -357,25 +357,26 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   onRouteChange?: (route: string | null) => void;
   /**
-   * Whether to persist editing state via tugbank [L23].
+   * Whether to preserve editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.
    * @default true
    */
-  persistState?: boolean;
+  preserveState?: boolean;
 }
 
-// ---- Persistence helper ----
+// ---- State preservation helper ----
 
 /**
- * Internal component that registers tug-pane-chrome persistence for TugPromptInput.
- * Conditionally rendered (only when persistState=true) so the hook isn't
- * called for test harness editors, avoiding registration collisions.
+ * Internal component that registers tug-pane-chrome state preservation
+ * for TugPromptInput. Conditionally rendered (only when
+ * preserveState=true) so the hook isn't called for test harness
+ * editors, avoiding registration collisions.
  *
  * onRestore may fire before the engine's useLayoutEffect creates the engine
  * (React fires child effects before parent effects). The pendingRestore ref
  * buffers the state until the engine mounts and applies it.
  */
-function TugPromptInputPersistence({
+function TugPromptInputStatePreservation({
   engineRef,
   pendingRestoreRef,
   cardIdRef,
@@ -386,8 +387,8 @@ function TugPromptInputPersistence({
   >;
   cardIdRef: React.RefObject<string | null>;
 }) {
-  // The TugPane persistence protocol expects onRestore to trigger a re-render
-  // so the no-deps useLayoutEffect in useCardPersistence fires and calls
+  // The TugPane state preservation protocol expects onRestore to trigger a re-render
+  // so the no-deps useLayoutEffect in useCardStatePreservation fires and calls
   // onContentReady (which removes visibility:hidden). Without this setState,
   // the direct DOM write via restoreState produces no re-render, onContentReady
   // never fires, and the card stays invisible.
@@ -402,7 +403,7 @@ function TugPromptInputPersistence({
     if (id === null) return;
     selectionGuard.updateCardDomSelection(id, range);
   };
-  useCardPersistence<TugTextEditingState>({
+  useCardStatePreservation<TugTextEditingState>({
     onCardActivated: () => {
       // Row 6 — activation gesture lands on this EM card. This is the
       // only call site that legitimately
@@ -523,7 +524,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     focusStyle = "background",
     borderless = false,
     disabled: disabledProp = false,
-    persistState = true,
+    preserveState = true,
     routePrefixes,
     onRouteChange,
     className,
@@ -649,7 +650,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
     useLayoutEffect(() => { completionDirectionRef.current = completionDirection; }, [completionDirection]);
     useLayoutEffect(() => { onRouteChangeRef.current = onRouteChange; }, [onRouteChange]);
 
-    // Enclosing card's id from `CardPersistenceContext`. Null when this
+    // Enclosing card's id from `CardStatePreservationContext`. Null when this
     // input is rendered outside a `CardHost` (e.g. stand-alone storybook /
     // unit test). Held in a ref because the engine-lifetime effect below
     // has empty deps and the relay closure must see the current value at
@@ -1263,7 +1264,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
           onPointerDown={handlePointerDown}
           {...rest}
         >
-          {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} cardIdRef={cardIdRef} />}
+          {preserveState && <TugPromptInputStatePreservation engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} cardIdRef={cardIdRef} />}
           <div
             ref={editorRef}
             className="tug-prompt-input-editor"

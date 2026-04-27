@@ -70,7 +70,7 @@ export function GalleryAccordion() {
           <TugAccordion
             type="single"
             collapsible
-            persistKey="single"
+            componentStatePreservationKey="single"
             data-testid="gallery-accordion-single"
           >
             <TugAccordionItem value="getting-started" trigger="Getting Started">
@@ -102,7 +102,7 @@ export function GalleryAccordion() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Multiple Mode</TugLabel>
         <div style={{ maxWidth: "480px" }}>
-          <TugAccordion type="multiple" persistKey="multiple" data-testid="gallery-accordion-multiple">
+          <TugAccordion type="multiple" componentStatePreservationKey="multiple" data-testid="gallery-accordion-multiple">
             <TugAccordionItem value="features" trigger="Features">
               <p style={paraStyle}>
                 Explore the full feature set: real-time collaboration, version history,

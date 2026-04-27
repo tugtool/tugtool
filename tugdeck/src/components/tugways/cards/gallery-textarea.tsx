@@ -174,7 +174,7 @@ export function GalleryTextarea() {
       {/* Controlled textareas (React owns `value` via state). No
           persistKey — DOM-level restore would be overwritten on the next
           render. Preserving these values across reload would require
-          opting the host card into `useCardPersistence`. */}
+          opting the host card into `useCardStatePreservation`. */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Character Counter</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>

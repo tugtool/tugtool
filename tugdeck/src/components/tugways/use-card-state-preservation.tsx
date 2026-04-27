@@ -1,15 +1,18 @@
 /**
- * CardPersistenceContext and useCardPersistence hook.
+ * CardStatePreservationContext and useCardStatePreservation hook.
  *
- * Provides the opt-in card content state persistence mechanism for card content.
+ * Provides the opt-in card content state preservation mechanism for
+ * card content.
  *
- * Card content components call `useCardPersistence({ onSave, onRestore })`
- * to register save/restore callbacks with their enclosing CardHost, which
- * calls `onSave` on tab deactivation and `onRestore` on tab activation, using
+ * Card content components call
+ * `useCardStatePreservation({ onSave, onRestore })` to register
+ * save/restore callbacks with their enclosing CardHost, which calls
+ * `onSave` on tab deactivation and `onRestore` on tab activation, using
  * the DeckManager tab state cache as the durable backing store.
  *
- * **Authoritative references:** [D01] onContentReady callback, [D02] persistence
- * hook, [D03] restorePendingRef, Rule 11, Rule 12.
+ * **Authoritative references:** [D01] onContentReady callback, [D02]
+ * card state preservation hook, [D03] restorePendingRef, Rule 11,
+ * Rule 12.
  */
 
 import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
@@ -21,10 +24,10 @@ import { DeckManagerContext } from "../../deck-manager-context";
 // ---------------------------------------------------------------------------
 
 /**
- * Options accepted by useCardPersistence.
+ * Options accepted by useCardStatePreservation.
  *
  * Generic over T so card content components get type-safe onRestore.
- * Internally stored as CardPersistenceCallbacks (erased to unknown)
+ * Internally stored as CardStatePreservationCallbacks (erased to unknown)
  * so CardHost can treat the content payload as opaque JSON.
  *
  * ([D02])
@@ -48,7 +51,7 @@ export interface CardRestoreOptions {
   isActive: boolean;
 }
 
-export interface UseCardPersistenceOptions<T> {
+export interface UseCardStatePreservationOptions<T> {
   /** Called by CardHost on tab deactivation. Must return JSON-serializable state. */
   onSave: () => T;
   /**
@@ -72,9 +75,9 @@ export interface UseCardPersistenceOptions<T> {
    * ```
    *
    * Registration happens in the hook's mount `useLayoutEffect`. The
-   * callback is registered on the persistence record and on the deck
-   * store's `registerActivationCallback` channel; see
-   * {@link CardPersistenceCallbacks.onCardActivated}.
+   * callback is registered on the state preservation record and on the
+   * deck store's `registerActivationCallback` channel; see
+   * {@link CardStatePreservationCallbacks.onCardActivated}.
    *
    * Optional. FC (DOM-authority) cards don't need this — `CardHost`
    * re-applies `bag.focus` + `bag.domSelection` directly for them.
@@ -98,12 +101,13 @@ export interface UseCardPersistenceOptions<T> {
 }
 
 // ---------------------------------------------------------------------------
-// CardPersistenceCallbacks
+// CardStatePreservationCallbacks
 // ---------------------------------------------------------------------------
 
 /**
  * Save/restore callback pair registered by card content components via
- * `useCardPersistence`. CardHost calls these on tab deactivation/activation.
+ * `useCardStatePreservation`. CardHost calls these on tab
+ * deactivation/activation.
  *
  * - `onSave()` is called on deactivation. Returns opaque JSON-serializable state.
  * - `onRestore(state)` is called on activation with the previously saved state.
@@ -116,7 +120,7 @@ export interface UseCardPersistenceOptions<T> {
  *
  * ([D02], [D01], [D03])
  */
-export interface CardPersistenceCallbacks {
+export interface CardStatePreservationCallbacks {
   onSave: () => unknown;
   /**
    * Called by CardHost on cold-mount restore (and on tab activation
@@ -167,39 +171,40 @@ export interface CardPersistenceCallbacks {
 }
 
 // ---------------------------------------------------------------------------
-// CardPersistenceContext
+// CardStatePreservationContext
 // ---------------------------------------------------------------------------
 
 /**
- * Value carried by {@link CardPersistenceContext}. CardHost writes this
- * pair on mount so descendants can both register persistence callbacks
- * and learn the id of the card they are rendering inside. `cardId` is
- * separate from the render-time `CardHost` props so content components
- * (e.g. `TugPromptInput`) can forward the id to non-React singletons
- * like `selectionGuard` without prop-drilling or reading the deck tree.
+ * Value carried by {@link CardStatePreservationContext}. CardHost writes
+ * this pair on mount so descendants can both register state preservation
+ * callbacks and learn the id of the card they are rendering inside.
+ * `cardId` is separate from the render-time `CardHost` props so content
+ * components (e.g. `TugPromptInput`) can forward the id to non-React
+ * singletons like `selectionGuard` without prop-drilling or reading the
+ * deck tree.
  */
-export interface CardPersistenceContextValue {
+export interface CardStatePreservationContextValue {
   /** Stable identity of the enclosing card — survives cross-pane moves. */
   cardId: string;
-  /** Register persistence callbacks for this card. Called once per mount. */
-  register: (callbacks: CardPersistenceCallbacks) => void;
+  /** Register state preservation callbacks for this card. Called once per mount. */
+  register: (callbacks: CardStatePreservationCallbacks) => void;
 }
 
 /**
  * Context provided by CardHost to its children.
  *
  * The value bundles the enclosing card's id and the stable registration
- * function. Card content components call `useCardPersistence()` which
- * reads this context and registers their save/restore callbacks in
- * `useLayoutEffect` (Rule 3 of Rules of Tugways). Components that need
- * the card id for out-of-tree wiring read it via {@link useCardId}.
+ * function. Card content components call `useCardStatePreservation()`
+ * which reads this context and registers their save/restore callbacks
+ * in `useLayoutEffect` (Rule 3 of Rules of Tugways). Components that
+ * need the card id for out-of-tree wiring read it via {@link useCardId}.
  *
- * null when rendered outside CardHost (no-op in useCardPersistence).
+ * null when rendered outside CardHost (no-op in useCardStatePreservation).
  *
  * ([D02])
  */
-export const CardPersistenceContext = createContext<
-  CardPersistenceContextValue | null
+export const CardStatePreservationContext = createContext<
+  CardStatePreservationContextValue | null
 >(null);
 
 /**
@@ -208,15 +213,15 @@ export const CardPersistenceContext = createContext<
  * themselves into card-scoped singletons (e.g. `selectionGuard`).
  */
 export function useCardId(): string | null {
-  return useContext(CardPersistenceContext)?.cardId ?? null;
+  return useContext(CardStatePreservationContext)?.cardId ?? null;
 }
 
 // ---------------------------------------------------------------------------
-// useCardPersistence hook
+// useCardStatePreservation hook
 // ---------------------------------------------------------------------------
 
 /**
- * Hook for card content components to opt in to state persistence.
+ * Hook for card content components to opt in to state preservation.
  *
  * On tab deactivation, CardHost calls `onSave()` and stores the result in
  * the DeckManager tab state cache (and debounced to tugbank). On tab
@@ -233,19 +238,19 @@ export function useCardId(): string | null {
  * - Rule 12: The `restorePendingRef` flag is the cancellation mechanism for
  *   rapid tab switches. ([D78], [D79])
  *
- * Returns cleanup that unregisters (sets persistence callbacks to null) when
- * the card content component unmounts.
+ * Returns cleanup that unregisters (sets state preservation callbacks
+ * to null) when the card content component unmounts.
  *
  * ([D02], [D01], [D02], [D03])
  */
-export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): void {
+export function useCardStatePreservation<T>(options: UseCardStatePreservationOptions<T>): void {
   // Read the registration function + cardId from context (null outside
   // CardHost). `cardId` is needed to route `onCardActivated` through
   // the deck store's activation-callback channel alongside the
   // callbacks-record registration.
-  const persistenceCtx = useContext(CardPersistenceContext);
-  const register = persistenceCtx?.register ?? null;
-  const cardId = persistenceCtx?.cardId ?? null;
+  const statePreservationCtx = useContext(CardStatePreservationContext);
+  const register = statePreservationCtx?.register ?? null;
+  const cardId = statePreservationCtx?.cardId ?? null;
 
   // DeckManagerContext is optional from this hook's perspective —
   // the hook is used in unit tests that render a card content
@@ -281,7 +286,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   // after unmount cleanup (which re-registers a no-op pair without
   // restorePendingRef). This is safe: after unmount, no further effects fire on
   // this component, so the no-deps useLayoutEffect never reads the stale ref.
-  const callbacksObjRef = useRef<CardPersistenceCallbacks | null>(null);
+  const callbacksObjRef = useRef<CardStatePreservationCallbacks | null>(null);
 
   // Register stable wrappers that read from refs at call time.
   // useLayoutEffect runs before any events can fire (Rule 3).
@@ -290,7 +295,7 @@ export function useCardPersistence<T>(options: UseCardPersistenceOptions<T>): vo
   useLayoutEffect(() => {
     if (!register) return;
 
-    const callbacks: CardPersistenceCallbacks = {
+    const callbacks: CardStatePreservationCallbacks = {
       onSave: () => onSaveRef.current?.() as unknown,
       onRestore: (state: unknown, opts: CardRestoreOptions) =>
         onRestoreRef.current?.(state as T, opts),

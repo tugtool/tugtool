@@ -36,7 +36,7 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -115,19 +115,20 @@ export interface TugRadioGroupProps
   /** Accessible label when no visible label is provided. */
   "aria-label"?: string;
   /**
-   * Opt the radio group into the Component Persistence Protocol
+   * Opt the radio group into the Component State Preservation Protocol
    * ([D13], [A9]). When provided (and rendered inside a card), the
-   * selected value is captured into `bag.components[persistKey]` at
-   * every save trigger and reapplied on the next mount. Controlled
-   * mode dispatches `selectValue` on restore (best-effort, parent
-   * owns truth); uncontrolled mode mirrors Radix's value in
-   * `useState` so restore can update it directly.
+   * selected value is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger and reapplied on the next mount. Controlled mode dispatches
+   * `selectValue` on restore (best-effort, parent owns truth);
+   * uncontrolled mode mirrors Radix's value in `useState` so restore
+   * can update it directly.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugRadioGroup`'s persisted state. */
-interface TugRadioGroupPersistState {
+/** Serialized shape of `TugRadioGroup`'s preserved state. */
+interface TugRadioGroupState {
   value: string;
 }
 
@@ -150,7 +151,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       "aria-label": ariaLabel,
       children,
       dir,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -172,8 +173,8 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     const effectiveSenderId = senderId ?? fallbackId;
 
     // Mirror Radix's value in `useState` for the uncontrolled path
-    // so `useComponentPersistence` can read/write it. Same shape as
-    // the tug-checkbox / tug-accordion opt-ins.
+    // so `useComponentStatePreservation` can read/write it. Same shape
+    // as the tug-checkbox / tug-accordion opt-ins.
     const isExternallyControlled = value !== undefined;
     const [internalValue, setInternalValue] = useState<string>(
       defaultValue ?? "",
@@ -195,14 +196,14 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
 
-    // Opt-in Component Persistence Protocol. Hook no-ops when
-    // `persistKey` is undefined. [D13] / [A9].
-    useComponentPersistence<TugRadioGroupPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. Hook no-ops when
+    // `componentStatePreservationKey` is undefined. [D13] / [A9].
+    useComponentStatePreservation<TugRadioGroupState>({
+      componentStatePreservationKey,
       captureState: () => ({ value: effectiveValue ?? "" }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugRadioGroupPersistState>).value;
+        const next = (saved as Partial<TugRadioGroupState>).value;
         if (typeof next !== "string") return;
         if (isExternallyControlled) {
           controlDispatch({

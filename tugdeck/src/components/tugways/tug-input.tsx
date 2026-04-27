@@ -100,7 +100,7 @@ export interface TugInputProps
    * **Uncontrolled only.** Use with uncontrolled inputs (native
    * `defaultValue` or no value prop). Setting `.value` on a controlled
    * input (`value={state}`) will be immediately overwritten on the
-   * next React render — use `useCardPersistence` for controlled state.
+   * next React render — use `useCardStatePreservation` for controlled state.
    */
   persistKey?: string;
 }

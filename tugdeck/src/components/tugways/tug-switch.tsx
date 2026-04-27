@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -128,23 +128,24 @@ export interface TugSwitchProps {
    */
   role?: TugSwitchRole;
   /**
-   * Opt the switch into the Component Persistence Protocol ([D13],
-   * [A9]). When provided (and rendered inside a card), the checked
-   * state is captured into `bag.components[persistKey]` at every
-   * save trigger and reapplied on the next mount. Controlled mode
+   * Opt the switch into the Component State Preservation Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * checked state is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger and reapplied on the next mount. Controlled mode
    * dispatches a `toggle` action through the responder chain on
    * restore (best-effort — the parent state owner reconciles);
    * uncontrolled mode mirrors Radix's checked state in `useState`
    * so restore can set it directly.
    *
-   * Absence means "not persisted" — gallery demos and standalone
+   * Absence means "not preserved" — gallery demos and standalone
    * tests that render the switch outside a card stay unaffected.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugSwitch`'s persisted state. */
-interface TugSwitchPersistState {
+/** Serialized shape of `TugSwitch`'s preserved state. */
+interface TugSwitchState {
   checked: boolean;
 }
 
@@ -165,7 +166,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       className,
       "aria-label": ariaLabel,
       role,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -181,8 +182,8 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     const effectiveSenderId = senderId ?? fallbackId;
 
     // Mirror Radix's checked state in `useState` for the uncontrolled
-    // path so `useComponentPersistence` can read/write it. When the
-    // parent supplies `checked`, that's classic controlled mode and
+    // path so `useComponentStatePreservation` can read/write it. When
+    // the parent supplies `checked`, that's classic controlled mode and
     // the parent owns truth. Same shape as `tug-checkbox`'s opt-in.
     const isExternallyControlled = checked !== undefined;
     const [internalChecked, setInternalChecked] = useState<boolean>(
@@ -207,17 +208,18 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
 
-    // Opt-in Component Persistence Protocol. Hook no-ops when
-    // `persistKey` is undefined. Capture reads `effectiveChecked`;
-    // restore updates internal state in the uncontrolled path and
-    // dispatches a `toggle` for the controlled path (best-effort
-    // re-dispatch; the parent is still in charge). [D13] / [A9].
-    useComponentPersistence<TugSwitchPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. Hook no-ops when
+    // `componentStatePreservationKey` is undefined. Capture reads
+    // `effectiveChecked`; restore updates internal state in the
+    // uncontrolled path and dispatches a `toggle` for the controlled
+    // path (best-effort re-dispatch; the parent is still in charge).
+    // [D13] / [A9].
+    useComponentStatePreservation<TugSwitchState>({
+      componentStatePreservationKey,
       captureState: () => ({ checked: effectiveChecked === true }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugSwitchPersistState>).checked;
+        const next = (saved as Partial<TugSwitchState>).checked;
         if (typeof next !== "boolean") return;
         if (isExternallyControlled) {
           controlDispatch({

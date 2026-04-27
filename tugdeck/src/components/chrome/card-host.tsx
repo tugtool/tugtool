@@ -61,7 +61,7 @@
  * subscription. CardHost's responsibility is to hand the snapshot to
  * the axis's owner at the right moment; the owner paints.
  *
- * Neither path uses `persistenceCallbacksRef` as a dep — refs do not
+ * Neither path uses `cardStatePreservationCallbacksRef` as a dep — refs do not
  * trigger re-renders, and a dep array is not how we coordinate. The
  * trigger is the store callsite (register, or host-element change).
  *
@@ -76,14 +76,14 @@ import { useCardPropertyStore } from "../tugways/hooks/use-card-property-store";
 import { useCardFeedStore } from "../tugways/hooks/use-card-feed-store";
 import { useCardDirtyState } from "../tugways/hooks/use-card-dirty-state";
 import {
-  CardPersistenceContext,
-  type CardPersistenceCallbacks,
-  type CardPersistenceContextValue,
-} from "../tugways/use-card-persistence";
+  CardStatePreservationContext,
+  type CardStatePreservationCallbacks,
+  type CardStatePreservationContextValue,
+} from "../tugways/use-card-state-preservation";
 import {
-  CardComponentRegistryContext,
-  type CardComponentRegistryContextValue,
-} from "../tugways/use-component-persistence";
+  CardComponentStatePreservationContext,
+  type CardComponentStatePreservationContextValue,
+} from "../tugways/use-component-state-preservation";
 import { CardDirtyContext, TugPanePortalContext } from "./tug-pane";
 import { useResponder } from "../tugways/use-responder";
 import type { ActionEvent } from "../tugways/responder-chain";
@@ -168,7 +168,7 @@ function supportsTextSelection(
  * it internally, and `::selection` paints the moment focus arrives.
  *
  * Only reads from the DOM (uncontrolled-input assumption — controlled
- * React-owned `value` is the caller's concern via `useCardPersistence`).
+ * React-owned `value` is the caller's concern via `useCardStatePreservation`).
  * Selection reads on types that don't support it (checkbox, radio,
  * number, etc.) are skipped via a capability check; residual errors
  * are swallowed so one misbehaving input never blocks save.
@@ -629,7 +629,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
 
   const { register: registerPropertyStore, ref: propertyStoreRef } = useCardPropertyStore();
 
-  const persistenceCallbacksRef = useRef<CardPersistenceCallbacks | null>(null);
+  const cardStatePreservationCallbacksRef = useRef<CardStatePreservationCallbacks | null>(null);
 
   // Ref for the latest `hostContentEl` so closures installed in
   // `registerPersistenceCallbacks` (onContentReady) read the current
@@ -683,8 +683,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // returned early, never re-running when callbacks finally appear.
   const [callbacksVersion, setCallbacksVersion] = useState(0);
   const registerPersistenceCallbacks = useCallback(
-    (callbacks: CardPersistenceCallbacks) => {
-      persistenceCallbacksRef.current = callbacks;
+    (callbacks: CardStatePreservationCallbacks) => {
+      cardStatePreservationCallbacksRef.current = callbacks;
       setCallbacksVersion((v) => v + 1);
     },
     [],
@@ -706,7 +706,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   useLayoutEffect(() => {
     if (hasAppliedContentRestoreRef.current) return;
     if (!hostContentEl) return;
-    const callbacks = persistenceCallbacksRef.current;
+    const callbacks = cardStatePreservationCallbacksRef.current;
     if (!callbacks) return;
     // Cleanup-pair re-entries (no `restorePendingRef`) skip this branch
     // for the same reason as the original synchronous registration did.
@@ -1045,14 +1045,14 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
       : undefined;
-    const content = persistenceCallbacksRef.current?.onSave();
+    const content = cardStatePreservationCallbacksRef.current?.onSave();
     // Scope form-control capture to THIS card's subtree so sibling cards in
     // the same pane (tab-group) never contaminate each other's values.
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
     const formControls = cardRoot ? captureFormControls(cardRoot) : undefined;
     const regionScroll = cardRoot ? captureRegionScrolls(cardRoot) : undefined;
     // [D07] — content-owning cards (any card whose factory writes
-    // `bag.content` via `useCardPersistence`) own their own selection
+    // `bag.content` via `useCardStatePreservation`) own their own selection
     // and focus. The content payload carries whatever the owner needs
     // (for tide-card: `bag.content.selection` flat offsets, and
     // engine-driven focus via `setSelectedRange`). CardHost must step
@@ -1108,8 +1108,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   }, [cardId, store]);
 
   // Component-level restore ([A9c]). Fires once per mount, after child
-  // `useComponentPersistence` hooks have run (React commits effects
-  // child-first, so by the time this parent effect runs every
+  // `useComponentStatePreservation` hooks have run (React commits
+  // effects child-first, so by the time this parent effect runs every
   // descendant component has already registered with the card's
   // registry). Keyed on `[cardId, store]` for identity stability, but
   // the `hasRestoredComponentsRef` guard keeps it one-shot so
@@ -1150,22 +1150,23 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // callback. A memoized object is cheaper to stabilize than threading
   // both through the tree separately, and it lets descendants that only
   // need the id read it via `useCardId` without subscribing to register.
-  const cardPersistenceContextValue = useMemo<CardPersistenceContextValue>(
+  const cardStatePreservationContextValue = useMemo<CardStatePreservationContextValue>(
     () => ({ cardId, register: registerPersistenceCallbacks }),
     [cardId, registerPersistenceCallbacks],
   );
 
-  // Per-card Component Persistence Protocol registry ([D13], [A9]).
-  // Lazily materialized by the deck manager on first child call to
-  // `useComponentPersistence`; we fetch a reference here so the
-  // context provider below carries it to every descendant of this card.
-  // The root context starts with an empty prefix and empty treePath;
-  // `<PersistenceScope>` providers nested beneath extend both.
-  const componentRegistryContextValue = useMemo<
-    CardComponentRegistryContextValue
+  // Per-card Component State Preservation Protocol registry ([D13],
+  // [A9]). Lazily materialized by the deck manager on first child call
+  // to `useComponentStatePreservation`; we fetch a reference here so
+  // the context provider below carries it to every descendant of this
+  // card. The root context starts with an empty prefix and empty
+  // treePath; `<ComponentStatePreservationScope>` providers nested
+  // beneath extend both.
+  const componentStatePreservationContextValue = useMemo<
+    CardComponentStatePreservationContextValue
   >(
     () => ({
-      registry: store.getComponentRegistry(cardId),
+      registry: store.getComponentStatePreservationRegistry(cardId),
       prefix: "",
       treePath: [],
     }),
@@ -1280,9 +1281,9 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           <ResponderScope>
             <CardDataProvider feedData={feedData}>
               <CardPropertyContext value={registerPropertyStore}>
-                <CardPersistenceContext value={cardPersistenceContextValue}>
-                  <CardComponentRegistryContext.Provider
-                    value={componentRegistryContextValue}
+                <CardStatePreservationContext value={cardStatePreservationContextValue}>
+                  <CardComponentStatePreservationContext.Provider
+                    value={componentStatePreservationContextValue}
                   >
                     <CardDirtyContext value={markDirty}>
                       {feedsReady ? (
@@ -1296,8 +1297,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
                         </div>
                       )}
                     </CardDirtyContext>
-                  </CardComponentRegistryContext.Provider>
-                </CardPersistenceContext>
+                  </CardComponentStatePreservationContext.Provider>
+                </CardStatePreservationContext>
               </CardPropertyContext>
             </CardDataProvider>
           </ResponderScope>

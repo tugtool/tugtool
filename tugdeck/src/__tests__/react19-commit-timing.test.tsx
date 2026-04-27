@@ -474,7 +474,7 @@ describe("Section 5: Pattern comparison for Rules of Tugways", () => {
 
   it("T-CT12: ready callback works with persistence context indirection", () => {
     // The real tug-pane-chrome pattern: parent provides context, child registers
-    // via useCardPersistence, parent calls onRestore. Adding an
+    // via useCardStatePreservation, parent calls onRestore. Adding an
     // onContentReady callback to the same context.
 
     type Callbacks = {

@@ -180,16 +180,16 @@ interface DiagnosticInfo {
  *      cross-card selection) seed cards with the variant component
  *      id and get deterministic content with no UI driving.
  *
- * Selection persistence is owned by the underlying `TugMarkdownView`
- * When its `persistKey` is set, it publishes `Range`s to
+ * Selection publish is owned by the underlying `TugMarkdownView`.
+ * When its `selectionPublishKey` is set, it publishes `Range`s to
  * `selectionGuard.cardRanges`, and `CardHost`'s automatic
  * `bag.domSelection` capture/restore round-trips the selection
  * across app-lifecycle saves and cold-boot. This card therefore
- * does NOT call `useCardPersistence` itself — doing so would set
- * `bag.content` and flip `CardHost`'s `ownsSelectionAndFocus` gate,
- * suppressing `bag.domSelection` capture (per [D07]). The bake-in
- * via `staticContentSize` re-renders the same content on mount, so
- * the saved selection's index paths still resolve.
+ * does NOT call `useCardStatePreservation` itself — doing so would
+ * set `bag.content` and flip `CardHost`'s `ownsSelectionAndFocus`
+ * gate, suppressing `bag.domSelection` capture (per [D07]). The
+ * bake-in via `staticContentSize` re-renders the same content on
+ * mount, so the saved selection's index paths still resolve.
  */
 export interface GalleryMarkdownViewProps {
   staticContentSize?: SizeKey;
@@ -201,9 +201,9 @@ export interface GalleryMarkdownViewProps {
  * A single TugMarkdownView is always mounted. A size selector (50KB | 1MB | 10MB)
  * controls the content size for Stream and Static actions.
  *
- * Selection persistence: delegated entirely to `TugMarkdownView`'s
- * `persistKey="markdown-view"` opt-in. Text content
- * persistence is intentionally not wired — the gallery card is a
+ * Selection publish: delegated entirely to `TugMarkdownView`'s
+ * `selectionPublishKey="markdown-view"` opt-in. Text content
+ * preservation is intentionally not wired — the gallery card is a
  * visual / performance verification surface, and the
  * `staticContentSize` bake-in is the canonical re-mount source of
  * truth.
@@ -475,7 +475,7 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
           onBlockMeasured={handleBlockMeasured}
           onTiming={handleTiming}
           className="gallery-md-view"
-          persistKey="markdown-view"
+          selectionPublishKey="markdown-view"
         />
       </div>
     </div>

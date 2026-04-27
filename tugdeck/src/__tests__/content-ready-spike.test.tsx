@@ -7,7 +7,7 @@
  *   A component's own no-deps useLayoutEffect fires on every render of
  *   THAT component — including re-renders triggered by its own setState.
  *   By setting a ref flag when onRestore is called and checking it in the
- *   no-deps effect, useCardPersistence can fire onContentReady at
+ *   no-deps effect, useCardStatePreservation can fire onContentReady at
  *   exactly the right moment: after the child's restored state is committed
  *   to the DOM.
  *
@@ -39,7 +39,7 @@ import { describe, it, expect } from "bun:test";
 import { render, act } from "@testing-library/react";
 
 // ===========================================================================
-// Simulated useCardPersistence with ref-flag onContentReady mechanism
+// Simulated useCardStatePreservation with ref-flag onContentReady mechanism
 // ===========================================================================
 
 /**
@@ -49,7 +49,7 @@ import { render, act } from "@testing-library/react";
  * - A no-deps useLayoutEffect watches the flag. When set, fires onContentReady
  *   and clears the flag.
  *
- * This is the EXACT mechanism we intend to build into useCardPersistence.
+ * This is the EXACT mechanism we intend to build into useCardStatePreservation.
  */
 function useContentReadyHook(options: {
   onRestore: (state: unknown) => void;
@@ -391,7 +391,7 @@ describe("S6: Independent sibling components", () => {
 // ===========================================================================
 
 describe("S7: Persistence context indirection", () => {
-  it("the pattern works through context registration (like real useCardPersistence)", () => {
+  it("the pattern works through context registration (like real useCardStatePreservation)", () => {
     // This simulates the full real pattern:
     // 1. Parent (TugPane) provides registration context
     // 2. Child registers onRestore + onContentReady via useLayoutEffect
@@ -416,7 +416,7 @@ describe("S7: Persistence context indirection", () => {
 
       const restorePendingRef = useRef(false);
 
-      // Registration (like real useCardPersistence).
+      // Registration (like real useCardStatePreservation).
       useLayoutEffect(() => {
         register?.({
           onSave: () => items,
@@ -432,7 +432,7 @@ describe("S7: Persistence context indirection", () => {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [register]);
 
-      // The ref-flag mechanism (would be inside useCardPersistence).
+      // The ref-flag mechanism (would be inside useCardStatePreservation).
       useLayoutEffect(() => {
         if (restorePendingRef.current) {
           restorePendingRef.current = false;
@@ -508,7 +508,7 @@ describe("S7: Persistence context indirection", () => {
 
 describe("S8: Nested content components", () => {
   it("hook in wrapper component, setState in grandchild — ready fires correctly", () => {
-    // Real-world: useCardPersistence is called in an outer wrapper,
+    // Real-world: useCardStatePreservation is called in an outer wrapper,
     // but onRestore passes state down to a nested child via props/context.
 
     let readyFired = false;

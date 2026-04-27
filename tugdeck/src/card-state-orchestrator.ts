@@ -10,13 +10,14 @@
  *
  *   - `captureCardState(cardId)` — invokes the card's registered
  *     assembler (framework axes + `bag.content`) and walks the per-card
- *     `ComponentPersistenceRegistry` parent-first, merging harvested
- *     component state into `bag.components`.
+ *     `ComponentStatePreservationRegistry` parent-first, merging
+ *     harvested component state into `bag.components`.
  *
  *   - `restoreCardState(cardId, bag)` — walks the per-card registry
  *     parent-first and applies `bag.components`; silently drops
- *     persistKeys the card no longer registers (dev-warn lists the
- *     orphans, per [D13] / Q5 resolution). Content and framework-axis
+ *     componentStatePreservationKeys the card no longer registers
+ *     (dev-warn lists the orphans, per [D13] / Q5 resolution). Content
+ *     and framework-axis
  *     restore continue to be driven by the existing CardHost triggers
  *     (child-registered callbacks + mount useLayoutEffect); the
  *     orchestrator adds component-state restore as a new pass that
@@ -35,7 +36,7 @@
  */
 
 import type { CardStateBag } from "./layout-tree";
-import type { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
+import type { ComponentStatePreservationRegistry } from "./components/tugways/component-state-preservation-registry";
 import { isDevEnv } from "./lib/dev-env";
 
 /**
@@ -53,9 +54,9 @@ export interface CardAssembler {
  * concrete `IDeckManagerStore` dependency so tests can inject a plain
  * `Map`-backed lookup.
  */
-export type ComponentRegistryLookup = (
+export type ComponentStatePreservationRegistryLookup = (
   cardId: string,
-) => ComponentPersistenceRegistry | undefined;
+) => ComponentStatePreservationRegistry | undefined;
 
 /**
  * Harvest every registered component's `captureState` output in
@@ -69,7 +70,7 @@ export type ComponentRegistryLookup = (
  * failure.
  */
 function harvestComponents(
-  registry: ComponentPersistenceRegistry | undefined,
+  registry: ComponentStatePreservationRegistry | undefined,
 ): Record<string, unknown> | undefined {
   if (!registry) return undefined;
   const entries = registry.entriesInTreeOrder();
@@ -91,22 +92,23 @@ function harvestComponents(
 
 /**
  * Apply each registered component's `restoreState(saved)` in
- * parent-first tree order. Orphan persistKeys (present in `saved` but
- * not registered) are silently dropped with a single dev-warn listing
- * the dropped keys (per [D13] / Q5 resolution, symmetric with [D12]).
+ * parent-first tree order. Orphan componentStatePreservationKeys
+ * (present in `saved` but not registered) are silently dropped with a
+ * single dev-warn listing the dropped keys (per [D13] / Q5 resolution,
+ * symmetric with [D12]).
  *
  * Dev-only: a throwing `restoreState` is logged and skipped. Production
  * swallows silently.
  */
 function restoreComponents(
-  registry: ComponentPersistenceRegistry,
+  registry: ComponentStatePreservationRegistry,
   saved: Record<string, unknown>,
 ): void {
   if (isDevEnv()) {
     const registered = registry.keys();
     const orphans = Object.keys(saved).filter((k) => !registered.has(k));
     if (orphans.length > 0) {
-      console.warn("[A9c] orphan persistKeys dropped:", orphans);
+      console.warn("[A9c] orphan componentStatePreservationKeys dropped:", orphans);
     }
   }
   for (const [key, entry] of registry.entriesInTreeOrder()) {
@@ -130,9 +132,9 @@ function restoreComponents(
  */
 export class CardStateOrchestrator {
   private readonly assemblers: Map<string, CardAssembler> = new Map();
-  private readonly getRegistry: ComponentRegistryLookup;
+  private readonly getRegistry: ComponentStatePreservationRegistryLookup;
 
-  constructor(getRegistry: ComponentRegistryLookup) {
+  constructor(getRegistry: ComponentStatePreservationRegistryLookup) {
     this.getRegistry = getRegistry;
   }
 
@@ -186,7 +188,8 @@ export class CardStateOrchestrator {
         if (keys.length > 0) {
           console.warn(
             `[A9c] restoreCardState: card "${cardId}" has no component ` +
-              `registry; dropping ${keys.length} persistKey(s):`,
+              `state preservation registry; dropping ${keys.length} ` +
+              `componentStatePreservationKey(s):`,
             keys,
           );
         }

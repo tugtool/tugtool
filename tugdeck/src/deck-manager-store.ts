@@ -13,7 +13,7 @@
 
 import type { DeckState, CardStateBag } from "./layout-tree";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
-import type { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
+import type { ComponentStatePreservationRegistry } from "./components/tugways/component-state-preservation-registry";
 import type { CardAssembler } from "./card-state-orchestrator";
 import type { SaveCallbackSource } from "./deck-trace";
 
@@ -247,22 +247,23 @@ export interface IDeckManagerStore {
   togglePaneCollapse: (paneId: string) => void;
 
   /**
-   * Return the per-card Component Persistence Protocol registry
+   * Return the per-card Component State Preservation Protocol registry
    * ([D13], [A9]) for `cardId`, creating it lazily on first call. Used
-   * by `useComponentPersistence` to register capture/restore closures
-   * and by the framework orchestration layer at save/restore time.
+   * by `useComponentStatePreservation` to register capture/restore
+   * closures and by the framework orchestration layer at save/restore
+   * time.
    */
-  getComponentRegistry: (cardId: string) => ComponentPersistenceRegistry;
+  getComponentStatePreservationRegistry: (cardId: string) => ComponentStatePreservationRegistry;
 
   /**
-   * Look up a card's component registry without creating one. Returns
-   * `undefined` when the card has never registered an opt-in
-   * component. Used by the capture/restore orchestration so a
-   * non-participating card incurs no allocation.
+   * Look up a card's component state preservation registry without
+   * creating one. Returns `undefined` when the card has never
+   * registered an opt-in component. Used by the capture/restore
+   * orchestration so a non-participating card incurs no allocation.
    */
-  peekComponentRegistry: (
+  peekComponentStatePreservationRegistry: (
     cardId: string,
-  ) => ComponentPersistenceRegistry | undefined;
+  ) => ComponentStatePreservationRegistry | undefined;
 
   /**
    * Register a card-level assembler with the framework orchestrator

@@ -70,7 +70,7 @@ export function GallerySwitch() {
               size={size}
               label={`Size: ${size}`}
               defaultChecked
-              persistKey={size === "md" ? "switch-md" : undefined}
+              componentStatePreservationKey={size === "md" ? "switch-md" : undefined}
               data-testid={size === "md" ? "gallery-switch-persistent" : undefined}
             />
           ))}

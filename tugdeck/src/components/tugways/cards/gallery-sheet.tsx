@@ -152,7 +152,7 @@ export function GallerySheet() {
           Compound API — TugSheet / TugSheetTrigger / TugSheetContent with a settings form
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet persistKey="sheet-basic">
+          <TugSheet componentStatePreservationKey="sheet-basic">
             <TugSheetTrigger asChild>
               <TugPushButton
                 emphasis="outlined"

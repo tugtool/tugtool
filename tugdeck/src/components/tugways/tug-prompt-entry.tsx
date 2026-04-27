@@ -62,8 +62,8 @@ import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover"
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useCardPersistence, useCardId } from "./use-card-persistence";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -128,7 +128,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
 };
 
 /**
- * Persisted state payload for TugPromptEntry via `useCardPersistence`.
+ * Preserved state payload for TugPromptEntry via `useCardStatePreservation`.
  *
  * - `currentRoute` is the active prefix at save time. On restore, the
  *   indicator snaps back to this route and the input displays the
@@ -139,7 +139,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  * JSON-serializable (no DOM, no functions) — round-trips through
  * tugbank via the TugPane persistence pipeline [L23].
  */
-interface TugPromptEntryPersistedState {
+interface TugPromptEntryState {
   currentRoute: string;
   perRoute: Record<string, TugTextEditingState>;
   /**
@@ -360,29 +360,30 @@ export interface TugPromptEntryProps {
    */
   className?: string;
   /**
-   * Opt the entry into the Component Persistence Protocol ([D13], [A9])
-   * for its chrome state. When provided (and rendered inside a card),
-   * `{ toolsOpen }` is captured into `bag.components[persistKey]` at
-   * every save trigger and reapplied on the next mount.
+   * Opt the entry into the Component State Preservation Protocol
+   * ([D13], [A9]) for its chrome state. When provided (and rendered
+   * inside a card), `{ toolsOpen }` is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger and reapplied on the next mount.
    *
-   * Only `toolsOpen` (the tools popover open/closed flag) is
-   * persisted via this hook. The active route + per-route
-   * engine drafts continue to live in `bag.content` via the existing
-   * `useCardPersistence` registration — they're semantically tied
-   * (the route is the index into `perRoute`) and splitting them would
-   * require a two-phase restore that violates [L23]. Closes [AT0031]'s
-   * `toolsOpen` axis; route survival is gated by [AT0024].
+   * Only `toolsOpen` (the tools popover open/closed flag) is preserved
+   * via this hook. The active route + per-route engine drafts continue
+   * to live in `bag.content` via the existing `useCardStatePreservation`
+   * registration — they're semantically tied (the route is the index
+   * into `perRoute`) and splitting them would require a two-phase
+   * restore that violates [L23]. Closes [AT0031]'s `toolsOpen` axis;
+   * route survival is gated by [AT0024].
    *
-   * Absence means "not persisted" — gallery demos and standalone
-   * tests that render the entry outside a card stay unaffected.
+   * Absence means "not preserved" — gallery demos and standalone tests
+   * that render the entry outside a card stay unaffected.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
 /**
  * Serialized shape of TugPromptEntry's chrome state via
- * `useComponentPersistence`. Engine content + active route live in
- * `bag.content` (see `TugPromptEntryPersistedState`); only the
+ * `useComponentStatePreservation`. Engine content + active route live
+ * in `bag.content` (see `TugPromptEntryState`); only the
  * popover open flag rides this axis.
  */
 interface TugPromptEntryChromeState {
@@ -442,7 +443,7 @@ export const TugPromptEntry = React.forwardRef<
     maximized,
     onMaximizeChange,
     className,
-    persistKey,
+    componentStatePreservationKey,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -787,17 +788,18 @@ export const TugPromptEntry = React.forwardRef<
   }, []);
 
   // Card id for diagnostic deck-trace events. Held in a ref so the
-  // onRestore closure (registered through useCardPersistence) reads
+  // onRestore closure (registered through useCardStatePreservation) reads
   // the current value at fire time.
   const cardIdForTrace = useCardId();
   const cardIdForTraceRef = useRef(cardIdForTrace);
   cardIdForTraceRef.current = cardIdForTrace;
 
 
-  // TugPane persistence [L23]. TugPromptEntry is the sole persister for
-  // this compound — the composed `TugPromptInput` is explicitly opted
-  // out via `persistState={false}` below so there's no competing
-  // registration. Payload carries the active route + a per-route
+  // TugPane state preservation [L23]. TugPromptEntry is the sole
+  // preserver for this compound — the composed `TugPromptInput` is
+  // explicitly opted out via `preserveState={false}` below so there's
+  // no competing registration. Payload carries the active route + a
+  // per-route
   // editing-state map, so each route's draft survives route switches
   // *and* card/tab deactivation *and* full reloads.
   //
@@ -819,7 +821,7 @@ export const TugPromptEntry = React.forwardRef<
     if (id === null) return;
     selectionGuard.updateCardDomSelection(id, range);
   };
-  useCardPersistence<TugPromptEntryPersistedState>({
+  useCardStatePreservation<TugPromptEntryState>({
     onCardActivated: () => {
       // Row 6 of the activation taxonomy: when this EM card
       // becomes the destination of an activation gesture, the
@@ -987,14 +989,14 @@ export const TugPromptEntry = React.forwardRef<
   // role (accent-on-open).
   const [toolsOpen, setToolsOpen] = React.useState(false);
 
-  // Component Persistence Protocol opt-in for the popover's open
-  // state. Hook no-ops when `persistKey` is undefined or rendered
-  // outside a card. [A9] / [AT0031] toolsOpen axis.
-  // Route + per-route engine drafts ride `bag.content` via
-  // `useCardPersistence` above; this hook only carries the popover
+  // Component State Preservation Protocol opt-in for the popover's
+  // open state. Hook no-ops when `componentStatePreservationKey` is
+  // undefined or rendered outside a card. [A9] / [AT0031] toolsOpen
+  // axis. Route + per-route engine drafts ride `bag.content` via
+  // `useCardStatePreservation` above; this hook only carries the popover
   // flag.
-  useComponentPersistence<TugPromptEntryChromeState>({
-    persistKey,
+  useComponentStatePreservation<TugPromptEntryChromeState>({
+    componentStatePreservationKey,
     captureState: () => ({ toolsOpen }),
     restoreState: (saved) => {
       if (saved === null || typeof saved !== "object") return;
@@ -1088,10 +1090,11 @@ export const TugPromptEntry = React.forwardRef<
             returnAction={RETURN_ACTION_BY_ROUTE[route] ?? "submit"}
             onChange={handleInputChange}
             onSubmit={performSubmit}
-            /* Persistence is owned by TugPromptEntry (per-route map).
-               Disable the child's registration so only one component
-               claims the single CardPersistenceContext slot. */
-            persistState={false}
+            /* State preservation is owned by TugPromptEntry (per-route
+               map). Disable the child's registration so only one
+               component claims the single CardStatePreservationContext
+               slot. */
+            preserveState={false}
           />
         </div>
         <div className="tug-prompt-entry-toolbar">

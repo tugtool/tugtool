@@ -75,7 +75,7 @@ export function GalleryValueInput() {
               senderId={mdId}
               min={0}
               max={100}
-              persistKey="value-input-md"
+              componentStatePreservationKey="value-input-md"
               data-testid="gallery-value-input-persistent"
             />
             <TugLabel size="2xs" color="muted">{`Value: ${mdValue}`}</TugLabel>

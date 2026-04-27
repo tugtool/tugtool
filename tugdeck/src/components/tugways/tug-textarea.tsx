@@ -125,7 +125,7 @@ export interface TugTextareaProps
    * **Uncontrolled only.** Use with uncontrolled textareas (native
    * `defaultValue` or no value prop). Setting `.value` on a controlled
    * textarea (`value={state}`) will be immediately overwritten on the
-   * next React render — use `useCardPersistence` for controlled state.
+   * next React render — use `useCardStatePreservation` for controlled state.
    */
   persistKey?: string;
 }

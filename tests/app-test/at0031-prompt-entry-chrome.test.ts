@@ -24,7 +24,7 @@
  *     popover exists.
  *   - **`bag.components` pipeline for the entry** — exercises the
  *     [A9] orchestrator's component-restore phase, distinct from
- *     `useCardPersistence`'s content path.
+ *     `useCardStatePreservation`'s content path.
  *   - **cmd-tab transition for the entry's chrome** — m24 covers
  *     `appReload` + `quitGracefully+relaunch` but not
  *     `simulateAppResign+Become`.

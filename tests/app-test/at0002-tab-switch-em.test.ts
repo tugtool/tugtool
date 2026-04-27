@@ -24,7 +24,7 @@
  * requires session-machinery setup (project-picker bind, code
  * feeds) that's outside this smoke's envelope. `gallery-prompt-entry`
  * is the practical proxy — same `TugPromptEntry`, same
- * `useCardPersistence` registration site, same activation path.
+ * `useCardStatePreservation` registration site, same activation path.
  *
  * ## Probes
  *

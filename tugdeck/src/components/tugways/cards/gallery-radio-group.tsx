@@ -94,7 +94,7 @@ export function GalleryRadioGroup() {
               value={sizeMdValue}
               senderId={radioMdId}
               aria-label="Medium radio group"
-              persistKey="radio-md"
+              componentStatePreservationKey="radio-md"
               data-testid="gallery-radio-persistent"
             >
               <TugRadioItem value="a">Alpha</TugRadioItem>

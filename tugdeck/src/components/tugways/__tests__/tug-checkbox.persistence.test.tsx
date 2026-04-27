@@ -1,22 +1,24 @@
 /**
- * TugCheckbox persistence opt-in — first-consumer proof for the
- * Component Persistence Protocol ([D13], [A9]).
+ * TugCheckbox state preservation opt-in — first-consumer proof for the
+ * Component State Preservation Protocol ([D13], [A9]).
  *
  * These tests pin the component-level contract visible to card
- * authors who set `persistKey`:
+ * authors who set `componentStatePreservationKey`:
  *
- *   1. Without `persistKey`, the checkbox does not register with the
- *      card's registry and `bag.components` stays absent — opt-in is
- *      truly opt-in.
- *   2. With `persistKey` in uncontrolled mode, the checkbox captures
- *      its current `checked` state into `bag.components[persistKey]`
- *      and restores it on a fresh mount.
- *   3. With `persistKey` in controlled mode, restore dispatches a
- *      `toggle` action through the responder chain so the parent
- *      state owner updates. This is the best-effort path acknowledged
- *      in the plan — the parent is still the source of truth.
- *   4. `<PersistenceScope prefix>` prefixing composes with the
- *      checkbox's own `persistKey`.
+ *   1. Without `componentStatePreservationKey`, the checkbox does not
+ *      register with the card's registry and `bag.components` stays
+ *      absent — opt-in is truly opt-in.
+ *   2. With `componentStatePreservationKey` in uncontrolled mode, the
+ *      checkbox captures its current `checked` state into
+ *      `bag.components[componentStatePreservationKey]` and restores it
+ *      on a fresh mount.
+ *   3. With `componentStatePreservationKey` in controlled mode,
+ *      restore dispatches a `toggle` action through the responder
+ *      chain so the parent state owner updates. This is the
+ *      best-effort path acknowledged in the plan — the parent is
+ *      still the source of truth.
+ *   4. `<ComponentStatePreservationScope prefix>` prefixing composes
+ *      with the checkbox's own `componentStatePreservationKey`.
  */
 
 import "../../../__tests__/setup-rtl";
@@ -26,26 +28,26 @@ import { describe, test, expect, afterEach } from "bun:test";
 import { render, cleanup, fireEvent, act } from "@testing-library/react";
 
 import { TugCheckbox } from "../tug-checkbox";
-import { ComponentPersistenceRegistry } from "../component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "../component-state-preservation-registry";
 import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import {
-  CardComponentRegistryContext,
-  PersistenceScope,
-} from "../use-component-persistence";
+  CardComponentStatePreservationContext,
+  ComponentStatePreservationScope,
+} from "../use-component-state-preservation";
 import { useResponderForm } from "../use-responder-form";
 import { ResponderChainProvider } from "../responder-chain-provider";
 
 function renderUnderCard(
-  registry: ComponentPersistenceRegistry,
+  registry: ComponentStatePreservationRegistry,
   ui: React.ReactElement,
 ) {
   return render(
     <ResponderChainProvider>
-      <CardComponentRegistryContext.Provider
+      <CardComponentStatePreservationContext.Provider
         value={{ registry, prefix: "", treePath: [] }}
       >
         {ui}
-      </CardComponentRegistryContext.Provider>
+      </CardComponentStatePreservationContext.Provider>
     </ResponderChainProvider>,
   );
 }
@@ -72,9 +74,9 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TugCheckbox — persistence opt-in", () => {
-  test("no persistKey prop → no registration, no bag.components", () => {
-    const registry = new ComponentPersistenceRegistry();
+describe("TugCheckbox — state preservation opt-in", () => {
+  test("no componentStatePreservationKey prop → no registration, no bag.components", () => {
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
     orchestrator.registerAssembler("c", { capture: () => ({}) });
 
@@ -86,13 +88,13 @@ describe("TugCheckbox — persistence opt-in", () => {
   });
 
   test("uncontrolled opt-in captures checked = true after user click", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
     orchestrator.registerAssembler("c", { capture: () => ({}) });
 
     const { container } = renderUnderCard(
       registry,
-      <TugCheckbox persistKey="done" label="Done" />,
+      <TugCheckbox componentStatePreservationKey="done" label="Done" />,
     );
     expect(registry.keys()).toEqual(new Set(["done"]));
     expect(getCheckboxCheckedAttr(container)).toBe("unchecked");
@@ -105,12 +107,12 @@ describe("TugCheckbox — persistence opt-in", () => {
   });
 
   test("uncontrolled opt-in restores checked state on a fresh mount", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
 
     const { container } = renderUnderCard(
       registry,
-      <TugCheckbox persistKey="done" label="Done" />,
+      <TugCheckbox componentStatePreservationKey="done" label="Done" />,
     );
     // Simulate a previously-saved bag being restored before user input.
     act(() => {
@@ -126,13 +128,17 @@ describe("TugCheckbox — persistence opt-in", () => {
   });
 
   test("defaultChecked seeds the uncontrolled mirror at mount", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
     orchestrator.registerAssembler("c", { capture: () => ({}) });
 
     const { container } = renderUnderCard(
       registry,
-      <TugCheckbox persistKey="done" defaultChecked={true} label="Done" />,
+      <TugCheckbox
+        componentStatePreservationKey="done"
+        defaultChecked={true}
+        label="Done"
+      />,
     );
     expect(getCheckboxCheckedAttr(container)).toBe("checked");
 
@@ -141,7 +147,7 @@ describe("TugCheckbox — persistence opt-in", () => {
   });
 
   test("controlled opt-in restores via responder-chain toggle dispatch", () => {
-    const registry = new ComponentPersistenceRegistry();
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
 
     function Harness(): React.ReactElement {
@@ -156,7 +162,7 @@ describe("TugCheckbox — persistence opt-in", () => {
         <ResponderScope>
           <div ref={responderRef as (el: HTMLDivElement | null) => void}>
             <TugCheckbox
-              persistKey="done"
+              componentStatePreservationKey="done"
               senderId={cbId}
               label="Done"
               checked={checked}
@@ -183,16 +189,16 @@ describe("TugCheckbox — persistence opt-in", () => {
     expect(getCheckboxCheckedAttr(container)).toBe("checked");
   });
 
-  test("<PersistenceScope prefix> composes with the checkbox persistKey", () => {
-    const registry = new ComponentPersistenceRegistry();
+  test("<ComponentStatePreservationScope prefix> composes with the checkbox componentStatePreservationKey", () => {
+    const registry = new ComponentStatePreservationRegistry();
     const orchestrator = new CardStateOrchestrator(() => registry);
     orchestrator.registerAssembler("c", { capture: () => ({}) });
 
     const { container } = renderUnderCard(
       registry,
-      <PersistenceScope prefix="task-panel">
-        <TugCheckbox persistKey="done" label="Done" />
-      </PersistenceScope>,
+      <ComponentStatePreservationScope prefix="task-panel">
+        <TugCheckbox componentStatePreservationKey="done" label="Done" />
+      </ComponentStatePreservationScope>,
     );
     expect(registry.keys()).toEqual(new Set(["task-panel/done"]));
 

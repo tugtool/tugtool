@@ -73,7 +73,7 @@ import {
   installLifecycleCascade,
   type LifecycleCascadeHandle,
 } from "./lib/lifecycle-cascade";
-import { ComponentPersistenceRegistry } from "./components/tugways/component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "./components/tugways/component-state-preservation-registry";
 import {
   CardStateOrchestrator,
   type CardAssembler,
@@ -210,13 +210,14 @@ export class DeckManager implements IDeckManagerStore {
   private saveCallbacks: Map<string, () => void> = new Map();
 
   /**
-   * Per-card Component Persistence Protocol registries ([D13], [A9]).
-   * Lazily created on first `getComponentRegistry(cardId)` call from a
-   * child component's `useComponentPersistence` hook; cleared when the
+   * Per-card Component State Preservation Protocol registries ([D13],
+   * [A9]). Lazily created on first
+   * `getComponentStatePreservationRegistry(cardId)` call from a child
+   * component's `useComponentStatePreservation` hook; cleared when the
    * card is destroyed (`_removeCard` / `_closePane`). A card that uses
    * no opt-in components never gets an entry here.
    */
-  private componentRegistries: Map<string, ComponentPersistenceRegistry> =
+  private componentStatePreservationRegistries: Map<string, ComponentStatePreservationRegistry> =
     new Map();
 
   /**
@@ -228,7 +229,7 @@ export class DeckManager implements IDeckManagerStore {
    */
   private readonly cardStateOrchestrator: CardStateOrchestrator =
     new CardStateOrchestrator((cardId) =>
-      this.componentRegistries.get(cardId),
+      this.componentStatePreservationRegistries.get(cardId),
     );
 
   private readonly handleVisibilityChange = (): void => {
@@ -784,7 +785,7 @@ export class DeckManager implements IDeckManagerStore {
     // destruction never have a stake in these registries, but ordering
     // after the lifecycle event makes the intent explicit.
     for (const cid of win.cardIds) {
-      this.discardComponentRegistry(cid);
+      this.discardComponentStatePreservationRegistry(cid);
     }
     this.notify();
     this.scheduleSave();
@@ -1150,7 +1151,7 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Content-factory activation callbacks, keyed by cardId. Written by
-   * `useCardPersistence` (through the context-provided register
+   * `useCardStatePreservation` (through the context-provided register
    * helper) on every mount of a card whose content component opts in
    * via `options.onCardActivated`. Last-write-wins per cardId.
    */
@@ -1236,47 +1237,49 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Return the per-card Component Persistence Protocol registry ([D13],
-   * [A9]) for `cardId`, creating it lazily on first call. Used by
-   * `useComponentPersistence` to register / unregister capture/restore
-   * closures; used by the framework orchestration layer
+   * Return the per-card Component State Preservation Protocol registry
+   * ([D13], [A9]) for `cardId`, creating it lazily on first call. Used
+   * by `useComponentStatePreservation` to register / unregister
+   * capture/restore closures; used by the framework orchestration layer
    * (`captureCardState` / `restoreCardState`) at save and restore time.
    *
-   * The registry is discarded in `discardComponentRegistry(cardId)` once
-   * the card is destroyed, so repeated create / destroy cycles of the
-   * same cardId yield fresh registries.
+   * The registry is discarded in
+   * `discardComponentStatePreservationRegistry(cardId)` once the card
+   * is destroyed, so repeated create / destroy cycles of the same
+   * cardId yield fresh registries.
    */
-  getComponentRegistry(cardId: string): ComponentPersistenceRegistry {
-    let registry = this.componentRegistries.get(cardId);
+  getComponentStatePreservationRegistry(cardId: string): ComponentStatePreservationRegistry {
+    let registry = this.componentStatePreservationRegistries.get(cardId);
     if (!registry) {
-      registry = new ComponentPersistenceRegistry();
-      this.componentRegistries.set(cardId, registry);
+      registry = new ComponentStatePreservationRegistry();
+      this.componentStatePreservationRegistries.set(cardId, registry);
     }
     return registry;
   }
 
   /**
-   * Look up a card's component registry without creating one. Returns
-   * `undefined` when the card has never registered an opt-in component.
-   * Used by the capture/restore orchestration so a non-participating card
-   * incurs no allocation.
+   * Look up a card's component state preservation registry without
+   * creating one. Returns `undefined` when the card has never
+   * registered an opt-in component. Used by the capture/restore
+   * orchestration so a non-participating card incurs no allocation.
    */
-  peekComponentRegistry(
+  peekComponentStatePreservationRegistry(
     cardId: string,
-  ): ComponentPersistenceRegistry | undefined {
-    return this.componentRegistries.get(cardId);
+  ): ComponentStatePreservationRegistry | undefined {
+    return this.componentStatePreservationRegistries.get(cardId);
   }
 
   /**
-   * Discard the per-card component registry for `cardId`. Called from
-   * `_removeCard` and `_closePane` alongside `flushSaveCallbackBeforeDestruction`
-   * so a card's registered closures don't outlive the card itself.
+   * Discard the per-card component state preservation registry for
+   * `cardId`. Called from `_removeCard` and `_closePane` alongside
+   * `flushSaveCallbackBeforeDestruction` so a card's registered
+   * closures don't outlive the card itself.
    */
-  private discardComponentRegistry(cardId: string): void {
-    const registry = this.componentRegistries.get(cardId);
+  private discardComponentStatePreservationRegistry(cardId: string): void {
+    const registry = this.componentStatePreservationRegistries.get(cardId);
     if (!registry) return;
     registry.clear();
-    this.componentRegistries.delete(cardId);
+    this.componentStatePreservationRegistries.delete(cardId);
   }
 
   /**
@@ -1293,8 +1296,8 @@ export class DeckManager implements IDeckManagerStore {
    * Capture the full `CardStateBag` for `cardId` via the orchestrator
    * — framework axes from the registered assembler, plus component
    * state harvested parent-first from the card's
-   * `ComponentPersistenceRegistry`. Single entry point for every save
-   * trigger; guarantees `bag.components` lands with every save by
+   * `ComponentStatePreservationRegistry`. Single entry point for every
+   * save trigger; guarantees `bag.components` lands with every save by
    * construction ([D13], [AT0017]).
    */
   captureCardState(cardId: string): CardStateBag {
@@ -1435,17 +1438,17 @@ export class DeckManager implements IDeckManagerStore {
       }
     }
 
-    // Discard per-card component registries for cards that left the
-    // deck so closures don't outlive the card. Explicit cleanup,
-    // symmetric with `_removeCard` / `_closePane`.
+    // Discard per-card component state preservation registries for
+    // cards that left the deck so closures don't outlive the card.
+    // Explicit cleanup, symmetric with `_removeCard` / `_closePane`.
     for (const prevId of previousCardIds) {
       if (!nextCardIds.has(prevId)) {
-        // discardComponentRegistry is private; inline the equivalent
-        // cleanup so we don't widen the surface.
-        const registry = this.componentRegistries.get(prevId);
+        // discardComponentStatePreservationRegistry is private; inline
+        // the equivalent cleanup so we don't widen the surface.
+        const registry = this.componentStatePreservationRegistries.get(prevId);
         if (registry) {
           registry.clear();
-          this.componentRegistries.delete(prevId);
+          this.componentStatePreservationRegistries.delete(prevId);
         }
       }
     }
@@ -1628,7 +1631,7 @@ export class DeckManager implements IDeckManagerStore {
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
       panes: this.deckState.panes.map((s) => (s.id === paneId ? finalStack : s)),
     };
-    this.discardComponentRegistry(cardId);
+    this.discardComponentStatePreservationRegistry(cardId);
     this.notify();
     this.scheduleSave();
   }

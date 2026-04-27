@@ -1210,7 +1210,7 @@ export function TideCardBody({ cardId, services }: TideCardBodyProps) {
                 toolsContent={toolsContent}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
-                persistKey="entry-chrome"
+                componentStatePreservationKey="entry-chrome"
               />
             </TugBox>
           </ResponderScope>

@@ -53,7 +53,7 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
       await app.enableDeckTrace(true);
 
       // Seed a single EM card. `gallery-prompt-input` is the
-      // gallery's TugPromptInput showcase; its `useCardPersistence`
+      // gallery's TugPromptInput showcase; its `useCardStatePreservation`
       // returns engine state on save, which makes it an EM card
       // by `bag.content !== undefined`.
       await app.seedDeckState({
@@ -217,7 +217,7 @@ describe.skipIf(!SHOULD_RUN)("EM-card observation surface", () => {
         `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
       );
 
-      // gallery-input is an FC card — its useCardPersistence
+      // gallery-input is an FC card — its useCardStatePreservation
       // doesn't return engine state, so bag.content is undefined.
       // getEmCardState must return null without throwing.
       const state = await app.getEmCardState("A");

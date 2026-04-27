@@ -1,8 +1,8 @@
 /**
- * useCardPersistence hook unit tests.
+ * useCardStatePreservation hook unit tests.
  *
  * Tests cover:
- * - T-P01: useCardPersistence registers callbacks called by TugPane on
+ * - T-P01: useCardStatePreservation registers callbacks called by TugPane on
  *   deactivation (onSave) and activation (onRestore).
  * - T-P02: Updating onSave/onRestore options does not cause re-registration
  *   (stable useLayoutEffect with [register] deps, refs used inside wrappers).
@@ -25,8 +25,8 @@ import React, { useState } from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
 
-import { CardPersistenceContext, useCardPersistence } from "@/components/tugways/use-card-persistence";
-import type { CardPersistenceCallbacks } from "@/components/tugways/use-card-persistence";
+import { CardStatePreservationContext, useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
+import type { CardStatePreservationCallbacks } from "@/components/tugways/use-card-state-preservation";
 import { DeckManagerContext } from "@/deck-manager-context";
 import { makeMockStore } from "./mock-deck-manager-store";
 import type { IDeckManagerStore } from "@/deck-manager-store";
@@ -41,9 +41,9 @@ import type { IDeckManagerStore } from "@/deck-manager-store";
  */
 function makeTestProvider() {
   let registrationCount = 0;
-  let latestCallbacks: CardPersistenceCallbacks | null = null;
+  let latestCallbacks: CardStatePreservationCallbacks | null = null;
 
-  function register(callbacks: CardPersistenceCallbacks) {
+  function register(callbacks: CardStatePreservationCallbacks) {
     registrationCount += 1;
     latestCallbacks = callbacks;
   }
@@ -59,9 +59,9 @@ function makeTestProvider() {
     cardId?: string;
   }) {
     return (
-      <CardPersistenceContext value={{ cardId, register }}>
+      <CardStatePreservationContext value={{ cardId, register }}>
         {children}
-      </CardPersistenceContext>
+      </CardStatePreservationContext>
     );
   }
 
@@ -69,10 +69,10 @@ function makeTestProvider() {
 }
 
 // ---------------------------------------------------------------------------
-// T-P01: useCardPersistence registers callbacks called by TugPane
+// T-P01: useCardStatePreservation registers callbacks called by TugPane
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – callback registration and invocation", () => {
+describe("useCardStatePreservation – callback registration and invocation", () => {
   it("T-P01a: onSave registered callback is called and returns the card's state", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -81,7 +81,7 @@ describe("useCardPersistence – callback registration and invocation", () => {
     const onRestore = mock((_s: typeof savedState) => {});
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore });
+      useCardStatePreservation({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -111,7 +111,7 @@ describe("useCardPersistence – callback registration and invocation", () => {
     const onRestore = mock((s: { value: number }) => { restoredValues.push(s); });
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore });
+      useCardStatePreservation({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -134,13 +134,13 @@ describe("useCardPersistence – callback registration and invocation", () => {
   });
 
   it("T-P01c: no-op when rendered outside a TugPane (context is null)", () => {
-    // Without a Provider, CardPersistenceContext value is null.
+    // Without a Provider, CardStatePreservationContext value is null.
     // The hook must not throw and must not call register.
     const onSave = mock(() => ({}));
     const onRestore = mock((_s: unknown) => {});
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore });
+      useCardStatePreservation({ onSave, onRestore });
       return <div>no provider</div>;
     }
 
@@ -157,7 +157,7 @@ describe("useCardPersistence – callback registration and invocation", () => {
 // T-P02: Updating options does not cause re-registration
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – stable registration across re-renders", () => {
+describe("useCardStatePreservation – stable registration across re-renders", () => {
   it("T-P02: updating onSave/onRestore does not trigger re-registration", () => {
     const { Provider, getRegistrationCount, getLatestCallbacks } = makeTestProvider();
 
@@ -169,7 +169,7 @@ describe("useCardPersistence – stable registration across re-renders", () => {
     let currentOnRestore = onRestoreV1;
 
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => currentOnSave(),
         onRestore: (s: unknown) => currentOnRestore(s),
       });
@@ -221,8 +221,8 @@ describe("useCardPersistence – stable registration across re-renders", () => {
 // T-P03: Integration with TugPane context (round-trip through TugPane)
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – TugPane context round-trip", () => {
-  it("T-P03: card content using useCardPersistence receives onRestore via TugPane activation", () => {
+describe("useCardStatePreservation – TugPane context round-trip", () => {
+  it("T-P03: card content using useCardStatePreservation receives onRestore via TugPane activation", () => {
     // Simulate TugPane providing context and calling onSave/onRestore.
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -232,7 +232,7 @@ describe("useCardPersistence – TugPane context round-trip", () => {
     const onRestore = mock((s: typeof contentState) => { restoredStates.push(s); });
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore });
+      useCardStatePreservation({ onSave, onRestore });
       return <div>card content</div>;
     }
 
@@ -262,7 +262,7 @@ describe("useCardPersistence – TugPane context round-trip", () => {
 // T-P04: restorePendingRef is included in registered callbacks
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – restorePendingRef in registered callbacks", () => {
+describe("useCardStatePreservation – restorePendingRef in registered callbacks", () => {
   it("T-P04: restorePendingRef is present on registered callbacks and defaults to false", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -270,7 +270,7 @@ describe("useCardPersistence – restorePendingRef in registered callbacks", () 
     const onRestore = mock((_s: unknown) => {});
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore });
+      useCardStatePreservation({ onSave, onRestore });
       return <div>content</div>;
     }
 
@@ -294,7 +294,7 @@ describe("useCardPersistence – restorePendingRef in registered callbacks", () 
 // T-P05: No-deps useLayoutEffect fires onContentReady when flag is set
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – no-deps useLayoutEffect fires onContentReady", () => {
+describe("useCardStatePreservation – no-deps useLayoutEffect fires onContentReady", () => {
   it("T-P05: setting restorePendingRef to true and writing onContentReady fires callback on re-render", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
@@ -303,7 +303,7 @@ describe("useCardPersistence – no-deps useLayoutEffect fires onContentReady", 
     const onRestoreMock = mock((s: unknown) => { currentState = s as string; });
 
     function CardContent() {
-      useCardPersistence({ onSave, onRestore: onRestoreMock });
+      useCardStatePreservation({ onSave, onRestore: onRestoreMock });
       return <div data-testid="content">{currentState}</div>;
     }
 
@@ -346,7 +346,7 @@ describe("useCardPersistence – no-deps useLayoutEffect fires onContentReady", 
 // T-P06: Parent-sets-ref, child-reads-ref: mirrors real TugPane code path
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", () => {
+describe("useCardStatePreservation – parent-sets-ref, child-reads-ref indirection", () => {
   it("T-P06: TugPane sets flag + writes onContentReady before onRestore; callback fires after child re-render commits", () => {
     // This test exercises the exact indirection the real TugPane code path uses:
     // 1. Provider (parent) gets the registered callbacks object.
@@ -364,7 +364,7 @@ describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", 
     function CardContent() {
       const [text, setText] = useState("initial");
 
-      useCardPersistence<string>({
+      useCardStatePreservation<string>({
         onSave: () => text,
         onRestore: (s: string) => { setText(s); },
       });
@@ -410,14 +410,14 @@ describe("useCardPersistence – parent-sets-ref, child-reads-ref indirection", 
 // can register in advance.
 // ---------------------------------------------------------------------------
 
-describe("useCardPersistence – onCardActivated field ([A2])", () => {
+describe("useCardStatePreservation – onCardActivated field ([A2])", () => {
   it("T-P07a: accepts the onCardActivated option (compile-time shape)", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
     function CardContent() {
       // Compile-time assertion: the hook's option type accepts the new
       // optional field. Any type regression here fails `tsc --noEmit`.
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         onCardActivated: () => {},
@@ -446,7 +446,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
 
     let invocations = 0;
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         onCardActivated: () => {
@@ -480,7 +480,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
     let current: () => void = mock(() => {});
 
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         onCardActivated: () => current(),
@@ -523,7 +523,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
     const { Provider, getLatestCallbacks } = makeTestProvider();
 
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         // onCardActivated intentionally omitted.
@@ -546,7 +546,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
     expect(() => callbacks.onCardActivated!()).not.toThrow();
   });
 
-  // Helper: a provider that wires BOTH CardPersistenceContext and
+  // Helper: a provider that wires BOTH CardStatePreservationContext and
   // DeckManagerContext, so the hook's store-channel registration
   // runs alongside the record-channel registration.
   function ProviderWithStore({
@@ -560,9 +560,9 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
   }) {
     return (
       <DeckManagerContext.Provider value={store}>
-        <CardPersistenceContext value={{ cardId, register: () => {} }}>
+        <CardStatePreservationContext value={{ cardId, register: () => {} }}>
           {children}
-        </CardPersistenceContext>
+        </CardStatePreservationContext>
       </DeckManagerContext.Provider>
     );
   }
@@ -573,7 +573,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
 
     let invocations = 0;
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         onCardActivated: () => {
@@ -604,7 +604,7 @@ describe("useCardPersistence – onCardActivated field ([A2])", () => {
     let current: () => void = mock(() => {});
 
     function CardContent() {
-      useCardPersistence({
+      useCardStatePreservation({
         onSave: () => ({}),
         onRestore: () => {},
         onCardActivated: () => current(),

@@ -38,7 +38,7 @@ import {
 } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -117,23 +117,24 @@ export interface TugChoiceGroupProps
   /** Accessible label for the group. */
   "aria-label"?: string;
   /**
-   * Opt the choice group into the Component Persistence Protocol
-   * ([D13], [A9]). When provided (and rendered inside a card), the
-   * selected value is captured into `bag.components[persistKey]` at
-   * every save trigger. On restore the component re-dispatches a
-   * `selectValue` action through the responder chain so the parent
-   * (which owns the `value` prop) updates its own state. The parent
-   * must register a `selectValue` handler that recognizes
+   * Opt the choice group into the Component State Preservation
+   * Protocol ([D13], [A9]). When provided (and rendered inside a
+   * card), the selected value is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger. On restore the component re-dispatches a `selectValue`
+   * action through the responder chain so the parent (which owns the
+   * `value` prop) updates its own state. The parent must register a
+   * `selectValue` handler that recognizes
    * `event.sender === senderId` to honor the restore.
    *
    * `tug-choice-group` is controlled-only (`value` is required) so
    * there is no internal mirror — the parent IS the source of truth.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugChoiceGroup`'s persisted state. */
-interface TugChoiceGroupPersistState {
+/** Serialized shape of `TugChoiceGroup`'s preserved state. */
+interface TugChoiceGroupState {
   value: string;
 }
 
@@ -152,7 +153,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       className,
       style,
       "aria-label": ariaLabel,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -198,16 +199,16 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       [controlDispatch, effectiveSenderId],
     );
 
-    // Opt-in Component Persistence Protocol. Hook no-ops when
-    // `persistKey` is undefined. Controlled-only — restore re-
-    // dispatches `selectValue` so the parent (the source of truth)
-    // updates. [D13] / [A9].
-    useComponentPersistence<TugChoiceGroupPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. Hook no-ops when
+    // `componentStatePreservationKey` is undefined. Controlled-only —
+    // restore re-dispatches `selectValue` so the parent (the source of
+    // truth) updates. [D13] / [A9].
+    useComponentStatePreservation<TugChoiceGroupState>({
+      componentStatePreservationKey,
       captureState: () => ({ value }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugChoiceGroupPersistState>).value;
+        const next = (saved as Partial<TugChoiceGroupState>).value;
         if (typeof next !== "string") return;
         dispatchSelectValue(next);
       },

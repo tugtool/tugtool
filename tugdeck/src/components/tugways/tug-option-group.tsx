@@ -43,7 +43,7 @@ import {
 } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Types ----
 
@@ -115,18 +115,19 @@ export interface TugOptionGroupProps
   /** Accessible label for the toolbar. */
   "aria-label"?: string;
   /**
-   * Opt the option group into the Component Persistence Protocol
-   * ([D13], [A9]). When provided (and rendered inside a card), the
-   * active set is captured into `bag.components[persistKey]` at
-   * every save trigger. On restore the component re-dispatches a
-   * `setValue` action so the parent (which owns `value`) updates
-   * its own state. Controlled-only — no internal mirror.
+   * Opt the option group into the Component State Preservation
+   * Protocol ([D13], [A9]). When provided (and rendered inside a
+   * card), the active set is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger. On restore the component re-dispatches a `setValue`
+   * action so the parent (which owns `value`) updates its own state.
+   * Controlled-only — no internal mirror.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugOptionGroup`'s persisted state. */
-interface TugOptionGroupPersistState {
+/** Serialized shape of `TugOptionGroup`'s preserved state. */
+interface TugOptionGroupState {
   value: string[];
 }
 
@@ -144,7 +145,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       className,
       style,
       "aria-label": ariaLabel,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -184,15 +185,16 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       [controlDispatch, effectiveSenderId],
     );
 
-    // Opt-in Component Persistence Protocol. Hook no-ops when
-    // `persistKey` is undefined. Controlled-only — restore re-
-    // dispatches `setValue` so the parent updates. [D13] / [A9].
-    useComponentPersistence<TugOptionGroupPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. Hook no-ops when
+    // `componentStatePreservationKey` is undefined. Controlled-only —
+    // restore re-dispatches `setValue` so the parent updates.
+    // [D13] / [A9].
+    useComponentStatePreservation<TugOptionGroupState>({
+      componentStatePreservationKey,
       captureState: () => ({ value: [...value] }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugOptionGroupPersistState>).value;
+        const next = (saved as Partial<TugOptionGroupState>).value;
         if (!Array.isArray(next) || next.some((v) => typeof v !== "string")) {
           return;
         }

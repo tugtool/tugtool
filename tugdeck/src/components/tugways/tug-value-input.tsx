@@ -51,7 +51,7 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { useTextInputResponder } from "./use-text-input-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- Props ----
 
@@ -98,23 +98,25 @@ export interface TugValueInputProps
    */
   disabled?: boolean;
   /**
-   * Opt the value input into the Component Persistence Protocol
+   * Opt the value input into the Component State Preservation Protocol
    * ([D13], [A9]). When provided (and rendered inside a card), the
-   * numeric value is captured into `bag.components[persistKey]` at
-   * every save trigger. On restore the component re-dispatches
-   * `setValue` (phase `discrete`) so the parent (which owns
-   * `value`) updates. Controlled-only — no internal mirror.
+   * numeric value is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger. On restore the component re-dispatches `setValue` (phase
+   * `discrete`) so the parent (which owns `value`) updates.
+   * Controlled-only — no internal mirror.
    *
    * Note: when nested inside a `TugSlider` that already opts in via
-   * its own `persistKey`, the value-input should leave `persistKey`
-   * undefined to avoid double-capture. The slider's persistKey
+   * its own `componentStatePreservationKey`, the value-input should
+   * leave `componentStatePreservationKey` undefined to avoid
+   * double-capture. The slider's `componentStatePreservationKey`
    * captures the same axis on a parent-scope key.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
-/** Serialized shape of `TugValueInput`'s persisted state. */
-interface TugValueInputPersistState {
+/** Serialized shape of `TugValueInput`'s preserved state. */
+interface TugValueInputState {
   value: number;
 }
 
@@ -377,7 +379,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       className,
       style,
       onContextMenu,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     },
     ref,
@@ -405,15 +407,16 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       [controlDispatch, effectiveSenderId],
     );
 
-    // Opt-in Component Persistence Protocol. Hook no-ops when
-    // `persistKey` is undefined. Controlled-only — restore re-
-    // dispatches `setValue` so the parent updates. [D13] / [A9].
-    useComponentPersistence<TugValueInputPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. Hook no-ops when
+    // `componentStatePreservationKey` is undefined. Controlled-only —
+    // restore re-dispatches `setValue` so the parent updates.
+    // [D13] / [A9].
+    useComponentStatePreservation<TugValueInputState>({
+      componentStatePreservationKey,
       captureState: () => ({ value }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugValueInputPersistState>).value;
+        const next = (saved as Partial<TugValueInputState>).value;
         if (typeof next !== "number" || !Number.isFinite(next)) return;
         dispatchCommit(next);
       },

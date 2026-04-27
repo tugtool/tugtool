@@ -2851,7 +2851,7 @@ describe("DeckManager window focus/blur wiring", () => {
 // reads and writes: the activation-callback channel (one closure per
 // cardId; last-registration wins) and the card-host-root channel
 // (one live `HTMLElement` per cardId). Tests here pin the contract
-// `useCardPersistence` and `CardHost` rely on.
+// `useCardStatePreservation` and `CardHost` rely on.
 // ---------------------------------------------------------------------------
 
 describe("DeckManager focus-transfer channels", () => {

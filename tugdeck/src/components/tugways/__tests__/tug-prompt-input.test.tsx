@@ -32,7 +32,7 @@
  *     for tests 3 and 4. happy-dom does not implement
  *     `document.execCommand` meaningfully; we supply just
  *     enough behavior for the branches we care about.
- *   - `persistState={false}` on the rendered input disables the
+ *   - `preserveState={false}` on the rendered input disables the
  *     tugbank persistence hook (no workspace key needed).
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -222,7 +222,7 @@ function uninstallCanvas2DShim() {
 // ---------------------------------------------------------------------------
 
 /**
- * Renders TugPromptInput with `persistState={false}` (no tugbank
+ * Renders TugPromptInput with `preserveState={false}` (no tugbank
  * persistence — no workspace key required) and exposes the widened
  * imperative handle as `delegateRef.current`.
  */
@@ -241,7 +241,7 @@ function Harness({ onRouteChange, routePrefixes, captureDelegate }: HarnessProps
   return (
     <TugPromptInput
       ref={ref}
-      persistState={false}
+      preserveState={false}
       routePrefixes={routePrefixes}
       onRouteChange={onRouteChange}
     />

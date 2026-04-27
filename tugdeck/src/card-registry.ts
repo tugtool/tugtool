@@ -124,7 +124,7 @@ export interface CardRegistration {
    * Engine classification for the activation pipeline.
    *
    * When set to `"em"` (engine-managed), the card's content factory
-   * owns its own focus + selection lifecycle through `useCardPersistence`'s
+   * owns its own focus + selection lifecycle through `useCardStatePreservation`'s
    * `onCardActivated` callback. `resolveActivationTarget` (in
    * `focus-transfer.ts`) returns `dispatch-activated` for these cards
    * regardless of whether `bag.content` is populated yet — fresh
@@ -194,7 +194,7 @@ export function getSizePolicy(componentId: string): CardSizePolicy {
 /**
  * True when the card type is registered and declares
  * `engineKind: "em"` — i.e., its content factory owns its own focus
- * via `useCardPersistence`'s `onCardActivated` callback. Used by
+ * via `useCardStatePreservation`'s `onCardActivated` callback. Used by
  * `resolveActivationTarget` to route fresh (never-saved) EM cards
  * through the dispatch path instead of the generic default-focus
  * walk. Returns `false` for unregistered componentIds and for

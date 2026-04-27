@@ -255,7 +255,7 @@ export interface ActiveElementInfo {
 /**
  * Snapshot of an engine-managed (EM) card's state, as returned by
  * {@link TugTestSurface.getEmCardState}. EM cards are factories
- * whose `useCardPersistence`'s `onSave` returns a structured
+ * whose `useCardStatePreservation`'s `onSave` returns a structured
  * engine state object (text, selection, atoms — see
  * `lib/tug-text-engine.ts::TugTextEditingState`). The framework
  * stashes that object as `bag.content`; this surface method
@@ -681,8 +681,9 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
   };
 
   const resetOrchestratorAxis = (): void => {
-    // Component Persistence Protocol registries are owned by the
-    // deck-manager (see `componentRegistries`). They have no public
+    // Component State Preservation Protocol registries are owned by
+    // the deck-manager (see `componentStatePreservationRegistries`).
+    // They have no public
     // "clear" API because production never wants one — the only
     // legitimate drop is when a card leaves the deck. The `deck`
     // axis's `seedDeckState({ state: empty })` already discards
@@ -1175,7 +1176,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       //
       //   - Raw `TugTextEditingState`: `{ text, atoms, selection }`.
       //     This is what TugPromptInput's standalone
-      //     useCardPersistence (`gallery-prompt-input`) returns.
+      //     useCardStatePreservation (`gallery-prompt-input`) returns.
       //
       //   - TugPromptEntry wrapper:
       //     `{ currentRoute, perRoute: { [route]: TugTextEditingState }, maximized }`.

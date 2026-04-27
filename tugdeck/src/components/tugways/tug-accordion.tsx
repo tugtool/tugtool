@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useComponentPersistence } from "./use-component-persistence";
+import { useComponentStatePreservation } from "./use-component-state-preservation";
 
 // ---- TugAccordion Props (discriminated union) ----
 
@@ -106,10 +106,11 @@ export interface TugAccordionSharedProps {
   /** TugAccordionItem children. */
   children: React.ReactNode;
   /**
-   * Opt the accordion into the Component Persistence Protocol ([D13],
-   * [A9]). When provided (and rendered inside a card), the open
-   * section value is captured into `bag.components[persistKey]` at
-   * every save trigger and reapplied on the next mount.
+   * Opt the accordion into the Component State Preservation Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * open section value is captured into
+   * `bag.components[componentStatePreservationKey]` at every save
+   * trigger and reapplied on the next mount.
    *
    * Controlled (`value` prop provided): restore dispatches a
    * `toggleSection` action through the responder chain so the
@@ -118,24 +119,24 @@ export interface TugAccordionSharedProps {
    * Radix's open value in its own `useState` so restore can
    * programmatically update it.
    *
-   * Persisted shape: `{ value: string }` for `type="single"`,
+   * Preserved shape: `{ value: string }` for `type="single"`,
    * `{ value: string[] }` for `type="multiple"`. Restore validates
    * the shape against the current `props.type` and silently drops
    * mismatches (a payload from a re-typed accordion).
    *
-   * Absence of `persistKey` means "not persisted" — gallery demos
-   * and tests that render the accordion outside a card stay
-   * unaffected.
+   * Absence of `componentStatePreservationKey` means "not preserved"
+   * — gallery demos and tests that render the accordion outside a
+   * card stay unaffected.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
 /** TugAccordion props — discriminated union of single/multiple modes plus shared props. */
 export type TugAccordionProps = (TugAccordionSingleProps | TugAccordionMultipleProps) &
   TugAccordionSharedProps;
 
-/** Serialized shape of `TugAccordion`'s persisted open value. */
-interface TugAccordionPersistState {
+/** Serialized shape of `TugAccordion`'s preserved open value. */
+interface TugAccordionState {
   /** Open section id for `type="single"` (or `""` collapsed-all);
    *  array of open section ids for `type="multiple"`. */
   value: string | string[];
@@ -151,7 +152,7 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
       senderId,
       className,
       children,
-      persistKey,
+      componentStatePreservationKey,
       ...rest
     } = props;
 
@@ -171,14 +172,15 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     // (classic controlled mode). When it doesn't, Radix normally owns
     // internal state via `defaultValue` — but that state is opaque
     // to us, so we can't programmatically restore it. To keep opt-in
-    // persistence working cleanly in the uncontrolled case, mirror
-    // Radix's value in our own `useState` and pass it back to Radix
-    // as `value`. The user still clicks the same elements;
+    // state preservation working cleanly in the uncontrolled case,
+    // mirror Radix's value in our own `useState` and pass it back to
+    // Radix as `value`. The user still clicks the same elements;
     // `handleValueChange` keeps the mirror in sync.
     //
     // The discriminated union (`type="single"` vs `"multiple"`) gives
-    // the persisted shape two variants. Mirror it as `string | string[]`
-    // and narrow at each access site by `props.type`. [L11]
+    // the preserved shape two variants. Mirror it as
+    // `string | string[]` and narrow at each access site by
+    // `props.type`. [L11]
     const isExternallyControlled = props.value !== undefined;
     const [internalValue, setInternalValue] = useState<string | string[]>(
       () => {
@@ -221,19 +223,19 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
       [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
 
-    // Opt-in Component Persistence Protocol. The hook no-ops when
-    // `persistKey` is undefined, so standalone / gallery uses remain
-    // unaffected. Capture reads the `effectiveValue` source of truth;
-    // restore updates internal state in the uncontrolled path and
-    // dispatches a `toggleSection` for the controlled path (a
-    // best-effort re-dispatch; the parent is still in charge).
-    // [D13] / [A9].
-    useComponentPersistence<TugAccordionPersistState>({
-      persistKey,
+    // Opt-in Component State Preservation Protocol. The hook no-ops
+    // when `componentStatePreservationKey` is undefined, so standalone
+    // / gallery uses remain unaffected. Capture reads the
+    // `effectiveValue` source of truth; restore updates internal state
+    // in the uncontrolled path and dispatches a `toggleSection` for the
+    // controlled path (a best-effort re-dispatch; the parent is still
+    // in charge). [D13] / [A9].
+    useComponentStatePreservation<TugAccordionState>({
+      componentStatePreservationKey,
       captureState: () => ({ value: effectiveValue }),
       restoreState: (saved) => {
         if (saved === null || typeof saved !== "object") return;
-        const next = (saved as Partial<TugAccordionPersistState>).value;
+        const next = (saved as Partial<TugAccordionState>).value;
         if (props.type === "single") {
           if (typeof next !== "string") return;
           if (isExternallyControlled) {
@@ -271,11 +273,11 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
     // callback shape and value type go to Radix.
     //
     // `defaultValue` is intentionally dropped from the spread when
-    // `persistKey` is set — Radix would otherwise treat the component
-    // as uncontrolled (preferring `defaultValue` over `value`). Since
-    // we always pass `value` here, the prop redundantly survives but
-    // does nothing; stripping it via destructure removes the surface
-    // ambiguity for future readers.
+    // `componentStatePreservationKey` is set — Radix would otherwise
+    // treat the component as uncontrolled (preferring `defaultValue`
+    // over `value`). Since we always pass `value` here, the prop
+    // redundantly survives but does nothing; stripping it via
+    // destructure removes the surface ambiguity for future readers.
     const radixSingleRest = props.type === "single"
       ? (() => {
           const r = rest as Record<string, unknown>;

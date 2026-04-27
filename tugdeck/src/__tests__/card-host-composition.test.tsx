@@ -24,7 +24,7 @@
  *      useCallback-with-stale-deps would break this test.
  *
  * The test renders a real DeckCanvas + a real content factory that calls
- * `useCardDirty` / `useCardPersistence`, against a minimal Store that
+ * `useCardDirty` / `useCardStatePreservation`, against a minimal Store that
  * implements the subset of `IDeckManagerStore` these tests exercise.
  */
 import "./setup-rtl";
@@ -42,8 +42,8 @@ import type { IDeckManagerStore } from "@/deck-manager-store";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 import { useCardDirty } from "@/components/chrome/tug-pane";
-import { useCardPersistence } from "@/components/tugways/use-card-persistence";
-import { ComponentPersistenceRegistry } from "@/components/tugways/component-persistence-registry";
+import { useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
+import { ComponentStatePreservationRegistry } from "@/components/tugways/component-state-preservation-registry";
 import { CardStateOrchestrator } from "@/card-state-orchestrator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import {
@@ -65,7 +65,7 @@ const probeHandles = {
 
 function Probe({ cardId }: { cardId: string }) {
   const markDirty = useCardDirty();
-  useCardPersistence({
+  useCardStatePreservation({
     onSave: () => probeHandles.onSavePayload,
     onRestore: () => {},
   });
@@ -175,22 +175,22 @@ class Store implements IDeckManagerStore {
   };
   togglePaneCollapse = (): void => {};
 
-  private componentRegistries = new Map<string, ComponentPersistenceRegistry>();
-  getComponentRegistry = (cardId: string): ComponentPersistenceRegistry => {
-    let r = this.componentRegistries.get(cardId);
+  private componentStatePreservationRegistries = new Map<string, ComponentStatePreservationRegistry>();
+  getComponentStatePreservationRegistry = (cardId: string): ComponentStatePreservationRegistry => {
+    let r = this.componentStatePreservationRegistries.get(cardId);
     if (!r) {
-      r = new ComponentPersistenceRegistry();
-      this.componentRegistries.set(cardId, r);
+      r = new ComponentStatePreservationRegistry();
+      this.componentStatePreservationRegistries.set(cardId, r);
     }
     return r;
   };
-  peekComponentRegistry = (
+  peekComponentStatePreservationRegistry = (
     cardId: string,
-  ): ComponentPersistenceRegistry | undefined =>
-    this.componentRegistries.get(cardId);
+  ): ComponentStatePreservationRegistry | undefined =>
+    this.componentStatePreservationRegistries.get(cardId);
 
   private orchestrator = new CardStateOrchestrator((cardId) =>
-    this.componentRegistries.get(cardId),
+    this.componentStatePreservationRegistries.get(cardId),
   );
   registerCardAssembler: IDeckManagerStore["registerCardAssembler"] = (
     cardId,

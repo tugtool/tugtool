@@ -11,12 +11,14 @@
  *      `undefined` (clean round-trip, no empty objects).
  *   3. A card with registered components harvests each component's
  *      `captureState` parent-first into `bag.components`.
- *   4. Nested `<PersistenceScope>` prefixing → scoped keys land in the
- *      bag as the scoped form (the registry's sort key).
+ *   4. Nested `<ComponentStatePreservationScope>` prefixing → scoped
+ *      keys land in the bag as the scoped form (the registry's sort
+ *      key).
  *   5. `restoreCardState` invokes each component's `restoreState` in
  *      parent-first order.
- *   6. Orphan persistKeys (present in `bag.components` but not
- *      registered) are silently dropped; a single dev-warn lists them.
+ *   6. Orphan componentStatePreservationKeys (present in
+ *      `bag.components` but not registered) are silently dropped; a
+ *      single dev-warn lists them.
  *   7. Throwing `captureState` / `restoreState` closures are logged
  *      and skipped — one misbehaving component never blocks a save or
  *      restore.
@@ -32,9 +34,9 @@ import type { RefObject } from "react";
 import {
   CardStateOrchestrator,
   type CardAssembler,
-  type ComponentRegistryLookup,
+  type ComponentStatePreservationRegistryLookup,
 } from "../card-state-orchestrator";
-import { ComponentPersistenceRegistry } from "../components/tugways/component-persistence-registry";
+import { ComponentStatePreservationRegistry } from "../components/tugways/component-state-preservation-registry";
 import type { CardStateBag } from "../layout-tree";
 
 function makeCaptureRef<T>(fn: () => T): RefObject<() => unknown> {
@@ -47,9 +49,10 @@ function makeRestoreRef<T>(
 }
 
 function makeOrchestrator(
-  registries: Map<string, ComponentPersistenceRegistry>,
+  registries: Map<string, ComponentStatePreservationRegistry>,
 ): CardStateOrchestrator {
-  const lookup: ComponentRegistryLookup = (cardId) => registries.get(cardId);
+  const lookup: ComponentStatePreservationRegistryLookup = (cardId) =>
+    registries.get(cardId);
   return new CardStateOrchestrator(lookup);
 }
 
@@ -61,13 +64,13 @@ function makeAssembler(bag: CardStateBag): CardAssembler {
 
 describe("CardStateOrchestrator — capture", () => {
   test("unregistered card + empty registry returns empty bag", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
     const orchestrator = makeOrchestrator(registries);
     expect(orchestrator.captureCardState("nobody")).toEqual({});
   });
 
   test("assembler with no components returns its own bag verbatim; components stays undefined", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
     const orchestrator = makeOrchestrator(registries);
 
     const frameworkBag: CardStateBag = {
@@ -82,8 +85,8 @@ describe("CardStateOrchestrator — capture", () => {
   });
 
   test("harvests registered components into bag.components parent-first", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
     // Deliberate mixed registration order — harvest order comes from
@@ -125,13 +128,14 @@ describe("CardStateOrchestrator — capture", () => {
     ]);
   });
 
-  test("scoped persistKeys from <PersistenceScope> land as scoped keys in bag.components", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+  test("scoped componentStatePreservationKeys from <ComponentStatePreservationScope> land as scoped keys in bag.components", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
-    // Simulate what useComponentPersistence under a <PersistenceScope>
-    // would produce: scoped keys like "panel/expanded".
+    // Simulate what useComponentStatePreservation under a
+    // <ComponentStatePreservationScope> would produce: scoped keys like
+    // "panel/expanded".
     registry.register(
       "panel/expanded",
       makeCaptureRef(() => true),
@@ -156,8 +160,8 @@ describe("CardStateOrchestrator — capture", () => {
   });
 
   test("merges framework axes with bag.components without mutating the assembler's bag", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
     registry.register(
       "ck",
@@ -179,8 +183,8 @@ describe("CardStateOrchestrator — capture", () => {
   });
 
   test("registry with no entries leaves bag.components undefined", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    registries.set("card-a", new ComponentPersistenceRegistry()); // present but empty
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    registries.set("card-a", new ComponentStatePreservationRegistry()); // present but empty
 
     const orchestrator = makeOrchestrator(registries);
     orchestrator.registerAssembler("card-a", makeAssembler({}));
@@ -219,8 +223,8 @@ describe("CardStateOrchestrator — assembler lifecycle", () => {
 
 describe("CardStateOrchestrator — restore", () => {
   test("dispatches bag.components to each component parent-first", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
     const calls: Array<[string, unknown]> = [];
@@ -261,9 +265,9 @@ describe("CardStateOrchestrator — restore", () => {
     orchestrator.restoreCardState("card-a", { scroll: { x: 0, y: 0 } });
   });
 
-  test("orphan persistKeys are dropped with a dev-warn", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+  test("orphan componentStatePreservationKeys are dropped with a dev-warn", () => {
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
     const restored: string[] = [];
@@ -288,7 +292,7 @@ describe("CardStateOrchestrator — restore", () => {
       const orphanWarn = warnings.find(
         (args) =>
           typeof args[0] === "string" &&
-          args[0].includes("orphan persistKeys dropped"),
+          args[0].includes("orphan componentStatePreservationKeys dropped"),
       );
       expect(orphanWarn).toBeDefined();
       expect(orphanWarn![1]).toEqual(["gone"]);
@@ -311,7 +315,7 @@ describe("CardStateOrchestrator — restore", () => {
       const warn = warnings.find(
         (args) =>
           typeof args[0] === "string" &&
-          args[0].includes('card "unknown-card" has no component registry'),
+          args[0].includes('card "unknown-card" has no component state preservation registry'),
       );
       expect(warn).toBeDefined();
     } finally {
@@ -336,8 +340,8 @@ describe("CardStateOrchestrator — error tolerance", () => {
   });
 
   test("throwing captureState is skipped; other components still harvest", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
     registry.register(
@@ -375,8 +379,8 @@ describe("CardStateOrchestrator — error tolerance", () => {
   });
 
   test("throwing restoreState is skipped; other components still restore", () => {
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
 
     const restored: string[] = [];
@@ -423,8 +427,8 @@ describe("CardStateOrchestrator — saveState RPC parity", () => {
     // `saveAndFlushSync` → each card's save callback →
     // `captureCardState`, so the RPC now returns this exact shape by
     // construction (closes [AT0017]).
-    const registries = new Map<string, ComponentPersistenceRegistry>();
-    const registry = new ComponentPersistenceRegistry();
+    const registries = new Map<string, ComponentStatePreservationRegistry>();
+    const registry = new ComponentStatePreservationRegistry();
     registries.set("card-a", registry);
     registry.register(
       "checkbox",

@@ -169,7 +169,7 @@ export function GalleryChoiceGroup() {
               value={mdValue}
               senderId={mdId}
               aria-label="Medium choice group"
-              persistKey="choice-md"
+              componentStatePreservationKey="choice-md"
               data-testid="gallery-choice-persistent"
               items={[
                 { value: "alpha", label: "Alpha" },

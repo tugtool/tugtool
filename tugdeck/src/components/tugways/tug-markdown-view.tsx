@@ -59,7 +59,7 @@ import { useOptionalResponder } from "@/components/tugways/use-responder";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { selectionGuard } from "@/components/tugways/selection-guard";
-import { useCardId, useCardPersistence } from "@/components/tugways/use-card-persistence";
+import { useCardId, useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
@@ -227,23 +227,24 @@ export interface TugMarkdownViewProps {
   /** CSS class for the scroll container. */
   className?: string;
   /**
-   * When set, opts the view into card-level selection persistence.
+   * When set, opts the view into card-level selection publish.
    *
    * Subscribes to `document.selectionchange` and publishes any range
    * whose `commonAncestorContainer` is within the scroll container to
    * `selectionGuard.updateCardDomSelection(cardId, range)` (cardId is
-   * read from the enclosing `CardPersistenceContext`). The
+   * read from the enclosing `CardStatePreservationContext`). The
    * card-level paint authority then carries the range through tab
    * switches, app resign/become-active, and cold-boot mount-restore
    * via `selectionGuard.restoreCardDomSelection`.
    *
    * No-op when the component is rendered outside a `CardHost`
-   * (`useCardId` returns null) or when `persistKey` is `undefined`.
+   * (`useCardId` returns null) or when `selectionPublishKey` is
+   * `undefined`.
    *
    * Implements [A5] (markdown-view selection publish) per [L23]
    * (user-visible state must round-trip).
    */
-  persistKey?: string;
+  selectionPublishKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +320,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onBlockMeasured,
     onTiming,
     className,
-    persistKey,
+    selectionPublishKey,
   }, ref) {
   // ---- DOM refs ----
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1279,7 +1280,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
   // ---- Selection publish [A5] ----
   //
-  // When `persistKey` is set and the view is mounted inside a
+  // When `selectionPublishKey` is set and the view is mounted inside a
   // `CardHost`, publish the user's `Range` to `selectionGuard` so the
   // card-level paint authority can carry it across tab switches, app
   // resign/become-active, and (via the `CardHost` mount-restore path)
@@ -1299,7 +1300,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // user's selection across save/restore boundaries.
   const cardId = useCardId();
   useLayoutEffect(() => {
-    if (persistKey === undefined) return;
+    if (selectionPublishKey === undefined) return;
     if (cardId === null) return;
     const root = scrollContainerRef.current;
     if (!root) return;
@@ -1325,9 +1326,9 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       root.ownerDocument.removeEventListener("selectionchange", onSelectionChange);
       selectionGuard.updateCardDomSelection(cardId, null);
     };
-  }, [persistKey, cardId]);
+  }, [selectionPublishKey, cardId]);
 
-  // Card-persistence registration. `onSave` returns `undefined` so
+  // Card-state-preservation registration. `onSave` returns `undefined` so
   // `bag.content` stays absent and `CardHost`'s `captureCardState`
   // takes the `!ownsSelectionAndFocus` branch — `bag.domSelection` is
   // captured automatically from `selectionGuard.cardRanges` (seeded
@@ -1336,7 +1337,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // ([D07] / 25B plan). The hook also registers an
   // `onCardActivated` channel so future focus-transfer needs land
   // here without a second `register` call.
-  useCardPersistence<undefined>({
+  useCardStatePreservation<undefined>({
     onSave: () => undefined,
     onRestore: () => {},
   });
