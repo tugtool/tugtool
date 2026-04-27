@@ -1,8 +1,13 @@
 /**
- * m27-deactivation-inactive-paint.test.ts — deactivation publishes
+ * m38-deactivation-inactive-paint.test.ts — deactivation publishes
  * the user's selection to selectionGuard at the same DOM positions
  * the user actually selected (selection plan Step 25C.4 follow-up
- * regression gate).
+ * regression gate / [M38]).
+ *
+ * Renamed from `m27-*` during the Step 25L M-series audit; the
+ * original `m27` prefix collided with the M27 layout-state tag
+ * (gated by `m27-layout-state-persistence.test.ts`). M38 was
+ * assigned in the canonical inventory at `tuglaws/m-series-inventory.md`.
  *
  * ## What this gates
  *
@@ -566,7 +571,7 @@ async function runDeactivationScenario(
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
-  "m27: deactivation publishes inactive paint at the user's exact DOM position",
+  "m38: deactivation publishes inactive paint at the user's exact DOM position",
   () => {
     test(
       "gallery-prompt-input — seeded selection survives deactivation at correct DOM position",

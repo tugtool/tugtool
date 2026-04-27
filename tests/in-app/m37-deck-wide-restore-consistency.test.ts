@@ -1,7 +1,12 @@
 /**
- * m26-deck-wide-restore-consistency.test.ts — multi-card restore
+ * m37-deck-wide-restore-consistency.test.ts — multi-card restore
  * preserves the active/inactive selection invariants (selection
- * plan Step 25C.4 / [M26]).
+ * plan Step 25C.4 / [M37]).
+ *
+ * Renamed from `m26-*` during the Step 25L M-series audit; the
+ * original `m26` prefix collided with the M26 overlay-policy tag
+ * (gated by `m26-overlay-persistence.test.ts`). M37 was assigned in
+ * the canonical inventory at `tuglaws/m-series-inventory.md`.
  *
  * ## What this gates
  *
@@ -637,7 +642,7 @@ async function runRelaunchScenario(layout: Layout): Promise<void> {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
-  "m26: deck-wide restore consistency (active/inactive paint split)",
+  "m37: deck-wide restore consistency (active/inactive paint split)",
   () => {
     test(
       "L1 (1 pane, 2 cards: gallery-prompt-input × 2) × appReload",

@@ -2686,7 +2686,7 @@ For active cards, layout changes that clamp scrollTop are handled by the engine 
 
 **Test plan.**
 
-New test file: `tests/in-app/m26-deck-wide-restore-consistency.test.ts`. Multi-card decks where each card carries a persisted selection and the active state matters. The matrix exercises both single-pane (multiple cards as tabs) and multi-pane geometries to gate the precise "active = deck-level first responder" definition.
+New test file: `tests/in-app/m37-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during the Step 25L M-series audit; original numbering collided with the M26 overlay-policy tag — see `tuglaws/m-series-inventory.md`). Multi-card decks where each card carries a persisted selection and the active state matters. The matrix exercises both single-pane (multiple cards as tabs) and multi-pane geometries to gate the precise "active = deck-level first responder" definition.
 
 **Test cases (4 layouts × 2 reload triggers = 8):**
 
@@ -2737,7 +2737,7 @@ If selectionGuard's existing paint mechanism doesn't match what the plan assumes
 1. Engine paint API split: `paintMirrorAsActive`, `paintMirrorAsInactive(publish)`, `repaintMirrorScroll`. Retire `applyMirrorToDom` (or keep as a thin wrapper that picks active by default, deprecated).
 2. CardHost: extend `onRestore` signature to pass `{ isActive }`. Add `onCardWillDeactivate` to the persistence-callbacks record (next to `onCardActivated`, NOT in `useCardDelegate`). Wire firings. Specify and enforce the [L23] restore ordering (inactive cards' onRestore complete before active card's `paintMirrorAsActive` claims focus).
 3. TugPromptInput / TugPromptEntry: route `onRestore` and `onCardActivated` / `onCardWillDeactivate` through the active/inactive paint methods. Pass `cardIdRef.current!`-based `selectionGuard.updateCardDomSelection` into the inactive publish callback (per the [L07] mandatory pattern above — direct `cardId` capture is forbidden).
-4. New harness test: `m26-deck-wide-restore-consistency.test.ts` (8 tests — 4 layouts × 2 triggers; L4 covers the multi-pane "active = deck-level first responder, NOT pane-active" precision).
+4. New harness test: `m37-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during 25L; 8 tests — 4 layouts × 2 triggers; L4 covers the multi-pane "active = deck-level first responder, NOT pane-active" precision).
 5. Audit: full default sweep green; m24 + m25 + m26 all pass.
 
 **Estimated commits:** two — (1) engine API split + CardHost wiring + component routing (the verification step from #0 lands as part of this commit's investigation); (2) m26 harness test + Justfile sweep wiring. Could be one commit if the test is added alongside the implementation, but a separate test commit makes the gating evidence cleaner (test fails on commit 1's parent, passes on commit 1).
@@ -3123,22 +3123,24 @@ The assertion remains valuable as preventive coverage if a future code path shor
 
 ##### Step 25L: Final cleanup ([M13], [M15], Step NN doc pass) {#step-25l}
 
-**Closes:** [M13] (integration test gap fill-in for any scenarios still uncovered by 25A–25K's harness tests), [M15] (legacy `saveSelection` / `restoreSelection` / `SavedSelection` deletion), and folds in [Step NN](#step-nn) (documentation pass + final cleanup).
+**Status:** ✅ M-series audit deliverable closed. Other deliverables marked partial / deferred — see breakdown below.
 
-**Deliverables:**
-- Walk the [M13] integration test inventory; fill any remaining gaps not closed by the M-tag-specific tests.
-- Delete `selectionGuard.saveSelection` / `restoreSelection` / `SavedSelection` — the surface is now unused; the grep test landed in `selection-persistence-greps.test.ts` flips from "expected references" to "expected zero references".
-- `selection-model.md` rewrite to reflect the post-23A–23G architecture (synchronous `focus-transfer.ts`, [A9] component protocol, taxonomy table updated). Module docstrings in `selection-guard.ts`, `tug-text-engine.ts`, `card-host.tsx`, `focus-transfer.ts` updated.
-- Cross-reference update in `tugplan-tide-card-polish.md`.
-- M-series end-of-plan audit: every M-tag flipped to ✅ in the inventory; [Step NN](#step-nn) checkboxes flipped.
+**Closes:** [M13] (closed: per-tag tests collectively constitute the integration coverage); M-series end-of-plan audit (closed: canonical inventory at [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) lists every tag's status). [M15] remains ⚠️ partial (test-fixture cleanup deferred); other doc-pass items left for follow-up commits.
 
-**Estimated commits:** one or two (split if [M13] adds many tests; otherwise bundled with the doc pass).
+**Deliverables (audited):**
+- ✅ **[M13] integration test coverage.** Closed in spirit by landing a focused `m{NN}-*.test.ts` per M-tag across 25A–25K, not by extending one mega-test file. Coverage = sum of per-tag gating tests; the inventory itself is the integration test plan.
+- ⚠️ **[M15] legacy API deletion.** Production callers retired; the `selectionGuard.saveSelection` / `restoreSelection` / `SavedSelection` surface still exists for unit-test compatibility (`selection-guard.test.ts`, `selection-model.test.tsx`, `use-selection-boundary.test.tsx` exercise it as a registration probe). Full deletion requires rewriting those tests to use the published `cardRanges` / `updateCardDomSelection` surface — non-trivial. Marked ⚠️ partial in the inventory; deferred as a focused follow-up.
+- ⏸ **`selection-model.md` rewrite + module docstrings.** Big doc rewrite covering the post-23A–23G architecture (synchronous `focus-transfer.ts`, [A9] component protocol, taxonomy table). Out of scope for the M-series-audit commit; deferred as a follow-up doc pass.
+- ✅ **Cross-reference update in `tugplan-tide-card-polish.md`.** Existing references to `tugplan-selection.md` are still accurate (they point at the plan doc, which remains canonical for design intent). The new inventory link landed inline in the missing-cases section.
+- ✅ **M-series end-of-plan audit.** New file [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) lists every tag M01–M38 with status, gating tests, one-paragraph summary. M32–M36 elaborated entries added to this plan doc. M37 and M38 added (renumbered from drifted `m26-*` and `m27-*` test filenames; old prefixes collided with the M26 overlay-policy and M27 layout-state tags). Coverage matrix extended to include M32–M38. The justfile's hardcoded test-suite list updated to use the new filenames + add the m26/m27/m30/m31 tests added during 25D–25G that were never wired into the default sweep.
+
+**Estimated commits (actual):** one — the M-series audit commit lands here. M15 deletion + selection-model.md rewrite tracked as follow-up commits if/when prioritized.
 
 **Dependencies:** all preceding sub-steps in Step 25.
 
 ##### End of M-series.
 
-After Step 25L lands, the missing-cases inventory ([M01]–[M31]) is fully closed. The plan doc transitions to a maintenance shape: any new M-tag surfaces from a real-app gap, gets authored as a new entry, gated by a new harness test, and closed in a focused sub-step.
+After Step 25L lands, the missing-cases inventory ([M01]–[M38]) is fully closed except for [M12] (IME, deferred to [25J]), [M28] (banner-dismiss, deferred), [M29] (scroll-key audit, deferred), and the residual axes called out in [M15] (legacy API surface — partial), [M30] (virtual-focus-without-selection — niche edge case), and [M31] (tide-card lazy-mount). The plan doc transitions to a maintenance shape: any new M-tag surfaces from a real-app gap, gets authored as a new entry in [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md), gated by a new harness test, and closed in a focused sub-step.
 
 ---
 
@@ -3175,6 +3177,8 @@ After Step 25L lands, the missing-cases inventory ([M01]–[M31]) is fully close
 - [ ] All D-decisions referenced by at least one step via the validator.
 
 ### Missing cases inventory {#missing-cases}
+
+> **Canonical registry:** [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) is the authoritative index of M-tag → status → gating tests, including M32–M38 added during Steps 23F / 23G / 25C.4 / 25C.5 / 25L. The blocks below remain the elaborated rationale + closing-requires for each tag and stay synchronized with the inventory's status field. When the two diverge, the inventory's tag numbering is authoritative; the per-tag block here is authoritative for design intent.
 
 Post-implementation analysis of Steps 1–15 surfaced a class of transitions and card-type interactions the original plan did not cover. The plan did cover cold-boot reload and cross-pane moves well, but left **in-session activation transitions** (tab switch, pane activation, app resign / become-active, app hide / unhide) and **content-owning card focus reactivation** without a documented owner or trigger.
 
@@ -3495,6 +3499,79 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Trigger:** User navigates within a prompt-entry to a non-default route or opens the tools panel; transition resets both to defaults.
 - **Status:** ✅ closed for `gallery-prompt-entry` by [Step 25G](#step-25g). Architectural divergence from the original plan: route + per-route engine drafts continue to live in `bag.content` ([M24] gates route survival), and only `toolsOpen` rides `bag.components.entry-chrome` via `useComponentPersistence`. The original "serialize `{ route, toolsOpen }` via `captureState`" wording would have split route from `bag.content.perRoute` (the perRoute map), forcing a two-phase restore that violates [L23] (apply-default-then-recover). Single-restore architecture preserves the L23 contract. Tide-card's lazy `TugPromptEntry` mount falls outside the [A9c] orchestrator's one-shot component-restore window — documented as a follow-up gap in `m31-prompt-entry-chrome.test.ts`'s module docstring; closure requires extending [A9c] to re-fire on registry changes (or adding a per-component restore primitive at hook-register time). m24 already proved route + per-route content survives across `appReload` / `quitGracefully+relaunch`; m31 adds the `toolsOpen` axis + the cmd-tab transition for chrome.
 - **Closing requires:** `tug-prompt-entry` opts into [A9] with persistKey and serializes `{ toolsOpen }` via `captureState`. Route stays in `bag.content.currentRoute` because it is the index into `bag.content.perRoute` — splitting the two would require two-phase restore, which violates [L23]. Tide closure requires the orchestrator change above.
+
+---
+
+_M32–M36 surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each gates a specific EM-card focus or selection bug that escaped the M01–M23 transition coverage._
+
+#### [M32] EM cold-boot selection paint {#m32-em-cold-boot-selection}
+
+- **Card types:** EM
+- **State axes:** SR
+- **Trigger:** Reload with an EM card seeded ACTIVE and a non-collapsed selection in `bag.content`.
+- **Status:** ✅ closed at [Step 23F](#step-23f).
+- **Test:** `m32-em-cold-boot-selection.test.ts`.
+- **Mechanism (was):** Cold-boot mount-restore for EM cards landed selection on an unfocused engine root; the visible paint was missing on first frame.
+- **Mechanism (now):** `cold-boot-restore-snapshot` diagnostic event fires with `hasContent: true`; `engine-restore-applied` echoes the seeded selection and the live `engine.getSelectedRange()` post-restore.
+
+#### [M33] Fresh-EM-card resolver classification {#m33-em-fresh-card-activation}
+
+- **Card types:** EM
+- **State axes:** FX
+- **Trigger:** A fresh, never-saved EM card mounts in an inactive tab; the user activates it via tab click. Pre-23F, focus landed on the editor's first toolbar button (e.g. "Insert Atom") instead of the contenteditable.
+- **Status:** ✅ closed at [Step 23F](#step-23f).
+- **Test:** `m33-em-fresh-card-activation.test.ts`.
+- **Mechanism (was):** `resolveActivationTarget` discriminated EM vs FC by `bag.content !== undefined`. Saved EM cards (m09) classified correctly; fresh never-saved EM cards mis-classified into the `default-focus` branch, where `button:not([disabled])` matched before `[contenteditable="true"]`.
+- **Mechanism (now):** [Step 23F](#step-23f) adds `engineKind: "em"` to the card-registry shape; `resolveActivationTarget` reads `engineKind` instead of inferring from `bag.content`.
+
+#### [M34] EM focus after cross-pane move {#m34-em-focus-after-move}
+
+- **Card types:** EM
+- **State axes:** FX
+- **Trigger:** Drag an EM card cross-pane (or detach to a new pane). `engine-activation-dispatched` fires (proving `onCardActivated` ran), but `.focus()` no-ops on the freshly re-mounted contenteditable.
+- **Status:** ✅ closed at [Step 23F](#step-23f).
+- **Test:** `m34-em-focus-after-move.test.ts`.
+- **Mechanism:** Pre-23F, m06-em / m07-em deliberately omitted the focus-actually-landing assertion because the contenteditable's first commit lagged the activation dispatch. 23F closes the gap; this test is the regression gate for the focus-actually-landing assertion that those tests can now adopt.
+
+#### [M35] App-switch selection survival (EM + tide) {#m35-em-app-switch-selection}
+
+- **Card types:** EM (gallery-prompt-input direct + tide-card variant)
+- **State axes:** SR, FX
+- **Trigger:** Type into an EM card, select a substring, cmd-tab away, cmd-tab back. Pre-23G, text always restored but selection was intermittently lost — tide-specific reproducer; gallery-prompt-entry didn't exhibit it.
+- **Status:** ✅ closed at [Step 23G](#step-23g).
+- **Tests:** `m35-em-app-switch-selection.test.ts`, `m35-tide-app-switch-selection.test.ts`.
+- **Mechanism:** Tide-card had two redundant focus paths on activation — its own `useCardDelegate({cardDidActivate})` legacy hook plus TugPromptEntry's framework-driven `onCardActivated`. Back-to-back `.focus()` calls triggered WebKit's selectionchange-on-focus quirk intermittently. Step 23G routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern. Gallery-prompt-input variant is the forward-regression gate for the activation chain shared between the two factories.
+
+#### [M36] Inactive-card cmd-tab selection survival {#m36-inactive-card-app-switch-selection}
+
+- **Card types:** FC (TugInput)
+- **State axes:** SR
+- **Trigger:** Activate an FC card, type + select. Activate another card → first card's selection is captured into `bag.formControls`. Cmd-Tab away + back. Re-activate the FC card by clicking its tab. Pre-25C.5 Layer 4: re-activation click clobbered the saved selection (mousedown placed a collapsed caret at the click point before any restore could re-apply).
+- **Status:** ✅ closed at [Step 25C.5](#step-25c5) Layer 4.
+- **Test:** `m36-inactive-card-app-switch-selection.test.ts`.
+- **Mechanism:** `installFormControlReapplyOnNextMousedown` (focus-transfer.ts) is the deterministic event-ordering primitive — a one-shot capture-phase mousedown listener that `preventDefault`s the default caret-placement and re-applies `bag.formControls` for the clicked input. No RAF, no microtask — strictly deterministic against the browser's event-dispatch sequence ([L05]).
+
+---
+
+_M37 and M38 surfaced during selection-plan Step 25C.4 (active/inactive paint split). Multi-card paint invariants that the active/inactive routing must preserve. Originally numbered `m26-*` and `m27-*` in test filenames; renumbered to M37 / M38 during the Step 25L M-series audit when the canonical inventory landed and the M26 / M27 tags were claimed by the overlay-policy and layout-state entries._
+
+#### [M37] Multi-card deck-wide restore consistency {#m37-deck-wide-restore-consistency}
+
+- **Card types:** EM × N
+- **State axes:** SR, FX, OS, TV (all axes per card)
+- **Trigger:** Restore a multi-card deck (single-pane tabs OR multi-pane geometries) where each card carries a persisted selection.
+- **Status:** ✅ closed at [Step 25C.4](#step-25c4).
+- **Test:** `m37-deck-wide-restore-consistency.test.ts`.
+- **Invariants gated:** (1) exactly one card holds document focus — the deck-level first responder; (2) exactly one card's range is in `window.getSelection()` (same card); (3) every inactive card's selection lives in `selectionGuard.cardRanges` and is observable via `__tug.getCaretState(cardId)`; (4) every inactive card's range is in the `inactive-selection` CSS Custom Highlight; the active card's range is NOT; (5) every card's bag-on-disk has the four 25C.3 axes (text/atoms/selection/scrollTop) preserved.
+
+#### [M38] Deactivation-time inactive paint {#m38-deactivation-inactive-paint}
+
+- **Card types:** EM
+- **State axes:** SR (selection paint at correct DOM positions)
+- **Trigger:** Type enough into an EM card to make it scroll, select content (possibly off-screen), click another card to deactivate. Pre-25C.4: inactive-paint highlight ended up at the wrong DOM positions (relative-to-visible offset rather than the user's actual selection).
+- **Status:** ✅ closed at [Step 25C.4](#step-25c4).
+- **Test:** `m38-deactivation-inactive-paint.test.ts`.
+- **Mechanism:** `paintMirrorAsInactive(publish)` rebuilds a DOM Range from `mirror.selection` flat offsets via `flatToDom`. The test gates `flatToDom`'s correctness against scrolled content — the rebuilt Range must reflect the user's actual selection, not the visible / scroll-relative position.
 
 ---
 
@@ -3835,6 +3912,13 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 | [M29] | [A9f] | none |
 | [M30] | [A9d] (selected value captured per component; virtual-focus-index axis deferred) | virtual-focus-without-selection edge case unaddressed — see [25E](#step-25e) note |
 | [M31] | [A9d] (`toolsOpen`) + [M24] (route via `bag.content`) | tide-card lazy mount misses [A9c]'s one-shot component-restore — see [M31] note |
+| [M32] | [Step 23F](#step-23f) (cold-boot diagnostic chain + EM mount-restore) | none |
+| [M33] | [Step 23F](#step-23f) (`engineKind` on the card-registry shape; `resolveActivationTarget` reads it) | none |
+| [M34] | [Step 23F](#step-23f) (cross-pane focus-actually-landing fix) | none |
+| [M35] | [Step 23G](#step-23g) (delegate focus routes through `engine.setSelectedRange`) | none |
+| [M36] | [Step 25C.5](#step-25c5) Layer 4 (`installFormControlReapplyOnNextMousedown` deterministic event ordering) | none |
+| [M37] | [Step 25C.4](#step-25c4) (engine paint API split + restore-ordering invariant) | none |
+| [M38] | [Step 25C.4](#step-25c4) (`paintMirrorAsInactive(publish)` + `flatToDom` correctness against scrolled content) | none |
 
 ##### Phasing suggestion for M-series execution steps {#m-phasing}
 
