@@ -19,9 +19,9 @@ are mechanical (path/anchor updates only — no behavior changes).
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete (2026-04-27) |
 | Target branch | main |
-| Last updated | 2026-04-27 (revision: overviewer feedback round 2) |
+| Last updated | 2026-04-27 (Step 8 audit close-out) |
 
 ---
 
@@ -1560,3 +1560,45 @@ set. Code changes limited to mechanical comment-path updates;
 | No stale path | `grep -rln 'selection-model.md' tuglaws/ tugdeck/src/ tests/` returns 0 |
 | Code clean | `bun x tsc --noEmit` exits 0 in `tugdeck/` |
 | Tests clean | `bun test` passes in `tugdeck/` |
+
+---
+
+### Audit Close-out {#audit-closeout}
+
+Final verification run on 2026-04-27, end of Step 8. Every success criterion in `#success-criteria` was re-executed against the worktree state; all gates green. The selection-model rename, harness doc split, framework-architecture appendix strip, and cross-reference repairs from Steps 1–7 hold under combined audit.
+
+**SC verification commands and results:**
+
+| ID | Command | Result |
+|----|---------|--------|
+| SC01 | `wc -l tuglaws/INDEX.md` | 35 lines (≤ 150). 17 bullets matching 17 sibling docs. PASS. |
+| SC02 | `test -f tuglaws/card-state-model.md && ! test -f tuglaws/selection-model.md` | exit 0. PASS. |
+| SC03 | per-identifier loop (15 identifiers) over `tuglaws/state-preservation.md` | no `MISSING:` output. PASS. |
+| SC04 | per-identifier loop (12 identifiers) over `tuglaws/lifecycle-delegates.md` | no `MISSING:` output. PASS. |
+| SC05 | `test -f tuglaws/app-test-harness.md`; `wc -l tests/app-test/README.md` | harness file exists; README 258 lines (< 320). PASS. |
+| SC06 | `grep -c '^### L0' tuglaws/framework-architecture.md` | `0`. PASS. |
+| SC07 | `grep -l '^\*Cross-references:' tuglaws/*.md` | includes `card-state-model.md`, `state-preservation.md`, `lifecycle-delegates.md`, `app-test-harness.md` (plus all pre-existing banner-bearing docs). PASS. |
+| SC08 | `grep -n 'state-preservation.md\|lifecycle-delegates.md' tuglaws/tuglaws.md` | L23 → `state-preservation.md` (line 67); L09 → `lifecycle-delegates.md` (line 79). PASS. |
+| SC09 | `grep -nA3 'Cross-Links\|state-preservation.md\|lifecycle-delegates.md' tuglaws/pane-model.md` | Cross-Links block lists both new docs (lines 200, 201). PASS. |
+| SC10 | awk `RS=""` paragraph gate over `tuglaws/app-test-inventory.md` | no `MISSING:` output. Count gate `grep -c 'state-preservation.md'` returns 7 (matches `[A9]` paragraph count). PASS. |
+| SC11 | `grep -r 'tuglaws/selection-model' tuglaws/ tugdeck/src/ tests/` | 0 hits. Stronger acceptance form `grep -rln 'selection-model.md' tuglaws/ tugdeck/src/ tests/` also 0 hits. PASS. |
+| SC12 | `bun x tsc --noEmit` in `tugdeck/` | exit 0. PASS. |
+| SC13 | `bun test` in `tugdeck/` | 2414 pass / 0 fail across 141 files (10.29s). PASS. |
+
+**Additional acceptance gates (from #exit-criteria):**
+
+| Acceptance | Command | Result |
+|------------|---------|--------|
+| Laws promoted to H3 | `grep -c '^### L' tuglaws/tuglaws.md` | 25 (≥ 25). PASS. |
+| Laws have anchors | `awk '/^### L[0-9][0-9]\./ && /#l[0-9][0-9]\}$/' tuglaws/tuglaws.md \| wc -l` | 25 (≥ 25). PASS. |
+
+**Visual readthrough.** Banners on `card-state-model.md`, `state-preservation.md`, `lifecycle-delegates.md`, and `app-test-harness.md` all match the canonical SC07 format (`# Title` / italic tagline / `*Cross-references:` line). No doc opens with a stale `selection-model.md` reference (`grep -l '^\*Cross-references:' tuglaws/*.md | xargs grep -l 'selection-model.md'` → none).
+
+**Residual `selection-model.md` mentions (per Risk R02).** Outside SC11's grep scope, the string survives only in roadmap/historical files: `roadmap/tugplan-state-preservation-rename.md`, `roadmap/tugplan-selection.md`, `roadmap/tugplan-tuglaws-tidyup.md`, `roadmap/archive/tugplan-vocabulary-pane-rename.md`, `roadmap/archive/tugplan-card-and-token-sweep.md`, `roadmap/archive/text-component-fit-and-finish.md`, plus `.tugtool/` planning artifacts for this plan itself. SC11's scope (`tuglaws/`, `tugdeck/src/`, `tests/`) is clean. Non-gating per Risk R02 / Assumption A05.
+
+**Phase exit checklist.**
+
+- [x] All SC01–SC13 in `#success-criteria` verified green.
+- [x] All eight steps committed (commits land via committer-agent per workflow).
+- [x] This plan's Status: `complete (2026-04-27)`.
+- [x] Audit close-out subsection appended.

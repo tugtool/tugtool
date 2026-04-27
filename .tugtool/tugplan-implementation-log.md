@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-04-27T23:38:20Z
+---
+
+## step-8: Final audit complete. All 13 SCs verified green; plan status flipped to complete (2026-04-27); Audit Close-out subsection appended. bun x tsc --noEmit exit 0; bun test 2414 pass / 0 fail.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-7
 date: 2025-04-27T23:34:07Z
 ---
