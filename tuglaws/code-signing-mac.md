@@ -1,6 +1,8 @@
-# Code Signing — `Tug Dev` Self-Signed Identity
+# Code Signing on macOS — `Tug Dev` Self-Signed Identity
 
 *The signing pipeline that gives `Tug.app` a stable signature hash across rebuilds, why the app-test harness depends on it, and the procedures + failure modes you need to know. Read this before changing anything in `Justfile`'s `build-app` or `app-test` recipes, in `scripts/setup-dev-signing.sh`, or in the bundle's signing settings inside Xcode.*
+
+> **Platform scope.** This document is **macOS-only**. The whole pipeline is structured around Apple's TCC database, the `security` CLI, the `codesign` tool, Xcode's build settings, and macOS Accessibility (AX) permissions. None of it has a meaningful analogue on Linux or Windows. When tugtool grows non-Mac dev hosts — a Linux build agent, a Windows port, anything that produces a runnable artifact — each platform will need its own signing-and-trust story documented as a sibling file (`code-signing-linux.md`, `code-signing-windows.md`, etc.); the file is named `code-signing-mac.md` to leave that namespace open. Everything below is "the Mac dev workflow."
 
 *Cross-references: `[D##]` → decisions in [`roadmap/tugplan-signing-hardening.md`](../roadmap/tugplan-signing-hardening.md). Plan close-out captures the per-step implementation history; this document is the durable reference.*
 
