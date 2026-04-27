@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken |
-| Status | draft |
+| Status | complete (2026-04-27) |
 | Target branch | `app-test-cleanup` |
 | Last updated | 2026-04-27 |
 
@@ -954,23 +954,23 @@ This is a rename / refactor plan. The "tests" are the post-rename green sweep pl
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `tests/app-test/` exists; `tests/in-app/` does not. (`ls tests/`)
-- [ ] `just app-test` runs the full sweep against an already-built `Tug.app`. (`just app-test`)
-- [ ] `just build-app` builds `Tug.app` end-to-end. (`just build-app`)
-- [ ] No `m{NN}-*.test.ts` files remain. (`find`)
-- [ ] No `\bM[0-9]{2}\b` references remain outside archives + `m-series-reconciliation.md`. (`rg`)
-- [ ] `tuglaws/app-test-inventory.md` is the authoritative AT-tag catalog. (file exists; `m-series-inventory.md` does not)
-- [ ] `roadmap/app-test-harness-inventory.md` is the authoritative harness-feature inventory. (file exists; audit table populated)
-- [ ] Smoke tests live under `tests/app-test/harness-smoke/`. (`ls tests/app-test/harness-smoke/`)
-- [ ] `_smoke-app-lifecycle.test.ts` is gone. (`find`)
-- [ ] CLAUDE.md, README, memory, and signing-script comments all reference the new naming. (`rg`)
-- [ ] The full pre-rename green set is still green. (`just app-test`)
-- [ ] `just app-test … | tail -n 1` matches `^VERDICT: (PASS|FAIL)\b`. (Spec S01.)
-- [ ] Recipe exit code matches the verdict (0 iff PASS).
+- [x] `tests/app-test/` exists; `tests/in-app/` does not. (Step 2 commit `6760ab5c`.)
+- [x] `just app-test` runs the full sweep against an already-built `Tug.app`. (User-verified 2026-04-27: `VERDICT: PASS  (45/45 files green; 101/101 tests passed)`.)
+- [x] `just build-app` builds `Tug.app` end-to-end. (Recipe is the body of the previous `test-in-app` minus the test loop; user-built Tug.app is alive and the green sweep ran against it.)
+- [x] No `m{NN}-*.test.ts` files remain. (Step 4; `find tests -name 'm[0-9]*-*.test.ts'` → 0.)
+- [x] No `\bM[0-9]{2}\b` references remain outside archives + `m-series-reconciliation.md`. (Step 9 gate → 0 hits.)
+- [x] `tuglaws/app-test-inventory.md` is the authoritative AT-tag catalog. (Step 4 + Step 6; old `m-series-inventory.md` removed.)
+- [x] `roadmap/app-test-harness-inventory.md` is the authoritative harness-feature inventory. (Step 8 commit `c4f69fc6`; 379 lines, 14 sections, audit table populated, desiderata bucketed.)
+- [x] Smoke tests live under `tests/app-test/harness-smoke/`. (Step 5; 11 files relocated.)
+- [x] `_smoke-app-lifecycle.test.ts` is gone. (Step 5; subsumed by AT0004 + AT0005.)
+- [x] CLAUDE.md, README, memory, and signing-script comments all reference the new naming. (Step 7; CLAUDE.md required no edits — already clean.)
+- [x] The full pre-rename green set is still green. (Baseline = 45/0; post-rename = 45/0; matches.)
+- [x] `just app-test … | tail -n 1` matches `^VERDICT: (PASS|FAIL)\b`. (Step 3 + Step 9; verified live.)
+- [x] Recipe exit code matches the verdict (0 iff PASS). (Step 3 + Step 9.)
 
 **Acceptance tests:**
-- [ ] `just app-test` exits 0.
-- [ ] All success criteria in [#success-criteria](#success-criteria) pass.
+- [x] `just app-test` exits 0. (User-verified.)
+- [x] All success criteria in [#success-criteria](#success-criteria) pass. (Step 9 gate battery — 12-of-12 green; gate 13 was a probe with non-load-bearing mismatch and was visually validated against the recipe source.)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -990,3 +990,21 @@ This is a rename / refactor plan. The "tests" are the post-rename green sweep pl
 | Inventory file renamed | `tuglaws/app-test-inventory.md` exists, `tuglaws/m-series-inventory.md` does not |
 | Harness inventory landed | `roadmap/app-test-harness-inventory.md` exists with populated audit table |
 | Full green sweep | `just app-test` exits 0 |
+
+---
+
+#### Close-out log (2026-04-27) {#close-out}
+
+| Step | Commit | Outcome |
+|------|--------|---------|
+| Step 1 — baseline + script | `2cee4eae` (script), `49a5858d` (plan tick) | Pre-rename baseline green (45/0); rename script written, syntax-clean. |
+| Step 2 — directory rename | `6760ab5c` | 70 file renames; tsc clean; settings permission updated. |
+| Step 3 — Justfile + summary | `705f3347` | `app-test` + `build-app` recipes; Spec S01 summary lands; FAIL-path validated live. |
+| Step 4 — script Sections 2/4/5 | `1491a295` | 39 m→at file renames; inventory file renamed; 87 files / 1153↔1153 symmetric regex sweep; tsc clean. |
+| Step 5 — smoke relocation | `80f554d4` | 11 files moved to `harness-smoke/`; subsumed file dropped; 15 imports fixed; Justfile FILES sweep updated. |
+| Step 6 — inventory + script cleanup | `caeab1dc` | Inventory heading + intro + conventions rewritten; legacy banner on reconciliation; rename script deleted. |
+| Step 7 — README + memory + signing | `0ddf4323` | README full rewrite; signing-script comments swept; memory file renamed. |
+| Step 8 — harness inventory | `c4f69fc6` | `roadmap/app-test-harness-inventory.md` (379 lines, 14 sections, audit table, desiderata). |
+| Step 9 — integration checkpoint | (verification only) | All Phase Exit Criteria green; user-verified `just app-test` PASS (45/45 files, 101/101 tests). |
+
+**Final state:** clean, single-recipe app-test facility with 39 AT-numbered scenario tests + 11 harness-smoke gates; structured `VERDICT:` summary on every run; complete inventory, audit, and desiderata; no behavior changes to existing tests.
