@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # setup-dev-signing.sh — Create the per-machine self-signed code-
-# signing identity used by `just test-in-app` to re-sign Tug.app
+# signing identity used by `just build-app` to re-sign Tug.app
 # with a stable signature hash.
 #
 # ## Why this exists
@@ -10,8 +10,8 @@
 # binary's code-signature hash. Xcode Debug builds default to ad-hoc
 # signing, which produces a fresh random hash on every rebuild — so
 # the Accessibility grant gets invalidated on every `xcodebuild`
-# pass. The in-app test harness's native-event spike and (later)
-# Phase A gesture verbs use `CGEvent.post`, which silently no-ops
+# pass. The app-test harness's native-event verbs (CGEvent-backed
+# clicks, drags, key events) use `CGEvent.post`, which silently no-ops
 # without Accessibility permission. A stable signature hash is the
 # only tractable fix.
 #
@@ -110,7 +110,7 @@ openssl pkcs12 -export \
 #
 # `-T /usr/bin/codesign` whitelists codesign to use the private key
 # without a keychain-access prompt on every build. Without this, the
-# first `just test-in-app` call would pop a keychain prompt.
+# first `just build-app` call would pop a keychain prompt.
 
 echo "Importing '${IDENTITY_NAME}' into login keychain..."
 security import "${TMPDIR}/bundle.p12" \
@@ -132,8 +132,9 @@ fi
 echo "✓ '${IDENTITY_NAME}' installed in login keychain."
 echo
 echo "Next steps:"
-echo "  1. Run 'just test-in-app' — this triggers the Accessibility-"
-echo "     permission system dialog the first time."
+echo "  1. Run 'just build-app' to build + sign Tug.app, then 'just"
+echo "     app-test' — first app-test run triggers the Accessibility-"
+echo "     permission system dialog."
 echo "  2. Grant permission to Tug.app when the dialog appears."
 echo "  3. Subsequent runs work without prompt; grant persists across"
 echo "     rebuilds because every build signs with the same '${IDENTITY_NAME}'"

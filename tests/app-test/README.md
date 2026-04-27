@@ -1,82 +1,102 @@
 # `tests/app-test/`
 
-App-test integration tests that drive a real `Tug.app` subprocess through
-the DEBUG-only `TestHarness` Unix-socket bridge. Unlike the colocated
-tests under `tugdeck/src/__tests__/`, these tests do **not** use
-happy-dom — they talk to the actual WKWebView inside the launched app.
+App-test integration tests that drive a real `Tug.app` subprocess
+through the DEBUG-only `TestHarness` Unix-socket bridge. Unlike the
+colocated tests under `tugdeck/src/__tests__/`, these tests do **not**
+use happy-dom — they talk to the actual WKWebView inside the launched
+app.
 
-See the parent strategy doc [`roadmap/in-app-test-harness.md`](../../roadmap/in-app-test-harness.md)
-and the Phase 2 plan [`roadmap/tugplan-in-app-bridge.md`](../../roadmap/tugplan-in-app-bridge.md)
-for the design rationale, decisions ([D01]-[D13]), and transport / boot
-choreography details.
+**Related docs:**
+
+- [`roadmap/tugplan-in-app-bridge.md`](../../roadmap/tugplan-in-app-bridge.md)
+  — design rationale, decisions ([D01]–[D14]), and transport / boot
+  choreography.
+- [`roadmap/tugplan-harness-extensions.md`](../../roadmap/tugplan-harness-extensions.md)
+  — Phase A native-event family (CGEvent-backed gestures, keyboard,
+  app-lifecycle), tugcode subprocess control.
+- [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
+  — canonical AT-tag catalog. Every `at{NNNN}-*.test.ts` filename
+  prefix MUST match an entry there.
+- [`roadmap/tugplan-app-test-cleanup.md`](../../roadmap/tugplan-app-test-cleanup.md)
+  — the 2026-04-27 cleanup that produced the current naming.
 
 ## Running
 
-Tests are gated on `TUGAPP_IN_APP_TEST=1`. Without it, every
-`describe.skipIf(!SHOULD_RUN)` block is skipped, so the suite can be
-safely included in CI and in local `bun x tsc --noEmit` checks even
-without a built `Tug.app` binary.
-
-To run the full suite locally:
-
 ```bash
-# 1. Build the debug Tug.app binary.
-cd tugapp && xcodebuild -scheme Tug -configuration Debug build
+# 1. One-time per machine: install the 'Tug Dev' code-signing identity.
+just setup-dev-signing
 
-# 2. Run the in-app test suite from the repo root.
-TUGAPP_IN_APP_TEST=1 bun test tests/app-test/
+# 2. Build (and re-sign) Tug.app + Rust binaries + tugdeck dist.
+#    Re-run only when Swift / Rust sources change.
+just build-app
 
-# Or a single file:
-TUGAPP_IN_APP_TEST=1 bun test tests/app-test/smoke.test.ts
+# 3. Run the full app-test sweep.
+just app-test
+
+# Run a single file:
+just app-test at0001-tab-switch-fc.test.ts
+just app-test harness-smoke/smoke.test.ts
+
+# Run a list of specific files in order:
+just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
 ```
 
-Environment variables honored by `launchTugApp`:
+`just app-test` ends every run with a structured summary block whose
+last stdout line is exactly `VERDICT: PASS  (...)` or `VERDICT: FAIL
+(...)`. Recipe exit code matches the verdict — 0 iff PASS. To check
+pass/fail programmatically:
+
+```bash
+just app-test 2>/dev/null | tail -n 1   # → VERDICT: PASS  (47/47 ...)
+```
+
+The summary also lists every file with `[PASS]` / `[FAIL]` / `[SKIP]`
+/ `[ERR]` and per-file `(passed/total)` counts, plus a `Failures:`
+block when any file fails. See
+[`roadmap/tugplan-app-test-cleanup.md#s01-summary-format`](../../roadmap/tugplan-app-test-cleanup.md#s01-summary-format)
+for the contract.
+
+## Environment variables
 
 | Variable                  | Purpose                                                      |
 |---------------------------|--------------------------------------------------------------|
-| `TUGAPP_IN_APP_TEST=1`    | Enables the `describe.skipIf(!SHOULD_RUN)` gate in tests.    |
-| `TUGAPP_DEBUG_PATH`       | Absolute path to the debug `Tug.app` binary (override).      |
-| `TUGAPP_TUGCODE_BINARY`   | Absolute path to the tugcode binary (used by EM-card tests). |
+| `TUGAPP_IN_APP_TEST=1`    | Enables the `describe.skipIf(!SHOULD_RUN)` gate. Set by the just-recipe; tests should never set it themselves. |
+| `TUGAPP_DEBUG_PATH`       | Absolute path to the debug `Tug.app` binary. Set by the just-recipe via xcodebuild's settings query. |
+| `TUGAPP_TUGCODE_BINARY`   | Absolute path to the bun-compiled `tugcode` binary. Used by EM-card / live-mode tests. |
+| `TUGAPP_TUGBANK_BINARY`   | Absolute path to the `tugbank` CLI. Used by cold-boot disk-side reads in `_harness/tugbank-helpers.ts`. |
 | `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
-| `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
+| `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`harness-smoke/smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
 
-Per-run log files are written under `tests/app-test/logs/` when a test
-passes `testName` to `launchTugApp`; the directory is gitignored.
+Per-run log files are written under `tests/app-test/logs/` when a
+test passes `testName` to `launchTugApp`; the directory is gitignored.
 
-## Running live-mode tugcode smoke
+## Live-mode tugcode smoke
 
-`tests/app-test/smoke-em-live.test.ts` exercises a real tugcode →
-Claude Code → Anthropic API round-trip. Because it consumes API
-credits and requires live credentials, it is gated behind
-`TUGCODE_LIVE=1` and stays out of the default `just test-in-app-fast`
-sweep. The default `just test-in-app-fast` run skips this file
-deterministically — you do not need to opt out.
-
-To run it locally:
+`tests/app-test/harness-smoke/smoke-em-live.test.ts` exercises a real
+tugcode → Claude Code → Anthropic API round-trip. Because it consumes
+API credits and requires live credentials, it is double-gated behind
+`TUGCODE_LIVE=1` and stays out of the default `just app-test` sweep.
 
 ```bash
-# 1. Ensure your Anthropic credentials are set up the way Claude Code
-#    expects (typically ANTHROPIC_API_KEY or `claude login`'s
-#    persisted creds).
-# 2. Run with both gates open:
-TUGCODE_LIVE=1 just test-in-app-fast smoke-em-live.test.ts
+# Anthropic credentials must already be set (ANTHROPIC_API_KEY or
+# `claude login`'s persisted creds).
+TUGCODE_LIVE=1 just app-test harness-smoke/smoke-em-live.test.ts
 ```
 
 The test sends a single deterministic prompt ("Reply with the single
 word: ack.") so token cost stays in single digits per run. First-token
 latency is allowed up to 20s for cold-start claude; full-turn up to
 60s. Failure surfaces the last 50 lines of tugcode's stdout/stderr to
-stderr so credentials issues / API errors are diagnosable without
-spelunking through `$TMPDIR`.
+stderr.
 
 ## Lifecycle model: one App per file, explicit reset
 
 Each test file launches its own `App` via `launchTugApp()` and closes
 it in a `finally` block. Inside a file, tests may share the `App` if
 they call `app.reset()` between scenarios — but **no state is shared
-across files**. This matches the Phase 2 bridge's single-connection
-contract (see [D12] in the parent plan and the double-connect test
-in `double-connect.test.ts`).
+across files**. This matches the bridge's single-connection contract
+([D12] in `tugplan-in-app-bridge.md` and the regression gate in
+`harness-smoke/double-connect.test.ts`).
 
 Canonical shape:
 
@@ -119,17 +139,16 @@ blink, paint correctness, or perceived snappiness. It *can* drive
 `isTrusted: true` paths (WebKit's hardware-event default-focus, drag
 selection, double-click-to-select-word, modifier-key combinations)
 via the Phase A native-gesture family — see the next section. See
-the "Fidelity limits" section of the parent plan
-([`roadmap/tugplan-in-app-bridge.md#fidelity-limits`](../../roadmap/tugplan-in-app-bridge.md#fidelity-limits))
-for the full envelope. When a bug falls outside this envelope, mark
-the residual as "manual verification required" in the test comment
-and do not paper over it with a weaker proxy assertion.
+the "Fidelity limits" section of `tugplan-in-app-bridge.md` for the
+full envelope. When a bug falls outside this envelope, mark the
+residual as "manual verification required" in the test comment and
+do not paper over it with a weaker proxy assertion.
 
 ## Phase A surface: native gestures, keyboard, introspection
 
 Beyond the JS-synthesized gesture drivers (`app.click`, `app.type`,
-`app.focusElement`), the Phase A harness exposes a trusted-event
-family backed by Swift's `CGEvent.post` ([D02] + [Q05]):
+`app.focusElement`), the harness exposes a trusted-event family
+backed by Swift's `CGEvent.post` ([D02] + [Q05]):
 
 **Native gestures** (point is `{x, y}` in CSS viewport coords):
 
@@ -147,7 +166,7 @@ family backed by Swift's `CGEvent.post` ([D02] + [Q05]):
 |--------|---------|
 | `nativeKey(key, modifiers?)` | One keystroke. `key` is a VirtualKeyMap entry (`"a"`, `"!"`, `"Enter"`, `"ArrowLeft"`, etc.). `modifiers` is a subset of `["cmd", "shift", "alt", "ctrl"]`. |
 | `nativeType(text)` | ASCII string typed keystroke-by-keystroke. Non-ASCII rejects with `NativeTypeAsciiOnlyError`. |
-| `holdModifier(mods, async thunk)` | Press modifiers, run inner verbs, release — all in one atomic Swift-side call (see below). |
+| `holdModifier(mods, async thunk)` | Press modifiers, run inner verbs, release — all in one atomic Swift-side call. |
 
 **`holdModifier` pattern:**
 
@@ -159,7 +178,7 @@ await app.holdModifier(["cmd"], async (inner) => {
 });
 
 // Simpler shape for a single inner keystroke: just pass the
-// modifier directly to `nativeKey`.
+// modifier directly to nativeKey.
 await app.nativeKey("a", ["cmd"]);
 ```
 
@@ -192,42 +211,77 @@ preflights this on every spawn and throws
 with actionable guidance naming the bundle path / id + a
 `tccutil reset` recipe for stale grants.
 
-Protocol-only tests (`smoke.test.ts`, `double-connect.test.ts`,
-`log-capture.test.ts`, `wait-for-condition.test.ts`) pass
-`skipAccessibilityPreflight: true` so they stay independent of the
-grant state. Scenario tests (AT0001/AT0003/AT0016, and the Phase A
-`smoke-native.test.ts`) leave the default strict — if the grant is
-missing, the failure attribution is instant.
+Protocol-only tests in `harness-smoke/` (`smoke.test.ts`,
+`double-connect.test.ts`, `log-capture.test.ts`,
+`wait-for-condition.test.ts`) pass `skipAccessibilityPreflight: true`
+so they stay independent of the grant state. Scenario tests
+(`at{NNNN}-*.test.ts`, plus `harness-smoke/smoke-native.test.ts`)
+leave the default strict — if the grant is missing, the failure
+attribution is instant.
 
 See [`scripts/setup-dev-signing.sh`](../../scripts/setup-dev-signing.sh)
 for the one-time stable-signing setup ([D14]) that makes the grant
 persist across rebuilds.
 
+## Smoke vs. scenario tests
+
+Two test categories live in this directory:
+
+### `harness-smoke/<name>.test.ts` — primitive gates
+
+Pin a single harness primitive — RPC handshake, evalJS error
+translation, native-CGEvent click round-trip, app-reload,
+cold-boot/quitGracefully, capture-phase save invariant, etc. They
+exist so a primitive regression can be diagnosed without the
+attribution being conflated with an `at{NNNN}` scenario regression.
+
+Smoke tests are not numbered. The filename describes what the gate
+asserts. Add a smoke test only when (a) it pins a harness primitive
+that AT scenarios depend on, AND (b) failure attribution would be
+muddled without a separate gate.
+
+### `at{NNNN}-<slug>.test.ts` — AT-numbered scenarios
+
+Every AT-numbered file gates a regression case enumerated in
+[`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md).
+The `at{NNNN}` prefix MUST match an inventory entry. To add a new
+scenario, add the inventory entry first (pick the next unused
+`AT{NNNN}` — high-water mark and "next available" are both at the top
+of the inventory), THEN write the test.
+
 ## Adding a new test
 
-1. **Name the file.** `tests/app-test/<scenario>.test.ts`. Files
-   prefixed with `_` are reserved for harness-internal smoke and
-   protocol tests (`smoke.test.ts`, `version-handshake.test.ts`,
-   etc.).
+1. **Decide: smoke or scenario?** See above. If you're adding an
+   AT-tag, also add the inventory entry first.
 
-2. **Gate on `TUGAPP_IN_APP_TEST=1`.** Use
-   `describe.skipIf(!SHOULD_RUN)` at the top of every `describe` block.
+2. **Name the file.**
+   - Scenario: `tests/app-test/at{NNNN}-<slug>.test.ts`.
+   - Smoke: `tests/app-test/harness-smoke/<descriptive>.test.ts`.
 
-3. **Import from `@/_harness`.** The path alias resolves to
-   `tests/app-test/_harness/index.ts`. Key exports:
+3. **Gate on `TUGAPP_IN_APP_TEST=1`.** Use
+   `describe.skipIf(!SHOULD_RUN)` at the top of every `describe`
+   block. Without it, `bun x tsc --noEmit` runs are forced to skip
+   too, which keeps CI honest.
+
+4. **Import from `@/_harness`.** The path alias resolves to
+   `tests/app-test/_harness/index.ts` regardless of subdirectory
+   depth. Key exports:
 
    - `launchTugApp(opts)` — spawn + connect + version handshake.
    - `App` class — `evalJS`, `waitForCondition`, `close`, plus typed
      wrappers (`click`, `type`, `focusElement`, `reset`,
-     `seedDeckState`, `getActive`, `getFocused`, `getCaret`,
-     `getFormControlValue`, `getDeckTrace`, `markDeckTrace`,
-     `expectFocusedCard`, `expectCaret`, ...).
+     `seedDeckState`, `getActiveCardId`, `getFocusedCardId`,
+     `getCaretState`, `getFormControlValue`, `getDeckTrace`,
+     `markDeckTrace`, `expectFocusedCard`, `expectCaret`, the full
+     native-gesture family, `simulateApp*` lifecycle verbs,
+     `appReload`, `quitGracefully`, `startTugcode` / `stopTugcode`,
+     ...).
    - `toContainOrderedSubset` / `registerSubsetMatcher()` — partial
      ordered-subset matcher for deck-trace assertions.
    - `EXPECTED_SURFACE_VERSION` — pinned `window.__tug` surface
      version; must match tugdeck and the Swift bridge.
 
-4. **Drive, assert, close.** Seed state, drive gestures through the
+5. **Drive, assert, close.** Seed state, drive gestures through the
    typed wrappers, assert against both `__tug` state reads and the
    deck-trace ring:
 
@@ -245,20 +299,22 @@ persist across rebuilds.
    Call `registerSubsetMatcher()` once at module load to enable the
    `expect(...).toContainOrderedSubset(...)` fluent form.
 
-5. **Always close in `finally`.** Orphaned subprocesses accumulate
+6. **Always close in `finally`.** Orphaned subprocesses accumulate
    across runs and exhaust socket paths.
 
-6. **Prefer production code paths over synthetic events where
-   possible.** For focus, call `app.focusElement(selector)` — this
-   uses the same `.focus()` path that production code takes, keeping
-   the test inside the fidelity envelope. See the `m01/m03/m16`
-   tests added in Phase 3 for reference patterns.
+7. **Prefer production code paths over synthetic events.** For focus,
+   call `app.focusElement(selector)` — this uses the same `.focus()`
+   path that production code takes, keeping the test inside the
+   fidelity envelope. For trusted clicks/drags/keys, use
+   `nativeClick` / `nativeDrag` / `nativeKey` — these post real
+   `CGEvent`s and exercise WebKit's `isTrusted: true` paths that
+   synthesized DOM events cannot reach.
 
 ## Lint: no raw timers
 
 `tests/app-test/` forbids `setTimeout` and `setInterval` in test code
-(the harness itself uses a `setTimeoutNative` alias internally — see
-`_harness/index.ts`). Run the checker with:
+(the harness itself uses a `setTimeoutNative` alias internally —
+see `_harness/index.ts`). Run the checker with:
 
 ```bash
 cd tests/app-test && bun run lint:no-timers
@@ -273,12 +329,31 @@ timeout + error.
 
 ```
 tests/app-test/
-  _harness/            # Bun-side harness library. Do not import from tests; use @/_harness.
-  smoke.test.ts       # Minimal launchTugApp → evalJS → close. Keep passing.
-  _*.test.ts           # Harness-internal protocol/lifecycle tests.
-  <scenario>.test.ts   # User-authored scenario tests.
-  bunfig.toml          # [test] root = "." — no happy-dom preload.
-  tsconfig.json        # Path alias @/_harness. tsc --noEmit must be clean.
-  lint-no-timers.ts    # bun run lint:no-timers scanner.
-  logs/                # Per-spawn stdout/stderr dumps. Gitignored.
+  _harness/                   # Bun-side harness library. Imported via @/_harness.
+  harness-smoke/              # Primitive gates: smoke + protocol tests.
+    smoke.test.ts             # Minimal launchTugApp → evalJS → close.
+    smoke-native.test.ts      # CGEvent click / type / Cmd+A / drag / double-click.
+    smoke-em.test.ts          # EM-card observation surface (engine-ready, getEmCardState).
+    smoke-em-live.test.ts     # Opt-in (TUGCODE_LIVE=1) Anthropic round-trip.
+    smoke-app-reload.test.ts  # appReload primitive.
+    smoke-cold-boot.test.ts   # quitGracefully + tugbankRead two-process round-trip.
+    smoke-capture-phase-save.test.ts  # [A9] capture-phase save invariant.
+    double-connect.test.ts    # Single-client transport guarantee.
+    log-capture.test.ts       # Per-test log file capture.
+    version-handshake.test.ts # EXPECTED_SURFACE_VERSION mismatch error.
+    wait-for-condition.test.ts # evalJS error translation, timeout, immediate-truthy.
+  at{NNNN}-<slug>.test.ts     # AT-numbered scenario tests; prefix must match inventory.
+  bunfig.toml                 # [test] root = "." — no happy-dom preload.
+  tsconfig.json               # Path alias @/_harness. tsc --noEmit must be clean.
+  lint-no-timers.ts           # bun run lint:no-timers scanner.
+  logs/                       # Per-spawn stdout/stderr dumps. Gitignored.
 ```
+
+## TUGAPP_IN_APP_TEST naming note
+
+The Swift-side gate env var is still named `TUGAPP_IN_APP_TEST=1`
+even though the directory is now `tests/app-test/`. Renaming the env
+var requires a coordinated Swift change with code-signing
+implications — deferred. See
+[`roadmap/tugplan-app-test-cleanup.md`](../../roadmap/tugplan-app-test-cleanup.md)
+[D06].
