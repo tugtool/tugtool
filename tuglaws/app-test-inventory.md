@@ -81,7 +81,7 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 #### [AT0010] Markdown-view copy-selection persistence
 - **Status:** ✅ closed at Step 25B.
 - **Tests:** `at0010-markdown-selection.test.ts`, `at0010-cold-boot-selection.test.ts`.
-- **Summary:** `tug-markdown-view` opts into the [A9] persistence protocol; copy-selection round-trips through `bag.domSelection` + selectionGuard's CSS Custom Highlight.
+- **Summary:** `tug-markdown-view` opts into the [A9] state preservation protocol; copy-selection round-trips through `bag.domSelection` + selectionGuard's CSS Custom Highlight.
 
 #### [AT0011] Card close → reopen
 - **Status:** ⬛ not-a-feature (M-Q4 resolution).
@@ -150,12 +150,12 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 
 ### Component-roster tags (AT0024–AT0031)
 
-Component-level persistence — gaps surfaced from the L23 audit of the stateful component roster. All route through the [A9] Component Persistence Protocol.
+Component-level state preservation — gaps surfaced from the L23 audit of the stateful component roster. All route through the [A9] Component State Preservation Protocol.
 
-#### [AT0024] No component-level persistence protocol
+#### [AT0024] No component-level state preservation protocol
 - **Status:** ✅ closed at Step 19 ([A9] foundational landed).
 - **Tests:** `selection-persistence-integration.test.tsx` (foundational gate); per-component coverage in AT0027/AT0030/AT0031.
-- **Summary:** `useComponentPersistence` + `ComponentPersistenceRegistry` provide the protocol; components opt in via `persistKey`.
+- **Summary:** `useComponentStatePreservation` + `ComponentStatePreservationRegistry` provide the protocol; components opt in via `componentStatePreservationKey`.
 
 #### [AT0025] Intrinsic internal state hidden from authors
 - **Status:** ✅ closed in spirit by 25D / 25E / 25F / 25G — every priority-roster component is now opted in or explicitly classified ephemeral.

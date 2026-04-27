@@ -472,7 +472,7 @@ describe("Section 4: Complete scroll restore pattern", () => {
 
 describe("Section 5: Pattern comparison for Rules of Tugways", () => {
 
-  it("T-CT12: ready callback works with persistence context indirection", () => {
+  it("T-CT12: ready callback works with state-preservation context indirection", () => {
     // The real tug-pane-chrome pattern: parent provides context, child registers
     // via useCardStatePreservation, parent calls onRestore. Adding an
     // onContentReady callback to the same context.

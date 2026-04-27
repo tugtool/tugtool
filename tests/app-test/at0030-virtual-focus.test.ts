@@ -1,7 +1,7 @@
 /**
  * at0030-virtual-focus.test.ts — composite-component user-visible value
- * survives cmd-tab + reload via the Component Persistence Protocol
- * [A9] ([AT0030] / [AT0027] composite-components
+ * survives cmd-tab + reload via the Component State Preservation
+ * Protocol [A9] ([AT0030] / [AT0027] composite-components
  * subset).
  *
  * ## Why this exists

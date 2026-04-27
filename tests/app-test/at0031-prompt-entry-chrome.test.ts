@@ -1,7 +1,7 @@
 /**
  * at0031-prompt-entry-chrome.test.ts — TugPromptEntry's tools popover
- * open/closed flag survives cmd-tab + reload via the Component
- * Persistence Protocol [A9] ([AT0031]).
+ * open/closed flag survives cmd-tab + reload via the Component State
+ * Preservation Protocol [A9] ([AT0031]).
  *
  * ## Why this exists (and what it does NOT cover)
  *

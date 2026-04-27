@@ -780,7 +780,7 @@ export class DeckManager implements IDeckManagerStore {
       cards: this.deckState.cards.filter((c) => !cardIdSet.has(c.id)),
       panes: this.deckState.panes.filter((s) => s.id !== paneId),
     };
-    // Discard per-card component-persistence registries ([A9]) after
+    // Discard per-card component-state-preservation registries ([A9]) after
     // destruction notifications have fired — subscribers observing
     // destruction never have a stake in these registries, but ordering
     // after the lifecycle event makes the intent explicit.

@@ -11,7 +11,7 @@
  * `useCardPropertyStore`, `useCardDirtyState`, and `useCardFeedStore`.
  * The harness itself owns only the cross-cutting wiring:
  * `hostContentEl` / `hostCardRootEl` registry lookups, the per-card
- * `saveCurrentCardState` closure, persistence-callback registration,
+ * `saveCurrentCardState` closure, state-preservation-callback registration,
  * the `registerSaveCallback(cardId, …)` binding into DeckManager, the
  * card-level responder that routes `SET_PROPERTY`, and the
  * context-provider tree wrapping the content factory.
@@ -24,7 +24,7 @@
  *
  *   1. **Content restore** fires from a CardHost-owned
  *      `useLayoutEffect` keyed on `[cardId, hostContentEl, store]`,
- *      after `registerPersistenceCallbacks` has merely stored the
+ *      after `registerStatePreservationCallbacks` has merely stored the
  *      child's callbacks. CardHost's effects fire AFTER CardPortal's
  *      own `useLayoutEffect` has appended the portal slot to the
  *      host pane's content element — so the engine root is
@@ -32,7 +32,7 @@
  *      runs and any `engine.setSelectedRange` (`.focus()` + `addRange`)
  *      inside it lands on a live node. This is the L04 ready-callback
  *      pattern; doing the restore synchronously inside
- *      `registerPersistenceCallbacks` (called from a CHILD's effect,
+ *      `registerStatePreservationCallbacks` (called from a CHILD's effect,
  *      before the parent CardPortal can attach the slot) was the
  *      cold-boot selection-paint bug ([AT0010]). A `hasAppliedContentRestoreRef` guard keeps the
  *      restore one-shot so cross-pane moves (which re-fire the
@@ -632,7 +632,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const cardStatePreservationCallbacksRef = useRef<CardStatePreservationCallbacks | null>(null);
 
   // Ref for the latest `hostContentEl` so closures installed in
-  // `registerPersistenceCallbacks` (onContentReady) read the current
+  // `registerStatePreservationCallbacks` (onContentReady) read the current
   // element at fire time, not the mount-time capture. L07.
   const hostContentElRef = useRef<HTMLDivElement | null>(null);
   hostContentElRef.current = hostContentEl;
@@ -657,7 +657,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `onContentReady` for the with-content case. L11, L22, L23.
   // Pure-storage registration. The actual restore (`callbacks.onRestore`,
   // `onContentReady` install, opacity mask, cold-boot trace) is driven by
-  // the post-attach effect below — NOT here. registerPersistenceCallbacks
+  // the post-attach effect below — NOT here. registerStatePreservationCallbacks
   // fires from a child's `useLayoutEffect` (deepest first), which runs
   // BEFORE CardPortal's own layout effect that calls `host.appendChild(slot)`.
   // Doing the restore here would call `engine.restoreState` (and its
@@ -677,12 +677,13 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // back into the restore-effect's dep set. Cards whose content factory
   // mounts conditionally (e.g. tide-card gates on `feedsReady` — its
   // editor doesn't render until `defaultFeedIds` resolve from tugcast)
-  // can have their persistence-callback registration arrive several
-  // commits AFTER hostContentEl is non-null. Without this counter, the
-  // restore effect would have already fired with `callbacks=null` and
-  // returned early, never re-running when callbacks finally appear.
+  // can have their state-preservation-callback registration arrive
+  // several commits AFTER hostContentEl is non-null. Without this
+  // counter, the restore effect would have already fired with
+  // `callbacks=null` and returned early, never re-running when
+  // callbacks finally appear.
   const [callbacksVersion, setCallbacksVersion] = useState(0);
-  const registerPersistenceCallbacks = useCallback(
+  const registerStatePreservationCallbacks = useCallback(
     (callbacks: CardStatePreservationCallbacks) => {
       cardStatePreservationCallbacksRef.current = callbacks;
       setCallbacksVersion((v) => v + 1);
@@ -1151,8 +1152,8 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // both through the tree separately, and it lets descendants that only
   // need the id read it via `useCardId` without subscribing to register.
   const cardStatePreservationContextValue = useMemo<CardStatePreservationContextValue>(
-    () => ({ cardId, register: registerPersistenceCallbacks }),
-    [cardId, registerPersistenceCallbacks],
+    () => ({ cardId, register: registerStatePreservationCallbacks }),
+    [cardId, registerStatePreservationCallbacks],
   );
 
   // Per-card Component State Preservation Protocol registry ([D13],

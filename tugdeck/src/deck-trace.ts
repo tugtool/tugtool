@@ -221,7 +221,7 @@ export type DeckTraceEvent = {
       dispatchedFrom: string;
     }
   | {
-      // Fired from `CardHost.registerPersistenceCallbacks` immediately
+      // Fired from `CardHost.registerStatePreservationCallbacks` immediately
       // before the persisted `bag.content` is forwarded to the
       // factory's `onRestore`. Captures what the framework knows about
       // the saved state on the cold-boot / cross-pane-mount path:

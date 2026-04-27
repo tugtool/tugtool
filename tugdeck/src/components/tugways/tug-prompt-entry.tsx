@@ -137,7 +137,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  *   its own draft that survives route switches and card/tab reloads.
  *
  * JSON-serializable (no DOM, no functions) — round-trips through
- * tugbank via the TugPane persistence pipeline [L23].
+ * tugbank via the TugPane state preservation pipeline [L23].
  */
 interface TugPromptEntryState {
   currentRoute: string;
@@ -859,7 +859,7 @@ export const TugPromptEntry = React.forwardRef<
     },
     onRestore: (state, { isActive }) => {
       // Defensive shape check. Before commit 99809d06 the child
-      // `TugPromptInput` owned persistence and wrote a flat
+      // `TugPromptInput` owned state preservation and wrote a flat
       // `TugTextEditingState` payload. After the upgrade, an old
       // payload restored from tugbank is still the previous shape —
       // reading `state.perRoute[state.currentRoute]` on that shape

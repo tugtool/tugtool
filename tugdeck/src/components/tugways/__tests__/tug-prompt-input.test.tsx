@@ -33,7 +33,7 @@
  *     `document.execCommand` meaningfully; we supply just
  *     enough behavior for the branches we care about.
  *   - `preserveState={false}` on the rendered input disables the
- *     tugbank persistence hook (no workspace key needed).
+ *     tugbank state preservation hook (no workspace key needed).
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -223,7 +223,7 @@ function uninstallCanvas2DShim() {
 
 /**
  * Renders TugPromptInput with `preserveState={false}` (no tugbank
- * persistence — no workspace key required) and exposes the widened
+ * state preservation — no workspace key required) and exposes the widened
  * imperative handle as `delegateRef.current`.
  */
 interface HarnessProps {

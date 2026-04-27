@@ -78,7 +78,7 @@ export interface ResetOptions {
   deck?: boolean;
   /** Clear registered selection boundaries + pinned card ranges. */
   selectionGuard?: boolean;
-  /** Drop per-card Component Persistence Protocol registries. */
+  /** Drop per-card Component State Preservation Protocol registries. */
   orchestrator?: boolean;
   /** `deckTrace.clear()`. Preserves the enable flag. */
   trace?: boolean;

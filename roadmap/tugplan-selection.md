@@ -1,5 +1,12 @@
 <!-- tugplan-skeleton v2 -->
 
+> **Note (2026-04-27):** the "Component Persistence Protocol" described
+> below has been renamed to "Component State Preservation Protocol",
+> and the `useComponentPersistence` / `useCardPersistence` hooks to
+> `useComponentStatePreservation` / `useCardStatePreservation`. See
+> [tugplan-state-preservation-rename.md](tugplan-state-preservation-rename.md).
+> This plan's body is grandfathered as historical reference.
+
 ## Selection, Focus, Scroll, and Content Persistence Subsystem {#phase-selection-subsystem}
 
 **Purpose:** Define a complete, code-grounded strategy for tracking, managing, saving, and restoring text content, text selection, focus, and scroll position across every card, component, and lifecycle transition in tugdeck.

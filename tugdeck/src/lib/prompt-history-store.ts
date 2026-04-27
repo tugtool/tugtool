@@ -117,7 +117,7 @@ class SessionHistoryProvider implements HistoryProvider {
  * entries whose `route` field matches the configured route are
  * surfaced. Each route within a session therefore gets an independent
  * history timeline, matching the per-route-drafts semantics of
- * TugPromptEntry's TugPane persistence payload.
+ * TugPromptEntry's TugPane state preservation payload.
  *
  * Cursor and `_draft` are in-memory and per-provider. Callers that
  * create one provider per route and retain the reference across route

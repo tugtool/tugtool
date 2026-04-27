@@ -465,7 +465,7 @@ class SelectionGuard {
    * an engine that has already published during `onRestore(bag.content)`.
    *
    * Order discipline at the callsite (see `CardHost` mount effect and
-   * the tail of `registerPersistenceCallbacks`): for engine-managed
+   * the tail of `registerStatePreservationCallbacks`): for engine-managed
    * cards the engine's own `restoreState` followed by the appropriate
    * paint method (`paintMirrorAsActive` writes
    * `window.getSelection()` directly; `paintMirrorAsInactive(publish)`

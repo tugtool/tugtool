@@ -1,7 +1,7 @@
 /**
  * at0026-overlay-persistence.test.ts — TugSheet open state survives
- * appReload via the Component Persistence Protocol [A9] (selection
- * [AT0026] PERSISTENT classification).
+ * appReload via the Component State Preservation Protocol [A9]
+ * (selection [AT0026] state-preserving classification).
  *
  * ## Why this exists
  *

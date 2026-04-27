@@ -12,7 +12,7 @@
  *
  *   1. **Debounced save** — scroll → markDirty → debounce fires with a
  *      bag composed from the current host content element, selection,
- *      and persistence-callback onSave payload.
+ *      and state-preservation-callback onSave payload.
  *   2. **Direct invokeSaveCallback** — DeckManager invoking the
  *      registered callback produces the same bag shape as the debounced
  *      path.

@@ -832,7 +832,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       // Apply any state buffered by onRestore that fired before engine
       // creation. The buffer carries the `isActive` snapshot CardHost
       // computed at the original onRestore call time, so we route to
-      // the same paint channel the persistence helper would have
+      // the same paint channel the state preservation helper would have
       // chosen had the engine been ready. [L23] preservation. The
       // `cardIdRef.current` capture honors [L07]'s ref-not-direct
       // pattern. [L23].
@@ -841,7 +841,7 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
         engine.restoreState(buffered);
         // Pass the buffered state through to the
         // paint methods so they read selection + scrollTop from the
-        // bag, matching the cold-boot path in the persistence helper.
+        // bag, matching the cold-boot path in the state preservation helper.
         if (isActive) {
           engine.paintMirrorAsActive(buffered);
         } else {

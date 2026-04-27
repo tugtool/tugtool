@@ -63,7 +63,7 @@ Controls (buttons, checkboxes, switches, sliders, etc.) refuse focus on click vi
 | TugPromptInput | **Accepts focus** — contentEditable |
 | TugMarkdownView | **Accepts focus** — tabIndex=0 for keyboard shortcuts |
 
-## Focus Persistence Attributes
+## Focus State Preservation Attributes
 
 `CardHost`'s save path captures `document.activeElement` into `bag.focus`
 (a `FocusSnapshot`) so cold-boot restore can return the cursor to the
