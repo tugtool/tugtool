@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-04-27T23:23:20Z
+---
+
+## step-5: Created tuglaws/app-test-harness.md (155 lines) per Spec S05 + [D03]: lifted architectural content (lifecycle model, fidelity envelope, native-gesture rationale, accessibility-grant relationship) from tests/app-test/README.md. Reduced README from 445 to 258 lines (gate: <320), kept procedural sections only per [D03] retain list. SC05 identifiers present; SC07 banner present.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-4
 date: 2025-04-27T23:15:42Z
 ---

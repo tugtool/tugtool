@@ -1,22 +1,26 @@
 # `tests/app-test/`
 
-App-test integration tests that drive a real `Tug.app` subprocess
-through the DEBUG-only `TestHarness` Unix-socket bridge. Unlike the
-colocated tests under `tugdeck/src/__tests__/`, these tests do **not**
-use happy-dom — they talk to the actual WKWebView inside the launched
-app.
+Procedural reference for test authors working in `tests/app-test/`.
+
+For the harness **architecture** — what it is, the trusted-event problem, lifecycle model, fidelity envelope, native-gesture rationale, accessibility-grant relationship, smoke vs. scenario classification — see [`tuglaws/app-test-harness.md`](../../tuglaws/app-test-harness.md). This README covers the procedural test-author workflow only.
 
 **Related docs:**
 
+- [`tuglaws/app-test-harness.md`](../../tuglaws/app-test-harness.md) —
+  harness architecture reference. Read first if anything in this README
+  feels under-explained.
+- [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
+  — canonical AT-tag catalog. Every `at{NNNN}-*.test.ts` filename
+  prefix MUST match an entry there.
+- [`tuglaws/code-signing-mac.md`](../../tuglaws/code-signing-mac.md) —
+  the `Tug Dev` signing pipeline that keeps the macOS Accessibility
+  grant stable across rebuilds. Read this when AX is broken.
 - [`roadmap/tugplan-in-app-bridge.md`](../../roadmap/tugplan-in-app-bridge.md)
   — design rationale, decisions ([D01]–[D14]), and transport / boot
   choreography.
 - [`roadmap/tugplan-harness-extensions.md`](../../roadmap/tugplan-harness-extensions.md)
   — Phase A native-event family (CGEvent-backed gestures, keyboard,
   app-lifecycle), tugcode subprocess control.
-- [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
-  — canonical AT-tag catalog. Every `at{NNNN}-*.test.ts` filename
-  prefix MUST match an entry there.
 - [`roadmap/tugplan-app-test-cleanup.md`](../../roadmap/tugplan-app-test-cleanup.md)
   — the 2026-04-27 cleanup that produced the current naming.
 
@@ -66,6 +70,7 @@ for the contract.
 | `TUGAPP_TUGBANK_BINARY`   | Absolute path to the `tugbank` CLI. Used by cold-boot disk-side reads in `_harness/tugbank-helpers.ts`. |
 | `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
 | `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`harness-smoke/smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
+| `APP_TEST_SKIP_RESIGN=1`  | Bypass the defensive re-sign in `just app-test`. Tests that need `CGEvent.post` will fail; tests that don't will pass. Diagnostic-only — see `tuglaws/code-signing-mac.md`. |
 
 Per-run log files are written under `tests/app-test/logs/` when a
 test passes `testName` to `launchTugApp`; the directory is gitignored.
@@ -89,16 +94,9 @@ latency is allowed up to 20s for cold-start claude; full-turn up to
 60s. Failure surfaces the last 50 lines of tugcode's stdout/stderr to
 stderr.
 
-## Lifecycle model: one App per file, explicit reset
+## Adding a new test
 
-Each test file launches its own `App` via `launchTugApp()` and closes
-it in a `finally` block. Inside a file, tests may share the `App` if
-they call `app.reset()` between scenarios — but **no state is shared
-across files**. This matches the bridge's single-connection contract
-([D12] in `tugplan-in-app-bridge.md` and the regression gate in
-`harness-smoke/double-connect.test.ts`).
-
-Canonical shape:
+Canonical test shape:
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -121,224 +119,15 @@ describe.skipIf(!SHOULD_RUN)("my scenario", () => {
 });
 ```
 
-Why a fresh app per file:
+Step-by-step:
 
-- Crash isolation — one test file's hang does not poison the next.
-- The WKUserScript that sets `window.__tugTestMode = true` runs only
-  at process start; we cannot "downgrade" a live WebView.
-- Log files rotate per spawn; failed-test diagnostics stay scoped.
-
-Within a single file, prefer `app.reset()` over re-spawning when
-scenarios share the app — it is orders of magnitude faster than a
-subprocess boot.
-
-## Fidelity envelope
-
-The harness is **not a visual renderer**. It cannot assert caret
-blink, paint correctness, or perceived snappiness. It *can* drive
-`isTrusted: true` paths (WebKit's hardware-event default-focus, drag
-selection, double-click-to-select-word, modifier-key combinations)
-via the Phase A native-gesture family — see the next section. See
-the "Fidelity limits" section of `tugplan-in-app-bridge.md` for the
-full envelope. When a bug falls outside this envelope, mark the
-residual as "manual verification required" in the test comment and
-do not paper over it with a weaker proxy assertion.
-
-## Phase A surface: native gestures, keyboard, introspection
-
-Beyond the JS-synthesized gesture drivers (`app.click`, `app.type`,
-`app.focusElement`), the harness exposes a trusted-event family
-backed by Swift's `CGEvent.post` ([D02] + [Q05]):
-
-**Native gestures** (point is `{x, y}` in CSS viewport coords):
-
-| Method | Purpose |
-|--------|---------|
-| `nativeClick(point, opts?)` / `nativeClickAtElement(selector, opts?)` | Single trusted click. `opts`: `button`, `clickCount`, `mouseDownDelayMs`, `mouseUpDelayMs`. |
-| `nativeDoubleClick(point)` / `nativeDoubleClickAtElement(selector)` | Pinned 80ms-interval double click; drives WebKit word-select. |
-| `nativeRightClick(point)` / `nativeRightClickAtElement(selector)` | Right-button click for context-menu paths. |
-| `nativeDrag(from, to, opts?)` / `nativeDragElement(fromSel, to, opts?)` | Endpoint-only drag (mouseDown → one mouseDragged → mouseUp). |
-| `nativeMouseDown(point)` / `nativeMouseUp(point)` | Primitives — reach for these only when a click isn't atomic enough. |
-
-**Native keyboard:**
-
-| Method | Purpose |
-|--------|---------|
-| `nativeKey(key, modifiers?)` | One keystroke. `key` is a VirtualKeyMap entry (`"a"`, `"!"`, `"Enter"`, `"ArrowLeft"`, etc.). `modifiers` is a subset of `["cmd", "shift", "alt", "ctrl"]`. |
-| `nativeType(text)` | ASCII string typed keystroke-by-keystroke. Non-ASCII rejects with `NativeTypeAsciiOnlyError`. |
-| `holdModifier(mods, async thunk)` | Press modifiers, run inner verbs, release — all in one atomic Swift-side call. |
-
-**`holdModifier` pattern:**
-
-```ts
-// Hold Cmd while executing multiple keystrokes as one sequence.
-await app.holdModifier(["cmd"], async (inner) => {
-  await inner.rpcCall("nativeKey", { key: "a" });     // Cmd+A
-  await inner.rpcCall("nativeKey", { key: "c" });     // Cmd+C
-});
-
-// Simpler shape for a single inner keystroke: just pass the
-// modifier directly to nativeKey.
-await app.nativeKey("a", ["cmd"]);
-```
-
-Inner verbs inside a `holdModifier` thunk must be native gestures
-only — `evalJS` / `waitForCondition` / nested `holdModifier` all
-reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
-nesting scopes.
-
-**Introspection** (pure DOM reads; no CGEvent):
-
-| Method | Returns |
-|--------|---------|
-| `getElementText(selector)` | `textContent` (or `.value` for form controls). |
-| `getElementValue(selector)` | `.value` of `<input>` / `<textarea>` / `<select>`. |
-| `getElementAttribute(selector, name)` | `attribute` or `null`. |
-| `getElementBounds(selector)` | Viewport-rel `{x, y, width, height}`. |
-| `getElementScreenBounds(selector)` | Screen-CG `{x, y, width, height}` via `CoordMapping`. |
-| `getElementState(selector)` | `{tagName, disabled, readOnly, checked, visible, isFocused}`. |
-| `getActiveElement()` | `{tagName, id, cardId, componentStatePreservationKey, selector}` or `null`. |
-| `getSelection(cardId?)` | Selection snapshot (form-control or contentEditable range). |
-| `getComputedStyleValue(selector, property)` | Resolved CSS value. |
-
-## Accessibility permission preflight
-
-Phase A's trusted events are posted via `CGEvent.post`, which
-requires Tug.app to hold the macOS Accessibility grant (System
-Settings → Privacy & Security → Accessibility). `launchTugApp`
-preflights this on every spawn and throws
-`AccessibilityPermissionMissingError` if the grant is missing,
-with actionable guidance naming the bundle path / id + a
-`tccutil reset` recipe for stale grants.
-
-Protocol-only tests in `harness-smoke/` (`smoke.test.ts`,
-`double-connect.test.ts`, `log-capture.test.ts`,
-`wait-for-condition.test.ts`) pass `skipAccessibilityPreflight: true`
-so they stay independent of the grant state. Scenario tests
-(`at{NNNN}-*.test.ts`, plus `harness-smoke/smoke-native.test.ts`)
-leave the default strict — if the grant is missing, the failure
-attribution is instant.
-
-See [`scripts/setup-dev-signing.sh`](../../scripts/setup-dev-signing.sh)
-for the one-time stable-signing setup ([D14]) that makes the grant
-persist across rebuilds. When the grant breaks unexpectedly, see
-the next section.
-
-## Accessibility grant failure modes
-
-The macOS Accessibility (TCC) grant is keyed to the bundle's code-
-signing **designated requirement (DR)** — a string composed of the
-bundle identifier plus the cert's leaf hash, not the binary's content
-hash. Two builds signed by the same `Tug Dev` cert share a DR and
-share a grant; anything that changes the DR forces a re-grant.
-
-When `just app-test` starts failing with
-`AccessibilityPermissionMissingError` or every CGEvent-backed test
-silently no-ops, walk this checklist.
-
-### What can invalidate the grant
-
-1. **`Tug Dev` cert deleted and re-created.** A new self-signed cert
-   has a different private key → different leaf hash → different DR.
-   The fingerprint sentinel at `.tugtool/code-sign-fingerprint`
-   detects this and `just app-test` prints a `[warn] code-sign
-   fingerprint drift detected` diagnostic.
-2. **`Tug.app` bundle moved or renamed.** TCC grants are also keyed
-   to bundle path / identifier; moving the build product or editing
-   the bundle id in `project.pbxproj` will invalidate the grant.
-3. **Bare `xcodebuild` between runs.** Running an Xcode IDE Build
-   (or `xcodebuild` directly without going through `just build-app`)
-   re-signs ad-hoc, which produces a wholly different DR. `just
-   app-test`'s defensive re-sign handles this transparently — but
-   only if the `Tug Dev` cert is still installed.
-4. **macOS major upgrade.** A major version bump can occasionally
-   wipe TCC entries. Diagnoses as a one-shot re-grant requirement.
-5. **Manual revoke.** System Settings → Privacy & Security →
-   Accessibility, untoggling Tug.app.
-
-### Diagnosis checklist
-
-When AX is broken, work through these in order:
-
-1. **Confirm the identity is still installed:**
-   ```sh
-   security find-identity -p codesigning | grep "Tug Dev"
-   ```
-   If empty → run `just setup-dev-signing` to recreate, then
-   `just build-app` to re-sign.
-
-2. **Confirm the bundle's DR matches the sentinel:**
-   ```sh
-   APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-       -configuration Debug -destination 'platform=macOS,arch=arm64' \
-       -showBuildSettings 2>/dev/null \
-       | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
-   diff <(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}') \
-        .tugtool/code-sign-fingerprint
-   ```
-   Empty diff → fingerprint is fresh. Non-empty → drift; the AX grant
-   is almost certainly invalidated.
-
-3. **Confirm Accessibility shows Tug.app and is enabled:** open
-   System Settings → Privacy & Security → Accessibility. If Tug.app
-   isn't listed, run `just app-test harness-smoke/smoke-native.test.ts`
-   once to trigger the system grant dialog. If it's listed but
-   greyed-out or untoggled, toggle it on.
-
-4. **If the grant is stale and re-toggling doesn't work, reset and
-   re-grant:**
-   ```sh
-   tccutil reset Accessibility dev.tugtool.app
-   ```
-   Then run `just app-test harness-smoke/smoke-native.test.ts` to
-   trigger the dialog fresh.
-
-### Last-resort bypass
-
-If you need to run the harness without the AX-grant dance — e.g.,
-during initial onboarding before `just setup-dev-signing` has run, or
-when diagnosing whether the re-sign step itself is the culprit — set:
-
-```sh
-APP_TEST_SKIP_RESIGN=1 just app-test
-```
-
-`app-test` will skip the re-sign entirely. Tests that need
-`CGEvent.post` (every `at*` scenario, plus `smoke-native.test.ts`)
-will fail; tests that don't need AX (`smoke.test.ts`,
-`double-connect.test.ts`, `version-handshake.test.ts`,
-`wait-for-condition.test.ts`, `smoke-em.test.ts`) will pass.
-
-## Smoke vs. scenario tests
-
-Two test categories live in this directory:
-
-### `harness-smoke/<name>.test.ts` — primitive gates
-
-Pin a single harness primitive — RPC handshake, evalJS error
-translation, native-CGEvent click round-trip, app-reload,
-cold-boot/quitGracefully, capture-phase save invariant, etc. They
-exist so a primitive regression can be diagnosed without the
-attribution being conflated with an `at{NNNN}` scenario regression.
-
-Smoke tests are not numbered. The filename describes what the gate
-asserts. Add a smoke test only when (a) it pins a harness primitive
-that AT scenarios depend on, AND (b) failure attribution would be
-muddled without a separate gate.
-
-### `at{NNNN}-<slug>.test.ts` — AT-numbered scenarios
-
-Every AT-numbered file gates a regression case enumerated in
-[`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md).
-The `at{NNNN}` prefix MUST match an inventory entry. To add a new
-scenario, add the inventory entry first (pick the next unused
-`AT{NNNN}` — high-water mark and "next available" are both at the top
-of the inventory), THEN write the test.
-
-## Adding a new test
-
-1. **Decide: smoke or scenario?** See above. If you're adding an
-   AT-tag, also add the inventory entry first.
+1. **Decide: smoke or scenario?** See
+   [`tuglaws/app-test-harness.md`](../../tuglaws/app-test-harness.md)
+   for the classification rule. If you're adding a scenario, also add
+   the inventory entry in
+   [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
+   first — pick the next unused `AT{NNNN}` (high-water mark and "next
+   available" are both at the top of the inventory).
 
 2. **Name the file.**
    - Scenario: `tests/app-test/at{NNNN}-<slug>.test.ts`.
@@ -388,13 +177,37 @@ of the inventory), THEN write the test.
 6. **Always close in `finally`.** Orphaned subprocesses accumulate
    across runs and exhaust socket paths.
 
-7. **Prefer production code paths over synthetic events.** For focus,
+7. **Within a single file, prefer `app.reset()`** over re-spawning
+   when scenarios share the app — it is orders of magnitude faster
+   than a subprocess boot. No state is shared across files.
+
+8. **Prefer production code paths over synthetic events.** For focus,
    call `app.focusElement(selector)` — this uses the same `.focus()`
    path that production code takes, keeping the test inside the
    fidelity envelope. For trusted clicks/drags/keys, use
    `nativeClick` / `nativeDrag` / `nativeKey` — these post real
    `CGEvent`s and exercise WebKit's `isTrusted: true` paths that
    synthesized DOM events cannot reach.
+
+9. **`holdModifier` for modifier-bracketed sequences.** Hold modifiers
+   atomically Swift-side rather than driving them as separate events:
+
+   ```ts
+   // Hold Cmd while executing multiple keystrokes as one sequence.
+   await app.holdModifier(["cmd"], async (inner) => {
+     await inner.rpcCall("nativeKey", { key: "a" });     // Cmd+A
+     await inner.rpcCall("nativeKey", { key: "c" });     // Cmd+C
+   });
+
+   // Simpler shape for a single inner keystroke: just pass the
+   // modifier directly to nativeKey.
+   await app.nativeKey("a", ["cmd"]);
+   ```
+
+   Inner verbs inside a `holdModifier` thunk must be native gestures
+   only — `evalJS` / `waitForCondition` / nested `holdModifier` all
+   reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
+   nesting scopes.
 
 ## Lint: no raw timers
 

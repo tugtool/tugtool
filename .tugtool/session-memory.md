@@ -1,37 +1,37 @@
 # Session Memory — tuglaws-tidyup-ae990f1-1
 
 ## Project map
-Pure-docs plan in `tuglaws/`. Existing: framework-architecture, tuglaws, design-decisions, pane-model, card-state-model (renamed from selection-model), state-preservation, lifecycle-delegates (NEW Step 4), responder-chain, action-naming, component-authoring, token-naming, color-palette, theme-engine, app-test-inventory, code-signing-mac, tugplan-skeleton, INDEX. Future: app-test-harness.md (Step 5). Source edits are inline-comment-only per [D06].
+Pure-docs plan in `tuglaws/`. Existing docs: framework-architecture, tuglaws, design-decisions, pane-model, card-state-model (renamed from selection-model), state-preservation, lifecycle-delegates, app-test-harness (NEW Step 5), responder-chain, action-naming, component-authoring, token-naming, color-palette, theme-engine, app-test-inventory, code-signing-mac, tugplan-skeleton, INDEX. Source edits inline-comment-only per [D06].
 
 ## Files touched
-- tuglaws/INDEX.md — Step 1 reading guide; ≤150 lines; format `- [doc](doc) — desc`. Already lists lifecycle-delegates.md.
-- tuglaws/card-state-model.md — Renamed from selection-model.md; Cross-Links has lifecycle-delegates backlink at L272.
-- tuglaws/state-preservation.md — Step 3 (274 lines). Cross-Links L269 backlink to lifecycle-delegates.md.
-- tuglaws/lifecycle-delegates.md — Step 4 NEW (211 lines). SC04 12 identifiers + SC07 banner. Authored from `tugdeck/src/lib/card-lifecycle.ts` ([D07] primary) and `tugdeck/src/components/chrome/card-host.tsx` (secondary). Includes one TODO-candidate-law comment about roadmap-vs-source disagreement on move/resize geometry payloads.
-- tuglaws/pane-model.md — Cross-Links link `selection-model.md` → `card-state-model.md`.
-- tuglaws/component-authoring.md — Selection-and-Focus link target updated.
-- tuglaws/responder-chain.md — Sibling-docs bullet pointing at card-state-model.md.
-- tugdeck/src/components/tugways/selection-guard.ts — comment path update.
-- tugdeck/src/components/tugways/use-copyable-text.tsx — comment path update.
+- tuglaws/INDEX.md — Step 1; ≤150 lines; lists app-test-harness.md L29.
+- tuglaws/card-state-model.md — Step 2 rename; Cross-Links → lifecycle-delegates.
+- tuglaws/state-preservation.md — Step 3 (274 lines).
+- tuglaws/lifecycle-delegates.md — Step 4 (211 lines); SC04 11 idents + SC07 banner.
+- tuglaws/app-test-harness.md — Step 5 NEW (155 lines); SC05 5 idents (TestHarness, isTrusted, CGEvent.post, WKWebView, APP_TEST_SKIP_RESIGN) + SC07 banner.
+- tests/app-test/README.md — Step 5 reduced 445→258 lines. Stripped: lifecycle, fidelity envelope, Phase A surface, Accessibility preflight + grant failure modes, Smoke vs scenario. Retained: Related docs (added app-test-harness.md), Running, Env vars (added APP_TEST_SKIP_RESIGN row), Live-mode, Adding a new test (consolidates canonical shape + holdModifier), Lint, Directory layout, TUGAPP_APP_TEST note.
+- tuglaws/pane-model.md — Cross-Links link selection→card-state-model.
+- tuglaws/component-authoring.md, tuglaws/responder-chain.md — link target updated.
+- tugdeck/src/components/tugways/{selection-guard.ts,use-copyable-text.tsx} — comment path updates.
 
 ## Patterns established
-- Canonical doc header (SC07): `# Title` + italic tagline + `*Cross-references: [D##]→design-decisions.md. [L##]→tuglaws.md.*` + `---`.
-- INDEX entries (per [D05]): one line, `- [name](name) — desc`.
-- [D06]: source-code edits limited to inline JSDoc/comments; no production code.
-- AT-tag refs use `[AT0008](app-test-inventory.md#at0008-...)` slug-anchor form. lifecycle-delegates.md uses bare `[AT0008]` style citations in prose (no slug links) — fine; per-AT slug links only need to exist somewhere in the docs corpus.
-- TODO-candidate-law comment per [Q01]: `<!-- TODO: candidate law? roadmap doc disagrees on X — ... -->`.
-- Identifier code-block style: short `interface` literal copy from source for clarity (used in lifecycle-delegates.md).
+- SC07 banner: `# Title` + italic tagline + `*Cross-references: [D##]→design-decisions.md. [L##]→tuglaws.md.*` + `---`. app-test-harness.md banner additionally redirects internal [D##] refs (D02/D12/Q05) to roadmap/tugplan-in-app-bridge.md + harness-extensions.md.
+- INDEX entries (D05): one line `- [name](name) — desc`.
+- AT-tag prose refs use bare `[AT0008]`; per-AT slug links exist somewhere in corpus.
+- TODO-candidate-law comment (Q01): `<!-- TODO: candidate law? roadmap disagrees on X — ... -->`.
+- Top-of-doc pointer pattern: README starts "For architecture see X; this doc is procedure"; mirror "procedural reference for test authors" entry in harness-doc Files block.
+- Files section split: "primary canonical authority" / "secondary implementation source" / "historical / secondary planning".
 
 ## Build / test notes
-- Worktree has `tugdeck/node_modules` populated (Step 1 install persists).
-- `bun x tsc --noEmit` clean after Step 4 docs-only addition.
-- SC11 grep `grep -rln 'selection-model.md' tuglaws/ tugdeck/src/ tests/` returns 0 lines.
-- Step 4 SC04 file-exists + 12-identifier loop both pass; SC07 banner gate = 1.
-- Step 3 SC03 identifier loop passes (all 15 idents present).
+- tugdeck/node_modules populated; `bun x tsc --noEmit` exits 0 (Step 5 sanity, no .ts/.tsx touched).
+- Step 5 gates: file exists ✓; SC07 banner=1 ✓; README wc -l=258<320 ✓; "Accessibility grant failure modes" count=0 ✓.
+- Step 5's plan tests do NOT include bun test / tsc — those are gated on Steps 2, 7, 8.
 
 ## Hints for upcoming steps
-- Step 5 SC05: app-test-harness.md must mention each of: TestHarness, isTrusted, CGEvent.post, WKWebView, APP_TEST_SKIP_RESIGN. Lift content from `tests/app-test/README.md` per Spec S05. Reduce README to procedural sections only; gate `wc -l < 320`. Source-of-truth files for harness: `tugapp/Tests/AppTests/Harness/*` (Swift bridge), `tests/app-test/lib/*.ts` (JS side).
-- Step 6: strip law-text appendix from framework-architecture.md; promote `**LNN. ...**` → `### LNN. ... {#lNN}` in tuglaws.md.
-- Step 7 SC10: every paragraph in app-test-inventory.md containing `[A9]` must also contain a state-preservation.md link (awk RS="" gate). state-preservation.md exists now so links can be added.
-- Step 7 may also want to review lifecycle-delegates.md cross-refs from app-test-inventory.md entries [AT0008]/[AT0019] (currently no backlink from inventory).
-- Plan decisions: [D01] promote selection-model. [D02] state-preservation=mechanism, card-state-model=contract. [D03] harness=architecture, README=procedure. [D04] strip FA appendix. [D05] one-line INDEX. [D06] comment-only source edits. [D07] card-lifecycle.ts is lifecycle authority.
+- Step 6: structural rewrite of tuglaws.md — every `**LNN. ...**` law line → `### LNN. ... {#lNN}` heading. Currently bold prose, not headings. Then strip framework-architecture.md "Appendix: Laws referenced" block; replace with one-liner-list pointing at new anchors (D04). Verify anchors render on GitHub web preview (OF6), not strict local CommonMark.
+- Step 7 SC10: 7 [A9] paragraphs in app-test-inventory.md need state-preservation.md links each (awk RS="" gate); state-preservation.md exists.
+- Step 7 SC09: pane-model.md Cross-Links (NOT Files table per OF8) needs state-preservation.md + lifecycle-delegates.md.
+- Step 7 SC08: tuglaws.md L23 → state-preservation.md; L09 → lifecycle-delegates.md.
+- Step 7 may add inventory backlinks to lifecycle-delegates.md from [AT0008]/[AT0019].
+- Step 8: full SC01–SC13 audit, plan status flip, audit subsection appended.
+- Plan decisions: [D01] promote selection-model. [D02] state-preservation=mechanism, card-state-model=contract. [D03] harness=arch / README=procedure (shipped Step 5). [D04] strip FA appendix. [D05] one-line INDEX. [D06] comment-only source edits. [D07] card-lifecycle.ts is lifecycle authority.
