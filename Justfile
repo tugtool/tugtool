@@ -245,7 +245,7 @@ dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
 
 # One-time per-machine setup: create the `Tug Dev` self-signed code-
-# signing identity in the login keychain. `test-in-app` re-signs
+# signing identity in the login keychain. `build-app` re-signs
 # Tug.app with this identity after xcodebuild so the signature hash
 # stays stable across rebuilds — the Accessibility permission grant
 # persists across runs instead of being invalidated on every rebuild
@@ -255,64 +255,56 @@ dmg:
 setup-dev-signing:
     scripts/setup-dev-signing.sh
 
-# Run the in-app tests (harness smoke + M01/M03/M16) against a fresh
-# DEBUG Tug.app. Boots the app in dev mode via an isolated scratch
-# tugbank so your real ~/.tugbank.db is untouched. Requires tmux and
-# a prior `just build` (for tugbank / tugutil on PATH), plus a
-# one-time `just setup-dev-signing` to install the local code-signing
-# identity.
-test-in-app:
+# Build Tug.app (Debug) end-to-end: Rust debug binaries, tugdeck deps
+# + production dist, app-test deps, xcodebuild, and a re-sign with the
+# local `Tug Dev` identity so the Accessibility grant persists across
+# rebuilds. After this finishes, run `just app-test` to run tests.
+#
+# Prereqs (one-time per machine):
+#   just setup-dev-signing                 # creates 'Tug Dev' identity
+build-app:
     #!/usr/bin/env bash
     set -euo pipefail
-    REPO_ROOT="$(pwd)"
-    SCRATCH_DB="$(mktemp -t tugapp-inapp.XXXX).db"
     SIGNING_IDENTITY="Tug Dev"
 
-    command -v tmux >/dev/null || { echo "tmux not on PATH — brew install tmux"; exit 1; }
-    command -v tugbank >/dev/null || { echo "tugbank not on PATH — run 'just build' first"; exit 1; }
-
     # Verify the per-machine code-signing identity exists. Without it,
-    # xcodebuild would fall back to ad-hoc signing and the Accessibility
-    # grant would be invalidated on every rebuild (CGEvent.post silently
+    # xcodebuild falls back to ad-hoc signing and the Accessibility
+    # grant is invalidated on every rebuild (CGEvent.post silently
     # no-ops without the grant).
     #
-    # Note: we use `find-identity -p codesigning` WITHOUT `-v` — a self-
-    # signed identity registers as CSSMERR_TP_NOT_TRUSTED (no system-wide
-    # root trust), which the `-v` filter hides. codesign doesn't care:
-    # setup-dev-signing.sh whitelists codesign via `-T /usr/bin/codesign`
-    # on import.
+    # Note: `find-identity -p codesigning` WITHOUT `-v` — a self-
+    # signed identity registers as CSSMERR_TP_NOT_TRUSTED (no system
+    # root trust), which the `-v` filter hides. codesign doesn't
+    # care; setup-dev-signing.sh whitelists codesign via
+    # `-T /usr/bin/codesign` on import.
     if ! security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
         echo "error: '$SIGNING_IDENTITY' code-signing identity not found in login keychain." >&2
         echo "       Run: just setup-dev-signing" >&2
         exit 1
     fi
 
-    echo "==> [1/7] Rust debug binaries"
+    echo "==> [1/5] Rust debug binaries"
     (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
 
-    echo "==> [2/7] tugdeck deps + prebuilt dist"
+    echo "==> [2/5] tugdeck deps + prebuilt dist"
     (cd tugdeck && bun install && bun run build)
 
-    echo "==> [3/7] tests/in-app deps"
-    (cd tests/in-app && bun install)
+    echo "==> [3/5] tests/app-test deps"
+    (cd tests/app-test && bun install)
 
-    echo "==> [4/7] Build Tug.app (Debug)"
+    echo "==> [4/5] Build Tug.app (Debug)"
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile phase
-    # headers + indented command-line invocations) even on a clean build.
-    # Capture the full log to a temp file, then on success show only the
-    # signal (warnings, errors, BUILD banner). On failure, dump the full
-    # log so the user can diagnose — nothing is hidden when it matters.
+    # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile
+    # phase headers + indented invocations) even on a clean build.
+    # Capture the full log; on success show only the signal (warnings,
+    # errors, BUILD banner). On failure, dump the full log so the user
+    # can diagnose.
     XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
     if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' build \
         > "$XCODE_LOG" 2>&1; then
-        # Print warnings, compiler/linker errors, and the BUILD banner.
-        # `grep || true` tolerates a clean build (no matches).
         grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
-        # If the build was fully clean, grep prints nothing — surface the
-        # banner explicitly so the user sees a success signal.
         grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
         rm -f "$XCODE_LOG"
     else
@@ -328,173 +320,212 @@ test-in-app:
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     [ -x "$APP_BIN" ] || { echo "Tug.app binary missing: $APP_BIN"; exit 1; }
 
-    # Re-sign the built app bundle with the stable local identity so
-    # the signature hash doesn't change between rebuilds — preserves
-    # the Accessibility grant across the test loop. `--force` replaces
-    # xcodebuild's ad-hoc signature; `--deep` ensures nested frameworks
-    # (if any) get the same identity; `--preserve-metadata=...` keeps
-    # the entitlements + designated-requirement string intact.
-    echo "==> [4b/7] Re-sign with '$SIGNING_IDENTITY' for stable AX grant"
+    # Re-sign with the stable local identity. `--force` replaces the
+    # ad-hoc signature; `--deep` covers nested frameworks;
+    # `--preserve-metadata=...` keeps entitlements + the designated
+    # requirement string intact.
+    echo "==> [5/5] Re-sign with '$SIGNING_IDENTITY' for stable AX grant"
     codesign --sign "$SIGNING_IDENTITY" --force --deep \
         --preserve-metadata=entitlements,requirements \
         "$APP_DIR" 2>&1 | grep -v 'replacing existing signature' || true
     echo "    Tug.app binary: $APP_BIN"
+    echo
+    echo "==> Built. Now run 'just app-test' to run tests."
 
-    echo "==> [5/7] Scratch tugbank (dev mode + source tree at $REPO_ROOT)"
-    TUGBANK_PATH="$SCRATCH_DB" tugbank write dev.tugtool.app source-tree-path "$REPO_ROOT"
-    TUGBANK_PATH="$SCRATCH_DB" tugbank write dev.tugtool.app dev-mode-enabled true
-
-    echo "==> [6/7] Kill any stale Tug processes and free vite port 55155"
-    # Leaked Tug AND tugcast instances from a previous run will hold
-    # tugbank locks, mess with the Dock, and race on ports 55155 and
-    # 55255. tugcast outlives Tug when the prior run ended via
-    # SIGTERM (`app.close()`) instead of the graceful path.
-    pkill -x Tug 2>/dev/null || true
-    pkill -x tugcast 2>/dev/null || true
-    sleep 0.3
-    if PID="$(lsof -ti tcp:55155 2>/dev/null)"; then kill "$PID" 2>/dev/null || true; sleep 0.5; fi
-
-    # Ensure we clean up on exit no matter how we got here (Ctrl-C,
-    # test crash, just-recipe error). pkill is idempotent and safe.
-    cleanup() {
-        pkill -x Tug 2>/dev/null || true
-        pkill -x tugcast 2>/dev/null || true
-        rm -f "$SCRATCH_DB"
-    }
-    trap cleanup EXIT INT TERM
-
-    echo "==> [7/7] Run in-app tests (sequentially, one Tug.app per file)"
-    export TUGBANK_PATH="$SCRATCH_DB"
-    export TUGAPP_IN_APP_TEST=1
-    export TUGAPP_DEBUG_PATH="$APP_BIN"
-    export TUGAPP_TUGCODE_BINARY="$REPO_ROOT/tugrust/target/debug/tugcode"
-    # tugbank binary path (selection plan Step 25C.2 Layer 2). Used
-    # by `tests/in-app/_harness/tugbank-helpers.ts` for cold-boot
-    # disk-side reads.
-    export TUGAPP_TUGBANK_BINARY="$REPO_ROOT/tugrust/target/debug/tugbank"
-    cd tests/in-app
-    STATUS=0
-    for f in _smoke.test.ts _smoke-native.test.ts _smoke-cold-boot.test.ts _smoke-app-reload.test.ts _smoke-capture-phase-save.test.ts m01-tab-switch-fc.test.ts m03-pane-activation.test.ts m16-tab-close-handoff.test.ts m24-prompt-state-roundtrip.test.ts m25-prompt-deactivated-roundtrip.test.ts m37-deck-wide-restore-consistency.test.ts m38-deactivation-inactive-paint.test.ts m36-inactive-card-app-switch-selection.test.ts; do
-        echo "---- $f ----"
-        bun test "$f" || STATUS=$?
-        # Between files, kill any stragglers so port 55155 is free
-        # and Dock icons don't accumulate. The harness's wrappedKill
-        # already pkills tugcast on `app.close()`, so the between-
-        # file pkill stays Tug-only to keep the inter-file pause
-        # short (extra pkills disturb WindowServer activation
-        # state, surfacing as Finder-activation races in tests).
-        pkill -x Tug 2>/dev/null || true
-        sleep 0.3
-    done
-
-    exit $STATUS
-
-# Fast iteration variant of `test-in-app`. Skips the full rebuild
-# (cargo, tugdeck, scratch-bank setup, tmux) and runs the in-app test
-# sweep directly against the already-built, stable-signed Tug.app.
-# Useful when iterating on a single test file or on tugdeck source
-# (vite HMR picks up tugdeck changes live). Swift changes still
-# require a rebuild — use `just test-in-app` for those.
+# Run the app-test suite against an already-built Tug.app. Each file
+# launches its own Tug.app subprocess via the harness's
+# `launchTugApp`. Output streams per-file as bun runs, and an
+# end-of-run summary block follows — its last line is exactly
+# `VERDICT: PASS` or `VERDICT: FAIL`, greppable via `tail -n 1`.
+# Recipe exit code matches the verdict (0 iff PASS).
 #
-# Prerequisites (same as test-in-app, run once per machine):
-#   just setup-dev-signing                 # creates 'Tug Dev' identity
-#   just test-in-app                       # builds Tug.app + signs it
+# Prereqs:
+#   just setup-dev-signing                 # one-time; 'Tug Dev' identity
+#   just build-app                         # build + sign Tug.app
 #
 # Usage:
-#   just test-in-app-fast                  # runs default sweep
-#   just test-in-app-fast m03-pane-activation.test.ts
-#                                          # runs only the named file
-#   just test-in-app-fast _smoke-native.test.ts m03-pane-activation.test.ts
-#                                          # runs specific files in order
+#   just app-test                          # full sweep
+#   just app-test m01-tab-switch-fc.test.ts
+#                                          # single file
+#   just app-test _smoke.test.ts m03-pane-activation.test.ts
+#                                          # specific files in order
 #
-# Re-signs with 'Tug Dev' on every invocation so a bare xcodebuild in
-# between runs cannot invalidate the Accessibility grant. Re-signing
-# is idempotent and fast (~100ms).
-test-in-app-fast *FILES:
+# Re-signs Tug.app with 'Tug Dev' on every invocation so a bare
+# xcodebuild between runs cannot invalidate the Accessibility grant.
+# Re-signing is idempotent and fast (~100ms).
+app-test *FILES:
     #!/usr/bin/env bash
-    set -euo pipefail
+    # Deliberately NOT `set -e` — we want to keep iterating past per-
+    # file failures so the summary captures every file's status.
+    set -uo pipefail
 
-    # Locate the already-built Tug.app via xcodebuild's settings
-    # query (instant — no compilation).
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
         -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     if [ ! -x "$APP_BIN" ]; then
-        echo "error: Tug.app binary missing at $APP_BIN" >&2
-        echo "       Run 'just test-in-app' first for a full build + sign." >&2
+        echo "error: Tug.app not built at $APP_BIN" >&2
+        echo "       Run 'just build-app' first." >&2
         exit 1
     fi
 
-    # Re-sign with the stable identity so the AX grant persists across
-    # iterations. No-op fast path when the identity isn't present
-    # (lets the recipe work on a machine without dev-signing set up,
-    # though tests requiring AX will fail).
+    # Re-sign with the stable identity so the AX grant persists.
+    # No-op fast path when the identity isn't installed (tests that
+    # need AX will fail explicitly).
     if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
         codesign --sign "Tug Dev" --force --deep \
             --preserve-metadata=entitlements,requirements \
             "$APP_DIR" >/dev/null 2>&1 || true
     fi
 
-    # Refresh tugdeck/dist so the harness (which loads from prod-built
-    # static files via tugcast's ServeDir, not Vite — see TUGAPP_IN_APP_TEST
-    # branch in AppDelegate.loadPreferences) reflects the current source.
-    # Vite is fast for incremental builds (~200ms when nothing changed,
-    # ~1.5s on first run after a source edit). Skipping Vite at launch
-    # time is worth ~700ms per launch on cold disk, so the trade is
-    # decisively in favor of building once up-front.
+    # Refresh tugdeck/dist so the harness (which loads prod-built
+    # static files via tugcast's ServeDir, not Vite — see the
+    # TUGAPP_IN_APP_TEST branch in AppDelegate.loadPreferences)
+    # reflects current source.
     (cd tugdeck && bun run build >/dev/null)
 
-    # Clean slate: kill stale Tug AND tugcast processes before the
-    # first spawn. tugcast lives in its own process group; a prior
-    # run that ended via `app.close()` (SIGTERM, not the graceful
-    # path) leaks it past Tug's death and causes port-55255
-    # collisions on the next launch.
+    # Clean slate before the first spawn. tugcast lives in its own
+    # process group; a prior `app.close()` SIGTERM leaks it past Tug's
+    # death and causes port-55255 collisions on the next launch.
     pkill -x Tug 2>/dev/null || true
     pkill -x tugcast 2>/dev/null || true
     sleep 0.3
 
-    # Clean up on exit so a Ctrl-C or test crash leaves no orphans.
+    TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
         pkill -x Tug 2>/dev/null || true
         pkill -x tugcast 2>/dev/null || true
+        rm -f "$TMPOUT"
     }
     trap cleanup EXIT INT TERM
 
     export TUGAPP_IN_APP_TEST=1
     export TUGAPP_DEBUG_PATH="$APP_BIN"
-    # tugcode binary path (Pass 7A — harness Step 5). Located via
-    # `bun build --compile` in `just test-in-app`'s [1/7] step.
     REPO_ROOT_FAST="$(pwd)"
     export TUGAPP_TUGCODE_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugcode"
-    # tugbank binary path (selection plan Step 25C.2 Layer 2). Used
-    # by `tests/in-app/_harness/tugbank-helpers.ts` to read tugbank
-    # state from disk between two-process cold-boot phases.
+    # tugbank binary path used by tests/app-test/_harness/tugbank-helpers.ts
+    # for cold-boot disk-side reads.
     export TUGAPP_TUGBANK_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugbank"
-    cd tests/in-app
+    cd tests/app-test
 
-    # Default sweep mirrors `test-in-app`'s loop.
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
         FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts _smoke-cold-boot.test.ts _smoke-app-reload.test.ts _smoke-capture-phase-save.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts m10-markdown-selection.test.ts m10-cold-boot-selection.test.ts m14-scroll-persistence.test.ts m14-cold-boot-scroll.test.ts m17-savestate-rpc-parity.test.ts m18-async-content-race.test.ts m19-pane-teardown-flush.test.ts m20-overlay-focus-return.test.ts m22-caret-visibility.test.ts m23-cross-card-selection.test.ts m24-prompt-state-roundtrip.test.ts m25-prompt-deactivated-roundtrip.test.ts m26-overlay-persistence.test.ts m27-layout-state-persistence.test.ts m30-virtual-focus.test.ts m31-prompt-entry-chrome.test.ts m32-em-cold-boot-selection.test.ts m33-em-fresh-card-activation.test.ts m34-em-focus-after-move.test.ts m35-em-app-switch-selection.test.ts m35-tide-app-switch-selection.test.ts m36-inactive-card-app-switch-selection.test.ts m37-deck-wide-restore-consistency.test.ts m38-deactivation-inactive-paint.test.ts)
+        SWEEP_LABEL="full"
     else
         read -r -a FILES <<< "$FILES_INPUT"
+        SWEEP_LABEL="explicit-files"
     fi
 
-    STATUS=0
+    declare -a RESULT_ROWS=()
+    declare -a FAILURE_BLOCKS=()
+    START_EPOCH="$(date +%s)"
+
     for f in "${FILES[@]}"; do
         echo "---- $f ----"
-        bun test "$f" || STATUS=$?
-        # Between files, kill stragglers so port 55155 is free and
-        # Dock icons don't accumulate. The harness's wrappedKill
-        # already pkills tugcast on `app.close()`, so the between-
-        # file pkill stays Tug-only — extra pkills disturb
-        # WindowServer activation state and surface as Finder-
-        # activation races in subsequent tests.
+        # bun's stdout/stderr both stream to the user's terminal AND
+        # land in $TMPOUT for parsing. `tee` truncates without `-a`.
+        if bun test "$f" 2>&1 | tee "$TMPOUT"; then
+            rc=0
+        else
+            rc="${PIPESTATUS[0]}"
+        fi
+        # Bun emits "  N pass\n  N fail" near the end of each file.
+        # Match the LAST occurrence so per-test mentions earlier in
+        # the output do not confuse the count.
+        passed="$(grep -E '^[ \t]*[0-9]+ pass$' "$TMPOUT" | tail -n 1 | grep -oE '[0-9]+' | head -n 1)"
+        failed="$(grep -E '^[ \t]*[0-9]+ fail$' "$TMPOUT" | tail -n 1 | grep -oE '[0-9]+' | head -n 1)"
+        passed="${passed:-0}"
+        failed="${failed:-0}"
+        total=$((passed + failed))
+
+        if [ "$rc" -eq 0 ] && [ "$total" -eq 0 ]; then
+            RESULT_ROWS+=("SKIP:$f:0:0")
+        elif [ "$rc" -eq 0 ]; then
+            RESULT_ROWS+=("PASS:$f:$passed:$total")
+        elif [ "$total" -gt 0 ]; then
+            RESULT_ROWS+=("FAIL:$f:$passed:$total")
+            FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
+        else
+            RESULT_ROWS+=("ERR:$f:0:0")
+            FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
+        fi
+
+        # Between files, kill stragglers. Tug-only — pkilling tugcast
+        # here disturbs WindowServer state and surfaces as Finder-
+        # activation races in subsequent tests; the harness's
+        # wrappedKill already pkills tugcast on `app.close()`.
         pkill -x Tug 2>/dev/null || true
         sleep 0.3
     done
-    exit $STATUS
+
+    END_EPOCH="$(date +%s)"
+    ELAPSED=$((END_EPOCH - START_EPOCH))
+
+    files_run=${#FILES[@]}
+    files_passed=0
+    files_failed=0
+    files_errored=0
+    files_skipped=0
+    tests_passed_total=0
+    tests_total=0
+    for row in "${RESULT_ROWS[@]}"; do
+        IFS=':' read -r status _file rpassed rtotal <<< "$row"
+        case "$status" in
+            PASS) files_passed=$((files_passed + 1)) ;;
+            FAIL) files_failed=$((files_failed + 1)) ;;
+            ERR)  files_errored=$((files_errored + 1)) ;;
+            SKIP) files_skipped=$((files_skipped + 1)) ;;
+        esac
+        tests_passed_total=$((tests_passed_total + rpassed))
+        tests_total=$((tests_total + rtotal))
+    done
+
+    BANNER="========================================================"
+    echo
+    echo "$BANNER"
+    echo "APP-TEST SUMMARY"
+    echo "$BANNER"
+    printf '%-14s  %s\n' 'Sweep:' "$SWEEP_LABEL"
+    printf '%-14s  %d\n' 'Files run:' "$files_run"
+    printf '%-14s  %d\n' 'Files passed:' "$files_passed"
+    printf '%-14s  %d\n' 'Files failed:' "$files_failed"
+    printf '%-14s  %d\n' 'Files errored:' "$files_errored"
+    [ "$files_skipped" -gt 0 ] && printf '%-14s  %d\n' 'Files skipped:' "$files_skipped"
+    if [ "$ELAPSED" -lt 60 ]; then
+        printf '%-14s  %ds\n' 'Wall time:' "$ELAPSED"
+    else
+        printf '%-14s  %dm %ds\n' 'Wall time:' $((ELAPSED / 60)) $((ELAPSED % 60))
+    fi
+
+    echo
+    echo "Per-file results:"
+    for row in "${RESULT_ROWS[@]}"; do
+        IFS=':' read -r status file rpassed rtotal <<< "$row"
+        printf '  %-6s %-56s (%d/%d)\n' "[$status]" "$file" "$rpassed" "$rtotal"
+    done
+
+    if [ ${#FAILURE_BLOCKS[@]} -gt 0 ]; then
+        echo
+        echo "Failures:"
+        for blk in "${FAILURE_BLOCKS[@]}"; do
+            file="${blk%%$'\n'*}"
+            echo "  $file"
+            # Surface bun's per-test "(fail) ..." lines for quick diagnosis.
+            printf '%s\n' "$blk" | grep -E '^\(fail\) ' | sed 's/^/    > /' || true
+        done
+    fi
+
+    echo "$BANNER"
+    if [ "$files_failed" -eq 0 ] && [ "$files_errored" -eq 0 ]; then
+        printf 'VERDICT: PASS  (%d/%d files green; %d/%d tests passed)\n' \
+            "$files_passed" "$files_run" "$tests_passed_total" "$tests_total"
+        exit 0
+    else
+        printf 'VERDICT: FAIL  (%d/%d files green; %d file(s) failed; %d/%d tests passed)\n' \
+            "$files_passed" "$files_run" $((files_failed + files_errored)) "$tests_passed_total" "$tests_total"
+        exit 1
+    fi
 
 # Clean Rust targets and Mac app build artifacts
 clean:
