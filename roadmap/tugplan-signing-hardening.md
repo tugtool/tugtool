@@ -484,33 +484,54 @@ This is a shell-recipe + docs change. "Tests" are deliberate-state probes agains
 
 **Depends on:** #step-3
 
-**Commit:** `refactor(signing): app-test skips re-sign when bundle DR matches sentinel`
+**Commit:** `f7811d7b` (bundled with Step 7).
 
 **Tasks:**
-- [ ] Hoist the current-DR + saved-DR extraction above the re-sign branch (single computation, used by both the early-skip check and the post-resign drift check).
-- [ ] Add the early-skip branch at the top: if both DR values are non-empty and equal, print a notice and proceed past the entire re-sign + drift block.
-- [ ] Leave the existing fail-loud / opt-out / drift logic intact for the mismatch path.
+- [x] Hoist the current-DR + saved-DR extraction above the re-sign branch.
+- [x] Add the early-skip branch at the top.
+- [x] Leave the existing fail-loud / opt-out / drift logic intact for the mismatch path.
 
 **Tests:**
-- [ ] Steady-state probe: `just build-app && just app-test-smoke` — observe `Re-sign skipped` line in the output.
-- [ ] Drift probe: corrupt sentinel, run `app-test` — observe re-sign happen, then drift warn (since post-resign DR no longer matches the bogus sentinel).
-- [ ] Stale-bundle probe (manual; optional): bare `xcodebuild` between runs, then `app-test` — observe re-sign happens because bundle has ad-hoc DR.
+- [x] Steady-state probe: `just app-test nonexistent.test.ts` printed `==> Re-sign skipped (bundle DR matches sentinel)`.
+- [x] Drift probe: bogus sentinel value triggered re-sign + 4-line `[warn]` block (Saved/Current/invalidated/README cross-link), exactly as designed.
+- [ ] Stale-bundle probe — deferred (low value, would require running an Xcode IDE Build to invalidate the bundle's signature; the optimization's correctness is already covered by the drift probe).
 
 ##### Step 7: just teardown-dev-signing recipe {#step-7}
 
 **Depends on:** #step-6
 
-**Commit:** `feat(signing): add 'just teardown-dev-signing' recipe`
+**Commit:** `f7811d7b` (bundled with Step 6 — same file, tightly coupled).
 
 **Tasks:**
-- [ ] Add `teardown-dev-signing` recipe near `setup-dev-signing` in the Justfile.
-- [ ] Body: `security delete-identity -c "Tug Dev"` (with not-found tolerance), `rm -f .tugtool/code-sign-fingerprint`, closing instruction to re-run `setup-dev-signing` before next test.
+- [x] Add `teardown-dev-signing` recipe near `setup-dev-signing` in the Justfile.
+- [x] Body: `security delete-identity -c "Tug Dev"` (with not-found tolerance), `rm -f .tugtool/code-sign-fingerprint`, closing instruction to re-run `setup-dev-signing` + `build-app`.
 
 **Tests:**
-- [ ] Probe deferred — would disturb the user's working `Tug Dev` identity. Code review of the recipe + dry-run via `just --show teardown-dev-signing` is sufficient.
+- [x] `just --list` shows the new recipe with its summary line.
+- [x] `just --show teardown-dev-signing` reveals the expected body.
+- [ ] Live probe deferred — would disturb the user's working `Tug Dev` identity. Code review of the recipe is sufficient given the small scope.
 
-#### Phase 2 Roadmap / Follow-ons Status Update
+#### Phase 2 Close-out (2026-04-27) {#phase-2-close-out}
 
-- [x] Audit-item E. (Step 6.)
-- [x] Audit-item G. (Step 7.)
+| Step | Commit | Outcome |
+|------|--------|---------|
+| Plan addendum | `26cacb3e` | Phase 2 scoped + item 1 explicitly deferred. |
+| Step 6 + Step 7 (bundled) | `f7811d7b` | Re-sign skipped on DR match (saves ~100ms steady-state); teardown recipe lands. |
+
+**Verified live:**
+- Steady-state `app-test` prints `Re-sign skipped (bundle DR matches sentinel)`.
+- Bogus-sentinel probe: re-sign branch fires, post-resign drift warn fires.
+- `just --list` shows `teardown-dev-signing` alongside `setup-dev-signing`.
+
+#### Phase 2 Roadmap / Follow-ons Status
+
+- [x] Audit-item E. (Step 6, commit `f7811d7b`.)
+- [x] Audit-item G. (Step 7, commit `f7811d7b`.)
 - [ ] **Audit-item 1 — DEFERRED INDEFINITELY.** The pbxproj-edit form forces every contributor through `setup-dev-signing` even for non-test builds, which the audit and post-Phase-1 review both concluded was the wrong trade for ~50ms savings. A command-line `CODE_SIGN_IDENTITY="Tug Dev" CODE_SIGN_STYLE=Manual` override on `xcodebuild` was identified as a less-disruptive alternative; it's also deferred for now since the post-resign overwrite already works.
+
+**Final state of the signing pipeline (post-Phase-2):**
+- Every silent-failure mode the audit identified now produces an actionable error or structured warning.
+- Steady-state `app-test` saves ~100ms by skipping the redundant re-sign.
+- Drift detection remains proactive (warning before the test sweep wastes time on a broken AX grant).
+- Decommissioning the project is one command (`just teardown-dev-signing`).
+- Failure-mode checklist in the README means the next confused person has a path forward.
