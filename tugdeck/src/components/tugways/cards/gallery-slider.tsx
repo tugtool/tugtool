@@ -111,6 +111,8 @@ export function GallerySlider() {
               value={mdValue}
               senderId={mdId}
               label="Medium"
+              persistKey="slider-md"
+              data-testid="gallery-slider-persistent"
             />
             <TugLabel size="2xs" color="muted">{`Value: ${mdValue}`}</TugLabel>
           </div>

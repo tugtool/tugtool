@@ -51,6 +51,7 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { useTextInputResponder } from "./use-text-input-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Props ----
 
@@ -96,6 +97,25 @@ export interface TugValueInputProps
    * @default false
    */
   disabled?: boolean;
+  /**
+   * Opt the value input into the Component Persistence Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * numeric value is captured into `bag.components[persistKey]` at
+   * every save trigger. On restore the component re-dispatches
+   * `setValue` (phase `discrete`) so the parent (which owns
+   * `value`) updates. Controlled-only — no internal mirror.
+   *
+   * Note: when nested inside a `TugSlider` that already opts in via
+   * its own `persistKey`, the value-input should leave `persistKey`
+   * undefined to avoid double-capture. The slider's persistKey
+   * captures the same axis on a parent-scope key.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugValueInput`'s persisted state. */
+interface TugValueInputPersistState {
+  value: number;
 }
 
 // ---- Helpers ----
@@ -357,6 +377,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       className,
       style,
       onContextMenu,
+      persistKey,
       ...rest
     },
     ref,
@@ -383,6 +404,20 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       },
       [controlDispatch, effectiveSenderId],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. Controlled-only — restore re-
+    // dispatches `setValue` so the parent updates. [D13] / [A9].
+    useComponentPersistence<TugValueInputPersistState>({
+      persistKey,
+      captureState: () => ({ value }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugValueInputPersistState>).value;
+        if (typeof next !== "number" || !Number.isFinite(next)) return;
+        dispatchCommit(next);
+      },
+    });
 
     const editing = useValueInputEditing({
       value,

@@ -27,7 +27,7 @@
 
 import "./tug-radio-group.css";
 
-import React, { useCallback, useId } from "react";
+import React, { useCallback, useId, useState } from "react";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
@@ -36,6 +36,7 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -113,6 +114,21 @@ export interface TugRadioGroupProps
   disabled?: boolean;
   /** Accessible label when no visible label is provided. */
   "aria-label"?: string;
+  /**
+   * Opt the radio group into the Component Persistence Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * selected value is captured into `bag.components[persistKey]` at
+   * every save trigger and reapplied on the next mount. Controlled
+   * mode dispatches `selectValue` on restore (best-effort, parent
+   * owns truth); uncontrolled mode mirrors Radix's value in
+   * `useState` so restore can update it directly.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugRadioGroup`'s persisted state. */
+interface TugRadioGroupPersistState {
+  value: string;
 }
 
 // ---- TugRadioGroup ----
@@ -134,6 +150,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       "aria-label": ariaLabel,
       children,
       dir,
+      persistKey,
       ...rest
     },
     ref,
@@ -153,8 +170,21 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
+
+    // Mirror Radix's value in `useState` for the uncontrolled path
+    // so `useComponentPersistence` can read/write it. Same shape as
+    // the tug-checkbox / tug-accordion opt-ins.
+    const isExternallyControlled = value !== undefined;
+    const [internalValue, setInternalValue] = useState<string>(
+      defaultValue ?? "",
+    );
+    const effectiveValue = isExternallyControlled ? value : internalValue;
+
     const handleValueChange = useCallback(
       (nextValue: string) => {
+        if (!isExternallyControlled) {
+          setInternalValue(nextValue);
+        }
         controlDispatch({
           action: TUG_ACTIONS.SELECT_VALUE,
           value: nextValue,
@@ -162,16 +192,37 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           phase: "discrete",
         });
       },
-      [controlDispatch, effectiveSenderId],
+      [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. [D13] / [A9].
+    useComponentPersistence<TugRadioGroupPersistState>({
+      persistKey,
+      captureState: () => ({ value: effectiveValue ?? "" }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugRadioGroupPersistState>).value;
+        if (typeof next !== "string") return;
+        if (isExternallyControlled) {
+          controlDispatch({
+            action: TUG_ACTIONS.SELECT_VALUE,
+            value: next,
+            sender: effectiveSenderId,
+            phase: "discrete",
+          });
+        } else {
+          setInternalValue(next);
+        }
+      },
+    });
 
     return (
       <TugRadioGroupContext.Provider value={ctx}>
         <RadioGroupPrimitive.Root
           ref={ref}
           data-slot="tug-radio-group"
-          value={value}
-          defaultValue={defaultValue}
+          value={effectiveValue}
           onValueChange={handleValueChange}
           name={name}
           disabled={effectiveDisabled}

@@ -69,7 +69,15 @@ export function GalleryValueInput() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>md</span>
-            <TugValueInput size="md" value={mdValue} senderId={mdId} min={0} max={100} />
+            <TugValueInput
+              size="md"
+              value={mdValue}
+              senderId={mdId}
+              min={0}
+              max={100}
+              persistKey="value-input-md"
+              data-testid="gallery-value-input-persistent"
+            />
             <TugLabel size="2xs" color="muted">{`Value: ${mdValue}`}</TugLabel>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>

@@ -65,7 +65,14 @@ export function GallerySwitch() {
         <TugLabel className="cg-section-title">Size Variants</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {ALL_SIZES.map((size) => (
-            <TugSwitch key={size} size={size} label={`Size: ${size}`} defaultChecked />
+            <TugSwitch
+              key={size}
+              size={size}
+              label={`Size: ${size}`}
+              defaultChecked
+              persistKey={size === "md" ? "switch-md" : undefined}
+              data-testid={size === "md" ? "gallery-switch-persistent" : undefined}
+            />
           ))}
         </div>
       </div>

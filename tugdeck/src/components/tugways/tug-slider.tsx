@@ -124,6 +124,7 @@ import { TugValueInput } from "./tug-value-input";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -210,6 +211,20 @@ export interface TugSliderProps
    * @default false
    */
   disabled?: boolean;
+  /**
+   * Opt the slider into the Component Persistence Protocol ([D13],
+   * [A9]). When provided (and rendered inside a card), the numeric
+   * value is captured into `bag.components[persistKey]` at every
+   * save trigger. On restore the component re-dispatches `setValue`
+   * (phase `discrete`) so the parent updates. Controlled-only —
+   * the parent owns `value` and is the source of truth.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugSlider`'s persisted state. */
+interface TugSliderPersistState {
+  value: number;
 }
 
 // ---- TugSlider ----
@@ -234,6 +249,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       disabled = false,
       className,
       style,
+      persistKey,
       ...rest
     },
     ref,
@@ -276,6 +292,21 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       },
       [controlDispatch, effectiveSenderId],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. Controlled-only — restore re-
+    // dispatches `setValue` (discrete phase) so the parent updates.
+    // [D13] / [A9].
+    useComponentPersistence<TugSliderPersistState>({
+      persistKey,
+      captureState: () => ({ value }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugSliderPersistState>).value;
+        if (typeof next !== "number" || !Number.isFinite(next)) return;
+        dispatchSetValue(next, "discrete");
+      },
+    });
 
     // Live ref to the latest `dispatchSetValue` so the window-level
     // listener installed once at mount can call the current-render

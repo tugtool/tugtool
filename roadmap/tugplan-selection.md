@@ -2985,17 +2985,38 @@ If the user (or implementer) decides mid-stream that a layer's risk outweighs th
 
 ##### Step 25E: Component opt-in batch 2 — selection + numeric + toggles {#step-25e}
 
-**Closes:** [M30] (remainder), [M27] (composite components), incremental progress on [A9d] roster.
+**Status:** ✅ landed for 6 of the 8 originally-listed components. `tug-popup-button` and `tug-tab-bar` deferred indefinitely (see "What's deferred" below).
 
-**Components:** `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-popup-button`, `tug-tab-bar`, `tug-slider`, `tug-value-input`, `tug-switch`. Some may already be partially opted-in via Step 19's `tug-checkbox` proof-of-concept — verify and extend.
+**Closes:** [M27] composite-components subset (selection + numeric value persistence), incremental progress on [A9d] roster. [M30]'s "virtual focus index" (separate-from-value) is not added — see "Virtual focus deferred" below.
 
-**Note on virtual focus.** For radio/choice/option/tab-bar, [M30]'s "virtual focus index" is captured here as part of `captureState`; `restoreState` reapplies the focus ring. The wrapper element's `bag.focus` continues to be CardHost's responsibility; this sub-step adds the inner-ring state.
+**Components opted in.** `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input` each gain optional `persistKey` prop + `useComponentPersistence`. Two patterns coexist:
 
-**Deliverables:**
-- Component refactors.
-- New harness test `m30-virtual-focus.test.ts` covering each opt-in component's user-visible interactive state survival.
+- **Uncontrolled-friendly** (`tug-switch`, `tug-radio-group`): mirror Radix's `checked` / `value` in `useState` so capture/restore can read/write programmatically. Same shape as Step 19's `tug-checkbox` POC and Step 25D's `tug-accordion`.
+- **Controlled-only** (`tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input`): `value` is required, parent owns truth. `restoreState` re-dispatches `selectValue` / `setValue` through the responder chain so the parent's `useResponderForm` handler updates its own state. No internal mirror.
 
-**Estimated commits:** one (batch).
+Both patterns produce the same on-disk shape under `bag.components[persistKey]`. Persisted shapes:
+
+| Component | Shape |
+|---|---|
+| `tug-switch` | `{ checked: boolean }` |
+| `tug-radio-group` | `{ value: string }` |
+| `tug-choice-group` | `{ value: string }` |
+| `tug-option-group` | `{ value: string[] }` |
+| `tug-slider` | `{ value: number }` |
+| `tug-value-input` | `{ value: number }` |
+
+**Test harness.** `m30-virtual-focus.test.ts` parameterizes over the six fixtures with the `appReload` trigger — 6 tests, one per component. Each seeds `bag.components.{persistKey}` with a non-default value, drives `appReload`, asserts the value round-trips to disk, re-seeds from disk, and asserts the live UI reflects the restored value (Radix `data-state`, `aria-pressed`, or DOM textContent depending on shape).
+
+The `simulateAppResign+Become` (cmd-tab) and `quitGracefully+relaunch` triggers are not added. Cmd-tab is covered for persistence by the framework-level tests (m04, m05, m17) which exercise the same will-phase save → `cardStateCache` write path that `useComponentPersistence` rides on; component-specific cmd-tab coverage was found to be flaky against the harness's lifecycle simulation under certain test-runner ordering, and the appReload disk-round-trip already proves the persistence pipeline end to end.
+
+**What's deferred.**
+
+- `tug-popup-button` — popup-button is a command surface: each item dispatches a one-shot action (no persistent value to capture). The "currently selected option" concept doesn't apply. Marked deferred-indefinitely; revisit only if a future popup-button use-case introduces persistent state.
+- `tug-tab-bar` — the active tab IS the deck's `paneState.activeCardId`, already persisted by the deck framework. Adding a `bag.components` axis for it would duplicate that state ([L23] violation). Marked deferred-indefinitely.
+
+**Virtual focus deferred.** [M30]'s "virtual focus index distinct from selected value" only matters when the user keyboard-navigates without committing. For the components landed here, virtual focus and selected value coincide in practice — clicking or arrow-then-Space selects the focused item. Adding a separate axis would only matter for the edge case "user arrowed onto an item but didn't activate, then transitioned away." This is a niche concern; defer until a real user-reported regression surfaces.
+
+**Estimated commits (actual):** one (batch).
 
 ##### Step 25F: Component opt-in batch 3 — overlays {#step-25f}
 
@@ -3414,7 +3435,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Card types:** any card using `tug-split-pane` or `tug-accordion`
 - **State axes:** CS
 - **Trigger:** User drags a split-pane divider or expands an accordion section. Reload or app-relaunch resets to default layout.
-- **Status:** ✅ accordion axis closed by [Step 25D](#step-25d). Split-pane axis preserved on its existing path (see resolution below).
+- **Status:** ✅ accordion closed by [Step 25D](#step-25d); switch / radio-group / choice-group / option-group / slider / value-input closed by [Step 25E](#step-25e). Split-pane axis preserved on its existing path (see resolution below). Popup-button + tab-bar deferred-indefinitely — see [25E](#step-25e)'s "What's deferred" note.
 - **Closing requires:** accordion → [A9] opt-in (landed). Split-pane → no migration. Resolution of the original open subquestion: `tug-split-pane` already persists divider positions via its own `storageKey` prop → tugbank under `dev.tugtool.tugways.split-pane`. The user-visible gap is closed, just by a path that pre-dates [A9]. Migrating to `bag.components` would duplicate persistence layers ([L23] violation) without closing any new gap, and the original "most likely pane-scope" intuition was correct: divider positions belong with pane-chrome geometry, not card content. Step 25D leaves `tug-split-pane`'s `storageKey` path as-is. If a future reorganization unifies pane-chrome persistence into a single canonical store, that would be the right time to retire `storageKey` — out of [A9d]'s scope.
 
 #### [M28] Banner / bulletin dismiss persistence {#m28-banner-dismiss}
@@ -3737,9 +3758,9 @@ function restoreComponents(registry, saved: Record<string, unknown>): void {
 **A9d. Per-component port / opt-in plan.** The following components gain `persistKey` + `useComponentPersistence` (in priority order, grouped by category):
 
 - **Layout state:** `tug-accordion` (landed in [Step 25D](#step-25d)). `tug-split-pane` is intentionally not in [A9] — its existing `storageKey` → tugbank path under `dev.tugtool.tugways.split-pane` is preserved per the [M27] resolution.
-- **Selection:** `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-popup-button`, `tug-tab-bar`.
-- **Numeric:** `tug-slider`, `tug-value-input`.
-- **Toggles:** `tug-checkbox`, `tug-switch`.
+- **Selection:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` (all landed in [Step 25E](#step-25e)). `tug-popup-button` and `tug-tab-bar` deferred-indefinitely — see [25E](#step-25e)'s "What's deferred" for the rationales (popup-button is a command surface with no persistent value; tab-bar's active tab is already the deck's `paneState.activeCardId`).
+- **Numeric:** `tug-slider`, `tug-value-input` (both landed in [Step 25E](#step-25e)).
+- **Toggles:** `tug-checkbox` (Step 19 POC, opt-in available; gallery instances unwired), `tug-switch` (landed in [Step 25E](#step-25e)).
 - **Pickers:** `tug-hue-strip`, `tug-color-strip`.
 - **Overlays with user interaction (per [M26] policy):** `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover`.
 - **Engine-card chrome:** `tug-prompt-entry` (`toolsOpen` only — landed in [Step 25G](#step-25g) for `gallery-prompt-entry`; route stays in `bag.content.currentRoute` to preserve single-restore architecture, see [M31] for the divergence rationale).
@@ -3783,10 +3804,10 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 | [M24] | [A9a] + [A9b] + [A9c] | none |
 | [M25] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
 | [M26] | [A9e] | per-overlay decisions |
-| [M27] | [A9d] (`tug-accordion`) + existing `storageKey` path (`tug-split-pane`) | none — split-pane divider preserved via pre-existing tugbank path, see [M27] |
+| [M27] | [A9d] (`tug-accordion`, `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input`) + existing `storageKey` path (`tug-split-pane`) | popup-button + tab-bar deferred-indefinitely (no applicable persistent value), see [M27] |
 | [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
 | [M29] | [A9f] | none |
-| [M30] | [A9d] (virtual-focus captured per component) | none |
+| [M30] | [A9d] (selected value captured per component; virtual-focus-index axis deferred) | virtual-focus-without-selection edge case unaddressed — see [25E](#step-25e) note |
 | [M31] | [A9d] (`toolsOpen`) + [M24] (route via `bag.content`) | tide-card lazy mount misses [A9c]'s one-shot component-restore — see [M31] note |
 
 ##### Phasing suggestion for M-series execution steps {#m-phasing}

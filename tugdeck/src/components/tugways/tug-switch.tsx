@@ -21,12 +21,13 @@
 
 import "./tug-switch.css";
 
-import React, { useCallback, useId } from "react";
+import React, { useCallback, useId, useState } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -126,6 +127,25 @@ export interface TugSwitchProps {
    * @selector [data-role="<role>"]
    */
   role?: TugSwitchRole;
+  /**
+   * Opt the switch into the Component Persistence Protocol ([D13],
+   * [A9]). When provided (and rendered inside a card), the checked
+   * state is captured into `bag.components[persistKey]` at every
+   * save trigger and reapplied on the next mount. Controlled mode
+   * dispatches a `toggle` action through the responder chain on
+   * restore (best-effort — the parent state owner reconciles);
+   * uncontrolled mode mirrors Radix's checked state in `useState`
+   * so restore can set it directly.
+   *
+   * Absence means "not persisted" — gallery demos and standalone
+   * tests that render the switch outside a card stay unaffected.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugSwitch`'s persisted state. */
+interface TugSwitchPersistState {
+  checked: boolean;
 }
 
 // ---- TugSwitch ----
@@ -145,6 +165,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       className,
       "aria-label": ariaLabel,
       role,
+      persistKey,
       ...rest
     },
     ref,
@@ -158,8 +179,24 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
+
+    // Mirror Radix's checked state in `useState` for the uncontrolled
+    // path so `useComponentPersistence` can read/write it. When the
+    // parent supplies `checked`, that's classic controlled mode and
+    // the parent owns truth. Same shape as `tug-checkbox`'s opt-in.
+    const isExternallyControlled = checked !== undefined;
+    const [internalChecked, setInternalChecked] = useState<boolean>(
+      defaultChecked ?? false,
+    );
+    const effectiveChecked = isExternallyControlled
+      ? checked
+      : internalChecked;
+
     const handleCheckedChange = useCallback(
       (next: boolean) => {
+        if (!isExternallyControlled) {
+          setInternalChecked(next);
+        }
         controlDispatch({
           action: TUG_ACTIONS.TOGGLE,
           value: next,
@@ -167,8 +204,33 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
           phase: "discrete",
         });
       },
-      [controlDispatch, effectiveSenderId],
+      [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. Capture reads `effectiveChecked`;
+    // restore updates internal state in the uncontrolled path and
+    // dispatches a `toggle` for the controlled path (best-effort
+    // re-dispatch; the parent is still in charge). [D13] / [A9].
+    useComponentPersistence<TugSwitchPersistState>({
+      persistKey,
+      captureState: () => ({ checked: effectiveChecked === true }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugSwitchPersistState>).checked;
+        if (typeof next !== "boolean") return;
+        if (isExternallyControlled) {
+          controlDispatch({
+            action: TUG_ACTIONS.TOGGLE,
+            value: next,
+            sender: effectiveSenderId,
+            phase: "discrete",
+          });
+        } else {
+          setInternalChecked(next);
+        }
+      },
+    });
 
     // Role injection — every path injects surface-toggle-track tokens. [L06]
     // No role prop = accent. Single path, zero branches.
@@ -183,8 +245,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       <SwitchPrimitive.Root
         ref={ref}
         data-slot="tug-switch"
-        checked={checked}
-        defaultChecked={defaultChecked}
+        checked={effectiveChecked}
         onCheckedChange={handleCheckedChange}
         disabled={effectiveDisabled}
         name={name}

@@ -89,7 +89,14 @@ export function GalleryRadioGroup() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>md</div>
-            <TugRadioGroup size="md" value={sizeMdValue} senderId={radioMdId} aria-label="Medium radio group">
+            <TugRadioGroup
+              size="md"
+              value={sizeMdValue}
+              senderId={radioMdId}
+              aria-label="Medium radio group"
+              persistKey="radio-md"
+              data-testid="gallery-radio-persistent"
+            >
               <TugRadioItem value="a">Alpha</TugRadioItem>
               <TugRadioItem value="b">Beta</TugRadioItem>
               <TugRadioItem value="c">Gamma</TugRadioItem>

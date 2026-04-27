@@ -135,6 +135,8 @@ export function GalleryOptionGroup() {
             value={formatValue}
             senderId={formatId}
             aria-label="Text formatting"
+            persistKey="option-format"
+            data-testid="gallery-option-persistent"
             items={[
               { value: "bold",      icon: <Bold />,      "aria-label": "Bold" },
               { value: "italic",    icon: <Italic />,    "aria-label": "Italic" },

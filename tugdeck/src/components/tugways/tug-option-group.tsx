@@ -43,6 +43,7 @@ import {
 } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -113,6 +114,20 @@ export interface TugOptionGroupProps
   disabled?: boolean;
   /** Accessible label for the toolbar. */
   "aria-label"?: string;
+  /**
+   * Opt the option group into the Component Persistence Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * active set is captured into `bag.components[persistKey]` at
+   * every save trigger. On restore the component re-dispatches a
+   * `setValue` action so the parent (which owns `value`) updates
+   * its own state. Controlled-only — no internal mirror.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugOptionGroup`'s persisted state. */
+interface TugOptionGroupPersistState {
+  value: string[];
 }
 
 // ---- TugOptionGroup ----
@@ -129,6 +144,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       className,
       style,
       "aria-label": ariaLabel,
+      persistKey,
       ...rest
     },
     ref,
@@ -167,6 +183,22 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       },
       [controlDispatch, effectiveSenderId],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. Controlled-only — restore re-
+    // dispatches `setValue` so the parent updates. [D13] / [A9].
+    useComponentPersistence<TugOptionGroupPersistState>({
+      persistKey,
+      captureState: () => ({ value: [...value] }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugOptionGroupPersistState>).value;
+        if (!Array.isArray(next) || next.some((v) => typeof v !== "string")) {
+          return;
+        }
+        dispatchSetValue(next as string[]);
+      },
+    });
 
     const dispatchFocusDirection = useCallback(
       (direction: "next" | "previous" | "first" | "last") => {

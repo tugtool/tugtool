@@ -38,6 +38,7 @@ import {
 } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useComponentPersistence } from "./use-component-persistence";
 
 // ---- Types ----
 
@@ -115,6 +116,25 @@ export interface TugChoiceGroupProps
   animated?: boolean;
   /** Accessible label for the group. */
   "aria-label"?: string;
+  /**
+   * Opt the choice group into the Component Persistence Protocol
+   * ([D13], [A9]). When provided (and rendered inside a card), the
+   * selected value is captured into `bag.components[persistKey]` at
+   * every save trigger. On restore the component re-dispatches a
+   * `selectValue` action through the responder chain so the parent
+   * (which owns the `value` prop) updates its own state. The parent
+   * must register a `selectValue` handler that recognizes
+   * `event.sender === senderId` to honor the restore.
+   *
+   * `tug-choice-group` is controlled-only (`value` is required) so
+   * there is no internal mirror — the parent IS the source of truth.
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugChoiceGroup`'s persisted state. */
+interface TugChoiceGroupPersistState {
+  value: string;
 }
 
 // ---- TugChoiceGroup ----
@@ -132,6 +152,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       className,
       style,
       "aria-label": ariaLabel,
+      persistKey,
       ...rest
     },
     ref,
@@ -176,6 +197,21 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       },
       [controlDispatch, effectiveSenderId],
     );
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined. Controlled-only — restore re-
+    // dispatches `selectValue` so the parent (the source of truth)
+    // updates. [D13] / [A9].
+    useComponentPersistence<TugChoiceGroupPersistState>({
+      persistKey,
+      captureState: () => ({ value }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugChoiceGroupPersistState>).value;
+        if (typeof next !== "string") return;
+        dispatchSelectValue(next);
+      },
+    });
 
     // ---- Keyboard navigation ----
 
