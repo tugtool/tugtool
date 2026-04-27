@@ -75,6 +75,7 @@ import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
+import { useComponentPersistence } from "./use-component-persistence";
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -142,6 +143,27 @@ export interface TugSheetProps {
   responderId?: string;
   /** Trigger + Content children. */
   children: React.ReactNode;
+  /**
+   * Opt the sheet into the Component Persistence Protocol ([D13],
+   * [A9]). When provided (and rendered inside a card), the open
+   * state is captured into `bag.components[persistKey]` at every
+   * save trigger and reapplied on the next mount — so a sheet the
+   * user opened (and was interacting with) re-opens after reload
+   * or cmd-tab. Per-surface payloads (form values inside the
+   * sheet, scroll position, etc.) are owned by the consumer's
+   * own components, which ride their own `bag.components` keys.
+   *
+   * `tug-sheet` is uncontrolled-only — open state lives in this
+   * component's `useState`, so `restoreState` writes through
+   * `setOpen` directly. Marked PERSISTENT per [Step 25F](#step-25f) /
+   * [M26].
+   */
+  persistKey?: string;
+}
+
+/** Serialized shape of `TugSheet`'s persisted state. */
+interface TugSheetPersistState {
+  open: boolean;
 }
 
 /**
@@ -156,7 +178,7 @@ export interface TugSheetProps {
  * ```
  */
 export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
-  function TugSheet({ defaultOpen = false, responderId: responderIdProp, children }, ref) {
+  function TugSheet({ defaultOpen = false, responderId: responderIdProp, children, persistKey }, ref) {
     const [open, setOpen] = useState(defaultOpen);
     const contentId = useId();
     const fallbackResponderId = useId();
@@ -165,6 +187,19 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
     const handleOpenChange = useCallback((next: boolean) => {
       setOpen(next);
     }, []);
+
+    // Opt-in Component Persistence Protocol. Hook no-ops when
+    // `persistKey` is undefined or rendered outside a card.
+    // Step 25F / [M26] PERSISTENT classification.
+    useComponentPersistence<TugSheetPersistState>({
+      persistKey,
+      captureState: () => ({ open }),
+      restoreState: (saved) => {
+        if (saved === null || typeof saved !== "object") return;
+        const next = (saved as Partial<TugSheetPersistState>).open;
+        if (typeof next === "boolean") setOpen(next);
+      },
+    });
 
     useImperativeHandle(ref, () => ({
       open() {

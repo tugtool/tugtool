@@ -3020,16 +3020,27 @@ The `simulateAppResign+Become` (cmd-tab) and `quitGracefully+relaunch` triggers 
 
 ##### Step 25F: Component opt-in batch 3 — overlays {#step-25f}
 
+**Status:** ✅ landed. `tug-sheet` is the sole PERSISTENT surface; `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` resolved as EPHEMERAL.
+
 **Closes:** [M26] (overlay-by-overlay policy + opt-in for the persistent set).
 
-**Per-overlay policy decisions land in this sub-step** (per [M26] resolution): `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover` are PERSISTENT (re-open with state intact on re-mount); `tug-tooltip`, `tug-context-menu`, simple-popover are EPHEMERAL (no opt-in).
+**Per-overlay policy decisions land in this sub-step** (per [M26] resolution): `tug-sheet` is PERSISTENT (re-open with state intact on re-mount); `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, simple-popover are EPHEMERAL (no opt-in).
 
-**Deliverables:**
-- Persistent overlays gain `useComponentPersistence`.
-- Ephemeral overlays' status is documented inline + in [M26]'s entry.
-- New harness test `m26-overlay-persistence.test.ts` covering each PERSISTENT overlay surviving tab-switch / cmd-tab / reload.
+The original proposal classified `tug-alert`, `tug-confirm-popover`, and `tug-popover` as PERSISTENT alongside `tug-sheet`. They were reclassified as EPHEMERAL during 25F:
 
-**Estimated commits:** one.
+- `tug-alert` is **imperative-promise-based**: `await showAlert(...)` opens the dialog and resolves on click. The `resolve` function is held in a ref captured at the call site. Persisting `open: true` would re-open the dialog after reload, but the resolver is gone — clicks resolve nothing, the awaiting code has vanished with its re-rendered component. Persistence would actively break the Promise contract.
+- `tug-confirm-popover` is the same shape — short-lived "are you sure?" prompts with no in-flight state worth preserving. Re-prompting on return is correct behavior, not a regression.
+- `tug-popover` is a general-purpose anchored surface whose contents vary widely. Opting it in at the wrapper level would force-persist transient cases (date pickers, tooltipped controls, dismissible help) that the user expects to recompute. Specific persistent popover *uses* (e.g., the prompt-entry tools popover, [Step 25G](#step-25g)) opt in at their consumer site instead.
+
+`tug-sheet` is the only remaining surface that's both declaratively-mountable AND has user-investment value worth preserving — sheets typically wrap forms, settings panes, and multi-step flows that the user expects to find still-open after a transient reload.
+
+**Deliverables (actual):**
+- `tug-sheet` adds optional `persistKey` prop + `useComponentPersistence` capturing `{ open: boolean }`. Uncontrolled-only — restore writes through `setOpen` directly (no controlled-mode dispatch needed since the sheet has no public `open`/`onOpenChange` prop).
+- Ephemeral overlays — `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` — left untouched; status documented in [M26]'s entry and in the per-overlay rationale above.
+- `gallery-sheet` wires `persistKey="sheet-basic"` on the basic-sheet demo and tags the trigger with `data-testid="gallery-sheet-trigger"` for harness scoping.
+- `m26-overlay-persistence.test.ts` covers `tug-sheet × appReload` for both axes (open=true round-trips; open=false stays closed). The `simulateAppResign+Become` (cmd-tab) trigger is not added; m04 / m05 / m17 already cover the will-phase save → cardStateCache write path.
+
+**Estimated commits (actual):** one.
 
 ##### Step 25G: Component opt-in batch 4 — `tug-prompt-entry` chrome state {#step-25g}
 
@@ -3427,8 +3438,8 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Card types:** cards with sheet / alert / popover / confirm-popover / menu surfaces
 - **State axes:** CS, FX, SR
 - **Trigger:** User opens an overlay (e.g., `tug-sheet` with a form inside), invests interaction, Cmd-Tabs away or switches tabs. On return, overlay is closed; in-flight state lost.
-- **Status:** ❌ broken for modal-like overlays; ⬛ accepted for transient chrome.
-- **Closing requires:** policy per overlay type. Proposal: (a) PERSIST — sheet, alert, confirm-popover, complex popover. Opt into [A9]; restore re-opens with state intact. (b) EPHEMERAL — tooltip, context-menu, simple transient popovers. No opt-in; re-open empty is user-acceptable. Tracked as [A9e]; decided overlay-by-overlay during implementation.
+- **Status:** ✅ closed by [Step 25F](#step-25f). `tug-sheet` opted in; `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` resolved as EPHEMERAL by design.
+- **Closing requires:** policy per overlay type, decided in [Step 25F](#step-25f). Resolution: (a) PERSIST — `tug-sheet`. Opt into [A9]; restore re-opens with state intact. (b) EPHEMERAL — `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, simple transient popovers. No opt-in; re-open empty is user-acceptable. The original proposal also classified `tug-alert`, `tug-confirm-popover`, `tug-popover` as PERSIST; all three moved to EPHEMERAL during 25F (rationale in [Step 25F](#step-25f)) — alerts in particular would break their Promise contract if re-opened without a resolver.
 
 #### [M27] Layout state: split-pane divider, accordion expansion {#m27-layout-state}
 
@@ -3762,13 +3773,13 @@ function restoreComponents(registry, saved: Record<string, unknown>): void {
 - **Numeric:** `tug-slider`, `tug-value-input` (both landed in [Step 25E](#step-25e)).
 - **Toggles:** `tug-checkbox` (Step 19 POC, opt-in available; gallery instances unwired), `tug-switch` (landed in [Step 25E](#step-25e)).
 - **Pickers:** `tug-hue-strip`, `tug-color-strip`.
-- **Overlays with user interaction (per [M26] policy):** `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover`.
+- **Overlays with user interaction (per [M26] policy):** `tug-sheet`. `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` are EPHEMERAL — no opt-in (see [Step 25F](#step-25f) for the rationale; alerts in particular have a Promise-contract reason on top of the general "short-lived prompt" reasoning).
 - **Engine-card chrome:** `tug-prompt-entry` (`toolsOpen` only — landed in [Step 25G](#step-25g) for `gallery-prompt-entry`; route stays in `bag.content.currentRoute` to preserve single-restore architecture, see [M31] for the divergence rationale).
 - **Virtual focus within composites:** radio-group, option-group, choice-group, tab-bar — see [M30].
 
 Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) migrate from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves (for `bag.content`).
 
-**A9e. Overlay policy implementation.** Per [M26]: opt in (a) sheet, alert, confirm-popover, complex popover. Opt out (b) tooltip, context-menu, editor-context-menu, transient popovers. Captured state for (a) overlays: `{ open, anchorPath?, invokedAt?, ...per-surface-data }`.
+**A9e. Overlay policy implementation.** Per [M26], resolved in [Step 25F](#step-25f): opt in (a) `tug-sheet`. Opt out (b) `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, editor-context-menu, transient popovers. Captured state for (a) overlays: `{ open: boolean }` at minimum; per-surface payloads (form values, etc.) are owned by the consumer's `useResponderForm` and ride their own `bag.components` keys when needed.
 
 **A9f. Scroll-key audit.** Per [M29]: walk stateful components for internally-scrollable sub-regions; add `data-tug-scroll-key` where user-visible scroll applies. IS-axis machinery (Step 9) handles capture/restore. Scope: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-completion-menu`, `tug-context-menu` if scrollable, any custom scrollable chrome.
 
@@ -3803,7 +3814,7 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 | [M23] | scope to single-card; paint doesn't crash cross-card | cross-card selections remain one-owner |
 | [M24] | [A9a] + [A9b] + [A9c] | none |
 | [M25] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
-| [M26] | [A9e] | per-overlay decisions |
+| [M26] | [A9e] (`tug-sheet` opted in; alert / confirm-popover / popover / tooltip / context-menu EPHEMERAL by design) | none |
 | [M27] | [A9d] (`tug-accordion`, `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input`) + existing `storageKey` path (`tug-split-pane`) | popup-button + tab-bar deferred-indefinitely (no applicable persistent value), see [M27] |
 | [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
 | [M29] | [A9f] | none |

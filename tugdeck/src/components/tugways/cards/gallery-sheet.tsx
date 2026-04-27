@@ -152,9 +152,15 @@ export function GallerySheet() {
           Compound API — TugSheet / TugSheetTrigger / TugSheetContent with a settings form
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet>
+          <TugSheet persistKey="sheet-basic">
             <TugSheetTrigger asChild>
-              <TugPushButton emphasis="outlined" size="sm">Open Settings</TugPushButton>
+              <TugPushButton
+                emphasis="outlined"
+                size="sm"
+                data-testid="gallery-sheet-trigger"
+              >
+                Open Settings
+              </TugPushButton>
             </TugSheetTrigger>
             <TugSheetContent title="Card Settings">
               <div style={fieldGroupStyle}>
