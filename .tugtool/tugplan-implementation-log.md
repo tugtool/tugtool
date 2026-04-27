@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-27T23:15:42Z
+---
+
+## step-4: Created tuglaws/lifecycle-delegates.md (211 lines) per Spec S04 + [D07] + OQ1 expansion: covers all 11 TugCardDelegate methods, the strict cross-card will/did ordering invariant, MessageChannel drain queue, LIFECYCLE_LOG, portal-refactoring relationship, and authoring rules. Source-of-truth is card-lifecycle.ts (primary), card-host.tsx (secondary). All SC04 identifiers present; banner present; tsc clean.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-3
 date: 2025-04-27T23:09:12Z
 ---
