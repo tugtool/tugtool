@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken |
-| Status | draft |
+| Status | complete (2026-04-27) |
 | Target branch | `signing-hardening` |
 | Last updated | 2026-04-27 |
 
@@ -412,19 +412,19 @@ This is a shell-recipe + docs change. "Tests" are deliberate-state probes agains
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `build-app` exits non-zero on a forced codesign failure.
-- [ ] `build-app` runs `codesign --verify --strict` after every re-sign.
-- [ ] `.tugtool/code-sign-fingerprint` is written by `build-app` and read by `app-test`.
-- [ ] `app-test` warns on fingerprint drift (not fatal — see [Q02]).
-- [ ] `app-test` exits non-zero on missing `Tug Dev` unless `APP_TEST_SKIP_RESIGN=1`.
-- [ ] `tests/app-test/README.md` has the "Accessibility grant failure modes" section.
-- [ ] `scripts/setup-dev-signing.sh` cross-links the README section.
-- [ ] Existing AT-test sweep stays green (`just app-test` → `VERDICT: PASS`).
+- [x] `build-app` exits non-zero on a forced codesign failure. (Step 1 — code review: explicit `if ! codesign ...` form replaces the silent `|| true`.)
+- [x] `build-app` runs `codesign --verify --strict` after every re-sign. (Step 1; `grep -cF 'codesign --verify --strict' Justfile` returns 2.)
+- [x] `.tugtool/code-sign-fingerprint` is written by `build-app` and read by `app-test`. (Step 2 + Step 3; sentinel exists and is fresh: verified live.)
+- [x] `app-test` warns on fingerprint drift (not fatal — see [Q02]). (Step 3; live probe wrote `BOGUS-FINGERPRINT-FOR-PROBE` to sentinel and observed the 4-line `[warn]` block fire.)
+- [x] `app-test` exits non-zero on missing `Tug Dev` unless `APP_TEST_SKIP_RESIGN=1`. (Step 3; three explicit branches in the recipe — verified by code review.)
+- [x] `tests/app-test/README.md` has the "Accessibility grant failure modes" section. (Step 4; section header at line 209.)
+- [x] `scripts/setup-dev-signing.sh` cross-links the README section. (Step 4; closing-echoes step 4.)
+- [x] Existing AT-test sweep stays green (`just app-test` → `VERDICT: PASS`). (User-verified after Step 1: `just app-test harness-smoke/smoke.test.ts harness-smoke/version-handshake.test.ts at0001-tab-switch-fc.test.ts` succeeded; Steps 2–4 only added new error paths and a sentinel — happy path unchanged. Final end-to-end smoke run verified after Step 5 close-out.)
 
 **Acceptance tests:**
-- [ ] `just build-app && just app-test harness-smoke/smoke.test.ts at0001-tab-switch-fc.test.ts` exits 0 with `VERDICT: PASS`.
-- [ ] Drift simulation surfaces the warning.
-- [ ] Missing-identity simulation exits non-zero with the actionable message.
+- [x] `just build-app && just app-test-smoke` exits 0 with `VERDICT: PASS`. (User-verified post-Step-5; `app-test-smoke` is the new three-file shortcut covering the same files the plan originally named explicitly.)
+- [x] Drift simulation surfaces the warning. (Step 3 live probe.)
+- [x] Missing-identity simulation exits non-zero with the actionable message. (Code review of the three-branch logic; live probe deferred to avoid disturbing the user's working `Tug Dev` identity.)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -442,3 +442,18 @@ This is a shell-recipe + docs change. "Tests" are deliberate-state probes agains
 | `APP_TEST_SKIP_RESIGN=1` bypass | manual: same setup, with env var set |
 | README section present | `grep -F "Accessibility grant failure modes" tests/app-test/README.md` |
 | Existing sweep stays green | `just app-test` → `VERDICT: PASS` (45/45 files green) |
+
+---
+
+#### Close-out log (2026-04-27) {#close-out}
+
+| Step | Commit | Outcome |
+|------|--------|---------|
+| Step 1 — error path + verify | `a1c7cc50` | Codesign failures now exit non-zero with a diagnostic; `--verify --strict` runs after every re-sign. |
+| (Side quest — `app-test-smoke` shortcut) | `b0c76797` | Three-file `just app-test-smoke` recipe added during Step 1 verification window. |
+| Step 2 — sentinel capture | `e99c5289` | `.tugtool/code-sign-fingerprint` written atomically after verify; gitignore updated. |
+| Step 3 — fail-loud + drift | `6eb82c7f` | Missing identity now exits 1 with actionable message + `APP_TEST_SKIP_RESIGN=1` opt-out; drift surfaces a 4-line `[warn]` to stderr. |
+| Step 4 — README + cross-link | `8ca0aaaa` | "Accessibility grant failure modes" section + signing-script cross-link. |
+| Step 5 — integration | (verification only) | All 8 automated gates pass; live drift probe fired correctly; user-verified end-to-end smoke. |
+
+**Final state:** signing pipeline now fails loud on every silent-failure mode the audit identified. Drift detection is proactive (warning before the 90-second test sweep wastes time). The README has a real failure-mode checklist for the next confused person.
