@@ -6,7 +6,7 @@
  *    verify the log file contains the line."
  *
  * The harness routes Tug.app stdout/stderr into
- * `tests/in-app/logs/<testName>.log` when `launchTugApp({ testName })`
+ * `tests/app-test/logs/<testName>.log` when `launchTugApp({ testName })`
  * is called. `app.tailLog()` reads the file contents so tests can
  * diff; `app.close()` flushes the stream before this test inspects
  * the file.
@@ -24,7 +24,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_log-capture.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_log-capture.test.ts
  *
  * Design notes:
  * - The test uses a unique marker string so a flake involving an
@@ -34,7 +34,7 @@
  *   startup chatter to stdout/stderr before our marker arrives.
  * - The test name is sanitized by the harness before being turned
  *   into a filename. Keep it filesystem-safe so you can `ls
- *   tests/in-app/logs/` and see what ran.
+ *   tests/app-test/logs/` and see what ran.
  */
 
 import { existsSync, readFileSync } from "node:fs";

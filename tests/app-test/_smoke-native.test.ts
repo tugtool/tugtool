@@ -3,7 +3,7 @@
  *
  * ## What this file pins
  *
- * Every Phase A native verb that the M-series rewrites (Step 3b and
+ * Every Phase A native verb that the AT-series rewrites (Step 3b and
  * onward) relies on. If any of these five tests fails, the whole
  * native-event pipeline is broken and the downstream M-test suite
  * cannot be trusted.
@@ -271,7 +271,7 @@ describe.skipIf(!SHOULD_RUN)("phase A native-gesture smoke", () => {
     // `responder-chain-provider.tsx`). Fighting tugdeck's capture
     // listener from a smoke test would be fragile; asserting on the
     // *event shape* directly is the robust pipeline check. Step 3b's
-    // M03 rewrite does assert on behavior, but there the test scenario
+    // AT0003 rewrite does assert on behavior, but there the test scenario
     // is designed around the deck's own bindings, not in conflict
     // with them.
     const app = await launchTugApp({ testName: "smoke-native-cmd-a" });

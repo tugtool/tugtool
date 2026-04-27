@@ -138,7 +138,7 @@ export const EXPECTED_SURFACE_VERSION = "1.5.0" as const;
 /**
  * Directory (relative to this file) where per-test subprocess logs
  * are captured when `testName` is set. Tug.app stdout/stderr routes
- * to `tests/in-app/logs/<test>.log`.
+ * to `tests/app-test/logs/<test>.log`.
  */
 const LOGS_DIR = pathResolve(import.meta.dir, "..", "logs");
 
@@ -873,7 +873,7 @@ export class App {
    * Stdout/stderr go to `opts.logFilePath` (truncated on open) or
    * `/dev/null` when unset. Tests that want to inspect tugcode's
    * output should pass an absolute log path under
-   * `tests/in-app/logs/`.
+   * `tests/app-test/logs/`.
    */
   startTugcode(opts: client.StartTugcodeOptions): Promise<client.StartTugcodeResult> {
     return client.startTugcode(this as HarnessCaller, opts);
@@ -954,7 +954,7 @@ export class App {
    * `TimeoutError` from `waitForCondition` has nothing to print).
    *
    *     try { ... } catch (e) {
-   *       await app.dumpTraceToFile(`tests/in-app/logs/${testName}-trace.json`);
+   *       await app.dumpTraceToFile(`tests/app-test/logs/${testName}-trace.json`);
    *       throw e;
    *     }
    *
@@ -1245,7 +1245,7 @@ export async function launchTugApp(
 /**
  * Narrow, typed shim for the globalThis scheduler. We import this
  * rather than using `setTimeout` directly so a grep for
- * `setTimeout` in `tests/in-app/` only hits `./_harness/*` (harness
+ * `setTimeout` in `tests/app-test/` only hits `./_harness/*` (harness
  * internals), not test files.
  */
 const setTimeoutNative = (

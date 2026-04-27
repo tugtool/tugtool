@@ -384,7 +384,7 @@ export interface LaunchTugAppOptions {
   /**
    * Test name; used for the `logs/<test-name>.log` capture path when
    * stdout/stderr redirection is enabled. Optional. When set, the
-   * harness opens `tests/in-app/logs/<testName>.log` and pipes the
+   * harness opens `tests/app-test/logs/<testName>.log` and pipes the
    * subprocess's stdout/stderr into it; `app.logPath` is populated so
    * tests can call `app.tailLog()` on failure.
    */
@@ -412,7 +412,7 @@ export interface LaunchTugAppOptions {
   /**
    * Disable test-mode's persistence-bypass so tugbank writes from
    * `deck-manager`'s `put*Guarded` wrappers actually go through.
-   * Used by cold-boot harness tests ([M14] scroll / focus round-trips)
+   * Used by cold-boot harness tests ([AT0014] scroll / focus round-trips)
    * paired with a per-test `TUGBANK_PATH` so pollution of the
    * developer's real `~/.tugbank.db` is impossible.
    *

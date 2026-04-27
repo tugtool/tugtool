@@ -381,7 +381,7 @@ export function registerGalleryCards(): void {
   });
 
   // Pre-baked variant: mounts with 50KB of static markdown loaded
-  // immediately. Used by [M14] / [M23] harness tests
+  // immediately. Used by [AT0014] / [AT0023] harness tests
   // for predictable scrollable content; useful as a manual
   // theme-debug fixture too. Same component code, distinct id.
   registerCard({

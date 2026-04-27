@@ -38,7 +38,7 @@
  *      up from `activeElement` to find a `[data-card-id]` ancestor,
  *      matches against `state.cards`) → **true** (card-to-card
  *      navigation via tab switch or pane activation is a deliberate
- *      user gesture, not focus theft — M01/M03 scenarios).
+ *      user gesture, not focus theft — AT0001/AT0003 scenarios).
  *   7. Otherwise → **false** (the user has focus somewhere real;
  *      don't steal).
  *

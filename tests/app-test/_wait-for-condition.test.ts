@@ -16,7 +16,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_wait-for-condition.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_wait-for-condition.test.ts
  *
  * Design notes:
  * - Each test launches its own `App` instance and closes it in the

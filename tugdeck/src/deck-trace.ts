@@ -1,7 +1,7 @@
 /**
  * deck-trace.ts — a bounded, in-memory ring buffer of structured deck
  * events, used to reconstruct focus / activation / lifecycle sequences
- * when diagnosing M-series regressions inside the real Tug.app
+ * when diagnosing AT-series regressions inside the real Tug.app
  * WKWebView.
  *
  * ## Why this exists
@@ -281,7 +281,7 @@ export type DeckTraceEventInput =
 
 /**
  * Ring capacity. Fixed at 512 entries — enough to span typical
- * M-series reproductions while keeping `dumpTable()` output readable.
+ * AT-series reproductions while keeping `dumpTable()` output readable.
  */
 export const DECK_TRACE_CAPACITY = 512;
 

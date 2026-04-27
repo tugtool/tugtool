@@ -5,7 +5,7 @@
  * entries."
  *
  * These tests run under bun:test with NO happy-dom (see
- * `tests/in-app/bunfig.toml` — root-scoped, no preload). The matcher
+ * `tests/app-test/bunfig.toml` — root-scoped, no preload). The matcher
  * is pure logic, so no DOM is needed.
  */
 
@@ -209,7 +209,7 @@ describe("toContainOrderedSubset — fail cases", () => {
   });
 
   test("out-of-order match emits Order violation annotation citing both indices", () => {
-    // M01-shaped scenario: the trace contains destination-flip BEFORE
+    // AT0001-shaped scenario: the trace contains destination-flip BEFORE
     // fr-flip, but the test expects fr-flip → destination-flip. The
     // annotation should call this out explicitly so the reader
     // doesn't have to eyeball the JSON to reach the same conclusion.
@@ -590,7 +590,7 @@ describe("toContainOrderedSubset — one-line summary above JSON dump", () => {
   });
 
   test("summary annotates pre-cursor wrong-order match", () => {
-    // Mirror of the M01-shaped scenario: destination-flip sits at
+    // Mirror of the AT0001-shaped scenario: destination-flip sits at
     // index 0 but the test wants fr-flip first. After fr-flip at
     // index 2 matches expected #0, the matcher scans [3..) for
     // expected #1 and fails. The summary should mark index 0 as a

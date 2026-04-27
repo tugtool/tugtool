@@ -197,7 +197,7 @@ export function tugbankWrite(
  *     fastest boot. Override via opts if a test needs dev-mode.
  *
  * `sourceTreePath` defaults to the repo root derived from this
- * module's location: `tests/in-app/_harness/tugbank-helpers.ts`
+ * module's location: `tests/app-test/_harness/tugbank-helpers.ts`
  * sits three directories below the repo root.
  */
 export function seedTugbankForLaunch(
@@ -220,7 +220,7 @@ export function seedTugbankForLaunch(
 }
 
 function defaultRepoRoot(): string {
-  // import.meta.dir → tests/in-app/_harness/ ; go up three levels.
+  // import.meta.dir → tests/app-test/_harness/ ; go up three levels.
   return pathResolve(import.meta.dir, "..", "..", "..");
 }
 

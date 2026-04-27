@@ -18,7 +18,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_version-handshake.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_version-handshake.test.ts
  *
  * Design notes:
  * - The test must NOT leave a live subprocess behind if the throw

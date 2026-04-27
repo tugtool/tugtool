@@ -53,7 +53,7 @@ enum AppLifecycleError: Error, CustomStringConvertible {
     }
 
     /// The error `name` reported over the RPC wire. Matched client-
-    /// side in `tests/in-app/_harness/rpc.ts`'s `translateError`.
+    /// side in `tests/app-test/_harness/rpc.ts`'s `translateError`.
     var wireName: String {
         switch self {
         case .timeout: return "AppLifecycleTimeoutError"
@@ -153,7 +153,7 @@ enum AppLifecycleHandlers {
     /// silent no-op and `applicationDidResignActive:` never fires.
     /// The robust way to deactivate is to ACTIVATE another app
     /// (which also matches the user-facing scenario of "user clicks
-    /// on Finder" that M04 is meant to exercise). Finder is a
+    /// on Finder" that AT0004 is meant to exercise). Finder is a
     /// system-essential app that's always running, so it's the
     /// reliable target. We still call `NSApp.deactivate()` first
     /// for parity with [D07]'s wire spec — on macOS versions where

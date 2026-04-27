@@ -30,14 +30,14 @@
  *      and reads the value back through tugcast. End-to-end proof
  *      that save-on-quit actually persists across processes.
  *
- * ## Why this exists as a smoke test, not an M-tag test
+ * ## Why this exists as a smoke test, not an AT-tag test
  *
- * Layer 3's cold-boot tests (`m14-cold-boot-scroll.test.ts`,
- * `m10-cold-boot-selection.test.ts`) lean on every primitive above.
+ * Layer 3's cold-boot tests (`at0014-cold-boot-scroll.test.ts`,
+ * `at0010-cold-boot-selection.test.ts`) lean on every primitive above.
  * If this smoke file fails, those layered tests cannot work. Putting
  * the primitive-level gate in a single small file keeps the failure
  * attribution crisp: a Layer-3 failure here means the harness itself
- * is broken; a Layer-3 failure in the M-tag tests means the
+ * is broken; a Layer-3 failure in the AT-tag tests means the
  * production save/restore path is broken.
  *
  * ## Wire path under test

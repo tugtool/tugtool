@@ -235,7 +235,7 @@ export function usePaneFocusController(
     // clears the current focus to body. For a trusted click on a
     // non-focusable pane chrome element (title bar span, frame divs,
     // etc.) this blurs whatever the user had focused before — which,
-    // for M03's cross-pane activation flow, is the very element our
+    // for AT0003's cross-pane activation flow, is the very element our
     // A3 activation effect has just restored focus to. The result is
     // a race: A3 focuses the destination card's input; mousedown
     // default blurs it 1ms later; the user's caret vanishes.

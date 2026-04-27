@@ -18,11 +18,11 @@
  *      after the reload — same Tug.app process, same tugcast
  *      process.
  *
- * ## Why this exists as a smoke test, not an M-tag test
+ * ## Why this exists as a smoke test, not an AT-tag test
  *
- * See also: `m24-prompt-state-roundtrip.test.ts`,
+ * See also: `at0024-prompt-state-roundtrip.test.ts`,
  * which uses `app.appReload()` as one of its two reload triggers. If
- * `app.appReload()` itself is broken, the M-tag tests cannot
+ * `app.appReload()` itself is broken, the AT-tag tests cannot
  * possibly pass — the failure attribution would conflate "the
  * primitive is broken" with "the production save/restore path is
  * broken." A separate smoke gate keeps those clearly separated.

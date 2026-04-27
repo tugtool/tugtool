@@ -60,7 +60,7 @@ declare global {
      * the source of state truth) but the `put*Guarded` wrappers
      * actually issue their tugbank writes instead of short-circuiting.
      *
-     * Used by cold-boot harness tests ([M14] / focus round-trips)
+     * Used by cold-boot harness tests ([AT0014] / focus round-trips)
      * that pair test-mode IPC with per-test `TUGBANK_PATH` isolation
      * — the temp DB makes the test-mode pollution prevention
      * redundant, and the writes are required for Phase A's "bag is

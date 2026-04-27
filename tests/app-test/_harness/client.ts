@@ -36,7 +36,7 @@ import type {
 //
 // These shapes MIRROR `tugdeck/src/test-surface.ts` and
 // `tugdeck/src/deck-trace.ts`. We declare them locally (rather than
-// `import type`-ing from the tugdeck source) so the `tests/in-app/`
+// `import type`-ing from the tugdeck source) so the `tests/app-test/`
 // tsc run does not have to type-check the full tugdeck React/DOM
 // graph. Drift is caught at handshake time via the surface-version
 // check ([D11]); the bridge's `SURFACE_VERSION` is the
@@ -1109,7 +1109,7 @@ export const TUGCODE_TRANSCRIPT_SCHEMA_VERSION = 1 as const;
  *
  * `outputs` are tugcode `OutboundMessage` shapes (`assistant_text`
  * / `turn_complete` / etc.). The harness type is `unknown[]` here
- * to avoid coupling `tests/in-app/`'s tsc graph to tugcode's
+ * to avoid coupling `tests/app-test/`'s tsc graph to tugcode's
  * runtime types — round-trip is opaque.
  */
 export interface TugcodeTranscriptTurn {

@@ -370,8 +370,8 @@ export interface TugPromptEntryProps {
    * engine drafts continue to live in `bag.content` via the existing
    * `useCardPersistence` registration — they're semantically tied
    * (the route is the index into `perRoute`) and splitting them would
-   * require a two-phase restore that violates [L23]. Closes [M31]'s
-   * `toolsOpen` axis; route survival is gated by [M24].
+   * require a two-phase restore that violates [L23]. Closes [AT0031]'s
+   * `toolsOpen` axis; route survival is gated by [AT0024].
    *
    * Absence means "not persisted" — gallery demos and standalone
    * tests that render the entry outside a card stay unaffected.
@@ -989,7 +989,7 @@ export const TugPromptEntry = React.forwardRef<
 
   // Component Persistence Protocol opt-in for the popover's open
   // state. Hook no-ops when `persistKey` is undefined or rendered
-  // outside a card. [A9] / [M31] toolsOpen axis.
+  // outside a card. [A9] / [AT0031] toolsOpen axis.
   // Route + per-route engine drafts ride `bag.content` via
   // `useCardPersistence` above; this hook only carries the popover
   // flag.

@@ -19,7 +19,7 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_double-connect.test.ts
+ *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_double-connect.test.ts
  *
  * Design notes:
  * - We can't use `launchTugApp` for the second "client" — it always

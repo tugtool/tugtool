@@ -27,7 +27,7 @@ enum TestHarnessUserScript {
     /// go through to tugbank when both flags are true. The bypass
     /// itself stays in place for ordinary in-app tests so the
     /// developer's real `~/.tugbank.db` is never touched. See
-    /// cold-boot harness docs ([M14]).
+    /// cold-boot harness docs ([AT0014]).
     static func install(into config: WKWebViewConfiguration) {
         var source = "window.__tugTestMode = true;"
         if ProcessInfo.processInfo.environment["TUGAPP_PERSIST_IN_TEST_MODE"] == "1" {

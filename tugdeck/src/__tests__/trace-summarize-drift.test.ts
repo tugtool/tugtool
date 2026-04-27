@@ -3,14 +3,14 @@
  * tugdeck's `DeckTraceEvent` discriminated union and the in-app
  * harness's mirrored `DeckTraceEventShape` / `summarizeEvent` switch.
  *
- * The harness at `tests/in-app/_harness/matchers.ts` renders each
+ * The harness at `tests/app-test/_harness/matchers.ts` renders each
  * trace entry as a one-line label via `summarizeEvent`, with an
  * internal `never`-branch pinning exhaustiveness against its local
  * {@link HarnessKnownTraceKind} union. That local union is a
  * hand-maintained MIRROR of `DeckTraceEvent["kind"]` — if someone
  * adds a new kind to `deck-trace.ts` without touching matchers.ts,
  * the harness internal check still passes (because the mirror
- * doesn't know the new kind exists), and the next M-series failure
+ * doesn't know the new kind exists), and the next AT-series failure
  * silently renders the new kind via the generic fallback.
  *
  * This test closes that loop at the tugdeck tsc boundary. It
@@ -30,7 +30,7 @@ import type { DeckTraceEvent } from "../deck-trace";
 import type {
   DeckTraceEventShape,
   HarnessKnownTraceKind,
-} from "../../../tests/in-app/_harness/matchers";
+} from "../../../tests/app-test/_harness/matchers";
 
 // ---------------------------------------------------------------------------
 // Compile-time drift check
@@ -56,7 +56,7 @@ type _MissingKinds = Exclude<DeckTraceEvent["kind"], HarnessKnownTraceKind>;
 type _DriftCheck = [_MissingKinds] extends [never]
   ? true
   : {
-      error: "New DeckTraceEvent kind(s) added to tugdeck/src/deck-trace.ts — update tests/in-app/_harness/matchers.ts:HARNESS_KNOWN_TRACE_KINDS, DeckTraceEventShape, and summarizeEvent to match.";
+      error: "New DeckTraceEvent kind(s) added to tugdeck/src/deck-trace.ts — update tests/app-test/_harness/matchers.ts:HARNESS_KNOWN_TRACE_KINDS, DeckTraceEventShape, and summarizeEvent to match.";
       missing: _MissingKinds;
     };
 
@@ -70,7 +70,7 @@ type _PhantomKinds = Exclude<HarnessKnownTraceKind, DeckTraceEvent["kind"]>;
 type _PhantomCheck = [_PhantomKinds] extends [never]
   ? true
   : {
-      error: "tests/in-app/_harness/matchers.ts lists kinds that tugdeck's DeckTraceEvent union does not emit — remove them from HARNESS_KNOWN_TRACE_KINDS and DeckTraceEventShape.";
+      error: "tests/app-test/_harness/matchers.ts lists kinds that tugdeck's DeckTraceEvent union does not emit — remove them from HARNESS_KNOWN_TRACE_KINDS and DeckTraceEventShape.";
       phantom: _PhantomKinds;
     };
 

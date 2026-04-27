@@ -73,7 +73,7 @@ enum TugcodeLifecycleError: Error, CustomStringConvertible {
     }
 
     /// The error `name` reported over the RPC wire. Matched client-
-    /// side in `tests/in-app/_harness/rpc.ts`'s `translateError`.
+    /// side in `tests/app-test/_harness/rpc.ts`'s `translateError`.
     var wireName: String {
         switch self {
         case .alreadyRunning, .missingBinaryPath, .binaryNotFound,

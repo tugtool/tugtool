@@ -450,7 +450,7 @@ export function TugPane({
       // dispatch through React's synthetic event system, so without
       // it `setActiveCardInPane`'s `notify()` would be batched and
       // step 5's `.focus()` would land on a still-`display:none`
-      // element (silent failure). See [M01] closure
+      // element (silent failure). See [AT0001] closure
       // gate.
       transferFocusForActivation({
         outgoingCardId: activeCardIdRef.current ?? null,

@@ -34,7 +34,7 @@
  *      pattern; doing the restore synchronously inside
  *      `registerPersistenceCallbacks` (called from a CHILD's effect,
  *      before the parent CardPortal can attach the slot) was the
- *      cold-boot selection-paint bug ([M10]). A `hasAppliedContentRestoreRef` guard keeps the
+ *      cold-boot selection-paint bug ([AT0010]). A `hasAppliedContentRestoreRef` guard keeps the
  *      restore one-shot so cross-pane moves (which re-fire the
  *      effect via `hostContentEl` change) don't clobber engine
  *      state the user may have edited since first mount. The
@@ -413,7 +413,7 @@ function isActiveCardOfActivePane(
  * `focus-call` deck-trace events so a trace reader can distinguish a
  * focus call against a live element from one against a node whose
  * ancestor's `display: none` silently swallows focus (the WebKit
- * behavior behind the M-series neighbor-not-focusable symptoms).
+ * behavior behind the AT-series neighbor-not-focusable symptoms).
  */
 function isElementHidden(el: HTMLElement | null): boolean {
   if (el === null) return false;
@@ -948,7 +948,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // attributeFilter: ["style"]` so the spacer-height mutations
     // fire `apply()`; without that, only `childList` mutations
     // would trigger re-application and the bake-in race would
-    // never resolve. See [M14] region-scroll persistence notes.
+    // never resolve. See [AT0014] region-scroll persistence notes.
     const regionSettled = new Set<string>();
     const REGION_SCROLL_TOLERANCE_PX = 8;
 
@@ -1084,7 +1084,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // save path) and `registerSaveCallback` (close-before-destroy flush
   // and app will-phase triggers). Routes through `captureCardState` so
   // every save trigger picks up both framework axes and opt-in
-  // component state in one call ([A9c] / [M17]).
+  // component state in one call ([A9c] / [AT0017]).
   const saveCurrentCardStateRef = useRef<() => void>(() => {});
   saveCurrentCardStateRef.current = () => {
     store.setCardState(cardId, store.captureCardState(cardId));

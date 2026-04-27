@@ -166,7 +166,7 @@ describe("canProgrammaticallyFocus — decision branches", () => {
   });
 
   test("branch 6: focus is inside a different deck card → true", () => {
-    // M01/M03 scenario: the user has focus in card A's input, then
+    // AT0001/AT0003 scenario: the user has focus in card A's input, then
     // clicks tab B (or pane 2's title) to navigate. The gate must
     // permit moving focus to B even though activeElement is a "real"
     // element — card-to-card navigation is a deliberate user gesture,

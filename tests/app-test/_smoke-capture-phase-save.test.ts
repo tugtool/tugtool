@@ -45,12 +45,12 @@
  * deactivation gesture lands, the outgoing card's `bag.focus`
  * correctly identifies the focused form-control AND
  * `bag.formControls[persistKey]` carries the user's typed value
- * + selection. No reliance on the m36-era
+ * + selection. No reliance on the at0036-era
  * `lastFocusedPersistKeyRef` fallback.
  *
- * ## Why a smoke, not an M-tag test
+ * ## Why a smoke, not an AT-tag test
  *
- * The smoke gates Layer 2's safety. M-tag tests (m24-m36) assert
+ * The smoke gates Layer 2's safety. AT-tag tests (at0024-m36) assert
  * end-to-end user-visible behavior. This smoke asserts a structural
  * invariant of the persistence pipeline — capture-phase save timing
  * — that's invisible to user-visible checks but is the load-bearing

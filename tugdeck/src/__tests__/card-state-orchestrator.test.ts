@@ -422,7 +422,7 @@ describe("CardStateOrchestrator — saveState RPC parity", () => {
     // on top by the orchestrator. The `saveState` RPC calls
     // `saveAndFlushSync` → each card's save callback →
     // `captureCardState`, so the RPC now returns this exact shape by
-    // construction (closes [M17]).
+    // construction (closes [AT0017]).
     const registries = new Map<string, ComponentPersistenceRegistry>();
     const registry = new ComponentPersistenceRegistry();
     registries.set("card-a", registry);

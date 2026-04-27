@@ -196,7 +196,7 @@ export function GallerySeparator() {
             <div style={descStyle}>SVG at default size</div>
             <TugSeparator ornament={
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8Z" />
+                <path d="AT0012 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8Z" />
               </svg>
             } />
           </div>
@@ -204,7 +204,7 @@ export function GallerySeparator() {
             <div style={descStyle}>SVG scaled up with ornamentSize="2rem"</div>
             <TugSeparator ornamentSize="2rem" ornament={
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8Z" />
+                <path d="AT0012 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8Z" />
               </svg>
             } />
           </div>

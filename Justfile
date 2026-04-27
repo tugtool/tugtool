@@ -345,9 +345,9 @@ build-app:
 #
 # Usage:
 #   just app-test                          # full sweep
-#   just app-test m01-tab-switch-fc.test.ts
+#   just app-test at0001-tab-switch-fc.test.ts
 #                                          # single file
-#   just app-test _smoke.test.ts m03-pane-activation.test.ts
+#   just app-test _smoke.test.ts at0003-pane-activation.test.ts
 #                                          # specific files in order
 #
 # Re-signs Tug.app with 'Tug Dev' on every invocation so a bare
@@ -410,7 +410,7 @@ app-test *FILES:
 
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts _smoke-cold-boot.test.ts _smoke-app-reload.test.ts _smoke-capture-phase-save.test.ts m01-tab-switch-fc.test.ts m01-rapid-cadence.test.ts m02-tab-switch-em.test.ts m03-pane-activation.test.ts m03-rapid-cadence.test.ts m16-tab-close-handoff.test.ts m16-rapid-cadence.test.ts m06-cross-pane-drag.test.ts m06-em-cross-pane.test.ts m07-card-detach.test.ts m07-em-card-detach.test.ts m09-em-inactive-mount.test.ts m21-drag-aborted.test.ts m04-app-resign-return.test.ts m05-app-hide-unhide.test.ts m10-markdown-selection.test.ts m10-cold-boot-selection.test.ts m14-scroll-persistence.test.ts m14-cold-boot-scroll.test.ts m17-savestate-rpc-parity.test.ts m18-async-content-race.test.ts m19-pane-teardown-flush.test.ts m20-overlay-focus-return.test.ts m22-caret-visibility.test.ts m23-cross-card-selection.test.ts m24-prompt-state-roundtrip.test.ts m25-prompt-deactivated-roundtrip.test.ts m26-overlay-persistence.test.ts m27-layout-state-persistence.test.ts m30-virtual-focus.test.ts m31-prompt-entry-chrome.test.ts m32-em-cold-boot-selection.test.ts m33-em-fresh-card-activation.test.ts m34-em-focus-after-move.test.ts m35-em-app-switch-selection.test.ts m35-tide-app-switch-selection.test.ts m36-inactive-card-app-switch-selection.test.ts m37-deck-wide-restore-consistency.test.ts m38-deactivation-inactive-paint.test.ts)
+        FILES=(_smoke.test.ts _smoke-native.test.ts _smoke-em.test.ts _smoke-cold-boot.test.ts _smoke-app-reload.test.ts _smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0031-prompt-entry-chrome.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-tide-app-switch-selection.test.ts at0036-inactive-card-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts)
         SWEEP_LABEL="full"
     else
         read -r -a FILES <<< "$FILES_INPUT"

@@ -2,7 +2,7 @@
 
 ## In-App Test Bridge {#phase-in-app-bridge}
 
-**Purpose:** Build the DEBUG-only Tug.app ↔ bun test runner bridge that lets tests drive the real WKWebView inside Tug.app. Ships the Swift side (env-var detection, Unix-socket listener, `WKUserScript` for `__tugTestMode`, `evalJS` / `waitForCondition` RPC handlers) plus the TypeScript side (`DeckManager.testMode` flag, `window.__tug` surface, bun harness library). Phase 3 of the parent [In-App Test Harness plan](../.tugtool/tugplan-in-app-test-harness.md) consumes this bridge to author M01/M03/M16 regression tests.
+**Purpose:** Build the DEBUG-only Tug.app ↔ bun test runner bridge that lets tests drive the real WKWebView inside Tug.app. Ships the Swift side (env-var detection, Unix-socket listener, `WKUserScript` for `__tugTestMode`, `evalJS` / `waitForCondition` RPC handlers) plus the TypeScript side (`DeckManager.testMode` flag, `window.__tug` surface, bun harness library). Phase 3 of the parent [In-App Test Harness plan](../.tugtool/tugplan-in-app-test-harness.md) consumes this bridge to author AT0001/AT0003/AT0016 regression tests.
 
 ---
 
@@ -21,7 +21,7 @@
 
 #### Context {#context}
 
-The parent plan's Phase 1 (deck-trace instrumentation) has landed; Phase 3 (three M-series regression tests) needs a test runner that can drive the real Tug.app WKWebView. happy-dom, Playwright-WebKit, and Safari-in-isolation are all wrong-engine-in-wrong-process (see parent plan [#context]). The only honest harness runs the same binary users run, inside the same WKWebView tugdeck renders into, under the same `WKWebViewConfiguration`.
+The parent plan's Phase 1 (deck-trace instrumentation) has landed; Phase 3 (three AT-series regression tests) needs a test runner that can drive the real Tug.app WKWebView. happy-dom, Playwright-WebKit, and Safari-in-isolation are all wrong-engine-in-wrong-process (see parent plan [#context]). The only honest harness runs the same binary users run, inside the same WKWebView tugdeck renders into, under the same `WKWebViewConfiguration`.
 
 This plan delivers that bridge. Every piece of it is DEBUG-build-only on both halves independently ([D03] in the parent plan, tracked here as [D01]): the Swift side is `#if DEBUG`-bracketed at file scope; the TypeScript side is gated by `import.meta.env.DEV && window.__tugTestMode`. Release binaries contain no bridge code, no socket listener, no `window.__tug`, no `DeckManager.testMode` codepath.
 
@@ -40,11 +40,11 @@ Three concerns drive the design. (1) **Boot timing** must be deterministic: `tes
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `TUGAPP_TEST_SOCKET=/tmp/tugapp-test-<uuid>.sock` launched Tug.app subprocess responds to `evalJS("1+1")` with `{ ok: true, value: 2 }`. (Verified: `bun test tests/in-app/_smoke.test.ts` exits 0.)
+- `TUGAPP_TEST_SOCKET=/tmp/tugapp-test-<uuid>.sock` launched Tug.app subprocess responds to `evalJS("1+1")` with `{ ok: true, value: 2 }`. (Verified: `bun test tests/app-test/_smoke.test.ts` exits 0.)
 - `window.__tugTestMode` is observable in `main.tsx` before `new DeckManager(...)` is constructed. (Verified: Swift-side unit test asserts WKUserScript injection timing; tugdeck-side log line.)
 - `window.__tug.version === "1.0.0"` assertion passes on handshake; mismatched harness version throws `VersionSkewError`. (Verified: unit test on harness client + one mismatched-version test.)
 - Release-build binary of Tug.app contains zero bytes of bridge code. (Verified: `wc -c` diff before/after; `strings` grep for `TUGAPP_TEST_SOCKET` / `evalJS` on release archive.)
-- `tests/in-app/` runs under `bun test` in isolation from the tugdeck happy-dom suite. (Verified: `bun test` in `tugdeck/` does not load in-app tests; `bun test tests/in-app/` does not load happy-dom tests.)
+- `tests/app-test/` runs under `bun test` in isolation from the tugdeck happy-dom suite. (Verified: `bun test` in `tugdeck/` does not load in-app tests; `bun test tests/app-test/` does not load happy-dom tests.)
 - `waitForCondition(script, { timeoutMs: 100 })` on a never-truthy script throws `TimeoutError` within budget. (Verified: harness unit test with a stub transport.)
 - `app.close()` on SIGINT leaves no stray Tug.app subprocess, no stale socket file. (Verified: manual + ps/lsof check in smoke test.)
 
@@ -60,15 +60,15 @@ Three concerns drive the design. (1) **Boot timing** must be deterministic: `tes
 8. TypeScript-side `DeckManager.testMode?: boolean` constructor option with tugbank read/write guards and `seedDeckState(args)` method (parent plan [D02] / Spec [#s05-testmode-semantics]).
 9. TypeScript-side `window.__tug` surface implementing `TugTestSurface` (parent plan Spec [#s03-tug-surface]).
 10. TypeScript-side `main.tsx` integration: read `window.__tugTestMode` at module top level; pass `testMode: true` to `new DeckManager(...)`; attach `window.__tug` only under the double guard.
-11. bun harness library at `tests/in-app/_harness/`: `launchTugApp`, typed RPC client, `toContainOrderedSubset` matcher, gesture/reset/seed wrappers, error classes (`TimeoutError`, `AppCrashedError`, `VersionSkewError`).
-12. `tests/in-app/` workspace config: `tsconfig.json`, `bun test` glob, `logs/` directory (gitignored), exclusion from `tugdeck/` happy-dom suite.
-13. One trivial smoke test: `launchTugApp → evalJS("1+1") → close` at `tests/in-app/_smoke.test.ts`.
+11. bun harness library at `tests/app-test/_harness/`: `launchTugApp`, typed RPC client, `toContainOrderedSubset` matcher, gesture/reset/seed wrappers, error classes (`TimeoutError`, `AppCrashedError`, `VersionSkewError`).
+12. `tests/app-test/` workspace config: `tsconfig.json`, `bun test` glob, `logs/` directory (gitignored), exclusion from `tugdeck/` happy-dom suite.
+13. One trivial smoke test: `launchTugApp → evalJS("1+1") → close` at `tests/app-test/_smoke.test.ts`.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- The M01/M03/M16 regression tests themselves. They land under parent plan Steps 13–15, consuming this bridge.
+- The AT0001/AT0003/AT0016 regression tests themselves. They land under parent plan Steps 13–15, consuming this bridge.
 - `CGEventPost` hardware-event synthesis. Deferred to a follow-up plan per parent [Q03] / this plan [D08].
-- CI integration of `tests/in-app/`. First target is local-dev `bun test tests/in-app/` on macOS.
+- CI integration of `tests/app-test/`. First target is local-dev `bun test tests/app-test/` on macOS.
 - Multi-window support. Tug.app is single-window; harness and `__tug` are not keyed per-window.
 - EM-card support (tide-card contentEditable with tugcode running). Phase 3 stays FC-only.
 - Replacing the tugdeck happy-dom test suite. Pure-logic unit tests stay on happy-dom.
@@ -145,9 +145,9 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 
 **Resolution:** DECIDED — keep T-1 / T-2 in Phase 2 (this tugplan). Rationale: the Swift bridge's first `evalJS` round-trip (parent Step 7) is meaningfully testable only once `window.__tugTestMode` and `window.__tug` exist. Splitting them across phases means parent Step 7 lands with the Swift side alive but nothing to talk to on the TypeScript side — a half-landed state that makes review harder, not easier. The parent plan's Step 5–7 ordering (testMode flag, `__tug` scaffold, transport) already sequences this correctly. See [D03] below.
 
-#### [Q03] `CGEventPost` escape hatch — do any of M01/M03/M16 require it? (DEFERRED) {#q03-cgeventpost-needed}
+#### [Q03] `CGEventPost` escape hatch — do any of AT0001/AT0003/AT0016 require it? (DEFERRED) {#q03-cgeventpost-needed}
 
-**Question:** Synthesized PointerEvent/MouseEvent/InputEvent dispatches set `isTrusted: false`. If any of M01/M03/M16 hits a WebKit behavior gated on `isTrusted: true`, this harness cannot drive it.
+**Question:** Synthesized PointerEvent/MouseEvent/InputEvent dispatches set `isTrusted: false`. If any of AT0001/AT0003/AT0016 hits a WebKit behavior gated on `isTrusted: true`, this harness cannot drive it.
 
 **Why it matters:** Building `CGEventPost` is real work (Swift-side macOS event-stream posting, accessibility permission handling). Doing it speculatively bloats Phase 2; skipping when a test needs it blocks Phase 3.
 
@@ -164,7 +164,7 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 | Boot-time race between `WKUserScript` and tugdeck first script | high | low | `atDocumentStart` timing + Swift unit test asserting readability | Any change to `WKWebViewConfiguration` or main-frame load order |
 | Bridge subprocess hangs on stuck script | medium | medium | Per-call hard timeout in Swift (not relying on bun client); kill subprocess on repeated timeout | >1 harness hang observed locally |
 | Version drift between `__tug` surface and harness client | medium | medium | Compile-time `version` constant; handshake throws `VersionSkewError` | Any PR touching `TugTestSurface` |
-| `tests/in-app/` accidentally loaded by tugdeck happy-dom suite | medium | low | Separate `tsconfig.json`; bun test glob excludes `tests/in-app/` from tugdeck; tugdeck root glob excludes `tests/in-app/` | Any change to bun test config or tsconfig include paths |
+| `tests/app-test/` accidentally loaded by tugdeck happy-dom suite | medium | low | Separate `tsconfig.json`; bun test glob excludes `tests/app-test/` from tugdeck; tugdeck root glob excludes `tests/app-test/` | Any change to bun test config or tsconfig include paths |
 
 **Risk R01: Swift bridge code leaks to release binary** {#r01-swift-release-leak}
 
@@ -181,7 +181,7 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 - **Risk:** A script passed to `evalJS` deadlocks (awaits a promise that never resolves, throws and swallows, etc.). Without a hard timeout, the entire test run hangs until the runner's outer timeout kills it.
 - **Mitigation:**
   - Hard per-call timeout enforced server-side (Swift side), not just on the bun client. Default 5000ms for `evalJS`, 2000ms for `waitForCondition`.
-  - On timeout, Swift sends a cancellation result to the client (so the bun-side RPC promise resolves into `TimeoutError`) and logs the script contents to `tests/in-app/logs/<test>.log`.
+  - On timeout, Swift sends a cancellation result to the client (so the bun-side RPC promise resolves into `TimeoutError`) and logs the script contents to `tests/app-test/logs/<test>.log`.
   - After three consecutive timeouts from the same connection, the Swift side closes the connection; harness client observes EOF and throws `AppCrashedError`, forcing a subprocess relaunch.
 - **Residual risk:** A subprocess that deadlocks WITHOUT returning from `evaluateJavaScript`'s completion handler (e.g. WebKit internal deadlock) would not honor the Swift-side timeout. Very unlikely; trapped by the external bun test-runner timeout as backstop.
 
@@ -196,7 +196,7 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 
 **Risk R04: Socket-path collision across concurrent test runs** {#r04-socket-collision}
 
-- **Risk:** Developer runs two `bun test tests/in-app/` in parallel; second hits bind failure if they share a fixed path.
+- **Risk:** Developer runs two `bun test tests/app-test/` in parallel; second hits bind failure if they share a fixed path.
 - **Mitigation:**
   - Harness generates socket path as `/tmp/tugapp-test-${uuid}.sock`; uuid per `launchTugApp` invocation.
   - `launchTugApp` sets `TUGAPP_TEST_SOCKET` on the spawned process's env, not process-global.
@@ -263,7 +263,7 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 
 #### [D05] Hand-written typed RPC client, not codegen (DECIDED) {#d05-rpc-client-shape}
 
-**Decision:** The bun-side RPC client is hand-written TypeScript in `tests/in-app/_harness/rpc.ts`. No codegen, no protocol descriptor files.
+**Decision:** The bun-side RPC client is hand-written TypeScript in `tests/app-test/_harness/rpc.ts`. No codegen, no protocol descriptor files.
 
 **Rationale:**
 - The protocol has exactly two methods (`evalJS`, `waitForCondition`) and one response shape. Hand-written is ~60 lines; codegen toolchain is larger than the output.
@@ -271,9 +271,9 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 - Type-level contract is captured in `_harness/types.ts` shared with the Swift side informally (matched by Spec [#s02-rpc-protocol]). If either side drifts, `VersionSkewError` catches it at handshake.
 
 **Implications:**
-- `tests/in-app/_harness/rpc.ts` owns serialization, NDJSON framing, request-id correlation, and error-class translation.
-- `tests/in-app/_harness/errors.ts` owns the three error classes (`TimeoutError`, `AppCrashedError`, `VersionSkewError`).
-- `tests/in-app/_harness/index.ts` composes them into `launchTugApp` and the gesture/reset/seed wrappers.
+- `tests/app-test/_harness/rpc.ts` owns serialization, NDJSON framing, request-id correlation, and error-class translation.
+- `tests/app-test/_harness/errors.ts` owns the three error classes (`TimeoutError`, `AppCrashedError`, `VersionSkewError`).
+- `tests/app-test/_harness/index.ts` composes them into `launchTugApp` and the gesture/reset/seed wrappers.
 - If the protocol grows a third method, this decision can be revisited.
 
 #### [D06] Socket-path security: mode 0600, parent-dir ownership check, stale-unlink only if same-user-owned (DECIDED) {#d06-socket-security}
@@ -311,11 +311,11 @@ This plan follows the conventions in [`tuglaws/tugplan-skeleton.md`](../tuglaws/
 
 #### [D08] Hardware-event fallback (`CGEventPost`) declared as deferred follow-up (DECIDED) {#d08-cgeventpost-deferred}
 
-**Decision:** `CGEventPost`-based `isTrusted: true` event synthesis is NOT in Phase 2 scope. If any of M01/M03/M16 cannot be made reliable via synthesized PointerEvent/MouseEvent/InputEvent, a follow-up plan adds `CGEventPost` with accessibility-permission handling.
+**Decision:** `CGEventPost`-based `isTrusted: true` event synthesis is NOT in Phase 2 scope. If any of AT0001/AT0003/AT0016 cannot be made reliable via synthesized PointerEvent/MouseEvent/InputEvent, a follow-up plan adds `CGEventPost` with accessibility-permission handling.
 
 **Rationale:**
 - Parent plan [Q03]. Building `CGEventPost` is real work; doing it speculatively bloats Phase 2.
-- Current code inspection says M01/M03/M16 are reachable via synthesized events (no `event.isTrusted` checks in our handlers).
+- Current code inspection says AT0001/AT0003/AT0016 are reachable via synthesized events (no `event.isTrusted` checks in our handlers).
 - Deferring keeps the harness envelope honest: we build what we know we need, document what we don't.
 
 **Implications:**
@@ -371,12 +371,12 @@ Wire format: newline-delimited JSON (NDJSON), one request or one response per li
 
 See Spec [#s01-rpc-protocol] for exact shapes and Spec [#s02-error-classes] for error semantics. See [D07] for the design rationale.
 
-#### `tests/in-app/` workspace config {#tests-in-app-config}
+#### `tests/app-test/` workspace config {#tests-in-app-config}
 
 Directory structure (per parent plan [#new-files]):
 
 ```
-tests/in-app/
+tests/app-test/
 ├── _harness/
 │   ├── errors.ts       # TimeoutError, AppCrashedError, VersionSkewError
 │   ├── matchers.ts     # toContainOrderedSubset (trace-assertion matcher)
@@ -384,15 +384,15 @@ tests/in-app/
 │   ├── types.ts        # Request<T>, Response<T>, DeckTraceEvent re-export
 │   └── index.ts        # launchTugApp, App class, gesture/reset/seed wrappers
 ├── _smoke.test.ts      # launchTugApp → evalJS("1+1") → close
-├── m01-tab-switch-fc.test.ts    # parent Step 13
-├── m03-pane-activation.test.ts  # parent Step 14
-├── m16-tab-close-handoff.test.ts # parent Step 15
+├── at0001-tab-switch-fc.test.ts    # parent Step 13
+├── at0003-pane-activation.test.ts  # parent Step 14
+├── at0016-tab-close-handoff.test.ts # parent Step 15
 ├── logs/               # gitignored; per-test Tug.app stdout/stderr capture
 ├── tsconfig.json
 └── .gitignore          # excludes logs/
 ```
 
-`tsconfig.json` at `tests/in-app/tsconfig.json`:
+`tsconfig.json` at `tests/app-test/tsconfig.json`:
 - `extends`: none (independent from tugdeck's config)
 - `compilerOptions.target`: `ES2022`
 - `compilerOptions.module`: `ESNext`
@@ -403,9 +403,9 @@ tests/in-app/
 - `include`: `["**/*.ts"]`
 - `exclude`: `["logs/**"]`
 
-bun test glob: `bun test tests/in-app/` (runs from repo root). tugdeck's `bun test` glob is rooted in `tugdeck/src/` and never reaches `tests/in-app/`; the separation is structural.
+bun test glob: `bun test tests/app-test/` (runs from repo root). tugdeck's `bun test` glob is rooted in `tugdeck/src/` and never reaches `tests/app-test/`; the separation is structural.
 
-Logs: `tests/in-app/logs/<test-name>.log` captures Tug.app stdout+stderr per test. On failure, runner prints last 50 lines.
+Logs: `tests/app-test/logs/<test-name>.log` captures Tug.app stdout+stderr per test. On failure, runner prints last 50 lines.
 
 #### Fidelity limits {#fidelity-limits}
 
@@ -529,8 +529,8 @@ Restates parent plan Spec [#s06-boot-choreography] in Swift-side terms. When `TU
 - **Migration plan:** Not applicable for Phase 2 first landing. Future versions of the `__tug` surface land under new tugplans; harness client bumps in the same commit.
 - **Rollout plan:**
   - DEBUG-only by construction. Release builds are unaffected.
-  - First merge to `main` leaves `tests/in-app/_smoke.test.ts` passing locally; parent plan Phase 3 adds the M-series tests.
-  - Rollback strategy: revert the commits that introduce `tugapp/Sources/TestHarness/`, `tugdeck/src/test-surface.ts`, `tests/in-app/_harness/`. No production code path depends on any of them.
+  - First merge to `main` leaves `tests/app-test/_smoke.test.ts` passing locally; parent plan Phase 3 adds the AT-series tests.
+  - Rollback strategy: revert the commits that introduce `tugapp/Sources/TestHarness/`, `tugdeck/src/test-surface.ts`, `tests/app-test/_harness/`. No production code path depends on any of them.
 
 ---
 
@@ -553,14 +553,14 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 | File | Purpose |
 |------|---------|
 | `tugdeck/src/test-surface.ts` | `TugTestSurface` implementation (parent Spec [#s03-tug-surface]). |
-| `tests/in-app/_harness/index.ts` | `launchTugApp`, `App` class, gesture/reset/seed wrappers. |
-| `tests/in-app/_harness/rpc.ts` | NDJSON framing, request-id correlation, error translation. |
-| `tests/in-app/_harness/errors.ts` | `TimeoutError`, `AppCrashedError`, `VersionSkewError` (this plan's Spec [#s02-error-classes]). |
-| `tests/in-app/_harness/matchers.ts` | `toContainOrderedSubset` matcher. |
-| `tests/in-app/_harness/types.ts` | `Request`, `Response<T>` types; `DeckTraceEvent` re-export. |
-| `tests/in-app/_smoke.test.ts` | Smoke test: `launchTugApp → evalJS("1+1") → close`. |
-| `tests/in-app/tsconfig.json` | TypeScript config for in-app tests. |
-| `tests/in-app/.gitignore` | Excludes `logs/`. |
+| `tests/app-test/_harness/index.ts` | `launchTugApp`, `App` class, gesture/reset/seed wrappers. |
+| `tests/app-test/_harness/rpc.ts` | NDJSON framing, request-id correlation, error translation. |
+| `tests/app-test/_harness/errors.ts` | `TimeoutError`, `AppCrashedError`, `VersionSkewError` (this plan's Spec [#s02-error-classes]). |
+| `tests/app-test/_harness/matchers.ts` | `toContainOrderedSubset` matcher. |
+| `tests/app-test/_harness/types.ts` | `Request`, `Response<T>` types; `DeckTraceEvent` re-export. |
+| `tests/app-test/_smoke.test.ts` | Smoke test: `launchTugApp → evalJS("1+1") → close`. |
+| `tests/app-test/tsconfig.json` | TypeScript config for in-app tests. |
+| `tests/app-test/.gitignore` | Excludes `logs/`. |
 
 #### Modified files {#modified-files}
 
@@ -571,7 +571,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 | `tugapp/Tug.xcodeproj/project.pbxproj` | Add `TestHarness/` sources to the app target's compile phases. |
 | `tugdeck/src/deck-manager.ts` | Add `testMode?: boolean` constructor option; guard tugbank reads and writes per parent Spec [#s05-testmode-semantics]; add `seedDeckState(args)` method. |
 | `tugdeck/src/main.tsx` | Read `window.__tugTestMode` at module top level; pass `testMode: true` to `new DeckManager(...)` when set; attach `window.__tug` under `import.meta.env.DEV && window.__tugTestMode`. |
-| `tugdeck/.gitignore` (if needed) | Verify `tests/in-app/` is not picked up by tugdeck build. |
+| `tugdeck/.gitignore` (if needed) | Verify `tests/app-test/` is not picked up by tugdeck build. |
 
 #### Symbols to add / modify {#symbols}
 
@@ -584,21 +584,21 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 | `createTugTestSurface` | TS function | `tugdeck/src/test-surface.ts` | Factory; attaches to `window.__tug` under double guard. |
 | `DeckManager.testMode` | constructor option | `tugdeck/src/deck-manager.ts` | Parent Spec [#s05-testmode-semantics]. |
 | `DeckManager.seedDeckState` | method | `tugdeck/src/deck-manager.ts` | Parent Spec [#s05-testmode-semantics]. |
-| `launchTugApp` | TS function | `tests/in-app/_harness/index.ts` | Spawn, connect, handshake. |
-| `App` | TS class | `tests/in-app/_harness/index.ts` | `evalJS`, `waitForCondition`, `click`, `type`, `focusElement`, `reset`, `seedDeckState`, `expectFocusedCard`, `expectCaret`, `getDeckTrace`, `markDeckTrace`, `close`. |
-| `TimeoutError` | TS class | `tests/in-app/_harness/errors.ts` | Spec [#s02-error-classes]. |
-| `AppCrashedError` | TS class | `tests/in-app/_harness/errors.ts` | Spec [#s02-error-classes]. |
-| `VersionSkewError` | TS class | `tests/in-app/_harness/errors.ts` | Spec [#s02-error-classes]. |
-| `toContainOrderedSubset` | bun matcher | `tests/in-app/_harness/matchers.ts` | Trace-assertion matcher. |
+| `launchTugApp` | TS function | `tests/app-test/_harness/index.ts` | Spawn, connect, handshake. |
+| `App` | TS class | `tests/app-test/_harness/index.ts` | `evalJS`, `waitForCondition`, `click`, `type`, `focusElement`, `reset`, `seedDeckState`, `expectFocusedCard`, `expectCaret`, `getDeckTrace`, `markDeckTrace`, `close`. |
+| `TimeoutError` | TS class | `tests/app-test/_harness/errors.ts` | Spec [#s02-error-classes]. |
+| `AppCrashedError` | TS class | `tests/app-test/_harness/errors.ts` | Spec [#s02-error-classes]. |
+| `VersionSkewError` | TS class | `tests/app-test/_harness/errors.ts` | Spec [#s02-error-classes]. |
+| `toContainOrderedSubset` | bun matcher | `tests/app-test/_harness/matchers.ts` | Trace-assertion matcher. |
 
 ---
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tests/in-app/README.md`: how to write an in-app test (launch, reset, seedDeckState, drive gestures, assert, close).
+- [ ] `tests/app-test/README.md`: how to write an in-app test (launch, reset, seedDeckState, drive gestures, assert, close).
 - [ ] `tugapp/` README: `TUGAPP_TEST_SOCKET` env var; socket-path format; DEBUG-builds-only; Web Inspector enablement in test mode.
 - [ ] Link from parent plan's [#phase-2-bridge] section to this plan.
-- [ ] Update root `CLAUDE.md` with a pointer to `tests/in-app/` as the canonical surface for focus/selection/caret testing (inherited from parent plan Documentation Plan).
+- [ ] Update root `CLAUDE.md` with a pointer to `tests/app-test/` as the canonical surface for focus/selection/caret testing (inherited from parent plan Documentation Plan).
 
 ---
 
@@ -609,9 +609,9 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (Swift)** | WKUserScript injection timing; socket-security sequence unit tests | `UserScriptTimingTests.swift`, security-sequence test |
-| **Unit (TypeScript, happy-dom allowed)** | RPC client serialization, error-class translation, matcher logic | `tests/in-app/_harness/` unit tests (pure logic only) |
-| **In-app integration (real WKWebView)** | Smoke test through the real bridge | `tests/in-app/_smoke.test.ts` |
-| **Golden / Contract** | Pin `version`, `Request`, `Response` wire shapes | `tests/in-app/_harness/rpc.test.ts` |
+| **Unit (TypeScript, happy-dom allowed)** | RPC client serialization, error-class translation, matcher logic | `tests/app-test/_harness/` unit tests (pure logic only) |
+| **In-app integration (real WKWebView)** | Smoke test through the real bridge | `tests/app-test/_smoke.test.ts` |
+| **Golden / Contract** | Pin `version`, `Request`, `Response` wire shapes | `tests/app-test/_harness/rpc.test.ts` |
 
 **What we do not use:**
 - happy-dom for any UI / focus / selection / DOM-timing behavior of tugdeck. Parent plan constraint.
@@ -622,32 +622,32 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 
 ### Execution Steps {#execution-steps}
 
-> This plan coordinates the Swift-side work of Phase 2. The TypeScript-side steps (`DeckManager.testMode`, `window.__tug` scaffold, bun harness library) live in the parent plan's step list (Steps 5, 6, 10) to preserve reviewer-facing step ordering per [D03]. The steps below cover only the Swift-side changes and the `tests/in-app/` workspace scaffold.
+> This plan coordinates the Swift-side work of Phase 2. The TypeScript-side steps (`DeckManager.testMode`, `window.__tug` scaffold, bun harness library) live in the parent plan's step list (Steps 5, 6, 10) to preserve reviewer-facing step ordering per [D03]. The steps below cover only the Swift-side changes and the `tests/app-test/` workspace scaffold.
 
 #### Step 1: TypeScript-free workspace scaffold {#step-1}
 
-**Commit:** `chore(tests): scaffold tests/in-app/ workspace with tsconfig and gitignore`
+**Commit:** `chore(tests): scaffold tests/app-test/ workspace with tsconfig and gitignore`
 
 **References:** [D03] T-1/T-2 placement, [D05] hand-written RPC client, [D06] socket security (referenced for future steps), (#tests-in-app-config)
 
 **Artifacts:**
-- `tests/in-app/tsconfig.json`
-- `tests/in-app/.gitignore`
-- `tests/in-app/logs/.gitkeep`
-- `tests/in-app/_harness/` (empty directory, committed via `.gitkeep` if needed)
+- `tests/app-test/tsconfig.json`
+- `tests/app-test/.gitignore`
+- `tests/app-test/logs/.gitkeep`
+- `tests/app-test/_harness/` (empty directory, committed via `.gitkeep` if needed)
 
 **Tasks:**
-- [ ] Create `tests/in-app/` directory tree.
+- [ ] Create `tests/app-test/` directory tree.
 - [ ] Author `tsconfig.json` per [#tests-in-app-config].
 - [ ] Author `.gitignore` excluding `logs/`.
-- [ ] Verify `bun test` in tugdeck does not pick up `tests/in-app/` (grep tugdeck bun test config).
+- [ ] Verify `bun test` in tugdeck does not pick up `tests/app-test/` (grep tugdeck bun test config).
 
 **Tests:**
-- [ ] `bun x tsc --noEmit -p tests/in-app/tsconfig.json` exits 0 (empty project).
+- [ ] `bun x tsc --noEmit -p tests/app-test/tsconfig.json` exits 0 (empty project).
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit -p tests/in-app/tsconfig.json` exits 0.
-- [ ] `cd tugdeck && bun test` continues to exit 0 and reports no tests from `tests/in-app/`.
+- [ ] `bun x tsc --noEmit -p tests/app-test/tsconfig.json` exits 0.
+- [ ] `cd tugdeck && bun test` continues to exit 0 and reports no tests from `tests/app-test/`.
 
 ---
 
@@ -660,8 +660,8 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 **References:** [D05] hand-written RPC client, [D07] structured errors, Spec [#s01-rpc-protocol], Spec [#s02-error-classes]
 
 **Artifacts:**
-- `tests/in-app/_harness/errors.ts`
-- `tests/in-app/_harness/types.ts`
+- `tests/app-test/_harness/errors.ts`
+- `tests/app-test/_harness/types.ts`
 
 **Tasks:**
 - [ ] Author `errors.ts` with the three classes per Spec [#s02-error-classes].
@@ -673,8 +673,8 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 - [ ] Unit test: `new VersionSkewError("x", "1.0.0", "2.0.0").expected === "1.0.0"`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit -p tests/in-app/tsconfig.json` exits 0.
-- [ ] `bun test tests/in-app/_harness/errors.test.ts` passes.
+- [ ] `bun x tsc --noEmit -p tests/app-test/tsconfig.json` exits 0.
+- [ ] `bun test tests/app-test/_harness/errors.test.ts` passes.
 
 ---
 
@@ -781,8 +781,8 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 **References:** [D05] hand-written RPC client, [D07] structured errors, Spec [#s01-rpc-protocol], Spec [#s02-error-classes]
 
 **Artifacts:**
-- `tests/in-app/_harness/rpc.ts`
-- `tests/in-app/_harness/index.ts` (first pass: `launchTugApp`, `App` class with `evalJS`, `waitForCondition`, `close`)
+- `tests/app-test/_harness/rpc.ts`
+- `tests/app-test/_harness/index.ts` (first pass: `launchTugApp`, `App` class with `evalJS`, `waitForCondition`, `close`)
 
 **Tasks:**
 - [ ] Author `rpc.ts`: NDJSON framing, request-id correlation, error-class translation.
@@ -798,7 +798,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 - [ ] Unit test: `rpc.ts` translates unknown error names to a plain `Error`.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit -p tests/in-app/tsconfig.json` exits 0.
+- [ ] `bun x tsc --noEmit -p tests/app-test/tsconfig.json` exits 0.
 - [ ] Unit tests pass.
 
 ---
@@ -812,7 +812,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 **References:** [D05] hand-written RPC client, Spec [#s01-rpc-protocol], (#success-criteria)
 
 **Artifacts:**
-- `tests/in-app/_smoke.test.ts`
+- `tests/app-test/_smoke.test.ts`
 
 **Tasks:**
 - [ ] Author the smoke test: `const app = await launchTugApp(); expect(await app.evalJS("1+1")).toBe(2); await app.close();`.
@@ -824,7 +824,7 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 - [ ] Smoke test fails loudly with `VersionSkewError` when the constant on the TS side is temporarily bumped to `"2.0.0"` (drift-prevention check).
 
 **Checkpoint:**
-- [ ] `bun test tests/in-app/_smoke.test.ts` exits 0.
+- [ ] `bun test tests/app-test/_smoke.test.ts` exits 0.
 - [ ] `ps -ef | grep Tug.app` after the test shows zero leftover subprocesses.
 - [ ] `ls /tmp/tugapp-test-*.sock` after the test shows zero leftover socket files.
 
@@ -862,20 +862,20 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A DEBUG-only Tug.app test bridge that a bun harness can drive via Unix socket, plus the TypeScript surface on the tugdeck side, plus the `tests/in-app/` workspace scaffold and first smoke test.
+**Deliverable:** A DEBUG-only Tug.app test bridge that a bun harness can drive via Unix socket, plus the TypeScript surface on the tugdeck side, plus the `tests/app-test/` workspace scaffold and first smoke test.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `bun test tests/in-app/_smoke.test.ts` exits 0 locally on macOS against a debug build (verification: repeat 10× with zero flakes).
+- [ ] `bun test tests/app-test/_smoke.test.ts` exits 0 locally on macOS against a debug build (verification: repeat 10× with zero flakes).
 - [ ] `window.__tug.version === "1.0.0"` handshake passes; mismatch throws `VersionSkewError` (verification: smoke test + temporary version bump test).
 - [ ] Release-build `strings` grep for `TUGAPP_TEST_SOCKET`, `TestHarness`, `__tugTestMode` returns zero matches.
 - [ ] Release-build binary-size delta vs pre-Phase-2 baseline is < 1% (verification: `wc -c` on notarized archive before/after).
 - [ ] Every Swift file under `tugapp/Sources/TestHarness/` starts with `#if DEBUG` and ends with `#endif` at file scope (verification: `grep -L '#if DEBUG' tugapp/Sources/TestHarness/*.swift` empty).
-- [ ] `bun test` in `tugdeck/` does not load `tests/in-app/`; `bun test tests/in-app/` does not load tugdeck happy-dom tests (verification: test count diff from pre-Phase-2 baseline).
+- [ ] `bun test` in `tugdeck/` does not load `tests/app-test/`; `bun test tests/app-test/` does not load tugdeck happy-dom tests (verification: test count diff from pre-Phase-2 baseline).
 - [ ] `UserScriptTimingTests` passes, verifying `__tugTestMode` is readable before tugdeck's first script tag evaluates.
 
 **Acceptance tests:**
-- [ ] `tests/in-app/_smoke.test.ts` passes against a freshly built debug Tug.app.
+- [ ] `tests/app-test/_smoke.test.ts` passes against a freshly built debug Tug.app.
 - [ ] `UserScriptTimingTests` passes in Xcode.
 - [ ] `xcodebuild -scheme Tug -configuration Debug build` exits 0.
 - [ ] `xcodebuild -scheme Tug -configuration Release build` exits 0 and the resulting binary passes the release-build grep check.
@@ -883,14 +883,14 @@ Listed in the parent plan Symbol Inventory; duplicated here for completeness.
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] `CGEventPost` escape hatch for `isTrusted: true`-gated behaviors — new plan if parent Phase 3 demonstrates a need per [D08].
-- [ ] CI integration of `bun test tests/in-app/` — new plan once local-dev workflow is stable.
+- [ ] CI integration of `bun test tests/app-test/` — new plan once local-dev workflow is stable.
 - [ ] Multi-window harness keying — new plan if Tug.app grows multi-window support.
 - [ ] `__tug` surface extensions beyond v1.0.0 — each under its own plan with a version bump.
 - [ ] Harness performance telemetry (per-RPC latency, connection reuse across test files) — new plan if test-run time becomes a concern.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Smoke test green | `bun test tests/in-app/_smoke.test.ts` exits 0 (10/10 runs) |
+| Smoke test green | `bun test tests/app-test/_smoke.test.ts` exits 0 (10/10 runs) |
 | DEBUG guard holds | `grep -L '#if DEBUG' tugapp/Sources/TestHarness/*.swift` returns empty |
 | Release binary clean | `strings <release-archive> \| grep -E 'TUGAPP_TEST_SOCKET\|TestHarness\|__tugTestMode'` returns empty |
 | Binary-size delta | `wc -c` diff < 1% vs pre-Phase-2 baseline |

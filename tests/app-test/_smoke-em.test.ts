@@ -1,5 +1,5 @@
 /**
- * _smoke-em.test.ts — EM-card observation surface smoke ([M10] area).
+ * _smoke-em.test.ts — EM-card observation surface smoke ([AT0010] area).
  * Permanent test file (not scratch).
  *
  * ## What this file pins

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * lint-no-timers.ts — Lint check: no `setTimeout` / `setInterval` in
- * `tests/in-app/`.
+ * `tests/app-test/`.
  *
  * Parent plan [D12] bans `setTimeout` / `setInterval` from in-app test
  * files. Every wait is a `waitForCondition` over a pure boolean
@@ -11,8 +11,8 @@
  * Scope
  * -----
  * The ban applies to:
- *   - every `.ts` file under `tests/in-app/` that is NOT a harness
- *     internal (`tests/in-app/_harness/**`).
+ *   - every `.ts` file under `tests/app-test/` that is NOT a harness
+ *     internal (`tests/app-test/_harness/**`).
  *
  * The harness itself is allowed to use `setTimeout` / `setInterval`
  * because it owns subprocess lifecycle timing (connect backoff,
@@ -22,7 +22,7 @@
  *
  * Usage
  * -----
- *     bun run tests/in-app/lint-no-timers.ts
+ *     bun run tests/app-test/lint-no-timers.ts
  *
  * Exits 0 if clean, 1 if any banned token is found. A failure prints
  * each `file:line: line-content` hit so the author can locate it.
@@ -146,7 +146,7 @@ function main(): number {
   }
   console.error(
     "\nParent plan [D12]: `setTimeout` / `setInterval` are banned in " +
-      "`tests/in-app/` outside `_harness/`. Use `app.waitForCondition(...)` " +
+      "`tests/app-test/` outside `_harness/`. Use `app.waitForCondition(...)` " +
       "instead — the server polls on a pure boolean expression and honors a " +
       "single, explicit timeout budget.",
   );

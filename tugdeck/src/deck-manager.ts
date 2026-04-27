@@ -1295,7 +1295,7 @@ export class DeckManager implements IDeckManagerStore {
    * state harvested parent-first from the card's
    * `ComponentPersistenceRegistry`. Single entry point for every save
    * trigger; guarantees `bag.components` lands with every save by
-   * construction ([D13], [M17]).
+   * construction ([D13], [AT0017]).
    */
   captureCardState(cardId: string): CardStateBag {
     return this.cardStateOrchestrator.captureCardState(cardId);

@@ -176,7 +176,7 @@ interface DiagnosticInfo {
  *      content immediately rather than the empty-on-mount default —
  *      handy for theming and visual smoke-checks.
  *   2. Test fixture: harness tests that need predictable scrollable
- *      content ([M14] scroll persistence, [M23]
+ *      content ([AT0014] scroll persistence, [AT0023]
  *      cross-card selection) seed cards with the variant component
  *      id and get deterministic content with no UI driving.
  *

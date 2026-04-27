@@ -5,7 +5,7 @@
  * ## Why a sidecar
  *
  * Transcripts that ship with the test repo (e.g.,
- * `tests/in-app/fixtures/tugcode/em-smoke.transcript.json`) are
+ * `tests/app-test/fixtures/tugcode/em-smoke.transcript.json`) are
  * captured against a specific tugcode build and then committed.
  * If the file is edited without rerunning the capture script,
  * downstream tests would replay corrupted IPC sequences and fail

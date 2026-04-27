@@ -191,7 +191,7 @@ export class TugcodeVersionSkewError extends Error {
 }
 
 /**
- * Thrown by the transcript loader (`tests/in-app/_harness/transcript.ts`)
+ * Thrown by the transcript loader (`tests/app-test/_harness/transcript.ts`)
  * when a transcript file's content does not match its `.sha256`
  * sidecar. The capture / reapprove scripts produce sidecar files
  * for committed transcripts; runtime test code calling

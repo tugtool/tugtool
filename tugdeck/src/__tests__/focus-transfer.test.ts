@@ -287,4 +287,4 @@ describe("resolveActivationTarget", () => {
 // in focus-transfer. The stub-assertion tests that
 // previously lived here (asserting the throws) are gone — behavior
 // coverage for these helpers lives in the in-app drag harness
-// (m06-cross-pane-drag, m07-card-detach, m21-drag-aborted).
+// (at0006-cross-pane-drag, at0007-card-detach, at0021-drag-aborted).

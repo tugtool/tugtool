@@ -24,10 +24,10 @@ To run the full suite locally:
 cd tugapp && xcodebuild -scheme Tug -configuration Debug build
 
 # 2. Run the in-app test suite from the repo root.
-TUGAPP_IN_APP_TEST=1 bun test tests/in-app/
+TUGAPP_IN_APP_TEST=1 bun test tests/app-test/
 
 # Or a single file:
-TUGAPP_IN_APP_TEST=1 bun test tests/in-app/_smoke.test.ts
+TUGAPP_IN_APP_TEST=1 bun test tests/app-test/_smoke.test.ts
 ```
 
 Environment variables honored by `launchTugApp`:
@@ -40,12 +40,12 @@ Environment variables honored by `launchTugApp`:
 | `TUGAPP_TEST_SOCKET`      | Reserved; set by the harness when spawning the subprocess.   |
 | `TUGCODE_LIVE=1`          | Opt-in for live-mode tugcode smoke (`_smoke-em-live.test.ts`); requires Anthropic credentials. Skipped by default. |
 
-Per-run log files are written under `tests/in-app/logs/` when a test
+Per-run log files are written under `tests/app-test/logs/` when a test
 passes `testName` to `launchTugApp`; the directory is gitignored.
 
 ## Running live-mode tugcode smoke
 
-`tests/in-app/_smoke-em-live.test.ts` exercises a real tugcode →
+`tests/app-test/_smoke-em-live.test.ts` exercises a real tugcode →
 Claude Code → Anthropic API round-trip. Because it consumes API
 credits and requires live credentials, it is gated behind
 `TUGCODE_LIVE=1` and stays out of the default `just test-in-app-fast`
@@ -195,7 +195,7 @@ with actionable guidance naming the bundle path / id + a
 Protocol-only tests (`_smoke.test.ts`, `_double-connect.test.ts`,
 `_log-capture.test.ts`, `_wait-for-condition.test.ts`) pass
 `skipAccessibilityPreflight: true` so they stay independent of the
-grant state. Scenario tests (M01/M03/M16, and the Phase A
+grant state. Scenario tests (AT0001/AT0003/AT0016, and the Phase A
 `_smoke-native.test.ts`) leave the default strict — if the grant is
 missing, the failure attribution is instant.
 
@@ -205,7 +205,7 @@ persist across rebuilds.
 
 ## Adding a new test
 
-1. **Name the file.** `tests/in-app/<scenario>.test.ts`. Files
+1. **Name the file.** `tests/app-test/<scenario>.test.ts`. Files
    prefixed with `_` are reserved for harness-internal smoke and
    protocol tests (`_smoke.test.ts`, `_version-handshake.test.ts`,
    etc.).
@@ -214,7 +214,7 @@ persist across rebuilds.
    `describe.skipIf(!SHOULD_RUN)` at the top of every `describe` block.
 
 3. **Import from `@/_harness`.** The path alias resolves to
-   `tests/in-app/_harness/index.ts`. Key exports:
+   `tests/app-test/_harness/index.ts`. Key exports:
 
    - `launchTugApp(opts)` — spawn + connect + version handshake.
    - `App` class — `evalJS`, `waitForCondition`, `close`, plus typed
@@ -256,12 +256,12 @@ persist across rebuilds.
 
 ## Lint: no raw timers
 
-`tests/in-app/` forbids `setTimeout` and `setInterval` in test code
+`tests/app-test/` forbids `setTimeout` and `setInterval` in test code
 (the harness itself uses a `setTimeoutNative` alias internally — see
 `_harness/index.ts`). Run the checker with:
 
 ```bash
-cd tests/in-app && bun run lint:no-timers
+cd tests/app-test && bun run lint:no-timers
 ```
 
 Exit 0 is clean; exit 1 prints offending `file:line` locations. The
@@ -272,7 +272,7 @@ timeout + error.
 ## Directory layout
 
 ```
-tests/in-app/
+tests/app-test/
   _harness/            # Bun-side harness library. Do not import from tests; use @/_harness.
   _smoke.test.ts       # Minimal launchTugApp → evalJS → close. Keep passing.
   _*.test.ts           # Harness-internal protocol/lifecycle tests.

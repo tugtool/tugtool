@@ -14,10 +14,10 @@
  *
  *   1. **resign / become-active round trip** — call
  *      `simulateAppResign`, then `simulateAppBecomeActive`. Both
- *      should resolve without throwing. This is the M04 dependency.
+ *      should resolve without throwing. This is the AT0004 dependency.
  *
  *   2. **hide / unhide round trip** — same shape with
- *      `simulateAppHide` / `simulateAppUnhide`. M05 dependency.
+ *      `simulateAppHide` / `simulateAppUnhide`. AT0005 dependency.
  *
  *   3. **deliberate timeout** — pass `timeoutMs: 1` to a verb and
  *      assert it throws `AppLifecycleTimeoutError`. The 1ms bound
@@ -27,7 +27,7 @@
  * ## Why this is a scratch test
  *
  * This file is "deleted after
- * Step 6" — its coverage is subsumed once M04/M05 land in the
+ * Step 6" — its coverage is subsumed once AT0004/AT0005 land in the
  * permanent test set. Until then, this is the unit-level pin for
  * the bridge primitive.
  *

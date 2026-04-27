@@ -81,9 +81,9 @@ import { dispatchAction } from "./action-dispatch";
  *
  * `1.3.0`: adds
  * {@link TugTestSurface.getCardStateBag} (full bag introspection
- * for [M17] saveState-RPC-parity) and {@link TugTestSurface.closePane}
- * (whole-pane teardown for [M19] flush coverage). Markdown content
- * fixtures for [M14] / [M23] ride through a separate
+ * for [AT0017] saveState-RPC-parity) and {@link TugTestSurface.closePane}
+ * (whole-pane teardown for [AT0019] flush coverage). Markdown content
+ * fixtures for [AT0014] / [AT0023] ride through a separate
  * `gallery-markdown-50kb` card registration that bakes 50KB of
  * static content on mount — no test-specific surface needed.
  * Additive; major stays `1`.
@@ -528,7 +528,7 @@ export interface TugTestSurface {
    * memory cache. Returns `null` when no bag exists. Does NOT
    * force a save first — callers wanting fresh state should call
    * `window.tugdeck.saveState()` (or trigger a will-phase save)
-   * first. Used by [M17] saveState-RPC-parity
+   * first. Used by [AT0017] saveState-RPC-parity
    * audit for structural diffs of the bag across save paths.
    */
   getCardStateBag(cardId: string): CardStateBag | null;
@@ -536,7 +536,7 @@ export interface TugTestSurface {
   /**
    * Close an entire pane by id. Mirrors `deckManager.handlePaneClosed`,
    * the entry point a "close every card in this pane" UI affordance
-   * would call. Used by [M19] pane-teardown-flush
+   * would call. Used by [AT0019] pane-teardown-flush
    * audit so a multi-card pane's `_closePane` flush loop can be
    * exercised directly rather than driven through the per-tab close
    * button (which routes through `_removeCard` and only delegates to

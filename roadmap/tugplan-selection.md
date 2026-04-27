@@ -444,7 +444,7 @@ The immediate L23 win: when an engine restoreState runs at mount with content id
 - **Frequency:** `captureState` fires only at explicit orchestration moments (will-resign, will-hide, tab switch, beforeunload, `saveState` RPC, close-before-destroy). Never per-keystroke.
 
 **Implications:**
-- Current persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) port from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves.
+- Current persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[AT0010]) port from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves.
 - `captureCardState` / `restoreCardState` become the **sole** explicit framework entry points for card-level snapshot/restore. All save triggers route through them; no trigger calls per-card `onSave` directly.
 - See architecture piece [A9] for the implementation sketch.
 
@@ -554,7 +554,7 @@ Every question has a concrete decision the user must make before the execution p
 
 The implementation sequence begins with 15 commits (Steps 1–15) landing the selection/focus/scroll persistence subsystem. Each is independently revertable. The compile target stays green end-to-end; the user-visible save/restore behavior may regress briefly between commits (from Step 1 through Step 10) and comes back fully correct at Step 10. Integration tests at Step 14 pin every transition.
 
-Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Protocol foundation ([A9] / [D13]). The M-series continues beyond Step 19 (subsequent phases authored as separate step blocks); Step NN performs the final documentation + cleanup pass.
+Steps 16–19 land M-phase 0 of the AT-series — the Component Persistence Protocol foundation ([A9] / [D13]). The AT-series continues beyond Step 19 (subsequent phases authored as separate step blocks); Step NN performs the final documentation + cleanup pass.
 
 #### Step 1: Replace `CardStateBag` shape; strip old-shape callers {#step-1}
 
@@ -1200,7 +1200,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
   - `deckManager.saveAndFlush()` continues to exist as the public API but internally iterates cards and calls `captureCardState(cardId)` for each. No caller-visible API change.
   - `flushSaveCallbackBeforeDestruction(cardId)` (Step 14) internally calls `captureCardState(cardId)` then writes the bag via tugbank — behavior identical to today, now flowing through the new entry point.
   - Will-phase subscribers (`applicationWillResignActive`, `applicationWillHide`, `applicationDidResignActive` backstop) from Step 13 remain wired to `deckManager.saveAndFlush`; no change needed.
-  - `saveState` RPC handler (audit target of [M17]) is updated in this step to call `captureCardState` for each card and return the assembled bags. (This closes [M17] proactively as part of the refactor — the RPC now captures every axis the orchestrator captures, by construction.)
+  - `saveState` RPC handler (audit target of [AT0017]) is updated in this step to call `captureCardState` for each card and return the assembled bags. (This closes [AT0017] proactively as part of the refactor — the RPC now captures every axis the orchestrator captures, by construction.)
 - Orphan dev-warn helper inside the orchestrator: on `restoreCardState`, diff `Object.keys(bag.components ?? {})` against `registry.keys()`; log orphans once per restore via `console.warn("[A9c] orphan persistKeys dropped:", [...])`.
 
 **Tasks:**
@@ -1211,7 +1211,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - [x] Add dev-warn for orphan persistKeys on restore.
 - [x] Ensure `bag.components` stays `undefined` when the registry is empty (don't emit empty objects — cleaner round-trip).
 
-**Upholds:** [D13]; [L23] (every save trigger now captures every axis, by construction — removes the [M17] audit class of gaps). Simplifies future consumers by giving them one entry point.
+**Upholds:** [D13]; [L23] (every save trigger now captures every axis, by construction — removes the [AT0017] audit class of gaps). Simplifies future consumers by giving them one entry point.
 
 **Tests:**
 - [x] New `card-state-orchestrator.test.ts`:
@@ -1228,7 +1228,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green. _(2340 pass / 0 fail.)_
 - [x] Grep `onSave\|onRestore` outside of `use-card-persistence.tsx` and `card-state-orchestrator.ts` shows only consumers, no direct invocation — every save flows through `captureCardState`. _(Two residual hits in `card-host.tsx`: `persistenceCallbacksRef.current?.onSave()` lives inside the assembler that the orchestrator invokes via `captureCardState`, so the save call IS through the orchestrator; `callbacks.onRestore(bag.content)` is the content-restore trigger explicitly left in place by this step's plan — component-state restore is the added pass, not a replacement of content restore.)_
-- [ ] Manually verify in the browser: reload with a tide card + a gallery input. Both round-trip identically to pre-Step-18 behavior. [M17] closes (RPC captures every axis). _(Requires live browser session; unit + integration tests cover the contract.)_
+- [ ] Manually verify in the browser: reload with a tide card + a gallery input. Both round-trip identically to pre-Step-18 behavior. [AT0017] closes (RPC captures every axis). _(Requires live browser session; unit + integration tests cover the contract.)_
 
 ---
 
@@ -1238,7 +1238,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 
 **Commit:** `feat(tug-checkbox): opt into component persistence protocol`
 
-**References:** [D13](#d13-component-persistence), [A9d](#a9-component-persistence-protocol); [M24](#m24-component-protocol) (validates closure).
+**References:** [D13](#d13-component-persistence), [A9d](#a9-component-persistence-protocol); [AT0024](#at0024-component-protocol) (validates closure).
 
 **Artifacts:**
 - `tug-checkbox.tsx` gains optional `persistKey?: string` prop. When provided (and when rendered inside a card), the component calls `useComponentPersistence` with `{ persistKey, captureState: () => ({ checked }), restoreState: (saved) => setChecked(saved.checked) }`.
@@ -1267,7 +1267,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 **Checkpoint:**
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green. _(2349 pass / 0 fail.)_
-- [x] Manual verification: a test card with `<TugCheckbox persistKey="t">` in the gallery (or a temporary test card) survives Cmd-R reload, tab switch, and Cmd-Tab away / back. [M24] validated on at least one component. _(Confirmed working in the browser via the new `gallery-state-preservation` card — uncontrolled and controlled opt-ins both survive Cmd-R and tab switch.)_
+- [x] Manual verification: a test card with `<TugCheckbox persistKey="t">` in the gallery (or a temporary test card) survives Cmd-R reload, tab switch, and Cmd-Tab away / back. [AT0024] validated on at least one component. _(Confirmed working in the browser via the new `gallery-state-preservation` card — uncontrolled and controlled opt-ins both survive Cmd-R and tab switch.)_
 
 ---
 
@@ -1424,7 +1424,7 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
 
 **Commit:** `feat(card-host): install A3 shared activation effect`
 
-**References:** [A3](#a3-shared-activation-effect); [A1](#a1-focus-destination-selector); [A8](#a8-focus-theft-gate); [A2](#a2-on-card-activated); [M01](#m01-tab-switch-fc); [M03](#m03-pane-activation); [M16](#m16-tab-close-handoff).
+**References:** [A3](#a3-shared-activation-effect); [A1](#a1-focus-destination-selector); [A8](#a8-focus-theft-gate); [A2](#a2-on-card-activated); [AT0001](#at0001-tab-switch-fc); [AT0003](#at0003-pane-activation); [AT0016](#at0016-tab-close-handoff).
 
 **Artifacts:**
 - New `useLayoutEffect` in `card-host.tsx` — the "activation effect." Subscribes to `useFocusDestination(cardId)` from [#step-20](#step-20). Runs on every render; internally gates on `false → true` transitions of that predicate via a `prevIsFocusDestinationRef`.
@@ -1453,25 +1453,25 @@ Steps 16–19 land M-phase 0 of the M-series — the Component Persistence Proto
   - Unsafe gate: `canProgrammaticallyFocus` returns `false` → activation body skipped entirely.
   - `true → false` transition: no-op (no blur applied; deactivation is app-lifecycle's job, not the activation effect's).
 - [x] Extend `selection-persistence-integration.test.tsx` with three new scenarios:
-  - **[M01] FC intra-pane tab switch:** card A is FC with focus + selection; switch to card B in the same pane; switch back; assert card A regains focus + selection paint.
-  - **[M03] FC pane activation:** two panes, each with an FC card that had focus; click pane B chrome; click back on pane A's chrome (not the input); assert pane A's card regains focus.
-  - **[M16] FC tab close handoff:** pane with two FC cards, card A focused; close card A; assert card B receives focus.
+  - **[AT0001] FC intra-pane tab switch:** card A is FC with focus + selection; switch to card B in the same pane; switch back; assert card A regains focus + selection paint.
+  - **[AT0003] FC pane activation:** two panes, each with an FC card that had focus; click pane B chrome; click back on pane A's chrome (not the input); assert pane A's card regains focus.
+  - **[AT0016] FC tab close handoff:** pane with two FC cards, card A focused; close card A; assert card B receives focus.
 - [x] Existing integration tests must continue to pass — no regressions in cold-boot reload, cross-pane move (Step 11's effect still handles this for FC), or any paint-bucket behavior.
 
 **Checkpoint:**
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green.
-- [x] Manual verification (closed by Phase A trusted-click in-app sweep — `_smoke` 2/2, `_smoke-native` 5/5, M01 1/1, M03 1/1, M16 1/1 against real DEBUG Tug.app, 2026-04-24):
-  - Two FC cards in a pane, one focused with a selection. Switch tabs and return — focus and selection paint restored. [M01] ✓
-  - Two panes with FC cards focused in each. Click pane chrome to switch active pane; return — selection restored. [M03] ✓
-  - Close the active FC tab in a multi-tab pane — focus lands on the new active tab. [M16] ✓
+- [x] Manual verification (closed by Phase A trusted-click in-app sweep — `_smoke` 2/2, `_smoke-native` 5/5, AT0001 1/1, AT0003 1/1, AT0016 1/1 against real DEBUG Tug.app, 2026-04-24):
+  - Two FC cards in a pane, one focused with a selection. Switch tabs and return — focus and selection paint restored. [AT0001] ✓
+  - Two panes with FC cards focused in each. Click pane chrome to switch active pane; return — selection restored. [AT0003] ✓
+  - Close the active FC tab in a multi-tab pane — focus lands on the new active tab. [AT0016] ✓
   - EM cards (tide-card, gallery-prompt-input) may still lose focus across these transitions — closes in Step 23E. Not a regression; pre-existing behavior.
 
 ---
 
 #### Activation trigger taxonomy (preamble to Steps 23A–23E) {#activation-trigger-taxonomy}
 
-Step 23's `[A3]` implementation landed as a `useLayoutEffect` that observed `useFocusDestination(cardId)` and wrote DOM-authority state (focus, selection paint) from inside React's commit cycle. Rapid-cadence manual verification of [M03] exposed a sibling-effect ordering race: two `CardHost`s reacting to the same `activePaneId` change fire their effects in unspecified order, so the incoming card's [A8] gate could see `activeElement` still inside the outgoing card (branch 6 → refuse) if the outgoing effect hadn't yet released focus. The race is a symptom; the underlying diseases are **[L22]** (driving DOM writes through React's render cycle) and **[L23]** (save-then-restore of user-visible state).
+Step 23's `[A3]` implementation landed as a `useLayoutEffect` that observed `useFocusDestination(cardId)` and wrote DOM-authority state (focus, selection paint) from inside React's commit cycle. Rapid-cadence manual verification of [AT0003] exposed a sibling-effect ordering race: two `CardHost`s reacting to the same `activePaneId` change fire their effects in unspecified order, so the incoming card's [A8] gate could see `activeElement` still inside the outgoing card (branch 6 → refuse) if the outgoing effect hadn't yet released focus. The race is a symptom; the underlying diseases are **[L22]** (driving DOM writes through React's render cycle) and **[L23]** (save-then-restore of user-visible state).
 
 Steps 23A–23E replace the Step-23 implementation with a non-React `focus-transfer.ts` module whose entry points are called synchronously from each activation gesture's source. The contract pinned by `[A3]` is preserved end-to-end — the externally visible behavior ("card becomes focus destination → its `bag.focus` + `bag.domSelection` re-apply") is unchanged; only the implementation moves out of React.
 
@@ -1483,21 +1483,21 @@ Every activation flip routes through one of seven trigger shapes. Each row names
 
 | # | Trigger | Shape | Outgoing → Incoming | Where the helper fires |
 |---|---------|-------|---------------------|------------------------|
-| 1 | Intra-pane tab click ([M01](#m01-tab-switch-fc)) | sync, before-mutation | different cards | `tug-pane.tsx#performSelectCard` |
-| 2 | Pane-chrome activation click ([M03](#m03-pane-activation)) | sync, before-mutation | different cards | `pane-focus-controller.ts` |
-| 3 | Tab-close handoff ([M16](#m16-tab-close-handoff)) | sync, before-mutation | outgoing destroyed | `deck-manager.ts#_removeCard` / `_closePane` |
-| 4 | Cross-pane drag / detach ([M06](#m06-cross-pane-em) FC-half, [M07](#m07-card-detach) FC-half, [M21](#m21-drag-aborted)) | multi-phase | same card, DOM re-parents | save at drag-start (pane chrome `pointerdown`); refocus at drop (`_moveCardToPane` / `_detachCard`) or cancel (Escape / `pointercancel`; drop-into-void is not a cancel, it detaches) |
-| 5 | App resign → resume / window focus ([M04](#m04-app-resign-return), [M05](#m05-app-hide-unhide), [A4](#a4-app-lifecycle-activation)) | external event | current first-responder → itself | window `blur` save + window `focus` reactivate ([Step 20](#step-20) listener extended in [Step 23D](#step-23d)); EM-card delegate `focus()` routes through `engine.setSelectedRange` for WebKit-safe focus-then-select ordering ([Step 23G](#step-23g)) |
-| 6 | EM card activations ([M02](#m02-tab-switch-em), [M06](#m06-cross-pane-em) EM-half, [M07](#m07-card-detach) EM-half, [M09](#m09-inactive-mount)) | sync or external | engine owns focus | registered `onCardActivated` callback (dispatched from row 1 / 2 / 3 / 4 / 5 paths by card-flavor) |
+| 1 | Intra-pane tab click ([AT0001](#at0001-tab-switch-fc)) | sync, before-mutation | different cards | `tug-pane.tsx#performSelectCard` |
+| 2 | Pane-chrome activation click ([AT0003](#at0003-pane-activation)) | sync, before-mutation | different cards | `pane-focus-controller.ts` |
+| 3 | Tab-close handoff ([AT0016](#at0016-tab-close-handoff)) | sync, before-mutation | outgoing destroyed | `deck-manager.ts#_removeCard` / `_closePane` |
+| 4 | Cross-pane drag / detach ([AT0006](#at0006-cross-pane-em) FC-half, [AT0007](#at0007-card-detach) FC-half, [AT0021](#at0021-drag-aborted)) | multi-phase | same card, DOM re-parents | save at drag-start (pane chrome `pointerdown`); refocus at drop (`_moveCardToPane` / `_detachCard`) or cancel (Escape / `pointercancel`; drop-into-void is not a cancel, it detaches) |
+| 5 | App resign → resume / window focus ([AT0004](#at0004-app-resign-return), [AT0005](#at0005-app-hide-unhide), [A4](#a4-app-lifecycle-activation)) | external event | current first-responder → itself | window `blur` save + window `focus` reactivate ([Step 20](#step-20) listener extended in [Step 23D](#step-23d)); EM-card delegate `focus()` routes through `engine.setSelectedRange` for WebKit-safe focus-then-select ordering ([Step 23G](#step-23g)) |
+| 6 | EM card activations ([AT0002](#at0002-tab-switch-em), [AT0006](#at0006-cross-pane-em) EM-half, [AT0007](#at0007-card-detach) EM-half, [AT0009](#at0009-inactive-mount)) | sync or external | engine owns focus | registered `onCardActivated` callback (dispatched from row 1 / 2 / 3 / 4 / 5 paths by card-flavor) |
 | 7 | Cold-boot mount | structural | — | `CardHost`'s post-attach `useLayoutEffect` keyed on `[cardId, hostContentEl, store]` calls `onRestore(bag.content)` AFTER CardPortal's slot.appendChild has connected the engine root to the document. Closed by [Step 23F](#step-23f) gap-1 (the previous synchronous-from-child-effect call landed selection on a detached portal slot). |
 
 ##### Step breakdown
 
 - **[Step 23A](#step-23a)** — Plumbing only. `focus-transfer.ts` scaffolded; store registration channels; `CardHost` registers its root element; `useCardPersistence` routes `onCardActivated` through the new channel. No behavior change; existing Step-23 and Step-11 effects remain in place.
-- **[Step 23B](#step-23b)** — Retires the `[A3]` React effect. Wires rows 1, 2, 3 through the helper's synchronous before-mutation entry point. Rapid-cadence [M01] / [M03] / [M16] are the regression gates.
-- **[Step 23C](#step-23c)** — Retires Step-11's cross-pane `[hostStackId]`-keyed effect. Wires row 4 (drag-start save + drop/cancel refocus) through the helper. Drag-coordinator integration is explicit: pointerdown-save hook, post-drop refocus hook, and drag-cancel refocus hook are all named. Closes the FC/MV halves of [M06], [M07], and [M21].
-- **[Step 23D](#step-23d)** — Wires row 5 ([A4] app-lifecycle) through the helper. The `window.focus` listener installed in [Step 20](#step-20) routes through a new `reactivateCurrentFocusDestination(store)` entry. Closes [M04] and [M05]. **Absorbs what was previously labeled M-phase 3.**
-- **[Step 23E](#step-23e)** — EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated` (row 6). Closes the EM halves of [M02], [M06], [M07], and [M09]. Retires any ad-hoc engine-internal refocus code superseded by the helper.
+- **[Step 23B](#step-23b)** — Retires the `[A3]` React effect. Wires rows 1, 2, 3 through the helper's synchronous before-mutation entry point. Rapid-cadence [AT0001] / [AT0003] / [AT0016] are the regression gates.
+- **[Step 23C](#step-23c)** — Retires Step-11's cross-pane `[hostStackId]`-keyed effect. Wires row 4 (drag-start save + drop/cancel refocus) through the helper. Drag-coordinator integration is explicit: pointerdown-save hook, post-drop refocus hook, and drag-cancel refocus hook are all named. Closes the FC/MV halves of [AT0006], [AT0007], and [AT0021].
+- **[Step 23D](#step-23d)** — Wires row 5 ([A4] app-lifecycle) through the helper. The `window.focus` listener installed in [Step 20](#step-20) routes through a new `reactivateCurrentFocusDestination(store)` entry. Closes [AT0004] and [AT0005]. **Absorbs what was previously labeled M-phase 3.**
+- **[Step 23E](#step-23e)** — EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated` (row 6). Closes the EM halves of [AT0002], [AT0006], [AT0007], and [AT0009]. Retires any ad-hoc engine-internal refocus code superseded by the helper.
 - **[Step 23F](#step-23f)** — Cold-boot EM-card selection paint. Surfaced as a real-app gap during manual verification after 23E. Closes row 7 for EM cards specifically (FC cold-boot was already working).
 - **[Step 23G](#step-23g)** — EM-card selection survives the app-resign / app-become-active round-trip (cmd-tab away+back). Real-app gap surfaced post-23F: tide-card's redundant `cardDidActivate`+`onCardActivated` focus path triggered WebKit's selectionchange-on-focus quirk intermittently. Fix routes the delegate's `focus()` through `engine.setSelectedRange` for WebKit-safe focus-then-select.
 
@@ -1509,36 +1509,36 @@ Steps 23B–23E land their behavior changes against `roadmap/tugplan-harness-ext
 
 **Why ping-pong, not harness-first.** The harness is now confirmed faithful (Phase A acceptance — see `tugplan-harness-extensions.md` [#step-3b]); each new selection-plan behavior change is testable as soon as its harness piece is in. Front-loading all of harness Phases A/B/C before any 23B–23E work would block six weeks of behavior change behind harness throughput. Interleaving keeps both fronts moving and uses every newly-landed primitive immediately, while harness-first builds tooling that sits unused until the selection plan catches up.
 
-**Rapid-cadence is moving from a manual ritual to an automated gate.** Steps 23B/23C/23D each carry a "manual verification at rapid cadence" checkpoint as their regression-closure gate. Those checkpoints predate the trusted-click pipeline. Now that `nativeClickAtElement` works, every "rapid cadence" verification graduates to a dedicated in-app test file (one per scenario) that issues the same gestures back-to-back with no inter-call waits. Slow-cadence baselines stay in their existing files (`m01-tab-switch-fc.test.ts`, `m03-pane-activation.test.ts`, `m16-tab-close-handoff.test.ts`); rapid-cadence variants live alongside in `m01-rapid-cadence.test.ts`, `m03-rapid-cadence.test.ts`, `m16-rapid-cadence.test.ts` so failures name the cadence in the file path and either set can be disabled independently if it ever needs to be.
+**Rapid-cadence is moving from a manual ritual to an automated gate.** Steps 23B/23C/23D each carry a "manual verification at rapid cadence" checkpoint as their regression-closure gate. Those checkpoints predate the trusted-click pipeline. Now that `nativeClickAtElement` works, every "rapid cadence" verification graduates to a dedicated in-app test file (one per scenario) that issues the same gestures back-to-back with no inter-call waits. Slow-cadence baselines stay in their existing files (`at0001-tab-switch-fc.test.ts`, `at0003-pane-activation.test.ts`, `at0016-tab-close-handoff.test.ts`); rapid-cadence variants live alongside in `at0001-rapid-cadence.test.ts`, `at0003-rapid-cadence.test.ts`, `at0016-rapid-cadence.test.ts` so failures name the cadence in the file path and either set can be disabled independently if it ever needs to be.
 
 **Pass map.** The strategy executes in nine passes. Each pass is one or two commits; selection-plan passes follow the existing one-step-one-commit discipline modulo the explicit allowance to split 23B (per author note, 2026-04-24). Harness-side passes follow `tugplan-harness-extensions.md`'s step boundaries.
 
 | # | Pass | Type | Purpose | Output |
 |---|------|------|---------|--------|
 | 1 | Doc sync | doc | Close stale checkboxes; cite real commit hashes; correct stale `nativeDrag` docstrings. | One commit; no behavior change. |
-| 2 | Rapid-cadence test files | harness | Lift Steps 23B/23C/23D's "manual rapid-cadence" gate to automated. Author `m01-rapid-cadence.test.ts`, `m03-rapid-cadence.test.ts`, `m16-rapid-cadence.test.ts`. See "Pass 2 result note" below — files start green and serve as forward regression gates. | Three new test files, three forward regression gates, one commit. |
+| 2 | Rapid-cadence test files | harness | Lift Steps 23B/23C/23D's "manual rapid-cadence" gate to automated. Author `at0001-rapid-cadence.test.ts`, `at0003-rapid-cadence.test.ts`, `at0016-rapid-cadence.test.ts`. See "Pass 2 result note" below — files start green and serve as forward regression gates. | Three new test files, three forward regression gates, one commit. |
 | 3 | [Step 23B](#step-23b) | selection | Retire the [A3] React effect; wire rows 1–3 (intra-pane tab click, pane-chrome activation, tab-close handoff) through `transferFocusForActivation`. Pass 2's rapid-cadence tests stay green through the migration; any regression at the existing cadence fails Pass 2's files immediately. | Up to three commits per the split-allowed authorisation: (a) `transferFocusForActivation` body + `pane-focus-controller` wiring, (b) `tug-pane`/`deck-manager` wiring + `flushSync` sandwich, (c) [A3] effect retirement + test rename. |
-| 4 | [Step 23C](#step-23c) | selection | Multi-phase drag: drag-start save, drop refocus, Escape/`pointercancel` refocus. Retire Step-11's cross-pane `useLayoutEffect`. Author M06/M07/M21 in-app tests using the existing `nativeDrag` + `nativeKey("Escape")`. | One commit (per plan); new `m06-cross-pane-drag.test.ts` / `m07-card-detach.test.ts` / `m21-drag-aborted.test.ts` files; rapid-cadence variants if the slow versions reveal a race. |
-| 4.5 | Harness Step 3c | harness | Add `nativeDragWithoutRelease` primitive (and element-anchored variant) per `tugplan-harness-extensions.md` [#step-3c]. Backfill `m21-drag-aborted` with a real test body that issues the trusted `nativeDragWithoutRelease → nativeKey("Escape") → nativeMouseUp` sequence. Closes the harness gap surfaced at Pass 4 close. | Per harness plan Step 3c; m21 placeholder retired. |
+| 4 | [Step 23C](#step-23c) | selection | Multi-phase drag: drag-start save, drop refocus, Escape/`pointercancel` refocus. Retire Step-11's cross-pane `useLayoutEffect`. Author AT0006/AT0007/AT0021 in-app tests using the existing `nativeDrag` + `nativeKey("Escape")`. | One commit (per plan); new `at0006-cross-pane-drag.test.ts` / `at0007-card-detach.test.ts` / `at0021-drag-aborted.test.ts` files; rapid-cadence variants if the slow versions reveal a race. |
+| 4.5 | Harness Step 3c | harness | Add `nativeDragWithoutRelease` primitive (and element-anchored variant) per `tugplan-harness-extensions.md` [#step-3c]. Backfill `at0021-drag-aborted` with a real test body that issues the trusted `nativeDragWithoutRelease → nativeKey("Escape") → nativeMouseUp` sequence. Closes the harness gap surfaced at Pass 4 close. | Per harness plan Step 3c; m21 placeholder retired. |
 | 5 | Harness Step 4 | harness | Swift app-lifecycle handlers (`simulateAppResign` / `BecomeActive` / `Hide` / `Unhide`) per `tugplan-harness-extensions.md` [#step-4]. Required dependency for selection [Step 23D](#step-23d). | Per harness plan Step 4. |
-| 6 | [Step 23D](#step-23d) ✅ | selection | Wire row 5 ([A4] app-lifecycle) through `reactivateCurrentFocusDestination`. Window-`blur` save flush; window-`focus` reactivation. New M04/M05 in-app tests using harness Step 4's primitives. | One commit; `m04-app-resign-return.test.ts`, `m05-app-hide-unhide.test.ts`. Drift-prevention cycle landed (revert listeners → tests red → restore → tests green). |
-| 7A | Harness Step 5 ✅ | harness | Tugcode subprocess lifecycle: Swift `startTugcode` / `stopTugcode` handlers, pipe-fd setup, SIGTERM/SIGKILL teardown, log routing to `tests/in-app/logs/<test>-tugcode.log`, production launch path gated behind `!testMode`, RPC dispatch + types, latency measurement → resolve [Q03]. Surface version: bump Swift `surfaceVersion` `1.2.0`→`1.3.0` (additive minor; tugdeck `SURFACE_VERSION` unchanged). Scratch `_smoke-tugcode-lifecycle.test.ts` proves spawn/teardown in isolation. | Per harness plan Step 5; one commit; mostly Swift. [Q03] resolved per-test-file (median 13.2ms / 10 cycles). |
+| 6 | [Step 23D](#step-23d) ✅ | selection | Wire row 5 ([A4] app-lifecycle) through `reactivateCurrentFocusDestination`. Window-`blur` save flush; window-`focus` reactivation. New AT0004/AT0005 in-app tests using harness Step 4's primitives. | One commit; `at0004-app-resign-return.test.ts`, `at0005-app-hide-unhide.test.ts`. Drift-prevention cycle landed (revert listeners → tests red → restore → tests green). |
+| 7A | Harness Step 5 ✅ | harness | Tugcode subprocess lifecycle: Swift `startTugcode` / `stopTugcode` handlers, pipe-fd setup, SIGTERM/SIGKILL teardown, log routing to `tests/app-test/logs/<test>-tugcode.log`, production launch path gated behind `!testMode`, RPC dispatch + types, latency measurement → resolve [Q03]. Surface version: bump Swift `surfaceVersion` `1.2.0`→`1.3.0` (additive minor; tugdeck `SURFACE_VERSION` unchanged). Scratch `_smoke-tugcode-lifecycle.test.ts` proves spawn/teardown in isolation. | Per harness plan Step 5; one commit; mostly Swift. [Q03] resolved per-test-file (median 13.2ms / 10 cycles). |
 | 7B | Harness Step 6 ✅ | harness | Stub-transcript replay + tooling: tugcode `--stub-transcript=<path>` CLI flag with structured-record replay engine; transcript handoff folded into `startTugcode({ transcript })` (path-based, not fd-based — see Author note); two new error classes (`TugcodeVersionSkewError`, `TugcodeTranscriptMismatchError`); content-hash sidecar helper + `scripts/reapprove-transcript.ts`; new `writeTugcodeStdin` RPC verb so tests can drive tugcode's IPC loop directly; transcript round-trip unit tests; end-to-end stub smoke; [Q04] resolved (structured records + SHA-256 sidecar; no raw-bytes fallback needed). Surface bumps Swift `1.3.0`→`1.4.0` + TS `EXPECTED_SURFACE_VERSION` `1.3.0`→`1.4.0`. Capture script + version-skew runtime throw are deferred to 7C. | Per harness plan Step 6; one commit. |
 | 7C | Harness Step 7 ✅ | harness | EM-card surface (`__tug.getEmCardState` + `isEngineReady`; harness `awaitEngineReady`); two new deck-trace event kinds (`engine-ready` wired at `tug-prompt-input.tsx`; `engine-activation-dispatched` defined for Step 23E emit sites); tugdeck `SURFACE_VERSION` `1.1.0`→`1.2.0`; permanent `_smoke-em.test.ts` (3 tests, in default sweep); scratch `_smoke-tugcode-lifecycle.test.ts` and `_smoke-tugcode-stub.test.ts` retired. **Tugcode → tugdeck integration deferred** — needs tugcast-bypass plumbing not yet in place; smoke covers observation surface only. **Capture script + `drainTugcodeTurn` + `getEngineSelection` deferred** — see Author note. | Per harness plan Step 7; one commit. |
-| 7D | Harness Step 8 ✅ | harness | Live-mode smoke: `tests/in-app/_smoke-em-live.test.ts` exercises real tugcode → Claude Code → Anthropic; gated behind `TUGCODE_LIVE=1` (default sweep skips it). New `dir` field on `StartTugcodeOptions` mapping to tugcode's `--dir <path>` arg. README addition documenting the opt-in flag. **Tugdeck-side observation deferred** alongside the tugcast-bypass plumbing — smoke asserts on bare-tugcode protocol shape (assistant_text + turn_complete in stdout log) rather than `getEmCardState`. Capture script also deferred. | Per harness plan Step 8; one commit; small. |
+| 7D | Harness Step 8 ✅ | harness | Live-mode smoke: `tests/app-test/_smoke-em-live.test.ts` exercises real tugcode → Claude Code → Anthropic; gated behind `TUGCODE_LIVE=1` (default sweep skips it). New `dir` field on `StartTugcodeOptions` mapping to tugcode's `--dir <path>` arg. README addition documenting the opt-in flag. **Tugdeck-side observation deferred** alongside the tugcast-bypass plumbing — smoke asserts on bare-tugcode protocol shape (assistant_text + turn_complete in stdout log) rather than `getEmCardState`. Capture script also deferred. | Per harness plan Step 8; one commit; small. |
 | 7-close | Harness Step 9 verification sweep ✅ | verification | Verified: 14/14 default sweep + 2412/2412 tugdeck unit + 205/205 tugcode unit + 58/58 harness unit. Release `nm` audit clean (zero TestHarness/AppLifecycle/TugcodeLifecycle/NativeEvent/VirtualKeyMap/CoordMapping/CGEvent symbols). `#if DEBUG` gating verified across all 9 TestHarness Swift files + AppDelegate. Surface versions in lockstep (Swift/TS RPC at 1.4.0; tugdeck JS at 1.2.0). | Plan-doc-only commit (`dc848c91` Step 23F authoring already covered the doc updates; verification flips Step 9 checkboxes). |
-| 8 | [Step 23E](#step-23e) ✅ | selection | EM content factories register `onCardActivated`; new in-app tests M02/M06-EM/M07-EM/M09 covering both `gallery-prompt-input` (TugPromptInput direct) and `gallery-prompt-entry` (TugPromptEntry, tide-card's editor); `invokeActivationCallback` plumbed with `dispatchedFrom` tag; `engine-activation-dispatched` trace fires from DeckManager. **Three follow-up gaps surfaced and tracked in [Step 23F](#step-23f):** cold-boot selection paint, fresh-EM-card resolver mis-classification, EM focus-after-cross-pane-move. **Deferred to Pass 10:** grep audit for ad-hoc engine-refocus paths and `_flipFirstResponder` dev-only assertion. | One commit; 4 new EM-half test files (8 tests across 2 factories each); + plan updates expanding 23F to cover the surfaced gaps. |
-| 9 | [Step 23F](#step-23f) ✅ | selection | Three EM-card focus gaps closed. Gap 1 (cold-boot selection): root cause was CardPortal slot detachment when `onRestore` fired from a child's `useLayoutEffect` — the engine root sits in a detached `<div data-card-portal-slot>` at the moment `engine.setSelectedRange` runs, so `.focus()` no-ops and `addRange` doesn't stick. **Fix**: defer `callbacks.onRestore(bag.content)` from `registerPersistenceCallbacks` (called early from a child's effect) to a CardHost-owned `useLayoutEffect` keyed on `[cardId, hostContentEl, store]`, which fires AFTER CardPortal's slot.appendChild. L04 ready-callback pattern. Gap 2 (fresh-card resolver): `resolveActivationTarget` now consults `registration.engineKind === "em"` first, before the `bag.content !== undefined` heuristic. EM factories tag their registrations. Gap 3 (focus-after-move): incidentally fixed by gap-1 — pre-fix, the cold-boot path left a half-mounted state that cascaded into the move path. Three new in-app tests: `m32-em-cold-boot-selection.test.ts`, `m33-em-fresh-card-activation.test.ts`, `m34-em-focus-after-move.test.ts`. Drift-prevention verified for both gap-1 and gap-2. | One commit; production fixes in `card-host.tsx` (defer onRestore to post-attach effect), `card-registry.ts` (add `engineKind` field + `isEngineManagedCard` helper), `focus-transfer.ts` (registry-tag check in resolver), three EM factories tag `engineKind: "em"`. Diagnostic deck-trace events `cold-boot-restore-snapshot` + `engine-restore-applied` added (kept post-fix as forward observability). |
+| 8 | [Step 23E](#step-23e) ✅ | selection | EM content factories register `onCardActivated`; new in-app tests AT0002/AT0006-EM/AT0007-EM/AT0009 covering both `gallery-prompt-input` (TugPromptInput direct) and `gallery-prompt-entry` (TugPromptEntry, tide-card's editor); `invokeActivationCallback` plumbed with `dispatchedFrom` tag; `engine-activation-dispatched` trace fires from DeckManager. **Three follow-up gaps surfaced and tracked in [Step 23F](#step-23f):** cold-boot selection paint, fresh-EM-card resolver mis-classification, EM focus-after-cross-pane-move. **Deferred to Pass 10:** grep audit for ad-hoc engine-refocus paths and `_flipFirstResponder` dev-only assertion. | One commit; 4 new EM-half test files (8 tests across 2 factories each); + plan updates expanding 23F to cover the surfaced gaps. |
+| 9 | [Step 23F](#step-23f) ✅ | selection | Three EM-card focus gaps closed. Gap 1 (cold-boot selection): root cause was CardPortal slot detachment when `onRestore` fired from a child's `useLayoutEffect` — the engine root sits in a detached `<div data-card-portal-slot>` at the moment `engine.setSelectedRange` runs, so `.focus()` no-ops and `addRange` doesn't stick. **Fix**: defer `callbacks.onRestore(bag.content)` from `registerPersistenceCallbacks` (called early from a child's effect) to a CardHost-owned `useLayoutEffect` keyed on `[cardId, hostContentEl, store]`, which fires AFTER CardPortal's slot.appendChild. L04 ready-callback pattern. Gap 2 (fresh-card resolver): `resolveActivationTarget` now consults `registration.engineKind === "em"` first, before the `bag.content !== undefined` heuristic. EM factories tag their registrations. Gap 3 (focus-after-move): incidentally fixed by gap-1 — pre-fix, the cold-boot path left a half-mounted state that cascaded into the move path. Three new in-app tests: `at0032-em-cold-boot-selection.test.ts`, `at0033-em-fresh-card-activation.test.ts`, `at0034-em-focus-after-move.test.ts`. Drift-prevention verified for both gap-1 and gap-2. | One commit; production fixes in `card-host.tsx` (defer onRestore to post-attach effect), `card-registry.ts` (add `engineKind` field + `isEngineManagedCard` helper), `focus-transfer.ts` (registry-tag check in resolver), three EM factories tag `engineKind: "em"`. Diagnostic deck-trace events `cold-boot-restore-snapshot` + `engine-restore-applied` added (kept post-fix as forward observability). |
 
-**Pass 2 result note (2026-04-24).** The rapid-cadence files were authored expecting them to fail today (the [A3] sibling-effect race the strategy was designed to drive 23B against). They pass deterministically across multiple consecutive runs at the harness's natural cadence (~50ms between clicks: Swift's 20ms intra-click delay + ~10ms RPC round-trip per `nativeClickAtElement`, well under the plan's <100ms gate). Most plausible explanation: Step 3b's `pane-focus-controller` mousedown `preventDefault` already closed the user-visible symptom — WebKit no longer blurs focus during pane-chrome / tab clicks, so the [A3] restore lands on a stable target rather than racing a focus-clearing default. The architectural problem is unchanged (DOM writes routed through React's render cycle violate [L22]/[L23]); Step 23B is now architectural cleanup rather than a bug fix. The rapid-cadence files become *forward* regression gates: they lock in current passing behavior so 23B's helper migration cannot reintroduce a regression at any of M01/M03/M16's cadences. Step 23B's existing checkpoints are unchanged; the rapid-cadence verification line ("Manual verification at rapid cadence (<100 ms between clicks)") flips from human-verified to test-file-verified once the migration lands and the files are still green.
+**Pass 2 result note (2026-04-24).** The rapid-cadence files were authored expecting them to fail today (the [A3] sibling-effect race the strategy was designed to drive 23B against). They pass deterministically across multiple consecutive runs at the harness's natural cadence (~50ms between clicks: Swift's 20ms intra-click delay + ~10ms RPC round-trip per `nativeClickAtElement`, well under the plan's <100ms gate). Most plausible explanation: Step 3b's `pane-focus-controller` mousedown `preventDefault` already closed the user-visible symptom — WebKit no longer blurs focus during pane-chrome / tab clicks, so the [A3] restore lands on a stable target rather than racing a focus-clearing default. The architectural problem is unchanged (DOM writes routed through React's render cycle violate [L22]/[L23]); Step 23B is now architectural cleanup rather than a bug fix. The rapid-cadence files become *forward* regression gates: they lock in current passing behavior so 23B's helper migration cannot reintroduce a regression at any of AT0001/AT0003/AT0016's cadences. Step 23B's existing checkpoints are unchanged; the rapid-cadence verification line ("Manual verification at rapid cadence (<100 ms between clicks)") flips from human-verified to test-file-verified once the migration lands and the files are still green.
 
-**Pass 4 result note (2026-04-24).** Two findings worth pinning. First, `m21-drag-aborted` shipped as a `describe.skipIf(true)` placeholder. The harness's `nativeDrag` is atomic (`mouseDown` → 8-step interpolated trail → `mouseUp` in one Swift-side RPC), and there is no `nativeMouseDragged` exposed on the TS surface, so a "begin drag, hold, fire Escape, release" sequence cannot be authored with current verbs. Pass 4.5 closes this gap by adding `nativeDragWithoutRelease` per harness plan [#step-3c] and backfilling m21 with a real test body. Manual verification of the Escape→cancel path is the regression gate until Pass 4.5 lands. Second, m06's first draft asserted that focus stays on the source pane's remaining card after a cross-pane merge — that turned out to be production-bug-pinning rather than correct behavior. The user gesture intent for "drag a card to another pane" is to follow the card; pre-fix, `_moveCardToPane` only flipped `activePaneId` to the target when the source was destroyed, leaving the dragged card mounted but not focused. The fix landed in the same Pass 4 commit: `_moveCardToPane` always activates the target pane and bumps it to z-top, making the dragged card the new first responder. Unit test `T-11-6-1b-07b` rewritten to reflect the new contract. Discipline rule: a pass that surfaces a real production bug MUST land the fix in the same pass (already codified below).
+**Pass 4 result note (2026-04-24).** Two findings worth pinning. First, `at0021-drag-aborted` shipped as a `describe.skipIf(true)` placeholder. The harness's `nativeDrag` is atomic (`mouseDown` → 8-step interpolated trail → `mouseUp` in one Swift-side RPC), and there is no `nativeMouseDragged` exposed on the TS surface, so a "begin drag, hold, fire Escape, release" sequence cannot be authored with current verbs. Pass 4.5 closes this gap by adding `nativeDragWithoutRelease` per harness plan [#step-3c] and backfilling m21 with a real test body. Manual verification of the Escape→cancel path is the regression gate until Pass 4.5 lands. Second, m06's first draft asserted that focus stays on the source pane's remaining card after a cross-pane merge — that turned out to be production-bug-pinning rather than correct behavior. The user gesture intent for "drag a card to another pane" is to follow the card; pre-fix, `_moveCardToPane` only flipped `activePaneId` to the target when the source was destroyed, leaving the dragged card mounted but not focused. The fix landed in the same Pass 4 commit: `_moveCardToPane` always activates the target pane and bumps it to z-top, making the dragged card the new first responder. Unit test `T-11-6-1b-07b` rewritten to reflect the new contract. Discipline rule: a pass that surfaces a real production bug MUST land the fix in the same pass (already codified below).
 
-**Pass 5 result note (2026-04-25).** macOS Sonoma+ broke the simple `NSApp.deactivate()` primitive: the call is silently ignored when there's no other "active" app queued to receive activation, so `applicationDidResignActive:` never posts and the bridge times out. The harness's `simulateAppResign` therefore activates Finder via `NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.activate(options: [])` after calling `NSApp.deactivate()` — Finder is system-essential and always running, so it's a reliable target, and activating it forces Tug.app to give up activation exactly the way a user click into Finder would. The wire spec [D07] still names `NSApp.deactivate()` as the primitive; the Finder nudge is an implementation detail of the Swift handler and has no harness-API or test-API impact. The hide/unhide / become-active primitives work as documented. Smoke test `_smoke-app-lifecycle.test.ts` covers all four happy paths plus a deliberate-timeout path (`simulateAppHide` while already hidden, with `timeoutMs: 1`) — file is scratch-marked for deletion at the harness plan's Step 6 once M04/M05 land in the permanent test set.
+**Pass 5 result note (2026-04-25).** macOS Sonoma+ broke the simple `NSApp.deactivate()` primitive: the call is silently ignored when there's no other "active" app queued to receive activation, so `applicationDidResignActive:` never posts and the bridge times out. The harness's `simulateAppResign` therefore activates Finder via `NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.activate(options: [])` after calling `NSApp.deactivate()` — Finder is system-essential and always running, so it's a reliable target, and activating it forces Tug.app to give up activation exactly the way a user click into Finder would. The wire spec [D07] still names `NSApp.deactivate()` as the primitive; the Finder nudge is an implementation detail of the Swift handler and has no harness-API or test-API impact. The hide/unhide / become-active primitives work as documented. Smoke test `_smoke-app-lifecycle.test.ts` covers all four happy paths plus a deliberate-timeout path (`simulateAppHide` while already hidden, with `timeoutMs: 1`) — file is scratch-marked for deletion at the harness plan's Step 6 once AT0004/AT0005 land in the permanent test set.
 
 **Pass 8 result note (2026-04-25).** Step 23E landed with the dispatch-wiring contract closed (EM factories register `onCardActivated`, `engine-activation-dispatched` traces fire correctly across all activation gesture sources). Two scope-trimming decisions and three new gaps absorbed into Step 23F.
 
-(1) **In-app smokes broadened to gallery-prompt-entry**, per user feedback that TugPromptEntry (which tide-card uses internally) is the realistic case, not just standalone TugPromptInput. M02, M06-EM, M07-EM, M09 each now have two parameterized tests — one per EM factory.
+(1) **In-app smokes broadened to gallery-prompt-entry**, per user feedback that TugPromptEntry (which tide-card uses internally) is the realistic case, not just standalone TugPromptInput. AT0002, AT0006-EM, AT0007-EM, AT0009 each now have two parameterized tests — one per EM factory.
 
 (2) **Three related EM-card focus gaps surfaced during 23E in-app testing and absorbed into [Step 23F](#step-23f).** All share root "fresh / freshly-re-mounted EM cards have brittle focus paths." (a) Cold-boot selection paint (originally 23F's only gap). (b) Fresh-EM-card resolver mis-classification: a never-saved EM card activates via `default-focus` instead of `dispatch-activated` because `bag.content !== undefined` is the EM discriminator; default-focus then walks DEFAULT_FOCUS_SELECTORS where `button:not([disabled])` matches before `[contenteditable="true"]`, landing focus on a toolbar button. (c) EM focus-after-cross-pane-move doesn't stick: `engine-activation-dispatched` fires (proving onCardActivated ran) but `.focus()` no-ops on the freshly re-mounted contenteditable, leaving activeElement on BODY. Step 23F now addresses all three.
 
@@ -1552,7 +1552,7 @@ Gap 2 was the cleanest of the three: a one-field registry change (`engineKind?: 
 
 Gap 3 (focus-after-cross-pane-move) was incidentally closed by the gap-1 restructure. Pre-fix, the cold-boot path was applying selection to a detached slot, leaving the engine in an inconsistent state that cascaded forward — by the time the user dragged the card cross-pane, the focus path's `.focus()` call was operating against a node whose history of detach/reattach interactions had unsettled WebKit's internal state. Once the cold-boot path lands selection correctly, the cross-pane drag's `engine.root.focus()` lands focus correctly too — verified by m34 (4 tests across 2 factories × 2 scenarios) all green with the gap-1 fix and all failing without it.
 
-Default sweep: 21/21 files (38 tests). Tugdeck unit: 2414/2414. tsc clean (tugdeck + tests/in-app). Drift-prevention verified for gap-1 (m32 + m34 fail without the deferred-restore change) and gap-2 (m33 fails without the registry-tag branch in `resolveActivationTarget`). End-of-M-phase-2 closes here for the production gaps; Pass 10 cleanup (grep audit for ad-hoc engine refocus + `_flipFirstResponder` dev assertion) remains.
+Default sweep: 21/21 files (38 tests). Tugdeck unit: 2414/2414. tsc clean (tugdeck + tests/app-test). Drift-prevention verified for gap-1 (m32 + m34 fail without the deferred-restore change) and gap-2 (m33 fails without the registry-tag branch in `resolveActivationTarget`). End-of-M-phase-2 closes here for the production gaps; Pass 10 cleanup (grep audit for ad-hoc engine refocus + `_flipFirstResponder` dev assertion) remains.
 
 End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanup follows.
 
@@ -1564,13 +1564,13 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 
 **Pass 7A result note (2026-04-25).** [Q03] resolved on the first measurement: median start+stop+RPC wall-clock 13.2ms across 10 cycles (min 11.5ms / max 13.7ms), so per-test-file lifecycle wins on simplicity — no `resetTugcode()` RPC needed. Three implementation deviations from the plan-as-written: (1) the "production tugcode-launch path gated behind `!testMode`" task is a no-op today because tugcast spawns tugcode per AI session on demand (in `feeds/agent_bridge.rs::TugcodeSpawner`), NOT at app boot. The harness never initiates an AI session, so the production spawn path naturally doesn't fire — the gate would only become load-bearing if tugcast added an at-boot warm-spawn. Documented in the Author note of harness plan Step 5; revisit when relevant. (2) tugcode shuts down on stdin EOF (its `[tugcode] stdin closed, shutting down` branch), so the Swift handler holds a `Pipe`'s write-end open for the lifetime of the child. The same FD will carry transcript bytes in 7B's `--stub-transcript=<fd>` flow. (3) Surface versions bumped Swift `1.2.0`→`1.3.0` and TS `EXPECTED_SURFACE_VERSION` `1.2.0`→`1.3.0` (additive minor); `_smoke.test.ts`'s exact-match assertion against `EXPECTED_SURFACE_VERSION` stays in lockstep.
 
-**Pass 6 result note (2026-04-25).** Step 23D landed cleanly with no production-bug surfacing. `reactivateCurrentFocusDestination` mirrors the shape of `transferFocusAfterMove`'s 3-step body (resolve → gate → transfer) with two distinguishing details: (1) it reads `cardId` from `store.getFirstResponderCardId()` and short-circuits on `null` rather than receiving an explicit cardId, and (2) the trace `site` tags are `"focus-transfer-reactivate"` / `"focus-transfer-reactivate-default"` so post-mortems can distinguish app-resume reactivations from drag-drop refocuses. The window-`blur` handler runs `store.invokeSaveCallback(fr, "window-blur")` BEFORE flipping `setHasFocus(false)` and the window-`focus` handler runs `reactivateCurrentFocusDestination(store)` AFTER `setHasFocus(true)` — both orderings matter (the gate reads `state.hasFocus`; flipping after the helper would refuse). Added `"window-blur"` to the `SaveCallbackSource` union so the trace marker the M04/M05 tests assert on is a typed citizen of the trace surface. Plan deviation: the originally-planned happy-dom unit tests in `focus-transfer.test.ts` / `deck-manager.test.ts` and the `selection-persistence-integration.test.tsx` extension are dropped — the project's happy-dom scoping rule prohibits focus / event-ordering across React renders in jsdom-class fakes, and the in-app M04/M05 tests are the natural regression gate. The plan's task-list checkboxes for those unit tests are marked SKIPPED with rationale rather than checked.
+**Pass 6 result note (2026-04-25).** Step 23D landed cleanly with no production-bug surfacing. `reactivateCurrentFocusDestination` mirrors the shape of `transferFocusAfterMove`'s 3-step body (resolve → gate → transfer) with two distinguishing details: (1) it reads `cardId` from `store.getFirstResponderCardId()` and short-circuits on `null` rather than receiving an explicit cardId, and (2) the trace `site` tags are `"focus-transfer-reactivate"` / `"focus-transfer-reactivate-default"` so post-mortems can distinguish app-resume reactivations from drag-drop refocuses. The window-`blur` handler runs `store.invokeSaveCallback(fr, "window-blur")` BEFORE flipping `setHasFocus(false)` and the window-`focus` handler runs `reactivateCurrentFocusDestination(store)` AFTER `setHasFocus(true)` — both orderings matter (the gate reads `state.hasFocus`; flipping after the helper would refuse). Added `"window-blur"` to the `SaveCallbackSource` union so the trace marker the AT0004/AT0005 tests assert on is a typed citizen of the trace surface. Plan deviation: the originally-planned happy-dom unit tests in `focus-transfer.test.ts` / `deck-manager.test.ts` and the `selection-persistence-integration.test.tsx` extension are dropped — the project's happy-dom scoping rule prohibits focus / event-ordering across React renders in jsdom-class fakes, and the in-app AT0004/AT0005 tests are the natural regression gate. The plan's task-list checkboxes for those unit tests are marked SKIPPED with rationale rather than checked.
 
 **Discipline rules.**
 
 - Every selection-plan pass closes with the in-app sweep + tugdeck unit tests + tugdeck typecheck (`bunx --bun tsc --noEmit`) all green. No "regression to chase later" is permitted.
 - Rapid-cadence variants run as part of the default `just test-in-app-fast` sweep — adding them to the sweep is part of Pass 2's checklist. A passing rapid-cadence file is the regression gate; do not flip its corresponding selection-plan checkpoint without it.
-- A pass that surfaces a real production bug (e.g. Pass 4's drag-cancel scenarios may surface coordinator-side races) MUST land the production fix in the same pass, paralleling Step 3b's pattern: the test exists to prove user-visible behavior is correct, not to prove the test framework is consistent. Production fix in its own commit; test rewrite in its own commit; doc note in `roadmap/m-series-reconciliation.md` if appropriate.
+- A pass that surfaces a real production bug (e.g. Pass 4's drag-cancel scenarios may surface coordinator-side races) MUST land the production fix in the same pass, paralleling Step 3b's pattern: the test exists to prove user-visible behavior is correct, not to prove the test framework is consistent. Production fix in its own commit; test rewrite in its own commit; doc note in `roadmap/at-series-reconciliation.md` if appropriate.
 - Harness-side passes (5, 7) follow `tugplan-harness-extensions.md`'s author notes verbatim. Any deviation discovered during implementation lands as an `**Author note (YYYY-MM-DD):**` block in the harness plan, mirroring how Step 3b documented its findings.
 - The "manual verification at rapid cadence" lines on Steps 23B/23C/23D's checkpoints are explicitly retired by Pass 2's automated files. Each of those checkboxes flips to "verified by `<rapid-cadence-test-file>`" once the corresponding production change lands and the file is green. Slow-cadence manual verification of new behavior (e.g. cmd-tab away and back for [A4]) stays manual until the test exists; once it does, it's gone.
 
@@ -1629,13 +1629,13 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 - [x] New `tugdeck/src/__tests__/focus-transfer.test.ts`: unit tests for `resolveActivationTarget` only (FC with saved `bag.focus` → `focus-element`; EM with registered callback → `dispatch-activated`; neither → `none`; unknown cardId → `none`). The three side-effecting entries throw; a single smoke test confirms they throw with informative messages.
 - [x] `deck-manager.test.ts`: new describe block covering the four store methods — last-wins registration, unregister clears, `peekCardHostRoot` returns `null` when unregistered, `invokeActivationCallback` no-ops silently.
 - [x] `use-card-persistence.test.tsx`: `T-P07e` (new) asserts that `store.invokeActivationCallback(cardId)` fires the registered `onCardActivated`; `T-P07f` (new) asserts that re-rendering with a different `onCardActivated` implementation updates what fires (ref-sync behavior).
-- [x] All existing tests continue to pass — Step 23's `card-host-activation-effect.test.tsx` and the three integration scenarios (M01/M03/M16) are unchanged and still green.
+- [x] All existing tests continue to pass — Step 23's `card-host-activation-effect.test.tsx` and the three integration scenarios (AT0001/AT0003/AT0016) are unchanged and still green.
 
 **Checkpoint:**
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green.
 - [x] Grep: `registerActivationCallback` and `registerCardHostRoot` have exactly one implementation each in `deck-manager.ts` and one mock-stub pattern in test files.
-- [x] No user-visible behavior change. [M01], [M03], [M16] pass at slow cadence via the in-app trusted-click sweep (2026-04-24, same state as end-of-Step-23).
+- [x] No user-visible behavior change. [AT0001], [AT0003], [AT0016] pass at slow cadence via the in-app trusted-click sweep (2026-04-24, same state as end-of-Step-23).
 
 ---
 
@@ -1645,7 +1645,7 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 
 **Commit:** `refactor(card-host): replace A3 React effect with synchronous focus-transfer`
 
-**References:** [A3](#a3-shared-activation-effect); [A8](#a8-focus-theft-gate); [L22](#); [L23](#); [L10](#); [M01](#m01-tab-switch-fc); [M03](#m03-pane-activation); [M16](#m16-tab-close-handoff); `pane-focus-controller.ts`, `tug-pane.tsx`, `deck-manager.ts`, `card-host.tsx`.
+**References:** [A3](#a3-shared-activation-effect); [A8](#a8-focus-theft-gate); [L22](#); [L23](#); [L10](#); [AT0001](#at0001-tab-switch-fc); [AT0003](#at0003-pane-activation); [AT0016](#at0016-tab-close-handoff); `pane-focus-controller.ts`, `tug-pane.tsx`, `deck-manager.ts`, `card-host.tsx`.
 
 **Purpose.** Close the rapid-cadence race on rows 1–3 of the trigger taxonomy. Retires the Step-23 `[A3]` `useLayoutEffect` and moves its responsibility into three synchronous call sites.
 
@@ -1671,7 +1671,7 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 **Tasks:**
 - [ ] Implement `transferFocusForActivation` in `focus-transfer.ts` with the options record (`{ outgoingCardId, incomingCardId, store, commitMutation?, outgoingWillBeDestroyed? }`). Import `flushSync` from `react-dom` and wrap `commitMutation?.()` so the React-commit guarantee holds regardless of whether the caller is inside or outside a React event handler.
 - [ ] Wire into `pane-focus-controller.ts`'s activation branch, passing `commitMutation: () => store.activateCard(pane.activeCardId)`.
-- [ ] Wire into `tug-pane.tsx#performSelectCard`, passing `commitMutation: () => store.setActiveCardInPane(paneId, newCardId)`. Verify the helper's internal `flushSync` triggers visibility flip BEFORE the focus call lands (this is what closes M01 correctly, given `card-host.tsx:1062`'s `display: "none"` for inactive cards).
+- [ ] Wire into `tug-pane.tsx#performSelectCard`, passing `commitMutation: () => store.setActiveCardInPane(paneId, newCardId)`. Verify the helper's internal `flushSync` triggers visibility flip BEFORE the focus call lands (this is what closes AT0001 correctly, given `card-host.tsx:1062`'s `display: "none"` for inactive cards).
 - [ ] Wire into `deck-manager.ts`'s `_removeCard` and `_closePane`, passing `commitMutation` as the flip-commit closure plus `outgoingWillBeDestroyed: true`.
 - [ ] Delete the `[A3]` `useLayoutEffect` and its supporting refs from `CardHost`.
 - [ ] `git mv card-host-activation-effect.test.tsx focus-transfer-call-sites.test.tsx`, then rewrite the body: the three existing scenarios dispatch through the real gesture source (simulated `pointerdown` on pane chrome; simulated click on a tab button; simulated click on the close button) instead of bare `setActiveCardInPane`. Add a rapid-cadence scenario (three activations back-to-back, no delay) proving no sibling-effect race. Add a visibility-flip scenario that mocks an inactive tab's content, dispatches a tab click, and asserts the incoming input receives focus (verifying the `flushSync` sandwich works — this is the regression gate for the `display: none` ordering issue).
@@ -1686,7 +1686,7 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 **Tests:**
 - [ ] `focus-transfer.test.ts`: fill in the behavior tests for `transferFocusForActivation` — save-before-transfer ordering (spy on `invokeSaveCallback`), same-card no-op, gate-refuses abort, single-atomic-transition (no observable `document.body` between save and focus).
 - [ ] `focus-transfer-call-sites.test.tsx` (rewritten from `card-host-activation-effect.test.tsx`): gesture-source wiring tests per the task above; rapid-cadence scenario.
-- [ ] `selection-persistence-integration.test.tsx`: the three Step-23 scenarios ([M01], [M03], [M16]) rewritten to dispatch through real gesture sources — tests become end-to-end proofs that each gesture source is wired.
+- [ ] `selection-persistence-integration.test.tsx`: the three Step-23 scenarios ([AT0001], [AT0003], [AT0016]) rewritten to dispatch through real gesture sources — tests become end-to-end proofs that each gesture source is wired.
 - [ ] Full suite green.
 
 **Checkpoint:**
@@ -1694,8 +1694,8 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 - [ ] `bun test` full suite green.
 - [ ] Grep: `useFocusDestination` has no production consumer under `tugdeck/src/components/`. (`src/deck-store-hooks.ts` exports it; `__tests__/use-focus-destination.test.tsx` tests it; nothing else.)
 - [ ] Grep: `canProgrammaticallyFocus` has exactly one production consumer, `focus-transfer.ts`. No call sites inside React components.
-- [ ] Manual verification at slow cadence: [M01], [M03], [M16] all pass.
-- [ ] **Manual verification at rapid cadence (<100 ms between clicks): [M01], [M03], [M16] all pass. This is the regression-closure gate for Step 23B; rapid-click failure blocks merge.**
+- [ ] Manual verification at slow cadence: [AT0001], [AT0003], [AT0016] all pass.
+- [ ] **Manual verification at rapid cadence (<100 ms between clicks): [AT0001], [AT0003], [AT0016] all pass. This is the regression-closure gate for Step 23B; rapid-click failure blocks merge.**
 
 ---
 
@@ -1705,7 +1705,7 @@ End-of-M-phase-2 will properly close once Step 23F lands plus the Pass 10 cleanu
 
 **Commit:** `refactor(card-host): route cross-pane drag through focus-transfer`
 
-**References:** [A3](#a3-shared-activation-effect); [A8](#a8-focus-theft-gate); [M06](#m06-cross-pane-em) (FC-half); [M07](#m07-card-detach) (FC-half); [M21](#m21-drag-aborted); [#step-11](#step-11); `card-drag-coordinator.ts`, `tug-pane.tsx`, `deck-manager.ts`, `card-host.tsx`.
+**References:** [A3](#a3-shared-activation-effect); [A8](#a8-focus-theft-gate); [AT0006](#at0006-cross-pane-em) (FC-half); [AT0007](#at0007-card-detach) (FC-half); [AT0021](#at0021-drag-aborted); [#step-11](#step-11); `card-drag-coordinator.ts`, `tug-pane.tsx`, `deck-manager.ts`, `card-host.tsx`.
 
 **Purpose.** Close row 4 of the trigger taxonomy — cross-pane drag and detach. Retires Step-11's cross-pane `[hostStackId]`-keyed `useLayoutEffect` (which has the same L22 exposure and the same 1-second-debounce brittleness as Step 23's `[A3]` effect had).
 
@@ -1748,7 +1748,7 @@ Without the cancel hook, a user who starts a drag and then presses Escape would 
 **Tests:**
 - [ ] `focus-transfer.test.ts`: add tests for `captureFocusForDragStart` (invokes save, does not mutate DOM focus) and `transferFocusAfterMove` (resolves and focuses the moved card's target after a simulated DOM re-parent).
 - [ ] `focus-transfer-call-sites.test.tsx`: add cross-pane drag-drop scenario (simulated pointerdown on pane chrome + coordinator's `_moveCardToPane` call) and drag-cancel scenarios — (a) Escape during drag, (b) `pointercancel` during drag. Assert focus is restored in both cases without any prior debounced save having fired.
-- [ ] `selection-persistence-integration.test.tsx`: add [M06] (FC-half) cross-pane drag scenario; assert focus + selection survive. Add [M21] drag-cancel scenarios covering both Escape and `pointercancel`; assert focus returns to the original input in each.
+- [ ] `selection-persistence-integration.test.tsx`: add [AT0006] (FC-half) cross-pane drag scenario; assert focus + selection survive. Add [AT0021] drag-cancel scenarios covering both Escape and `pointercancel`; assert focus returns to the original input in each.
 - [ ] `card-drag-coordinator.test.ts` (new file if not present; extend existing): assert `onDragCancel` fires for Escape and `pointercancel` paths. Assert the keydown listener is installed on `startDrag` and removed on `cleanup` (no leak between drags). Verify `onDragCancel` does NOT fire on a normal successful drop (the commit paths remain unchanged).
 - [ ] Grep test: Step-11's cross-pane `useLayoutEffect` identifier is gone from `card-host.tsx`. Grep for the marker comment `"Cross-pane-move focus effect"` (or equivalent unique phrase in that block) — must return zero hits. Do NOT grep for `hasMountedRef` alone; that identifier pattern may recur in other contexts.
 
@@ -1756,8 +1756,8 @@ Without the cancel hook, a user who starts a drag and then presses Escape would 
 - [ ] `bun x tsc --noEmit` exits 0.
 - [ ] `bun test` full suite green.
 - [ ] Grep: `applyFocusSnapshot` and `restoreCardDomSelection` have production call sites only from `focus-transfer.ts` and the `CardHost` mount-restore effect. No call sites in `useLayoutEffect`s keyed on `hostStackId`, `isActive`, or any activation-related value.
-- [ ] Manual verification at slow cadence: [M06] (FC-half — drag an FC card between panes), [M07] (drag a card out of a pane into a new standalone pane) all pass. [M21] (start a drag then press Escape) restores focus to the original pane's input.
-- [ ] **Manual verification at rapid cadence (cross-pane drag immediately after typing, no 1-second wait): [M06] (FC-half), [M07] all pass. [M21] drag-cancel via Escape at rapid cadence restores focus. This is the regression-closure gate for Step 23C; failure on any blocks merge.**
+- [ ] Manual verification at slow cadence: [AT0006] (FC-half — drag an FC card between panes), [AT0007] (drag a card out of a pane into a new standalone pane) all pass. [AT0021] (start a drag then press Escape) restores focus to the original pane's input.
+- [ ] **Manual verification at rapid cadence (cross-pane drag immediately after typing, no 1-second wait): [AT0006] (FC-half), [AT0007] all pass. [AT0021] drag-cancel via Escape at rapid cadence restores focus. This is the regression-closure gate for Step 23C; failure on any blocks merge.**
 
 ---
 
@@ -1787,22 +1787,22 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
 - [x] Implement `reactivateCurrentFocusDestination` in `focus-transfer.ts`.
 - [x] Extend the window `blur` listener in `deck-manager.ts#installDeckStoreFocusListeners` to invoke the current first responder's save callback BEFORE flipping `state.hasFocus = false`.
 - [x] Extend the window `focus` listener in the same module to call `reactivateCurrentFocusDestination(deckStore)` AFTER `setHasFocus(true)`.
-- [x] Author M04 / M05 in-app tests that drive real `simulateAppResign` / `simulateAppBecomeActive` / `simulateAppHide` / `simulateAppUnhide` against a seeded deck and assert the focus-restoration + value-preservation path end-to-end (see Author note 2026-04-25 — the happy-dom integration variant is dropped per the project's happy-dom scoping rule).
+- [x] Author AT0004 / AT0005 in-app tests that drive real `simulateAppResign` / `simulateAppBecomeActive` / `simulateAppHide` / `simulateAppUnhide` against a seeded deck and assert the focus-restoration + value-preservation path end-to-end (see Author note 2026-04-25 — the happy-dom integration variant is dropped per the project's happy-dom scoping rule).
 
 **Upholds:**
 - **[L22]** — the window `focus` listener is a direct DOM observer of a browser-level event; the helper call is a synchronous side-effect of that listener. No React cycle involved.
-- **[A4]** — the M-series architecture piece [A4] is implemented end-to-end at this step's commit.
+- **[A4]** — the AT-series architecture piece [A4] is implemented end-to-end at this step's commit.
 
 **Tests:**
-- [x] `tests/in-app/m04-app-resign-return.test.ts` — full resign/return cycle with trusted `simulateAppResign` / `simulateAppBecomeActive`; asserts (a) `save-callback` trace event with `source: "window-blur"` fires during resign, (b) input regains `document.activeElement` after the focus event, (c) value preserved.
-- [x] `tests/in-app/m05-app-hide-unhide.test.ts` — parallel to m04 via `simulateAppHide` / `simulateAppUnhide`.
+- [x] `tests/app-test/at0004-app-resign-return.test.ts` — full resign/return cycle with trusted `simulateAppResign` / `simulateAppBecomeActive`; asserts (a) `save-callback` trace event with `source: "window-blur"` fires during resign, (b) input regains `document.activeElement` after the focus event, (c) value preserved.
+- [x] `tests/app-test/at0005-app-hide-unhide.test.ts` — parallel to m04 via `simulateAppHide` / `simulateAppUnhide`.
 - [x] `bun test` (tugdeck) — full suite green (2412/2412); no regressions from the new save source or listener changes.
-- [ ] `focus-transfer.test.ts` / `deck-manager.test.ts` happy-dom unit additions: SKIPPED. Per the project's happy-dom scoping rule, focus / event-ordering across React renders is unreliable in jsdom-class fakes; the in-app M04/M05 tests are the regression gate. The resolver's pure decision tree continues to be covered in `focus-transfer.test.ts` from Step 23A; `reactivateCurrentFocusDestination` adds no new resolver branches.
+- [ ] `focus-transfer.test.ts` / `deck-manager.test.ts` happy-dom unit additions: SKIPPED. Per the project's happy-dom scoping rule, focus / event-ordering across React renders is unreliable in jsdom-class fakes; the in-app AT0004/AT0005 tests are the regression gate. The resolver's pure decision tree continues to be covered in `focus-transfer.test.ts` from Step 23A; `reactivateCurrentFocusDestination` adds no new resolver branches.
 
 **Checkpoint:**
 - [x] `bun x tsc --noEmit` exits 0.
 - [x] `bun test` full suite green (tugdeck: 2412/2412).
-- [x] **In-app verification at rapid cadence:** drift-prevention cycle landed — reverted both listener changes, confirmed M04 + M05 fail at the `save-callback` trace assertion (window-blur source absent), restored, confirmed both pass. Manual Cmd-Tab cycle is now subsumed by the automated tests.
+- [x] **In-app verification at rapid cadence:** drift-prevention cycle landed — reverted both listener changes, confirmed AT0004 + AT0005 fail at the `save-callback` trace assertion (window-blur source absent), restored, confirmed both pass. Manual Cmd-Tab cycle is now subsumed by the automated tests.
 
 ---
 
@@ -1812,7 +1812,7 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
 
 **Commit:** `feat(engine-cards): implement onCardActivated for engine reactivation`
 
-**References:** [A2](#a2-on-card-activated); [A3](#a3-shared-activation-effect); [M02](#m02-tab-switch-em); [M06](#m06-cross-pane-em) (EM-half); [M07](#m07-card-detach) (EM-half); [M09](#m09-inactive-mount); `tide-card.tsx`, `tug-prompt-input.tsx`, `gallery-prompt-entry.tsx` (and any other EM-flavored factory surfaced during implementation).
+**References:** [A2](#a2-on-card-activated); [A3](#a3-shared-activation-effect); [AT0002](#at0002-tab-switch-em); [AT0006](#at0006-cross-pane-em) (EM-half); [AT0007](#at0007-card-detach) (EM-half); [AT0009](#at0009-inactive-mount); `tide-card.tsx`, `tug-prompt-input.tsx`, `gallery-prompt-entry.tsx` (and any other EM-flavored factory surfaced during implementation).
 
 **Purpose.** Close row 6 of the trigger taxonomy — EM card activations. With the helper infrastructure in place and the gesture sources wired (23A–23D), EM content factories opt in to `onCardActivated` so their engine root re-focuses when the card becomes the destination. Also retire any legacy engine-internal refocus code that existed because the framework didn't provide this callback — at this step's commit, the framework fully provides it.
 
@@ -1828,7 +1828,7 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
   The engine's existing `setSelectedRange` behavior (focus-first, per [#step-11](#step-11)) means the engine republishes its selection on focus, which flows through the Step 3/4 `onSelectionChanged` → `selectionGuard.updateCardDomSelection` → paint chain. Paint re-lights automatically; no extra wiring needed.
 - **Scope:** at minimum, `tide-card.tsx`, `tug-prompt-input.tsx`, and `gallery-prompt-entry.tsx`. Any other EM-flavored factory discovered during implementation gets the same pattern. Audit: `grep` for factories that call `useCardPersistence` with an `onSave` that returns a `TugTextEditingState`-shaped object.
 - **Retire redundant refocus paths.** Any engine-internal code that does a `.root.focus()` from a mount effect or from a `bag.content !== undefined` branch of CardHost now has the helper as the single authority. Delete or consolidate. This is the concrete work the original Step 24 described as "retire redundant refocus paths"; at Step 23E's commit, the helper is the only path.
-- **[M09] inactive-at-mount EM card.** When an engine mounts in an inactive tab (`display: none`), the engine's `setSelectedRange` focus call silently fails (dev-warn already installed earlier in the plan). On user-activate the tab, `transferFocusForActivation` (Step 23B) fires and `resolveActivationTarget` returns `dispatch-activated`; the callback calls `engine.root.focus(...)` on the now-visible subtree. Paint lights up. Verified by integration test; no additional code beyond this step's callbacks.
+- **[AT0009] inactive-at-mount EM card.** When an engine mounts in an inactive tab (`display: none`), the engine's `setSelectedRange` focus call silently fails (dev-warn already installed earlier in the plan). On user-activate the tab, `transferFocusForActivation` (Step 23B) fires and `resolveActivationTarget` returns `dispatch-activated`; the callback calls `engine.root.focus(...)` on the now-visible subtree. Paint lights up. Verified by integration test; no additional code beyond this step's callbacks.
 - **Install the deferred `_flipFirstResponder` dev-only assertion (per audit P1, carried forward from Step 23B).** By this step every caller of `_flipFirstResponder` has a fully-wired sibling path through the helper: rows 1–3 via `transferFocusForActivation` (23B), row 4 via `transferFocusAfterMove` (23C), row 5 via `reactivateCurrentFocusDestination` (23D), and row 6 via the EM `onCardActivated` registrations in this step. Fresh-card creation paths (`_addCardToPane`, `addCard`) resolve to `kind: "none"` (no saved bag), so they naturally satisfy the assertion. Implementation approach:
   1. Add a module-scope `dragRefocusPendingRef: { current: Set<cardId> }` set in `deck-manager.ts` (or an equivalent transient marker). The drag coordinator marks a cardId as "refocus-pending" from drag-start (`captureFocusForDragStart`) until `transferFocusAfterMove` completes. `_flipFirstResponder` skips its assertion when `dragRefocusPendingRef.current.has(newFR)`.
   2. Inside `_flipFirstResponder`, when `oldFR !== newFR` and `newFR !== null` and `!dragRefocusPendingRef.current.has(newFR)` and `!isFreshlyConstructed(newFR)`: compute `resolveActivationTarget(newFR, this)`. If `kind === "focus-element"` AND `document.activeElement` is not inside `store.peekCardHostRoot(newFR)`, `isDevEnv()`-guarded `console.warn` with the caller name (derived from `new Error().stack` top frame or a passed tag argument — implementer's choice, documented in the landed code). A flip that bypasses the helper is a dev-time bug; this assertion catches future regressions.
@@ -1848,26 +1848,26 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
 - **[L10]** — content factories own their engine-root focus; the framework owns when to dispatch the callback. Ownership boundaries hold.
 
 **Tests:** (per the project's happy-dom scoping rule, EM scenarios moved from `selection-persistence-integration.test.tsx` to dedicated in-app tests)
-- [x] `tests/in-app/m02-tab-switch-em.test.ts` — EM intra-pane tab switch. Two parameterized tests over `gallery-prompt-input` (TugPromptInput direct) and `gallery-prompt-entry` (TugPromptEntry, what tide-card uses). Both pass: text preserved + focus returns to engine root + `engine-activation-dispatched` event with `transfer-for-activation` tag.
-- [x] `tests/in-app/m06-em-cross-pane.test.ts` — EM cross-pane drag. Two parameterized tests. Both pass: text preserved + `engine-activation-dispatched` event with `transfer-after-move` tag fires. **Focus-actually-landing assertion intentionally omitted** — see Author note (gap 3 of Step 23F).
-- [x] `tests/in-app/m07-em-card-detach.test.ts` — EM card detach. Two parameterized tests. Both pass; same shape as m06-em.
-- [x] `tests/in-app/m09-em-inactive-mount.test.ts` — EM inactive-at-mount → activate via tab click. Two parameterized tests over the saved-state path (pre-cooked `bag.content`); the fresh-card path is deliberately deferred to Step 23F (gap 2). Both pass: `engine-activation-dispatched` event fires + focus + seeded text restored.
+- [x] `tests/app-test/at0002-tab-switch-em.test.ts` — EM intra-pane tab switch. Two parameterized tests over `gallery-prompt-input` (TugPromptInput direct) and `gallery-prompt-entry` (TugPromptEntry, what tide-card uses). Both pass: text preserved + focus returns to engine root + `engine-activation-dispatched` event with `transfer-for-activation` tag.
+- [x] `tests/app-test/at0006-em-cross-pane.test.ts` — EM cross-pane drag. Two parameterized tests. Both pass: text preserved + `engine-activation-dispatched` event with `transfer-after-move` tag fires. **Focus-actually-landing assertion intentionally omitted** — see Author note (gap 3 of Step 23F).
+- [x] `tests/app-test/at0007-em-card-detach.test.ts` — EM card detach. Two parameterized tests. Both pass; same shape as at0006-em.
+- [x] `tests/app-test/at0009-em-inactive-mount.test.ts` — EM inactive-at-mount → activate via tab click. Two parameterized tests over the saved-state path (pre-cooked `bag.content`); the fresh-card path is deliberately deferred to Step 23F (gap 2). Both pass: `engine-activation-dispatched` event fires + focus + seeded text restored.
 - [ ] Grep tests for ad-hoc `engine.root.focus()` sites. **DEFERRED** alongside the grep-audit task above.
 - [ ] `_flipFirstResponder` dev-only assertion. **DEFERRED** to a Pass 10 cleanup.
-- [x] Full default sweep green: 18/18 (added m02-tab-switch-em, m06-em-cross-pane, m07-em-card-detach, m09-em-inactive-mount to `just test-in-app-fast`'s default FILES list).
+- [x] Full default sweep green: 18/18 (added at0002-tab-switch-em, at0006-em-cross-pane, at0007-em-card-detach, at0009-em-inactive-mount to `just test-in-app-fast`'s default FILES list).
 
 **Checkpoint:**
-- [x] `bun x tsc --noEmit` exits 0 (tugdeck + tests/in-app).
+- [x] `bun x tsc --noEmit` exits 0 (tugdeck + tests/app-test).
 - [x] `bun test` (tugdeck) full suite green: 2412/2412.
 - [x] In-app default sweep: 18/18 green.
-- [ ] **End of M-phase 2 — REVISED.** The M-series transitions FC-half [M01], [M03], [M04], [M05], [M06] (FC-half), [M07] (FC-half), [M16], [M21] are closed at rapid cadence. EM-half [M02], [M06]-EM, [M07]-EM, and saved-state [M09] are closed for the dispatch-wiring contract (`engine-activation-dispatched` events fire correctly), but three related EM-card focus gaps remain open and are tracked under [Step 23F](#step-23f): cold-boot selection paint, fresh-EM-card resolver mis-classification, and EM focus-after-cross-pane-move. The deferred `_flipFirstResponder` dev assertion is moved to a Pass 10 cleanup. End-of-M-phase-2 will properly close once Step 23F lands and the deferred items follow.
+- [ ] **End of M-phase 2 — REVISED.** The AT-series transitions FC-half [AT0001], [AT0003], [AT0004], [AT0005], [AT0006] (FC-half), [AT0007] (FC-half), [AT0016], [AT0021] are closed at rapid cadence. EM-half [AT0002], [AT0006]-EM, [AT0007]-EM, and saved-state [AT0009] are closed for the dispatch-wiring contract (`engine-activation-dispatched` events fire correctly), but three related EM-card focus gaps remain open and are tracked under [Step 23F](#step-23f): cold-boot selection paint, fresh-EM-card resolver mis-classification, and EM focus-after-cross-pane-move. The deferred `_flipFirstResponder` dev assertion is moved to a Pass 10 cleanup. End-of-M-phase-2 will properly close once Step 23F lands and the deferred items follow.
 
 **Plan-doc updates (apply during 23E's commit):**
 - `[A3]` section ([#a3-shared-activation-effect](#a3-shared-activation-effect)) updated to describe the helper-based implementation: "one synchronous helper invoked at every activation gesture source" replaces "one `useLayoutEffect` in `CardHost`." The `closes` list is unchanged.
 - `[A4]` section ([#a4-app-lifecycle-activation](#a4-app-lifecycle-activation)) updated to describe the implementation as the window `blur` → save + window `focus` → `reactivateCurrentFocusDestination` pair inside `installDeckStoreFocusListeners`, not the earlier `observeApplicationDidBecomeActive`-style coordinator wording.
 - Step 11's in-session cross-pane refocus gets a trailing note pointing at Steps 23A–23C; its mount-time portion is explicitly retained.
 - Step 23's retrospective notes that the Step-23 `[A3]` landed as a React effect and that Steps 23A–23E moved the implementation out of React to satisfy [L22] / [L23] after a sibling-effect ordering race was observed at rapid gesture cadence.
-- Architecture coverage matrix ([#architecture-coverage](#architecture-coverage)) [M06] and [M07] rows get explicit "(FC-half: Step 23C / EM-half: Step 23E)" annotations to match the References updates in those steps.
+- Architecture coverage matrix ([#architecture-coverage](#architecture-coverage)) [AT0006] and [AT0007] rows get explicit "(FC-half: Step 23C / EM-half: Step 23E)" annotations to match the References updates in those steps.
 - The "End of M-phase 2" summary in Step 23E's checkpoint replaces the previous version that referenced Step 24.
 
 ---
@@ -1886,7 +1886,7 @@ This step is deliberately independent of Step 23C: app-lifecycle refocus touches
 
 (2) **Fresh-EM-card resolver mis-classification.** Pass 8 (Step 23E) in-app testing: a fresh, never-saved EM card activated via tab-click lands focus on the FIRST focusable element in the card (e.g., `gallery-prompt-input`'s "Insert Atom" toolbar button), NOT the contenteditable editor. The `resolveActivationTarget` discriminator (`bag.content !== undefined`) gates whether the resolver returns `dispatch-activated` (correct EM behavior, fires `onCardActivated`) or falls through to `default-focus` (walks `DEFAULT_FOCUS_SELECTORS`, where `button:not([disabled])` matches before `[contenteditable="true"]`). Fresh EM cards hit the default-focus branch and end up with toolbar focus.
 
-(3) **EM focus-after-cross-pane-move doesn't stick.** Pass 8 in-app testing of M06-EM / M07-EM: after dragging an EM card to another pane (or detaching to a new standalone pane), the trace event `engine-activation-dispatched` with `dispatchedFrom: "transfer-after-move"` fires (verifying `onCardActivated` ran), but `document.activeElement` ends up as `BODY`, not the engine root. The `engine.root.focus({ preventScroll: true })` call inside `onCardActivated` no-ops on the freshly re-mounted contenteditable. Likely cause: `transferFocusAfterMove` runs synchronously from `_moveCardToPane` / `_detachCard` after `notify()`, but the new TugPromptInput's mount-time `useLayoutEffect` engine init has not yet established a stable focus target — `.focus()` on a DOM node whose ancestor was just removed-and-re-attached can silently no-op on WebKit. The engine state is preserved (re-mount applies the saved bag.content correctly); only the focus is lost.
+(3) **EM focus-after-cross-pane-move doesn't stick.** Pass 8 in-app testing of AT0006-EM / AT0007-EM: after dragging an EM card to another pane (or detaching to a new standalone pane), the trace event `engine-activation-dispatched` with `dispatchedFrom: "transfer-after-move"` fires (verifying `onCardActivated` ran), but `document.activeElement` ends up as `BODY`, not the engine root. The `engine.root.focus({ preventScroll: true })` call inside `onCardActivated` no-ops on the freshly re-mounted contenteditable. Likely cause: `transferFocusAfterMove` runs synchronously from `_moveCardToPane` / `_detachCard` after `notify()`, but the new TugPromptInput's mount-time `useLayoutEffect` engine init has not yet established a stable focus target — `.focus()` on a DOM node whose ancestor was just removed-and-re-attached can silently no-op on WebKit. The engine state is preserved (re-mount applies the saved bag.content correctly); only the focus is lost.
 
 Gaps (2) and (3) share the same root: **fresh EM cards / freshly re-mounted EM cards are not robustly classified or focused by the activation pipeline.** Gap (1) shares the family: cold-boot is structurally a fresh-mount scenario for the engine. Step 23F addresses all three — fresh cards must dispatch through `onCardActivated` even without bag.content, the cold-boot data-roundtrip for selection paint must reach the live DOM after the card becomes visible, AND the `transferFocusAfterMove` → `onCardActivated` → `.focus()` chain must produce stable focus on the re-mounted contenteditable.
 
@@ -1917,16 +1917,16 @@ The implementer's call: try (5) first (clean architectural fix; fixes fresh-card
   - If (3) hasFocus race: defer the selection apply until `document.hasFocus() === true` OR until the first `window.focus` event fires. Implement as a one-shot `pendingSelectionRestoreRef` on the engine; check on `window.focus` and re-apply if pending.
   - If (4) engine-not-ready: hoist the `pendingRestoreRef`-style buffering into TugPromptEntry's `onRestore` so a missing engine on first call gets re-applied when the engine reports ready.
 - **In-app smokes** (all new, all permanent, all added to the default `just test-in-app-fast` sweep):
-  - `tests/in-app/m32-em-cold-boot-selection.test.ts` — gap 1. Seeds a deck via `seedDeckState` with a `gallery-prompt-entry` card carrying a pre-cooked `bag.content` whose `perRoute[currentRoute].selection` is non-null; activates the card; awaits `engine-ready`; reads `getEmCardState(cardId).engineSelection`; asserts it matches the seeded value.
-  - `tests/in-app/m33-em-fresh-card-activation.test.ts` — gap 2. Seeds two cards (FC active, EM inactive) with NO `bag.content` for the EM card; activates the EM tab; asserts `engine-activation-dispatched` fires AND `document.activeElement` is the contenteditable (not a sibling toolbar button). Parameterized over `gallery-prompt-input` and `gallery-prompt-entry`.
-  - `tests/in-app/m34-em-focus-after-move.test.ts` — gap 3. Re-runs `m06-em-cross-pane`'s drag and `m07-em-card-detach`'s detach scenarios but tightens the assertion: after the move, `document.activeElement` MUST be inside the engine's contenteditable, not BODY. Currently `m06-em-cross-pane` and `m07-em-card-detach` (landed in Pass 8 / Step 23E) deliberately omit the focus-actually-landing assertion; this test is the regression gate for 23F's gap-3 fix.
+  - `tests/app-test/at0032-em-cold-boot-selection.test.ts` — gap 1. Seeds a deck via `seedDeckState` with a `gallery-prompt-entry` card carrying a pre-cooked `bag.content` whose `perRoute[currentRoute].selection` is non-null; activates the card; awaits `engine-ready`; reads `getEmCardState(cardId).engineSelection`; asserts it matches the seeded value.
+  - `tests/app-test/at0033-em-fresh-card-activation.test.ts` — gap 2. Seeds two cards (FC active, EM inactive) with NO `bag.content` for the EM card; activates the EM tab; asserts `engine-activation-dispatched` fires AND `document.activeElement` is the contenteditable (not a sibling toolbar button). Parameterized over `gallery-prompt-input` and `gallery-prompt-entry`.
+  - `tests/app-test/at0034-em-focus-after-move.test.ts` — gap 3. Re-runs `at0006-em-cross-pane`'s drag and `at0007-em-card-detach`'s detach scenarios but tightens the assertion: after the move, `document.activeElement` MUST be inside the engine's contenteditable, not BODY. Currently `at0006-em-cross-pane` and `at0007-em-card-detach` (landed in Pass 8 / Step 23E) deliberately omit the focus-actually-landing assertion; this test is the regression gate for 23F's gap-3 fix.
 - **Activation taxonomy update.** Update the row-7 entry in [#activation-trigger-taxonomy](#activation-trigger-taxonomy) to no longer say "unchanged; not in Steps 23A–23E"; instead, point at Step 23F as the row-7 fix site. Add a one-line note at the top of the Step Breakdown subsection: "[Step 23F](#step-23f) — Cold-boot EM-card selection paint. Closes a gap surfaced by manual verification of tide-card after [Step 23E](#step-23e) landed."
 
 **Tasks:**
-- [x] Gap 2 (fresh-card resolver): chose option (5) registry-tag-based. Added `engineKind?: "em"` to `CardRegistration`; `gallery-prompt-input`, `gallery-prompt-entry`, and `tide` declare it. `resolveActivationTarget` consults `registration.engineKind` before the `bag.content !== undefined` heuristic. Forward-regression-gated by `m33-em-fresh-card-activation.test.ts` (2 tests, both factories).
+- [x] Gap 2 (fresh-card resolver): chose option (5) registry-tag-based. Added `engineKind?: "em"` to `CardRegistration`; `gallery-prompt-input`, `gallery-prompt-entry`, and `tide` declare it. `resolveActivationTarget` consults `registration.engineKind` before the `bag.content !== undefined` heuristic. Forward-regression-gated by `at0033-em-fresh-card-activation.test.ts` (2 tests, both factories).
 - [x] Gap 1 (cold-boot selection): added `cold-boot-restore-snapshot` and `engine-restore-applied` deck-trace events; instrumented CardHost and both EM factories. Diagnosis: `selectionApplied={start:0,end:5}` but `domSelectionAfter=null` — engine's `setSelectedRange` ran on a detached portal slot. Root cause: `onRestore` fired from `registerPersistenceCallbacks` which is called from a child's `useLayoutEffect`, BEFORE the parent CardPortal's effect could `host.appendChild(slot)`. None of the four original triage candidates (save-time-null / WebKit-quirk / hasFocus-race / engine-not-ready) matched — the actual cause was a fifth candidate (portal-slot detached at restore time) that the L04 ready-callback pattern resolves cleanly. **Fix**: defer the restore call to a CardHost-owned post-attach `useLayoutEffect`.
 - [x] Gap 3 (focus-after-cross-pane-move): incidentally closed by gap-1's restructure. m34 verified (4 tests, both factories × cross-pane drag + detach scenarios).
-- [x] Author `m32-em-cold-boot-selection.test.ts`, `m33-em-fresh-card-activation.test.ts`, `m34-em-focus-after-move.test.ts`. All three added to the default sweep.
+- [x] Author `at0032-em-cold-boot-selection.test.ts`, `at0033-em-fresh-card-activation.test.ts`, `at0034-em-focus-after-move.test.ts`. All three added to the default sweep.
 - [x] Drift-prevention cycle: gap-2 verified (revert resolver branch → m33 fails → restore → green); gap-1 verified (revert CardHost defer → m32 + m34 fail → restore → green).
 - [x] Plan-doc: row-7 taxonomy entry updated; Step 23F checkboxes flipped; Pass 9 result note added matching the shape of prior result notes.
 
@@ -1935,15 +1935,15 @@ The implementer's call: try (5) first (clean architectural fix; fixes fresh-card
 - **[L23]** — selection captured at quit time must round-trip cleanly. If the issue is save-time `null`, the fix is in the capture path, not the restore path.
 
 **Tests:**
-- [x] `tests/in-app/m32-em-cold-boot-selection.test.ts` exits 0 in default sweep.
-- [x] `tests/in-app/m33-em-fresh-card-activation.test.ts` exits 0 in default sweep.
-- [x] `tests/in-app/m34-em-focus-after-move.test.ts` exits 0 in default sweep.
+- [x] `tests/app-test/at0032-em-cold-boot-selection.test.ts` exits 0 in default sweep.
+- [x] `tests/app-test/at0033-em-fresh-card-activation.test.ts` exits 0 in default sweep.
+- [x] `tests/app-test/at0034-em-focus-after-move.test.ts` exits 0 in default sweep.
 - [ ] Manual verification: type and select inside a tide card; quit Tug.app; relaunch; assert visible selection paint shows the same span. (User-side verification step.)
-- [x] `bun test` (tugdeck) full suite green: 2414/2414. `bun x tsc --noEmit` exits 0 (tugdeck + tests/in-app).
+- [x] `bun test` (tugdeck) full suite green: 2414/2414. `bun x tsc --noEmit` exits 0 (tugdeck + tests/app-test).
 
 **Checkpoint:**
 - [x] In-app smoke green: 21/21 default sweep files (38 tests including the three new gap-gates).
-- [x] No regression at any existing M-series scenario.
+- [x] No regression at any existing AT-series scenario.
 - [ ] Manual verification (user-side, see Tests above).
 
 **Why this isn't 23E.** Step 23E is row 6 (runtime EM activation via `onCardActivated`). Cold-boot is row 7 — different mechanism, different mount-time effect site. Bundling them into one step would hide the cold-boot fix's distinct test, distinct trace events, and distinct revert-to-red diagnostic path under a step whose primary commit is about a different concern. Keeping 23F separate keeps the bisect crisp if either change regresses.
@@ -1976,8 +1976,8 @@ The OS already removes focus from the WKWebView when the app resigns active — 
 2. **Secondary**: route the delegate's `focus()` and `TugPromptInputPersistence.onCardActivated` through `engine.setSelectedRange` for WebKit-safe focus-then-select ordering.
 
 **Artifacts:**
-- `tests/in-app/m35-em-app-switch-selection.test.ts` — selection survives `simulateAppResign` + `simulateAppBecomeActive` for both `gallery-prompt-input` and `gallery-prompt-entry`. Forward regression gate. Added to default sweep.
-- `tests/in-app/m35-tide-app-switch-selection.test.ts` — tide-card-specific stress test (10 iterations × 2-second blur dwell per iteration). Reproduced the bug pre-fix; deterministic green post-fix. Added to default sweep.
+- `tests/app-test/at0035-em-app-switch-selection.test.ts` — selection survives `simulateAppResign` + `simulateAppBecomeActive` for both `gallery-prompt-input` and `gallery-prompt-entry`. Forward regression gate. Added to default sweep.
+- `tests/app-test/at0035-tide-app-switch-selection.test.ts` — tide-card-specific stress test (10 iterations × 2-second blur dwell per iteration). Reproduced the bug pre-fix; deterministic green post-fix. Added to default sweep.
 
 **Harness extensions required to test tide-card.**
 1. **Test-mode `feedsReady` bypass** in `CardHost`. Tide's content factory would otherwise wait on a live tugcast/tugcode/Claude pipeline before rendering. When `window.__tugTestMode === true`, the gate is bypassed and the contentFactory mounts immediately. Production behavior is unchanged.
@@ -1993,9 +1993,9 @@ The OS already removes focus from the WKWebView when the app resigns active — 
 - [x] Add `__tug.getHasFocus()` test-surface getter and use it in `simulateAppResign` / `simulateAppBecomeActive` to wait for JS-side blur/focus events.
 - [x] Add `__tug.bindTideSession(cardId, options?)` test-surface helper to skip past tide's project-picker.
 - [x] Bypass `feedsReady` gate in `CardHost` when `window.__tugTestMode === true`.
-- [x] Author `m35-em-app-switch-selection.test.ts` and `m35-tide-app-switch-selection.test.ts`. Stress-loop confirmed deterministic green (3 × 10-iteration runs each).
+- [x] Author `at0035-em-app-switch-selection.test.ts` and `at0035-tide-app-switch-selection.test.ts`. Stress-loop confirmed deterministic green (3 × 10-iteration runs each).
 - [x] Add both tests to the default sweep.
-- [x] Drift-prevention verified: revert .blur() removal → m35-tide fails within 2 iterations; restore → green.
+- [x] Drift-prevention verified: revert .blur() removal → at0035-tide fails within 2 iterations; restore → green.
 - [ ] User-side manual verification: tide-card cmd-tab cycle no longer intermittently collapses the selection.
 
 **Upholds:**
@@ -2003,14 +2003,14 @@ The OS already removes focus from the WKWebView when the app resigns active — 
 - **L10** — focus-and-selection authority remains the engine's; the delegate forwards rather than duplicating focus logic.
 
 **Tests:**
-- [x] `tests/in-app/m35-em-app-switch-selection.test.ts` exits 0 in default sweep (gallery-prompt-input + gallery-prompt-entry).
-- [x] `tests/in-app/m35-tide-app-switch-selection.test.ts` exits 0 in default sweep (tide stress-loop with 2s blur dwell).
+- [x] `tests/app-test/at0035-em-app-switch-selection.test.ts` exits 0 in default sweep (gallery-prompt-input + gallery-prompt-entry).
+- [x] `tests/app-test/at0035-tide-app-switch-selection.test.ts` exits 0 in default sweep (tide stress-loop with 2s blur dwell).
 - [x] `bun test` (tugdeck): 2414/2414 green.
-- [x] `bun x tsc --noEmit` exits 0 (tugdeck + tests/in-app).
+- [x] `bun x tsc --noEmit` exits 0 (tugdeck + tests/app-test).
 
 **Checkpoint:**
 - [x] In-app smoke green: 23/23 default sweep files.
-- [x] No regression at any existing M-series scenario.
+- [x] No regression at any existing AT-series scenario.
 - [ ] Manual verification (user-side, see Tasks above).
 
 **Why this isn't 23F.** Step 23F closes cold-boot and cross-pane move (rows 6/7); both involve fresh or freshly-re-mounted contenteditables where the slot was detached. Step 23G is row 5 (app-lifecycle reactivation) where the slot stays attached and the engine state is intact — only the focus call's interaction with the pre-existing selection is the failure mode. Different gesture, different code path, different fix shape; bundling would hide the regression-bisect signal.
@@ -2035,63 +2035,63 @@ When Steps 23A–23E were authored, these two pieces split along their natural f
 
 #### Step 25: M-phase 4–10 execution strategy {#step-25}
 
-**Status:** Authored 2026-04-25. Sub-steps 25A–25L close the remaining M-tags.
+**Status:** Authored 2026-04-25. Sub-steps 25A–25L close the remaining AT-tags.
 
-**Why this step exists.** Steps 23A–23G closed M-phase 2 + M-phase 3 — every runtime activation trigger (intra-pane, pane-chrome, tab-close, cross-pane drag, app resign / focus, EM activations, cold-boot, cmd-tab) routes through the synchronous `focus-transfer.ts` module, EM cards register `onCardActivated`, and selection round-trips deterministically through cold-boot, cross-pane move, and cmd-tab away/back. The M-tags closed are: [M01], [M02], [M03], [M04], [M05], [M06], [M07], [M09], [M16], [M21] (full); [M24] (foundation, [A9] shipped; per-component opt-ins remaining); [M11] (not-a-feature, closed informationally).
+**Why this step exists.** Steps 23A–23G closed M-phase 2 + M-phase 3 — every runtime activation trigger (intra-pane, pane-chrome, tab-close, cross-pane drag, app resign / focus, EM activations, cold-boot, cmd-tab) routes through the synchronous `focus-transfer.ts` module, EM cards register `onCardActivated`, and selection round-trips deterministically through cold-boot, cross-pane move, and cmd-tab away/back. The AT-tags closed are: [AT0001], [AT0002], [AT0003], [AT0004], [AT0005], [AT0006], [AT0007], [AT0009], [AT0016], [AT0021] (full); [AT0024] (foundation, [A9] shipped; per-component opt-ins remaining); [AT0011] (not-a-feature, closed informationally).
 
-What's left maps to seven distinct architectural concerns, each scoped tight enough to land in 1–2 commits with the harness as the regression gate. The harness now has tide-card support (`bindTideSession`, test-mode `feedsReady` bypass) plus app-lifecycle simulation, native-event gestures, EM-card observation, and tugcode subprocess lifecycle — every remaining M-tag has an automation surface.
+What's left maps to seven distinct architectural concerns, each scoped tight enough to land in 1–2 commits with the harness as the regression gate. The harness now has tide-card support (`bindTideSession`, test-mode `feedsReady` bypass) plus app-lifecycle simulation, native-event gestures, EM-card observation, and tugcode subprocess lifecycle — every remaining AT-tag has an automation surface.
 
-**Remaining M-tags by bucket.**
+**Remaining AT-tags by bucket.**
 
 | Sub-step | Closes | Dependency | Architecture piece |
 |---|---|---|---|
-| [25A](#step-25a) | [M14], [M17], [M18], [M19], [M20], [M22], [M23] | none | (audit + verify) |
-| [25B](#step-25b) | [M10] | [A9] (done) | [A5] markdown-view publish |
-| [25C](#step-25c) | [M19] (audit half) | [25A](#step-25a) finding | [A7] unified flush gate |
-| [25C.2](#step-25c2) | [M10] cold-boot, [M14] cold-boot (re-opens) | [25B](#step-25b) (landed) | two-process harness + cold-boot debug |
-| [25D](#step-25d) | [M27] subset (layout state), [M30] subset (virtual focus on tab-bar / option-group) | [A9] (done) | [A9d] component opt-in batch 1 |
-| [25E](#step-25e) | [M30] (remainder), [M27] subset | [A9] (done) | [A9d] component opt-in batch 2 |
-| [25F](#step-25f) | [M26] (overlay policy + opt-in) | [A9] (done), [25E](#step-25e) | [A9d] component opt-in batch 3 |
-| [25G](#step-25g) | [M31] (`tug-prompt-entry` route + toolsOpen), [M25] (closure) | [A9] (done), [25F](#step-25f) | [A9d] component opt-in batch 4 |
-| [25H](#step-25h) | [M29] (scroll-key audit) | parallel-safe with 25D–G | (audit) |
-| [25I](#step-25i) | [M28] (banner / bulletin dismiss) | independent | user-prefs store |
-| [25J](#step-25j) | [M12] (IME) | platform research first | [A6] `bag.markedText` |
+| [25A](#step-25a) | [AT0014], [AT0017], [AT0018], [AT0019], [AT0020], [AT0022], [AT0023] | none | (audit + verify) |
+| [25B](#step-25b) | [AT0010] | [A9] (done) | [A5] markdown-view publish |
+| [25C](#step-25c) | [AT0019] (audit half) | [25A](#step-25a) finding | [A7] unified flush gate |
+| [25C.2](#step-25c2) | [AT0010] cold-boot, [AT0014] cold-boot (re-opens) | [25B](#step-25b) (landed) | two-process harness + cold-boot debug |
+| [25D](#step-25d) | [AT0027] subset (layout state), [AT0030] subset (virtual focus on tab-bar / option-group) | [A9] (done) | [A9d] component opt-in batch 1 |
+| [25E](#step-25e) | [AT0030] (remainder), [AT0027] subset | [A9] (done) | [A9d] component opt-in batch 2 |
+| [25F](#step-25f) | [AT0026] (overlay policy + opt-in) | [A9] (done), [25E](#step-25e) | [A9d] component opt-in batch 3 |
+| [25G](#step-25g) | [AT0031] (`tug-prompt-entry` route + toolsOpen), [AT0025] (closure) | [A9] (done), [25F](#step-25f) | [A9d] component opt-in batch 4 |
+| [25H](#step-25h) | [AT0029] (scroll-key audit) | parallel-safe with 25D–G | (audit) |
+| [25I](#step-25i) | [AT0028] (banner / bulletin dismiss) | independent | user-prefs store |
+| [25J](#step-25j) | [AT0012] (IME) | platform research first | [A6] `bag.markedText` |
 | [25K](#step-25k) | Pass 10 cleanup deferred from [Step 23E](#step-23e) | [Step 23G](#step-23g) (done) | grep-audit + `_flipFirstResponder` dev assertion |
-| [25L](#step-25l) | [M13] (integration test fill-in), [M15] (legacy API delete), Step NN doc pass | all preceding sub-steps | final cleanup |
+| [25L](#step-25l) | [AT0013] (integration test fill-in), [AT0015] (legacy API delete), Step NN doc pass | all preceding sub-steps | final cleanup |
 
-**Sequencing.** 25A first — its audits surface the actual scope of 25C and confirm what's already passing. After 25A: 25B and 25C can run in parallel with 25H and 25I (they touch disjoint files). 25D → 25E → 25F → 25G is a strict series because each batch's drift-prevention test needs the prior batch's components to behave normally. 25J last among the implementation steps because its platform research may surface a residual that defers the closure of [M12] beyond this plan. 25K and 25L are cleanup; 25K can land any time; 25L closes the plan.
+**Sequencing.** 25A first — its audits surface the actual scope of 25C and confirm what's already passing. After 25A: 25B and 25C can run in parallel with 25H and 25I (they touch disjoint files). 25D → 25E → 25F → 25G is a strict series because each batch's drift-prevention test needs the prior batch's components to behave normally. 25J last among the implementation steps because its platform research may surface a residual that defers the closure of [AT0012] beyond this plan. 25K and 25L are cleanup; 25K can land any time; 25L closes the plan.
 
-**Why the harness changes the cadence.** Pre-Step-23 work, every M-tag closure required manual browser verification: open Tug.app, click here, check this. The harness now drives every gesture (`nativeClickAtElement`, `nativeDragWithoutRelease`, `nativeKey`, `simulateAppResign` + `simulateAppBecomeActive` with JS-side event-drain wait, `bindTideSession`, EM-card observation), and the in-app sweep gates regression at every commit. M-phase 4–10 is consequently scoped tight — each sub-step ships with one or more new test files in the default sweep, and the manual-verification checkboxes that dominated Steps 1–14 are gone.
+**Why the harness changes the cadence.** Pre-Step-23 work, every AT-tag closure required manual browser verification: open Tug.app, click here, check this. The harness now drives every gesture (`nativeClickAtElement`, `nativeDragWithoutRelease`, `nativeKey`, `simulateAppResign` + `simulateAppBecomeActive` with JS-side event-drain wait, `bindTideSession`, EM-card observation), and the in-app sweep gates regression at every commit. M-phase 4–10 is consequently scoped tight — each sub-step ships with one or more new test files in the default sweep, and the manual-verification checkboxes that dominated Steps 1–14 are gone.
 
 ##### Step 25A: Audit + verification sweep {#step-25a}
 
-**Status: ✅ landed 2026-04-25.** All seven gating tests pass in the default sweep. M-tag entries [M14], [M17], [M18] (synchronous-restore factories), [M19] (multi-card teardown path), [M20] (editor-context-menu representative), [M22], [M23] flipped to ✅ above.
+**Status: ✅ landed 2026-04-25.** All seven gating tests pass in the default sweep. AT-tag entries [AT0014], [AT0017], [AT0018] (synchronous-restore factories), [AT0019] (multi-card teardown path), [AT0020] (editor-context-menu representative), [AT0022], [AT0023] flipped to ✅ above.
 
-**Closes:** [M14], [M17] (verification half — RPC parity), [M18] (gating for the synchronous-restore factories shipping today), [M19] (audit half — multi-card teardown coverage), [M20] (editor-context-menu representative), [M22], [M23].
+**Closes:** [AT0014], [AT0017] (verification half — RPC parity), [AT0018] (gating for the synchronous-restore factories shipping today), [AT0019] (audit half — multi-card teardown coverage), [AT0020] (editor-context-menu representative), [AT0022], [AT0023].
 
-**Why this step exists.** Several M-tags (M14, M17, M18, M19, M20, M22, M23) were flagged ❓ untested or ⚠️ partial — they needed verification before any fix could be authored. Some were already fixed by prior work (e.g. [M19]'s `_closePane` flush loop has been intact since Step 14); others were genuine gaps (e.g. [M22]'s `document.hasFocus()` half had no automated assertion). Clustering the audits in one sub-step informed the implementer's plan for 25C onwards.
+**Why this step exists.** Several AT-tags (AT0014, AT0017, AT0018, AT0019, AT0020, AT0022, AT0023) were flagged ❓ untested or ⚠️ partial — they needed verification before any fix could be authored. Some were already fixed by prior work (e.g. [AT0019]'s `_closePane` flush loop has been intact since Step 14); others were genuine gaps (e.g. [AT0022]'s `document.hasFocus()` half had no automated assertion). Clustering the audits in one sub-step informed the implementer's plan for 25C onwards.
 
 **Deliverables landed:**
 - Seven new harness tests, all in the default sweep:
-  - `m14-scroll-persistence.test.ts` — region scroll round-trip across tab switch + back; region scroll across `simulateAppResign` / `simulateAppBecomeActive`.
-  - `m17-savestate-rpc-parity.test.ts` — `window.tugdeck.saveState()` writes a JSON-equal bag to the window-blur path for the same steady state.
-  - `m18-async-content-race.test.ts` — `bag.content` survives `saveState` and `simulateAppResign` after a seed-and-mount.
-  - `m19-pane-teardown-flush.test.ts` — `__tug.closePane(paneId)` fires `save-callback` (close-handoff) for every cardId before any `card-host-unmount`.
-  - `m20-overlay-focus-return.test.ts` — editor context menu opens on right-click, dismisses on Escape, focus returns to the editor.
-  - `m22-caret-visibility.test.ts` — `document.activeElement === engineRoot && document.hasFocus() === true` after cold-boot, app-cycle, tab-switch.
-  - `m23-cross-card-selection.test.ts` — drag-select across two MV cards never crashes the paint system (`window.getSelection()` + per-card `__tug.getSelection`).
+  - `at0014-scroll-persistence.test.ts` — region scroll round-trip across tab switch + back; region scroll across `simulateAppResign` / `simulateAppBecomeActive`.
+  - `at0017-savestate-rpc-parity.test.ts` — `window.tugdeck.saveState()` writes a JSON-equal bag to the window-blur path for the same steady state.
+  - `at0018-async-content-race.test.ts` — `bag.content` survives `saveState` and `simulateAppResign` after a seed-and-mount.
+  - `at0019-pane-teardown-flush.test.ts` — `__tug.closePane(paneId)` fires `save-callback` (close-handoff) for every cardId before any `card-host-unmount`.
+  - `at0020-overlay-focus-return.test.ts` — editor context menu opens on right-click, dismisses on Escape, focus returns to the editor.
+  - `at0022-caret-visibility.test.ts` — `document.activeElement === engineRoot && document.hasFocus() === true` after cold-boot, app-cycle, tab-switch.
+  - `at0023-cross-card-selection.test.ts` — drag-select across two MV cards never crashes the paint system (`window.getSelection()` + per-card `__tug.getSelection`).
 - Component changes:
   - `gallery-markdown-view.tsx`: opts into `useCardPersistence` (text round-trips through `bag.content`); accepts an optional `staticContentSize` prop that bakes a fixed-size payload on mount via `useLayoutEffect` + `setRegion`.
-  - `gallery-registrations.tsx`: registers a `gallery-markdown-50kb` variant for the [M14] / [M23] fixtures (50KB of static markdown loaded at mount).
+  - `gallery-registrations.tsx`: registers a `gallery-markdown-50kb` variant for the [AT0014] / [AT0023] fixtures (50KB of static markdown loaded at mount).
 - Test-surface additions (page-side `SURFACE_VERSION` 1.3.0):
-  - `__tug.getCardStateBag(cardId)` — full bag introspection for the [M17] parity audit.
-  - `__tug.closePane(paneId)` — multi-card pane teardown entry point for the [M19] flush audit.
-- Plan-doc M-tag status flips for the seven tags above.
+  - `__tug.getCardStateBag(cardId)` — full bag introspection for the [AT0017] parity audit.
+  - `__tug.closePane(paneId)` — multi-card pane teardown entry point for the [AT0019] flush audit.
+- Plan-doc AT-tag status flips for the seven tags above.
 
 **Out of scope at 25A (deferred to [25C](#step-25c)):**
 - `[A7]` flush-gate invariant guard at the bottom of `_removeCard` / `_closePane` (dev-error on bypassed flush).
 - Deck-reset / workspace-close path audit for `flushSaveCallbackBeforeDestruction` coverage (no current call site, surfaced if/when added).
-- `restorePendingRef`-based `onSave` gate at `invokeSaveCallback` for any future async content factory that exposes the [M18] race.
+- `restorePendingRef`-based `onSave` gate at `invokeSaveCallback` for any future async content factory that exposes the [AT0018] race.
 
 **Commits:** one — Step 25A audit sweep.
 
@@ -2099,21 +2099,21 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 
 **Status:** ✅ landed 2026-04-25.
 
-**Closes:** [M10] per [L23] (user-visible state must round-trip). Implements [A5].
+**Closes:** [AT0010] per [L23] (user-visible state must round-trip). Implements [A5].
 
 **Deliverables (landed):**
 - `tug-markdown-view.tsx`: added a `persistKey?: string` prop. When set inside a `CardHost` (i.e. `useCardId` resolves to a non-null id), a `useLayoutEffect` subscribes to `document.selectionchange` and publishes any range whose `commonAncestorContainer` is within the scroll container via `selectionGuard.updateCardDomSelection(cardId, range)`. Out-of-card ranges and `rangeCount === 0` events are silently ignored — clearing belongs to the unmount cleanup, which calls `updateCardDomSelection(cardId, null)` exactly once.
 - `tug-markdown-view.tsx`: also calls `useCardPersistence({ onSave: () => undefined, onRestore: () => {} })` so `bag.content` stays absent and `CardHost`'s `captureCardState` falls into the `!ownsSelectionAndFocus` branch — `bag.domSelection` is captured automatically from `selectionGuard.cardRanges`, and the cold-boot mount-restore path replays it via `selectionGuard.restoreCardDomSelection`.
-- `gallery-markdown-view.tsx`: passes `persistKey="markdown-view"` to the underlying `TugMarkdownView` so harness fixtures for [M10] / [M14] / [M23] inherit the selection-publish behavior automatically.
-- New harness test `m10-markdown-selection.test.ts`: programmatically selects 20 chars in card A's first block, tab-switches A → B, asserts `getCaretState("A")` still resolves to the same `Range` AND that `CSS.highlights.get("inactive-selection")` contains a Range whose text matches; runs `simulateAppResign` + `simulateAppBecomeActive`, asserts the snapshot still resolves; tab-switches B → A, asserts native `window.getSelection()` text matches the saved Range — i.e. the focused card's range was restored to native `::selection` by the deck-store-driven `updatePaint` (the same path that installs the one-shot `mousedown` interceptor when a focus return lands on a card with a saved Range).
+- `gallery-markdown-view.tsx`: passes `persistKey="markdown-view"` to the underlying `TugMarkdownView` so harness fixtures for [AT0010] / [AT0014] / [AT0023] inherit the selection-publish behavior automatically.
+- New harness test `at0010-markdown-selection.test.ts`: programmatically selects 20 chars in card A's first block, tab-switches A → B, asserts `getCaretState("A")` still resolves to the same `Range` AND that `CSS.highlights.get("inactive-selection")` contains a Range whose text matches; runs `simulateAppResign` + `simulateAppBecomeActive`, asserts the snapshot still resolves; tab-switches B → A, asserts native `window.getSelection()` text matches the saved Range — i.e. the focused card's range was restored to native `::selection` by the deck-store-driven `updatePaint` (the same path that installs the one-shot `mousedown` interceptor when a focus return lands on a card with a saved Range).
 
 **Commits:** one — Step 25B markdown-view selection publish.
 
 ##### Step 25C: Unified flush-on-teardown gate {#step-25c}
 
-**Closes:** [M19] (closure). Implements [A7].
+**Closes:** [AT0019] (closure). Implements [A7].
 
-**Conditional on 25A's audit.** If `m19-pane-teardown-flush.test.ts` (added in 25A) passes without changes, this sub-step reduces to the dev-only invariant guard. If the audit surfaces a gap (a path that removes cards without flushing), the fix lands here.
+**Conditional on 25A's audit.** If `at0019-pane-teardown-flush.test.ts` (added in 25A) passes without changes, this sub-step reduces to the dev-only invariant guard. If the audit surfaces a gap (a path that removes cards without flushing), the fix lands here.
 
 **Deliverables:**
 - Either: invariant guard at the bottom of `_removeCard` / `_closePane` that dev-errors if `flushSaveCallbackBeforeDestruction` was not called for a card being removed; OR a single chokepoint `destroyCard(cardId)` that bundles flush + lifecycle + delete.
@@ -2126,9 +2126,9 @@ What's left maps to seven distinct architectural concerns, each scoped tight eno
 
 **Status:** proposal — open questions answered; ready for review.
 
-**Why this exists.** [Step 25B](#step-25b) landed `tug-markdown-view` selection publish and flipped [M10] / [M14] / [M23] to ✅ in the verification matrix. Manual verification surfaced that a TugMarkdownView (50KB) gallery card with a scroll position and selection — quit Tug.app, relaunch — restores neither. Reading the bag directly from tugbank (`tugbank read dev.tugtool.deck.cardstate <cardId>`) shows the save side IS working: `regionScroll.markdown-view.y = 26922` and a populated `domSelection` are on disk after quit. The break is on the load + cold-mount + virtualization-bake-in race side, none of which the current in-app sweep exercises.
+**Why this exists.** [Step 25B](#step-25b) landed `tug-markdown-view` selection publish and flipped [AT0010] / [AT0014] / [AT0023] to ✅ in the verification matrix. Manual verification surfaced that a TugMarkdownView (50KB) gallery card with a scroll position and selection — quit Tug.app, relaunch — restores neither. Reading the bag directly from tugbank (`tugbank read dev.tugtool.deck.cardstate <cardId>`) shows the save side IS working: `regionScroll.markdown-view.y = 26922` and a populated `domSelection` are on disk after quit. The break is on the load + cold-mount + virtualization-bake-in race side, none of which the current in-app sweep exercises.
 
-**The systemic gap.** Every test in the in-app sweep runs ONE Tug.app process for its lifetime. Tests that claim to gate persistence-on-quit (`m17-savestate-rpc-parity`) compare in-memory bags. Tests that claim to gate cold-boot restore (`m32-em-cold-boot-selection`, `m10-markdown-cold-boot` — the latter has been removed as confirmation theater) use `seedDeckState` to populate the in-memory `cardStateCache` and immediately re-mount. None of them go: (a) write bag to tugbank disk on quit, (b) terminate the WebView process, (c) start a fresh process, (d) read the bag back, (e) verify the live state. That gap is exactly what hid the markdown-view restore bug.
+**The systemic gap.** Every test in the in-app sweep runs ONE Tug.app process for its lifetime. Tests that claim to gate persistence-on-quit (`at0017-savestate-rpc-parity`) compare in-memory bags. Tests that claim to gate cold-boot restore (`at0032-em-cold-boot-selection`, `at0010-markdown-cold-boot` — the latter has been removed as confirmation theater) use `seedDeckState` to populate the in-memory `cardStateCache` and immediately re-mount. None of them go: (a) write bag to tugbank disk on quit, (b) terminate the WebView process, (c) start a fresh process, (d) read the bag back, (e) verify the live state. That gap is exactly what hid the markdown-view restore bug.
 
 **Open questions — answered.**
 
@@ -2138,7 +2138,7 @@ The proposal originally listed three open questions. Investigation closed all th
    - `AppDelegate.applicationDidFinishLaunching` already reads `TUGBANK_PATH` for the Swift-side `TugbankClient` (`tugapp/Sources/AppDelegate.swift:45-50`).
    - `ProcessManager.startProcess` inherits Tug.app's full env — `var env = ProcessInfo.processInfo.environment` — when spawning tugcast (`tugapp/Sources/ProcessManager.swift:549`), so tugcast inherits `TUGBANK_PATH`.
    - **Initial proposal claim was wrong:** tugcast's `main.rs` only honored a `--bank-path` CLI flag and fell back to `~/.tugbank.db`; it did NOT read `TUGBANK_PATH` env. Discovered when Layer 2's smoke test wrote via tugcast's HTTP PUT to a temp DB but the disk read returned null — tugcast had silently written to the user's real `~/.tugbank.db`. Layer 2 adds a `TUGBANK_PATH` fallback between the flag and the home-dir default, mirroring the precedence the `tugbank` CLI itself uses.
-   - The harness's `launchTugApp` already plumbs `opts.env` through `--env KEY=VALUE` flags to `/usr/bin/open` (`tests/in-app/_harness/index.ts:1325-1331`), which sets the env on the launched Tug.app.
+   - The harness's `launchTugApp` already plumbs `opts.env` through `--env KEY=VALUE` flags to `/usr/bin/open` (`tests/app-test/_harness/index.ts:1325-1331`), which sets the env on the launched Tug.app.
    - **Implication:** after Layer 2's tugcast change, `launchTugApp({env: {TUGBANK_PATH: tempPath}})` works. Both Tug.app's TugbankClient (Swift, direct sqlite) and tugcast's HTTP `put_key` handler (Rust, sqlite via `tugbank-core`) point at the same temp file. Both processes use `SQLITE_OPEN_READWRITE | WAL | busy_timeout=5000`, so concurrent open is safe.
    - **Boot-time seed required:** a fresh temp tugbank has no `dev.tugtool.app/source-tree-path`, so Tug.app's `loadPreferences` falls into the "Source Tree Required" alert. Layer 2 adds `seedTugbankForLaunch(path)` that writes the minimum (`source-tree-path`, `dev-mode-enabled=false`) before `launchTugApp`. Every cold-boot test calls it once per temp DB.
 
@@ -2185,19 +2185,19 @@ Land the harness surface that the new tests will lean on. Each primitive is inde
     2. `DispatchQueue.main.async { NSApp.terminate(nil) }` — fires `applicationShouldTerminate` → save path → `NSApp.reply(toApplicationShouldTerminate: true)` → `applicationWillTerminate` notification.
     3. `semaphore.wait(timeout: .now() + .milliseconds(timeoutMs))` — default 5000ms (long: save can take seconds when tugcast is busy).
     4. On timeout, throws a typed error `AppLifecycleError.quitTimeout(timeoutMs:)`. Note the test will not see the response on success — the socket dies with the app.
-  - Bump `surfaceVersion` to `1.5.0` in `TestHarnessConnection.swift` and the matching constant in `tests/in-app/_harness/index.ts:140`.
+  - Bump `surfaceVersion` to `1.5.0` in `TestHarnessConnection.swift` and the matching constant in `tests/app-test/_harness/index.ts:140`.
 - *`app.quitGracefully(opts?)` JS-side wrapper.*
-  - Add to `App` class in `tests/in-app/_harness/index.ts`. The wire-level `rpc.call` is fire-and-forget here: the connection drops mid-call as the app dies. Catch the connection-close error and treat it as success; await `subprocess.exited` to confirm.
+  - Add to `App` class in `tests/app-test/_harness/index.ts`. The wire-level `rpc.call` is fire-and-forget here: the connection drops mid-call as the app dies. Catch the connection-close error and treat it as success; await `subprocess.exited` to confirm.
   - Skip Cocoa's "really quit?" dialog: harness only runs in DEBUG builds where unsaved-changes prompts don't surface.
 - *`mkTempTugbank()` and `readTugbankCardState()` helpers.*
-  - New file: `tests/in-app/_harness/tugbank-helpers.ts` (TS module, not a runtime piece of the App class).
+  - New file: `tests/app-test/_harness/tugbank-helpers.ts` (TS module, not a runtime piece of the App class).
   - `mkTempTugbank(): string` — returns a unique path under `os.tmpdir()` like `/tmp/tugapp-test-tugbank-<uuid>.db`. Does NOT create the file; tugbank/tugcast create it on first write. Caller passes this path as `env.TUGBANK_PATH`.
   - `readTugbankCardState(path, cardId): CardStateBag | null` — shells out via `Bun.spawnSync` to `tugbank --path <path> --json read dev.tugtool.deck.cardstate <cardId>`. Returns `null` on exit code 2 (not found), the parsed JSON otherwise. Throws on other exit codes.
   - `clearTugbankCardState(path, cardId): void` — `tugbank --path <path> delete dev.tugtool.deck.cardstate <cardId>`. Used between Phase A and Phase B in tests that want a known starting point.
   - `rmTempTugbank(path): void` — unlinks the temp DB and any WAL/SHM siblings.
   - Resolves the `tugbank` binary via `process.env.TUGAPP_TUGBANK_BINARY` first, then `which tugbank`. Recipe-level support added in `Justfile`.
 - *`app.waitForMarkdownReady(cardId, opts?)` and `app.waitForScrollSettled(cardId, regionKey, expectedY, opts?)`.*
-  - Both are JS-side wrappers over the existing `waitForCondition` RPC. Deferred to Layer 4 if the cold-boot tests don't actually need them yet — but they're cheap and let us delete duplicated `waitForCondition` boilerplate from m14, m23, m10-markdown-selection.
+  - Both are JS-side wrappers over the existing `waitForCondition` RPC. Deferred to Layer 4 if the cold-boot tests don't actually need them yet — but they're cheap and let us delete duplicated `waitForCondition` boilerplate from m14, m23, at0010-markdown-selection.
   - `waitForMarkdownReady` blocks until the card's `[data-tug-scroll-key="markdown-view"]` exists, has `block-container` populated with `data-block-index`-tagged children, and `scrollHeight > clientHeight + 200` (the same gate `m14` uses inline today).
   - `waitForScrollSettled` blocks until `el.scrollTop` is within `tolerance` (default 8px) of `expectedY` AND has held across N consecutive `requestAnimationFrame` ticks (default N=3). N-stable polling is what catches the bake-in race: ResizeObserver-driven spacer growth nudges the value once before settling.
 
@@ -2221,8 +2221,8 @@ This smoke test proves all Layer-2 primitives end-to-end before any cold-boot te
 
 **Findings — what failed and what passed:**
 
-- *m14-cold-boot-scroll on `gallery-markdown-50kb`* — **fails** at Phase B's `waitForScrollSettled` after Phase A's 4 disk-side assertions pass. The bag IS on disk with `regionScroll["markdown-view"].y` matching the seeded scroll, and `el.scrollTop` never lands at the saved value within the 4s settle window. This is the Layer 4 gating evidence. **NOT in the default Justfile sweep until Layer 4 fixes it.**
-- *m10-cold-boot-selection on `gallery-markdown-1kb`* — **passes** end-to-end (11 expects, ~2s). With all blocks rendered (no virtualization), saved `domSelection` paths resolve to stable DOM nodes on re-mount and `selectionGuard` re-anchors the range correctly. **In the default Justfile sweep** as a regression-prevention gate.
+- *at0014-cold-boot-scroll on `gallery-markdown-50kb`* — **fails** at Phase B's `waitForScrollSettled` after Phase A's 4 disk-side assertions pass. The bag IS on disk with `regionScroll["markdown-view"].y` matching the seeded scroll, and `el.scrollTop` never lands at the saved value within the 4s settle window. This is the Layer 4 gating evidence. **NOT in the default Justfile sweep until Layer 4 fixes it.**
+- *at0010-cold-boot-selection on `gallery-markdown-1kb`* — **passes** end-to-end (11 expects, ~2s). With all blocks rendered (no virtualization), saved `domSelection` paths resolve to stable DOM nodes on re-mount and `selectionGuard` re-anchors the range correctly. **In the default Justfile sweep** as a regression-prevention gate.
 
 **Layer 4 scope narrows accordingly.** The non-virtualized selection round-trip is already correct; the fix needs to address only the scroll-restore race on virtualized markdown content. The 50KB-selection / content-relative-encoding follow-up remains out-of-scope for 25C.2 unless Layer 4's investigation surfaces it.
 
@@ -2230,15 +2230,15 @@ This smoke test proves all Layer-2 primitives end-to-end before any cold-boot te
 
 Original Layer 3 spec (preserved for reference):
 
-Both tests follow the same Phase-A / Phase-B convention. Naming: keep in `tests/in-app/`, prefix with the existing M-tag for traceability.
+Both tests follow the same Phase-A / Phase-B convention. Naming: keep in `tests/app-test/`, prefix with the existing AT-tag for traceability.
 
-*`m14-cold-boot-scroll.test.ts`*
+*`at0014-cold-boot-scroll.test.ts`*
 
 Test metadata convention (lives as a docstring header on the `describe` block):
 
 ```ts
 /**
- * m14-cold-boot-scroll.test.ts — region-scroll restore across full
+ * at0014-cold-boot-scroll.test.ts — region-scroll restore across full
  * Tug.app process restart.
  *
  * ## Two-phase contract
@@ -2264,7 +2264,7 @@ Test metadata convention (lives as a docstring header on the `describe` block):
  * own path — no cross-test sharing.
  *
  * ## Closes
- * - [M14] cold-boot variant. The existing m14-scroll-persistence
+ * - [AT0014] cold-boot variant. The existing at0014-scroll-persistence
  *   already gates tab-switch + simulateAppResign round-trips; this
  *   file adds the cold-boot variant they cannot exercise.
  */
@@ -2280,7 +2280,7 @@ describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot", () => {
       // Phase A: empty tugbank → seed → scroll → quit gracefully.
       {
         const app = await launchTugApp({
-          testName: "m14-cold-boot-scroll-A",
+          testName: "at0014-cold-boot-scroll-A",
           env: { TUGBANK_PATH: tugbankPath },
         });
         try {
@@ -2299,7 +2299,7 @@ describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot", () => {
       // Phase B: relaunch against same tugbank, assert restore.
       {
         const app = await launchTugApp({
-          testName: "m14-cold-boot-scroll-B",
+          testName: "at0014-cold-boot-scroll-B",
           env: { TUGBANK_PATH: tugbankPath },
         });
         try {
@@ -2320,7 +2320,7 @@ describe.skipIf(!SHOULD_RUN)("m14: scroll cold-boot", () => {
 });
 ```
 
-*`m10-cold-boot-selection.test.ts`* — same shape, different fixture (`gallery-markdown-1kb`) and assertions:
+*`at0010-cold-boot-selection.test.ts`* — same shape, different fixture (`gallery-markdown-1kb`) and assertions:
 - Phase A: mount, anchor selection to a known span (`{startOffset: 5, endOffset: 25}` on the first text node — deterministic with all blocks rendered), `quitGracefully`.
 - Phase A assertion: `readTugbankCardState`'s `domSelection` is non-null and matches the captured paths.
 - Phase B: relaunch, wait for ready, assert `__tug.getCaretState("A")` returns the saved range and the native `::selection` paint is visible.
@@ -2329,7 +2329,7 @@ Both tests must FAIL before Layer 4 lands and PASS after — that's the gating c
 
 **Layer 4 — The actual fix (1 commit). LANDED.**
 
-**The actual root cause (different from Layer 3's hypothesis):** the proposal predicted the bug was a clamp-on-first-apply that the `MutationObserver attributeFilter: ["style"]` retry would solve. That's part of the story but not the load-bearing piece. The real cause is `tug-markdown-view`'s `SmartScroll`: it defaults `followBottom: true`, and during ResizeObserver-driven bake-in the "if isFollowingBottom, slam `scrollTop = 0x40000000`" branch (`tug-markdown-view.tsx:504-505` and `:557-559`) re-clamps `scrollTop` to the bottom every time the spacer heights grow. Setting `el.scrollTop = 600` directly — what `applyRegionScrolls` did, what the m14-cold-boot-scroll Phase A test did — couldn't survive bake-in: by save time the bag captured the bottom-most scrollTop, not the user's chosen position. Phase B then "restored" to that bogus value AND got re-slammed to bottom on its own bake-in.
+**The actual root cause (different from Layer 3's hypothesis):** the proposal predicted the bug was a clamp-on-first-apply that the `MutationObserver attributeFilter: ["style"]` retry would solve. That's part of the story but not the load-bearing piece. The real cause is `tug-markdown-view`'s `SmartScroll`: it defaults `followBottom: true`, and during ResizeObserver-driven bake-in the "if isFollowingBottom, slam `scrollTop = 0x40000000`" branch (`tug-markdown-view.tsx:504-505` and `:557-559`) re-clamps `scrollTop` to the bottom every time the spacer heights grow. Setting `el.scrollTop = 600` directly — what `applyRegionScrolls` did, what the at0014-cold-boot-scroll Phase A test did — couldn't survive bake-in: by save time the bag captured the bottom-most scrollTop, not the user's chosen position. Phase B then "restored" to that bogus value AND got re-slammed to bottom on its own bake-in.
 
 **The fix.** Introduce a `tug-region-scroll-set` custom DOM event as the canonical "set scroll position" primitive for region scroll containers. tug-markdown-view installs a listener on its scroll container that:
 
@@ -2341,30 +2341,30 @@ Both tests must FAIL before Layer 4 lands and PASS after — that's the gating c
 
 The CardHost mount-restore retry mechanism (Layer 4 also keeps this from the proposal): the per-mount `regionSettled` Set replaces the one-shot `regionApplied` Set, and the `MutationObserver` adds `attributes: true, attributeFilter: ["style"]`. This handles the smaller residual race where the very first apply lands at a clamped scrollTop because content hasn't fully baked in — subsequent spacer growth re-fires `apply()` and we re-assert until `el.scrollTop` sits within 8px of the saved position.
 
-**Test side.** The m14-cold-boot-scroll Phase A test was changed to dispatch the same `tug-region-scroll-set` event instead of setting `el.scrollTop` directly (the latter would be re-slammed by SmartScroll's follow-bottom on bake-in, and the saved bag would carry the wrong value). This is consistent with the production restore path: both go through the same primitive.
+**Test side.** The at0014-cold-boot-scroll Phase A test was changed to dispatch the same `tug-region-scroll-set` event instead of setting `el.scrollTop` directly (the latter would be re-slammed by SmartScroll's follow-bottom on bake-in, and the saved bag would carry the wrong value). This is consistent with the production restore path: both go through the same primitive.
 
 **Result.**
 
-- `m14-cold-boot-scroll.test.ts` — 5/5 stable. Now in the default Justfile sweep.
-- `m10-cold-boot-selection.test.ts` — still 5/5 stable.
-- All adjacent tests (m04, m05, m10-markdown-selection, m14-scroll-persistence, m17-savestate-rpc-parity, m23-cross-card-selection, _smoke-cold-boot) green — no regressions.
+- `at0014-cold-boot-scroll.test.ts` — 5/5 stable. Now in the default Justfile sweep.
+- `at0010-cold-boot-selection.test.ts` — still 5/5 stable.
+- All adjacent tests (m04, m05, at0010-markdown-selection, at0014-scroll-persistence, at0017-savestate-rpc-parity, at0023-cross-card-selection, _smoke-cold-boot) green — no regressions.
 
 **Files touched.**
 
 - `tugdeck/src/components/chrome/card-host.tsx` — `applyRegionScrolls` dispatches the event; mount-restore uses `regionSettled` semantics + style-attribute observer.
 - `tugdeck/src/components/tugways/tug-markdown-view.tsx` — listener for `tug-region-scroll-set` that calls `SmartScroll.scrollTo` + `disengageFollowBottom` + `preventDefault`.
-- `tests/in-app/m14-cold-boot-scroll.test.ts` — Phase A dispatches the event; status doc flipped.
-- `Justfile` — `m14-cold-boot-scroll.test.ts` added to default sweep.
+- `tests/app-test/at0014-cold-boot-scroll.test.ts` — Phase A dispatches the event; status doc flipped.
+- `Justfile` — `at0014-cold-boot-scroll.test.ts` added to default sweep.
 
-**Selection-on-virtualized-content note.** The 50KB selection variant remains unimplemented as a follow-up (25C.3 if needed). The user's manual relaunch bug for selection on the 50KB card may still surface; a subsequent commit can add an m10-cold-boot-selection-50kb test. The likely fix there is content-relative selection encoding (block index + intra-block offset) rather than DOM child paths; that's a re-architecting of `captureDomSelection` / `restoreCardDomSelection` and is genuinely out-of-scope for 25C.2.
+**Selection-on-virtualized-content note.** The 50KB selection variant remains unimplemented as a follow-up (25C.3 if needed). The user's manual relaunch bug for selection on the 50KB card may still surface; a subsequent commit can add an at0010-cold-boot-selection-50kb test. The likely fix there is content-relative selection encoding (block index + intra-block offset) rather than DOM child paths; that's a re-architecting of `captureDomSelection` / `restoreCardDomSelection` and is genuinely out-of-scope for 25C.2.
 
 **Deliverables.**
 
 - Layer 1: one-line registration addition (`gallery-markdown-1kb`).
 - Layer 2: `quitGracefully` Swift handler + JS wrapper, surface version bump, `tugbank-helpers.ts`, `_smoke-cold-boot.test.ts` proving the primitives work.
-- Layer 3: `m14-cold-boot-scroll.test.ts`, `m10-cold-boot-selection.test.ts`. Both must fail on this commit; the failure mode confirms the bug exists.
+- Layer 3: `at0014-cold-boot-scroll.test.ts`, `at0010-cold-boot-selection.test.ts`. Both must fail on this commit; the failure mode confirms the bug exists.
 - Layer 4: the fix that flips Layer 3's tests to pass. Hypothesis-test the scroll-race fix first; selection fix second.
-- Audit: extend `m17-savestate-rpc-parity` and `m32-em-cold-boot-selection` to use `quitGracefully` + `readTugbankCardState` where the Phase-A-on-disk assertion strengthens their claim. Where the existing test body is honest about scope (m32's docstring is), the audit may decide an additive Phase B is enough; where the claim was misleading, rename to match.
+- Audit: extend `at0017-savestate-rpc-parity` and `at0032-em-cold-boot-selection` to use `quitGracefully` + `readTugbankCardState` where the Phase-A-on-disk assertion strengthens their claim. Where the existing test body is honest about scope (m32's docstring is), the audit may decide an additive Phase B is enough; where the claim was misleading, rename to match.
 
 **Estimated commits:** four — (1) Layer 1 fixture registration, (2) Layer 2 harness primitives + smoke test, (3) Layer 3 cold-boot tests (failing-as-expected), (4) Layer 4 fix. A fifth if content-relative selection encoding is required for the 50kb selection variant.
 
@@ -2433,7 +2433,7 @@ Both changes are tuglaws-compliant by construction:
 7. Quit Tug.app. Relaunch.
 8. Observe: same loss; in some races, the typed text may also be missing on the relaunch path (the cold-boot engine race).
 
-*Automated, gated by Layer 3.* New test file `tests/in-app/m24-prompt-state-roundtrip.test.ts` — full matrix of (component × trigger × state-axis), expanded below in Layer 3.
+*Automated, gated by Layer 3.* New test file `tests/app-test/at0024-prompt-state-roundtrip.test.ts` — full matrix of (component × trigger × state-axis), expanded below in Layer 3.
 
 **Open questions — needing answers before Layer 4.**
 
@@ -2455,7 +2455,7 @@ Add the soft-reload counterpart to `quitGracefully`. Maps to `Developer > Reload
   3. Waits for the post-reload ready signal up to a configurable timeout (default 8000ms — the WKWebView reload + Vite re-asset window + main.tsx boot can be slow on first cold cache).
   4. Returns success when the new `__tug` surface is online; throws `AppLifecycleError.reloadTimeout` otherwise.
 - *JS-side wrapper.* `app.appReload(opts?: { timeoutMs?: number })`. Resolves when the new `__tug` surface is online. The harness's existing `__tug.assertHostRootRegistered` / `waitForCondition` helpers automatically pick up the new JS context — no need to re-establish the test socket (Swift owns it, and Swift survives the reload).
-- *Surface version bump.* `1.5.0` → `1.6.0` in `TestHarnessConnection.swift` and `tests/in-app/_harness/index.ts`.
+- *Surface version bump.* `1.5.0` → `1.6.0` in `TestHarnessConnection.swift` and `tests/app-test/_harness/index.ts`.
 
 Smoke test gating Layer 1: extend `_smoke-cold-boot.test.ts` (or a sibling `_smoke-app-reload.test.ts`) to:
 1. Launch the app with a temp tugbank.
@@ -2468,7 +2468,7 @@ If this smoke fails, no later layer ships.
 
 **Layer 2 — Failing test: comprehensive prompt-state round-trip matrix (1 commit).**
 
-New file `tests/in-app/m24-prompt-state-roundtrip.test.ts`. Three target cards × four state axes × two reload triggers. Each combination is a separate test case — concise body, shared helpers, no skipped assertions.
+New file `tests/app-test/at0024-prompt-state-roundtrip.test.ts`. Three target cards × four state axes × two reload triggers. Each combination is a separate test case — concise body, shared helpers, no skipped assertions.
 
 Cards:
 - `gallery-prompt-input` — pure standalone.
@@ -2498,7 +2498,7 @@ Phase B (post-reload / post-relaunch) asserts the live state:
 - `__tug.evalJS("…engine.getText()…")` matches.
 - `__tug.evalJS("…engine.getAtoms()…")` matches.
 - `__tug.getCaretState(cardId)` returns the saved range.
-- `__tug.evalJS("…editorEl.scrollTop…")` is within 8px of seeded (uses the same N-stable polling shape `m14-cold-boot-scroll` uses post-25C.2).
+- `__tug.evalJS("…editorEl.scrollTop…")` is within 8px of seeded (uses the same N-stable polling shape `at0014-cold-boot-scroll` uses post-25C.2).
 
 Every Phase B assertion fails today. That is the gating evidence; Layer 2 ships exactly when the test file ships and exactly when every test case is FAILING in the expected way (not erroring, not skipped — running to completion and failing on the asserted axis). If a test errors out before reaching the assertion, that's a harness bug to fix in Layer 2 itself, not a green light to advance.
 
@@ -2546,7 +2546,7 @@ Skip if Layer 3's (a) or (b) closed the bake-in race already. Otherwise:
 **Deliverables.**
 
 - Layer 1: `appReload` Swift handler + JS wrapper, surface bump, smoke test.
-- Layer 2: `m24-prompt-state-roundtrip.test.ts`. All 24 test cases (3 cards × 4 axes × 2 triggers) wired and FAILING on appropriate axes.
+- Layer 2: `at0024-prompt-state-roundtrip.test.ts`. All 24 test cases (3 cards × 4 axes × 2 triggers) wired and FAILING on appropriate axes.
 - Layer 3: `TugTextEditingState.scrollTop`, engine capture/restore, decision on (a) vs (b).
 - Layer 4: Imperative-handle pendingRestoreRef path; activation-on-engine-ready handoff for tide.
 - Layer 5: Conditional scroll-bake-in tuning.
@@ -2686,7 +2686,7 @@ For active cards, layout changes that clamp scrollTop are handled by the engine 
 
 **Test plan.**
 
-New test file: `tests/in-app/m37-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during the Step 25L M-series audit; original numbering collided with the M26 overlay-policy tag — see `tuglaws/m-series-inventory.md`). Multi-card decks where each card carries a persisted selection and the active state matters. The matrix exercises both single-pane (multiple cards as tabs) and multi-pane geometries to gate the precise "active = deck-level first responder" definition.
+New test file: `tests/app-test/at0037-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during the Step 25L AT-series audit; original numbering collided with the AT0026 overlay-policy tag — see `tuglaws/at-series-inventory.md`). Multi-card decks where each card carries a persisted selection and the active state matters. The matrix exercises both single-pane (multiple cards as tabs) and multi-pane geometries to gate the precise "active = deck-level first responder" definition.
 
 **Test cases (4 layouts × 2 reload triggers = 8):**
 
@@ -2737,7 +2737,7 @@ If selectionGuard's existing paint mechanism doesn't match what the plan assumes
 1. Engine paint API split: `paintMirrorAsActive`, `paintMirrorAsInactive(publish)`, `repaintMirrorScroll`. Retire `applyMirrorToDom` (or keep as a thin wrapper that picks active by default, deprecated).
 2. CardHost: extend `onRestore` signature to pass `{ isActive }`. Add `onCardWillDeactivate` to the persistence-callbacks record (next to `onCardActivated`, NOT in `useCardDelegate`). Wire firings. Specify and enforce the [L23] restore ordering (inactive cards' onRestore complete before active card's `paintMirrorAsActive` claims focus).
 3. TugPromptInput / TugPromptEntry: route `onRestore` and `onCardActivated` / `onCardWillDeactivate` through the active/inactive paint methods. Pass `cardIdRef.current!`-based `selectionGuard.updateCardDomSelection` into the inactive publish callback (per the [L07] mandatory pattern above — direct `cardId` capture is forbidden).
-4. New harness test: `m37-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during 25L; 8 tests — 4 layouts × 2 triggers; L4 covers the multi-pane "active = deck-level first responder, NOT pane-active" precision).
+4. New harness test: `at0037-deck-wide-restore-consistency.test.ts` (renamed from `m26-*` during 25L; 8 tests — 4 layouts × 2 triggers; L4 covers the multi-pane "active = deck-level first responder, NOT pane-active" precision).
 5. Audit: full default sweep green; m24 + m25 + m26 all pass.
 
 **Estimated commits:** two — (1) engine API split + CardHost wiring + component routing (the verification step from #0 lands as part of this commit's investigation); (2) m26 harness test + Justfile sweep wiring. Could be one commit if the test is added alongside the implementation, but a separate test commit makes the gating evidence cleaner (test fails on commit 1's parent, passes on commit 1).
@@ -2946,7 +2946,7 @@ The m24–m36 cases collectively gate every behavior this step touches:
 - m26 — deck-wide multi-card consistency on reload (multiple cards with selections and the active-card race the 25C.4 split was designed for).
 - m27 — inactive paint at correct DOM positions across deactivation gestures.
 - m32 — cold-boot selection restore for engine cards.
-- m35-em / m35-tide — selection survives app-blur/focus while card is active.
+- at0035-em / at0035-tide — selection survives app-blur/focus while card is active.
 - m36 — selection AND focus restored after cmd-tab cycle + re-activation click.
 
 The Layer 1 smoke test gates the capture-phase save audit.
@@ -2971,13 +2971,13 @@ If the user (or implementer) decides mid-stream that a layer's risk outweighs th
 
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
-**Status:** ✅ landed. Accordion opted in; split-pane left on its existing `storageKey` path per the [M27] resolution. The original "both components in one batch since they're shape-similar" framing was wrong: `tug-split-pane` already had persistence via `storageKey` → tugbank, while `tug-accordion` had none. Migrating split-pane would have duplicated persistence layers without closing a user-visible gap.
+**Status:** ✅ landed. Accordion opted in; split-pane left on its existing `storageKey` path per the [AT0027] resolution. The original "both components in one batch since they're shape-similar" framing was wrong: `tug-split-pane` already had persistence via `storageKey` → tugbank, while `tug-accordion` had none. Migrating split-pane would have duplicated persistence layers without closing a user-visible gap.
 
-**Closes:** [M27] accordion axis (split-pane axis was already closed via `storageKey`); first installment of [M30] (virtual focus deferred to later batches).
+**Closes:** [AT0027] accordion axis (split-pane axis was already closed via `storageKey`); first installment of [AT0030] (virtual focus deferred to later batches).
 
 **What landed.** `tug-accordion` adds optional `persistKey` prop + `useComponentPersistence` registering `{ value: string | string[] }` (the discriminated union mirrors `type="single"`/`"multiple"`). When `persistKey` is set, the accordion mirrors Radix's open value in its own `useState` so capture/restore can read/write it programmatically; without `persistKey`, the hook no-ops and Radix retains its original uncontrolled behavior. The gallery card `gallery-accordion` opts in two demo accordions (`persistKey="single"`, `persistKey="multiple"`) and tags both with `data-testid` for harness scoping.
 
-**Test harness.** `m27-layout-state-persistence.test.ts` covers 2 axes (single, multiple) × 3 triggers (`appReload`, `quitGracefully+relaunch`, `simulateAppResign+Become`) = 6 tests. Each seeds `bag.components.{persistKey}` with a non-default open value, drives the trigger, and asserts the seeded sections are still open after restore. The cmd-tab path programmatically focuses an accordion trigger before the resign cycle since gallery-accordion has no auto-focused element on mount (unlike EM cards whose engine claims focus).
+**Test harness.** `at0027-layout-state-persistence.test.ts` covers 2 axes (single, multiple) × 3 triggers (`appReload`, `quitGracefully+relaunch`, `simulateAppResign+Become`) = 6 tests. Each seeds `bag.components.{persistKey}` with a non-default open value, drives the trigger, and asserts the seeded sections are still open after restore. The cmd-tab path programmatically focuses an accordion trigger before the resign cycle since gallery-accordion has no auto-focused element on mount (unlike EM cards whose engine claims focus).
 
 **Why split-pane stayed put.** The plan's "most likely pane-scope" intuition was correct: divider positions belong with pane chrome, not card content. Today they live in a card-scope tugbank domain via `storageKey`, which works in practice. Migrating to either `bag.components` or canonical pane-state would change the storage location without changing the user-visible outcome. Resolution: leave the existing path; revisit only if a future cleanup pass unifies pane-chrome persistence.
 
@@ -2987,7 +2987,7 @@ If the user (or implementer) decides mid-stream that a layer's risk outweighs th
 
 **Status:** ✅ landed for 6 of the 8 originally-listed components. `tug-popup-button` and `tug-tab-bar` deferred indefinitely (see "What's deferred" below).
 
-**Closes:** [M27] composite-components subset (selection + numeric value persistence), incremental progress on [A9d] roster. [M30]'s "virtual focus index" (separate-from-value) is not added — see "Virtual focus deferred" below.
+**Closes:** [AT0027] composite-components subset (selection + numeric value persistence), incremental progress on [A9d] roster. [AT0030]'s "virtual focus index" (separate-from-value) is not added — see "Virtual focus deferred" below.
 
 **Components opted in.** `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input` each gain optional `persistKey` prop + `useComponentPersistence`. Two patterns coexist:
 
@@ -3005,7 +3005,7 @@ Both patterns produce the same on-disk shape under `bag.components[persistKey]`.
 | `tug-slider` | `{ value: number }` |
 | `tug-value-input` | `{ value: number }` |
 
-**Test harness.** `m30-virtual-focus.test.ts` parameterizes over the six fixtures with the `appReload` trigger — 6 tests, one per component. Each seeds `bag.components.{persistKey}` with a non-default value, drives `appReload`, asserts the value round-trips to disk, re-seeds from disk, and asserts the live UI reflects the restored value (Radix `data-state`, `aria-pressed`, or DOM textContent depending on shape).
+**Test harness.** `at0030-virtual-focus.test.ts` parameterizes over the six fixtures with the `appReload` trigger — 6 tests, one per component. Each seeds `bag.components.{persistKey}` with a non-default value, drives `appReload`, asserts the value round-trips to disk, re-seeds from disk, and asserts the live UI reflects the restored value (Radix `data-state`, `aria-pressed`, or DOM textContent depending on shape).
 
 The `simulateAppResign+Become` (cmd-tab) and `quitGracefully+relaunch` triggers are not added. Cmd-tab is covered for persistence by the framework-level tests (m04, m05, m17) which exercise the same will-phase save → `cardStateCache` write path that `useComponentPersistence` rides on; component-specific cmd-tab coverage was found to be flaky against the harness's lifecycle simulation under certain test-runner ordering, and the appReload disk-round-trip already proves the persistence pipeline end to end.
 
@@ -3014,7 +3014,7 @@ The `simulateAppResign+Become` (cmd-tab) and `quitGracefully+relaunch` triggers 
 - `tug-popup-button` — popup-button is a command surface: each item dispatches a one-shot action (no persistent value to capture). The "currently selected option" concept doesn't apply. Marked deferred-indefinitely; revisit only if a future popup-button use-case introduces persistent state.
 - `tug-tab-bar` — the active tab IS the deck's `paneState.activeCardId`, already persisted by the deck framework. Adding a `bag.components` axis for it would duplicate that state ([L23] violation). Marked deferred-indefinitely.
 
-**Virtual focus deferred.** [M30]'s "virtual focus index distinct from selected value" only matters when the user keyboard-navigates without committing. For the components landed here, virtual focus and selected value coincide in practice — clicking or arrow-then-Space selects the focused item. Adding a separate axis would only matter for the edge case "user arrowed onto an item but didn't activate, then transitioned away." This is a niche concern; defer until a real user-reported regression surfaces.
+**Virtual focus deferred.** [AT0030]'s "virtual focus index distinct from selected value" only matters when the user keyboard-navigates without committing. For the components landed here, virtual focus and selected value coincide in practice — clicking or arrow-then-Space selects the focused item. Adding a separate axis would only matter for the edge case "user arrowed onto an item but didn't activate, then transitioned away." This is a niche concern; defer until a real user-reported regression surfaces.
 
 **Estimated commits (actual):** one (batch).
 
@@ -3022,9 +3022,9 @@ The `simulateAppResign+Become` (cmd-tab) and `quitGracefully+relaunch` triggers 
 
 **Status:** ✅ landed. `tug-sheet` is the sole PERSISTENT surface; `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` resolved as EPHEMERAL.
 
-**Closes:** [M26] (overlay-by-overlay policy + opt-in for the persistent set).
+**Closes:** [AT0026] (overlay-by-overlay policy + opt-in for the persistent set).
 
-**Per-overlay policy decisions land in this sub-step** (per [M26] resolution): `tug-sheet` is PERSISTENT (re-open with state intact on re-mount); `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, simple-popover are EPHEMERAL (no opt-in).
+**Per-overlay policy decisions land in this sub-step** (per [AT0026] resolution): `tug-sheet` is PERSISTENT (re-open with state intact on re-mount); `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, simple-popover are EPHEMERAL (no opt-in).
 
 The original proposal classified `tug-alert`, `tug-confirm-popover`, and `tug-popover` as PERSISTENT alongside `tug-sheet`. They were reclassified as EPHEMERAL during 25F:
 
@@ -3036,50 +3036,50 @@ The original proposal classified `tug-alert`, `tug-confirm-popover`, and `tug-po
 
 **Deliverables (actual):**
 - `tug-sheet` adds optional `persistKey` prop + `useComponentPersistence` capturing `{ open: boolean }`. Uncontrolled-only — restore writes through `setOpen` directly (no controlled-mode dispatch needed since the sheet has no public `open`/`onOpenChange` prop).
-- Ephemeral overlays — `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` — left untouched; status documented in [M26]'s entry and in the per-overlay rationale above.
+- Ephemeral overlays — `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` — left untouched; status documented in [AT0026]'s entry and in the per-overlay rationale above.
 - `gallery-sheet` wires `persistKey="sheet-basic"` on the basic-sheet demo and tags the trigger with `data-testid="gallery-sheet-trigger"` for harness scoping.
-- `m26-overlay-persistence.test.ts` covers `tug-sheet × appReload` for both axes (open=true round-trips; open=false stays closed). The `simulateAppResign+Become` (cmd-tab) trigger is not added; m04 / m05 / m17 already cover the will-phase save → cardStateCache write path.
+- `at0026-overlay-persistence.test.ts` covers `tug-sheet × appReload` for both axes (open=true round-trips; open=false stays closed). The `simulateAppResign+Become` (cmd-tab) trigger is not added; m04 / m05 / m17 already cover the will-phase save → cardStateCache write path.
 
 **Estimated commits (actual):** one.
 
 ##### Step 25G: Component opt-in batch 4 — `tug-prompt-entry` chrome state {#step-25g}
 
-**Closes:** [M31], [M25] (closure — the systemic encapsulation gap is now addressed for every component on the priority roster).
+**Closes:** [AT0031], [AT0025] (closure — the systemic encapsulation gap is now addressed for every component on the priority roster).
 
 **Deliverables:**
 - `tug-prompt-entry` opts into [A9] with `persistKey` + `captureState` returning `{ route, toolsOpen }`. Engine content continues to live in `bag.content` (unchanged).
-- New harness test `m31-prompt-entry-chrome.test.ts` covering route navigation + tools panel toggle survival across cmd-tab / reload.
-- Plan-doc audit: walk the [A9d] roster; flip every component's [M25] / [M27] / [M30] / [M31] status from ❌ to ✅ as appropriate.
+- New harness test `at0031-prompt-entry-chrome.test.ts` covering route navigation + tools panel toggle survival across cmd-tab / reload.
+- Plan-doc audit: walk the [A9d] roster; flip every component's [AT0025] / [AT0027] / [AT0030] / [AT0031] status from ❌ to ✅ as appropriate.
 
 **Estimated commits:** one.
 
 ##### Step 25H: Scroll-key audit {#step-25h}
 
-**Closes:** [M29].
+**Closes:** [AT0029].
 
 **Deliverables:**
 - Walk every stateful component for scrollable sub-regions: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-context-menu` / `tug-completion-menu` scroll, etc.
 - For each user-visible scroll, add `data-tug-scroll-key="<unique>"` to the scrolling element. The IS-axis machinery from [Step 9](#step-9) handles capture/restore automatically.
-- New harness test `m29-region-scroll-coverage.test.ts` parameterized over each component's scroll sub-region.
+- New harness test `at0029-region-scroll-coverage.test.ts` parameterized over each component's scroll sub-region.
 
 **Estimated commits:** one (parallel-safe with 25D–G; can land any order).
 
 ##### Step 25I: Banner / bulletin dismiss persistence {#step-25i}
 
-**Closes:** [M28].
+**Closes:** [AT0028].
 
 **Architecture.** Distinct from card-scoped [A9] — this is a USER-WIDE preference. New `dev.tugtool.user.dismissals/{bannerId}` tugbank domain.
 
 **Deliverables:**
 - New `useDismissalState(bannerId): { dismissed, dismiss, undismiss }` hook reading/writing the tugbank user-prefs domain.
 - `tug-banner`, `tug-pane-banner`, `tug-bulletin` consume the hook.
-- New harness test `m28-banner-dismiss.test.ts`: dismiss a banner, simulate reload (re-construct DeckManager via test-mode equivalent), banner stays dismissed.
+- New harness test `at0028-banner-dismiss.test.ts`: dismiss a banner, simulate reload (re-construct DeckManager via test-mode equivalent), banner stays dismissed.
 
 **Estimated commits:** one. Independent of all other sub-steps.
 
 ##### Step 25J: IME composition persistence {#step-25j}
 
-**Closes:** [M12] to the platform-permissible extent. Implements [A6].
+**Closes:** [AT0012] to the platform-permissible extent. Implements [A6].
 
 **Two-phase sub-step.**
 
@@ -3092,7 +3092,7 @@ The original proposal classified `tug-alert`, `tug-confirm-popover`, and `tug-po
 
 **Deliverables:**
 - Phase 1 outcome: research notes folded into [A6]'s description block; if (1) doesn't work and (2) requires Swift-side work that's out of scope, this sub-step's deliverable shrinks to the (3) text-only fallback for both EM and FC.
-- Phase 2 outcome: `bag.markedText` schema in `layout-tree.ts`; EM-engine API surfacing composition state; `m12-ime-composition.test.ts` (gated behind a CJK / IME availability check on the test runner; may end up TUGAPP_IME_AVAILABLE=1 environment-gated).
+- Phase 2 outcome: `bag.markedText` schema in `layout-tree.ts`; EM-engine API surfacing composition state; `at0012-ime-composition.test.ts` (gated behind a CJK / IME availability check on the test runner; may end up TUGAPP_IME_AVAILABLE=1 environment-gated).
 
 **Estimated commits:** two (Phase 1 research note as a separate small commit, Phase 2 the implementation). Phase 1 can land in any order; Phase 2 depends on Phase 1's path decision.
 
@@ -3121,34 +3121,34 @@ The assertion remains valuable as preventive coverage if a future code path shor
 
 **Estimated commits (actual):** one — plan-doc only.
 
-##### Step 25L: Final cleanup ([M13], [M15], Step NN doc pass) {#step-25l}
+##### Step 25L: Final cleanup ([AT0013], [AT0015], Step NN doc pass) {#step-25l}
 
-**Status:** ✅ M-series audit deliverable closed. Other deliverables marked partial / deferred — see breakdown below.
+**Status:** ✅ AT-series audit deliverable closed. Other deliverables marked partial / deferred — see breakdown below.
 
-**Closes:** [M13] (closed: per-tag tests collectively constitute the integration coverage); M-series end-of-plan audit (closed: canonical inventory at [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) lists every tag's status). [M15] remains ⚠️ partial (test-fixture cleanup deferred); other doc-pass items left for follow-up commits.
+**Closes:** [AT0013] (closed: per-tag tests collectively constitute the integration coverage); AT-series end-of-plan audit (closed: canonical inventory at [`tuglaws/at-series-inventory.md`](../tuglaws/at-series-inventory.md) lists every tag's status). [AT0015] remains ⚠️ partial (test-fixture cleanup deferred); other doc-pass items left for follow-up commits.
 
 **Deliverables (audited):**
-- ✅ **[M13] integration test coverage.** Closed in spirit by landing a focused `m{NN}-*.test.ts` per M-tag across 25A–25K, not by extending one mega-test file. Coverage = sum of per-tag gating tests; the inventory itself is the integration test plan.
-- ⚠️ **[M15] legacy API deletion.** Production callers retired; the `selectionGuard.saveSelection` / `restoreSelection` / `SavedSelection` surface still exists for unit-test compatibility (`selection-guard.test.ts`, `selection-model.test.tsx`, `use-selection-boundary.test.tsx` exercise it as a registration probe). Full deletion requires rewriting those tests to use the published `cardRanges` / `updateCardDomSelection` surface — non-trivial. Marked ⚠️ partial in the inventory; deferred as a focused follow-up.
-- ⏸ **`selection-model.md` rewrite + module docstrings.** Big doc rewrite covering the post-23A–23G architecture (synchronous `focus-transfer.ts`, [A9] component protocol, taxonomy table). Out of scope for the M-series-audit commit; deferred as a follow-up doc pass.
+- ✅ **[AT0013] integration test coverage.** Closed in spirit by landing a focused `m{NN}-*.test.ts` per AT-tag across 25A–25K, not by extending one mega-test file. Coverage = sum of per-tag gating tests; the inventory itself is the integration test plan.
+- ⚠️ **[AT0015] legacy API deletion.** Production callers retired; the `selectionGuard.saveSelection` / `restoreSelection` / `SavedSelection` surface still exists for unit-test compatibility (`selection-guard.test.ts`, `selection-model.test.tsx`, `use-selection-boundary.test.tsx` exercise it as a registration probe). Full deletion requires rewriting those tests to use the published `cardRanges` / `updateCardDomSelection` surface — non-trivial. Marked ⚠️ partial in the inventory; deferred as a focused follow-up.
+- ⏸ **`selection-model.md` rewrite + module docstrings.** Big doc rewrite covering the post-23A–23G architecture (synchronous `focus-transfer.ts`, [A9] component protocol, taxonomy table). Out of scope for the AT-series-audit commit; deferred as a follow-up doc pass.
 - ✅ **Cross-reference update in `tugplan-tide-card-polish.md`.** Existing references to `tugplan-selection.md` are still accurate (they point at the plan doc, which remains canonical for design intent). The new inventory link landed inline in the missing-cases section.
-- ✅ **M-series end-of-plan audit.** New file [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) lists every tag M01–M38 with status, gating tests, one-paragraph summary. M32–M36 elaborated entries added to this plan doc. M37 and M38 added (renumbered from drifted `m26-*` and `m27-*` test filenames; old prefixes collided with the M26 overlay-policy and M27 layout-state tags). Coverage matrix extended to include M32–M38. The justfile's hardcoded test-suite list updated to use the new filenames + add the m26/m27/m30/m31 tests added during 25D–25G that were never wired into the default sweep.
+- ✅ **AT-series end-of-plan audit.** New file [`tuglaws/at-series-inventory.md`](../tuglaws/at-series-inventory.md) lists every tag AT0001–AT0038 with status, gating tests, one-paragraph summary. AT0032–AT0036 elaborated entries added to this plan doc. AT0037 and AT0038 added (renumbered from drifted `m26-*` and `m27-*` test filenames; old prefixes collided with the AT0026 overlay-policy and AT0027 layout-state tags). Coverage matrix extended to include AT0032–AT0038. The justfile's hardcoded test-suite list updated to use the new filenames + add the m26/m27/m30/m31 tests added during 25D–25G that were never wired into the default sweep.
 
-**Estimated commits (actual):** one — the M-series audit commit lands here. M15 deletion + selection-model.md rewrite tracked as follow-up commits if/when prioritized.
+**Estimated commits (actual):** one — the AT-series audit commit lands here. AT0015 deletion + selection-model.md rewrite tracked as follow-up commits if/when prioritized.
 
 **Dependencies:** all preceding sub-steps in Step 25.
 
-##### End of M-series.
+##### End of AT-series.
 
-After Step 25L lands, the missing-cases inventory ([M01]–[M38]) is fully closed except for [M12] (IME, deferred to [25J]), [M28] (banner-dismiss, deferred), [M29] (scroll-key audit, deferred), and the residual axes called out in [M15] (legacy API surface — partial), [M30] (virtual-focus-without-selection — niche edge case), and [M31] (tide-card lazy-mount). The plan doc transitions to a maintenance shape: any new M-tag surfaces from a real-app gap, gets authored as a new entry in [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md), gated by a new harness test, and closed in a focused sub-step.
+After Step 25L lands, the missing-cases inventory ([AT0001]–[AT0038]) is fully closed except for [AT0012] (IME, deferred to [25J]), [AT0028] (banner-dismiss, deferred), [AT0029] (scroll-key audit, deferred), and the residual axes called out in [AT0015] (legacy API surface — partial), [AT0030] (virtual-focus-without-selection — niche edge case), and [AT0031] (tide-card lazy-mount). The plan doc transitions to a maintenance shape: any new AT-tag surfaces from a real-app gap, gets authored as a new entry in [`tuglaws/at-series-inventory.md`](../tuglaws/at-series-inventory.md), gated by a new harness test, and closed in a focused sub-step.
 
 ---
 
 #### Step NN: Documentation & final cleanup {#step-nn}
 
-**Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the M-series steps are authored.
+**Note:** placeholder number. This step used to be numbered 16 but was renumbered once the [missing cases inventory](#missing-cases) surfaced additional work between Step 15 and final cleanup. Resolving to a concrete step number happens after the AT-series steps are authored.
 
-**Depends on:** all preceding steps, including the M-series closures.
+**Depends on:** all preceding steps, including the AT-series closures.
 
 **Commit:** `docs(selection): document two-paint model and final cleanup`
 
@@ -3178,7 +3178,7 @@ After Step 25L lands, the missing-cases inventory ([M01]–[M38]) is fully close
 
 ### Missing cases inventory {#missing-cases}
 
-> **Canonical registry:** [`tuglaws/m-series-inventory.md`](../tuglaws/m-series-inventory.md) is the authoritative index of M-tag → status → gating tests, including M32–M38 added during Steps 23F / 23G / 25C.4 / 25C.5 / 25L. The blocks below remain the elaborated rationale + closing-requires for each tag and stay synchronized with the inventory's status field. When the two diverge, the inventory's tag numbering is authoritative; the per-tag block here is authoritative for design intent.
+> **Canonical registry:** [`tuglaws/at-series-inventory.md`](../tuglaws/at-series-inventory.md) is the authoritative index of AT-tag → status → gating tests, including AT0032–AT0038 added during Steps 23F / 23G / 25C.4 / 25C.5 / 25L. The blocks below remain the elaborated rationale + closing-requires for each tag and stay synchronized with the inventory's status field. When the two diverge, the inventory's tag numbering is authoritative; the per-tag block here is authoritative for design intent.
 
 Post-implementation analysis of Steps 1–15 surfaced a class of transitions and card-type interactions the original plan did not cover. The plan did cover cold-boot reload and cross-pane moves well, but left **in-session activation transitions** (tab switch, pane activation, app resign / become-active, app hide / unhide) and **content-owning card focus reactivation** without a documented owner or trigger.
 
@@ -3205,12 +3205,12 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **FX** — element focus (`document.activeElement`).
 - **OS** — outer scroll (`hostContentEl.scrollLeft/Top`).
 - **IS** — inner region scroll (`data-tug-scroll-key` elements).
-- **MT** — marked text / IME composition buffer (new axis introduced by [M12] resolution).
+- **MT** — marked text / IME composition buffer (new axis introduced by [AT0012] resolution).
 - **CS** — component state (new axis introduced by [D13]; opt-in per component via `persistKey`, captured into `bag.components`).
 
 ---
 
-#### [M01] Intra-pane tab switch: form-control card loses focus on return {#m01-tab-switch-fc}
+#### [AT0001] Intra-pane tab switch: form-control card loses focus on return {#at0001-tab-switch-fc}
 
 - **Card types:** FC
 - **State axes:** FX, SR (via paint dependency)
@@ -3220,26 +3220,26 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Mechanism:** `CardHost` wraps each card in `<div style={{ display: isActive ? "contents" : "none" }}>`. Browsers move focus off any element inside a `display: none` subtree. Neither the primary mount effect (deps `[cardId, hostStackId, hostContentEl]`) nor the cross-pane refocus effect (deps `[hostStackId]`) fires on `isActive` transitions. The input's internal `selectionStart/End` persists on the node, but the browser paints the highlight only when the input is focused.
 - **Closing requires:** a third `CardHost` `useLayoutEffect` keyed on `[isActive]` with a has-been-active ref-guard that skips the initial activation; on subsequent `false → true` transitions, re-apply `bag.focus` for FC (and `dom`) kinds only.
 
-#### [M02] Intra-pane tab switch: engine-managed card loses focus and caret on return {#m02-tab-switch-em}
+#### [AT0002] Intra-pane tab switch: engine-managed card loses focus and caret on return {#at0002-tab-switch-em}
 
 - **Card types:** EM
 - **State axes:** FX, SR paint
-- **Trigger:** Same as M01 but for EM cards (tide-card, gallery-prompt-input).
+- **Trigger:** Same as AT0001 but for EM cards (tide-card, gallery-prompt-input).
 - **Status:** ❌ broken
-- **Evidence:** Hypothesized from the same mechanism as M01. Needs direct user repro to confirm symptoms.
+- **Evidence:** Hypothesized from the same mechanism as AT0001. Needs direct user repro to confirm symptoms.
 - **Mechanism:** `display: none` unfocuses the engine's contentEditable root. The engine's own selection lives on `window.getSelection()` and may be cleared by WebKit when the anchoring element is hidden. `selectionGuard.cardRanges` retains its Range (guarded by `document.contains`), but native `::selection` doesn't paint without focus on the root, and no caret blinks.
-- **Closing requires:** a mechanism for content-owning cards to re-focus on reactivation. Options: (a) new `onCardActivated` callback in `CardPersistenceCallbacks` that the content factory implements (e.g., `engine.focus()`); (b) card-lifecycle subscription (`observeCardDidActivate`) inside the component. See [M08] for the infra decision.
+- **Closing requires:** a mechanism for content-owning cards to re-focus on reactivation. Options: (a) new `onCardActivated` callback in `CardPersistenceCallbacks` that the content factory implements (e.g., `engine.focus()`); (b) card-lifecycle subscription (`observeCardDidActivate`) inside the component. See [AT0008] for the infra decision.
 
-#### [M03] Pane activation change: card's `isActive` doesn't flip {#m03-pane-activation}
+#### [AT0003] Pane activation change: card's `isActive` doesn't flip {#at0003-pane-activation}
 
 - **Card types:** FC, EM
 - **State axes:** FX, SR paint
 - **Trigger:** User has two panes open with cards that had focus. Clicking in pane B to make it active doesn't toggle `isActive` on pane A's active card — it's still the active card of its pane. When the user clicks back on pane A's chrome (not the input), the input isn't re-focused.
 - **Status:** ❌ broken (hypothesized; needs repro)
-- **Mechanism:** The pane-activation path changes `activePaneId` in the deck store and flips composite-first-responder. `CardHost.isActive` only reflects "active within my own pane," not "my pane is the active pane." The [M01]/[M02] refocus trigger (`[isActive]` dep) misses this transition entirely.
-- **Closing requires:** a `CardHost` subscription to the deck store tracking `isActiveCardOfActivePane(store, cardId)` via `useSyncExternalStore` or direct `subscribe`; refocus on `false → true` transitions of that derived value. Overlaps with [M01] — a single mechanism can cover both if it tracks the "am I the focus destination right now?" predicate, not the narrower `isActive` prop.
+- **Mechanism:** The pane-activation path changes `activePaneId` in the deck store and flips composite-first-responder. `CardHost.isActive` only reflects "active within my own pane," not "my pane is the active pane." The [AT0001]/[AT0002] refocus trigger (`[isActive]` dep) misses this transition entirely.
+- **Closing requires:** a `CardHost` subscription to the deck store tracking `isActiveCardOfActivePane(store, cardId)` via `useSyncExternalStore` or direct `subscribe`; refocus on `false → true` transitions of that derived value. Overlaps with [AT0001] — a single mechanism can cover both if it tracks the "am I the focus destination right now?" predicate, not the narrower `isActive` prop.
 
-#### [M04] App resign → become-active: focus not restored to previously-focused element {#m04-app-resign-return}
+#### [AT0004] App resign → become-active: focus not restored to previously-focused element {#at0004-app-resign-return}
 
 - **Card types:** FC, EM
 - **State axes:** FX
@@ -3247,43 +3247,43 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Status:** ❌ broken
 - **Evidence:** Code inspection: `windowHasFocus` flips via `selectionGuard.handleApplicationDid{Resign,Become}Active` (Step 5), which drives paint of `cardRanges` (EM case) via the custom highlight. No FX restore path exists. For FC cards, inputs don't participate in `cardRanges` and native paint requires focus — the selection is in `selectionStart/End` but invisible.
 - **Mechanism:** Step 13 wires `saveAndFlush` on will-resign (so `bag.focus` is correct), but no counterpart re-applies `bag.focus` on become-active.
-- **Closing requires:** on `applicationDidBecomeActive` / `applicationDidUnhide`, re-apply `bag.focus` for the active card of the active pane — same mechanism as [M01]/[M03]. Needs the [R07] active-card gate to avoid focus theft if the user has since clicked elsewhere.
+- **Closing requires:** on `applicationDidBecomeActive` / `applicationDidUnhide`, re-apply `bag.focus` for the active card of the active pane — same mechanism as [AT0001]/[AT0003]. Needs the [R07] active-card gate to avoid focus theft if the user has since clicked elsewhere.
 
-#### [M05] App hide → unhide: same as M04 {#m05-app-hide-unhide}
+#### [AT0005] App hide → unhide: same as AT0004 {#at0005-app-hide-unhide}
 
 - **Card types:** FC, EM
 - **State axes:** FX
 - **Trigger:** macOS Cmd-H (`applicationWillHide` / `applicationDidUnhide`).
-- **Status:** ❌ broken (same mechanism as M04)
-- **Closing requires:** Same fix as M04; the `onCardActivated` hook (or deck-store-subscribed focus restore) should fire on unhide too.
+- **Status:** ❌ broken (same mechanism as AT0004)
+- **Closing requires:** Same fix as AT0004; the `onCardActivated` hook (or deck-store-subscribed focus restore) should fire on unhide too.
 
-#### [M06] Cross-pane move: focus not restored for content-owning cards {#m06-cross-pane-em}
+#### [AT0006] Cross-pane move: focus not restored for content-owning cards {#at0006-cross-pane-em}
 
 - **Card types:** EM
 - **State axes:** FX, SR paint
 - **Trigger:** User drags an engine-managed card from pane A to pane B (or detaches it into a new standalone pane). The pointerdown on pane chrome blurs the engine root; the drop reparents the DOM; the engine root never regains focus.
 - **Status:** ⚠️ partial
 - **Evidence:** Step 11's cross-pane-move refocus effect explicitly skips content-owning cards per the architectural gate landed in the tide-bug fix — CardHost doesn't call `applyFocusSnapshot` for them. The engine has no equivalent reactivation hook.
-- **Closing requires:** Same shared mechanism as [M02] ([M08]'s infra decision). Once engine-managed cards have an `onCardActivated` path, cross-pane-move refocus becomes an instance of it.
+- **Closing requires:** Same shared mechanism as [AT0002] ([AT0008]'s infra decision). Once engine-managed cards have an `onCardActivated` path, cross-pane-move refocus becomes an instance of it.
 
-#### [M07] Card detach: same focus gap as M06 {#m07-card-detach}
+#### [AT0007] Card detach: same focus gap as AT0006 {#at0007-card-detach}
 
 - **Card types:** EM, FC
 - **State axes:** FX, SR paint
 - **Trigger:** User drags a card out of its pane into a new standalone pane (`DeckManager._detachCard`).
-- **Status:** ⚠️ partial — FC is covered by the existing cross-pane refocus effect (Step 11) via the detached card's new `hostStackId`; EM is broken for the same reason as M06.
-- **Closing requires:** closes automatically once M06 is closed.
+- **Status:** ⚠️ partial — FC is covered by the existing cross-pane refocus effect (Step 11) via the detached card's new `hostStackId`; EM is broken for the same reason as AT0006.
+- **Closing requires:** closes automatically once AT0006 is closed.
 
-#### [M08] No `onCardActivated` hook for content-owning cards {#m08-on-card-activated}
+#### [AT0008] No `onCardActivated` hook for content-owning cards {#at0008-on-card-activated}
 
 - **Card types:** EM (but the hook would be general)
 - **State axes:** infra
-- **Trigger:** N/A — this is an infrastructure gap that blocks M02, M04, M05, M06.
+- **Trigger:** N/A — this is an infrastructure gap that blocks AT0002, AT0004, AT0005, AT0006.
 - **Status:** 🔧 missing infra
 - **Mechanism:** `CardPersistenceCallbacks` has `onSave` / `onRestore` / `onContentReady` / `restorePendingRef`. There is no signal for "your card just became the focus destination; if you want to re-focus yourself, now is the time." The `card-lifecycle.ts` observer API does expose `observeCardDidActivate`, but content factories don't wire it for focus-restore purposes today.
 - **Closing requires:** a design decision between (a) adding a new optional callback `onCardActivated?(): void` to `CardPersistenceCallbacks` — content factory calls `engine.root.focus()` in it; or (b) having content factories subscribe to `observeCardDidActivate` themselves. Option (a) is more discoverable and keeps lifecycle-awareness contained to the persistence protocol; option (b) is leaner but spreads the knowledge. Pending decision.
 
-#### [M09] Card mounts in an inactive tab: engine's `setSelectedRange` focus fails silently {#m09-inactive-mount}
+#### [AT0009] Card mounts in an inactive tab: engine's `setSelectedRange` focus fails silently {#at0009-inactive-mount}
 
 - **Card types:** EM
 - **State axes:** FX, SR
@@ -3291,18 +3291,18 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Status:** ❌ broken for this specific scenario (scoped)
 - **Evidence:** Follows directly from the dev-warn we installed — the warning text explicitly names this failure mode.
 - **Mechanism:** Our architectural gate (M-fix) keeps CardHost from stepping on the engine's selection. But for inactive-mount cards, the engine's own focus-first doesn't land. On user-activate (they click the tab), nothing re-focuses.
-- **Closing requires:** [M08]'s hook plus engine wiring to re-focus on `onCardActivated`. Same root cause cluster.
+- **Closing requires:** [AT0008]'s hook plus engine wiring to re-focus on `onCardActivated`. Same root cause cluster.
 
-#### [M10] Markdown-view copy selection is never persisted {#m10-markdown-selection}
+#### [AT0010] Markdown-view copy selection is never persisted {#at0010-markdown-selection}
 
 - **Card types:** MV
 - **State axes:** SR
 - **Trigger:** User selects text in a markdown-view card (for copy). Any transition (reload, tab switch, pane switch, resign) loses the selection.
-- **Status:** ✅ closed at [25B](#step-25b) — `tug-markdown-view` gained `persistKey` + a `document.selectionchange` listener that publishes the user's `Range` to `selectionGuard.updateCardDomSelection(cardId, range)` whenever the range's `commonAncestorContainer` is inside the scroll container. Round-trip gated by `m10-markdown-selection.test.ts` (tab-switch + cmd-tab; native `::selection` and the `inactive-selection` custom highlight both verified).
+- **Status:** ✅ closed at [25B](#step-25b) — `tug-markdown-view` gained `persistKey` + a `document.selectionchange` listener that publishes the user's `Range` to `selectionGuard.updateCardDomSelection(cardId, range)` whenever the range's `commonAncestorContainer` is inside the scroll container. Round-trip gated by `at0010-markdown-selection.test.ts` (tab-switch + cmd-tab; native `::selection` and the `inactive-selection` custom highlight both verified).
 - **Mechanism (was):** Markdown-view regions didn't carry a `persistKey`, didn't use `useCardPersistence`, and didn't participate in `selectionGuard.cardRanges` (no `onSelectionChanged` publish). The selection existed in `window.getSelection()` but nothing captured it.
 - **Mechanism (now):** With `persistKey` set, the view installs a `useLayoutEffect`-scoped `selectionchange` listener that publishes any in-card `Range` to `selectionGuard`. The card-level paint authority (`updatePaint`) buckets the range into native `::selection` (focused card with window focus) or `::highlight(inactive-selection)` (every other case) on every `cardRanges` update, every deck-store notify, and every resign/become-active. On a focus return that has a saved `Range`, the one-shot capture-phase `mousedown` interceptor stops the click that triggered the switch from collapsing the about-to-be-restored selection. The `useCardPersistence` registration's `onSave` returns `undefined` so `bag.content` stays absent — `CardHost`'s `captureCardState` then takes the `!ownsSelectionAndFocus` branch and serializes `bag.domSelection` from `selectionGuard.cardRanges` automatically. The cold-boot mount-restore path replays the range via `selectionGuard.restoreCardDomSelection`.
 
-#### [M11] Card close → reopen: no "reopen" path exists {#m11-card-close-reopen}
+#### [AT0011] Card close → reopen: no "reopen" path exists {#at0011-card-close-reopen}
 
 - **Card types:** all
 - **State axes:** all
@@ -3311,7 +3311,7 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Decision:** Close-then-reopen is not a product feature and no support is needed. Step 14's flush-on-close continues to write the bag for robustness (protects against accidental close with in-flight edits recoverable via history), but no UI path to reopen will be built. This entry is informational only and needs no follow-on work.
 - **Closing requires:** No action. Retained in the inventory for traceability.
 
-#### [M12] IME composition mid-transition unresolved {#m12-ime-composition}
+#### [AT0012] IME composition mid-transition unresolved {#at0012-ime-composition}
 
 - **Card types:** EM, FC
 - **State axes:** TV, SR, **MT (new: marked-text composition buffer)**
@@ -3324,7 +3324,7 @@ This section catalogs every known gap so follow-on steps can close them systemat
   - **Platform research required:** confirm which of the composition re-entry mechanisms (Web API, native IME bridge via `tugapp`) is viable in the Tide shell. See architecture piece [A6].
   - **Residual:** unclean process termination mid-composition is unrecoverable — accepted limitation.
 
-#### [M13] Integration test coverage for in-session transitions {#m13-integration-tests}
+#### [AT0013] Integration test coverage for in-session transitions {#at0013-integration-tests}
 
 - **Card types:** all
 - **State axes:** all
@@ -3339,16 +3339,16 @@ This section catalogs every known gap so follow-on steps can close them systemat
   - Inactive-at-mount card activated post-hoc.
 - **Closing requires:** extend `selection-persistence-integration.test.tsx` as each M-step lands. Each closing step should add its own integration test pinning the specific repro.
 
-#### [M14] Scroll persistence across in-session transitions: untested {#m14-scroll-untested}
+#### [AT0014] Scroll persistence across in-session transitions: untested {#at0014-scroll-untested}
 
 - **Card types:** all (MV particularly)
 - **State axes:** OS, IS
 - **Trigger:** Tab switch within pane, pane activation, app resign/activate.
-- **Status:** ✅ verified by `tests/in-app/m14-scroll-persistence.test.ts` ([Step 25A](#step-25a)).
+- **Status:** ✅ verified by `tests/app-test/at0014-scroll-persistence.test.ts` ([Step 25A](#step-25a)).
 - **Mechanism:** Region scroll (`bag.regionScroll`) round-trips correctly through tab switch and app resign/return on `gallery-markdown-50kb` — a `tug-markdown-view` card variant with 50KB of baked-in static content + `useCardPersistence` opt-in (added in [Step 25A](#step-25a)).
 - **Verification:** Two test cases cover region scroll across (a) tab switch + back, (b) `simulateAppResign` + `simulateAppBecomeActive`. Outer scroll (`bag.scroll`) stays unit-tested in `card-host-region-scroll.test.ts`; in-app gallery cards fill the pane (`height: 100%`), so an in-app outer-scroll fixture would require synthetic CSS that doesn't reflect production layouts.
 
-#### [M15] `saveSelection` / `restoreSelection` / `SavedSelection` legacy surface {#m15-legacy-api}
+#### [AT0015] `saveSelection` / `restoreSelection` / `SavedSelection` legacy surface {#at0015-legacy-api}
 
 - **Card types:** N/A
 - **State axes:** N/A (cleanup)
@@ -3357,53 +3357,53 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Mechanism:** Legacy API remains in `selection-guard.ts` for test compatibility. Step NN's documentation pass nominally removes them; this entry ensures the deletion doesn't slip.
 - **Closing requires:** Step NN performs the deletion; `selection-persistence-greps.test.ts` extends to also assert zero references (including tests) once the API is gone.
 
-#### [M16] Tab close of the active tab → focus handoff to the newly-active tab {#m16-tab-close-handoff}
+#### [AT0016] Tab close of the active tab → focus handoff to the newly-active tab {#at0016-tab-close-handoff}
 
 - **Card types:** FC, EM
 - **State axes:** FX, SR paint
 - **Trigger:** User closes the currently-active tab of a pane. The pane picks a new active card (typically the neighbor or most-recent). That new active card should receive focus + restore its selection paint.
-- **Status:** ❌ broken (hypothesized; same root cause as M01/M03 — no activation hook)
-- **Mechanism:** Closing a card routes through `_removeCard` → Step 14's flush path → React unmount. The pane's new `activeCardId` flips, causing `isActive` to flip `false → true` on the neighbor. Same missing `[isActive]`-triggered refocus as M01/M02. No current code refocuses the neighbor.
-- **Closing requires:** nothing new beyond [M01] / [M02] / [A3]'s shared activation effect — tab-close handoff is just another transition that flips `isFocusDestination`. Verify via integration test.
+- **Status:** ❌ broken (hypothesized; same root cause as AT0001/AT0003 — no activation hook)
+- **Mechanism:** Closing a card routes through `_removeCard` → Step 14's flush path → React unmount. The pane's new `activeCardId` flips, causing `isActive` to flip `false → true` on the neighbor. Same missing `[isActive]`-triggered refocus as AT0001/AT0002. No current code refocuses the neighbor.
+- **Closing requires:** nothing new beyond [AT0001] / [AT0002] / [A3]'s shared activation effect — tab-close handoff is just another transition that flips `isFocusDestination`. Verify via integration test.
 
-#### [M17] `saveState` RPC from native does not capture focus or selection {#m17-savestate-rpc}
+#### [AT0017] `saveState` RPC from native does not capture focus or selection {#at0017-savestate-rpc}
 
 - **Card types:** FC, EM, MV
 - **State axes:** FX, SR, MT
 - **Trigger:** Native shell (tugapp) calls into the web frontend via the `saveState` RPC to request a snapshot (e.g., on window-close or "save to crash recovery").
-- **Status:** ✅ verified by `tests/in-app/m17-savestate-rpc-parity.test.ts` ([Step 25A](#step-25a)).
+- **Status:** ✅ verified by `tests/app-test/at0017-savestate-rpc-parity.test.ts` ([Step 25A](#step-25a)).
 - **Evidence:** `main.tsx` wires `window.tugdeck.saveState` to `deck.saveAndFlushSync()`, which iterates every card through `invokeSaveCallback("manual")` — the same entry point the will-phase / window-blur path uses with `source: "window-blur"`. Both routes call the card's same `onSave` closure.
 - **Verification:** Gating test types into a focused FC card, drives `window.tugdeck.saveState()`, reads the bag, drives `simulateAppResign` (window-blur), reads the bag again. Asserts (a) saveState bag contains the user's edit and (b) saveState bag is JSON-equal to the window-blur bag for the same steady state.
 
-#### [M18] Async content-load race: save fires before `onContentReady` {#m18-async-content-ready-race}
+#### [AT0018] Async content-load race: save fires before `onContentReady` {#at0018-async-content-ready-race}
 
 - **Card types:** EM (content factories that async-load content)
 - **State axes:** TV, SR, FX
 - **Trigger:** Card mounts, sets `restorePendingRef = true`, kicks off an async content load. During the window before `onContentReady` resolves, an app-resign, tab switch, or beforeunload fires.
-- **Status:** ✅ verified by `tests/in-app/m18-async-content-race.test.ts` ([Step 25A](#step-25a)) for the synchronous-restore factories shipping today.
+- **Status:** ✅ verified by `tests/app-test/at0018-async-content-race.test.ts` ([Step 25A](#step-25a)) for the synchronous-restore factories shipping today.
 - **Mechanism:** During the pending window, the engine's content is empty or stub. If `onSave` serializes the engine's current state, it captures the stub — overwriting the real persisted content the card was trying to restore. `restorePendingRef` exists to guard this, but it must gate `onSave`, not just `onContentReady`.
 - **Verification:** Gating test pre-seeds `bag.content` with engine state, mounts a `gallery-prompt-entry` card, drives `saveState()` then `simulateAppResign` / `simulateAppBecomeActive`, and asserts `bag.content` still carries the seeded text after each save trigger. On-roster factories (`gallery-prompt-input`, `gallery-prompt-entry`, tide-card editor) restore synchronously inside Phase-1's layout effect, so the race window is sub-frame and not reproducible from the harness without explicit instrumentation. The behavioral assertion this test makes — "save after seed-and-mount captures the seeded content" — is what user-facing correctness requires.
 - **Follow-up condition:** if a future async factory exposes the race, this test will start failing and the proper fix (gate `invokeSaveCallback` on `restorePendingRef.current`) lands in [25C](#step-25c).
 
-#### [M19] Pane close / deck-level teardown: flush path coverage {#m19-pane-teardown-flush}
+#### [AT0019] Pane close / deck-level teardown: flush path coverage {#at0019-pane-teardown-flush}
 
 - **Card types:** all
 - **State axes:** all
 - **Trigger:** User closes an entire pane (not just a card within it), or the deck itself is torn down (e.g., deck switch, workspace close).
-- **Status:** ✅ verified by `tests/in-app/m19-pane-teardown-flush.test.ts` ([Step 25A](#step-25a)) for the multi-card pane teardown path. `[A7]` flush-gate invariant guard remains in scope for [25C](#step-25c) if the deck-reset / workspace-close paths surface a gap.
+- **Status:** ✅ verified by `tests/app-test/at0019-pane-teardown-flush.test.ts` ([Step 25A](#step-25a)) for the multi-card pane teardown path. `[A7]` flush-gate invariant guard remains in scope for [25C](#step-25c) if the deck-reset / workspace-close paths surface a gap.
 - **Mechanism:** `_closePane` iterates every card in the pane through `flushSaveCallbackBeforeDestruction` (deck-manager.ts phase 2) BEFORE firing `cardWillBeginDestruction` (phase 3). The `__tug.closePane` test surface entry mirrors `deckManager.handlePaneClosed` — the same public method a future "close every card in this pane" UI affordance would call.
 - **Verification:** Gating test seeds a 3-card pane, types into each, drives `__tug.closePane(paneId)`, and asserts (a) a `save-callback` event with `source: "close-handoff"` fires for every cardId, (b) every per-card save-callback precedes the first `card-host-unmount`. `[A7]` invariant guard at the bottom of `_removeCard` / `_closePane` and any deck-reset path audit remain follow-up work for [25C](#step-25c).
 
-#### [M20] Modal overlay (command palette, context menu, drag ghost) dismiss → focus return {#m20-overlay-focus-return}
+#### [AT0020] Modal overlay (command palette, context menu, drag ghost) dismiss → focus return {#at0020-overlay-focus-return}
 
 - **Card types:** FC, EM
 - **State axes:** FX, SR paint
 - **Trigger:** User opens a modal/overlay (command palette, right-click context menu, drag-and-drop ghost). Focus moves to the overlay. On dismiss, focus should return to the previously-focused card.
-- **Status:** ✅ verified by `tests/in-app/m20-overlay-focus-return.test.ts` ([Step 25A](#step-25a)) for the editor context-menu representative.
+- **Status:** ✅ verified by `tests/app-test/at0020-overlay-focus-return.test.ts` ([Step 25A](#step-25a)) for the editor context-menu representative.
 - **Mechanism:** `tug-editor-context-menu` (the most user-driven overlay surface — every prompt-input installs it via `useTextInputResponder`) portals to `document.body` and dismisses on Escape. The dismiss path correctly returns focus to the editor; `document.activeElement` lands back inside the contenteditable rather than on `<body>`.
 - **Verification:** Gating test mounts a `gallery-prompt-input`, types into the editor, drives `nativeRightClickAtElement` to open the menu, drives `nativeKey("Escape")` to dismiss, asserts `document.activeElement` is the editor's contenteditable inside the same card. Other overlay surfaces (`tug-popover`, `tug-sheet`, `tug-context-menu`, `tug-alert`) follow the same portal-then-dismiss pattern; the editor menu is the audit gate.
 
-#### [M21] Drag aborted (escape / invalid drop) → card state preservation {#m21-drag-aborted}
+#### [AT0021] Drag aborted (escape / invalid drop) → card state preservation {#at0021-drag-aborted}
 
 - **Card types:** FC, EM
 - **State axes:** FX, SR paint
@@ -3412,29 +3412,29 @@ This section catalogs every known gap so follow-on steps can close them systemat
 - **Mechanism:** If the drag preview mechanism reparents the DOM during drag (versus using a ghost element), aborting may not restore the DOM state cleanly. Even with a ghost, the pointerdown on the original card likely blurred the engine root; abort doesn't re-focus.
 - **Closing requires:** verify drag preview uses a ghost (not live DOM reparent). If live reparent: add a drag-abort path that routes through the activation mechanism to refocus. Integration test: drag card, press Escape, assert focus + selection paint unchanged.
 
-#### [M22] Engine caret visibility after refocus: paint vs. blink {#m22-caret-visibility}
+#### [AT0022] Engine caret visibility after refocus: paint vs. blink {#at0022-caret-visibility}
 
 - **Card types:** EM
 - **State axes:** FX (visual only; no state impact)
 - **Trigger:** After any refocus path (cold-boot, tab switch, cross-pane move, app-activate), does the caret blink (user's visual confirmation of focus)?
-- **Status:** ✅ verified by `tests/in-app/m22-caret-visibility.test.ts` ([Step 25A](#step-25a)).
+- **Status:** ✅ verified by `tests/app-test/at0022-caret-visibility.test.ts` ([Step 25A](#step-25a)).
 - **Mechanism:** `::selection` paint and caret blink are browser-native and tied to BOTH `document.activeElement` and `document.hasFocus()`. After cold-boot mount, app-resign + become-active, and tab switch + back, both conditions hold: `activeElement` is the engine root contenteditable, and `document.hasFocus() === true`.
 - **Verification:** Gating test mounts a `gallery-prompt-input` EM card, drives three refocus paths (cold-boot → app-cycle → tab switch A↔B), and asserts both axes after each transition.
 
-#### [M23] Selection spanning multiple cards {#m23-cross-card-selection}
+#### [AT0023] Selection spanning multiple cards {#at0023-cross-card-selection}
 
 - **Card types:** any two of {FC, EM, MV}
 - **State axes:** SR
 - **Trigger:** User clicks in card A, shift-clicks or drag-selects into card B.
-- **Status:** ✅ verified by `tests/in-app/m23-cross-card-selection.test.ts` ([Step 25A](#step-25a)). Paint system does not crash on a cross-card drag; the audit treats genuine cross-card ranges as informational diagnostics, not test failures.
+- **Status:** ✅ verified by `tests/app-test/at0023-cross-card-selection.test.ts` ([Step 25A](#step-25a)). Paint system does not crash on a cross-card drag; the audit treats genuine cross-card ranges as informational diagnostics, not test failures.
 - **Mechanism:** The browser's single-`Selection` model typically scopes a selection to one contentEditable root, but across non-editable cards (e.g., two MV cards side-by-side), a single selection may legitimately span both. The gating test exercises a native drag from card A's content to card B's content and inspects `window.getSelection()` + per-card `__tug.getSelection(cardId)` — neither throws under the WebKit boundary behavior that ships today.
 - **Verification:** Two side-by-side panes each with a `gallery-markdown-50kb` card; native drag from A's scroll container to B's; assertions cover (a) `window.getSelection()` does not throw, (b) `__tug.getSelection("A")` and `__tug.getSelection("B")` each return either a snapshot or `null` without crashing. A genuine cross-card range, if observed, prints a diagnostic for [25C](#step-25c) follow-up but does not fail the test — the audit gates the paint system, not specific selection scoping.
 
 ---
 
-_M24–M31 below surfaced from the component-roster L23 audit. They are gaps in **component-level** persistence — orthogonal to the transition-class gaps in M01–M23. All route through architecture piece [A9] (Component Persistence Protocol)._
+_M24–AT0031 below surfaced from the component-roster L23 audit. They are gaps in **component-level** persistence — orthogonal to the transition-class gaps in AT0001–AT0023. All route through architecture piece [A9] (Component Persistence Protocol)._
 
-#### [M24] No component-level persistence protocol {#m24-component-protocol}
+#### [AT0024] No component-level persistence protocol {#at0024-component-protocol}
 
 - **Card types:** any card that embeds stateful components
 - **State axes:** CS (new)
@@ -3443,7 +3443,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Mechanism:** `useCardPersistence` is card-scoped. There's no way for a leaf component to declare "I own state and want it persisted" without the containing card author's explicit cooperation. Every new stateful component is a potential L23 violation until every card author that uses it updates their `onSave`.
 - **Closing requires:** [A9] (Component Persistence Protocol) — foundational architectural work. See [D13] for the resolved design.
 
-#### [M25] Intrinsic internal state hidden from card authors {#m25-intrinsic-internal-state}
+#### [AT0025] Intrinsic internal state hidden from card authors {#at0025-intrinsic-internal-state}
 
 - **Card types:** cards embedding composite components
 - **State axes:** CS
@@ -3452,7 +3452,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Mechanism:** components encapsulate state as an implementation detail; the encapsulation hides it from the card's `onSave`.
 - **Closing requires:** per component, a decision between (a) this state is intentionally ephemeral (context-menu open, tooltip hover) — no opt-in; or (b) this state is user-visible — component implements [A9]'s `captureState`/`restoreState` for it. Audit + per-component fix under [A9d].
 
-#### [M26] Open-overlay persistence semantics undecided {#m26-overlay-policy}
+#### [AT0026] Open-overlay persistence semantics undecided {#at0026-overlay-policy}
 
 - **Card types:** cards with sheet / alert / popover / confirm-popover / menu surfaces
 - **State axes:** CS, FX, SR
@@ -3460,7 +3460,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Status:** ✅ closed by [Step 25F](#step-25f). `tug-sheet` opted in; `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` resolved as EPHEMERAL by design.
 - **Closing requires:** policy per overlay type, decided in [Step 25F](#step-25f). Resolution: (a) PERSIST — `tug-sheet`. Opt into [A9]; restore re-opens with state intact. (b) EPHEMERAL — `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, simple transient popovers. No opt-in; re-open empty is user-acceptable. The original proposal also classified `tug-alert`, `tug-confirm-popover`, `tug-popover` as PERSIST; all three moved to EPHEMERAL during 25F (rationale in [Step 25F](#step-25f)) — alerts in particular would break their Promise contract if re-opened without a resolver.
 
-#### [M27] Layout state: split-pane divider, accordion expansion {#m27-layout-state}
+#### [AT0027] Layout state: split-pane divider, accordion expansion {#at0027-layout-state}
 
 - **Card types:** any card using `tug-split-pane` or `tug-accordion`
 - **State axes:** CS
@@ -3468,7 +3468,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Status:** ✅ accordion closed by [Step 25D](#step-25d); switch / radio-group / choice-group / option-group / slider / value-input closed by [Step 25E](#step-25e). Split-pane axis preserved on its existing path (see resolution below). Popup-button + tab-bar deferred-indefinitely — see [25E](#step-25e)'s "What's deferred" note.
 - **Closing requires:** accordion → [A9] opt-in (landed). Split-pane → no migration. Resolution of the original open subquestion: `tug-split-pane` already persists divider positions via its own `storageKey` prop → tugbank under `dev.tugtool.tugways.split-pane`. The user-visible gap is closed, just by a path that pre-dates [A9]. Migrating to `bag.components` would duplicate persistence layers ([L23] violation) without closing any new gap, and the original "most likely pane-scope" intuition was correct: divider positions belong with pane-chrome geometry, not card content. Step 25D leaves `tug-split-pane`'s `storageKey` path as-is. If a future reorganization unifies pane-chrome persistence into a single canonical store, that would be the right time to retire `storageKey` — out of [A9d]'s scope.
 
-#### [M28] Banner / bulletin dismiss persistence {#m28-banner-dismiss}
+#### [AT0028] Banner / bulletin dismiss persistence {#at0028-banner-dismiss}
 
 - **Card types:** any context using `tug-banner`, `tug-pane-banner`, `tug-bulletin`
 - **State axes:** user-preference scope (not card/pane/app — user-wide)
@@ -3476,7 +3476,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Status:** ❌ broken — audit needed to confirm no dismiss-state exists today.
 - **Closing requires:** separate from [A9]'s card-scoped protocol. A new user-preferences store, keyed by banner ID, persisted in tugbank under `dev.tugtool.user.dismissals/{bannerId}`. Integrates with `tug-banner` / `tug-bulletin` via a new `useDismissalState(bannerId)` hook. Not strictly a "selection persistence" concern but surfaced during the component audit and belongs in the same plan for L23 completeness.
 
-#### [M29] Scroll-key audit across components {#m29-scroll-key-audit}
+#### [AT0029] Scroll-key audit across components {#at0029-scroll-key-audit}
 
 - **Card types:** any card using internally-scrollable components
 - **State axes:** IS
@@ -3484,7 +3484,7 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Status:** ❓ audit pending. Only `tug-markdown-view` carries `data-tug-scroll-key` today.
 - **Closing requires:** walk every stateful component for scrollable sub-regions (`tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-context-menu` / `tug-completion-menu` scroll). Where user-visible scroll applies, add `data-tug-scroll-key` to the scrolling element. IS-axis machinery (already shipped in Step 9) handles capture/restore.
 
-#### [M30] Virtual-focus / focus-within for composite components {#m30-virtual-focus}
+#### [AT0030] Virtual-focus / focus-within for composite components {#at0030-virtual-focus}
 
 - **Card types:** cards with composite components that manage a "virtual focus" (keyboard-navigation ring on a non-`activeElement` child)
 - **State axes:** CS (not FX)
@@ -3492,110 +3492,110 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Status:** ❌ broken.
 - **Closing requires:** each such component opts into [A9] and captures its internal focus index via `captureState`. Restore reapplies the ring. No extension to the `focus` axis needed; this is component state.
 
-#### [M31] `tug-prompt-entry` internal UI state (`route`, `toolsOpen`) {#m31-prompt-entry-ui-state}
+#### [AT0031] `tug-prompt-entry` internal UI state (`route`, `toolsOpen`) {#at0031-prompt-entry-ui-state}
 
 - **Card types:** gallery-prompt-entry, tide-card (if it uses prompt-entry)
 - **State axes:** CS
 - **Trigger:** User navigates within a prompt-entry to a non-default route or opens the tools panel; transition resets both to defaults.
-- **Status:** ✅ closed for `gallery-prompt-entry` by [Step 25G](#step-25g). Architectural divergence from the original plan: route + per-route engine drafts continue to live in `bag.content` ([M24] gates route survival), and only `toolsOpen` rides `bag.components.entry-chrome` via `useComponentPersistence`. The original "serialize `{ route, toolsOpen }` via `captureState`" wording would have split route from `bag.content.perRoute` (the perRoute map), forcing a two-phase restore that violates [L23] (apply-default-then-recover). Single-restore architecture preserves the L23 contract. Tide-card's lazy `TugPromptEntry` mount falls outside the [A9c] orchestrator's one-shot component-restore window — documented as a follow-up gap in `m31-prompt-entry-chrome.test.ts`'s module docstring; closure requires extending [A9c] to re-fire on registry changes (or adding a per-component restore primitive at hook-register time). m24 already proved route + per-route content survives across `appReload` / `quitGracefully+relaunch`; m31 adds the `toolsOpen` axis + the cmd-tab transition for chrome.
+- **Status:** ✅ closed for `gallery-prompt-entry` by [Step 25G](#step-25g). Architectural divergence from the original plan: route + per-route engine drafts continue to live in `bag.content` ([AT0024] gates route survival), and only `toolsOpen` rides `bag.components.entry-chrome` via `useComponentPersistence`. The original "serialize `{ route, toolsOpen }` via `captureState`" wording would have split route from `bag.content.perRoute` (the perRoute map), forcing a two-phase restore that violates [L23] (apply-default-then-recover). Single-restore architecture preserves the L23 contract. Tide-card's lazy `TugPromptEntry` mount falls outside the [A9c] orchestrator's one-shot component-restore window — documented as a follow-up gap in `at0031-prompt-entry-chrome.test.ts`'s module docstring; closure requires extending [A9c] to re-fire on registry changes (or adding a per-component restore primitive at hook-register time). m24 already proved route + per-route content survives across `appReload` / `quitGracefully+relaunch`; m31 adds the `toolsOpen` axis + the cmd-tab transition for chrome.
 - **Closing requires:** `tug-prompt-entry` opts into [A9] with persistKey and serializes `{ toolsOpen }` via `captureState`. Route stays in `bag.content.currentRoute` because it is the index into `bag.content.perRoute` — splitting the two would require two-phase restore, which violates [L23]. Tide closure requires the orchestrator change above.
 
 ---
 
-_M32–M36 surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each gates a specific EM-card focus or selection bug that escaped the M01–M23 transition coverage._
+_M32–AT0036 surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each gates a specific EM-card focus or selection bug that escaped the AT0001–AT0023 transition coverage._
 
-#### [M32] EM cold-boot selection paint {#m32-em-cold-boot-selection}
+#### [AT0032] EM cold-boot selection paint {#at0032-em-cold-boot-selection}
 
 - **Card types:** EM
 - **State axes:** SR
 - **Trigger:** Reload with an EM card seeded ACTIVE and a non-collapsed selection in `bag.content`.
 - **Status:** ✅ closed at [Step 23F](#step-23f).
-- **Test:** `m32-em-cold-boot-selection.test.ts`.
+- **Test:** `at0032-em-cold-boot-selection.test.ts`.
 - **Mechanism (was):** Cold-boot mount-restore for EM cards landed selection on an unfocused engine root; the visible paint was missing on first frame.
 - **Mechanism (now):** `cold-boot-restore-snapshot` diagnostic event fires with `hasContent: true`; `engine-restore-applied` echoes the seeded selection and the live `engine.getSelectedRange()` post-restore.
 
-#### [M33] Fresh-EM-card resolver classification {#m33-em-fresh-card-activation}
+#### [AT0033] Fresh-EM-card resolver classification {#at0033-em-fresh-card-activation}
 
 - **Card types:** EM
 - **State axes:** FX
 - **Trigger:** A fresh, never-saved EM card mounts in an inactive tab; the user activates it via tab click. Pre-23F, focus landed on the editor's first toolbar button (e.g. "Insert Atom") instead of the contenteditable.
 - **Status:** ✅ closed at [Step 23F](#step-23f).
-- **Test:** `m33-em-fresh-card-activation.test.ts`.
+- **Test:** `at0033-em-fresh-card-activation.test.ts`.
 - **Mechanism (was):** `resolveActivationTarget` discriminated EM vs FC by `bag.content !== undefined`. Saved EM cards (m09) classified correctly; fresh never-saved EM cards mis-classified into the `default-focus` branch, where `button:not([disabled])` matched before `[contenteditable="true"]`.
 - **Mechanism (now):** [Step 23F](#step-23f) adds `engineKind: "em"` to the card-registry shape; `resolveActivationTarget` reads `engineKind` instead of inferring from `bag.content`.
 
-#### [M34] EM focus after cross-pane move {#m34-em-focus-after-move}
+#### [AT0034] EM focus after cross-pane move {#at0034-em-focus-after-move}
 
 - **Card types:** EM
 - **State axes:** FX
 - **Trigger:** Drag an EM card cross-pane (or detach to a new pane). `engine-activation-dispatched` fires (proving `onCardActivated` ran), but `.focus()` no-ops on the freshly re-mounted contenteditable.
 - **Status:** ✅ closed at [Step 23F](#step-23f).
-- **Test:** `m34-em-focus-after-move.test.ts`.
-- **Mechanism:** Pre-23F, m06-em / m07-em deliberately omitted the focus-actually-landing assertion because the contenteditable's first commit lagged the activation dispatch. 23F closes the gap; this test is the regression gate for the focus-actually-landing assertion that those tests can now adopt.
+- **Test:** `at0034-em-focus-after-move.test.ts`.
+- **Mechanism:** Pre-23F, at0006-em / at0007-em deliberately omitted the focus-actually-landing assertion because the contenteditable's first commit lagged the activation dispatch. 23F closes the gap; this test is the regression gate for the focus-actually-landing assertion that those tests can now adopt.
 
-#### [M35] App-switch selection survival (EM + tide) {#m35-em-app-switch-selection}
+#### [AT0035] App-switch selection survival (EM + tide) {#at0035-em-app-switch-selection}
 
 - **Card types:** EM (gallery-prompt-input direct + tide-card variant)
 - **State axes:** SR, FX
 - **Trigger:** Type into an EM card, select a substring, cmd-tab away, cmd-tab back. Pre-23G, text always restored but selection was intermittently lost — tide-specific reproducer; gallery-prompt-entry didn't exhibit it.
 - **Status:** ✅ closed at [Step 23G](#step-23g).
-- **Tests:** `m35-em-app-switch-selection.test.ts`, `m35-tide-app-switch-selection.test.ts`.
+- **Tests:** `at0035-em-app-switch-selection.test.ts`, `at0035-tide-app-switch-selection.test.ts`.
 - **Mechanism:** Tide-card had two redundant focus paths on activation — its own `useCardDelegate({cardDidActivate})` legacy hook plus TugPromptEntry's framework-driven `onCardActivated`. Back-to-back `.focus()` calls triggered WebKit's selectionchange-on-focus quirk intermittently. Step 23G routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern. Gallery-prompt-input variant is the forward-regression gate for the activation chain shared between the two factories.
 
-#### [M36] Inactive-card cmd-tab selection survival {#m36-inactive-card-app-switch-selection}
+#### [AT0036] Inactive-card cmd-tab selection survival {#at0036-inactive-card-app-switch-selection}
 
 - **Card types:** FC (TugInput)
 - **State axes:** SR
 - **Trigger:** Activate an FC card, type + select. Activate another card → first card's selection is captured into `bag.formControls`. Cmd-Tab away + back. Re-activate the FC card by clicking its tab. Pre-25C.5 Layer 4: re-activation click clobbered the saved selection (mousedown placed a collapsed caret at the click point before any restore could re-apply).
 - **Status:** ✅ closed at [Step 25C.5](#step-25c5) Layer 4.
-- **Test:** `m36-inactive-card-app-switch-selection.test.ts`.
+- **Test:** `at0036-inactive-card-app-switch-selection.test.ts`.
 - **Mechanism:** `installFormControlReapplyOnNextMousedown` (focus-transfer.ts) is the deterministic event-ordering primitive — a one-shot capture-phase mousedown listener that `preventDefault`s the default caret-placement and re-applies `bag.formControls` for the clicked input. No RAF, no microtask — strictly deterministic against the browser's event-dispatch sequence ([L05]).
 
 ---
 
-_M37 and M38 surfaced during selection-plan Step 25C.4 (active/inactive paint split). Multi-card paint invariants that the active/inactive routing must preserve. Originally numbered `m26-*` and `m27-*` in test filenames; renumbered to M37 / M38 during the Step 25L M-series audit when the canonical inventory landed and the M26 / M27 tags were claimed by the overlay-policy and layout-state entries._
+_M37 and AT0038 surfaced during selection-plan Step 25C.4 (active/inactive paint split). Multi-card paint invariants that the active/inactive routing must preserve. Originally numbered `m26-*` and `m27-*` in test filenames; renumbered to AT0037 / AT0038 during the Step 25L AT-series audit when the canonical inventory landed and the AT0026 / AT0027 tags were claimed by the overlay-policy and layout-state entries._
 
-#### [M37] Multi-card deck-wide restore consistency {#m37-deck-wide-restore-consistency}
+#### [AT0037] Multi-card deck-wide restore consistency {#at0037-deck-wide-restore-consistency}
 
 - **Card types:** EM × N
 - **State axes:** SR, FX, OS, TV (all axes per card)
 - **Trigger:** Restore a multi-card deck (single-pane tabs OR multi-pane geometries) where each card carries a persisted selection.
 - **Status:** ✅ closed at [Step 25C.4](#step-25c4).
-- **Test:** `m37-deck-wide-restore-consistency.test.ts`.
+- **Test:** `at0037-deck-wide-restore-consistency.test.ts`.
 - **Invariants gated:** (1) exactly one card holds document focus — the deck-level first responder; (2) exactly one card's range is in `window.getSelection()` (same card); (3) every inactive card's selection lives in `selectionGuard.cardRanges` and is observable via `__tug.getCaretState(cardId)`; (4) every inactive card's range is in the `inactive-selection` CSS Custom Highlight; the active card's range is NOT; (5) every card's bag-on-disk has the four 25C.3 axes (text/atoms/selection/scrollTop) preserved.
 
-#### [M38] Deactivation-time inactive paint {#m38-deactivation-inactive-paint}
+#### [AT0038] Deactivation-time inactive paint {#at0038-deactivation-inactive-paint}
 
 - **Card types:** EM
 - **State axes:** SR (selection paint at correct DOM positions)
 - **Trigger:** Type enough into an EM card to make it scroll, select content (possibly off-screen), click another card to deactivate. Pre-25C.4: inactive-paint highlight ended up at the wrong DOM positions (relative-to-visible offset rather than the user's actual selection).
 - **Status:** ✅ closed at [Step 25C.4](#step-25c4).
-- **Test:** `m38-deactivation-inactive-paint.test.ts`.
+- **Test:** `at0038-deactivation-inactive-paint.test.ts`.
 - **Mechanism:** `paintMirrorAsInactive(publish)` rebuilds a DOM Range from `mirror.selection` flat offsets via `flatToDom`. The test gates `flatToDom`'s correctness against scrolled content — the rebuilt Range must reflect the user's actual selection, not the visible / scroll-relative position.
 
 ---
 
 #### Resolved design decisions
 
-All M-series open questions are resolved. Decisions are captured here and drive the architecture pieces in the next section.
+All AT-series open questions are resolved. Decisions are captured here and drive the architecture pieces in the next section.
 
-- **[M-Q1] Shared-mechanism vs per-axis fix → CONFIRMED shared.** [M01] / [M03] / [M04] / [M05] / [M06] / [M07] / [M09] all reduce to "this card just became the focus destination; restore its focus and paint." A single `CardHost` subscription tracking the `isFocusDestination` predicate (derived from the deck store) closes them all. Per-axis fixes would duplicate the same ref-guard, the same focus-theft gate, and the same app-lifecycle wiring in five places. Shared is the directive. See architecture piece [A1] / [A3].
+- **[M-Q1] Shared-mechanism vs per-axis fix → CONFIRMED shared.** [AT0001] / [AT0003] / [AT0004] / [AT0005] / [AT0006] / [AT0007] / [AT0009] all reduce to "this card just became the focus destination; restore its focus and paint." A single `CardHost` subscription tracking the `isFocusDestination` predicate (derived from the deck store) closes them all. Per-axis fixes would duplicate the same ref-guard, the same focus-theft gate, and the same app-lifecycle wiring in five places. Shared is the directive. See architecture piece [A1] / [A3].
 
 - **[M-Q2] `onCardActivated` as callback or observation → option (a) CONFIRMED.** Add a new optional callback `onCardActivated?: () => void` to `CardPersistenceCallbacks`. Content-owning cards (EM) implement it — typical body: `engine.root.focus({ preventScroll: true })` followed by engine-published selection. FC cards need no callback; `CardHost` handles FC reactivation directly by re-applying `bag.focus` + `bag.domSelection`. Placement in `CardPersistenceCallbacks` keeps lifecycle-awareness colocated with the existing save/restore protocol rather than scattering it across content factories that each subscribe to `card-lifecycle.ts`. See architecture piece [A2].
 
-- **[M-Q3] Markdown-view copy-selection → MUST close per [L23].** A user's copy-selection is user-visible state; losing it on any transition violates the tuglaw. Previously-defensible "ephemerality" is not a permitted exception. `tug-markdown-view` gains `persistKey` + `useCardPersistence` + `selectionchange` publish. See [M10] for the updated closing requirements and architecture piece [A5] for the implementation shape.
+- **[M-Q3] Markdown-view copy-selection → MUST close per [L23].** A user's copy-selection is user-visible state; losing it on any transition violates the tuglaw. Previously-defensible "ephemerality" is not a permitted exception. `tug-markdown-view` gains `persistKey` + `useCardPersistence` + `selectionchange` publish. See [AT0010] for the updated closing requirements and architecture piece [A5] for the implementation shape.
 
-- **[M-Q4] Card reopen → NOT a feature.** Close-then-reopen is not in scope; no UI path exists and none is planned. Step 14 continues to flush-on-close for robustness only (not for reopen). [M11] is closed as informational — no follow-on work.
+- **[M-Q4] Card reopen → NOT a feature.** Close-then-reopen is not in scope; no UI path exists and none is planned. Step 14 continues to flush-on-close for robustness only (not for reopen). [AT0011] is closed as informational — no follow-on work.
 
-- **[M-Q5] IME composition save → MUST retain, likely via `bag.markedText`.** Deferring save until `compositionend` is not sufficient: in-flight keystrokes from the user are user-visible state and must survive transitions. A new persisted axis `bag.markedText` captures the native marked-text buffer + composition anchor. Platform research required to determine whether browser APIs permit programmatic composition re-entry, or whether a native IPC bridge (via tugapp) is needed. See [M12] updated closing requirements and architecture piece [A6].
+- **[M-Q5] IME composition save → MUST retain, likely via `bag.markedText`.** Deferring save until `compositionend` is not sufficient: in-flight keystrokes from the user are user-visible state and must survive transitions. A new persisted axis `bag.markedText` captures the native marked-text buffer + composition anchor. Platform research required to determine whether browser APIs permit programmatic composition re-entry, or whether a native IPC bridge (via tugapp) is needed. See [AT0012] updated closing requirements and architecture piece [A6].
 
 ---
 
 #### Architecture to close the gaps {#missing-architecture}
 
-The M-series resolutions converge on a small number of shared mechanisms. Most of the broken cases ([M01], [M02], [M03], [M04], [M05], [M06], [M07], [M09], [M16]) are the same problem — "this card just became the focus destination; restore its focus + paint" — seen from different triggers. This section sketches the architectural pieces that, together, close the inventory. Each piece is labeled [A#] and cross-referenced from the M-entries above.
+The AT-series resolutions converge on a small number of shared mechanisms. Most of the broken cases ([AT0001], [AT0002], [AT0003], [AT0004], [AT0005], [AT0006], [AT0007], [AT0009], [AT0016]) are the same problem — "this card just became the focus destination; restore its focus + paint" — seen from different triggers. This section sketches the architectural pieces that, together, close the inventory. Each piece is labeled [A#] and cross-referenced from the M-entries above.
 
-**Status:** DRAFT. These pieces need design review before M-series execution steps can be authored.
+**Status:** DRAFT. These pieces need design review before AT-series execution steps can be authored.
 
 ##### [A1] `isFocusDestination` derived selector on the deck store {#a1-focus-destination-selector}
 
@@ -3640,7 +3640,7 @@ onCardActivated: () => {
 
 DOM-authority cards (FC) do not implement `onCardActivated`; `CardHost` handles them in [A3] by re-applying `bag.focus` + `bag.domSelection` directly.
 
-**Closes:** [M02], [M06], [M07], [M09] (by giving content-owning cards a reactivation entry point).
+**Closes:** [AT0002], [AT0006], [AT0007], [AT0009] (by giving content-owning cards a reactivation entry point).
 
 ##### [A3] Shared `CardHost` activation effect {#a3-shared-activation-effect}
 
@@ -3654,7 +3654,7 @@ One `useLayoutEffect` in `CardHost`, keyed on `isFocusDestination(cardId)` subsc
 
 This effect is the single replacement for the three dep-sets we currently use (`[cardId, hostStackId, hostContentEl]` primary mount; `[hostStackId]` cross-pane refocus). Those earlier effects continue to run for mount-specific work (scroll restore, unmask); the activation effect is additive.
 
-**Closes:** [M01], [M03], [M04] + [M05] (via [A4]'s wiring into `isFocusDestination`), [M06], [M07], [M09], [M16].
+**Closes:** [AT0001], [AT0003], [AT0004] + [AT0005] (via [A4]'s wiring into `isFocusDestination`), [AT0006], [AT0007], [AT0009], [AT0016].
 
 ##### [A4] App-lifecycle activation pathway {#a4-app-lifecycle-activation}
 
@@ -3665,7 +3665,7 @@ Implementation details:
 - Wire an `observeApplicationDidBecomeActive` / `observeApplicationDidUnhide` listener in `deck-store` (or a thin coordinator) that calls `deckStore.notify()` — this causes the `useSyncExternalStore` subscribers to re-read the selector and observe the `false → true` transition.
 - Paint-only response (app-resign dims paint, app-become-active brightens) already lives in `selectionGuard.handleApplicationDid{Resign,Become}Active`. This architecture piece is strictly about the _focus_ axis, which paint currently does not cover.
 
-**Closes:** [M04], [M05].
+**Closes:** [AT0004], [AT0005].
 
 ##### [A5] Markdown-view selection publish {#a5-markdown-view-publish}
 
@@ -3678,7 +3678,7 @@ Implementation details:
 
 Markdown-view owns no text value (content is immutable in-session), so no `bag.content` / `onCardActivated` is needed.
 
-**Closes:** [M10] per [L23].
+**Closes:** [AT0010] per [L23].
 
 ##### [A6] `bag.markedText` axis + composition persistence {#a6-marked-text-persistence}
 
@@ -3713,7 +3713,7 @@ FC save:
 - Defer save during composition: if `compositionStart` has fired and `compositionend` has not, `saveCurrentCardStateRef.current` enqueues the save for post-`compositionend` delivery. On `compositionend`, flush the deferred save.
 - Process-exit mid-composition: the last pre-composition bag is preserved; the in-flight composition buffer is lost. Accepted residual.
 
-**Closes:** [M12] to the extent the platform permits. Residuals documented.
+**Closes:** [AT0012] to the extent the platform permits. Residuals documented.
 
 ##### [A7] Unified flush-on-teardown gate {#a7-unified-flush-gate}
 
@@ -3725,7 +3725,7 @@ Every path that removes cards from `deckState.cards` routes through `flushSaveCa
 
 Add an invariant guard at the bottom of `_removeCard` / `_closePane`: if the flush helper was not called for a card being removed, log a dev-error. Consider a single chokepoint `destroyCard(cardId)` that bundles "flush + lifecycle notify + delete from state" so bypassing is difficult.
 
-**Closes:** [M19].
+**Closes:** [AT0019].
 
 ##### [A8] `canProgrammaticallyFocus` helper — central focus-theft gate {#a8-focus-theft-gate}
 
@@ -3752,7 +3752,7 @@ Every refocus helper — [A3]'s activation effect, [A4]'s app-lifecycle pathway,
 
 ##### [A9] Component Persistence Protocol {#a9-component-persistence-protocol}
 
-Per [D13] (approved). The foundational architectural piece that closes the entire ⚠️ class surfaced by the component-roster L23 audit ([M24]–[M31]). Framework-owned; components opt in.
+Per [D13] (approved). The foundational architectural piece that closes the entire ⚠️ class surfaced by the component-roster L23 audit ([AT0024]–[AT0031]). Framework-owned; components opt in.
 
 Framing: **a weekend's work for stable foundations instead of months-of-work debugging ad-hoc persistence for every new stateful component.**
 
@@ -3860,75 +3860,75 @@ function restoreComponents(registry, saved: Record<string, unknown>): void {
 
 **A9d. Per-component port / opt-in plan.** The following components gain `persistKey` + `useComponentPersistence` (in priority order, grouped by category):
 
-- **Layout state:** `tug-accordion` (landed in [Step 25D](#step-25d)). `tug-split-pane` is intentionally not in [A9] — its existing `storageKey` → tugbank path under `dev.tugtool.tugways.split-pane` is preserved per the [M27] resolution.
+- **Layout state:** `tug-accordion` (landed in [Step 25D](#step-25d)). `tug-split-pane` is intentionally not in [A9] — its existing `storageKey` → tugbank path under `dev.tugtool.tugways.split-pane` is preserved per the [AT0027] resolution.
 - **Selection:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` (all landed in [Step 25E](#step-25e)). `tug-popup-button` and `tug-tab-bar` deferred-indefinitely — see [25E](#step-25e)'s "What's deferred" for the rationales (popup-button is a command surface with no persistent value; tab-bar's active tab is already the deck's `paneState.activeCardId`).
 - **Numeric:** `tug-slider`, `tug-value-input` (both landed in [Step 25E](#step-25e)).
 - **Toggles:** `tug-checkbox` (Step 19 POC, opt-in available; gallery instances unwired), `tug-switch` (landed in [Step 25E](#step-25e)).
 - **Pickers:** `tug-hue-strip`, `tug-color-strip`.
-- **Overlays with user interaction (per [M26] policy):** `tug-sheet`. `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` are EPHEMERAL — no opt-in (see [Step 25F](#step-25f) for the rationale; alerts in particular have a Promise-contract reason on top of the general "short-lived prompt" reasoning).
-- **Engine-card chrome:** `tug-prompt-entry` (`toolsOpen` only — landed in [Step 25G](#step-25g) for `gallery-prompt-entry`; route stays in `bag.content.currentRoute` to preserve single-restore architecture, see [M31] for the divergence rationale).
-- **Virtual focus within composites:** radio-group, option-group, choice-group, tab-bar — see [M30].
+- **Overlays with user interaction (per [AT0026] policy):** `tug-sheet`. `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu` are EPHEMERAL — no opt-in (see [Step 25F](#step-25f) for the rationale; alerts in particular have a Promise-contract reason on top of the general "short-lived prompt" reasoning).
+- **Engine-card chrome:** `tug-prompt-entry` (`toolsOpen` only — landed in [Step 25G](#step-25g) for `gallery-prompt-entry`; route stays in `bag.content.currentRoute` to preserve single-restore architecture, see [AT0031] for the divergence rationale).
+- **Virtual focus within composites:** radio-group, option-group, choice-group, tab-bar — see [AT0030].
 
-Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) migrate from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves (for `bag.content`).
+Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[AT0010]) migrate from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves (for `bag.content`).
 
-**A9e. Overlay policy implementation.** Per [M26], resolved in [Step 25F](#step-25f): opt in (a) `tug-sheet`. Opt out (b) `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, editor-context-menu, transient popovers. Captured state for (a) overlays: `{ open: boolean }` at minimum; per-surface payloads (form values, etc.) are owned by the consumer's `useResponderForm` and ride their own `bag.components` keys when needed.
+**A9e. Overlay policy implementation.** Per [AT0026], resolved in [Step 25F](#step-25f): opt in (a) `tug-sheet`. Opt out (b) `tug-alert`, `tug-confirm-popover`, `tug-popover`, `tug-tooltip`, `tug-context-menu`, editor-context-menu, transient popovers. Captured state for (a) overlays: `{ open: boolean }` at minimum; per-surface payloads (form values, etc.) are owned by the consumer's `useResponderForm` and ride their own `bag.components` keys when needed.
 
-**A9f. Scroll-key audit.** Per [M29]: walk stateful components for internally-scrollable sub-regions; add `data-tug-scroll-key` where user-visible scroll applies. IS-axis machinery (Step 9) handles capture/restore. Scope: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-completion-menu`, `tug-context-menu` if scrollable, any custom scrollable chrome.
+**A9f. Scroll-key audit.** Per [AT0029]: walk stateful components for internally-scrollable sub-regions; add `data-tug-scroll-key` where user-visible scroll applies. IS-axis machinery (Step 9) handles capture/restore. Scope: `tug-tab-bar` overflow, `tug-popup-button` menu, `tug-sheet` content, `tug-completion-menu`, `tug-context-menu` if scrollable, any custom scrollable chrome.
 
-**Closes:** [M24], [M25], [M27], [M29], [M30], [M31] directly; enables closing [M26] per-overlay.
+**Closes:** [AT0024], [AT0025], [AT0027], [AT0029], [AT0030], [AT0031] directly; enables closing [AT0026] per-overlay.
 
 ##### Architecture coverage matrix {#architecture-coverage}
 
 | M-entry | Closed by | Residuals |
 |---------|-----------|-----------|
-| [M01] | [A1] + [A3] + [A8] | none |
-| [M02] | [A1] + [A2] + [A3] + [A8] | none |
-| [M03] | [A1] + [A3] + [A8] | none |
-| [M04] | [A1] + [A3] + [A4] + [A8] | none |
-| [M05] | [A1] + [A3] + [A4] + [A8] | none |
-| [M06] | [A1] + [A2] + [A3] + [A8] | none |
-| [M07] | [A1] + [A2] + [A3] + [A8] | none |
-| [M08] | [A2] (direct) | closed by adding the callback |
-| [M09] | [A1] + [A2] + [A3] + [A8] | none |
-| [M10] | [A5] | none |
-| [M11] | (no action — not a feature) | informational |
-| [M12] | [A6] | process-exit mid-composition unrecoverable |
-| [M13] | integration tests added per M-step | none |
-| [M14] | folded into [M13] test expansion | none |
-| [M15] | Step NN deletion | none |
-| [M16] | [A1] + [A3] | none |
-| [M17] | audit fix: `saveState` RPC → `captureCardState` ([A9c]) | parity test must pass |
-| [M18] | save-gate inspects `restorePendingRef.current` | none |
-| [M19] | [A7] | none |
-| [M20] | local overlay fixes + [A3] as safety net | none |
-| [M21] | drag-abort routes through activation | none |
-| [M22] | integration tests assert caret visibility | none |
-| [M23] | scope to single-card; paint doesn't crash cross-card | cross-card selections remain one-owner |
-| [M24] | [A9a] + [A9b] + [A9c] | none |
-| [M25] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
-| [M26] | [A9e] (`tug-sheet` opted in; alert / confirm-popover / popover / tooltip / context-menu EPHEMERAL by design) | none |
-| [M27] | [A9d] (`tug-accordion`, `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input`) + existing `storageKey` path (`tug-split-pane`) | popup-button + tab-bar deferred-indefinitely (no applicable persistent value), see [M27] |
-| [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
-| [M29] | [A9f] | none |
-| [M30] | [A9d] (selected value captured per component; virtual-focus-index axis deferred) | virtual-focus-without-selection edge case unaddressed — see [25E](#step-25e) note |
-| [M31] | [A9d] (`toolsOpen`) + [M24] (route via `bag.content`) | tide-card lazy mount misses [A9c]'s one-shot component-restore — see [M31] note |
-| [M32] | [Step 23F](#step-23f) (cold-boot diagnostic chain + EM mount-restore) | none |
-| [M33] | [Step 23F](#step-23f) (`engineKind` on the card-registry shape; `resolveActivationTarget` reads it) | none |
-| [M34] | [Step 23F](#step-23f) (cross-pane focus-actually-landing fix) | none |
-| [M35] | [Step 23G](#step-23g) (delegate focus routes through `engine.setSelectedRange`) | none |
-| [M36] | [Step 25C.5](#step-25c5) Layer 4 (`installFormControlReapplyOnNextMousedown` deterministic event ordering) | none |
-| [M37] | [Step 25C.4](#step-25c4) (engine paint API split + restore-ordering invariant) | none |
-| [M38] | [Step 25C.4](#step-25c4) (`paintMirrorAsInactive(publish)` + `flatToDom` correctness against scrolled content) | none |
+| [AT0001] | [A1] + [A3] + [A8] | none |
+| [AT0002] | [A1] + [A2] + [A3] + [A8] | none |
+| [AT0003] | [A1] + [A3] + [A8] | none |
+| [AT0004] | [A1] + [A3] + [A4] + [A8] | none |
+| [AT0005] | [A1] + [A3] + [A4] + [A8] | none |
+| [AT0006] | [A1] + [A2] + [A3] + [A8] | none |
+| [AT0007] | [A1] + [A2] + [A3] + [A8] | none |
+| [AT0008] | [A2] (direct) | closed by adding the callback |
+| [AT0009] | [A1] + [A2] + [A3] + [A8] | none |
+| [AT0010] | [A5] | none |
+| [AT0011] | (no action — not a feature) | informational |
+| [AT0012] | [A6] | process-exit mid-composition unrecoverable |
+| [AT0013] | integration tests added per M-step | none |
+| [AT0014] | folded into [AT0013] test expansion | none |
+| [AT0015] | Step NN deletion | none |
+| [AT0016] | [A1] + [A3] | none |
+| [AT0017] | audit fix: `saveState` RPC → `captureCardState` ([A9c]) | parity test must pass |
+| [AT0018] | save-gate inspects `restorePendingRef.current` | none |
+| [AT0019] | [A7] | none |
+| [AT0020] | local overlay fixes + [A3] as safety net | none |
+| [AT0021] | drag-abort routes through activation | none |
+| [AT0022] | integration tests assert caret visibility | none |
+| [AT0023] | scope to single-card; paint doesn't crash cross-card | cross-card selections remain one-owner |
+| [AT0024] | [A9a] + [A9b] + [A9c] | none |
+| [AT0025] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
+| [AT0026] | [A9e] (`tug-sheet` opted in; alert / confirm-popover / popover / tooltip / context-menu EPHEMERAL by design) | none |
+| [AT0027] | [A9d] (`tug-accordion`, `tug-switch`, `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-slider`, `tug-value-input`) + existing `storageKey` path (`tug-split-pane`) | popup-button + tab-bar deferred-indefinitely (no applicable persistent value), see [AT0027] |
+| [AT0028] | separate user-preferences store (not [A9]) | orthogonal layer |
+| [AT0029] | [A9f] | none |
+| [AT0030] | [A9d] (selected value captured per component; virtual-focus-index axis deferred) | virtual-focus-without-selection edge case unaddressed — see [25E](#step-25e) note |
+| [AT0031] | [A9d] (`toolsOpen`) + [AT0024] (route via `bag.content`) | tide-card lazy mount misses [A9c]'s one-shot component-restore — see [AT0031] note |
+| [AT0032] | [Step 23F](#step-23f) (cold-boot diagnostic chain + EM mount-restore) | none |
+| [AT0033] | [Step 23F](#step-23f) (`engineKind` on the card-registry shape; `resolveActivationTarget` reads it) | none |
+| [AT0034] | [Step 23F](#step-23f) (cross-pane focus-actually-landing fix) | none |
+| [AT0035] | [Step 23G](#step-23g) (delegate focus routes through `engine.setSelectedRange`) | none |
+| [AT0036] | [Step 25C.5](#step-25c5) Layer 4 (`installFormControlReapplyOnNextMousedown` deterministic event ordering) | none |
+| [AT0037] | [Step 25C.4](#step-25c4) (engine paint API split + restore-ordering invariant) | none |
+| [AT0038] | [Step 25C.4](#step-25c4) (`paintMirrorAsInactive(publish)` + `flatToDom` correctness against scrolled content) | none |
 
-##### Phasing suggestion for M-series execution steps {#m-phasing}
+##### Phasing suggestion for AT-series execution steps {#m-phasing}
 
 Not a commitment yet — just a sketch for discussion. Updated to place [A9] as the **foundational phase** because nearly every subsequent stateful-component fix depends on it.
 
 1. **M-phase 0 (foundation) — AUTHORED as [Steps 16–19](#step-16):**
    - **[Step 16](#step-16):** component persistence registry + `bag.components` schema.
    - **[Step 17](#step-17):** `useComponentPersistence` hook + `<PersistenceScope>`.
-   - **[Step 18](#step-18):** framework orchestration — `captureCardState` / `restoreCardState`; save triggers rerouted; closes [M17].
-   - **[Step 19](#step-19):** first-consumer proof — `tug-checkbox` opts into the protocol; closes [M24] at the per-component proof-of-concept level.
+   - **[Step 18](#step-18):** framework orchestration — `captureCardState` / `restoreCardState`; save triggers rerouted; closes [AT0017].
+   - **[Step 19](#step-19):** first-consumer proof — `tug-checkbox` opts into the protocol; closes [AT0024] at the per-component proof-of-concept level.
    - No user-visible behavior change through Step 18 (pure refactor). Step 19 is the first user-observable application of the protocol.
 2. **M-phase 1 (transition infra, no behavior change) — AUTHORED as [Steps 20–22](#step-20):**
    - **[Step 20](#step-20):** [A1] `isFocusDestination` selector + `hasFocus` slice on the deck store; `useFocusDestination` hook.
@@ -3936,22 +3936,22 @@ Not a commitment yet — just a sketch for discussion. Updated to place [A9] as 
    - **[Step 22](#step-22):** [A2] `onCardActivated` field added to `CardPersistenceCallbacks` (declared but not yet dispatched).
    - No consumers; no user-visible behavior change at phase end. Dispatchers land in M-phase 2.
 3. **M-phase 2 (core refocus) — AUTHORED as [Step 23](#step-23) + [Steps 23A–23E](#activation-trigger-taxonomy):**
-   - **[Step 23](#step-23):** install the [A3] shared activation effect in `CardHost` as a `useLayoutEffect`. FC cards get working reactivation for [M01] / [M03] / [M16] at slow click cadence. Rapid-cadence manual verification of [M03] surfaces a sibling-effect ordering race → prompts the 23A–E sub-sequence.
+   - **[Step 23](#step-23):** install the [A3] shared activation effect in `CardHost` as a `useLayoutEffect`. FC cards get working reactivation for [AT0001] / [AT0003] / [AT0016] at slow click cadence. Rapid-cadence manual verification of [AT0003] surfaces a sibling-effect ordering race → prompts the 23A–E sub-sequence.
    - **[Step 23A](#step-23a):** scaffold `focus-transfer.ts`, the store registration channels (`registerActivationCallback`, `registerCardHostRoot`), and route `useCardPersistence`'s `onCardActivated` through the new channel. Plumbing only; no behavior change.
-   - **[Step 23B](#step-23b):** retire the `[A3]` React effect; wire the helper's synchronous before-mutation entry point into `pane-focus-controller`, `performSelectCard`, and `_removeCard` / `_closePane`. Closes the rapid-cadence race for [M01] / [M03] / [M16].
-   - **[Step 23C](#step-23c):** retire Step 11's cross-pane `useLayoutEffect`; wire `captureFocusForDragStart` + `transferFocusAfterMove` into the drag path (drag-start save, drop refocus, Escape/pointercancel refocus). Closes the FC half of [M06], the FC half of [M07], and [M21].
-   - **[Step 23D](#step-23d):** wire [A4] app-lifecycle reactivation through the helper. The window `focus` listener installed in [Step 20](#step-20) calls `reactivateCurrentFocusDestination(store)`; the window `blur` listener flushes the first responder's save callback unconditionally. First implementation of [A4]. Closes [M04] and [M05].
-   - **[Step 23E](#step-23e):** EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated`; retire any legacy engine-internal refocus code; install the deferred `_flipFirstResponder` dev assertion now that every caller has a sibling helper path. Closes [M02], the EM half of [M06], the EM half of [M07], and [M09].
+   - **[Step 23B](#step-23b):** retire the `[A3]` React effect; wire the helper's synchronous before-mutation entry point into `pane-focus-controller`, `performSelectCard`, and `_removeCard` / `_closePane`. Closes the rapid-cadence race for [AT0001] / [AT0003] / [AT0016].
+   - **[Step 23C](#step-23c):** retire Step 11's cross-pane `useLayoutEffect`; wire `captureFocusForDragStart` + `transferFocusAfterMove` into the drag path (drag-start save, drop refocus, Escape/pointercancel refocus). Closes the FC half of [AT0006], the FC half of [AT0007], and [AT0021].
+   - **[Step 23D](#step-23d):** wire [A4] app-lifecycle reactivation through the helper. The window `focus` listener installed in [Step 20](#step-20) calls `reactivateCurrentFocusDestination(store)`; the window `blur` listener flushes the first responder's save callback unconditionally. First implementation of [A4]. Closes [AT0004] and [AT0005].
+   - **[Step 23E](#step-23e):** EM content factories (tide-card, `TugPromptInput`, `GalleryPromptEntry`) register `onCardActivated`; retire any legacy engine-internal refocus code; install the deferred `_flipFirstResponder` dev assertion now that every caller has a sibling helper path. Closes [AT0002], the EM half of [AT0006], the EM half of [AT0007], and [AT0009].
    - **[Step 24](#step-24):** OBSOLETE. Content absorbed into [23C](#step-23c) (Step 11 retirement) and [23E](#step-23e) (EM opt-ins). Anchor preserved for back-link integrity.
    - End of phase: all runtime activation triggers (intra-pane, pane chrome, tab close, cross-pane drag, app resume, EM cards) routed through one synchronous `focus-transfer.ts` module. M-phase 3 is absorbed (the [A4] work that was previously deferred now lives in 23D).
 4. **M-phase 3** was app-lifecycle wiring for [A4]; absorbed into [Step 23D](#step-23d) above. No separate phase remains.
-5. **M-phase 4 (markdown-view):** implement [A5]. Closes [M10].
-6. **M-phase 5 (teardown):** implement [A7]. Closes [M19].
-7. **M-phase 6 (IME):** implement [A6]. Platform research → decide between browser API / native IPC / text-fallback. Closes [M12] to platform-possible extent.
-8. **M-phase 7 (component opt-in):** walk [A9d] component priority list and port each. Closes [M25], [M27], [M30], [M31]. Overlay policy decisions ([A9e], [M26]) made during this phase. Scroll-key audit ([A9f], [M29]) folded in.
-9. **M-phase 8 (banner / bulletin dismiss):** implement the user-preferences store for [M28]. Orthogonal to [A9] (not card-scoped).
-10. **M-phase 9 (audit + verify):** [M17] RPC audit (now routed through `captureCardState`), [M18] restore-pending gate, [M20] overlay audit, [M21] drag-abort verify, [M22] caret-visibility tests, [M23] cross-card verify.
-11. **M-phase 10 (cleanup):** [M13] / [M14] integration test expansion, then Step NN ([M15] deletion + docs).
+5. **M-phase 4 (markdown-view):** implement [A5]. Closes [AT0010].
+6. **M-phase 5 (teardown):** implement [A7]. Closes [AT0019].
+7. **M-phase 6 (IME):** implement [A6]. Platform research → decide between browser API / native IPC / text-fallback. Closes [AT0012] to platform-possible extent.
+8. **M-phase 7 (component opt-in):** walk [A9d] component priority list and port each. Closes [AT0025], [AT0027], [AT0030], [AT0031]. Overlay policy decisions ([A9e], [AT0026]) made during this phase. Scroll-key audit ([A9f], [AT0029]) folded in.
+9. **M-phase 8 (banner / bulletin dismiss):** implement the user-preferences store for [AT0028]. Orthogonal to [A9] (not card-scoped).
+10. **M-phase 9 (audit + verify):** [AT0017] RPC audit (now routed through `captureCardState`), [AT0018] restore-pending gate, [AT0020] overlay audit, [AT0021] drag-abort verify, [AT0022] caret-visibility tests, [AT0023] cross-card verify.
+11. **M-phase 10 (cleanup):** [AT0013] / [AT0014] integration test expansion, then Step NN ([AT0015] deletion + docs).
 
 Each M-phase corresponds to 1–3 execution steps to be authored. The phasing gates "wait on decisions" away from "wait on implementation" so blockers surface early. M-phase 0 ([A9] foundation) is authored first so all subsequent phases can assume the protocol is in place.
 
@@ -3961,7 +3961,7 @@ Each M-phase corresponds to 1–3 execution steps to be authored. The phasing ga
 
 #### Phase-exit criteria {#phase-exit}
 
-- [ ] All execution steps landed — Steps 1–15 (original plan), the M-series steps that close the [missing cases inventory](#missing-cases), and Step NN (final cleanup). Each step's individual checkpoint passed.
+- [ ] All execution steps landed — Steps 1–15 (original plan), the AT-series steps that close the [missing cases inventory](#missing-cases), and Step NN (final cleanup). Each step's individual checkpoint passed.
 - [ ] `bun x tsc --noEmit` exits 0 on main.
 - [ ] `bun test` passes in full with the new integration suite from Step 15.
 - [ ] `tugutil validate /u/src/tugtool/roadmap/tugplan-selection.md` passes.

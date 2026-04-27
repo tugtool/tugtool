@@ -156,7 +156,7 @@ export interface TugSheetProps {
    * `tug-sheet` is uncontrolled-only — open state lives in this
    * component's `useState`, so `restoreState` writes through
    * `setOpen` directly. Marked PERSISTENT per [A9] /
-   * [M26].
+   * [AT0026].
    */
   persistKey?: string;
 }
@@ -190,7 +190,7 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
 
     // Opt-in Component Persistence Protocol. Hook no-ops when
     // `persistKey` is undefined or rendered outside a card.
-    // [M26] PERSISTENT classification.
+    // [AT0026] PERSISTENT classification.
     useComponentPersistence<TugSheetPersistState>({
       persistKey,
       captureState: () => ({ open }),
