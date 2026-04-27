@@ -432,8 +432,19 @@ export class TugTextEngine {
   private _suppressSelectionEmits = false;
 
   // -------------------------------------------------------------------
-  // Browser-mirrored state — the engine's authoritative model
+  // Browser-mirrored state — the engine's save-resilience cache
   // -------------------------------------------------------------------
+  //
+  // Per Step 25C.5 Layer 2 (abandoned) findings: this mirror is NOT a
+  // parallel source of truth competing with `bag.content`. It is the
+  // engine's in-memory cache, faithful to `bag.content.{selection,
+  // scrollTop}`, populated from live DOM events while focus is in-root,
+  // read by `captureState` when live DOM cannot be trusted (mass-save
+  // flows fire `invokeSaveCallback` for every card AFTER focus has
+  // moved; `window.getSelection()` and a hidden `el.scrollTop` would
+  // both return wrong values at that moment). The mirror's job is to
+  // produce a correct `TugTextEditingState` at *any* save trigger,
+  // including ones that run after focus has left the editor.
   //
   // The engine's persisted shape ([L23]) commingles two categories of
   // state:

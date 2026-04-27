@@ -209,7 +209,13 @@ const MAX_SCROLL_SPEED = 20;
  *
  * Paint is driven by three inputs:
  *   - `cardRanges`: per-card Range, published by the card's owning
- *     component (e.g. `TugTextEngine.onSelectionChanged`).
+ *     component at deactivation transitions (e.g. `TugPromptInput`
+ *     calls `engine.paintMirrorAsInactive(publish)` in its
+ *     `onCardWillDeactivate` hook). Pre-Step-25C.5-Layer-3 the publish
+ *     was a per-keystroke relay from `engine.onSelectionChanged`; that
+ *     live mirror was dropped because the active card's range never
+ *     painted from this map (native `::selection` carries it) and only
+ *     deactivation hand-off needed the publish.
  *   - `windowHasFocus`: flipped by the app-lifecycle observer on
  *     `applicationDidResignActive` / `applicationDidBecomeActive`.
  *   - `getDeckStore().getSnapshot().activePaneId → pane.activeCardId`:
@@ -259,8 +265,11 @@ class SelectionGuard {
   private inactiveHighlight: Highlight | null = null;
 
   // cardId → last-known DOM Range published by the card's owning
-  // component (e.g. TugTextEngine's `onSelectionChanged`). This is the
-  // input to the multi-card paint generalization in `updatePaint`.
+  // component at deactivation transitions (e.g. `TugPromptInput`'s
+  // `onCardWillDeactivate` hook calls `engine.paintMirrorAsInactive(publish)`,
+  // which builds a Range from the engine mirror and routes through
+  // `publish`). This is the input to the multi-card paint
+  // generalization in `updatePaint`.
   //
   // Only real Ranges are stored: `updateCardDomSelection(id, null)`
   // removes the entry rather than writing a sentinel. "No entry" covers
@@ -408,9 +417,10 @@ class SelectionGuard {
 
   /**
    * Publish the latest DOM `Range` for a card. Called by the card's
-   * owning component (e.g. a `TugTextEngine` via `onSelectionChanged`)
-   * whenever the card's selection moves, or on unmount to clear the
-   * entry by passing `null`. [D05], [Q06a].
+   * owning component at deactivation transitions (Step 25C.5 Layer 3
+   * dropped the per-keystroke relay; the engine now publishes once
+   * via `paintMirrorAsInactive(publish)` in `onCardWillDeactivate`),
+   * or on unmount to clear the entry by passing `null`. [D05], [Q06a].
    *
    * This step only stores the Range. Step 5 adds the paint step that
    * renders stored Ranges into the `inactive-selection` CSS Custom
@@ -456,10 +466,12 @@ class SelectionGuard {
    *
    * Order discipline at the callsite (see `CardHost` mount effect and
    * the tail of `registerPersistenceCallbacks`): for engine-managed
-   * cards the engine's own `restoreState` → `setSelectedRange` →
-   * `onSelectionChanged` → `updateCardDomSelection` wins by running
-   * after this method. For engine-less cards, this method's publish is
-   * the only publish, and it seeds `cardRanges` directly.
+   * cards the engine's own `restoreState` followed by the appropriate
+   * paint method (`paintMirrorAsActive` writes
+   * `window.getSelection()` directly; `paintMirrorAsInactive(publish)`
+   * routes through `updateCardDomSelection`) wins by running after
+   * this method. For engine-less cards, this method's publish is the
+   * only publish, and it seeds `cardRanges` directly.
    */
   restoreCardDomSelection(
     cardId: string,

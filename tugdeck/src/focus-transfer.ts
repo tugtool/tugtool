@@ -598,9 +598,11 @@ export function transferFocusForActivation(
  * action will (a) focus the click target and (b) place a collapsed
  * caret at the click position — clobbering any saved selection on
  * the input. The mount-restore effect in `card-host.tsx` applies
- * form-control snapshots once per element per mount (`WeakSet`-
- * gated), so a card that was deactivated then re-activated WITHOUT
- * remount has no path that re-applies its saved selection.
+ * form-control snapshots once at mount (Step 25C.5 Layer 4 — was
+ * `WeakSet`-gated through a MutationObserver loop, now a one-shot),
+ * so a card that was deactivated then re-activated WITHOUT remount
+ * has no path that re-applies its saved selection. This helper is
+ * the activation-time re-apply that closes that gap.
  *
  * ## Why an event listener, not timing
  *
