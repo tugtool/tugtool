@@ -297,7 +297,7 @@ export const DECK_TRACE_CAPACITY = 512;
  *   - `data-card-id`
  *   - `data-card-host`
  *   - `data-tug-focus-key`
- *   - `data-tug-persist-value`
+ *   - `data-tug-state-key`
  *
  * Non-Element inputs (Document, Window, null) collapse to a
  * descriptive tag: `#document`, `#window`, or the empty string for
@@ -331,7 +331,7 @@ export function formatElement(el: EventTarget | Element | null): string {
     "data-card-id",
     "data-card-host",
     "data-tug-focus-key",
-    "data-tug-persist-value",
+    "data-tug-state-key",
   ];
   const attrs: string[] = [];
   for (const key of dataKeys) {

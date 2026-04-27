@@ -197,7 +197,7 @@ nesting scopes.
 | `getElementBounds(selector)` | Viewport-rel `{x, y, width, height}`. |
 | `getElementScreenBounds(selector)` | Screen-CG `{x, y, width, height}` via `CoordMapping`. |
 | `getElementState(selector)` | `{tagName, disabled, readOnly, checked, visible, isFocused}`. |
-| `getActiveElement()` | `{tagName, id, cardId, persistKey, selector}` or `null`. |
+| `getActiveElement()` | `{tagName, id, cardId, componentStatePreservationKey, selector}` or `null`. |
 | `getSelection(cardId?)` | Selection snapshot (form-control or contentEditable range). |
 | `getComputedStyleValue(selector, property)` | Resolved CSS value. |
 

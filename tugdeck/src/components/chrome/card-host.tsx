@@ -149,7 +149,7 @@ function supportsTextSelection(
 
 /**
  * DOM-authority persistence for native `<input>` and `<textarea>` elements
- * carrying `data-tug-persist-value="<key>"`. Walks the card's own subtree
+ * carrying `data-tug-state-key="<key>"`. Walks the card's own subtree
  * and snapshots each element's value, scroll, and selection offsets keyed
  * by the attribute value.
  *
@@ -158,7 +158,7 @@ function supportsTextSelection(
  * Multiple cards inside one pane (tab-group panes) all portal into the
  * same pane-content `<div>`, so a query rooted at the pane would
  * cross-pollinate between sibling cards that happen to share a
- * `persistKey`. Rooting at the card-host div keeps `persistKey`
+ * `componentStatePreservationKey`. Rooting at the card-host div keeps `componentStatePreservationKey`
  * uniqueness a per-card concern, which is what the caller already
  * assumes.
  *
@@ -178,10 +178,10 @@ export function captureFormControls(
 ): Record<string, FormControlSnapshot> | undefined {
   const result: Record<string, FormControlSnapshot> = {};
   const els = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-    "[data-tug-persist-value]",
+    "[data-tug-state-key]",
   );
   for (const el of els) {
-    const key = el.getAttribute("data-tug-persist-value");
+    const key = el.getAttribute("data-tug-state-key");
     if (!key) continue;
     const snap: FormControlSnapshot = {
       value: el.value,
@@ -278,8 +278,8 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  * of the four `FocusSnapshot` variants.
  *
  *   - Focus outside the card root (including `document.body`) → `none`.
- *   - `[data-tug-persist-value]` wins over the other markers because
- *     a keyed form-control's focus is implicit in its persistKey (see
+ *   - `[data-tug-state-key]` wins over the other markers because
+ *     a keyed form-control's focus is implicit in its componentStatePreservationKey (see
  *     [D10]) — no separate focus key needed.
  *   - `[data-tug-focus-key]` → `dom`; keyed via the attribute value.
  *   - Matches a component-owned selector → `component-owned`.
@@ -288,7 +288,7 @@ const COMPONENT_OWNED_FOCUS_TARGETS: readonly string[] = [
  * Pure read; does not mutate focus, selection, or any DOM state.
  */
 export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
-  // Dropped m36's `fallbackPersistKey` parameter.
+  // Dropped m36's `fallbackComponentStatePreservationKey` parameter.
   // Audit (verified by `smoke-capture-phase-save.test.ts`)
   // proved every activation-trigger source already saves in capture
   // phase — `document.activeElement` is correct at save time, no
@@ -297,9 +297,9 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
   if (!(active instanceof HTMLElement)) return { kind: "none" };
   if (!cardRoot.contains(active)) return { kind: "none" };
 
-  const persistKey = active.getAttribute("data-tug-persist-value");
-  if (persistKey !== null && persistKey !== "") {
-    return { kind: "form-control", persistKey };
+  const componentStatePreservationKey = active.getAttribute("data-tug-state-key");
+  if (componentStatePreservationKey !== null && componentStatePreservationKey !== "") {
+    return { kind: "form-control", componentStatePreservationKey };
   }
 
   const focusKey = active.getAttribute("data-tug-focus-key");
@@ -351,7 +351,7 @@ export function applyFocusSnapshot(
   let target: HTMLElement | null = null;
   if (snapshot.kind === "form-control") {
     target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-persist-value="${CSS.escape(snapshot.persistKey)}"]`,
+      `[data-tug-state-key="${CSS.escape(snapshot.componentStatePreservationKey)}"]`,
     );
   } else if (snapshot.kind === "dom") {
     target = cardRoot.querySelector<HTMLElement>(
@@ -456,9 +456,9 @@ function traceApplyFocusSnapshot(
   let target: HTMLElement | null = null;
   let targetSelector = "";
   if (snapshot.kind === "form-control") {
-    targetSelector = `[data-tug-persist-value="${snapshot.persistKey}"]`;
+    targetSelector = `[data-tug-state-key="${snapshot.componentStatePreservationKey}"]`;
     target = cardRoot.querySelector<HTMLElement>(
-      `[data-tug-persist-value="${CSS.escape(snapshot.persistKey)}"]`,
+      `[data-tug-state-key="${CSS.escape(snapshot.componentStatePreservationKey)}"]`,
     );
   } else if (snapshot.kind === "dom") {
     targetSelector = `[data-tug-focus-key="${snapshot.focusKey}"]`;
@@ -922,7 +922,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
         for (const [key, snap] of Object.entries(formSnapshots)) {
           const el = cardRoot.querySelector<
             HTMLInputElement | HTMLTextAreaElement
-          >(`[data-tug-persist-value="${CSS.escape(key)}"]`);
+          >(`[data-tug-state-key="${CSS.escape(key)}"]`);
           if (el !== null) {
             applyFormControlSnapshot(el, snap);
           }

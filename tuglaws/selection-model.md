@@ -72,7 +72,7 @@ element the user left it on. Three opt-in attributes drive classification
 
 | Attribute | Kind at save | Purpose |
 |-----------|--------------|---------|
-| `data-tug-persist-value="<key>"` | `{ kind: "form-control", persistKey }` | Native `<input>` / `<textarea>`. The attribute that already persists the element's `value` doubles as its focus key — authors do not add a second attribute. |
+| `data-tug-state-key="<key>"` | `{ kind: "form-control", componentStatePreservationKey }` | Native `<input>` / `<textarea>`. The attribute that already preserves the element's `value` doubles as its focus key — authors do not add a second attribute. |
 | `data-tug-focus-key="<key>"` | `{ kind: "dom", focusKey }` | Any non-form-control focusable element (button, tab, custom focusable `tabindex=0` widget) that wants its focus restored. The value must be unique within the card subtree. |
 | `data-tug-prompt-input-root` (and other component-owned markers) | `{ kind: "component-owned" }` | Marker attribute on the outer container of a component that owns its own focus + selection state together (e.g. `TugPromptInput`). The owning component's `bag.content` carries the detail. |
 
@@ -92,7 +92,7 @@ also survive reload (captured into `bag.regionScroll`).
 
 | Attribute | Saved into | Purpose |
 |-----------|------------|---------|
-| `data-tug-scroll-key="<key>"` | `bag.regionScroll[key] = { x, y }` | Inner scrollable region whose `scrollLeft` / `scrollTop` should survive reload. The key must be unique within the card subtree (same author contract as `data-tug-persist-value`). Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls. |
+| `data-tug-scroll-key="<key>"` | `bag.regionScroll[key] = { x, y }` | Inner scrollable region whose `scrollLeft` / `scrollTop` should survive reload. The key must be unique within the card subtree (same author contract as `data-tug-state-key`). Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls. |
 
 The component's own runtime scroll logic (clamps, sticky-to-bottom,
 virtualization) continues to handle in-session behavior; this attribute

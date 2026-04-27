@@ -42,7 +42,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const INPUT_PERSIST_KEY = "gallery-input/size/sm";
 
 function inputSelectorFor(cardId: string): string {
-  return `[data-card-id="${cardId}"] [data-tug-persist-value="${INPUT_PERSIST_KEY}"]`;
+  return `[data-card-id="${cardId}"] [data-tug-state-key="${INPUT_PERSIST_KEY}"]`;
 }
 
 describe.skipIf(!SHOULD_RUN)("m05: app hide → unhide preserves focus + value", () => {

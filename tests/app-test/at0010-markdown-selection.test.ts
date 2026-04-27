@@ -11,7 +11,7 @@
  * mutates their selection. Engine-managed cards (`tug-prompt-input`,
  * `tug-prompt-entry`) publish through `engine.onSelectionChanged`.
  * Markdown-view (no engine) publishes directly off
- * `document.selectionchange` once `persistKey` opt-in is
+ * `document.selectionchange` once `selectionPublishKey` opt-in is
  * wired.
  *
  * Without that publish, `selectionGuard.cardRanges` stays empty for
@@ -23,7 +23,7 @@
  * ## Test layout
  *
  * One pane with two cards: A = `gallery-markdown-50kb` (50KB baked-
- * in markdown, opted into `persistKey`), B = `gallery-markdown-50kb`
+ * in markdown, opted into `selectionPublishKey`), B = `gallery-markdown-50kb`
  * (the alternate tab — using the same component id keeps the layout
  * symmetric, sidesteps focus-mode / form-control variance).
  *
@@ -119,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)("m10: markdown-view DOM selection round-trips throu
       // Programmatically select a 20-char span inside A's first
       // block's first text node. Setting `window.getSelection()`
       // fires `selectionchange` synchronously in WebKit; the
-      // listener installed by `tug-markdown-view` (persistKey="markdown-view")
+      // listener installed by `tug-markdown-view` (selectionPublishKey="markdown-view")
       // publishes the Range to `selectionGuard.cardRanges["A"]`.
       const seeded = await app.evalJS<SeededSelection | null>(
         `(function(){

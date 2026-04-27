@@ -22,7 +22,7 @@
  * Probes
  * ------
  * Cards use `componentId: "gallery-input"`, which renders `<TugInput>`
- * instances that stamp `data-tug-persist-value="gallery-input/size/sm"`
+ * instances that stamp `data-tug-state-key="gallery-input/size/sm"`
  * (and similar) on the underlying `<input>` element. That attribute is
  * the exact marker the harness reads via `__tug.getCaretState` and
  * `__tug.getFormControlValue` ([#s03-tug-surface]), so no bespoke test
@@ -60,7 +60,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 /**
  * Shared selector for the first-size (`sm`) TugInput inside a given
- * gallery-input card. Both cards render the same persistKey set, but
+ * gallery-input card. Both cards render the same componentStatePreservationKey set, but
  * they live in different `[data-card-id]` subtrees, so qualifying the
  * lookup by cardId disambiguates them. We probe the `sm` variant
  * because it is the first input in the gallery-input content, which
@@ -69,7 +69,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const INPUT_PERSIST_KEY = "gallery-input/size/sm";
 
 function inputSelectorFor(cardId: string): string {
-  return `[data-card-id="${cardId}"] [data-tug-persist-value="${INPUT_PERSIST_KEY}"]`;
+  return `[data-card-id="${cardId}"] [data-tug-state-key="${INPUT_PERSIST_KEY}"]`;
 }
 
 /**

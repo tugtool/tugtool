@@ -307,16 +307,16 @@ export function getCaretState(
 
 /**
  * Read the value of a persisted form control by its
- * `data-tug-persist-value` key.
+ * `data-tug-state-key` key.
  */
 export function getFormControlValue(
   caller: HarnessCaller,
   cardId: string,
-  persistKey: string,
+  componentStatePreservationKey: string,
   evalOpts?: EvalJsOptions,
 ): Promise<string | null> {
   const script = callSurface(
-    `window.__tug.getFormControlValue(${lit(cardId)}, ${lit(persistKey)})`,
+    `window.__tug.getFormControlValue(${lit(cardId)}, ${lit(componentStatePreservationKey)})`,
   );
   return caller.evalJS<string | null>(script, evalOpts);
 }
@@ -478,7 +478,7 @@ export interface ActiveElementInfo {
   tagName: string;
   id: string | null;
   cardId: string | null;
-  persistKey: string | null;
+  componentStatePreservationKey: string | null;
   selector: string;
 }
 

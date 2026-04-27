@@ -86,7 +86,7 @@ function isElementHidden(el: HTMLElement | null): boolean {
  *   2. `[data-tug-focus-key]` with any value — any tagged focus
  *      target. Allows cards to declare a focus target without
  *      naming it "primary" specifically.
- *   3. `[data-tug-persist-value]` — first persisted form control.
+ *   3. `[data-tug-state-key]` — first persisted form control.
  *      Gallery-input-style cards with no explicit focus-key still
  *      get their first input focused.
  *   4. Generic focusable — input / textarea / select / button /
@@ -96,7 +96,7 @@ function isElementHidden(el: HTMLElement | null): boolean {
 export const DEFAULT_FOCUS_SELECTORS: readonly string[] = [
   '[data-tug-focus-key="primary"]',
   "[data-tug-focus-key]",
-  "[data-tug-persist-value]",
+  "[data-tug-state-key]",
   'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
 ];
 

@@ -75,7 +75,7 @@ function makeFixture(): Fixture {
 function makeCardHost(cardId: string): {
   host: HTMLElement;
   focusKeyInput: HTMLInputElement;
-  persistKeyInput: HTMLInputElement;
+  componentStatePreservationKeyInput: HTMLInputElement;
   prompt: HTMLElement;
 } {
   const host = document.createElement("div");
@@ -87,10 +87,10 @@ function makeCardHost(cardId: string): {
   focusKeyInput.setAttribute("data-tug-focus-key", `fk-${cardId}`);
   host.appendChild(focusKeyInput);
 
-  const persistKeyInput = document.createElement("input");
-  persistKeyInput.type = "text";
-  persistKeyInput.setAttribute("data-tug-persist-value", `pv-${cardId}`);
-  host.appendChild(persistKeyInput);
+  const componentStatePreservationKeyInput = document.createElement("input");
+  componentStatePreservationKeyInput.type = "text";
+  componentStatePreservationKeyInput.setAttribute("data-tug-state-key", `pv-${cardId}`);
+  host.appendChild(componentStatePreservationKeyInput);
 
   const promptRoot = document.createElement("div");
   promptRoot.setAttribute("data-tug-prompt-input-root", "");
@@ -100,7 +100,7 @@ function makeCardHost(cardId: string): {
   host.appendChild(promptRoot);
 
   document.body.appendChild(host);
-  return { host, focusKeyInput, persistKeyInput, prompt };
+  return { host, focusKeyInput, componentStatePreservationKeyInput, prompt };
 }
 
 let fixture!: Fixture;
@@ -173,16 +173,16 @@ describe("resolveActivationTarget", () => {
   });
 
   test("resolves focus.kind === 'form-control' to the persist-keyed element", () => {
-    const { host, persistKeyInput } = makeCardHost("c1");
+    const { host, componentStatePreservationKeyInput } = makeCardHost("c1");
     fixture.setBag("c1", {
-      focus: { kind: "form-control", persistKey: "pv-c1" },
+      focus: { kind: "form-control", componentStatePreservationKey: "pv-c1" },
     });
     fixture.setHostRoot("c1", host);
 
     const result = resolveActivationTarget("c1", fixture.store);
     expect(result.kind).toBe("focus-element");
     if (result.kind === "focus-element") {
-      expect(result.el).toBe(persistKeyInput);
+      expect(result.el).toBe(componentStatePreservationKeyInput);
     }
   });
 

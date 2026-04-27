@@ -36,10 +36,10 @@ function makeCardRoot(id: string = "card-test"): HTMLElement {
   return el;
 }
 
-function makeInput(persistKey: string): HTMLInputElement {
+function makeInput(componentStatePreservationKey: string): HTMLInputElement {
   const el = document.createElement("input");
   el.type = "text";
-  el.setAttribute("data-tug-persist-value", persistKey);
+  el.setAttribute("data-tug-state-key", componentStatePreservationKey);
   return el;
 }
 
@@ -82,7 +82,7 @@ describe("applyFocusSnapshot – form-control variant", () => {
     const email = makeInput("email");
     cardRoot.appendChild(email);
 
-    const snap: FocusSnapshot = { kind: "form-control", persistKey: "email" };
+    const snap: FocusSnapshot = { kind: "form-control", componentStatePreservationKey: "email" };
     applyFocusSnapshot(cardRoot, snap);
 
     expect(document.activeElement).toBe(email);
@@ -96,7 +96,7 @@ describe("applyFocusSnapshot – form-control variant", () => {
     prior.focus();
     expect(document.activeElement).toBe(prior);
 
-    const snap: FocusSnapshot = { kind: "form-control", persistKey: "not-yet" };
+    const snap: FocusSnapshot = { kind: "form-control", componentStatePreservationKey: "not-yet" };
     expect(() => applyFocusSnapshot(cardRoot, snap)).not.toThrow();
 
     // prior is outside the cardRoot, so the pre-check doesn't fire;
@@ -157,7 +157,7 @@ describe("applyFocusSnapshot – pre-check (focus already inside card)", () => {
     other.focus();
     expect(document.activeElement).toBe(other);
 
-    const snap: FocusSnapshot = { kind: "form-control", persistKey: "email" };
+    const snap: FocusSnapshot = { kind: "form-control", componentStatePreservationKey: "email" };
     applyFocusSnapshot(cardRoot, snap);
 
     // Focus stays on `other`; restore does not fight the user.
@@ -176,18 +176,18 @@ describe("applyFocusSnapshot – pre-check (focus already inside card)", () => {
     outside.focus();
     expect(document.activeElement).toBe(outside);
 
-    applyFocusSnapshot(cardRoot, { kind: "form-control", persistKey: "email" });
+    applyFocusSnapshot(cardRoot, { kind: "form-control", componentStatePreservationKey: "email" });
     expect(document.activeElement).toBe(target);
   });
 });
 
 describe("applyFocusSnapshot – unknown key", () => {
-  it("silently no-ops when the persistKey does not match any element", () => {
+  it("silently no-ops when the componentStatePreservationKey does not match any element", () => {
     const cardRoot = makeCardRoot();
     const input = makeInput("email");
     cardRoot.appendChild(input);
 
-    const snap: FocusSnapshot = { kind: "form-control", persistKey: "other" };
+    const snap: FocusSnapshot = { kind: "form-control", componentStatePreservationKey: "other" };
     expect(() => applyFocusSnapshot(cardRoot, snap)).not.toThrow();
     // Focus did not move onto the matching-but-wrong-key input.
     expect(document.activeElement).not.toBe(input);

@@ -57,7 +57,7 @@ describe("DEFAULT_FOCUS_SELECTORS", () => {
   it("priority order: primary focus-key first, then any focus-key, then persist-value, then generic", () => {
     expect(DEFAULT_FOCUS_SELECTORS[0]).toBe('[data-tug-focus-key="primary"]');
     expect(DEFAULT_FOCUS_SELECTORS[1]).toBe("[data-tug-focus-key]");
-    expect(DEFAULT_FOCUS_SELECTORS[2]).toBe("[data-tug-persist-value]");
+    expect(DEFAULT_FOCUS_SELECTORS[2]).toBe("[data-tug-state-key]");
     // Generic focusable selector at the end — catch-all for cards
     // with no tug-specific metadata.
     expect(DEFAULT_FOCUS_SELECTORS[3]).toContain("input:not");
@@ -77,7 +77,7 @@ describe("resolveDefaultFocusTarget — priority chain", () => {
     // priority chain driving the selector choice.
     const primaryInput = document.createElement("input");
     primaryInput.type = "text";
-    primaryInput.setAttribute("data-tug-persist-value", "not-primary");
+    primaryInput.setAttribute("data-tug-state-key", "not-primary");
     root.appendChild(primaryInput);
 
     const plainKeyed = document.createElement("button");
@@ -99,7 +99,7 @@ describe("resolveDefaultFocusTarget — priority chain", () => {
     const root = makeCardRoot();
     const persistInput = document.createElement("input");
     persistInput.type = "text";
-    persistInput.setAttribute("data-tug-persist-value", "x");
+    persistInput.setAttribute("data-tug-state-key", "x");
     root.appendChild(persistInput);
 
     const keyed = document.createElement("button");
@@ -112,16 +112,16 @@ describe("resolveDefaultFocusTarget — priority chain", () => {
     expect(selector).toBe("[data-tug-focus-key]");
   });
 
-  it("falls back to [data-tug-persist-value] when no focus-key marker exists", () => {
+  it("falls back to [data-tug-state-key] when no focus-key marker exists", () => {
     const root = makeCardRoot();
     const input = document.createElement("input");
     input.type = "text";
-    input.setAttribute("data-tug-persist-value", "size/sm");
+    input.setAttribute("data-tug-state-key", "size/sm");
     root.appendChild(input);
 
     const { el, selector } = resolveDefaultFocusTarget(root);
     expect(el).toBe(input);
-    expect(selector).toBe("[data-tug-persist-value]");
+    expect(selector).toBe("[data-tug-state-key]");
   });
 
   it("falls back to generic focusable (plain input) when no tug-specific metadata present", () => {
@@ -160,7 +160,7 @@ describe("traceApplyDefaultFocus — focuses target and records focus-call", () 
     const root = makeCardRoot("card-A");
     const input = document.createElement("input");
     input.type = "text";
-    input.setAttribute("data-tug-persist-value", "size/sm");
+    input.setAttribute("data-tug-state-key", "size/sm");
     root.appendChild(input);
 
     traceApplyDefaultFocus("a3-default-focus", "card-A", root);
@@ -176,7 +176,7 @@ describe("traceApplyDefaultFocus — focuses target and records focus-call", () 
     if (focusCall === undefined) return;
     expect(focusCall.cardId).toBe("card-A");
     expect(focusCall.site).toBe("a3-default-focus");
-    expect(focusCall.targetSelector).toBe("[data-tug-persist-value]");
+    expect(focusCall.targetSelector).toBe("[data-tug-state-key]");
   });
 
   it("respects focus already inside the card root (click-in-progress wins)", () => {

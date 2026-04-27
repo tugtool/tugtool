@@ -40,7 +40,7 @@ export interface CardStateBag {
   content?: unknown;
   /**
    * Snapshot of every `<input>` / `<textarea>` inside the card that carries
-   * a `data-tug-persist-value="<key>"` attribute, keyed by the attribute's
+   * a `data-tug-state-key="<key>"` attribute, keyed by the attribute's
    * value. Captured at save time by walking the card-host subtree.
    * Reapplied on restore and on any DOM mutation that introduces a matching
    * element later (to handle late mounts). DOM-authority persistence for
@@ -68,7 +68,7 @@ export interface CardStateBag {
  * DOM-authority snapshot of a single native `<input>` or `<textarea>`.
  *
  * Captured and reapplied by `CardHost` for any element bearing
- * `data-tug-persist-value="<key>"`. The snapshot covers three axes:
+ * `data-tug-state-key="<key>"`. The snapshot covers three axes:
  *
  *   - `value` — the control's text value. Always present.
  *   - `scrollTop` / `scrollLeft` — scroll inside textareas (and
@@ -107,7 +107,7 @@ export interface FormControlSnapshot {
  * container — that the user has scrolled independently.
  *
  * Uniqueness of keys within a card subtree is an author contract
- * (same rule as `data-tug-persist-value`): `CardHost` walks the card
+ * (same rule as `data-tug-state-key`): `CardHost` walks the card
  * root and writes the last-encountered value per key.
  */
 export type RegionScrollSnapshot = Record<string, { x: number; y: number }>;
@@ -136,8 +136,8 @@ export interface DomSelectionSnapshot {
  * Four variants cover every real case:
  *
  *   - `form-control` — a `<input>` or `<textarea>` carrying
- *     `data-tug-persist-value="<key>"`. Focus travels with the
- *     persistKey; restore re-focuses that element after its value is
+ *     `data-tug-state-key="<key>"`. Focus travels with the
+ *     componentStatePreservationKey; restore re-focuses that element after its value is
  *     re-applied.
  *   - `dom` — a non-form-control focusable element carrying an opt-in
  *     `data-tug-focus-key="<key>"` marker (e.g. a button, a card-local
@@ -156,7 +156,7 @@ export interface DomSelectionSnapshot {
  */
 export type FocusSnapshot =
   | { kind: "none" }
-  | { kind: "form-control"; persistKey: string }
+  | { kind: "form-control"; componentStatePreservationKey: string }
   | { kind: "dom"; focusKey: string }
   | { kind: "component-owned" };
 

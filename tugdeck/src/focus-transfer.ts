@@ -319,7 +319,7 @@ export function resolveActivationTarget(
     let el: HTMLElement | null = null;
     if (focus.kind === "form-control") {
       el = hostRoot.querySelector<HTMLElement>(
-        `[data-tug-persist-value="${CSS.escape(focus.persistKey)}"]`,
+        `[data-tug-state-key="${CSS.escape(focus.componentStatePreservationKey)}"]`,
       );
     } else if (focus.kind === "dom") {
       el = hostRoot.querySelector<HTMLElement>(
@@ -619,14 +619,14 @@ function installFormControlReapplyOnNextMousedown(
   const handler = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null;
     const clickedInput = target?.closest<HTMLInputElement | HTMLTextAreaElement>(
-      "input[data-tug-persist-value], textarea[data-tug-persist-value]",
+      "input[data-tug-state-key], textarea[data-tug-state-key]",
     );
     if (clickedInput === null || clickedInput === undefined) return;
     if (!cardRoot.contains(clickedInput)) return;
 
-    const persistKey = clickedInput.getAttribute("data-tug-persist-value");
-    if (persistKey === null) return;
-    const snap = formSnapshots[persistKey];
+    const componentStatePreservationKey = clickedInput.getAttribute("data-tug-state-key");
+    if (componentStatePreservationKey === null) return;
+    const snap = formSnapshots[componentStatePreservationKey];
     if (snap === undefined) return;
 
     // Suppress the mousedown's default action. The browser would
@@ -668,7 +668,7 @@ function describeTargetSelector(
   const focus = bag?.focus;
   if (focus !== undefined && focus !== null) {
     if (focus.kind === "form-control") {
-      return `[data-tug-persist-value="${focus.persistKey}"]`;
+      return `[data-tug-state-key="${focus.componentStatePreservationKey}"]`;
     }
     if (focus.kind === "dom") {
       return `[data-tug-focus-key="${focus.focusKey}"]`;

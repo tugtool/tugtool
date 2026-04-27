@@ -12,8 +12,8 @@
  * (`{ currentRoute, perRoute, maximized }`) and are gated by [AT0024].
  *
  * Uses `useComponentPersistence` registered with
- * `persistKey="entry-chrome"` that captures `{ toolsOpen }` into
- * `bag.components[persistKey]`. The active route stays in
+ * `componentStatePreservationKey="entry-chrome"` that captures `{ toolsOpen }` into
+ * `bag.components[componentStatePreservationKey]`. The active route stays in
  * `bag.content.currentRoute` because it is the index into
  * `bag.content.perRoute` — splitting them across two bags would
  * require a two-phase restore that violates [L23].

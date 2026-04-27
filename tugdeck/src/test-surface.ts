@@ -122,7 +122,7 @@ const READY_GEN_STORAGE_KEY = "__tugReadyGen";
  * care about:
  *
  *   - `input` — the active element is a `<input>` / `<textarea>` with
- *     `data-tug-persist-value`, and the snapshot carries the control's
+ *     `data-tug-state-key`, and the snapshot carries the control's
  *     own `selectionStart` / `selectionEnd` / `selectionDirection` plus
  *     `value`.
  *   - `range` — the live DOM Range for the card, as published by the
@@ -237,8 +237,8 @@ export interface ElementStateSnapshot {
  * {@link TugTestSurface.getActiveElement}. `null` when the body is the
  * active element (no explicit focus).
  *
- * `cardId` is the nearest ancestor's `data-card-id`; `persistKey` is
- * the element's own `data-tug-persist-value`. Both default to `null`
+ * `cardId` is the nearest ancestor's `data-card-id`; `componentStatePreservationKey` is
+ * the element's own `data-tug-state-key`. Both default to `null`
  * when absent. `selector` is a best-effort locator ("#id" if the
  * element has an id, else "tag[data-card-id=...]" when inside a card)
  * — useful for logging but NOT intended as a round-trip selector that
@@ -248,7 +248,7 @@ export interface ActiveElementInfo {
   tagName: string;
   id: string | null;
   cardId: string | null;
-  persistKey: string | null;
+  componentStatePreservationKey: string | null;
   selector: string;
 }
 
@@ -359,7 +359,7 @@ export interface TugTestSurface {
   getActiveCardId(): string | null;
   getFocusedCardId(): string | null;
   getCaretState(cardId: string): CaretState | null;
-  getFormControlValue(cardId: string, persistKey: string): string | null;
+  getFormControlValue(cardId: string, componentStatePreservationKey: string): string | null;
   assertHostRootRegistered(cardId: string): boolean;
 
   // ---- Trace access ----
@@ -616,7 +616,7 @@ function makeEmptyDeckState(): DeckState {
 
 /**
  * Narrow `document.activeElement` to a form-control that sits inside
- * `cardRoot` and carries a `data-tug-persist-value` key. Returns
+ * `cardRoot` and carries a `data-tug-state-key` key. Returns
  * `null` when the active element is outside the card subtree or is
  * not a recognized form control.
  *
@@ -632,7 +632,7 @@ function activeFormControlIn(
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) return null;
   if (!cardRoot.contains(active)) return null;
-  if (active.getAttribute("data-tug-persist-value") === null) return null;
+  if (active.getAttribute("data-tug-state-key") === null) return null;
   if (active instanceof HTMLInputElement) return active;
   if (active instanceof HTMLTextAreaElement) return active;
   return null;
@@ -891,13 +891,13 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       };
     },
 
-    getFormControlValue(cardId: string, persistKey: string): string | null {
+    getFormControlValue(cardId: string, componentStatePreservationKey: string): string | null {
       const cardRoot = deck.peekCardHostRoot(cardId);
       if (cardRoot === null) return null;
-      // `CSS.escape` is important: persistKeys are authored
+      // `CSS.escape` is important: componentStatePreservationKeys are authored
       // strings and can technically contain characters that would
       // otherwise be interpreted as selector syntax.
-      const selector = `[data-tug-persist-value="${CSS.escape(persistKey)}"]`;
+      const selector = `[data-tug-state-key="${CSS.escape(componentStatePreservationKey)}"]`;
       const el = cardRoot.querySelector(selector);
       if (el === null) return null;
       if (
@@ -1028,7 +1028,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         cardEl instanceof HTMLElement
           ? cardEl.getAttribute("data-card-id")
           : null;
-      const persistKey = active.getAttribute("data-tug-persist-value");
+      const componentStatePreservationKey = active.getAttribute("data-tug-state-key");
       const id = active.id !== "" ? active.id : null;
       // Best-effort selector: id is stable when present; otherwise
       // scope by cardId and tag. We don't promise it re-resolves.
@@ -1042,7 +1042,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         tagName: active.tagName,
         id,
         cardId,
-        persistKey,
+        componentStatePreservationKey,
         selector,
       };
     },

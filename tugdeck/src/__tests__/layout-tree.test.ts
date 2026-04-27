@@ -707,10 +707,11 @@ describe("CardStateBag type — additional coverage", () => {
   });
 
   test("components axis round-trips with heterogeneous per-key payloads", () => {
-    // bag.components is the Component Persistence Protocol axis ([D13],
-    // [A9]): framework harvests opt-in components keyed by scoped
-    // persistKey. Values are serializable but otherwise opaque to the
-    // framework — round-trip must preserve arbitrary shapes.
+    // bag.components is the Component State Preservation Protocol axis
+    // ([D13], [A9]): framework harvests opt-in components keyed by
+    // scoped componentStatePreservationKey. Values are serializable but
+    // otherwise opaque to the framework — round-trip must preserve
+    // arbitrary shapes.
     const bag: CardStateBag = {
       components: {
         "checkbox.done": true,

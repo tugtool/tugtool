@@ -448,7 +448,7 @@ describe("CardStateOrchestrator — saveState RPC parity", () => {
         focusPath: [0],
         focusOffset: 1,
       },
-      focus: { kind: "form-control", persistKey: "name" },
+      focus: { kind: "form-control", componentStatePreservationKey: "name" },
     };
     const orchestrator = makeOrchestrator(registries);
     orchestrator.registerAssembler("card-a", makeAssembler(frameworkBag));
@@ -460,7 +460,7 @@ describe("CardStateOrchestrator — saveState RPC parity", () => {
     expect(bag.formControls?.["name"].value).toBe("Ken");
     expect(bag.regionScroll?.["scroller"]).toEqual({ x: 0, y: 42 });
     expect(bag.domSelection?.focusOffset).toBe(1);
-    expect(bag.focus).toEqual({ kind: "form-control", persistKey: "name" });
+    expect(bag.focus).toEqual({ kind: "form-control", componentStatePreservationKey: "name" });
     // Component harvest layered on top.
     expect(bag.components).toEqual({ checkbox: true });
   });

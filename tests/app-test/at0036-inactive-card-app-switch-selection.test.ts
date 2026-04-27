@@ -28,9 +28,9 @@
  * ## What this is testing
  *
  * TugInput uses DOM-authority persistence: CardHost's
- * `captureFormControls` walks `[data-tug-persist-value]` elements
+ * `captureFormControls` walks `[data-tug-state-key]` elements
  * inside the card root and snapshots `value`, `selectionStart`,
- * `selectionEnd`, `scrollTop` into `bag.formControls[persistKey]`.
+ * `selectionEnd`, `scrollTop` into `bag.formControls[componentStatePreservationKey]`.
  * Restore goes the other way via `applyFormControlSnapshot`.
  *
  * The test exercises:
@@ -52,7 +52,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const INPUT_MD_KEY = "gallery-input/size/md";
-const INPUT_MD_SELECTOR = `input[data-tug-persist-value="${INPUT_MD_KEY}"]`;
+const INPUT_MD_SELECTOR = `input[data-tug-state-key="${INPUT_MD_KEY}"]`;
 
 /**
  * Brief settle pause matching the natural pacing of user-driven
@@ -277,12 +277,12 @@ describe.skipIf(!SHOULD_RUN)(
           // deactivation save captures `bag.focus = { kind: "none" }`
           // (focus had already moved to B's input by save time), and
           // the resolver falls through to the default-focus chain
-          // which picks the FIRST persistKey input — `sm`, not `md`.
+          // which picks the FIRST componentStatePreservationKey input — `sm`, not `md`.
           const focusedPersistKey = await app.evalJS<string | null>(
             `(function(){
               var active = document.activeElement;
               if (!(active instanceof Element)) return null;
-              return active.getAttribute("data-tug-persist-value");
+              return active.getAttribute("data-tug-state-key");
             })()`,
           );
           expect(

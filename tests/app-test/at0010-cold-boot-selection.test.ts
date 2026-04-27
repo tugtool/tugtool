@@ -148,7 +148,7 @@ describe.skipIf(!SHOULD_RUN)("m10: selection cold-boot across full process resta
           // Programmatically anchor a 20-char range inside the first
           // block's first text node. Same primitive as
           // at0010-markdown-selection — the selectionchange listener
-          // installed by tug-markdown-view (persistKey="markdown-view")
+          // installed by tug-markdown-view (selectionPublishKey="markdown-view")
           // publishes the Range to selectionGuard.cardRanges["A"].
           const seededOpt = await app.evalJS<SeededSelection | null>(
             `(function(){

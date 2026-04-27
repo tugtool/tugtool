@@ -325,9 +325,9 @@ export class App {
   /** Read a persisted form-control's value by its persist key. */
   getFormControlValue(
     cardId: string,
-    persistKey: string,
+    componentStatePreservationKey: string,
   ): Promise<string | null> {
-    return client.getFormControlValue(this as HarnessCaller, cardId, persistKey);
+    return client.getFormControlValue(this as HarnessCaller, cardId, componentStatePreservationKey);
   }
 
   /** `true` iff the deck has registered a card-host root for `cardId`. */

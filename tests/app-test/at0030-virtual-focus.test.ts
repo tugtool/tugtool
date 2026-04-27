@@ -13,7 +13,7 @@
  * implementation operations (mount-time React state init) destroyed
  * user-visible state.
  *
- * Uses `persistKey` + `useComponentPersistence` to each
+ * Uses `componentStatePreservationKey` + `useComponentPersistence` to each
  * component. Two patterns coexist:
  *
  *   - **Uncontrolled-friendly** (`tug-switch`, `tug-radio-group`):
@@ -25,7 +25,7 @@
  *     through the responder chain so the parent updates its state.
  *
  * Both patterns produce the same on-disk shape under
- * `bag.components[persistKey]`.
+ * `bag.components[componentStatePreservationKey]`.
  *
  * ## Scope
  *
@@ -41,7 +41,7 @@
  *   6 components × 1 trigger = 6 tests.
  *
  *   - Components: switch, radio-group, choice-group, option-group,
- *     slider, value-input. Each gallery card wires `persistKey` + a
+ *     slider, value-input. Each gallery card wires `componentStatePreservationKey` + a
  *     `data-testid` on a single instance for the harness to scope.
  *   - Trigger: `appReload` (fresh WKWebView, disk round-trip). This
  *     gates the full persistence pipeline: capture → save → flush →
@@ -56,7 +56,7 @@
  * `useComponentPersistence` rides on. Component-specific cmd-tab
  * coverage can be added as a follow-up if a regression surfaces.
  *
- * Each test seeds `bag.components.{persistKey}` with a non-default
+ * Each test seeds `bag.components.{componentStatePreservationKey}` with a non-default
  * value, drives the trigger, and asserts the value survives via a
  * component-specific live-state probe.
  *
@@ -77,7 +77,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
 // ---------------------------------------------------------------------------
-// Per-component fixtures: componentId, persistKey, seed payload, live probe.
+// Per-component fixtures: componentId, componentStatePreservationKey, seed payload, live probe.
 // ---------------------------------------------------------------------------
 
 interface ComponentFixture {
@@ -85,9 +85,9 @@ interface ComponentFixture {
   label: string;
   /** Gallery componentId for the seedDeckState card row. */
   componentId: string;
-  /** persistKey used by the gallery instance. */
-  persistKey: string;
-  /** Bag.components payload to seed under `persistKey`. */
+  /** componentStatePreservationKey used by the gallery instance. */
+  componentStatePreservationKey: string;
+  /** Bag.components payload to seed under `componentStatePreservationKey`. */
   seedPayload: Record<string, unknown>;
   /**
    * Live-state assertion: throws if the component's user-visible state
@@ -101,7 +101,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "switch",
     componentId: "gallery-switch",
-    persistKey: "switch-md",
+    componentStatePreservationKey: "switch-md",
     seedPayload: { checked: false }, // gallery default is `defaultChecked`
     assertLive: async (app) => {
       // Radix switch surfaces data-state="checked" / "unchecked".
@@ -124,7 +124,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "radio-group",
     componentId: "gallery-radio-group",
-    persistKey: "radio-md",
+    componentStatePreservationKey: "radio-md",
     seedPayload: { value: "c" }, // gallery defaults to "b"
     assertLive: async (app) => {
       // Radix radio item with value="c" gets data-state="checked".
@@ -142,7 +142,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "choice-group",
     componentId: "gallery-choice-group",
-    persistKey: "choice-md",
+    componentStatePreservationKey: "choice-md",
     seedPayload: { value: "gamma" }, // gallery typically defaults to "alpha"/"beta"
     assertLive: async (app) => {
       // The active segment carries data-state="active".
@@ -168,7 +168,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "option-group",
     componentId: "gallery-option-group",
-    persistKey: "option-format",
+    componentStatePreservationKey: "option-format",
     seedPayload: { value: ["bold", "underline"] },
     assertLive: async (app) => {
       // Each toggled option button has aria-pressed="true".
@@ -193,7 +193,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "slider",
     componentId: "gallery-slider",
-    persistKey: "slider-md",
+    componentStatePreservationKey: "slider-md",
     seedPayload: { value: 73 }, // arbitrary non-default
     assertLive: async (app) => {
       // Radix slider surfaces aria-valuenow on the thumb. The gallery
@@ -217,7 +217,7 @@ const FIXTURES: ReadonlyArray<ComponentFixture> = [
   {
     label: "value-input",
     componentId: "gallery-value-input",
-    persistKey: "value-input-md",
+    componentStatePreservationKey: "value-input-md",
     seedPayload: { value: 42 },
     assertLive: async (app) => {
       // The gallery renders "Value: N" alongside each input, sourced
@@ -259,7 +259,7 @@ function deckShape(componentId: string) {
 function makeBag(fixture: ComponentFixture): Record<string, unknown> {
   return {
     components: {
-      [fixture.persistKey]: fixture.seedPayload,
+      [fixture.componentStatePreservationKey]: fixture.seedPayload,
     },
   };
 }
@@ -330,10 +330,10 @@ async function runAppReloadScenario(fixture: ComponentFixture): Promise<void> {
       await seedAndMount(app, fixture);
       await app.appReload();
 
-      const onDisk = readDiskValue(tugbankPath, fixture.persistKey);
+      const onDisk = readDiskValue(tugbankPath, fixture.componentStatePreservationKey);
       expect(
         onDisk,
-        `axis bag.components[${fixture.persistKey}]: appReload must round-trip seeded payload to disk`,
+        `axis bag.components[${fixture.componentStatePreservationKey}]: appReload must round-trip seeded payload to disk`,
       ).toEqual(fixture.seedPayload);
 
       await reseedFromDisk(app, fixture, tugbankPath);

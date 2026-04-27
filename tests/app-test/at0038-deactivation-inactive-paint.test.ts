@@ -378,7 +378,7 @@ async function runLiveSelectionScenario(
   // Click into B's editor to activate B's pane and deactivate A.
   // Both cards are in separate panes — the click hits B's content
   // directly (no tab selector since each pane has only one card).
-  await app.nativeClickAtElement(`[data-card-id="B"] [data-tug-persist-value="gallery-input/size/sm"]`);
+  await app.nativeClickAtElement(`[data-card-id="B"] [data-tug-state-key="gallery-input/size/sm"]`);
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "B")`,
     { timeoutMs: 2000 },
@@ -499,7 +499,7 @@ async function runDeactivationScenario(
   // Click into B's editor to activate B's pane and deactivate A.
   // Both cards are in separate panes — the click hits B's content
   // directly (no tab selector since each pane has only one card).
-  await app.nativeClickAtElement(`[data-card-id="B"] [data-tug-persist-value="gallery-input/size/sm"]`);
+  await app.nativeClickAtElement(`[data-card-id="B"] [data-tug-state-key="gallery-input/size/sm"]`);
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "B")`,
     { timeoutMs: 2000 },
@@ -776,7 +776,7 @@ describe.skipIf(!SHOULD_RUN)(
           // Click into B's editor to deactivate A — the user-action
           // moment.
           await app.nativeClickAtElement(
-            `[data-card-id="B"] [data-tug-persist-value="gallery-input/size/sm"]`,
+            `[data-card-id="B"] [data-tug-state-key="gallery-input/size/sm"]`,
           );
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "B")`,

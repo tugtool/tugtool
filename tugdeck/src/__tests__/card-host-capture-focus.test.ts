@@ -6,7 +6,7 @@
  * boundary. See `captureFocus` in `card-host.tsx` and the
  * `FocusSnapshot` type in `layout-tree.ts`.
  *
- *   - `[data-tug-persist-value]` focused → `{ kind: "form-control" }`.
+ *   - `[data-tug-state-key]` focused → `{ kind: "form-control" }`.
  *     Precedence: the form-control marker wins over the other two.
  *   - `[data-tug-focus-key]` focused → `{ kind: "dom" }`.
  *   - Focus inside a component-owned marker subtree (initially
@@ -33,10 +33,10 @@ function makeCardRoot(): HTMLElement {
   return el;
 }
 
-function makeInput(persistKey: string): HTMLInputElement {
+function makeInput(componentStatePreservationKey: string): HTMLInputElement {
   const el = document.createElement("input");
   el.type = "text";
-  el.setAttribute("data-tug-persist-value", persistKey);
+  el.setAttribute("data-tug-state-key", componentStatePreservationKey);
   return el;
 }
 
@@ -74,7 +74,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("captureFocus – four-variant classifier", () => {
-  it("focused [data-tug-persist-value] input → form-control with persistKey", () => {
+  it("focused [data-tug-state-key] input → form-control with componentStatePreservationKey", () => {
     const cardRoot = makeCardRoot();
     const input = makeInput("email");
     cardRoot.appendChild(input);
@@ -84,7 +84,7 @@ describe("captureFocus – four-variant classifier", () => {
 
     expect(captureFocus(cardRoot)).toEqual({
       kind: "form-control",
-      persistKey: "email",
+      componentStatePreservationKey: "email",
     });
   });
 
@@ -155,14 +155,14 @@ describe("captureFocus – four-variant classifier", () => {
     const cardRoot = makeCardRoot();
     const el = document.createElement("input");
     el.type = "text";
-    el.setAttribute("data-tug-persist-value", "query");
+    el.setAttribute("data-tug-state-key", "query");
     el.setAttribute("data-tug-focus-key", "also-here");
     cardRoot.appendChild(el);
 
     el.focus();
     expect(captureFocus(cardRoot)).toEqual({
       kind: "form-control",
-      persistKey: "query",
+      componentStatePreservationKey: "query",
     });
   });
 
@@ -170,7 +170,7 @@ describe("captureFocus – four-variant classifier", () => {
     const cardRoot = makeCardRoot();
     const el = document.createElement("input");
     el.type = "text";
-    el.setAttribute("data-tug-persist-value", "");
+    el.setAttribute("data-tug-state-key", "");
     el.setAttribute("data-tug-focus-key", "");
     cardRoot.appendChild(el);
 

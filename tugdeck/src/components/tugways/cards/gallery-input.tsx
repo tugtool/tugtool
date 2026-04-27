@@ -32,7 +32,7 @@ export function GalleryInput() {
     <div className="cg-content" data-testid="gallery-input">
 
       {/*
-        `persistKey` opts each input into DOM-authority persistence
+        `componentStatePreservationKey` opts each input into DOM-authority persistence
         (CardHost captures `.value` / selection / scroll at save time and
         reapplies on restore). Keys must be unique within this card's
         content tree; by convention we use a `gallery-input/<section>/<variant>`
@@ -49,7 +49,7 @@ export function GalleryInput() {
               key={size}
               size={size}
               placeholder={`Size: ${size}`}
-              persistKey={`gallery-input/size/${size}`}
+              componentStatePreservationKey={`gallery-input/size/${size}`}
             />
           ))}
         </div>
@@ -67,7 +67,7 @@ export function GalleryInput() {
               validation={v}
               defaultValue={v === "default" ? "" : `Validation: ${v}`}
               placeholder={v === "default" ? "Default (no validation)" : undefined}
-              persistKey={`gallery-input/validation/${v}`}
+              componentStatePreservationKey={`gallery-input/validation/${v}`}
             />
           ))}
         </div>
@@ -76,13 +76,13 @@ export function GalleryInput() {
       <TugSeparator />
 
       {/* ---- Disabled ---- */}
-      {/* Disabled inputs cannot be edited, but still carry persistKey
+      {/* Disabled inputs cannot be edited, but still carry componentStatePreservationKey
           so their defaultValue is preserved across restore for symmetry. */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Disabled</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
-          <TugInput disabled defaultValue="Disabled with value" persistKey="gallery-input/disabled/with-value" />
-          <TugInput disabled placeholder="Disabled with placeholder" persistKey="gallery-input/disabled/placeholder" />
+          <TugInput disabled defaultValue="Disabled with value" componentStatePreservationKey="gallery-input/disabled/with-value" />
+          <TugInput disabled placeholder="Disabled with placeholder" componentStatePreservationKey="gallery-input/disabled/placeholder" />
         </div>
       </div>
 
@@ -92,8 +92,8 @@ export function GalleryInput() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Read-only</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
-          <TugInput readOnly defaultValue="Read-only with value" persistKey="gallery-input/readonly/with-value" />
-          <TugInput readOnly placeholder="Read-only with placeholder" persistKey="gallery-input/readonly/placeholder" />
+          <TugInput readOnly defaultValue="Read-only with value" componentStatePreservationKey="gallery-input/readonly/with-value" />
+          <TugInput readOnly placeholder="Read-only with placeholder" componentStatePreservationKey="gallery-input/readonly/placeholder" />
         </div>
       </div>
 
@@ -103,12 +103,12 @@ export function GalleryInput() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Input Types</TugLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
-          <TugInput type="text" placeholder="type=text" persistKey="gallery-input/type/text" />
-          <TugInput type="password" placeholder="type=password" persistKey="gallery-input/type/password" />
-          <TugInput type="number" placeholder="type=number" persistKey="gallery-input/type/number" />
-          <TugInput type="email" placeholder="type=email" persistKey="gallery-input/type/email" />
-          <TugInput type="search" placeholder="type=search" persistKey="gallery-input/type/search" />
-          <TugInput type="url" placeholder="type=url" persistKey="gallery-input/type/url" />
+          <TugInput type="text" placeholder="type=text" componentStatePreservationKey="gallery-input/type/text" />
+          <TugInput type="password" placeholder="type=password" componentStatePreservationKey="gallery-input/type/password" />
+          <TugInput type="number" placeholder="type=number" componentStatePreservationKey="gallery-input/type/number" />
+          <TugInput type="email" placeholder="type=email" componentStatePreservationKey="gallery-input/type/email" />
+          <TugInput type="search" placeholder="type=search" componentStatePreservationKey="gallery-input/type/search" />
+          <TugInput type="url" placeholder="type=url" componentStatePreservationKey="gallery-input/type/url" />
         </div>
       </div>
 

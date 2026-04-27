@@ -44,7 +44,7 @@
  * For each of the three activation-trigger shapes, after the
  * deactivation gesture lands, the outgoing card's `bag.focus`
  * correctly identifies the focused form-control AND
- * `bag.formControls[persistKey]` carries the user's typed value
+ * `bag.formControls[componentStatePreservationKey]` carries the user's typed value
  * + selection. No reliance on the at0036-era
  * `lastFocusedPersistKeyRef` fallback.
  *
@@ -83,8 +83,8 @@ function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
 }
 
-function inputSelector(cardId: string, persistKey: string): string {
-  return `[data-card-id="${cardId}"] input[data-tug-persist-value="${persistKey}"]`;
+function inputSelector(cardId: string, componentStatePreservationKey: string): string {
+  return `[data-card-id="${cardId}"] input[data-tug-state-key="${componentStatePreservationKey}"]`;
 }
 
 interface FormControlSnap {
@@ -95,7 +95,7 @@ interface FormControlSnap {
 
 interface BagFocusSnap {
   kind: string;
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
 interface BagShape {
@@ -232,8 +232,8 @@ describe.skipIf(!SHOULD_RUN)(
             "inter-pane: bag.focus.kind must be form-control (focused element WAS in card root at save time)",
           ).toBe("form-control");
           expect(
-            focus?.persistKey,
-            "inter-pane: bag.focus.persistKey must identify the md input",
+            focus?.componentStatePreservationKey,
+            "inter-pane: bag.focus.componentStatePreservationKey must identify the md input",
           ).toBe(INPUT_MD_KEY);
           expect(
             mdSnap?.value,
@@ -304,7 +304,7 @@ describe.skipIf(!SHOULD_RUN)(
           const { focus, mdSnap } = await readBagFocus(app, "A");
           expect(focus).not.toBeNull();
           expect(focus?.kind).toBe("form-control");
-          expect(focus?.persistKey).toBe(INPUT_MD_KEY);
+          expect(focus?.componentStatePreservationKey).toBe(INPUT_MD_KEY);
           expect(mdSnap?.value).toBe("md");
           expect(mdSnap?.selectionStart).toBe(0);
           expect(mdSnap?.selectionEnd).toBe(2);
@@ -360,7 +360,7 @@ describe.skipIf(!SHOULD_RUN)(
           const { focus, mdSnap } = await readBagFocus(app, "A");
           expect(focus).not.toBeNull();
           expect(focus?.kind).toBe("form-control");
-          expect(focus?.persistKey).toBe(INPUT_MD_KEY);
+          expect(focus?.componentStatePreservationKey).toBe(INPUT_MD_KEY);
           expect(mdSnap?.value).toBe("md");
           expect(mdSnap?.selectionStart).toBe(0);
           expect(mdSnap?.selectionEnd).toBe(2);

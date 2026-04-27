@@ -493,7 +493,7 @@ describe("summarizeEvent — label grammar per kind", () => {
         kind: "focus-call",
         site: "a3-snapshot",
         cardId: "c2",
-        targetSelector: "[data-tug-persist-value]",
+        targetSelector: "[data-tug-state-key]",
         activeBefore: "body",
         activeAfter: "body",
         hidden: true,

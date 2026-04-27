@@ -82,7 +82,7 @@ export interface TugInputProps
   borderless?: boolean;
   /**
    * Opt into DOM-authority persistence. When set, the rendered `<input>`
-   * carries `data-tug-persist-value={persistKey}`. CardHost's save path
+   * carries `data-tug-state-key={componentStatePreservationKey}`. CardHost's save path
    * captures the element's `value`, selection, and scroll at save time
    * and reapplies them on restore.
    *
@@ -102,7 +102,7 @@ export interface TugInputProps
    * input (`value={state}`) will be immediately overwritten on the
    * next React render — use `useCardStatePreservation` for controlled state.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
 // ---- Shared rendering ----
@@ -150,7 +150,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       validation = "default",
       focusStyle = "background",
       borderless = false,
-      persistKey,
+      componentStatePreservationKey,
       className,
       disabled,
       onContextMenu,
@@ -188,7 +188,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
           data-slot="tug-input"
           data-focus-style={focusStyle}
           data-borderless={borderless || undefined}
-          data-tug-persist-value={persistKey}
+          data-tug-state-key={componentStatePreservationKey}
           className={buildInputClassName(size, validation, className)}
           disabled={effectiveDisabled}
           aria-invalid={validation === "invalid" ? "true" : undefined}

@@ -8,7 +8,7 @@
  *   - A selection on a `<input type="text">` round-trips through the
  *     capture + apply path: value, offsets, direction all survive.
  *   - A `<textarea>` with a backward selection round-trips.
- *   - An `<input type="checkbox">` that carries `data-tug-persist-value`
+ *   - An `<input type="checkbox">` that carries `data-tug-state-key`
  *     is captured (so its value still persists) but without selection
  *     fields — and neither capture nor apply throws.
  *   - Value restore precedes `setSelectionRange`, so offsets land
@@ -39,7 +39,7 @@ function makeCardRoot(): HTMLElement {
 }
 
 function makeInput(
-  persistKey: string,
+  componentStatePreservationKey: string,
   {
     type = "text",
     value = "",
@@ -48,14 +48,14 @@ function makeInput(
   const el = document.createElement("input");
   el.type = type;
   if (value !== "") el.value = value;
-  el.setAttribute("data-tug-persist-value", persistKey);
+  el.setAttribute("data-tug-state-key", componentStatePreservationKey);
   return el;
 }
 
-function makeTextarea(persistKey: string, value: string = ""): HTMLTextAreaElement {
+function makeTextarea(componentStatePreservationKey: string, value: string = ""): HTMLTextAreaElement {
   const el = document.createElement("textarea");
   if (value !== "") el.value = value;
-  el.setAttribute("data-tug-persist-value", persistKey);
+  el.setAttribute("data-tug-state-key", componentStatePreservationKey);
   return el;
 }
 
@@ -108,7 +108,7 @@ describe("captureFormControls – selection capture", () => {
     expect(snapshot?.["notes"].selectionDirection).toBe("backward");
   });
 
-  it("<input type='checkbox'> with persistKey captures value but no selection fields (and does not throw)", () => {
+  it("<input type='checkbox'> with componentStatePreservationKey captures value but no selection fields (and does not throw)", () => {
     const cardRoot = makeCardRoot();
     const cb = makeInput("agree", { type: "checkbox" });
     cardRoot.appendChild(cb);

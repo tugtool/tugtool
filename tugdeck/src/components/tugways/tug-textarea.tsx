@@ -111,7 +111,7 @@ export interface TugTextareaProps
   borderless?: boolean;
   /**
    * Opt into DOM-authority persistence. When set, the rendered
-   * `<textarea>` carries `data-tug-persist-value={persistKey}`.
+   * `<textarea>` carries `data-tug-state-key={componentStatePreservationKey}`.
    * CardHost's save path captures the element's `value`, selection,
    * and scroll at save time and reapplies them on restore.
    *
@@ -127,7 +127,7 @@ export interface TugTextareaProps
    * textarea (`value={state}`) will be immediately overwritten on the
    * next React render — use `useCardStatePreservation` for controlled state.
    */
-  persistKey?: string;
+  componentStatePreservationKey?: string;
 }
 
 // ---- Shared rendering helper ----
@@ -171,7 +171,7 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
   maxRows,
   focusStyle,
   borderless,
-  persistKey,
+  componentStatePreservationKey,
   className,
   disabled,
   onChange,
@@ -289,7 +289,7 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
       data-slot="tug-textarea"
       data-focus-style={focusStyle}
       data-borderless={borderless || undefined}
-      data-tug-persist-value={persistKey}
+      data-tug-state-key={componentStatePreservationKey}
       className={textareaClassName}
       disabled={effectiveDisabled}
       aria-invalid={validation === "invalid" ? "true" : undefined}

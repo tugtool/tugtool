@@ -11,7 +11,7 @@
  * an internal implementation operation (mount-time Radix init)
  * destroyed user-visible state.
  *
- * Uses `persistKey` + `useComponentPersistence` to
+ * Uses `componentStatePreservationKey` + `useComponentPersistence` to
  * TugAccordion. Uncontrolled accordions mirror Radix's value in a
  * `useState` so capture/restore can read/write it; controlled
  * accordions dispatch `toggleSection` through the responder chain
@@ -37,7 +37,7 @@
  *     `simulateAppResign+Become` (cmd-tab; same WebView, exercises
  *     the will-phase save path).
  *
- * Each test seeds `bag.components.{persistKey}` with a non-default
+ * Each test seeds `bag.components.{componentStatePreservationKey}` with a non-default
  * open value, drives the trigger, and asserts:
  *
  *   1. The seeded section's `data-state="open"` after restore (and
@@ -45,7 +45,7 @@
  *   2. `bag.components` round-tripped to disk for the persistence-
  *      flushing triggers (`appReload`, `relaunch`).
  *
- * The gallery-accordion card registers two persistKey-bearing
+ * The gallery-accordion card registers two componentStatePreservationKey-bearing
  * accordions: `single` (the "Single Mode" demo) and `multiple` (the
  * "Multiple Mode" demo). Both render side-by-side; each test seeds
  * one mode while leaving the other at its default.
@@ -124,7 +124,7 @@ async function seedAndMount(app: App, axis: "single" | "multiple"): Promise<void
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
   );
   // Wait for the seeded-axis accordion to render at least one item.
-  // Other accordions in the gallery card (uncontrolled, no persistKey)
+  // Other accordions in the gallery card (uncontrolled, no componentStatePreservationKey)
   // are intentionally NOT scoped — the test asserts only on the
   // persistent accordion's items.
   await app.waitForCondition<boolean>(
@@ -136,7 +136,7 @@ async function seedAndMount(app: App, axis: "single" | "multiple"): Promise<void
 /**
  * Read item-states for the persistent accordion of the given axis.
  * Scoped via the `data-testid` selector on the gallery's
- * persistKey-bearing accordion (`gallery-accordion-single` or
+ * componentStatePreservationKey-bearing accordion (`gallery-accordion-single` or
  * `gallery-accordion-multiple`) so the gallery's other uncontrolled
  * demo accordions don't leak into the assertion.
  */

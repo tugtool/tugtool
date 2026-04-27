@@ -24,7 +24,7 @@
  * Probes
  * ------
  * Cards use `componentId: "gallery-input"`, which stamps
- * `data-tug-persist-value="gallery-input/size/sm"` on a persisted
+ * `data-tug-state-key="gallery-input/size/sm"` on a persisted
  * `<TugInput>` — the same probe surface m01 uses. Each pane's root
  * element carries `data-pane-id={id}`, and the title text inside the
  * `CardTitleBar` stamps `data-testid="tug-pane-title"` (see
@@ -72,14 +72,14 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
  * Shared selector for the first-size (`sm`) TugInput inside a given
  * gallery-input card. Each seeded card lives under its own
  * `[data-card-id]` subtree, so qualifying the lookup by cardId
- * disambiguates them even though both cards render the same persistKey
+ * disambiguates them even though both cards render the same componentStatePreservationKey
  * set. The `sm` variant is the first input in the gallery-input content
  * — the same target m01 probes.
  */
 const INPUT_PERSIST_KEY = "gallery-input/size/sm";
 
 function inputSelectorFor(cardId: string): string {
-  return `[data-card-id="${cardId}"] [data-tug-persist-value="${INPUT_PERSIST_KEY}"]`;
+  return `[data-card-id="${cardId}"] [data-tug-state-key="${INPUT_PERSIST_KEY}"]`;
 }
 
 /**
