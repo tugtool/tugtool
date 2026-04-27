@@ -229,8 +229,14 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * wrapping card is the deck-level first responder. Direct callers
    * should ensure the restore-ordering invariant: every inactive
    * card's paint completes before the active card's paint runs.
+   *
+   * When `state` is supplied (cold-boot restore path), the engine
+   * reads selection + scrollTop from the bag directly. When omitted
+   * (cmd-tab return path), the engine falls back to the in-memory
+   * mirror. Both paths land identical writes; the parameter
+   * documents intent. Step 25C.5 Layer 5.
    */
-  paintMirrorAsActive(): void;
+  paintMirrorAsActive(state?: TugTextEditingState): void;
   /**
    * Paint the engine's `_browserMirror` to the DOM as an *inactive*
    * card — every card that is not the deck-level first responder.
@@ -241,8 +247,16 @@ export interface TugPromptInputDelegate extends TugTextInputDelegate {
    * paints via the `inactive-selection` CSS Custom Highlight. NO
    * focus claim, NO `window.getSelection()` mutation. Writes
    * scrollTop. Selection plan Step 25C.4. [L10], [L12], [L23].
+   *
+   * When `state` is supplied (cold-boot restore path), the engine
+   * reads selection + scrollTop from the bag directly. When omitted
+   * (cmd-tab return path), the engine falls back to the in-memory
+   * mirror. Step 25C.5 Layer 5.
    */
-  paintMirrorAsInactive(publish: (range: Range | null) => void): void;
+  paintMirrorAsInactive(
+    publish: (range: Range | null) => void,
+    state?: TugTextEditingState,
+  ): void;
 }
 
 /**
@@ -454,10 +468,15 @@ function TugPromptInputPersistence({
       const engine = engineRef.current;
       if (engine) {
         engine.restoreState(state);
+        // Step 25C.5 Layer 5: pass `state` through so the engine reads
+        // selection + scrollTop from the just-loaded bag rather than
+        // the in-memory mirror. Cold-boot restore can trust the bag
+        // verbatim; the mirror is for cmd-tab return paths where the
+        // bag has not been re-read.
         if (isActive) {
-          engine.paintMirrorAsActive();
+          engine.paintMirrorAsActive(state);
         } else {
-          engine.paintMirrorAsInactive(publishToSelectionGuard);
+          engine.paintMirrorAsInactive(publishToSelectionGuard, state);
         }
         const id = cardIdRef.current;
         if (id !== null) {
@@ -595,9 +614,11 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
       captureState() { return engineRef.current?.captureState() ?? { text: "", atoms: [], selection: null }; },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
-      paintMirrorAsActive() { engineRef.current?.paintMirrorAsActive(); },
-      paintMirrorAsInactive(publish: (range: Range | null) => void) {
-        engineRef.current?.paintMirrorAsInactive(publish);
+      paintMirrorAsActive(state?: TugTextEditingState) {
+        engineRef.current?.paintMirrorAsActive(state);
+      },
+      paintMirrorAsInactive(publish: (range: Range | null) => void, state?: TugTextEditingState) {
+        engineRef.current?.paintMirrorAsInactive(publish, state);
       },
       regenerateAtoms() { engineRef.current?.regenerateAtoms(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
@@ -817,15 +838,18 @@ export const TugPromptInput = React.forwardRef<TugPromptInputDelegate, TugPrompt
       if (pendingRestoreRef.current) {
         const { state: buffered, isActive } = pendingRestoreRef.current;
         engine.restoreState(buffered);
+        // Step 25C.5 Layer 5: pass the buffered state through to the
+        // paint methods so they read selection + scrollTop from the
+        // bag, matching the cold-boot path in the persistence helper.
         if (isActive) {
-          engine.paintMirrorAsActive();
+          engine.paintMirrorAsActive(buffered);
         } else {
           engine.paintMirrorAsInactive((range) => {
             const id = cardIdRef.current;
             if (id !== null) {
               selectionGuard.updateCardDomSelection(id, range);
             }
-          });
+          }, buffered);
         }
         pendingRestoreRef.current = null;
         const id = cardIdRef.current;

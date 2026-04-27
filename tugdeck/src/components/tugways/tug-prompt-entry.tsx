@@ -870,10 +870,15 @@ export const TugPromptEntry = React.forwardRef<
           // (selectionGuard publish, no focus claim, no global
           // Selection mutation). [L23] enforcement.
           input.restoreState(saved);
+          // Step 25C.5 Layer 5: pass the just-loaded bag (`saved`) so
+          // the engine reads selection + scrollTop from it directly.
+          // Cold-boot restore trusts the bag verbatim; the in-memory
+          // mirror is for cmd-tab return paths where the bag has not
+          // been re-read.
           if (isActive) {
-            input.paintMirrorAsActive();
+            input.paintMirrorAsActive(saved);
           } else {
-            input.paintMirrorAsInactive(publishToSelectionGuard);
+            input.paintMirrorAsInactive(publishToSelectionGuard, saved);
           }
           // Diagnostic for the cold-boot selection-paint gap
           // (selection plan Step 23F gap-1).

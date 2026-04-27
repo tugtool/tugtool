@@ -1067,17 +1067,27 @@ export class TugTextEngine {
    * Skips silently when the engine root is detached. The permanent
    * layout observer below will catch up on the next layout
    * transition. [L23], [L10].
+   *
+   * Source selection per Step 25C.5 Layer 5: when `state` is supplied
+   * (cold-boot restore path), read selection + scrollTop from the bag
+   * directly. When omitted (cmd-tab return path), fall back to the
+   * in-memory mirror. Both paths land identical writes; the parameter
+   * documents intent — cold-boot trusts the just-loaded bag, while
+   * cmd-tab trusts the mirror that captured the last live state.
    */
-  paintMirrorAsActive(): void {
+  paintMirrorAsActive(state?: TugTextEditingState): void {
     if (!this.root.isConnected) return;
-    if (this._browserMirror.selection) {
-      this.setSelectedRange(
-        this._browserMirror.selection.start,
-        this._browserMirror.selection.end,
-      );
+    const selection = state ? (state.selection ?? null) : this._browserMirror.selection;
+    const scrollTop = state
+      ? typeof state.scrollTop === "number"
+        ? state.scrollTop
+        : this._browserMirror.scrollTop
+      : this._browserMirror.scrollTop;
+    if (selection) {
+      this.setSelectedRange(selection.start, selection.end);
     }
-    if (this.root.scrollTop !== this._browserMirror.scrollTop) {
-      this.root.scrollTop = this._browserMirror.scrollTop;
+    if (this.root.scrollTop !== scrollTop) {
+      this.root.scrollTop = scrollTop;
     }
   }
 
@@ -1106,13 +1116,27 @@ export class TugTextEngine {
    *
    * Skips silently when the engine root is detached. [L23], [L10],
    * [L12] (selectionGuard owns card-scoped selection state).
+   *
+   * Source selection per Step 25C.5 Layer 5: when `state` is supplied
+   * (cold-boot restore path), read selection + scrollTop from the bag
+   * directly. When omitted (cmd-tab return path), fall back to the
+   * in-memory mirror. Both paths land identical writes; the parameter
+   * documents intent.
    */
-  paintMirrorAsInactive(publish: (range: Range | null) => void): void {
+  paintMirrorAsInactive(
+    publish: (range: Range | null) => void,
+    state?: TugTextEditingState,
+  ): void {
     if (!this.root.isConnected) return;
-    if (this._browserMirror.selection !== null) {
-      const sel = this._browserMirror.selection;
-      const start = flatToDom(this.root, sel.start);
-      const end = flatToDom(this.root, sel.end);
+    const selection = state ? (state.selection ?? null) : this._browserMirror.selection;
+    const scrollTop = state
+      ? typeof state.scrollTop === "number"
+        ? state.scrollTop
+        : this._browserMirror.scrollTop
+      : this._browserMirror.scrollTop;
+    if (selection !== null) {
+      const start = flatToDom(this.root, selection.start);
+      const end = flatToDom(this.root, selection.end);
       const range = document.createRange();
       try {
         range.setStart(start.node, start.offset);
@@ -1127,8 +1151,8 @@ export class TugTextEngine {
     } else {
       publish(null);
     }
-    if (this.root.scrollTop !== this._browserMirror.scrollTop) {
-      this.root.scrollTop = this._browserMirror.scrollTop;
+    if (this.root.scrollTop !== scrollTop) {
+      this.root.scrollTop = scrollTop;
     }
   }
 
