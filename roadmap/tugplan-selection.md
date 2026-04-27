@@ -2971,18 +2971,17 @@ If the user (or implementer) decides mid-stream that a layer's risk outweighs th
 
 ##### Step 25D: Component opt-in batch 1 — layout {#step-25d}
 
-**Closes:** [M27] subset (layout state); first installments of [M30] (virtual focus).
+**Status:** ✅ landed. Accordion opted in; split-pane left on its existing `storageKey` path per the [M27] resolution. The original "both components in one batch since they're shape-similar" framing was wrong: `tug-split-pane` already had persistence via `storageKey` → tugbank, while `tug-accordion` had none. Migrating split-pane would have duplicated persistence layers without closing a user-visible gap.
 
-**Components:** `tug-accordion`, `tug-split-pane` (or pane-scope; finalize the [M27] open subquestion during this sub-step).
+**Closes:** [M27] accordion axis (split-pane axis was already closed via `storageKey`); first installment of [M30] (virtual focus deferred to later batches).
 
-**Pattern:** each component adds `persistKey` prop + `useComponentPersistence({ persistKey, captureState, restoreState })` per [A9a]. captureState returns the component's user-visible interactive state ({ openSections } for accordion, { dividerPosition } for split-pane). restoreState applies it.
+**What landed.** `tug-accordion` adds optional `persistKey` prop + `useComponentPersistence` registering `{ value: string | string[] }` (the discriminated union mirrors `type="single"`/`"multiple"`). When `persistKey` is set, the accordion mirrors Radix's open value in its own `useState` so capture/restore can read/write it programmatically; without `persistKey`, the hook no-ops and Radix retains its original uncontrolled behavior. The gallery card `gallery-accordion` opts in two demo accordions (`persistKey="single"`, `persistKey="multiple"`) and tags both with `data-testid` for harness scoping.
 
-**Deliverables:**
-- Component refactors above.
-- New harness test `m27-layout-state-persistence.test.ts` covering accordion expansion + split-pane divider drag → reload (or simulateAppResign for in-session) → state restored.
-- One test per component opted in; each parameterized over the persisted-state shapes that matter.
+**Test harness.** `m27-layout-state-persistence.test.ts` covers 2 axes (single, multiple) × 3 triggers (`appReload`, `quitGracefully+relaunch`, `simulateAppResign+Become`) = 6 tests. Each seeds `bag.components.{persistKey}` with a non-default open value, drives the trigger, and asserts the seeded sections are still open after restore. The cmd-tab path programmatically focuses an accordion trigger before the resign cycle since gallery-accordion has no auto-focused element on mount (unlike EM cards whose engine claims focus).
 
-**Estimated commits:** one (both components in one batch since they're shape-similar).
+**Why split-pane stayed put.** The plan's "most likely pane-scope" intuition was correct: divider positions belong with pane chrome, not card content. Today they live in a card-scope tugbank domain via `storageKey`, which works in practice. Migrating to either `bag.components` or canonical pane-state would change the storage location without changing the user-visible outcome. Resolution: leave the existing path; revisit only if a future cleanup pass unifies pane-chrome persistence.
+
+**Estimated commits (actual):** one. Accordion-only.
 
 ##### Step 25E: Component opt-in batch 2 — selection + numeric + toggles {#step-25e}
 
@@ -3415,8 +3414,8 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Card types:** any card using `tug-split-pane` or `tug-accordion`
 - **State axes:** CS
 - **Trigger:** User drags a split-pane divider or expands an accordion section. Reload or app-relaunch resets to default layout.
-- **Status:** ❌ broken.
-- **Closing requires:** [A9] opt-in for both components. Open subquestion: is split-pane divider position truly card-scope, or pane-scope (pane-level layout meta)? If pane-scope: add to `paneState` in the deck store rather than a card's `bag.components`. If card-scope: use [A9]. Defer decision to the execution step that wires split-pane persistence; most likely pane-scope because the splitter often lives in pane chrome.
+- **Status:** ✅ accordion axis closed by [Step 25D](#step-25d). Split-pane axis preserved on its existing path (see resolution below).
+- **Closing requires:** accordion → [A9] opt-in (landed). Split-pane → no migration. Resolution of the original open subquestion: `tug-split-pane` already persists divider positions via its own `storageKey` prop → tugbank under `dev.tugtool.tugways.split-pane`. The user-visible gap is closed, just by a path that pre-dates [A9]. Migrating to `bag.components` would duplicate persistence layers ([L23] violation) without closing any new gap, and the original "most likely pane-scope" intuition was correct: divider positions belong with pane-chrome geometry, not card content. Step 25D leaves `tug-split-pane`'s `storageKey` path as-is. If a future reorganization unifies pane-chrome persistence into a single canonical store, that would be the right time to retire `storageKey` — out of [A9d]'s scope.
 
 #### [M28] Banner / bulletin dismiss persistence {#m28-banner-dismiss}
 
@@ -3737,7 +3736,7 @@ function restoreComponents(registry, saved: Record<string, unknown>): void {
 
 **A9d. Per-component port / opt-in plan.** The following components gain `persistKey` + `useComponentPersistence` (in priority order, grouped by category):
 
-- **Layout state:** `tug-accordion`, `tug-split-pane` (or pane-scope; see [M27]).
+- **Layout state:** `tug-accordion` (landed in [Step 25D](#step-25d)). `tug-split-pane` is intentionally not in [A9] — its existing `storageKey` → tugbank path under `dev.tugtool.tugways.split-pane` is preserved per the [M27] resolution.
 - **Selection:** `tug-radio-group`, `tug-choice-group`, `tug-option-group`, `tug-popup-button`, `tug-tab-bar`.
 - **Numeric:** `tug-slider`, `tug-value-input`.
 - **Toggles:** `tug-checkbox`, `tug-switch`.
@@ -3784,7 +3783,7 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 | [M24] | [A9a] + [A9b] + [A9c] | none |
 | [M25] | [A9a] + per-component classification ([A9d]) | ephemeral cases intentionally unpersisted |
 | [M26] | [A9e] | per-overlay decisions |
-| [M27] | [A9d] (or pane-state if splitter is pane-scope) | open sub-decision |
+| [M27] | [A9d] (`tug-accordion`) + existing `storageKey` path (`tug-split-pane`) | none — split-pane divider preserved via pre-existing tugbank path, see [M27] |
 | [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
 | [M29] | [A9f] | none |
 | [M30] | [A9d] (virtual-focus captured per component) | none |

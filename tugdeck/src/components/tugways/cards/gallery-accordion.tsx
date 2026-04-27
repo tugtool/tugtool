@@ -67,7 +67,12 @@ export function GalleryAccordion() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Single Mode</TugLabel>
         <div style={{ maxWidth: "480px" }}>
-          <TugAccordion type="single" collapsible>
+          <TugAccordion
+            type="single"
+            collapsible
+            persistKey="single"
+            data-testid="gallery-accordion-single"
+          >
             <TugAccordionItem value="getting-started" trigger="Getting Started">
               <p style={paraStyle}>
                 Welcome to the platform. This section walks you through the key concepts
@@ -97,7 +102,7 @@ export function GalleryAccordion() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Multiple Mode</TugLabel>
         <div style={{ maxWidth: "480px" }}>
-          <TugAccordion type="multiple">
+          <TugAccordion type="multiple" persistKey="multiple" data-testid="gallery-accordion-multiple">
             <TugAccordionItem value="features" trigger="Features">
               <p style={paraStyle}>
                 Explore the full feature set: real-time collaboration, version history,
