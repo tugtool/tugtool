@@ -3447,8 +3447,8 @@ _M24–M31 below surfaced from the component-roster L23 audit. They are gaps in 
 - **Card types:** gallery-prompt-entry, tide-card (if it uses prompt-entry)
 - **State axes:** CS
 - **Trigger:** User navigates within a prompt-entry to a non-default route or opens the tools panel; transition resets both to defaults.
-- **Status:** ❌ broken.
-- **Closing requires:** `tug-prompt-entry` opts into [A9] with persistKey and serializes `{ route, toolsOpen }` via `captureState`. Distinct from the engine's content serialization (which continues to live in `bag.content`).
+- **Status:** ✅ closed for `gallery-prompt-entry` by [Step 25G](#step-25g). Architectural divergence from the original plan: route + per-route engine drafts continue to live in `bag.content` ([M24] gates route survival), and only `toolsOpen` rides `bag.components.entry-chrome` via `useComponentPersistence`. The original "serialize `{ route, toolsOpen }` via `captureState`" wording would have split route from `bag.content.perRoute` (the perRoute map), forcing a two-phase restore that violates [L23] (apply-default-then-recover). Single-restore architecture preserves the L23 contract. Tide-card's lazy `TugPromptEntry` mount falls outside the [A9c] orchestrator's one-shot component-restore window — documented as a follow-up gap in `m31-prompt-entry-chrome.test.ts`'s module docstring; closure requires extending [A9c] to re-fire on registry changes (or adding a per-component restore primitive at hook-register time). m24 already proved route + per-route content survives across `appReload` / `quitGracefully+relaunch`; m31 adds the `toolsOpen` axis + the cmd-tab transition for chrome.
+- **Closing requires:** `tug-prompt-entry` opts into [A9] with persistKey and serializes `{ toolsOpen }` via `captureState`. Route stays in `bag.content.currentRoute` because it is the index into `bag.content.perRoute` — splitting the two would require two-phase restore, which violates [L23]. Tide closure requires the orchestrator change above.
 
 ---
 
@@ -3743,7 +3743,7 @@ function restoreComponents(registry, saved: Record<string, unknown>): void {
 - **Toggles:** `tug-checkbox`, `tug-switch`.
 - **Pickers:** `tug-hue-strip`, `tug-color-strip`.
 - **Overlays with user interaction (per [M26] policy):** `tug-sheet`, `tug-alert`, `tug-confirm-popover`, `tug-popover`.
-- **Engine-card chrome:** `tug-prompt-entry` (`route`, `toolsOpen`) — see [M31].
+- **Engine-card chrome:** `tug-prompt-entry` (`toolsOpen` only — landed in [Step 25G](#step-25g) for `gallery-prompt-entry`; route stays in `bag.content.currentRoute` to preserve single-restore architecture, see [M31] for the divergence rationale).
 - **Virtual focus within composites:** radio-group, option-group, choice-group, tab-bar — see [M30].
 
 Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-input`, `tug-prompt-entry`, `tug-markdown-view` post-[M10]) migrate from `useCardPersistence` (card-level) to `useComponentPersistence` (component-level) where appropriate. `useCardPersistence` remains for cards themselves (for `bag.content`).
@@ -3788,7 +3788,7 @@ Existing persistence-aware components (`tug-input`, `tug-textarea`, `tug-prompt-
 | [M28] | separate user-preferences store (not [A9]) | orthogonal layer |
 | [M29] | [A9f] | none |
 | [M30] | [A9d] (virtual-focus captured per component) | none |
-| [M31] | [A9d] (prompt-entry opts in) | none |
+| [M31] | [A9d] (`toolsOpen`) + [M24] (route via `bag.content`) | tide-card lazy mount misses [A9c]'s one-shot component-restore — see [M31] note |
 
 ##### Phasing suggestion for M-series execution steps {#m-phasing}
 

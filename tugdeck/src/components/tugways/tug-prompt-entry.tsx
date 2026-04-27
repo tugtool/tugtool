@@ -66,6 +66,7 @@ import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCardPersistence, useCardId } from "./use-card-persistence";
+import { useComponentPersistence } from "./use-component-persistence";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -361,6 +362,34 @@ export interface TugPromptEntryProps {
    * @selector standard
    */
   className?: string;
+  /**
+   * Opt the entry into the Component Persistence Protocol ([D13], [A9])
+   * for its chrome state. When provided (and rendered inside a card),
+   * `{ toolsOpen }` is captured into `bag.components[persistKey]` at
+   * every save trigger and reapplied on the next mount.
+   *
+   * Step 25G scope: only `toolsOpen` (the tools popover open/closed
+   * flag) is persisted via this hook. The active route + per-route
+   * engine drafts continue to live in `bag.content` via the existing
+   * `useCardPersistence` registration — they're semantically tied
+   * (the route is the index into `perRoute`) and splitting them would
+   * require a two-phase restore that violates [L23]. Closes [M31]'s
+   * `toolsOpen` axis; route survival is gated by [M24].
+   *
+   * Absence means "not persisted" — gallery demos and standalone
+   * tests that render the entry outside a card stay unaffected.
+   */
+  persistKey?: string;
+}
+
+/**
+ * Serialized shape of TugPromptEntry's chrome state via
+ * `useComponentPersistence`. Engine content + active route live in
+ * `bag.content` (see `TugPromptEntryPersistedState`); only the
+ * popover open flag rides this axis.
+ */
+interface TugPromptEntryChromeState {
+  toolsOpen: boolean;
 }
 
 /**
@@ -416,6 +445,7 @@ export const TugPromptEntry = React.forwardRef<
     maximized,
     onMaximizeChange,
     className,
+    persistKey,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -959,6 +989,24 @@ export const TugPromptEntry = React.forwardRef<
   // both the popover's visibility AND the toggle button's emphasis +
   // role (accent-on-open).
   const [toolsOpen, setToolsOpen] = React.useState(false);
+
+  // Component Persistence Protocol opt-in for the popover's open
+  // state. Hook no-ops when `persistKey` is undefined or rendered
+  // outside a card. Step 25G / [A9] / closes [M31]'s toolsOpen axis.
+  // Route + per-route engine drafts ride `bag.content` via
+  // `useCardPersistence` above; this hook only carries the popover
+  // flag.
+  useComponentPersistence<TugPromptEntryChromeState>({
+    persistKey,
+    captureState: () => ({ toolsOpen }),
+    restoreState: (saved) => {
+      if (saved === null || typeof saved !== "object") return;
+      const next = saved as Partial<TugPromptEntryChromeState>;
+      if (typeof next.toolsOpen === "boolean") {
+        setToolsOpen(next.toolsOpen);
+      }
+    },
+  });
 
   return (
     <ResponderScope>
