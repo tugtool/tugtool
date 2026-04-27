@@ -1,5 +1,7 @@
 # M-Series Reconciliation — Findings & Plan
 
+> **Note:** This document predates the canonical inventory and uses the legacy `M{NN}` prefix. Tags `M01`, `M03`, `M16`, etc. correspond to `AT0001`, `AT0003`, `AT0016`, etc. in current docs (see `tuglaws/app-test-inventory.md`). The doc is preserved verbatim for historical context per `roadmap/tugplan-app-test-cleanup.md`'s Non-goals.
+
 **Status:** COMPLETE — M01, M03, M16 all green as of 2026-04-24. M03 rewritten against trusted `CGEvent`-backed clicks (Phase A, harness-extensions Step 3b) on 2026-04-24; rewrite surfaced a third production bug (pane-chrome mousedown blurred the just-restored focus). Fix landed in `pane-focus-controller.ts`.
 **Last updated:** 2026-04-24
 **Source runs:**

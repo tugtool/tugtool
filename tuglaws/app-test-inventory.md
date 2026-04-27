@@ -1,12 +1,14 @@
-# M-Series Inventory
+# AT-Tag Inventory
 
-Canonical registry of AT-tags — the persistent inventory of selection / focus / state-persistence regression cases that the test harness gates. AT-tags are stable, append-only identifiers; once assigned, a number is never reused. Tests live in `tests/app-test/m{NN}-*.test.ts` and their filename `m{NN}` prefix MUST match an entry in this inventory.
+Canonical registry of AT-tags — the persistent inventory of selection / focus / state-persistence regression cases that the app-test harness gates. AT-tags are stable, append-only identifiers; once assigned, a number is never reused. Tests live in `tests/app-test/at{NNNN}-*.test.ts` and their filename `at{NNNN}` prefix MUST match an entry in this inventory.
 
 The selection-plan history (`roadmap/tugplan-selection.md`) captures the elaborated rationale, mechanism, closing-requires, and architectural cross-links for each tag. This file is the *index* — the quick map from tag → status → gating test(s) → one-line summary. When the two diverge, the selection plan's per-tag block is authoritative for design intent; this inventory is authoritative for tag numbering and current status.
 
+> **History:** This file was previously named `m-series-inventory.md` and used an `M{NN}` two-digit prefix. The 2026-04-27 cleanup renamed it to `app-test-inventory.md` and renumbered every tag `M{NN}` → `AT{NNNN}` (1:1 mapping; e.g. `M01` → `AT0001`, `M38` → `AT0038`). See `roadmap/tugplan-app-test-cleanup.md` for the rationale.
+
 ## Conventions
 
-- **Tag format:** `[M{NN}]` — two-digit zero-padded.
+- **Tag format:** `[AT{NNNN}]` — four-digit zero-padded.
 - **Status legend:**
   - ✅ Closed — fix landed; gating test(s) pass.
   - ⚠️ Partial — some axis closed, residual axis open or deferred.
@@ -15,15 +17,15 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
   - ⬛ Not-a-feature — closed-as-WONTFIX with a documented decision.
   - 🔧 Infra — infrastructure gap that blocks other tags; not a user-visible bug per se.
 - **Gating tests:** filenames listed point to `tests/app-test/`. Multiple tests per tag are allowed (e.g., FC half + EM half, or rapid-cadence variant).
-- **Numbering invariant:** test filename's `m{NN}` prefix MUST match a tag in this inventory. If a test gates a regression that isn't in the inventory, *add a tag first*, then name the test.
+- **Numbering invariant:** test filename's `at{NNNN}` prefix MUST match a tag in this inventory. If a test gates a regression that isn't in the inventory, *add a tag first*, then name the test.
 
 ## Adding a new tag
 
-1. Pick the next unused `MNN`. The current high-water mark is **AT0038**.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0038**.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
-5. Add the gating test as `tests/app-test/m{NN}-{slug}.test.ts`.
+5. Add the gating test as `tests/app-test/at{NNNN}-{slug}.test.ts`.
 
 ## Inventory
 
