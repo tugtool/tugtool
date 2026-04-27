@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-27T22:54:32Z
+---
+
+## step-1: Created tuglaws/INDEX.md per Spec S01 / [D05]: 35 lines, 5 H2 sections, lists every existing tuglaws/*.md plus the 4 forthcoming new docs.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-16
 date: 2025-04-24T00:08:53Z
 ---
