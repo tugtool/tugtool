@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-04-27T23:29:16Z
+---
+
+## step-6: Promoted 25 law lines in tuglaws.md from bold prose to H3 headings with {#lNN} trailing-attribute anchors per [Q02] / [D04]. Stripped duplicated law-text appendix from framework-architecture.md and replaced with single H2 'Laws referenced in this document' cross-ref list (9 laws: L02, L03, L04, L05, L06, L07, L08, L11, L24). Sub-step C (manual GitHub preview verification per OF6) deferred to Step 8 audit. All 5 plan tests pass.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-5
 date: 2025-04-27T23:23:20Z
 ---
