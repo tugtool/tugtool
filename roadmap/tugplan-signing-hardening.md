@@ -457,3 +457,60 @@ This is a shell-recipe + docs change. "Tests" are deliberate-state probes agains
 | Step 5 — integration | (verification only) | All 8 automated gates pass; live drift probe fired correctly; user-verified end-to-end smoke. |
 
 **Final state:** signing pipeline now fails loud on every silent-failure mode the audit identified. Drift detection is proactive (warning before the 90-second test sweep wastes time). The README has a real failure-mode checklist for the next confused person.
+
+---
+
+### Phase 2 Addendum — Polish + Teardown {#phase-2-addendum}
+
+**Authored:** 2026-04-27, immediately after Phase 1 close.
+
+**Trigger:** the user opted to take two of the three Roadmap / Follow-ons (E + G) right away while the area was in our sights. Item 1 (move `CODE_SIGN_IDENTITY` into pbxproj) is **deferred indefinitely** — the audit and the post-Phase-1 review both concluded the friction-on-onboarding cost outweighed the ~50ms-per-build savings.
+
+#### Phase 2 strategy {#phase-2-strategy}
+
+- **Step 6 — Audit-item E: skip re-sign when fingerprint matches.** Hoist the DR comparison to the top of the `app-test` re-sign block; if current DR == saved DR, skip both the re-sign and the post-resign drift block (they'd both be no-ops). Saves ~100ms per `app-test` invocation in the steady state AND avoids the corner case where re-signing with a re-created `Tug Dev` cert would invalidate an otherwise-valid AX grant.
+- **Step 7 — Audit-item G: `just teardown-dev-signing` recipe.** Removes the `Tug Dev` identity from the login keychain and clears `.tugtool/code-sign-fingerprint`. Used when decommissioning the project on a machine, debugging confused signing state, or migrating to a different identity. Trivial — ~10 lines.
+
+#### Phase 2 success criteria {#phase-2-success-criteria}
+
+- **Step 6:** `just app-test` in the steady state prints `==> Re-sign skipped (bundle DR matches sentinel)` and the recipe completes faster (subjective; ~100ms is below the noise floor of a multi-file sweep but visible on a single-file invocation).
+- **Step 6:** drift case still fires correctly — corrupt the sentinel, run `app-test`, observe re-sign happen + drift warn on post-resign comparison.
+- **Step 7:** `just teardown-dev-signing` removes the cert and the sentinel; running it twice is idempotent (second run reports "nothing to remove").
+- **Step 7:** after teardown, `just app-test` (without `APP_TEST_SKIP_RESIGN=1`) hits the fail-loud path. After `just setup-dev-signing` + `just build-app`, normal flow resumes.
+
+#### Phase 2 execution {#phase-2-execution}
+
+##### Step 6: app-test — skip re-sign when fingerprint matches {#step-6}
+
+**Depends on:** #step-3
+
+**Commit:** `refactor(signing): app-test skips re-sign when bundle DR matches sentinel`
+
+**Tasks:**
+- [ ] Hoist the current-DR + saved-DR extraction above the re-sign branch (single computation, used by both the early-skip check and the post-resign drift check).
+- [ ] Add the early-skip branch at the top: if both DR values are non-empty and equal, print a notice and proceed past the entire re-sign + drift block.
+- [ ] Leave the existing fail-loud / opt-out / drift logic intact for the mismatch path.
+
+**Tests:**
+- [ ] Steady-state probe: `just build-app && just app-test-smoke` — observe `Re-sign skipped` line in the output.
+- [ ] Drift probe: corrupt sentinel, run `app-test` — observe re-sign happen, then drift warn (since post-resign DR no longer matches the bogus sentinel).
+- [ ] Stale-bundle probe (manual; optional): bare `xcodebuild` between runs, then `app-test` — observe re-sign happens because bundle has ad-hoc DR.
+
+##### Step 7: just teardown-dev-signing recipe {#step-7}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(signing): add 'just teardown-dev-signing' recipe`
+
+**Tasks:**
+- [ ] Add `teardown-dev-signing` recipe near `setup-dev-signing` in the Justfile.
+- [ ] Body: `security delete-identity -c "Tug Dev"` (with not-found tolerance), `rm -f .tugtool/code-sign-fingerprint`, closing instruction to re-run `setup-dev-signing` before next test.
+
+**Tests:**
+- [ ] Probe deferred — would disturb the user's working `Tug Dev` identity. Code review of the recipe + dry-run via `just --show teardown-dev-signing` is sufficient.
+
+#### Phase 2 Roadmap / Follow-ons Status Update
+
+- [x] Audit-item E. (Step 6.)
+- [x] Audit-item G. (Step 7.)
+- [ ] **Audit-item 1 — DEFERRED INDEFINITELY.** The pbxproj-edit form forces every contributor through `setup-dev-signing` even for non-test builds, which the audit and post-Phase-1 review both concluded was the wrong trade for ~50ms savings. A command-line `CODE_SIGN_IDENTITY="Tug Dev" CODE_SIGN_STYLE=Manual` override on `xcodebuild` was identified as a less-disruptive alternative; it's also deferred for now since the post-resign overwrite already works.
