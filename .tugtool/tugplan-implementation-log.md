@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-27T23:09:12Z
+---
+
+## step-3: Created tuglaws/state-preservation.md (274 lines) per Spec S03: banner, Why, two opt-in layers, public-identifier inventory (15 identifiers), save/restore lifecycle, restore ordering, DOM attributes table, FocusSnapshot/CardStateBag detail, authoring rules, AT-tag relationship table, Files, Cross-Links. All SC03 identifiers present; SC07 banner present; tsc/test green.
+
+**Files changed:**
+- tuglaws-tidyup-ae990f1-1
+
+---
+
+---
 step: step-2
 date: 2025-04-27T23:01:21Z
 ---
