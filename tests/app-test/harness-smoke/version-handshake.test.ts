@@ -12,13 +12,13 @@
  * major doesn't match the server's (currently `1.0.0` → major `1`)
  * throws.
  *
- * Skipped by default unless `TUGAPP_IN_APP_TEST=1` is set. The test
+ * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
  * `TUGAPP_DEBUG_PATH` pointing at one).
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/version-handshake.test.ts
+ *   TUGAPP_APP_TEST=1 bun test tests/app-test/version-handshake.test.ts
  *
  * Design notes:
  * - The test must NOT leave a live subprocess behind if the throw
@@ -33,7 +33,7 @@ import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "../_harness";
 import { VersionSkewError } from "../_harness/errors";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: version handshake", () => {
   test("wrong expected version throws VersionSkewError with expected/actual populated", async () => {

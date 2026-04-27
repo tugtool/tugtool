@@ -192,7 +192,7 @@ This plan does the methodical pass: rename, renumber, relocate, and produce the 
 
 **Implications:**
 - Every reference to "in-app test" in docs and comments updates to "app-test".
-- The `TUGAPP_IN_APP_TEST=1` env var stays — it's a Swift-side gate read by `AppDelegate.swift`, and renaming it would require a coordinated Swift change. (See follow-on roadmap.)
+- ~~The `TUGAPP_IN_APP_TEST=1` env var stays — it's a Swift-side gate read by `AppDelegate.swift`, and renaming it would require a coordinated Swift change. (See follow-on roadmap.)~~ Superseded — renamed to `TUGAPP_APP_TEST` in a follow-on commit on 2026-04-27. See updated [D06].
 
 ---
 
@@ -267,18 +267,23 @@ This plan does the methodical pass: rename, renumber, relocate, and produce the 
 
 ---
 
-#### [D06] The `TUGAPP_IN_APP_TEST` env var stays as-is (DECIDED) {#d06-env-var-name}
+#### [D06] The `TUGAPP_IN_APP_TEST` env var stays as-is (SUPERSEDED — env var renamed to `TUGAPP_APP_TEST` 2026-04-27 in a follow-on commit) {#d06-env-var-name}
 
-**Decision:** The Swift-side gate (`AppDelegate.loadPreferences` reads `TUGAPP_IN_APP_TEST=1`) is not renamed.
+**Original decision:** The Swift-side gate (`AppDelegate.loadPreferences` reads `TUGAPP_IN_APP_TEST=1`) is not renamed during this cleanup.
 
-**Rationale:**
+**Original rationale:**
 - Renaming requires a coordinated Swift change with re-signing implications and AX-grant invalidation.
 - The env var is internal — only the just-recipe sets it. Test authors never see it.
 - A future Swift sweep can rename it to `TUGAPP_APP_TEST` if desired; this plan does not block on that.
 
-**Implications:**
-- One small naming inconsistency persists: directory is `app-test`, env var is `IN_APP_TEST`. README calls this out.
-- Add an item to the desiderata: "Rename `TUGAPP_IN_APP_TEST` → `TUGAPP_APP_TEST` in a coordinated Swift change."
+**Update (2026-04-27, post-close):** the user opted to do the follow-on immediately after phase close. Sweep landed in a separate commit:
+- `tugapp/Sources/AppDelegate.swift` + `ProcessManager.swift`: read `TUGAPP_APP_TEST` instead of `TUGAPP_IN_APP_TEST`.
+- `Justfile` `app-test` recipe: exports `TUGAPP_APP_TEST=1`.
+- 39 AT test files + 11 harness-smoke files: gate condition updated.
+- `tests/app-test/README.md`: env-var table + canonical-shape sample updated.
+- A `just build-app` rebuild is required after this change to recompile the Swift code; the AX grant survives because `Tug Dev` re-signs with the same identity.
+
+**Historical references in this plan and `tugplan-harness-extensions.md` retain the old name** as accurate snapshots of the pre-rename state.
 
 ---
 
@@ -589,7 +594,7 @@ Initial sketch (the deliverable doc will refine):
 - **Trackpad / wheel scroll** — no `nativeScroll` verb; tests can synth `wheel` events via `evalJS` but those carry `isTrusted: false`.
 - **Cross-app drag-and-drop** — no Finder / external-app drop fidelity.
 - **Parallel test execution** — one App per file by design; test-suite wallclock is sequential. Worth quantifying before any optimization.
-- **`TUGAPP_IN_APP_TEST` rename** — coordinate the Swift-side env-var rename to `TUGAPP_APP_TEST`. (See [D06].)
+- ~~**`TUGAPP_IN_APP_TEST` rename** — coordinate the Swift-side env-var rename to `TUGAPP_APP_TEST`. (See [D06].)~~ DONE 2026-04-27.
 - **Live-mode tugcode coverage** — only `em-live.test.ts` exercises the real Anthropic API; expanding this would catch tugcode-side regressions earlier but costs API credits.
 - **Rapid-cadence variants for missing AT-tags** — only AT0001, AT0003, AT0016 have rapid-cadence siblings today.
 - **Drift-prevention discipline** — `tugplan-harness-extensions.md` [D12] requires a deliberate revert-and-retest cycle for every new AT test before merge; this is process, not code, and lives in the desiderata as a reminder.
@@ -974,7 +979,7 @@ This is a rename / refactor plan. The "tests" are the post-rename green sweep pl
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Rename `TUGAPP_IN_APP_TEST` → `TUGAPP_APP_TEST` in a coordinated Swift change ([D06]).
+- [x] Rename `TUGAPP_IN_APP_TEST` → `TUGAPP_APP_TEST` in a coordinated Swift change ([D06]). DONE 2026-04-27 in a follow-on commit immediately after phase close.
 - [ ] Pick from the desiderata list to drive future plans (CI integration, IME coverage, multi-window scenarios, parallel test execution, etc.).
 - [ ] Optionally archive `roadmap/m-series-reconciliation.md` under `roadmap/archive/` once the historical context is no longer needed.
 

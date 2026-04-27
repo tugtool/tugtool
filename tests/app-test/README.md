@@ -60,7 +60,7 @@ for the contract.
 
 | Variable                  | Purpose                                                      |
 |---------------------------|--------------------------------------------------------------|
-| `TUGAPP_IN_APP_TEST=1`    | Enables the `describe.skipIf(!SHOULD_RUN)` gate. Set by the just-recipe; tests should never set it themselves. |
+| `TUGAPP_APP_TEST=1`    | Enables the `describe.skipIf(!SHOULD_RUN)` gate. Set by the just-recipe; tests should never set it themselves. |
 | `TUGAPP_DEBUG_PATH`       | Absolute path to the debug `Tug.app` binary. Set by the just-recipe via xcodebuild's settings query. |
 | `TUGAPP_TUGCODE_BINARY`   | Absolute path to the bun-compiled `tugcode` binary. Used by EM-card / live-mode tests. |
 | `TUGAPP_TUGBANK_BINARY`   | Absolute path to the `tugbank` CLI. Used by cold-boot disk-side reads in `_harness/tugbank-helpers.ts`. |
@@ -104,7 +104,7 @@ Canonical shape:
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "@/_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("my scenario", () => {
   test("does the thing", async () => {
@@ -258,7 +258,7 @@ of the inventory), THEN write the test.
    - Scenario: `tests/app-test/at{NNNN}-<slug>.test.ts`.
    - Smoke: `tests/app-test/harness-smoke/<descriptive>.test.ts`.
 
-3. **Gate on `TUGAPP_IN_APP_TEST=1`.** Use
+3. **Gate on `TUGAPP_APP_TEST=1`.** Use
    `describe.skipIf(!SHOULD_RUN)` at the top of every `describe`
    block. Without it, `bun x tsc --noEmit` runs are forced to skip
    too, which keeps CI honest.
@@ -349,9 +349,9 @@ tests/app-test/
   logs/                       # Per-spawn stdout/stderr dumps. Gitignored.
 ```
 
-## TUGAPP_IN_APP_TEST naming note
+## TUGAPP_APP_TEST naming note
 
-The Swift-side gate env var is still named `TUGAPP_IN_APP_TEST=1`
+The Swift-side gate env var is still named `TUGAPP_APP_TEST=1`
 even though the directory is now `tests/app-test/`. Renaming the env
 var requires a coordinated Swift change with code-signing
 implications — deferred. See

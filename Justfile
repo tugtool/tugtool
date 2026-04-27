@@ -380,7 +380,7 @@ app-test *FILES:
 
     # Refresh tugdeck/dist so the harness (which loads prod-built
     # static files via tugcast's ServeDir, not Vite — see the
-    # TUGAPP_IN_APP_TEST branch in AppDelegate.loadPreferences)
+    # TUGAPP_APP_TEST branch in AppDelegate.loadPreferences)
     # reflects current source.
     (cd tugdeck && bun run build >/dev/null)
 
@@ -399,7 +399,7 @@ app-test *FILES:
     }
     trap cleanup EXIT INT TERM
 
-    export TUGAPP_IN_APP_TEST=1
+    export TUGAPP_APP_TEST=1
     export TUGAPP_DEBUG_PATH="$APP_BIN"
     REPO_ROOT_FAST="$(pwd)"
     export TUGAPP_TUGCODE_BINARY="$REPO_ROOT_FAST/tugrust/target/debug/tugcode"

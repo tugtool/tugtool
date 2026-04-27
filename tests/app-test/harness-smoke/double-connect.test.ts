@@ -13,13 +13,13 @@
  * `tugapp/Sources/TestHarness/TestHarnessListener.swift` for the
  * rationale.
  *
- * Skipped by default unless `TUGAPP_IN_APP_TEST=1` is set. The test
+ * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
  * `TUGAPP_DEBUG_PATH` pointing at one).
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/double-connect.test.ts
+ *   TUGAPP_APP_TEST=1 bun test tests/app-test/double-connect.test.ts
  *
  * Design notes:
  * - We can't use `launchTugApp` for the second "client" — it always
@@ -33,7 +33,7 @@
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "../_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: double-connect refused", () => {
   test("second connect to the active harness socket is refused", async () => {

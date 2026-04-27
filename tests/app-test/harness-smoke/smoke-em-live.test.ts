@@ -54,7 +54,7 @@ import { join } from "node:path";
 
 import { launchTugApp } from "../_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TUGCODE_LIVE = process.env.TUGCODE_LIVE === "1";
 
 /** Poll the log file until `predicate(content)` is truthy or the budget elapses. */

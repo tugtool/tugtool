@@ -32,7 +32,7 @@
  * Gating
  * ------
  * The whole describe block is wrapped in `describe.skipIf(!SHOULD_RUN)`.
- * CI and local `bun x tsc --noEmit` runs without `TUGAPP_IN_APP_TEST=1`
+ * CI and local `bun x tsc --noEmit` runs without `TUGAPP_APP_TEST=1`
  * skip every test, matching the README recipe (`tests/app-test/README.md`).
  */
 
@@ -52,7 +52,7 @@ import {
 // authors who prefer not to extend `expect`.
 registerSubsetMatcher();
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 // ---------------------------------------------------------------------------
 // Seed fixtures

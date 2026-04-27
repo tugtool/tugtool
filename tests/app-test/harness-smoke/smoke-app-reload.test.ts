@@ -44,7 +44,7 @@ import {
   seedTugbankForLaunch,
 } from "../_harness/tugbank-helpers";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const TEST_TIMEOUT_MS = 60_000;
 

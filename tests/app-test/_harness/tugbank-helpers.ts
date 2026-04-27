@@ -192,7 +192,7 @@ export function tugbankWrite(
  *     ServeDir from it (or Vite can spawn from the source tree
  *     when dev-mode-enabled is true).
  *   - `dev.tugtool.app/dev-mode-enabled` = `false`. The in-app
- *     test harness skips Vite anyway (TUGAPP_IN_APP_TEST=1 path
+ *     test harness skips Vite anyway (TUGAPP_APP_TEST=1 path
  *     in `ProcessManager.startProcess`), so prod-mode is the
  *     fastest boot. Override via opts if a test needs dev-mode.
  *

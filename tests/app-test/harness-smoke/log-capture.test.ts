@@ -18,13 +18,13 @@
  * If the underlying host ever stops doing that, this test will
  * surface the regression as an empty log tail.
  *
- * Skipped by default unless `TUGAPP_IN_APP_TEST=1` is set. The test
+ * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
  * `TUGAPP_DEBUG_PATH` pointing at one).
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/log-capture.test.ts
+ *   TUGAPP_APP_TEST=1 bun test tests/app-test/log-capture.test.ts
  *
  * Design notes:
  * - The test uses a unique marker string so a flake involving an
@@ -41,7 +41,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "../_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: log capture", () => {
   test("evalJS console output lands in the per-test log file", async () => {

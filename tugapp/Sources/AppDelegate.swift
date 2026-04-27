@@ -269,7 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // ~700ms on cold launch by skipping the Vite subprocess + the
         // first-request TS-on-demand transform. Test-only; manual
         // launches still honor whatever the user has set in tugbank.
-        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1" {
+        if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1" {
             devModeEnabled = false
         }
     }

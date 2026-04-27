@@ -10,13 +10,13 @@
  *   3. `waitForCondition` for an immediately-truthy expression returns
  *      the value.
  *
- * Skipped by default unless `TUGAPP_IN_APP_TEST=1` is set. The test
+ * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
  * `TUGAPP_DEBUG_PATH` pointing at one).
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/wait-for-condition.test.ts
+ *   TUGAPP_APP_TEST=1 bun test tests/app-test/wait-for-condition.test.ts
  *
  * Design notes:
  * - Each test launches its own `App` instance and closes it in the
@@ -37,7 +37,7 @@ import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "../_harness";
 import { TimeoutError } from "../_harness/errors";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 describe.skipIf(!SHOULD_RUN)("in-app: evalJS error translation", () => {
   test("evalJS that throws surfaces as an Error with matching name/message", async () => {

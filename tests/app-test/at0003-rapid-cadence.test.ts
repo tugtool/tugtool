@@ -31,7 +31,7 @@
 import { describe, expect, test } from "bun:test";
 import { launchTugApp, type CaretState } from "./_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const INPUT_PERSIST_KEY = "gallery-input/size/sm";
 

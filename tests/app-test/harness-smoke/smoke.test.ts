@@ -6,7 +6,7 @@
  *
  * Also asserts `app.version === "1.0.0"` to pin the handshake.
  *
- * Skipped by default unless `TUGAPP_IN_APP_TEST=1` is set. The test
+ * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
  * `TUGAPP_DEBUG_PATH` pointing at one). Running without that env
  * variable would fail in environments where the app isn't built,
@@ -14,13 +14,13 @@
  *
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
- *   TUGAPP_IN_APP_TEST=1 bun test tests/app-test/smoke.test.ts
+ *   TUGAPP_APP_TEST=1 bun test tests/app-test/smoke.test.ts
  */
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp, EXPECTED_SURFACE_VERSION } from "../_harness";
 
-const SHOULD_RUN = process.env.TUGAPP_IN_APP_TEST === "1";
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 // This suite predates Phase A native-events and exercises ONLY the
 // `evalJS` protocol — no CGEvent path. Opt out of the AX preflight

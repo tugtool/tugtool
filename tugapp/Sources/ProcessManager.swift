@@ -560,7 +560,7 @@ class ProcessManager {
         // bundle so a `bun run build` in tugdeck refreshes the dist tugcast
         // serves — no xcodebuild needed between iterations. Production
         // launches keep the bundle path.
-        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1",
+        if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1",
            let path = sourceTree {
             env["TUGCAST_RESOURCE_ROOT"] = path
         } else if let resourcePath = Bundle.main.resourcePath {
@@ -587,7 +587,7 @@ class ProcessManager {
         // process group (setpgid) and survives until its parent_watch
         // notices, so the next launch races on the port and otherwise
         // pays the supervisor's 1-second backoff.
-        if ProcessInfo.processInfo.environment["TUGAPP_IN_APP_TEST"] == "1" {
+        if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1" {
             args += ["--force"]
         }
         proc.arguments = args

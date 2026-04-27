@@ -364,9 +364,10 @@ follow-on plans.
 
 ### Naming / cleanup
 
-- **Rename `TUGAPP_IN_APP_TEST` → `TUGAPP_APP_TEST`.** Coordinated
+- ~~**Rename `TUGAPP_IN_APP_TEST` → `TUGAPP_APP_TEST`.** Coordinated
   Swift change; deferred to avoid re-signing churn. See cleanup plan
-  [D06].
+  [D06].~~ **DONE 2026-04-27** in a follow-on commit; cleanup-plan
+  [D06] superseded.
 - **`just app-test --json`.** Emit the summary as a JSON sidecar for
   richer programmatic consumption. Not added in this plan because the
   text-format `VERDICT:` line is already deterministic.
