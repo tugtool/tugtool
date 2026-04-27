@@ -703,17 +703,17 @@ This is a rename / refactor plan. The "tests" are the post-rename green sweep pl
 - A captured pre-rename `just test-in-app-fast` log under `roadmap/.app-test-baseline.log` (gitignored — referenced for sanity, not committed).
 
 **Tasks:**
-- [ ] Run `just test-in-app-fast` and confirm green; capture the run log locally.
-- [ ] Write `scripts/rename-m-to-at.sh` per the [outline](#rename-script). Use `perl -i -pe` for in-place regex replacement on macOS (sed is finicky with extended regexes). Exclude `archive/`, `node_modules`, `target/`, `dist/`, `bun.lock`, `package-lock.json`, `*.png`, `*.jpg`, the script itself.
-- [ ] Dry-run the script's grep pattern against the repo and verify it finds expected sites (no surprises in archived plans, etc.).
+- [x] Run `just test-in-app-fast` and confirm green; capture the run log locally. (2026-04-27 — 45 files, 0 fails, log at `roadmap/.app-test-baseline.log`.)
+- [x] Write `scripts/rename-m-to-at.sh` per the [outline](#rename-script). Use `perl -i -pe` for in-place regex replacement on macOS (sed is finicky with extended regexes). Exclude `archive/`, `node_modules`, `target/`, `dist/`, `bun.lock`, `package-lock.json`, `*.png`, `*.jpg`, the script itself. (Commit `2cee4eae`.)
+- [x] Dry-run the script's grep pattern against the repo and verify it finds expected sites (no surprises in archived plans, etc.). (~92 files matched, all expected.)
 
 **Tests:**
-- [ ] `bash -n scripts/rename-m-to-at.sh` (syntax check).
-- [ ] Manual visual review of the regex replacements against the inventory.
+- [x] `bash -n scripts/rename-m-to-at.sh` (syntax check).
+- [x] Manual visual review of the regex replacements against the inventory.
 
 **Checkpoint:**
-- [ ] `git status` clean except for the new script + plan.
-- [ ] `just test-in-app-fast` green.
+- [x] `git status` clean except for the new script + plan.
+- [x] `just test-in-app-fast` green.
 
 ---
 
